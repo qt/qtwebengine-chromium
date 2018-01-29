@@ -49,10 +49,11 @@ void LinearEchoPower(const FftData& E,
 // Class for removing the echo from the capture signal.
 class EchoRemoverImpl final : public EchoRemover {
  public:
-  explicit EchoRemoverImpl(
-      const AudioProcessing::Config::EchoCanceller3& config,
-      int sample_rate_hz);
+  explicit EchoRemoverImpl(const EchoCanceller3Config& config,
+                           int sample_rate_hz);
   ~EchoRemoverImpl() override;
+
+  void GetMetrics(EchoControl::Metrics* metrics) const override;
 
   // Removes the echo from a block of samples from the capture signal. The
   // supplied render signal is assumed to be pre-aligned with the capture
@@ -71,7 +72,7 @@ class EchoRemoverImpl final : public EchoRemover {
 
  private:
   static int instance_count_;
-  const AudioProcessing::Config::EchoCanceller3 config_;
+  const EchoCanceller3Config config_;
   const Aec3Fft fft_;
   std::unique_ptr<ApmDataDumper> data_dumper_;
   const Aec3Optimization optimization_;
@@ -92,9 +93,8 @@ class EchoRemoverImpl final : public EchoRemover {
 
 int EchoRemoverImpl::instance_count_ = 0;
 
-EchoRemoverImpl::EchoRemoverImpl(
-    const AudioProcessing::Config::EchoCanceller3& config,
-    int sample_rate_hz)
+EchoRemoverImpl::EchoRemoverImpl(const EchoCanceller3Config& config,
+                                 int sample_rate_hz)
     : config_(config),
       fft_(),
       data_dumper_(
@@ -111,6 +111,13 @@ EchoRemoverImpl::EchoRemoverImpl(
 }
 
 EchoRemoverImpl::~EchoRemoverImpl() = default;
+
+void EchoRemoverImpl::GetMetrics(EchoControl::Metrics* metrics) const {
+  // Echo return loss (ERL) is inverted to go from gain to attenuation.
+  metrics->echo_return_loss = -10.0 * log10(aec_state_.ErlTimeDomain());
+  metrics->echo_return_loss_enhancement =
+      10.0 * log10(aec_state_.ErleTimeDomain());
+}
 
 void EchoRemoverImpl::ProcessCapture(
     const rtc::Optional<size_t>& echo_path_delay_samples,
@@ -191,10 +198,9 @@ void EchoRemoverImpl::ProcessCapture(
   cng_.Compute(aec_state_, Y2, &comfort_noise, &high_band_comfort_noise);
 
   // A choose and apply echo suppression gain.
-  suppression_gain_.GetGain(
-      E2, R2, cng_.NoiseSpectrum(), render_signal_analyzer_,
-      aec_state_.SaturatedEcho(), x, aec_state_.ForcedZeroGain(),
-      aec_state_.LinearEchoEstimate(), &high_bands_gain, &G);
+  suppression_gain_.GetGain(E2, R2, cng_.NoiseSpectrum(),
+                            render_signal_analyzer_, aec_state_, x,
+                            &high_bands_gain, &G);
   suppression_filter_.ApplyGain(comfort_noise, high_band_comfort_noise, G,
                                 high_bands_gain, y);
 
@@ -242,9 +248,8 @@ void EchoRemoverImpl::ProcessCapture(
 
 }  // namespace
 
-EchoRemover* EchoRemover::Create(
-    const AudioProcessing::Config::EchoCanceller3& config,
-    int sample_rate_hz) {
+EchoRemover* EchoRemover::Create(const EchoCanceller3Config& config,
+                                 int sample_rate_hz) {
   return new EchoRemoverImpl(config, sample_rate_hz);
 }
 

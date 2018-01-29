@@ -19,7 +19,7 @@
 namespace content {
 namespace {
 
-const int kVerboseLevel = 1;
+const int kDownloadJobVerboseLevel = 1;
 
 }  // namespace
 
@@ -121,13 +121,13 @@ void ParallelDownloadJob::OnByteStreamReady(
     DownloadWorker* worker,
     std::unique_ptr<ByteStreamReader> stream_reader) {
   bool success = DownloadJob::AddInputStream(
-      base::MakeUnique<DownloadManager::InputStream>(std::move(stream_reader)),
+      std::make_unique<DownloadManager::InputStream>(std::move(stream_reader)),
       worker->offset(), worker->length());
   RecordParallelDownloadAddStreamSuccess(success);
 
   // Destroy the request if the sink is gone.
   if (!success) {
-    VLOG(kVerboseLevel)
+    VLOG(kDownloadJobVerboseLevel)
         << "Byte stream arrived after download file is released.";
     worker->Cancel(false);
   }
@@ -158,7 +158,7 @@ void ParallelDownloadJob::BuildParallelRequests() {
   // previous session only has one stream writing to disk. In these cases, fall
   // back to non parallel download.
   if (initial_request_offset_ > first_slice_offset) {
-    VLOG(kVerboseLevel)
+    VLOG(kDownloadJobVerboseLevel)
         << "Received slices data mismatch initial request offset.";
     return;
   }
@@ -234,7 +234,7 @@ void ParallelDownloadJob::CreateRequest(int64_t offset, int64_t length) {
   DCHECK(download_item_);
 
   std::unique_ptr<DownloadWorker> worker =
-      base::MakeUnique<DownloadWorker>(this, offset, length);
+      std::make_unique<DownloadWorker>(this, offset, length);
 
   StoragePartition* storage_partition =
       BrowserContext::GetStoragePartitionForSite(

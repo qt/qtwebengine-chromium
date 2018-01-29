@@ -41,28 +41,27 @@ enum XFA_DocFlag {
 };
 
 class CFX_XMLDoc;
+class CFXJSE_Engine;
 class CScript_DataWindow;
 class CScript_EventPseudoModel;
 class CScript_HostPseudoModel;
 class CScript_LogPseudoModel;
 class CScript_LayoutPseudoModel;
 class CScript_SignaturePseudoModel;
-class CXFA_Document;
+class CXFA_ContainerLayoutItem;
+class CXFA_DocumentParser;
+class CXFA_FFNotify;
 class CXFA_LayoutItem;
 class CXFA_LayoutProcessor;
 class CXFA_Node;
-class CXFA_LayoutProcessor;
-class CXFA_DocumentParser;
-class CXFA_ContainerLayoutItem;
-class CXFA_FFNotify;
-class CXFA_ScriptContext;
+class CXFA_Object;
 
 class CXFA_Document {
  public:
   explicit CXFA_Document(CXFA_DocumentParser* pParser);
   ~CXFA_Document();
 
-  CXFA_ScriptContext* InitScriptContext(v8::Isolate* pIsolate);
+  CFXJSE_Engine* InitScriptContext(v8::Isolate* pIsolate);
 
   CXFA_Node* GetRoot() const { return m_pRootNode; }
 
@@ -74,13 +73,12 @@ class CXFA_Document {
   CXFA_Node* GetNotBindNode(const std::vector<CXFA_Object*>& arrayNodes);
   CXFA_LayoutProcessor* GetLayoutProcessor();
   CXFA_LayoutProcessor* GetDocLayout();
-  CXFA_ScriptContext* GetScriptContext();
+  CFXJSE_Engine* GetScriptContext();
 
   void SetRoot(CXFA_Node* pNewRoot);
 
   void AddPurgeNode(CXFA_Node* pNode);
   bool RemovePurgeNode(CXFA_Node* pNode);
-  void PurgeNodes();
 
   bool HasFlag(uint32_t dwFlag) { return (m_dwDocFlags & dwFlag) == dwFlag; }
   void SetFlag(uint32_t dwFlag, bool bOn);
@@ -89,8 +87,7 @@ class CXFA_Document {
   XFA_VERSION GetCurVersionMode() { return m_eCurVersionMode; }
   XFA_VERSION RecognizeXFAVersionNumber(const WideString& wsTemplateNS);
 
-  CXFA_Node* CreateNode(uint32_t dwPacket, XFA_Element eElement);
-  CXFA_Node* CreateNode(const XFA_PACKETINFO* pPacket, XFA_Element eElement);
+  CXFA_Node* CreateNode(XFA_PacketType packet, XFA_Element eElement);
 
   void DoProtoMerge();
   void DoDataMerge();
@@ -111,7 +108,7 @@ class CXFA_Document {
  private:
   CXFA_DocumentParser* m_pParser;
   CXFA_Node* m_pRootNode;
-  std::unique_ptr<CXFA_ScriptContext> m_pScriptContext;
+  std::unique_ptr<CFXJSE_Engine> m_pScriptContext;
   std::unique_ptr<CXFA_LayoutProcessor> m_pLayoutProcessor;
   std::unique_ptr<CXFA_LocaleMgr> m_pLocalMgr;
   std::unique_ptr<CScript_DataWindow> m_pScriptDataWindow;

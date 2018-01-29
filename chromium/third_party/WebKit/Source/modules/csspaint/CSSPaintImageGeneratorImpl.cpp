@@ -49,13 +49,11 @@ void CSSPaintImageGeneratorImpl::NotifyGeneratorReady() {
   observer_->PaintImageGeneratorReady();
 }
 
-RefPtr<Image> CSSPaintImageGeneratorImpl::Paint(
+scoped_refptr<Image> CSSPaintImageGeneratorImpl::Paint(
     const ImageResourceObserver& observer,
     const IntSize& container_size,
-    const CSSStyleValueVector* data,
-    const LayoutSize* logical_size) {
-  return paint_worklet_->Paint(name_, observer, container_size, data,
-                               logical_size);
+    const CSSStyleValueVector* data) {
+  return paint_worklet_->Paint(name_, observer, container_size, data);
 }
 
 bool CSSPaintImageGeneratorImpl::HasDocumentDefinition() const {
@@ -104,7 +102,7 @@ bool CSSPaintImageGeneratorImpl::IsImageGeneratorReady() const {
   return HasDocumentDefinition();
 }
 
-DEFINE_TRACE(CSSPaintImageGeneratorImpl) {
+void CSSPaintImageGeneratorImpl::Trace(blink::Visitor* visitor) {
   visitor->Trace(observer_);
   visitor->Trace(paint_worklet_);
   CSSPaintImageGenerator::Trace(visitor);

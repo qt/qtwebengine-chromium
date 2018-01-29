@@ -58,7 +58,7 @@ class MODULES_EXPORT NavigatorGamepad final
   static GamepadList* getGamepads(Navigator&);
   GamepadList* Gamepads();
 
-  DECLARE_VIRTUAL_TRACE();
+  void Trace(blink::Visitor*) override;
 
  private:
   explicit NavigatorGamepad(Navigator&);
@@ -70,6 +70,7 @@ class MODULES_EXPORT NavigatorGamepad final
   bool StartUpdatingIfAttached();
   void SampleAndCheckConnectedGamepads();
   bool CheckConnectedGamepads(GamepadList*, GamepadList*);
+  void CheckConnectedGamepad(Gamepad*, Gamepad*, bool*, bool*);
 
   // PageVisibilityObserver
   void PageVisibilityChanged() override;

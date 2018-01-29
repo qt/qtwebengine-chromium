@@ -8,9 +8,9 @@
 
 #include "fpdfsdk/fpdfxfa/cpdfxfa_context.h"
 #include "fpdfsdk/fsdk_define.h"
+#include "fxjs/cfxjse_engine.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/base/ptr_util.h"
-#include "xfa/fxfa/parser/cxfa_scriptcontext.h"
 
 XFAJSEmbedderTest::XFAJSEmbedderTest()
     : array_buffer_allocator_(pdfium::MakeUnique<FXJS_ArrayBufferAllocator>()) {
@@ -74,7 +74,7 @@ bool XFAJSEmbedderTest::ExecuteSilenceFailure(const ByteStringView& input) {
 
 bool XFAJSEmbedderTest::ExecuteHelper(const ByteStringView& input) {
   value_ = pdfium::MakeUnique<CFXJSE_Value>(GetIsolate());
-  return script_context_->RunScript(XFA_SCRIPTLANGTYPE_Formcalc,
+  return script_context_->RunScript(CXFA_ScriptData::Type::Formcalc,
                                     WideString::FromUTF8(input).AsStringView(),
                                     value_.get(), GetXFADocument()->GetRoot());
 }

@@ -17,7 +17,6 @@
 #include "base/json/json_writer.h"
 #include "base/json/string_escape.h"
 #include "base/logging.h"
-#include "base/memory/ptr_util.h"
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
 #include "base/task_scheduler/post_task.h"
@@ -74,7 +73,7 @@ class Coordinator::TraceStreamer : public base::SupportsWeakPtr<TraceStreamer> {
       mojom::TraceDataType type,
       base::WeakPtr<AgentRegistry::AgentEntry> agent_entry) {
     mojom::RecorderPtr ptr;
-    auto recorder = base::MakeUnique<Recorder>(
+    auto recorder = std::make_unique<Recorder>(
         MakeRequest(&ptr), type,
         base::BindRepeating(&Coordinator::TraceStreamer::OnRecorderDataChange,
                             AsWeakPtr(), label));
@@ -288,7 +287,7 @@ Coordinator::Coordinator()
 Coordinator::~Coordinator() {
   if (!stop_and_flush_callback_.is_null()) {
     base::ResetAndReturn(&stop_and_flush_callback_)
-        .Run(base::MakeUnique<base::DictionaryValue>());
+        .Run(std::make_unique<base::DictionaryValue>());
   }
   if (!start_tracing_callback_.is_null())
     base::ResetAndReturn(&start_tracing_callback_).Run(false);
@@ -374,11 +373,12 @@ void Coordinator::StopAndFlushAgent(mojo::ScopedDataPipeProducerHandle stream,
                                     const StopAndFlushCallback& callback) {
   if (!is_tracing_) {
     stream.reset();
-    callback.Run(base::MakeUnique<base::DictionaryValue>());
+    callback.Run(std::make_unique<base::DictionaryValue>());
     return;
   }
   DCHECK(!trace_streamer_);
   DCHECK(stream.is_valid());
+  is_tracing_ = false;
 
   // Do not send |StartTracing| to agents that connect from now on.
   agent_registry_->RemoveAgentInitializationCallback();

@@ -15,6 +15,7 @@
 #include <set>
 #include <string>
 #include <tuple>
+#include <unordered_map>
 #include <vector>
 
 #include "base/containers/flat_map.h"
@@ -22,6 +23,7 @@
 #include "base/containers/stack_container.h"
 #include "base/files/file.h"
 #include "base/format_macros.h"
+#include "base/memory/shared_memory_handle.h"
 #include "base/numerics/safe_conversions.h"
 #include "base/optional.h"
 #include "base/strings/string16.h"
@@ -38,7 +40,6 @@ class DictionaryValue;
 class FilePath;
 class ListValue;
 class NullableString16;
-class SharedMemoryHandle;
 class Time;
 class TimeDelta;
 class TimeTicks;
@@ -428,10 +429,9 @@ struct ParamTraits<std::map<K, V, C, A> > {
   typedef std::map<K, V, C, A> param_type;
   static void Write(base::Pickle* m, const param_type& p) {
     WriteParam(m, base::checked_cast<int>(p.size()));
-    typename param_type::const_iterator iter;
-    for (iter = p.begin(); iter != p.end(); ++iter) {
-      WriteParam(m, iter->first);
-      WriteParam(m, iter->second);
+    for (const auto& iter : p) {
+      WriteParam(m, iter.first);
+      WriteParam(m, iter.second);
     }
   }
   static bool Read(const base::Pickle* m,
@@ -452,6 +452,37 @@ struct ParamTraits<std::map<K, V, C, A> > {
   }
   static void Log(const param_type& p, std::string* l) {
     l->append("<std::map>");
+  }
+};
+
+template <class K, class V, class C, class A>
+struct ParamTraits<std::unordered_map<K, V, C, A>> {
+  typedef std::unordered_map<K, V, C, A> param_type;
+  static void Write(base::Pickle* m, const param_type& p) {
+    WriteParam(m, base::checked_cast<int>(p.size()));
+    for (const auto& iter : p) {
+      WriteParam(m, iter.first);
+      WriteParam(m, iter.second);
+    }
+  }
+  static bool Read(const base::Pickle* m,
+                   base::PickleIterator* iter,
+                   param_type* r) {
+    int size;
+    if (!ReadParam(m, iter, &size) || size < 0)
+      return false;
+    for (int i = 0; i < size; ++i) {
+      K k;
+      if (!ReadParam(m, iter, &k))
+        return false;
+      V& value = (*r)[k];
+      if (!ReadParam(m, iter, &value))
+        return false;
+    }
+    return true;
+  }
+  static void Log(const param_type& p, std::string* l) {
+    l->append("<std::unordered_map>");
   }
 };
 
@@ -524,6 +555,18 @@ struct IPC_EXPORT ParamTraits<base::SharedMemoryHandle> {
                    param_type* r);
   static void Log(const param_type& p, std::string* l);
 };
+
+#if defined(OS_ANDROID)
+template <>
+struct IPC_EXPORT ParamTraits<base::SharedMemoryHandle::Type> {
+  typedef base::SharedMemoryHandle::Type param_type;
+  static void Write(base::Pickle* m, const param_type& p);
+  static bool Read(const base::Pickle* m,
+                   base::PickleIterator* iter,
+                   param_type* r);
+  static void Log(const param_type& p, std::string* l);
+};
+#endif
 
 #if defined(OS_WIN)
 template <>

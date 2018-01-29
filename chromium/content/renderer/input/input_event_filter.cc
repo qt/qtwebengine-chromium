@@ -60,9 +60,9 @@ InputEventFilter::InputEventFilter(
     const scoped_refptr<base::SingleThreadTaskRunner>& target_task_runner)
     : main_task_runner_(main_task_runner),
       main_listener_(main_listener),
-      sender_(NULL),
+      sender_(nullptr),
       target_task_runner_(target_task_runner),
-      input_handler_manager_(NULL) {
+      input_handler_manager_(nullptr) {
   DCHECK(target_task_runner_.get());
   DCHECK(main_task_runner_->BelongsToCurrentThread());
 }
@@ -103,7 +103,7 @@ void InputEventFilter::DidOverscroll(int routing_id,
 }
 
 void InputEventFilter::DidStopFlinging(int routing_id) {
-  SendMessage(base::MakeUnique<InputHostMsg_DidStopFlinging>(routing_id));
+  SendMessage(std::make_unique<InputHostMsg_DidStopFlinging>(routing_id));
 }
 
 void InputEventFilter::QueueClosureForMainThreadEventQueue(
@@ -118,7 +118,6 @@ void InputEventFilter::QueueClosureForMainThreadEventQueue(
 
   // For some reason we didn't find an event queue for the route.
   // Don't drop the task on the floor allow it to execute.
-  NOTREACHED();
   main_task_runner_->PostTask(FROM_HERE, closure);
 }
 
@@ -139,7 +138,7 @@ void InputEventFilter::SetWhiteListedTouchAction(int routing_id,
                                                  cc::TouchAction touch_action,
                                                  uint32_t unique_touch_event_id,
                                                  InputEventAckState ack_state) {
-  SendMessage(base::MakeUnique<InputHostMsg_SetWhiteListedTouchAction>(
+  SendMessage(std::make_unique<InputHostMsg_SetWhiteListedTouchAction>(
       routing_id, touch_action, unique_touch_event_id, ack_state));
 }
 
@@ -149,11 +148,11 @@ void InputEventFilter::OnFilterAdded(IPC::Channel* channel) {
 }
 
 void InputEventFilter::OnFilterRemoved() {
-  sender_ = NULL;
+  sender_ = nullptr;
 }
 
 void InputEventFilter::OnChannelClosing() {
-  sender_ = NULL;
+  sender_ = nullptr;
 }
 
 // This function returns true if the IPC message is one that the compositor

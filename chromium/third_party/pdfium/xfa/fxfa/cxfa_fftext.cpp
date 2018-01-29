@@ -40,23 +40,21 @@ void CXFA_FFText::RenderWidget(CXFA_Graphics* pGS,
 
   CFX_RenderDevice* pRenderDevice = pGS->GetRenderDevice();
   CFX_RectF rtText = GetRectWithoutRotate();
-  if (CXFA_Margin mgWidget = m_pDataAcc->GetMargin()) {
+  CXFA_MarginData marginData = m_pDataAcc->GetMarginData();
+  if (marginData.HasValidNode()) {
     CXFA_LayoutItem* pItem = this;
     if (!pItem->GetPrev() && !pItem->GetNext()) {
-      XFA_RectWidthoutMargin(rtText, mgWidget);
+      XFA_RectWidthoutMargin(rtText, marginData);
     } else {
-      float fLeftInset;
-      float fRightInset;
       float fTopInset = 0;
       float fBottomInset = 0;
-      mgWidget.GetLeftInset(fLeftInset);
-      mgWidget.GetRightInset(fRightInset);
       if (!pItem->GetPrev())
-        mgWidget.GetTopInset(fTopInset);
+        fTopInset = marginData.GetTopInset();
       else if (!pItem->GetNext())
-        mgWidget.GetBottomInset(fBottomInset);
+        fBottomInset = marginData.GetBottomInset();
 
-      rtText.Deflate(fLeftInset, fTopInset, fRightInset, fBottomInset);
+      rtText.Deflate(marginData.GetLeftInset(), fTopInset,
+                     marginData.GetRightInset(), fBottomInset);
     }
   }
 
@@ -87,16 +85,12 @@ bool CXFA_FFText::PerformLayout() {
   pItem = pItem->GetFirst();
   while (pItem) {
     CFX_RectF rtText = pItem->GetRect(false);
-    if (CXFA_Margin mgWidget = m_pDataAcc->GetMargin()) {
-      if (!pItem->GetPrev()) {
-        float fTopInset;
-        mgWidget.GetTopInset(fTopInset);
-        rtText.height -= fTopInset;
-      } else if (!pItem->GetNext()) {
-        float fBottomInset;
-        mgWidget.GetBottomInset(fBottomInset);
-        rtText.height -= fBottomInset;
-      }
+    CXFA_MarginData marginData = m_pDataAcc->GetMarginData();
+    if (marginData.HasValidNode()) {
+      if (!pItem->GetPrev())
+        rtText.height -= marginData.GetTopInset();
+      else if (!pItem->GetNext())
+        rtText.height -= marginData.GetBottomInset();
     }
     pTextLayout->ItemBlocks(rtText, pItem->GetIndex());
     pItem = pItem->GetNext();

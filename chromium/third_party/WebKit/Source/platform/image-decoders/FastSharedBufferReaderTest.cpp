@@ -29,6 +29,7 @@
  */
 
 #include "platform/image-decoders/FastSharedBufferReader.h"
+#include "platform/image-decoders/ImageDecoderTestHelpers.h"
 #include "platform/image-decoders/SegmentReader.h"
 #include "third_party/skia/include/core/SkData.h"
 #include "third_party/skia/include/core/SkRWBuffer.h"
@@ -39,16 +40,10 @@ namespace blink {
 
 namespace {
 
-const unsigned kDefaultTestSize = 4 * SharedBuffer::kSegmentSize;
-
-void PrepareReferenceData(char* buffer, size_t size) {
-  for (size_t i = 0; i < size; ++i)
-    buffer[i] = static_cast<char>(i);
-}
-
-RefPtr<SegmentReader> CopyToROBufferSegmentReader(RefPtr<SegmentReader> input) {
+scoped_refptr<SegmentReader> CopyToROBufferSegmentReader(
+    scoped_refptr<SegmentReader> input) {
   SkRWBuffer rw_buffer;
-  const char* segment = 0;
+  const char* segment = nullptr;
   size_t position = 0;
   while (size_t length = input->GetSomeData(segment, position)) {
     rw_buffer.append(segment, length);
@@ -57,14 +52,15 @@ RefPtr<SegmentReader> CopyToROBufferSegmentReader(RefPtr<SegmentReader> input) {
   return SegmentReader::CreateFromSkROBuffer(rw_buffer.makeROBufferSnapshot());
 }
 
-RefPtr<SegmentReader> CopyToDataSegmentReader(RefPtr<SegmentReader> input) {
+scoped_refptr<SegmentReader> CopyToDataSegmentReader(
+    scoped_refptr<SegmentReader> input) {
   return SegmentReader::CreateFromSkData(input->GetAsSkData());
 }
 
 struct SegmentReaders {
-  RefPtr<SegmentReader> segment_readers[3];
+  scoped_refptr<SegmentReader> segment_readers[3];
 
-  SegmentReaders(RefPtr<SharedBuffer> input) {
+  SegmentReaders(scoped_refptr<SharedBuffer> input) {
     segment_readers[0] =
         SegmentReader::CreateFromSharedBuffer(std::move(input));
     segment_readers[1] = CopyToROBufferSegmentReader(segment_readers[0]);
@@ -77,7 +73,7 @@ struct SegmentReaders {
 TEST(FastSharedBufferReaderTest, nonSequentialReads) {
   char reference_data[kDefaultTestSize];
   PrepareReferenceData(reference_data, sizeof(reference_data));
-  RefPtr<SharedBuffer> data = SharedBuffer::Create();
+  scoped_refptr<SharedBuffer> data = SharedBuffer::Create();
   data->Append(reference_data, sizeof(reference_data));
 
   SegmentReaders reader_struct(data);
@@ -100,7 +96,7 @@ TEST(FastSharedBufferReaderTest, nonSequentialReads) {
 TEST(FastSharedBufferReaderTest, readBackwards) {
   char reference_data[kDefaultTestSize];
   PrepareReferenceData(reference_data, sizeof(reference_data));
-  RefPtr<SharedBuffer> data = SharedBuffer::Create();
+  scoped_refptr<SharedBuffer> data = SharedBuffer::Create();
   data->Append(reference_data, sizeof(reference_data));
 
   SegmentReaders reader_struct(data);
@@ -125,7 +121,7 @@ TEST(FastSharedBufferReaderTest, readBackwards) {
 TEST(FastSharedBufferReaderTest, byteByByte) {
   char reference_data[kDefaultTestSize];
   PrepareReferenceData(reference_data, sizeof(reference_data));
-  RefPtr<SharedBuffer> data = SharedBuffer::Create();
+  scoped_refptr<SharedBuffer> data = SharedBuffer::Create();
   data->Append(reference_data, sizeof(reference_data));
 
   SegmentReaders reader_struct(data);
@@ -143,7 +139,7 @@ TEST(FastSharedBufferReaderTest, readAllOverlappingLastSegmentBoundary) {
   const unsigned kDataSize = 2 * SharedBuffer::kSegmentSize;
   char reference_data[kDataSize];
   PrepareReferenceData(reference_data, kDataSize);
-  RefPtr<SharedBuffer> data = SharedBuffer::Create();
+  scoped_refptr<SharedBuffer> data = SharedBuffer::Create();
   data->Append(reference_data, kDataSize);
 
   SegmentReaders reader_struct(data);
@@ -160,7 +156,7 @@ TEST(SegmentReaderTest, readPastEndThenRead) {
   const unsigned kDataSize = 2 * SharedBuffer::kSegmentSize;
   char reference_data[kDataSize];
   PrepareReferenceData(reference_data, kDataSize);
-  RefPtr<SharedBuffer> data = SharedBuffer::Create();
+  scoped_refptr<SharedBuffer> data = SharedBuffer::Create();
   data->Append(reference_data, kDataSize);
 
   SegmentReaders reader_struct(data);
@@ -178,7 +174,7 @@ TEST(SegmentReaderTest, getAsSkData) {
   const unsigned kDataSize = 4 * SharedBuffer::kSegmentSize;
   char reference_data[kDataSize];
   PrepareReferenceData(reference_data, kDataSize);
-  RefPtr<SharedBuffer> data = SharedBuffer::Create();
+  scoped_refptr<SharedBuffer> data = SharedBuffer::Create();
   data->Append(reference_data, kDataSize);
 
   SegmentReaders reader_struct(data);
@@ -202,7 +198,7 @@ TEST(SegmentReaderTest, variableSegments) {
   char reference_data[kDataSize];
   PrepareReferenceData(reference_data, kDataSize);
 
-  RefPtr<SegmentReader> segment_reader;
+  scoped_refptr<SegmentReader> segment_reader;
   {
     // Create a SegmentReader with difference sized segments, to test that
     // the SkROBuffer implementation works when two consecutive segments

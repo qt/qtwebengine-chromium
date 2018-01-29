@@ -206,10 +206,10 @@ Polymer({
     this.bluetoothToggleDisabled_ = true;
     this.bluetoothPrivate.setAdapterState(
         {powered: this.bluetoothToggleState_}, () => {
-          if (chrome.runtime.lastError) {
-            console.error(
-                'Error enabling bluetooth: ' +
-                chrome.runtime.lastError.message);
+          var error = chrome.runtime.lastError;
+          if (error && error != 'Error setting adapter properties: powered') {
+            console.error('Error enabling bluetooth: ' + error.message);
+            return;
           }
           this.setPrefValue(
               'ash.user.bluetooth.adapter_enabled',

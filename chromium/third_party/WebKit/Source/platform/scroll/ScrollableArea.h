@@ -66,7 +66,7 @@ class PLATFORM_EXPORT ScrollableArea : public GarbageCollectedMixin {
  public:
   static int PixelsPerLineStep(PlatformChromeClient*);
   static float MinFractionToStepWhenPaging();
-  static int MaxOverlapBetweenPages();
+  int MaxOverlapBetweenPages() const;
 
   // Convert a non-finite scroll value (Infinity, -Infinity, NaN) to 0 as
   // per http://dev.w3.org/csswg/cssom-view/#normalize-non_finite-values.
@@ -364,7 +364,7 @@ class PLATFORM_EXPORT ScrollableArea : public GarbageCollectedMixin {
 
   // Need to promptly let go of owned animator objects.
   EAGERLY_FINALIZE();
-  DECLARE_VIRTUAL_TRACE();
+  virtual void Trace(blink::Visitor*);
 
   virtual void ClearScrollableArea();
 
@@ -374,12 +374,14 @@ class PLATFORM_EXPORT ScrollableArea : public GarbageCollectedMixin {
 
   // Returns the task runner to be used for scrollable area timers.
   // Ideally a frame-specific throttled one can be used.
-  virtual RefPtr<WebTaskRunner> GetTimerTaskRunner() const = 0;
+  virtual scoped_refptr<WebTaskRunner> GetTimerTaskRunner() const = 0;
 
   // Callback for compositor-side scrolling.
   virtual void DidScroll(const gfx::ScrollOffset&);
 
   virtual void ScrollbarFrameRectChanged() {}
+
+  virtual ScrollbarTheme& GetPageScrollbarTheme() const = 0;
 
  protected:
   ScrollableArea();

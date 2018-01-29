@@ -50,12 +50,13 @@ class ContainerNode;
 class Document;
 class Element;
 class HTMLElement;
-class MutableStylePropertySet;
+class MutableCSSPropertyValueSet;
 class Node;
 class QualifiedName;
 class ComputedStyle;
-class StylePropertySet;
+class CSSPropertyValueSet;
 enum class EditingTriState;
+enum class SecureContextMode;
 
 class CORE_EXPORT EditingStyle final : public GarbageCollected<EditingStyle> {
  public:
@@ -88,34 +89,37 @@ class CORE_EXPORT EditingStyle final : public GarbageCollected<EditingStyle> {
     return new EditingStyle(position, properties_to_include);
   }
 
-  static EditingStyle* Create(const StylePropertySet* style) {
+  static EditingStyle* Create(const CSSPropertyValueSet* style) {
     return new EditingStyle(style);
   }
 
-  static EditingStyle* Create(CSSPropertyID property_id, const String& value) {
-    return new EditingStyle(property_id, value);
+  static EditingStyle* Create(CSSPropertyID property_id,
+                              const String& value,
+                              SecureContextMode secure_context_mode) {
+    return new EditingStyle(property_id, value, secure_context_mode);
   }
 
-  MutableStylePropertySet* Style() { return mutable_style_.Get(); }
+  MutableCSSPropertyValueSet* Style() { return mutable_style_.Get(); }
   bool GetTextDirection(WritingDirection&) const;
   bool IsEmpty() const;
-  void OverrideWithStyle(const StylePropertySet*);
+  void OverrideWithStyle(const CSSPropertyValueSet*);
   void Clear();
   EditingStyle* Copy() const;
   EditingStyle* ExtractAndRemoveBlockProperties();
-  EditingStyle* ExtractAndRemoveTextDirection();
+  EditingStyle* ExtractAndRemoveTextDirection(SecureContextMode);
   void RemoveBlockProperties();
   void RemoveStyleAddedByElement(Element*);
   void RemoveStyleConflictingWithStyleOfElement(Element*);
-  void CollapseTextDecorationProperties();
+  void CollapseTextDecorationProperties(SecureContextMode);
   enum ShouldIgnoreTextOnlyProperties {
     kIgnoreTextOnlyProperties,
     kDoNotIgnoreTextOnlyProperties
   };
-  EditingTriState TriStateOfStyle(EditingStyle*) const;
-  EditingTriState TriStateOfStyle(const VisibleSelection&) const;
+  EditingTriState TriStateOfStyle(EditingStyle*, SecureContextMode) const;
+  EditingTriState TriStateOfStyle(const VisibleSelection&,
+                                  SecureContextMode) const;
   bool ConflictsWithInlineStyleOfElement(HTMLElement* element) const {
-    return ConflictsWithInlineStyleOfElement(element, 0, 0);
+    return ConflictsWithInlineStyleOfElement(element, nullptr, nullptr);
   }
   bool ConflictsWithInlineStyleOfElement(
       HTMLElement* element,
@@ -161,30 +165,35 @@ class CORE_EXPORT EditingStyle final : public GarbageCollected<EditingStyle> {
   float FontSizeDelta() const { return font_size_delta_; }
   bool HasFontSizeDelta() const { return font_size_delta_ != no_font_delta_; }
 
-  void SetProperty(CSSPropertyID, const String& value, bool important = false);
+  void SetProperty(CSSPropertyID,
+                   const String& value,
+                   bool important,
+                   SecureContextMode);
 
-  DECLARE_TRACE();
+  void Trace(blink::Visitor*);
 
  private:
   EditingStyle() = default;
   EditingStyle(ContainerNode*, PropertiesToInclude);
   EditingStyle(const Position&, PropertiesToInclude);
-  explicit EditingStyle(const StylePropertySet*);
-  EditingStyle(CSSPropertyID, const String& value);
+  explicit EditingStyle(const CSSPropertyValueSet*);
+  EditingStyle(CSSPropertyID, const String& value, SecureContextMode);
   void Init(Node*, PropertiesToInclude);
   void RemoveInheritedColorsIfNeeded(const ComputedStyle*);
   void ReplaceFontSizeByKeywordIfPossible(const ComputedStyle*,
+                                          SecureContextMode,
                                           CSSComputedStyleDeclaration*);
   void ExtractFontSizeDelta();
   EditingTriState TriStateOfStyle(CSSStyleDeclaration* style_to_compare,
-                                  ShouldIgnoreTextOnlyProperties) const;
+                                  ShouldIgnoreTextOnlyProperties,
+                                  SecureContextMode) const;
   bool ConflictsWithInlineStyleOfElement(
       HTMLElement*,
       EditingStyle* extracted_style,
       Vector<CSSPropertyID>* conflicting_properties) const;
-  void MergeStyle(const StylePropertySet*, CSSPropertyOverrideMode);
+  void MergeStyle(const CSSPropertyValueSet*, CSSPropertyOverrideMode);
 
-  Member<MutableStylePropertySet> mutable_style_;
+  Member<MutableCSSPropertyValueSet> mutable_style_;
   bool is_monospace_font_ = false;
   float font_size_delta_ = no_font_delta_;
   bool is_vertical_align_ = false;
@@ -237,7 +246,7 @@ class StyleChange {
 
  private:
   void ExtractTextStyles(Document*,
-                         MutableStylePropertySet*,
+                         MutableCSSPropertyValueSet*,
                          bool is_monospace_font);
 
   String css_style_;
@@ -255,7 +264,7 @@ class StyleChange {
 // FIXME: Remove these functions or make them non-global to discourage using
 // CSSStyleDeclaration directly.
 CSSValueID GetIdentifierValue(CSSStyleDeclaration*, CSSPropertyID);
-CSSValueID GetIdentifierValue(StylePropertySet*, CSSPropertyID);
+CSSValueID GetIdentifierValue(CSSPropertyValueSet*, CSSPropertyID);
 
 }  // namespace blink
 

@@ -189,7 +189,27 @@ SlotAssignment::SlotAssignment(ShadowRoot& owner)
   DCHECK(owner.IsV1());
 }
 
+void SlotAssignment::ResolveAssignmentNg() {
+  DCHECK(RuntimeEnabledFeatures::IncrementalShadowDOMEnabled());
+
+  if (!needs_assignment_recalc_)
+    return;
+  needs_assignment_recalc_ = false;
+
+  for (Member<HTMLSlotElement> slot : Slots())
+    slot->ClearAssignedNodes();
+
+  for (Node& child : NodeTraversal::ChildrenOf(owner_->host())) {
+    if (!child.IsSlotable())
+      continue;
+    if (HTMLSlotElement* slot = FindSlotByName(child.SlotName()))
+      slot->AppendAssignedNode(child);
+  }
+}
+
 void SlotAssignment::ResolveAssignment() {
+  DCHECK(!RuntimeEnabledFeatures::IncrementalShadowDOMEnabled());
+
   for (Member<HTMLSlotElement> slot : Slots())
     slot->SaveAndClearDistribution();
 
@@ -207,6 +227,8 @@ void SlotAssignment::ResolveAssignment() {
 }
 
 void SlotAssignment::ResolveDistribution() {
+  DCHECK(!RuntimeEnabledFeatures::IncrementalShadowDOMEnabled());
+
   ResolveAssignment();
   const HeapVector<Member<HTMLSlotElement>>& slots = Slots();
 
@@ -257,7 +279,7 @@ HTMLSlotElement* SlotAssignment::GetCachedFirstSlotWithoutAccessingNodeTree(
   return nullptr;
 }
 
-DEFINE_TRACE(SlotAssignment) {
+void SlotAssignment::Trace(blink::Visitor* visitor) {
   visitor->Trace(slots_);
   visitor->Trace(slot_map_);
   visitor->Trace(owner_);

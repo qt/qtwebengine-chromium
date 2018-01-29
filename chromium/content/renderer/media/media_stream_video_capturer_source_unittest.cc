@@ -105,7 +105,7 @@ class MediaStreamVideoCapturerSourceTest : public testing::Test {
             base::test::ScopedTaskEnvironment::MainThreadType::UI),
         child_process_(new ChildProcess()),
         source_stopped_(false) {
-    auto delegate = base::MakeUnique<MockVideoCapturerSource>();
+    auto delegate = std::make_unique<MockVideoCapturerSource>();
     delegate_ = delegate.get();
     EXPECT_CALL(*delegate_, GetPreferredFormats());
     source_ = new MediaStreamVideoCapturerSource(
@@ -153,13 +153,18 @@ class MediaStreamVideoCapturerSourceTest : public testing::Test {
     source_->OnRunStateChanged(delegate_->capture_params(), result);
   }
 
+  void SetStopCaptureFlag() { stop_capture_flag_ = true; }
+
+  MOCK_METHOD0(MockNotification, void());
+
  protected:
   void OnConstraintsApplied(MediaStreamSource* source,
                             MediaStreamRequestResult result,
                             const blink::WebString& result_name) {}
 
-  // A ChildProcess and a MessageLoopForUI are both needed to fool the Tracks
-  // and Sources below into believing they are on the right threads.
+  // A ChildProcess is needed to fool the Tracks and Sources into believing they
+  // are on the right threads. A ScopedTaskEnvironment must be instantiated
+  // before ChildProcess to prevent it from leaking a TaskScheduler.
   base::test::ScopedTaskEnvironment scoped_task_environment_;
   std::unique_ptr<ChildProcess> child_process_;
 
@@ -169,6 +174,7 @@ class MediaStreamVideoCapturerSourceTest : public testing::Test {
   MockVideoCapturerSource* delegate_;       // owned by |source_|.
   blink::WebString webkit_source_id_;
   bool source_stopped_;
+  bool stop_capture_flag_ = false;
 };
 
 TEST_F(MediaStreamVideoCapturerSourceTest, StartAndStop) {
@@ -315,6 +321,36 @@ TEST_F(MediaStreamVideoCapturerSourceTest, Restart) {
   // Verify that MediaStreamSource::SourceStoppedCallback has been triggered.
   EXPECT_TRUE(source_stopped_);
   EXPECT_FALSE(source_->IsRunning());
+}
+
+TEST_F(MediaStreamVideoCapturerSourceTest, StartStopAndNotify) {
+  InSequence s;
+  EXPECT_CALL(mock_delegate(), MockStartCapture(_, _, _));
+  blink::WebMediaStreamTrack web_track =
+      StartSource(VideoTrackAdapterSettings(), base::nullopt, false, 0.0);
+  base::RunLoop().RunUntilIdle();
+  EXPECT_EQ(blink::WebMediaStreamSource::kReadyStateLive,
+            webkit_source_.GetReadyState());
+  EXPECT_FALSE(source_stopped_);
+
+  stop_capture_flag_ = false;
+  EXPECT_CALL(mock_delegate(), MockStopCapture())
+      .WillOnce(InvokeWithoutArgs(
+          this, &MediaStreamVideoCapturerSourceTest::SetStopCaptureFlag));
+  EXPECT_CALL(*this, MockNotification());
+  MediaStreamTrack* track = MediaStreamTrack::GetTrack(web_track);
+  track->StopAndNotify(
+      base::BindOnce(&MediaStreamVideoCapturerSourceTest::MockNotification,
+                     base::Unretained(this)));
+  EXPECT_EQ(blink::WebMediaStreamSource::kReadyStateEnded,
+            webkit_source_.GetReadyState());
+  EXPECT_TRUE(source_stopped_);
+  // It is a requirement that StopCapture() gets called in the same task as
+  // StopAndNotify(), as CORS security checks for element capture rely on this.
+  EXPECT_TRUE(stop_capture_flag_);
+  // The readyState is updated in the current task, but the notification is
+  // received on a separate task.
+  base::RunLoop().RunUntilIdle();
 }
 
 }  // namespace content

@@ -35,6 +35,7 @@
 #include "bindings/core/v8/serialization/SerializedScriptValue.h"
 #include "core/dom/ExecutionContext.h"
 #include "core/frame/csp/ContentSecurityPolicy.h"
+#include "core/inspector/ThreadDebugger.h"
 #include "core/origin_trials/OriginTrialContext.h"
 #include "core/workers/DedicatedWorkerObjectProxy.h"
 #include "core/workers/DedicatedWorkerThread.h"
@@ -58,7 +59,7 @@ const AtomicString& DedicatedWorkerGlobalScope::InterfaceName() const {
 
 void DedicatedWorkerGlobalScope::postMessage(
     ScriptState* script_state,
-    RefPtr<SerializedScriptValue> message,
+    scoped_refptr<SerializedScriptValue> message,
     const MessagePortArray& ports,
     ExceptionState& exception_state) {
   // Disentangle the port in preparation for sending it to the remote context.
@@ -66,8 +67,11 @@ void DedicatedWorkerGlobalScope::postMessage(
       ExecutionContext::From(script_state), ports, exception_state);
   if (exception_state.HadException())
     return;
+  ThreadDebugger* debugger = ThreadDebugger::From(script_state->GetIsolate());
+  v8_inspector::V8StackTraceId stack_id =
+      debugger->StoreCurrentStackTrace("postMessage");
   WorkerObjectProxy().PostMessageToWorkerObject(std::move(message),
-                                                std::move(channels));
+                                                std::move(channels), stack_id);
 }
 
 DedicatedWorkerObjectProxy& DedicatedWorkerGlobalScope::WorkerObjectProxy()
@@ -75,7 +79,7 @@ DedicatedWorkerObjectProxy& DedicatedWorkerGlobalScope::WorkerObjectProxy()
   return static_cast<DedicatedWorkerThread*>(GetThread())->WorkerObjectProxy();
 }
 
-DEFINE_TRACE(DedicatedWorkerGlobalScope) {
+void DedicatedWorkerGlobalScope::Trace(blink::Visitor* visitor) {
   WorkerGlobalScope::Trace(visitor);
 }
 

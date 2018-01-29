@@ -5,14 +5,14 @@
 #include "core/loader/IdlenessDetector.h"
 
 #include "core/testing/DummyPageHolder.h"
-#include "platform/testing/TestingPlatformSupport.h"
+#include "platform/testing/TestingPlatformSupportWithMockScheduler.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace blink {
 
 class IdlenessDetectorTest : public ::testing::Test {
  protected:
-  void SetUp() {
+  void SetUp() override {
     platform_time_ = 1;
     platform_->AdvanceClockSeconds(platform_time_);
     page_holder_ = DummyPageHolder::Create(IntSize(800, 600));

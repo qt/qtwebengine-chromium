@@ -147,11 +147,13 @@ void BitrateControllerImpl::OnDelayBasedBweResult(
     return;
   {
     rtc::CritScope cs(&critsect_);
-    bandwidth_estimation_.UpdateDelayBasedEstimate(clock_->TimeInMilliseconds(),
-                                                   result.target_bitrate_bps);
     if (result.probe) {
       bandwidth_estimation_.SetSendBitrate(result.target_bitrate_bps);
     }
+    // Since SetSendBitrate now resets the delay-based estimate, we have to call
+    // UpdateDelayBasedEstimate after SetSendBitrate.
+    bandwidth_estimation_.UpdateDelayBasedEstimate(clock_->TimeInMilliseconds(),
+                                                   result.target_bitrate_bps);
   }
   MaybeTriggerOnNetworkChanged();
 }
@@ -207,8 +209,9 @@ void BitrateControllerImpl::OnReceivedRtcpReceiverReport(
           report_block.extended_highest_sequence_number;
     }
     if (total_number_of_packets < 0) {
-      LOG(LS_WARNING) << "Received report block where extended high sequence "
-                         "number goes backwards, ignoring.";
+      RTC_LOG(LS_WARNING)
+          << "Received report block where extended high sequence "
+             "number goes backwards, ignoring.";
       return;
     }
     if (total_number_of_packets == 0)

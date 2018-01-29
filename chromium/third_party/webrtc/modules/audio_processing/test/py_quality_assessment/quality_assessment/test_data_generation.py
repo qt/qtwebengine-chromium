@@ -23,6 +23,7 @@ obtained by convolving the input signal with an impulse response.
 
 import logging
 import os
+import shutil
 import sys
 
 try:
@@ -33,7 +34,6 @@ except ImportError:
 
 from . import data_access
 from . import exceptions
-from . import input_signal_creator
 from . import signal_processing
 
 
@@ -110,12 +110,6 @@ class TestDataGenerator(object):
       base_output_path: base path where output is written.
     """
     self.Clear()
-
-    # If the input signal file does not exist, try to create using the
-    # available input signal creators.
-    if not os.path.exists(input_signal_filepath):
-      self._CreateInputSignal(input_signal_filepath)
-
     self._Generate(
         input_signal_filepath, test_data_cache_path, base_output_path)
 
@@ -125,34 +119,6 @@ class TestDataGenerator(object):
     self._noisy_signal_filepaths = {}
     self._apm_output_paths = {}
     self._reference_signal_filepaths = {}
-
-  @classmethod
-  def _CreateInputSignal(cls, input_signal_filepath):
-    """Creates a missing input signal file.
-
-    The file name is parsed to extract input signal creator and params. If a
-    creator is matched and the parameters are valid, a new signal is generated
-    and written in |input_signal_filepath|.
-
-    Args:
-      input_signal_filepath: Path to the input signal audio file to write.
-
-    Raises:
-      InputSignalCreatorException
-    """
-    filename = os.path.splitext(os.path.split(input_signal_filepath)[-1])[0]
-    filename_parts = filename.split('-')
-
-    if len(filename_parts) < 2:
-      raise exceptions.InputSignalCreatorException(
-          'Cannot parse input signal file name')
-
-    signal, metadata = input_signal_creator.InputSignalCreator.Create(
-        filename_parts[0], filename_parts[1].split('_'))
-
-    signal_processing.SignalProcessingUtils.SaveWav(
-        input_signal_filepath, signal)
-    data_access.Metadata.SaveFileMetadata(input_signal_filepath, metadata)
 
   def _Generate(
       self, input_signal_filepath, test_data_cache_path, base_output_path):
@@ -217,13 +183,27 @@ class IdentityTestDataGenerator(TestDataGenerator):
 
   NAME = 'identity'
 
-  def __init__(self, output_directory_prefix):
+  def __init__(self, output_directory_prefix, copy_with_identity):
     TestDataGenerator.__init__(self, output_directory_prefix)
+    self._copy_with_identity = copy_with_identity
+
+  @property
+  def copy_with_identity(self):
+    return self._copy_with_identity
 
   def _Generate(
       self, input_signal_filepath, test_data_cache_path, base_output_path):
     config_name = 'default'
     output_path = self._MakeDir(base_output_path, config_name)
+
+    if self._copy_with_identity:
+      input_signal_filepath_new = os.path.join(
+          test_data_cache_path, os.path.split(input_signal_filepath)[1])
+      logging.info('copying ' + input_signal_filepath + ' to ' + (
+          input_signal_filepath_new))
+      shutil.copy(input_signal_filepath, input_signal_filepath_new)
+      input_signal_filepath = input_signal_filepath_new
+
     self._AddNoiseReferenceFilesPair(
         config_name=config_name,
         noisy_signal_filepath=input_signal_filepath,

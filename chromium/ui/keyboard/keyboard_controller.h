@@ -13,6 +13,9 @@
 #include "ui/base/ime/input_method_observer.h"
 #include "ui/base/ime/text_input_type.h"
 #include "ui/gfx/geometry/rect.h"
+#include "ui/gfx/geometry/vector2d.h"
+#include "ui/keyboard/container_behavior.h"
+#include "ui/keyboard/container_type.h"
 #include "ui/keyboard/keyboard_event_filter.h"
 #include "ui/keyboard/keyboard_export.h"
 #include "ui/keyboard/keyboard_layout_delegate.h"
@@ -31,10 +34,6 @@ namespace keyboard {
 class CallbackAnimationObserver;
 class KeyboardControllerObserver;
 class KeyboardUI;
-
-// Relative distance from the parent window, from which show animation starts
-// or hide animation finishes.
-constexpr int kAnimationDistance = 30;
 
 // Represents the current state of the keyboard managed by the controller.
 // Don't change the numeric value of the members because they are used in UMA
@@ -140,7 +139,36 @@ class KEYBOARD_EXPORT KeyboardController : public ui::InputMethodObserver,
     return current_keyboard_bounds_;
   }
 
+  // Returns the current bounds that affect the workspace layout. If the
+  // keyboard is not shown or if the keyboard mode should not affect the usable
+  // region of the screen, an empty rectangle will get returned.
+  const gfx::Rect GetWorkspaceObscuringBounds() const;
+
   KeyboardControllerState GetStateForTest() const { return state_; }
+
+  const gfx::Rect AdjustSetBoundsRequest(
+      const gfx::Rect& display_bounds,
+      const gfx::Rect& requested_bounds) const;
+
+  // Returns true if overscroll is currently allowed by the active keyboard
+  // container behavior.
+  bool IsOverscrollAllowed() const;
+
+  // Handle mouse and touch events on the keyboard. The effects of this method
+  // will not stop propagation to the keyboard extension.
+  void HandlePointerEvent(bool isMouseButtonPressed,
+                          const gfx::Vector2d& kb_scoped_location);
+
+  // Moves an already loaded keyboard.
+  void MoveKeyboard(const gfx::Rect new_bounds);
+
+  // Sets the active container type. If the keyboard is currently shown, this
+  // will trigger a hide animation and a subsequent show animation. Otherwise
+  // the ContainerBehavior change is synchronous.
+  void SetContainerType(const ContainerType type);
+
+  // Sets floating keyboard drggable rect.
+  bool SetDraggableArea(const gfx::Rect& rect);
 
  private:
   // For access to Observer methods for simulation.
@@ -160,7 +188,8 @@ class KEYBOARD_EXPORT KeyboardController : public ui::InputMethodObserver,
                                       aura::Window* new_root) override;
   void OnWindowBoundsChanged(aura::Window* window,
                              const gfx::Rect& old_bounds,
-                             const gfx::Rect& new_bounds) override;
+                             const gfx::Rect& new_bounds,
+                             ui::PropertyChangeReason reason) override;
 
   // InputMethodObserver overrides
   void OnBlur() override {}
@@ -183,9 +212,8 @@ class KEYBOARD_EXPORT KeyboardController : public ui::InputMethodObserver,
   // Returns true if keyboard is scheduled to hide.
   bool WillHideKeyboard() const;
 
-  // Called when show and hide animation finished successfully. If the animation
-  // is aborted, it won't be called.
-  void ShowAnimationFinished();
+  // Called when the hide animation finishes.
+  void HideAnimationFinished();
 
   void NotifyKeyboardBoundsChangingAndEnsureCaretInWorkArea();
 
@@ -207,12 +235,17 @@ class KEYBOARD_EXPORT KeyboardController : public ui::InputMethodObserver,
   // Reports error histogram in case lingering in an intermediate state.
   void ReportLingeringState();
 
+  void SetContainerBehaviorInternal(const ContainerType type);
+
   std::unique_ptr<KeyboardUI> ui_;
   KeyboardLayoutDelegate* layout_delegate_;
   std::unique_ptr<aura::Window> container_;
   // CallbackAnimationObserver should destructed before container_ because it
   // uses container_'s animator.
   std::unique_ptr<CallbackAnimationObserver> animation_observer_;
+
+  // Current active visual behavior for the keyboard container.
+  std::unique_ptr<ContainerBehavior> container_behavior_;
 
   // If true, show the keyboard window when keyboard UI content updates.
   bool show_on_content_update_;
@@ -229,6 +262,8 @@ class KEYBOARD_EXPORT KeyboardController : public ui::InputMethodObserver,
   gfx::Rect current_keyboard_bounds_;
 
   KeyboardControllerState state_;
+
+  ContainerType enqueued_container_type_;
 
   static KeyboardController* instance_;
 

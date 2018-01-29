@@ -58,13 +58,14 @@ class SVGImageForContainer final : public Image {
   USING_FAST_MALLOC(SVGImageForContainer);
 
  public:
-  static RefPtr<SVGImageForContainer> Create(SVGImage* image,
-                                             const IntSize& container_size,
-                                             float zoom,
-                                             const KURL& url) {
+  static scoped_refptr<SVGImageForContainer> Create(
+      SVGImage* image,
+      const IntSize& container_size,
+      float zoom,
+      const KURL& url) {
     FloatSize container_size_without_zoom(container_size);
     container_size_without_zoom.Scale(1 / zoom);
-    return WTF::AdoptRef(new SVGImageForContainer(
+    return base::AdoptRef(new SVGImageForContainer(
         image, container_size_without_zoom, zoom, url));
   }
 

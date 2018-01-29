@@ -18,8 +18,8 @@
 #include "core/page/ChromeClient.h"
 #include "core/page/Page.h"
 #include "platform/Histogram.h"
-#include "platform/wtf/CurrentTime.h"
 #include "platform/wtf/PtrUtil.h"
+#include "platform/wtf/Time.h"
 #include "public/platform/WebCoalescedInputEvent.h"
 #include "public/platform/WebTouchEvent.h"
 
@@ -145,7 +145,7 @@ void TouchEventManager::Clear() {
   current_touch_action_ = TouchAction::kTouchActionAuto;
 }
 
-DEFINE_TRACE(TouchEventManager) {
+void TouchEventManager::Trace(blink::Visitor* visitor) {
   visitor->Trace(frame_);
   visitor->Trace(touch_sequence_document_);
   visitor->Trace(touch_attribute_map_);

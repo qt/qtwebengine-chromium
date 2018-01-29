@@ -60,7 +60,7 @@ class MockBattOrConnection : public BattOrConnection {
  public:
   MockBattOrConnection(BattOrConnection::Listener* listener)
       : BattOrConnection(listener) {}
-  ~MockBattOrConnection() override {}
+  ~MockBattOrConnection() override = default;
 
   MOCK_METHOD0(Open, void());
   MOCK_METHOD0(Close, void());
@@ -71,6 +71,7 @@ class MockBattOrConnection : public BattOrConnection {
   MOCK_METHOD1(ReadMessage, void(BattOrMessageType type));
   MOCK_METHOD0(CancelReadMessage, void());
   MOCK_METHOD0(Flush, void());
+  MOCK_METHOD1(LogSerial, void(const std::string& str));
 
  private:
   DISALLOW_COPY_AND_ASSIGN(MockBattOrConnection);

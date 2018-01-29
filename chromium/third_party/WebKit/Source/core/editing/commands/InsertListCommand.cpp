@@ -376,7 +376,8 @@ bool InsertListCommand::DoApplyForSingleParagraph(
 
     // If the entire list is selected, then convert the whole list.
     if (switch_list_type &&
-        IsNodeVisiblyContainedWithin(*list_element, current_selection)) {
+        IsNodeVisiblyContainedWithin(*list_element,
+                                     EphemeralRange(&current_selection))) {
       bool range_start_is_in_list =
           VisiblePositionBeforeNode(*list_element).DeepEquivalent() ==
           CreateVisiblePosition(current_selection.StartPosition())
@@ -552,7 +553,7 @@ static HTMLElement* AdjacentEnclosingList(const VisiblePosition& pos,
       OutermostEnclosingList(adjacent_pos.DeepEquivalent().AnchorNode());
 
   if (!list_element)
-    return 0;
+    return nullptr;
 
   Element* previous_cell = EnclosingTableCell(pos.DeepEquivalent());
   Element* current_cell = EnclosingTableCell(adjacent_pos.DeepEquivalent());
@@ -562,7 +563,7 @@ static HTMLElement* AdjacentEnclosingList(const VisiblePosition& pos,
       previous_cell != current_cell ||
       EnclosingList(list_element) !=
           EnclosingList(pos.DeepEquivalent().AnchorNode()))
-    return 0;
+    return nullptr;
 
   return list_element;
 }
@@ -698,7 +699,7 @@ void InsertListCommand::MoveParagraphOverPositionIntoEmptyListItem(
                 editing_state, kPreserveSelection);
 }
 
-DEFINE_TRACE(InsertListCommand) {
+void InsertListCommand::Trace(blink::Visitor* visitor) {
   CompositeEditCommand::Trace(visitor);
 }
 

@@ -53,6 +53,8 @@ void AndroidVideoSurfaceChooserImpl::UpdateState(
     if (!initial_state_received_) {
       initial_state_received_ = true;
       // Choose here so that Choose() doesn't have to handle non-dynamic.
+      // Note that we ignore |is_expecting_relayout| here, since it's transient.
+      // We don't want to pick SurfaceTexture permanently for that.
       if (overlay_factory_ &&
           (current_state_.is_fullscreen || current_state_.is_secure ||
            current_state_.is_required)) {
@@ -130,10 +132,6 @@ void AndroidVideoSurfaceChooserImpl::Choose() {
     if (time_since_last_failure < MinimumDelayAfterFailedOverlay)
       new_overlay_state = kUsingSurfaceTexture;
   }
-
-  // If our frame is hidden, then don't use overlays.
-  if (current_state_.is_frame_hidden)
-    new_overlay_state = kUsingSurfaceTexture;
 
   // If an overlay is required, then choose one.  The only way we won't is if we
   // don't have a factory or our request fails.

@@ -45,6 +45,8 @@ class VertexDataManager;
 
 struct Renderer11DeviceCaps
 {
+    Renderer11DeviceCaps();
+
     D3D_FEATURE_LEVEL featureLevel;
     bool supportsDXGI1_2;                // Support for DXGI 1.2
     bool supportsClearView;              // Support for ID3D11DeviceContext1::ClearView
@@ -112,7 +114,7 @@ class Renderer11 : public RendererD3D
 {
   public:
     explicit Renderer11(egl::Display *display);
-    virtual ~Renderer11();
+    ~Renderer11() override;
 
     egl::Error initialize() override;
     bool resetDevice() override;
@@ -228,13 +230,13 @@ class Renderer11 : public RendererD3D
     // Shader operations
     gl::Error loadExecutable(const uint8_t *function,
                              size_t length,
-                             ShaderType type,
+                             gl::ShaderType type,
                              const std::vector<D3DVarying> &streamOutVaryings,
                              bool separatedOutputBuffers,
                              ShaderExecutableD3D **outExecutable) override;
     gl::Error compileToExecutable(gl::InfoLog &infoLog,
                                   const std::string &shaderHLSL,
-                                  ShaderType type,
+                                  gl::ShaderType type,
                                   const std::vector<D3DVarying> &streamOutVaryings,
                                   bool separatedOutputBuffers,
                                   const angle::CompilerWorkaroundsD3D &workarounds,
@@ -291,7 +293,7 @@ class Renderer11 : public RendererD3D
                                                       GLsizei height,
                                                       int levels,
                                                       int samples,
-                                                      GLboolean fixedSampleLocations) override;
+                                                      bool fixedSampleLocations) override;
 
     VertexBuffer *createVertexBuffer() override;
     IndexBuffer *createIndexBuffer() override;
@@ -371,7 +373,7 @@ class Renderer11 : public RendererD3D
     bool isES3Capable() const;
     const Renderer11DeviceCaps &getRenderer11DeviceCaps() const { return mRenderer11DeviceCaps; };
 
-    RendererClass getRendererClass() const override { return RENDERER_D3D11; }
+    RendererClass getRendererClass() const override;
     StateManager11 *getStateManager() { return &mStateManager; }
 
     void onSwap();
@@ -497,7 +499,7 @@ class Renderer11 : public RendererD3D
                                 const gl::Offset &destOffset,
                                 RenderTargetD3D *destRenderTarget);
 
-    gl::SupportedSampleSet generateSampleSetFromCaps(
+    gl::SupportedSampleSet generateSampleSetForEGLConfig(
         const gl::TextureCaps &colorBufferFormatCaps,
         const gl::TextureCaps &depthStencilBufferFormatCaps) const;
 

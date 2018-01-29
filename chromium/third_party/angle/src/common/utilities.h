@@ -70,7 +70,14 @@ GLuint GetPrimitiveRestartIndex(GLenum indexType);
 bool IsTriangleMode(GLenum drawMode);
 bool IsIntegerFormat(GLenum unsizedFormat);
 
-unsigned int ParseAndStripArrayIndex(std::string *name);
+// Returns the product of the sizes in the vector, or 1 if the vector is empty. Doesn't currently
+// perform overflow checks.
+unsigned int ArraySizeProduct(const std::vector<unsigned int> &arraySizes);
+
+// Return the array index at the end of name, and write the length of name before the final array
+// index into nameLengthWithoutArrayIndexOut. In case name doesn't include an array index, return
+// GL_INVALID_INDEX and write the length of the original string.
+unsigned int ParseArrayIndex(const std::string &name, size_t *nameLengthWithoutArrayIndexOut);
 
 struct UniformTypeInfo final : angle::NonCopyable
 {
@@ -123,6 +130,10 @@ struct UniformTypeInfo final : angle::NonCopyable
 
 const UniformTypeInfo &GetUniformTypeInfo(GLenum uniformType);
 
+const char *GetGenericErrorMessage(GLenum error);
+
+unsigned int ElementTypeSize(GLenum elementType);
+
 }  // namespace gl
 
 namespace egl
@@ -134,7 +145,9 @@ size_t CubeMapTextureTargetToLayerIndex(EGLenum target);
 EGLenum LayerIndexToCubeMapTextureTarget(size_t index);
 bool IsTextureTarget(EGLenum target);
 bool IsRenderbufferTarget(EGLenum target);
-}
+
+const char *GetGenericErrorMessage(EGLint error);
+}  // namespace egl
 
 namespace egl_gl
 {

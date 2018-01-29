@@ -13,6 +13,8 @@
 #include "sk_app/Window.h"
 #include "gm.h"
 #include "SkAnimTimer.h"
+#include "SkExecutor.h"
+#include "SkJSONCPP.h"
 #include "SkTouchGesture.h"
 #include "Slide.h"
 
@@ -47,6 +49,7 @@ private:
     void setStartupSlide();
     void setupCurrentSlide(int previousSlide);
     void listNames();
+    void resetMeasurements();
 
     void updateUIState();
 
@@ -57,13 +60,19 @@ private:
     void changeZoomLevel(float delta);
     SkMatrix computeMatrix();
 
+    void resetExecutor() {
+        fExecutor = SkExecutor::MakeFIFOThreadPool(fThreadCnt == 0 ? fTileCnt : fThreadCnt);
+    }
+
     sk_app::Window*        fWindow;
 
-    static const int kMeasurementCount = 64;  // should be power of 2 for fast mod
+    static const int kMeasurementCount = 1 << 6;  // should be power of 2 for fast mod
     double fPaintTimes[kMeasurementCount];
     double fFlushTimes[kMeasurementCount];
     double fAnimateTimes[kMeasurementCount];
     int fCurrentMeasurement;
+    double fCumulativeMeasurementTime;
+    int fCumulativeMeasurementCount;
 
     SkAnimTimer            fAnimTimer;
     SkTArray<sk_sp<Slide>> fSlides;
@@ -75,6 +84,7 @@ private:
     SkPaint                fImGuiFontPaint;
     SkPaint                fImGuiGamutPaint;
     bool                   fShowImGuiDebugWindow;
+    bool                   fShowSlidePicker;
     bool                   fShowImGuiTestWindow;
 
     bool                   fShowZoomWindow;
@@ -85,6 +95,7 @@ private:
     // Color properties for slide rendering
     ColorMode              fColorMode;
     SkColorSpacePrimaries  fColorSpacePrimaries;
+    SkColorSpaceTransferFn fColorSpaceTransferFn;
 
     // transform data
     SkScalar               fZoomLevel;
@@ -106,6 +117,10 @@ private:
     SkTArray<std::function<void(void)>> fDeferredActions;
 
     Json::Value            fAllSlideNames; // cache all slide names for fast updateUIState
+
+    int fTileCnt;
+    int fThreadCnt;
+    std::unique_ptr<SkExecutor> fExecutor;
 };
 
 

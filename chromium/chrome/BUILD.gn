@@ -113,6 +113,9 @@ if (!is_android && !is_mac) {
     if (use_aura && (is_win || is_linux)) {
       data_deps += [ "//chrome/app:service_manifests" ]
     }
+    if (is_chromeos) {
+      data_deps += [ "//sandbox/linux:chrome_sandbox" ]
+    }
   }
 
   template("chrome_binary") {
@@ -269,9 +272,13 @@ if (!is_android && !is_mac) {
           ldflags += [ "-Wl,--long-plt" ]
         }
 
-        if (use_pangocairo) {
-          # Needed for chrome_main.cc initialization of libraries.
-          configs += [ "//build/config/linux/pangocairo" ]
+        if (is_desktop_linux && !is_component_build && !using_sanitizer) {
+          version_script = "//build/linux/chrome.map"
+          inputs = [
+            version_script,
+          ]
+          ldflags += [ "-Wl,--version-script=" +
+                       rebase_path(version_script, root_build_dir) ]
         }
 
         if (use_x11) {
@@ -280,7 +287,7 @@ if (!is_android && !is_mac) {
             "//build/config/linux:xext",
           ]
         }
-        if (enable_package_mash_services) {
+        if (enable_mus) {
           deps += [ "//mash/common" ]
         }
       }
@@ -320,7 +327,7 @@ if (!is_android && !is_mac) {
 
   # TODO(jonross): remove this once telemetry can differentiate between linux
   # and linux chromiumos.
-  if (enable_package_mash_services) {
+  if (enable_mus) {
     chrome_binary("chrome_test") {
       # Note that the output name needs to end with "chrome", because that's
       # what telemetry test-runner expects.
@@ -383,7 +390,7 @@ if (is_win) {
       "//net:net_resources",
       "//ppapi/features",
       "//services/service_manager/embedder",
-      "//third_party/cld",
+      "//third_party/cld_3/src/src:cld_3",
       "//third_party/wtl",
       "//ui/views",
     ]
@@ -1030,7 +1037,7 @@ if (is_win) {
       info_plist = "//third_party/widevine/cdm/widevine_resources.plist"
       extra_substitutions = [
         "CHROMIUM_BUNDLE_ID=$chrome_mac_bundle_id",
-        "BUNDLE_ID=widevine_resources",
+        "BUNDLE_ID=widevine-resources",
       ]
       executable_name = "Widevine Resources"
     }
@@ -1165,7 +1172,7 @@ if (is_win) {
       "//content/public/common:service_names",
       "//headless:headless_shell_lib",
       "//services/service_manager/embedder",
-      "//third_party/cld",
+      "//third_party/cld_3/src/src:cld_3",
     ]
 
     if (is_component_build) {
@@ -1399,7 +1406,7 @@ group("browser_dependencies") {
 
   if (enable_basic_printing || enable_print_preview) {
     public_deps += [ "//printing" ]
-    if (enable_print_preview) {
+    if (enable_print_preview && !is_chromeos) {
       public_deps += [ "//chrome/service" ]
     }
   }
@@ -1528,7 +1535,6 @@ group("extra_resources") {
   public_deps = [
     "//chrome/browser/resources:invalidations_resources",
     "//chrome/browser/resources:net_internals_resources",
-    "//chrome/browser/resources:password_manager_internals_resources",
     "//chrome/browser/resources:quota_internals_resources",
     "//chrome/browser/resources:task_scheduler_internals_resources",
     "//chrome/browser/resources:translate_internals_resources",
@@ -1555,6 +1561,10 @@ group("extra_resources") {
       "//chrome/browser/resources:extensions_resources",
       "//chrome/browser/resources:sync_file_system_internals_resources",
     ]
+  }
+
+  if (enable_print_preview) {
+    public_deps += [ "//chrome/browser/resources:print_preview_resources" ]
   }
 }
 
@@ -1669,6 +1679,12 @@ if (is_android) {
     ]
   }
 
+  java_cpp_enum("assist_ranker_prediction_enum_javagen") {
+    sources = [
+      "browser/android/contextualsearch/contextual_search_ranker_logger_impl.h",
+    ]
+  }
+
   java_cpp_enum("page_info_connection_type_javagen") {
     sources = [
       "browser/ui/android/page_info/page_info_popup_android.h",
@@ -1681,9 +1697,21 @@ if (is_android) {
     ]
   }
 
+  java_cpp_enum("partner_bookmarks_javagen") {
+    sources = [
+      "browser/android/bookmarks/partner_bookmarks_reader.h",
+    ]
+  }
+
   java_cpp_enum("payments_journey_logger_enum_javagen") {
     sources = [
       "../components/payments/core/journey_logger.h",
+    ]
+  }
+
+  java_cpp_enum("pref_enum_javagen") {
+    sources = [
+      "browser/android/preferences/prefs.h",
     ]
   }
 
@@ -1733,7 +1761,7 @@ if (is_android) {
       "//chrome/profiling",
       "//chrome/renderer",
       "//chrome/utility",
-      "//components/safe_browsing/db:safe_browsing_mobile",
+      "//components/safe_browsing/android:safe_browsing_mobile",
       "//content/public/app:both",
       "//content/public/common:service_names",
       "//services/service_manager/embedder",

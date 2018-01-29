@@ -71,7 +71,7 @@ class CPDF_PageObjectHolder {
   void Transform(const CFX_Matrix& matrix);
   CFX_FloatRect CalcBoundingBox() const;
 
-  UnownedPtr<CPDF_Dictionary> m_pFormDict;
+  const UnownedPtr<CPDF_Dictionary> m_pFormDict;
   UnownedPtr<CPDF_Stream> m_pFormStream;
   UnownedPtr<CPDF_Document> m_pDocument;
   UnownedPtr<CPDF_Dictionary> m_pPageResources;
@@ -79,7 +79,7 @@ class CPDF_PageObjectHolder {
   std::map<GraphicsData, ByteString> m_GraphicsMap;
   std::map<FontData, ByteString> m_FontsMap;
   CFX_FloatRect m_BBox;
-  int m_Transparency;
+  int m_iTransparency;
 
  protected:
   enum ParseState { CONTENT_NOT_PARSED, CONTENT_PARSING, CONTENT_PARSED };

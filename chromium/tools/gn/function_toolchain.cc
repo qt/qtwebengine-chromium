@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <limits>
+#include <memory>
 #include <utility>
 
 #include "tools/gn/err.h"
@@ -453,7 +454,8 @@ Value RunToolchain(Scope* scope,
 
   // This object will actually be copied into the one owned by the toolchain
   // manager, but that has to be done in the lock.
-  std::unique_ptr<Toolchain> toolchain(new Toolchain(scope->settings(), label));
+  std::unique_ptr<Toolchain> toolchain =
+      std::make_unique<Toolchain>(scope->settings(), label);
   toolchain->set_defined_from(function);
   toolchain->visibility().SetPublic();
 
@@ -838,7 +840,7 @@ R"(  Compiler tools have the notion of a single input and a single output, along
 
     {{libs}}
         Expands to the list of system libraries to link to. Each will be
-        prefixed by the "lib_prefix".
+        prefixed by the "lib_switch".
 
         As a special case to support Mac, libraries with names ending in
         ".framework" will be added to the {{libs}} with "-framework" preceeding
@@ -948,8 +950,8 @@ Example
 
   toolchain("my_toolchain") {
     # Put these at the top to apply to all tools below.
-    lib_prefix = "-l"
-    lib_dir_prefix = "-L"
+    lib_switch = "-l"
+    lib_dir_switch = "-L"
 
     tool("cc") {
       command = "gcc {{source}} -o {{output}}"
@@ -1022,7 +1024,7 @@ Value RunTool(Scope* scope,
     subst_output_validator = &IsValidToolSubstitution;
   }
 
-  std::unique_ptr<Tool> tool(new Tool);
+  std::unique_ptr<Tool> tool = std::make_unique<Tool>();
   tool->set_defined_from(function);
 
   if (!ReadPattern(&block_scope, "command", subst_validator, tool.get(),

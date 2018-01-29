@@ -4,7 +4,7 @@
 
 #include "core/layout/ng/ng_physical_fragment.h"
 
-#include "core/layout/LayoutObject.h"
+#include "core/layout/LayoutBlock.h"
 #include "core/layout/ng/geometry/ng_border_edges.h"
 #include "core/layout/ng/geometry/ng_box_strut.h"
 #include "core/layout/ng/inline/ng_physical_line_box_fragment.h"
@@ -41,6 +41,25 @@ bool AppendFragmentOffsetAndSize(const NGPhysicalFragment* fragment,
   return has_content;
 }
 
+String StringForBoxType(NGPhysicalFragment::NGBoxType box_type) {
+  switch (box_type) {
+    case NGPhysicalFragment::NGBoxType::kNormalBox:
+      return String();
+    case NGPhysicalFragment::NGBoxType::kInlineBlock:
+      return "inline-block";
+    case NGPhysicalFragment::NGBoxType::kFloating:
+      return "floating";
+    case NGPhysicalFragment::NGBoxType::kOutOfFlowPositioned:
+      return "out-of-flow-positioned";
+    case NGPhysicalFragment::NGBoxType::kOldLayoutRoot:
+      return "old-layout-root";
+    case NGPhysicalFragment::NGBoxType::kAnonymousBox:
+      return "anonymous";
+  }
+  NOTREACHED();
+  return String();
+}
+
 void AppendFragmentToString(const NGPhysicalFragment* fragment,
                             StringBuilder* builder,
                             NGPhysicalFragment::DumpFlags flags,
@@ -54,6 +73,12 @@ void AppendFragmentToString(const NGPhysicalFragment* fragment,
   if (fragment->IsBox()) {
     if (flags & NGPhysicalFragment::DumpType) {
       builder->Append("Box");
+      String box_type = StringForBoxType(fragment->BoxType());
+      if (!box_type.IsEmpty()) {
+        builder->Append(" (");
+        builder->Append(box_type);
+        builder->Append(")");
+      }
       has_content = true;
     }
     has_content =
@@ -130,12 +155,13 @@ NGPhysicalFragment::NGPhysicalFragment(LayoutObject* layout_object,
                                        const ComputedStyle& style,
                                        NGPhysicalSize size,
                                        NGFragmentType type,
-                                       RefPtr<NGBreakToken> break_token)
+                                       scoped_refptr<NGBreakToken> break_token)
     : layout_object_(layout_object),
       style_(&style),
       size_(size),
       break_token_(std::move(break_token)),
       type_(type),
+      box_type_(NGBoxType::kNormalBox),
       is_placed_(false) {}
 
 // Keep the implementation of the destructor here, to avoid dependencies on
@@ -170,6 +196,15 @@ Node* NGPhysicalFragment::GetNode() const {
   return layout_object_ ? layout_object_->GetNode() : nullptr;
 }
 
+bool NGPhysicalFragment::IsPlacedByLayoutNG() const {
+  // TODO(kojii): Move this to a flag for |LayoutNGBlockFlow::UpdateBlockLayout|
+  // to set.
+  if (!layout_object_)
+    return false;
+  const LayoutBlock* container = layout_object_->ContainingBlock();
+  return container && container->IsLayoutNGMixin();
+}
+
 NGPixelSnappedPhysicalBoxStrut NGPhysicalFragment::BorderWidths() const {
   unsigned edges = BorderEdges();
   NGPhysicalBoxStrut box_strut(
@@ -184,33 +219,41 @@ NGPixelSnappedPhysicalBoxStrut NGPhysicalFragment::BorderWidths() const {
   return box_strut.SnapToDevicePixels();
 }
 
+NGPhysicalOffsetRect NGPhysicalFragment::SelfVisualRect() const {
+  switch (Type()) {
+    case NGPhysicalFragment::kFragmentBox:
+      return ToNGPhysicalBoxFragment(*this).SelfVisualRect();
+    case NGPhysicalFragment::kFragmentText:
+      return ToNGPhysicalTextFragment(*this).SelfVisualRect();
+    case NGPhysicalFragment::kFragmentLineBox:
+      return {{}, Size()};
+  }
+  NOTREACHED();
+  return {{}, Size()};
+}
+
+NGPhysicalOffsetRect NGPhysicalFragment::VisualRectWithContents() const {
+  switch (Type()) {
+    case NGPhysicalFragment::kFragmentBox:
+      return ToNGPhysicalBoxFragment(*this).VisualRectWithContents();
+    case NGPhysicalFragment::kFragmentText:
+      return ToNGPhysicalTextFragment(*this).SelfVisualRect();
+    case NGPhysicalFragment::kFragmentLineBox:
+      return ToNGPhysicalLineBoxFragment(*this).VisualRectWithContents();
+  }
+  NOTREACHED();
+  return {{}, Size()};
+}
+
 void NGPhysicalFragment::PropagateContentsVisualRect(
     NGPhysicalOffsetRect* parent_visual_rect) const {
-  NGPhysicalOffsetRect visual_rect;
-  switch (Type()) {
-    case NGPhysicalFragment::kFragmentBox: {
-      const auto& box = ToNGPhysicalBoxFragment(*this);
-      visual_rect = box.LocalVisualRect();
-      visual_rect.Unite(box.ContentsVisualRect());
-      break;
-    }
-    case NGPhysicalFragment::kFragmentText: {
-      const auto& text = ToNGPhysicalTextFragment(*this);
-      visual_rect = text.LocalVisualRect();
-      break;
-    }
-    case NGPhysicalFragment::kFragmentLineBox: {
-      const auto& line_box = ToNGPhysicalLineBoxFragment(*this);
-      for (const auto& child : line_box.Children())
-        child->PropagateContentsVisualRect(&visual_rect);
-      break;
-    }
-  }
+  NGPhysicalOffsetRect visual_rect = VisualRectWithContents();
   visual_rect.offset += Offset();
   parent_visual_rect->Unite(visual_rect);
 }
 
-RefPtr<NGPhysicalFragment> NGPhysicalFragment::CloneWithoutOffset() const {
+scoped_refptr<NGPhysicalFragment> NGPhysicalFragment::CloneWithoutOffset()
+    const {
   switch (Type()) {
     case kFragmentBox:
       return static_cast<const NGPhysicalBoxFragment*>(this)
@@ -232,9 +275,10 @@ RefPtr<NGPhysicalFragment> NGPhysicalFragment::CloneWithoutOffset() const {
 }
 
 String NGPhysicalFragment::ToString() const {
-  return String::Format("Type: '%d' Size: '%s' Offset: '%s' Placed: '%d'",
-                        Type(), Size().ToString().Ascii().data(),
-                        Offset().ToString().Ascii().data(), IsPlaced());
+  return String::Format(
+      "Type: '%d' Size: '%s' Offset: '%s' Placed: '%d', BoxType: '%s'", Type(),
+      Size().ToString().Ascii().data(), Offset().ToString().Ascii().data(),
+      IsPlaced(), StringForBoxType(BoxType()).Ascii().data());
 }
 
 String NGPhysicalFragment::DumpFragmentTree(DumpFlags flags) const {
@@ -250,5 +294,9 @@ void NGPhysicalFragment::ShowFragmentTree() const {
   fprintf(stderr, "%s\n", DumpFragmentTree(DumpAll).Utf8().data());
 }
 #endif  // !NDEBUG
+
+NGPhysicalOffsetRect NGPhysicalFragmentWithOffset::RectInContainerBox() const {
+  return {offset_to_container_box, fragment->Size()};
+}
 
 }  // namespace blink

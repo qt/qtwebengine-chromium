@@ -770,20 +770,93 @@ std::string ParseResourceName(const std::string &name, std::vector<unsigned int>
     return name.substr(0, baseNameLength);
 }
 
-unsigned int ParseAndStripArrayIndex(std::string *name)
+unsigned int ArraySizeProduct(const std::vector<unsigned int> &arraySizes)
 {
-    unsigned int subscript = GL_INVALID_INDEX;
+    unsigned int arraySizeProduct = 1u;
+    for (unsigned int arraySize : arraySizes)
+    {
+        arraySizeProduct *= arraySize;
+    }
+    return arraySizeProduct;
+}
+
+unsigned int ParseArrayIndex(const std::string &name, size_t *nameLengthWithoutArrayIndexOut)
+{
+    ASSERT(nameLengthWithoutArrayIndexOut != nullptr);
 
     // Strip any trailing array operator and retrieve the subscript
-    size_t open  = name->find_last_of('[');
-    size_t close = name->find_last_of(']');
-    if (open != std::string::npos && close == name->length() - 1)
+    size_t open = name.find_last_of('[');
+    if (open != std::string::npos && name.back() == ']')
     {
-        subscript = atoi(name->c_str() + open + 1);
-        name->erase(open);
+        bool indexIsValidDecimalNumber = true;
+        for (size_t i = open + 1; i < name.length() - 1u; ++i)
+        {
+            if (!isdigit(name[i]))
+            {
+                indexIsValidDecimalNumber = false;
+                break;
+            }
+        }
+        if (indexIsValidDecimalNumber)
+        {
+            errno = 0;  // reset global error flag.
+            unsigned long subscript =
+                strtoul(name.c_str() + open + 1, /*endptr*/ nullptr, /*radix*/ 10);
+
+            // Check if resulting integer is out-of-range or conversion error.
+            if ((subscript <= static_cast<unsigned long>(UINT_MAX)) &&
+                !(subscript == ULONG_MAX && errno == ERANGE) && !(errno != 0 && subscript == 0))
+            {
+                *nameLengthWithoutArrayIndexOut = open;
+                return static_cast<unsigned int>(subscript);
+            }
+        }
     }
 
-    return subscript;
+    *nameLengthWithoutArrayIndexOut = name.length();
+    return GL_INVALID_INDEX;
+}
+
+const char *GetGenericErrorMessage(GLenum error)
+{
+    switch (error)
+    {
+        case GL_NO_ERROR:
+            return "";
+        case GL_INVALID_ENUM:
+            return "Invalid enum.";
+        case GL_INVALID_VALUE:
+            return "Invalid value.";
+        case GL_INVALID_OPERATION:
+            return "Invalid operation.";
+        case GL_STACK_OVERFLOW:
+            return "Stack overflow.";
+        case GL_STACK_UNDERFLOW:
+            return "Stack underflow.";
+        case GL_OUT_OF_MEMORY:
+            return "Out of memory.";
+        case GL_INVALID_FRAMEBUFFER_OPERATION:
+            return "Invalid framebuffer operation.";
+        default:
+            UNREACHABLE();
+            return "Unknown error.";
+    }
+}
+
+unsigned int ElementTypeSize(GLenum elementType)
+{
+    switch (elementType)
+    {
+        case GL_UNSIGNED_BYTE:
+            return sizeof(GLubyte);
+        case GL_UNSIGNED_SHORT:
+            return sizeof(GLushort);
+        case GL_UNSIGNED_INT:
+            return sizeof(GLuint);
+        default:
+            UNREACHABLE();
+            return 0;
+    }
 }
 
 }  // namespace gl
@@ -841,6 +914,51 @@ bool IsRenderbufferTarget(EGLenum target)
 {
     return target == EGL_GL_RENDERBUFFER_KHR;
 }
+
+const char *GetGenericErrorMessage(EGLint error)
+{
+    switch (error)
+    {
+        case EGL_SUCCESS:
+            return "";
+        case EGL_NOT_INITIALIZED:
+            return "Not initialized.";
+        case EGL_BAD_ACCESS:
+            return "Bad access.";
+        case EGL_BAD_ALLOC:
+            return "Bad allocation.";
+        case EGL_BAD_ATTRIBUTE:
+            return "Bad attribute.";
+        case EGL_BAD_CONFIG:
+            return "Bad config.";
+        case EGL_BAD_CONTEXT:
+            return "Bad context.";
+        case EGL_BAD_CURRENT_SURFACE:
+            return "Bad current surface.";
+        case EGL_BAD_DISPLAY:
+            return "Bad display.";
+        case EGL_BAD_MATCH:
+            return "Bad match.";
+        case EGL_BAD_NATIVE_WINDOW:
+            return "Bad native window.";
+        case EGL_BAD_PARAMETER:
+            return "Bad parameter.";
+        case EGL_BAD_SURFACE:
+            return "Bad surface.";
+        case EGL_CONTEXT_LOST:
+            return "Context lost.";
+        case EGL_BAD_STREAM_KHR:
+            return "Bad stream.";
+        case EGL_BAD_STATE_KHR:
+            return "Bad state.";
+        case EGL_BAD_DEVICE_EXT:
+            return "Bad device.";
+        default:
+            UNREACHABLE();
+            return "Unknown error.";
+    }
+}
+
 }  // namespace egl
 
 namespace egl_gl

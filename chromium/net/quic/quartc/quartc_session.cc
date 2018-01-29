@@ -37,7 +37,6 @@ class DummyProofSource : public ProofSource {
                 const string& server_config,
                 QuicTransportVersion transport_version,
                 QuicStringPiece chlo_hash,
-                const QuicTagVector& connection_options,
                 std::unique_ptr<Callback> callback) override {
     QuicReferenceCountedPointer<ProofSource::Chain> chain;
     QuicCryptoProof proof;
@@ -210,8 +209,9 @@ bool QuartcSession::IsOpenStream(QuicStreamId stream_id) {
 QuartcSessionStats QuartcSession::GetStats() {
   QuartcSessionStats stats;
   const QuicConnectionStats& connection_stats = connection_->GetStats();
-  stats.bandwidth_estimate_bits_per_second =
-      connection_stats.estimated_bandwidth.ToBitsPerSecond();
+  stats.bandwidth_estimate = connection_stats.estimated_bandwidth;
+  stats.smoothed_rtt =
+      QuicTime::Delta::FromMicroseconds(connection_stats.srtt_us);
   return stats;
 }
 
@@ -258,6 +258,12 @@ bool QuartcSession::ExportKeyingMaterial(const string& label,
   quic_result.copy(reinterpret_cast<char*>(result), result_len);
   DCHECK(quic_result.length() == result_len);
   return success;
+}
+
+void QuartcSession::CloseConnection(const string& details) {
+  connection_->CloseConnection(
+      QuicErrorCode::QUIC_CONNECTION_CANCELLED, details,
+      ConnectionCloseBehavior::SEND_CONNECTION_CLOSE_PACKET_WITH_NO_ACK);
 }
 
 QuartcStreamInterface* QuartcSession::CreateOutgoingStream(

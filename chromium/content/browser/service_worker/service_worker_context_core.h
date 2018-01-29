@@ -181,7 +181,8 @@ class CONTENT_EXPORT ServiceWorkerContextCore
       const GURL& origin);
 
   // Runs the callback with true if there is a ProviderHost for |origin| of type
-  // SERVICE_WORKER_PROVIDER_FOR_WINDOW which is a main (top-level) frame.
+  // blink::mojom::ServiceWorkerProviderType::kForWindow which is a main
+  // (top-level) frame.
   void HasMainFrameProviderHost(const GURL& origin,
                                 const BoolCallback& callback) const;
 
@@ -204,11 +205,12 @@ class CONTENT_EXPORT ServiceWorkerContextCore
   void UnregisterServiceWorker(const GURL& pattern,
                                const UnregistrationCallback& callback);
 
-  // Callback is called issued after all unregistrations occur.  The Status
-  // is populated as SERVICE_WORKER_OK if all succeed, or SERVICE_WORKER_FAILED
+  // Callback is called after all deletions occured. The status code is
+  // SERVICE_WORKER_OK if all succeed, or SERVICE_WORKER_FAILED
   // if any did not succeed.
-  void UnregisterServiceWorkers(const GURL& origin,
-                                const UnregistrationCallback& callback);
+  void DeleteForOrigin(
+      const GURL& origin,
+      base::OnceCallback<void(ServiceWorkerStatusCode)> callback);
 
   // Updates the service worker. If |force_bypass_cache| is true or 24 hours
   // have passed since the last update, bypasses the browser cache.
@@ -265,7 +267,6 @@ class CONTENT_EXPORT ServiceWorkerContextCore
 
   // Returns new context-local unique ID.
   int GetNewServiceWorkerHandleId();
-  int GetNewRegistrationHandleId();
 
   void ScheduleDeleteAndStartOver() const;
 
@@ -336,11 +337,11 @@ class CONTENT_EXPORT ServiceWorkerContextCore
                               int64_t registration_id,
                               ServiceWorkerStatusCode status);
 
-  void DidGetAllRegistrationsForUnregisterForOrigin(
-      const UnregistrationCallback& result,
-      const GURL& origin,
+  void DidGetRegistrationsForDeleteForOrigin(
+      base::OnceCallback<void(ServiceWorkerStatusCode)> callback,
       ServiceWorkerStatusCode status,
-      const std::vector<ServiceWorkerRegistrationInfo>& registrations);
+      const std::vector<scoped_refptr<ServiceWorkerRegistration>>&
+          registrations);
 
   void DidFindRegistrationForCheckHasServiceWorker(
       const GURL& other_url,
@@ -378,7 +379,6 @@ class CONTENT_EXPORT ServiceWorkerContextCore
 
   bool force_update_on_page_load_;
   int next_handle_id_;
-  int next_registration_handle_id_;
   // Set in RegisterServiceWorker(), cleared in ClearAllServiceWorkersForTest().
   // This is used to avoid unnecessary disk read operation in tests. This value
   // is false if Chrome was relaunched after service workers were registered.

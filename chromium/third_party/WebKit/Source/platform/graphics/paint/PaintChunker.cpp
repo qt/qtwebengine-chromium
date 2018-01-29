@@ -13,13 +13,14 @@ PaintChunker::PaintChunker() : force_new_chunk_(false) {}
 PaintChunker::~PaintChunker() {}
 
 void PaintChunker::UpdateCurrentPaintChunkProperties(
-    const PaintChunk::Id* chunk_id,
+    const Optional<PaintChunk::Id>& chunk_id,
     const PaintChunkProperties& properties) {
   DCHECK(RuntimeEnabledFeatures::SlimmingPaintV175Enabled());
 
-  current_chunk_id_ = WTF::nullopt;
   if (chunk_id)
     current_chunk_id_.emplace(*chunk_id);
+  else
+    current_chunk_id_ = WTF::nullopt;
   current_properties_ = properties;
 }
 
@@ -55,7 +56,8 @@ bool PaintChunker::IncrementDisplayItemIndex(const DisplayItem& item) {
     new_chunk_begin_index = 0;
   } else {
     auto& last_chunk = chunks_.back();
-    if (!force_new_chunk_ && current_properties_ == last_chunk.properties) {
+    if (!force_new_chunk_ && current_properties_ == last_chunk.properties &&
+        (!current_chunk_id_ || current_chunk_id_ == last_chunk.id)) {
       // Continue the current chunk.
       last_chunk.end_index++;
       return false;

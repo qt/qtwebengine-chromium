@@ -16,7 +16,7 @@
 #include "base/threading/sequenced_task_runner_handle.h"
 #include "content/public/renderer/render_frame.h"
 #include "content/renderer/media/apply_constraints_processor.h"
-#include "content/renderer/media/media_stream_dispatcher.h"
+#include "content/renderer/media/media_stream_device_observer.h"
 #include "content/renderer/media/media_stream_video_track.h"
 #include "content/renderer/media/peer_connection_tracker.h"
 #include "content/renderer/media/webrtc_logging.h"
@@ -57,6 +57,7 @@ UserMediaClientImpl::Request::Request(std::unique_ptr<UserMediaRequest> request)
     : user_media_request_(std::move(request)) {
   DCHECK(user_media_request_);
   DCHECK(apply_constraints_request_.IsNull());
+  DCHECK(web_track_to_stop_.IsNull());
 }
 
 UserMediaClientImpl::Request::Request(
@@ -64,12 +65,32 @@ UserMediaClientImpl::Request::Request(
     : apply_constraints_request_(request) {
   DCHECK(!apply_constraints_request_.IsNull());
   DCHECK(!user_media_request_);
+  DCHECK(web_track_to_stop_.IsNull());
+}
+
+UserMediaClientImpl::Request::Request(
+    const blink::WebMediaStreamTrack& web_track_to_stop)
+    : web_track_to_stop_(web_track_to_stop) {
+  DCHECK(!web_track_to_stop_.IsNull());
+  DCHECK(!user_media_request_);
+  DCHECK(apply_constraints_request_.IsNull());
 }
 
 UserMediaClientImpl::Request::Request(Request&& other)
     : user_media_request_(std::move(other.user_media_request_)),
-      apply_constraints_request_(other.apply_constraints_request_) {
-  DCHECK(!IsApplyConstraints() || !IsUserMedia());
+      apply_constraints_request_(other.apply_constraints_request_),
+      web_track_to_stop_(other.web_track_to_stop_) {
+#if DCHECK_IS_ON()
+  int num_types = 0;
+  if (IsUserMedia())
+    num_types++;
+  if (IsApplyConstraints())
+    num_types++;
+  if (IsStopTrack())
+    num_types++;
+
+  DCHECK_EQ(num_types, 1);
+#endif
 }
 
 UserMediaClientImpl::Request& UserMediaClientImpl::Request::operator=(
@@ -96,14 +117,14 @@ UserMediaClientImpl::UserMediaClientImpl(
 UserMediaClientImpl::UserMediaClientImpl(
     RenderFrame* render_frame,
     PeerConnectionDependencyFactory* dependency_factory,
-    std::unique_ptr<MediaStreamDispatcher> media_stream_dispatcher,
+    std::unique_ptr<MediaStreamDeviceObserver> media_stream_device_observer,
     const scoped_refptr<base::TaskRunner>& worker_task_runner)
     : UserMediaClientImpl(
           render_frame,
-          base::MakeUnique<UserMediaProcessor>(
+          std::make_unique<UserMediaProcessor>(
               render_frame,
               dependency_factory,
-              std::move(media_stream_dispatcher),
+              std::move(media_stream_device_observer),
               base::BindRepeating(
                   &UserMediaClientImpl::GetMediaDevicesDispatcher,
                   base::Unretained(this)),
@@ -148,17 +169,15 @@ void UserMediaClientImpl::RequestUserMedia(
   // The value returned by isProcessingUserGesture() is used by the browser to
   // make decisions about the permissions UI. Its value can be lost while
   // switching threads, so saving its value here.
+  bool user_gesture = blink::WebUserGestureIndicator::IsProcessingUserGesture(
+      web_request.OwnerDocument().IsNull()
+          ? nullptr
+          : web_request.OwnerDocument().GetFrame());
   std::unique_ptr<UserMediaRequest> request_info =
-      base::MakeUnique<UserMediaRequest>(
-          request_id, web_request,
-          blink::WebUserGestureIndicator::IsProcessingUserGesture());
+      std::make_unique<UserMediaRequest>(request_id, web_request, user_gesture);
   pending_request_infos_.push_back(Request(std::move(request_info)));
-  if (!is_processing_request_) {
-    base::SequencedTaskRunnerHandle::Get()->PostTask(
-        FROM_HERE,
-        base::BindOnce(&UserMediaClientImpl::MaybeProcessNextRequestInfo,
-                       weak_factory_.GetWeakPtr()));
-  }
+  if (!is_processing_request_)
+    MaybeProcessNextRequestInfo();
 }
 
 void UserMediaClientImpl::ApplyConstraints(
@@ -166,12 +185,15 @@ void UserMediaClientImpl::ApplyConstraints(
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   // TODO(guidou): Implement applyConstraints(). http://crbug.com/338503
   pending_request_infos_.push_back(Request(web_request));
-  if (!is_processing_request_) {
-    base::SequencedTaskRunnerHandle::Get()->PostTask(
-        FROM_HERE,
-        base::BindOnce(&UserMediaClientImpl::MaybeProcessNextRequestInfo,
-                       weak_factory_.GetWeakPtr()));
-  }
+  if (!is_processing_request_)
+    MaybeProcessNextRequestInfo();
+}
+
+void UserMediaClientImpl::StopTrack(
+    const blink::WebMediaStreamTrack& web_track) {
+  pending_request_infos_.push_back(Request(web_track));
+  if (!is_processing_request_)
+    MaybeProcessNextRequestInfo();
 }
 
 void UserMediaClientImpl::MaybeProcessNextRequestInfo() {
@@ -190,12 +212,22 @@ void UserMediaClientImpl::MaybeProcessNextRequestInfo() {
         current_request.MoveUserMediaRequest(),
         base::BindOnce(&UserMediaClientImpl::CurrentRequestCompleted,
                        base::Unretained(this)));
-  } else {
-    DCHECK(current_request.IsApplyConstraints());
+  } else if (current_request.IsApplyConstraints()) {
     apply_constraints_processor_->ProcessRequest(
         current_request.apply_constraints_request(),
         base::BindOnce(&UserMediaClientImpl::CurrentRequestCompleted,
                        base::Unretained(this)));
+  } else {
+    DCHECK(current_request.IsStopTrack());
+    MediaStreamTrack* track =
+        MediaStreamTrack::GetTrack(current_request.web_track_to_stop());
+    if (track) {
+      track->StopAndNotify(
+          base::BindOnce(&UserMediaClientImpl::CurrentRequestCompleted,
+                         weak_factory_.GetWeakPtr()));
+    } else {
+      CurrentRequestCompleted();
+    }
   }
 }
 
@@ -330,11 +362,11 @@ void UserMediaClientImpl::WillCommitProvisionalLoad() {
 }
 
 void UserMediaClientImpl::SetMediaDevicesDispatcherForTesting(
-    ::mojom::MediaDevicesDispatcherHostPtr media_devices_dispatcher) {
+    blink::mojom::MediaDevicesDispatcherHostPtr media_devices_dispatcher) {
   media_devices_dispatcher_ = std::move(media_devices_dispatcher);
 }
 
-const ::mojom::MediaDevicesDispatcherHostPtr&
+const blink::mojom::MediaDevicesDispatcherHostPtr&
 UserMediaClientImpl::GetMediaDevicesDispatcher() {
   if (!media_devices_dispatcher_) {
     render_frame()->GetRemoteInterfaces()->GetInterface(

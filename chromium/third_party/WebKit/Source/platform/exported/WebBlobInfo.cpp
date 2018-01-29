@@ -12,13 +12,12 @@ WebBlobInfo::WebBlobInfo(const WebString& uuid,
                          const WebString& type,
                          long long size,
                          mojo::ScopedMessagePipeHandle handle)
-    : WebBlobInfo(
-          BlobDataHandle::Create(uuid,
-                                 type,
-                                 size,
-                                 storage::mojom::blink::BlobPtrInfo(
-                                     std::move(handle),
-                                     storage::mojom::blink::Blob::Version_))) {}
+    : WebBlobInfo(BlobDataHandle::Create(
+          uuid,
+          type,
+          size,
+          mojom::blink::BlobPtrInfo(std::move(handle),
+                                    mojom::blink::Blob::Version_))) {}
 
 WebBlobInfo::WebBlobInfo(const WebString& uuid,
                          const WebString& file_path,
@@ -27,16 +26,15 @@ WebBlobInfo::WebBlobInfo(const WebString& uuid,
                          double last_modified,
                          long long size,
                          mojo::ScopedMessagePipeHandle handle)
-    : WebBlobInfo(
-          BlobDataHandle::Create(uuid,
-                                 type,
-                                 size,
-                                 storage::mojom::blink::BlobPtrInfo(
-                                     std::move(handle),
-                                     storage::mojom::blink::Blob::Version_)),
-          file_path,
-          file_name,
-          last_modified) {}
+    : WebBlobInfo(BlobDataHandle::Create(
+                      uuid,
+                      type,
+                      size,
+                      mojom::blink::BlobPtrInfo(std::move(handle),
+                                                mojom::blink::Blob::Version_)),
+                  file_path,
+                  file_name,
+                  last_modified) {}
 
 WebBlobInfo::~WebBlobInfo() {
   blob_handle_.Reset();
@@ -54,10 +52,10 @@ mojo::ScopedMessagePipeHandle WebBlobInfo::CloneBlobHandle() const {
   return blob_handle_->CloneBlobPtr().PassInterface().PassHandle();
 }
 
-WebBlobInfo::WebBlobInfo(RefPtr<BlobDataHandle> handle)
+WebBlobInfo::WebBlobInfo(scoped_refptr<BlobDataHandle> handle)
     : WebBlobInfo(handle, handle->GetType(), handle->size()) {}
 
-WebBlobInfo::WebBlobInfo(RefPtr<BlobDataHandle> handle,
+WebBlobInfo::WebBlobInfo(scoped_refptr<BlobDataHandle> handle,
                          const WebString& file_path,
                          const WebString& file_name,
                          double last_modified)
@@ -68,7 +66,7 @@ WebBlobInfo::WebBlobInfo(RefPtr<BlobDataHandle> handle,
                   last_modified,
                   handle->size()) {}
 
-WebBlobInfo::WebBlobInfo(RefPtr<BlobDataHandle> handle,
+WebBlobInfo::WebBlobInfo(scoped_refptr<BlobDataHandle> handle,
                          const WebString& type,
                          long long size)
     : is_file_(false),
@@ -78,7 +76,7 @@ WebBlobInfo::WebBlobInfo(RefPtr<BlobDataHandle> handle,
       blob_handle_(std::move(handle)),
       last_modified_(0) {}
 
-WebBlobInfo::WebBlobInfo(RefPtr<BlobDataHandle> handle,
+WebBlobInfo::WebBlobInfo(scoped_refptr<BlobDataHandle> handle,
                          const WebString& file_path,
                          const WebString& file_name,
                          const WebString& type,
@@ -93,7 +91,7 @@ WebBlobInfo::WebBlobInfo(RefPtr<BlobDataHandle> handle,
       file_name_(file_name),
       last_modified_(last_modified) {}
 
-RefPtr<BlobDataHandle> WebBlobInfo::GetBlobHandle() const {
+scoped_refptr<BlobDataHandle> WebBlobInfo::GetBlobHandle() const {
   return blob_handle_.Get();
 }
 

@@ -36,7 +36,7 @@ class GbmSurfaceless : public gl::SurfacelessEGL {
 
   // gl::GLSurface:
   bool Initialize(gl::GLSurfaceFormat format) override;
-  gfx::SwapResult SwapBuffers() override;
+  gfx::SwapResult SwapBuffers(const PresentationCallback& callback) override;
   bool ScheduleOverlayPlane(int z_order,
                             gfx::OverlayTransform transform,
                             gl::GLImage* image,
@@ -46,13 +46,21 @@ class GbmSurfaceless : public gl::SurfacelessEGL {
   gfx::VSyncProvider* GetVSyncProvider() override;
   bool SupportsAsyncSwap() override;
   bool SupportsPostSubBuffer() override;
-  gfx::SwapResult PostSubBuffer(int x, int y, int width, int height) override;
-  void SwapBuffersAsync(const SwapCompletionCallback& callback) override;
-  void PostSubBufferAsync(int x,
-                          int y,
-                          int width,
-                          int height,
-                          const SwapCompletionCallback& callback) override;
+  gfx::SwapResult PostSubBuffer(int x,
+                                int y,
+                                int width,
+                                int height,
+                                const PresentationCallback& callback) override;
+  void SwapBuffersAsync(
+      const SwapCompletionCallback& completion_callback,
+      const PresentationCallback& presentation_callback) override;
+  void PostSubBufferAsync(
+      int x,
+      int y,
+      int width,
+      int height,
+      const SwapCompletionCallback& completion_callback,
+      const PresentationCallback& presentation_callback) override;
   EGLConfig GetConfig() override;
   void SetRelyOnImplicitSync() override;
 
@@ -78,7 +86,7 @@ class GbmSurfaceless : public gl::SurfacelessEGL {
   void SubmitFrame();
 
   EGLSyncKHR InsertFence(bool implicit);
-  void FenceRetired(EGLSyncKHR fence, PendingFrame* frame);
+  void FenceRetired(PendingFrame* frame);
 
   void SwapCompleted(const SwapCompletionCallback& callback,
                      gfx::SwapResult result);

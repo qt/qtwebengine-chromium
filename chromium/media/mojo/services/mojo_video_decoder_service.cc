@@ -9,12 +9,14 @@
 #include "base/logging.h"
 #include "base/optional.h"
 #include "base/threading/thread_task_runner_handle.h"
+#include "media/base/cdm_context.h"
 #include "media/base/decoder_buffer.h"
 #include "media/base/video_decoder.h"
 #include "media/base/video_decoder_config.h"
 #include "media/base/video_frame.h"
 #include "media/mojo/common/media_type_converters.h"
 #include "media/mojo/common/mojo_decoder_buffer_converter.h"
+#include "media/mojo/services/mojo_cdm_service_context.h"
 #include "media/mojo/services/mojo_media_client.h"
 #include "media/mojo/services/mojo_media_log.h"
 #include "mojo/public/c/system/types.h"
@@ -24,12 +26,16 @@
 namespace media {
 
 MojoVideoDecoderService::MojoVideoDecoderService(
-    MojoMediaClient* mojo_media_client)
-    : mojo_media_client_(mojo_media_client), weak_factory_(this) {
+    MojoMediaClient* mojo_media_client,
+    MojoCdmServiceContext* mojo_cdm_service_context)
+    : mojo_media_client_(mojo_media_client),
+      mojo_cdm_service_context_(mojo_cdm_service_context),
+      weak_factory_(this) {
+  DCHECK(mojo_cdm_service_context_);
   weak_this_ = weak_factory_.GetWeakPtr();
 }
 
-MojoVideoDecoderService::~MojoVideoDecoderService() {}
+MojoVideoDecoderService::~MojoVideoDecoderService() = default;
 
 void MojoVideoDecoderService::Construct(
     mojom::VideoDecoderClientAssociatedPtrInfo client,
@@ -63,6 +69,7 @@ void MojoVideoDecoderService::Construct(
 
 void MojoVideoDecoderService::Initialize(const VideoDecoderConfig& config,
                                          bool low_delay,
+                                         int32_t cdm_id,
                                          InitializeCallback callback) {
   DVLOG(1) << __func__;
 
@@ -71,10 +78,31 @@ void MojoVideoDecoderService::Initialize(const VideoDecoderConfig& config,
     return;
   }
 
+  // Get CdmContext from cdm_id if the stream is encrypted.
+  // TODO(xhwang): This code is duplicated in mojo_audio_decoder_service.
+  // crbug.com/786736 .
+  CdmContext* cdm_context = nullptr;
+  scoped_refptr<ContentDecryptionModule> cdm;
+  if (config.is_encrypted()) {
+    cdm = mojo_cdm_service_context_->GetCdm(cdm_id);
+    if (!cdm) {
+      DVLOG(1) << "CDM not found for CDM id: " << cdm_id;
+      std::move(callback).Run(false, false, 1);
+      return;
+    }
+
+    cdm_context = cdm->GetCdmContext();
+    if (!cdm_context) {
+      DVLOG(1) << "CDM context not available for CDM id: " << cdm_id;
+      std::move(callback).Run(false, false, 1);
+      return;
+    }
+  }
+
   decoder_->Initialize(
-      config, low_delay, nullptr,
+      config, low_delay, cdm_context,
       base::Bind(&MojoVideoDecoderService::OnDecoderInitialized, weak_this_,
-                 base::Passed(&callback)),
+                 base::Passed(&callback), cdm),
       base::Bind(&MojoVideoDecoderService::OnDecoderOutput, weak_this_,
                  base::nullopt));
 }
@@ -88,7 +116,7 @@ void MojoVideoDecoderService::Decode(mojom::DecoderBufferPtr buffer,
   }
 
   mojo_decoder_buffer_reader_->ReadDecoderBuffer(
-      std::move(buffer), base::BindOnce(&MojoVideoDecoderService::OnDecoderRead,
+      std::move(buffer), base::BindOnce(&MojoVideoDecoderService::OnReaderRead,
                                         weak_this_, std::move(callback)));
 }
 
@@ -100,19 +128,27 @@ void MojoVideoDecoderService::Reset(ResetCallback callback) {
     return;
   }
 
-  decoder_->Reset(base::Bind(&MojoVideoDecoderService::OnDecoderReset,
-                             weak_this_, base::Passed(&callback)));
+  // Flush the reader so that pending decodes will be dispatches first.
+  mojo_decoder_buffer_reader_->Flush(
+      base::Bind(&MojoVideoDecoderService::OnReaderFlushed, weak_this_,
+                 base::Passed(&callback)));
 }
 
-void MojoVideoDecoderService::OnDecoderInitialized(InitializeCallback callback,
-                                                   bool success) {
+void MojoVideoDecoderService::OnDecoderInitialized(
+    InitializeCallback callback,
+    scoped_refptr<ContentDecryptionModule> cdm,
+    bool success) {
   DVLOG(1) << __func__;
   DCHECK(decoder_);
+
+  if (success)
+    cdm_ = std::move(cdm);
+
   std::move(callback).Run(success, decoder_->NeedsBitstreamConversion(),
                           decoder_->GetMaxDecodeRequests());
 }
 
-void MojoVideoDecoderService::OnDecoderRead(
+void MojoVideoDecoderService::OnReaderRead(
     DecodeCallback callback,
     scoped_refptr<DecoderBuffer> buffer) {
   if (!buffer) {
@@ -124,6 +160,11 @@ void MojoVideoDecoderService::OnDecoderRead(
   decoder_->Decode(
       buffer, base::Bind(&MojoVideoDecoderService::OnDecoderDecoded, weak_this_,
                          base::Passed(&callback)));
+}
+
+void MojoVideoDecoderService::OnReaderFlushed(ResetCallback callback) {
+  decoder_->Reset(base::Bind(&MojoVideoDecoderService::OnDecoderReset,
+                             weak_this_, base::Passed(&callback)));
 }
 
 void MojoVideoDecoderService::OnDecoderDecoded(DecodeCallback callback,

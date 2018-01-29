@@ -53,7 +53,7 @@ class CORE_EXPORT HTMLOptionElement final : public HTMLElement {
 
   // |text| IDL attribute implementations.
   String text() const;
-  void setText(const String&, ExceptionState&);
+  void setText(const String&);
 
   int index() const;
 
@@ -92,7 +92,7 @@ class CORE_EXPORT HTMLOptionElement final : public HTMLElement {
 
  private:
   explicit HTMLOptionElement(Document&);
-  ~HTMLOptionElement();
+  ~HTMLOptionElement() override;
 
   bool SupportsFocus() const override;
   bool MatchesDefaultPseudoClass() const override;

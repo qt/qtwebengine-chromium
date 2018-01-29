@@ -56,8 +56,7 @@ AsyncPacketSocket* BasicPacketSocketFactory::CreateUdpSocket(
     return NULL;
   }
   if (BindSocket(socket, address, min_port, max_port) < 0) {
-    LOG(LS_ERROR) << "UDP bind failed with error "
-                    << socket->GetError();
+    RTC_LOG(LS_ERROR) << "UDP bind failed with error " << socket->GetError();
     delete socket;
     return NULL;
   }
@@ -71,7 +70,7 @@ AsyncPacketSocket* BasicPacketSocketFactory::CreateServerTcpSocket(
     int opts) {
   // Fail if TLS is required.
   if (opts & PacketSocketFactory::OPT_TLS) {
-    LOG(LS_ERROR) << "TLS support currently is not available.";
+    RTC_LOG(LS_ERROR) << "TLS support currently is not available.";
     return NULL;
   }
 
@@ -82,8 +81,7 @@ AsyncPacketSocket* BasicPacketSocketFactory::CreateServerTcpSocket(
   }
 
   if (BindSocket(socket, local_address, min_port, max_port) < 0) {
-    LOG(LS_ERROR) << "TCP bind failed with error "
-                  << socket->GetError();
+    RTC_LOG(LS_ERROR) << "TCP bind failed with error " << socket->GetError();
     delete socket;
     return NULL;
   }
@@ -109,6 +107,18 @@ AsyncPacketSocket* BasicPacketSocketFactory::CreateClientTcpSocket(
     const SocketAddress& remote_address,
     const ProxyInfo& proxy_info,
     const std::string& user_agent,
+    int opts) {
+  PacketSocketTcpOptions tcp_options;
+  tcp_options.opts = opts;
+  return CreateClientTcpSocket(local_address, remote_address, proxy_info,
+                               user_agent, tcp_options);
+}
+
+AsyncPacketSocket* BasicPacketSocketFactory::CreateClientTcpSocket(
+    const SocketAddress& local_address,
+    const SocketAddress& remote_address,
+    const ProxyInfo& proxy_info,
+    const std::string& user_agent,
     const PacketSocketTcpOptions& tcp_options) {
   AsyncSocket* socket =
       socket_factory()->CreateAsyncSocket(local_address.family(), SOCK_STREAM);
@@ -121,10 +131,10 @@ AsyncPacketSocket* BasicPacketSocketFactory::CreateClientTcpSocket(
     // is mostly redundant in the first place. The socket will be bound when we
     // call Connect() instead.
     if (local_address.IsAnyIP()) {
-      LOG(LS_WARNING) << "TCP bind failed with error " << socket->GetError()
-                      << "; ignoring since socket is using 'any' address.";
+      RTC_LOG(LS_WARNING) << "TCP bind failed with error " << socket->GetError()
+                          << "; ignoring since socket is using 'any' address.";
     } else {
-      LOG(LS_ERROR) << "TCP bind failed with error " << socket->GetError();
+      RTC_LOG(LS_ERROR) << "TCP bind failed with error " << socket->GetError();
       delete socket;
       return NULL;
     }
@@ -174,8 +184,7 @@ AsyncPacketSocket* BasicPacketSocketFactory::CreateClientTcpSocket(
   }
 
   if (socket->Connect(remote_address) < 0) {
-    LOG(LS_ERROR) << "TCP connect failed with error "
-                  << socket->GetError();
+    RTC_LOG(LS_ERROR) << "TCP connect failed with error " << socket->GetError();
     delete socket;
     return NULL;
   }

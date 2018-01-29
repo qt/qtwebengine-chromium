@@ -36,7 +36,8 @@ public:
     void preFlush(GrOnFlushResourceProvider*, const uint32_t*, int,
                   SkTArray<sk_sp<GrRenderTargetContext>>*) override {}
 
-    void postFlush(GrDrawOpUploadToken startTokenForNextFlush) override {
+    void postFlush(GrDeferredUploadToken startTokenForNextFlush,
+                   const uint32_t* opListIDs, int numOpListIDs) override {
         if (fAtlas) {
             fAtlas->compact(startTokenForNextFlush);
         }
@@ -65,6 +66,7 @@ private:
                 return *this;
             }
 
+            // for SDF paths
             void set(const GrShape& shape, uint32_t dim) {
                 // Shapes' keys are for their pre-style geometry, but by now we shouldn't have any
                 // relevant styling information.
@@ -76,13 +78,8 @@ private:
                 shape.writeUnstyledKey(&fKey[1]);
             }
 
+            // for bitmap paths
             void set(const GrShape& shape, const SkMatrix& ctm) {
-                GrUniqueKey maskKey;
-                struct KeyData {
-                    SkScalar fFractionalTranslateX;
-                    SkScalar fFractionalTranslateY;
-                };
-
                 // Shapes' keys are for their pre-style geometry, but by now we shouldn't have any
                 // relevant styling information.
                 SkASSERT(shape.style().isSimpleFill());

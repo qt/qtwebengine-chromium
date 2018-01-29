@@ -283,15 +283,18 @@ TEST_F(FPDFAnnotEmbeddertest, AddAndSaveUnderlineAnnotation) {
   FPDF_ClosePage(page);
 
   // Open the saved document.
-  const char md5[] = "184b67b322edaee27994b3232544b8b3";
-  TestSaved(612, 792, md5);
+  const char md5[] = "dba153419f67b7c0c0e3d22d3e8910d5";
+
+  OpenSavedDocument();
+  page = LoadSavedPage(0);
+  VerifySavedRendering(page, 612, 792, md5);
 
   // Check that the saved document has 2 annotations on the first page
-  EXPECT_EQ(2, FPDFPage_GetAnnotCount(m_SavedPage));
+  EXPECT_EQ(2, FPDFPage_GetAnnotCount(page));
 
   // Check that the second annotation is an underline annotation and verify
   // its quadpoints.
-  FPDF_ANNOTATION new_annot = FPDFPage_GetAnnot(m_SavedPage, 1);
+  FPDF_ANNOTATION new_annot = FPDFPage_GetAnnot(page, 1);
   ASSERT_TRUE(new_annot);
   EXPECT_EQ(FPDF_ANNOT_UNDERLINE, FPDFAnnot_GetSubtype(new_annot));
   FS_QUADPOINTSF new_quadpoints;
@@ -302,7 +305,9 @@ TEST_F(FPDFAnnotEmbeddertest, AddAndSaveUnderlineAnnotation) {
   EXPECT_NEAR(quadpoints.y4, new_quadpoints.y4, 0.001f);
 
   FPDFPage_CloseAnnot(new_annot);
-  CloseSaved();
+
+  CloseSavedPage(page);
+  CloseSavedDocument();
 }
 
 TEST_F(FPDFAnnotEmbeddertest, ModifyRectQuadpointsWithAP) {
@@ -311,13 +316,13 @@ TEST_F(FPDFAnnotEmbeddertest, ModifyRectQuadpointsWithAP) {
   const char md5_modified_highlight[] = "aec26075011349dec9bace891856b5f2";
   const char md5_modified_square[] = "057f57a32be95975775e5ec513fdcb56";
 #elif _FX_PLATFORM_ == _FX_PLATFORM_WINDOWS_
-  const char md5_original[] = "ade6762a70e85605546ce067e7d2148f";
-  const char md5_modified_highlight[] = "fb8440ed1a070b53ed5598ce7451cfad";
-  const char md5_modified_square[] = "7925f6726b343393f258e8b4e93dd65d";
+  const char md5_original[] = "0e27376094f11490f74c65f3dc3a42c5";
+  const char md5_modified_highlight[] = "66f3caef3a7d488a4fa1ad37fc06310e";
+  const char md5_modified_square[] = "a456dad0bc6801ee2d6408a4394af563";
 #else
-  const char md5_original[] = "ade6762a70e85605546ce067e7d2148f";
-  const char md5_modified_highlight[] = "fb8440ed1a070b53ed5598ce7451cfad";
-  const char md5_modified_square[] = "7925f6726b343393f258e8b4e93dd65d";
+  const char md5_original[] = "0e27376094f11490f74c65f3dc3a42c5";
+  const char md5_modified_highlight[] = "66f3caef3a7d488a4fa1ad37fc06310e";
+  const char md5_modified_square[] = "a456dad0bc6801ee2d6408a4394af563";
 #endif
 
   // Open a file with four annotations and load its first page.
@@ -449,7 +454,7 @@ TEST_F(FPDFAnnotEmbeddertest, RemoveAnnotation) {
   EXPECT_TRUE(FPDF_SaveAsCopy(document(), this, 0));
   FPDF_ClosePage(page);
 
-  // TODO(npm): TestSaved changes annot rect dimensions by 1??
+  // TODO(npm): VerifySavedRendering changes annot rect dimensions by 1??
   // Open the saved document.
   std::string new_file = GetString();
   FPDF_FILEACCESS file_access;
@@ -486,16 +491,11 @@ TEST_F(FPDFAnnotEmbeddertest, AddAndModifyPath) {
   const char md5_modified_path[] = "cf3cea74bd46497520ff6c4d1ea228c8";
   const char md5_two_paths[] = "e8994452fc4385337bae5522354e10ff";
   const char md5_new_annot[] = "ee5372b31fede117fc83b9384598aa25";
-#elif _FX_PLATFORM_ == _FX_PLATFORM_WINDOWS_
-  const char md5_original[] = "4f64add0190ede63f7bb9eb1e2e83edb";
-  const char md5_modified_path[] = "681f0d0738dded0722e146f6c219bfac";
-  const char md5_two_paths[] = "67c7e90fc3b64e20f6b69a1744f7f4f0";
-  const char md5_new_annot[] = "262187984451bae2fe826067d68623ff";
 #else
-  const char md5_original[] = "4f64add0190ede63f7bb9eb1e2e83edb";
-  const char md5_modified_path[] = "681f0d0738dded0722e146f6c219bfac";
-  const char md5_two_paths[] = "67c7e90fc3b64e20f6b69a1744f7f4f0";
-  const char md5_new_annot[] = "262187984451bae2fe826067d68623ff";
+  const char md5_original[] = "964f89bbe8911e540a465cf1a64b7f7e";
+  const char md5_modified_path[] = "3f77b88ce6048e08e636c9a03921b2e5";
+  const char md5_two_paths[] = "bffbf5ecd15862b9fe553c795400ff8e";
+  const char md5_new_annot[] = "e020534c7eeea76be537c70d6e359a40";
 #endif
 
   // Open a file with two annotations and load its first page.
@@ -590,11 +590,13 @@ TEST_F(FPDFAnnotEmbeddertest, AddAndModifyPath) {
   FPDF_ClosePage(page);
 
   // Open the saved document.
-  TestSaved(595, 842, md5_new_annot);
+  OpenSavedDocument();
+  page = LoadSavedPage(0);
+  VerifySavedRendering(page, 595, 842, md5_new_annot);
 
   // Check that the document has a correct count of annotations and objects.
-  EXPECT_EQ(3, FPDFPage_GetAnnotCount(m_SavedPage));
-  annot = FPDFPage_GetAnnot(m_SavedPage, 2);
+  EXPECT_EQ(3, FPDFPage_GetAnnotCount(page));
+  annot = FPDFPage_GetAnnot(page, 2);
   ASSERT_TRUE(annot);
   EXPECT_EQ(1, FPDFAnnot_GetObjectCount(annot));
 
@@ -606,7 +608,8 @@ TEST_F(FPDFAnnotEmbeddertest, AddAndModifyPath) {
   EXPECT_EQ(rect.top, new_rect.top);
 
   FPDFPage_CloseAnnot(annot);
-  CloseSaved();
+  CloseSavedPage(page);
+  CloseSavedDocument();
 }
 
 TEST_F(FPDFAnnotEmbeddertest, ModifyAnnotationFlags) {
@@ -664,14 +667,10 @@ TEST_F(FPDFAnnotEmbeddertest, AddAndModifyImage) {
   const char md5_original[] = "c35408717759562d1f8bf33d317483d2";
   const char md5_new_image[] = "ff012f5697436dfcaec25b32d1333596";
   const char md5_modified_image[] = "86cf8cb2755a7a2046a543e66d9c1e61";
-#elif _FX_PLATFORM_ == _FX_PLATFORM_WINDOWS_
-  const char md5_original[] = "4f64add0190ede63f7bb9eb1e2e83edb";
-  const char md5_new_image[] = "6fb176c20996cc554d0210d8c8b6138f";
-  const char md5_modified_image[] = "546959714dfb0dcd7e7b00259e8d178c";
 #else
-  const char md5_original[] = "4f64add0190ede63f7bb9eb1e2e83edb";
-  const char md5_new_image[] = "6fb176c20996cc554d0210d8c8b6138f";
-  const char md5_modified_image[] = "546959714dfb0dcd7e7b00259e8d178c";
+  const char md5_original[] = "964f89bbe8911e540a465cf1a64b7f7e";
+  const char md5_new_image[] = "9ea8732dc9d579f68853f16892856208";
+  const char md5_modified_image[] = "74239d2a8c55c9de1dbb9cd8781895aa";
 #endif
 
   // Open a file with two annotations and load its first page.
@@ -730,12 +729,10 @@ TEST_F(FPDFAnnotEmbeddertest, AddAndModifyImage) {
   // Save the document, closing the page and document.
   EXPECT_TRUE(FPDF_SaveAsCopy(document(), this, 0));
   FPDF_ClosePage(page);
+  FPDFBitmap_Destroy(image_bitmap);
 
   // Test that the saved document renders the modified image object correctly.
-  TestSaved(595, 842, md5_modified_image);
-
-  FPDFBitmap_Destroy(image_bitmap);
-  CloseSaved();
+  VerifySavedDocument(595, 842, md5_modified_image);
 }
 
 TEST_F(FPDFAnnotEmbeddertest, AddAndModifyText) {
@@ -743,14 +740,10 @@ TEST_F(FPDFAnnotEmbeddertest, AddAndModifyText) {
   const char md5_original[] = "c35408717759562d1f8bf33d317483d2";
   const char md5_new_text[] = "e5680ed048c2cfd9a1d27212cdf41286";
   const char md5_modified_text[] = "79f5cfb0b07caaf936f65f6a7a57ce77";
-#elif _FX_PLATFORM_ == _FX_PLATFORM_WINDOWS_
-  const char md5_original[] = "4f64add0190ede63f7bb9eb1e2e83edb";
-  const char md5_new_text[] = "998abae4962f8f41e094e7612d8339fc";
-  const char md5_modified_text[] = "e89b82ca4589b8f0b45fff42ca3a96a4";
 #else
-  const char md5_original[] = "4f64add0190ede63f7bb9eb1e2e83edb";
-  const char md5_new_text[] = "998abae4962f8f41e094e7612d8339fc";
-  const char md5_modified_text[] = "e89b82ca4589b8f0b45fff42ca3a96a4";
+  const char md5_original[] = "964f89bbe8911e540a465cf1a64b7f7e";
+  const char md5_new_text[] = "00b14fa2dc1c90d1b0d034e1608efef5";
+  const char md5_modified_text[] = "076c8f24a09ddc0e49f7e758edead6f0";
 #endif
 
   // Open a file with two annotations and load its first page.
@@ -873,13 +866,13 @@ TEST_F(FPDFAnnotEmbeddertest, GetSetStringValue) {
   // Open the saved annotation.
 #if _FX_PLATFORM_ == _FX_PLATFORM_APPLE_
   const char md5[] = "4d64e61c9c0f8c60ab3cc3234bb73b1c";
-#elif _FX_PLATFORM_ == _FX_PLATFORM_WINDOWS_
-  const char md5[] = "0e3710ea6476f5bcba2cd39eb42d54e2";
 #else
-  const char md5[] = "0e3710ea6476f5bcba2cd39eb42d54e2";
+  const char md5[] = "c96ee1f316d7f5a1b154de9f9d467f01";
 #endif
-  TestSaved(595, 842, md5);
-  FPDF_ANNOTATION new_annot = FPDFPage_GetAnnot(m_SavedPage, 0);
+  OpenSavedDocument();
+  page = LoadSavedPage(0);
+  VerifySavedRendering(page, 595, 842, md5);
+  FPDF_ANNOTATION new_annot = FPDFPage_GetAnnot(page, 0);
 
   // Check that the string value of the modified date is the newly-set value.
   EXPECT_EQ(FPDF_OBJECT_STRING, FPDFAnnot_GetValueType(new_annot, kDateKey));
@@ -893,7 +886,8 @@ TEST_F(FPDFAnnotEmbeddertest, GetSetStringValue) {
                    .c_str());
 
   FPDFPage_CloseAnnot(new_annot);
-  CloseSaved();
+  CloseSavedPage(page);
+  CloseSavedDocument();
 }
 
 TEST_F(FPDFAnnotEmbeddertest, ExtractLinkedAnnotations) {

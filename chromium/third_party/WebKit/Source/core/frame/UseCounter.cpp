@@ -48,15 +48,15 @@ int totalPagesMeasuredCSSSampleId() {
 }
 
 // Make sure update_use_counter_css.py was run which updates histograms.xml.
-constexpr int kMaximumCSSSampleId = 588;
+constexpr int kMaximumCSSSampleId = 589;
 
 }  // namespace
 
 namespace blink {
 
 int UseCounter::MapCSSPropertyIdToCSSSampleIdForHistogram(
-    CSSPropertyID css_property_id) {
-  switch (css_property_id) {
+    CSSPropertyID unresolved_property) {
+  switch (unresolved_property) {
     // Begin at 2, because 1 is reserved for totalPagesMeasuredCSSSampleId.
     case CSSPropertyColor:
       return 2;
@@ -382,10 +382,10 @@ int UseCounter::MapCSSPropertyIdToCSSSampleIdForHistogram(
     // CSSPropertyWebkitAspectRatio was 176
     case CSSPropertyAliasWebkitBackfaceVisibility:
       return 177;
-    case CSSPropertyWebkitBackgroundClip:
+    case CSSPropertyAliasWebkitBackgroundClip:
       return 178;
     // case CSSPropertyWebkitBackgroundComposite: return 179;
-    case CSSPropertyWebkitBackgroundOrigin:
+    case CSSPropertyAliasWebkitBackgroundOrigin:
       return 180;
     case CSSPropertyAliasWebkitBackgroundSize:
       return 181;
@@ -1025,8 +1025,7 @@ int UseCounter::MapCSSPropertyIdToCSSSampleIdForHistogram(
       return 530;
     case CSSPropertyColumns:
       return 531;
-    case CSSPropertyApplyAtRule:
-      return 532;
+    // CSSPropertyApplyAtRule was 532.
     case CSSPropertyFontVariantCaps:
       return 533;
     case CSSPropertyHyphens:
@@ -1052,8 +1051,7 @@ int UseCounter::MapCSSPropertyIdToCSSSampleIdForHistogram(
       return 544;
     case CSSPropertyOffsetPosition:
       return 545;
-    case CSSPropertyTextDecorationSkip:
-      return 546;
+    // CSSPropertyTextDecorationSkip was 546.
     case CSSPropertyCaretColor:
       return 547;
     case CSSPropertyOffsetRotate:
@@ -1138,6 +1136,8 @@ int UseCounter::MapCSSPropertyIdToCSSSampleIdForHistogram(
       return 587;
     case CSSPropertyFontVariantEastAsian:
       return 588;
+    case CSSPropertyTextDecorationSkipInk:
+      return 589;
     // 1. Add new features above this line (don't change the assigned numbers of
     // the existing items).
     // 2. Update kMaximumCSSSampleId with the new maximum value.
@@ -1192,7 +1192,6 @@ void UseCounter::RecordMeasurement(WebFeature feature,
     }
     features_recorded_.QuickSet(feature_id);
   }
-  legacy_counter_.CountFeature(feature);
 }
 
 bool UseCounter::HasRecordedMeasurement(WebFeature feature) const {
@@ -1237,13 +1236,11 @@ void UseCounter::CountIfFeatureWouldBeBlockedByFeaturePolicy(
   }
 }
 
-DEFINE_TRACE(UseCounter) {
+void UseCounter::Trace(blink::Visitor* visitor) {
   visitor->Trace(observers_);
 }
 
 void UseCounter::DidCommitLoad(const KURL& url) {
-  legacy_counter_.UpdateMeasurements();
-
   // Reset state from previous load.
   // Use the protocol of the document being loaded into the main frame to
   // decide whether this page is interesting from a metrics perspective.
@@ -1346,12 +1343,9 @@ void UseCounter::Count(CSSParserMode css_parser_mode, CSSPropertyID property) {
     }
     css_recorded_.QuickSet(property);
   }
-  legacy_counter_.CountCSS(property);
 }
 
 void UseCounter::Count(WebFeature feature, const LocalFrame* source_frame) {
-  // TODO(rbyers): Report UseCounter to browser process along with page
-  // load metrics for sourceFrame  crbug.com/716565
   RecordMeasurement(feature, *source_frame);
 }
 
@@ -1458,72 +1452,6 @@ EnumerationHistogram& UseCounter::AnimatedCSSHistogram() const {
       ("Blink.UseCounter.SVGImage.AnimatedCSSProperties", kMaximumCSSSampleId));
 
   return context_ == kSVGImageContext ? svg_histogram : histogram;
-}
-
-/*
- *
- * LEGACY metrics support - WebCore.FeatureObserver is to be superceded by
- * WebCore.UseCounter
- *
- */
-
-static EnumerationHistogram& FeatureObserverHistogram() {
-  DEFINE_STATIC_LOCAL(EnumerationHistogram, histogram,
-                      ("WebCore.FeatureObserver",
-                       static_cast<int32_t>(WebFeature::kNumberOfFeatures)));
-  return histogram;
-}
-
-UseCounter::LegacyCounter::LegacyCounter()
-    : feature_bits_(static_cast<int>(WebFeature::kNumberOfFeatures)),
-      css_bits_(numCSSPropertyIDs) {}
-
-UseCounter::LegacyCounter::~LegacyCounter() {
-  // PageDestruction was intended to be used as a scale, but it's broken (due to
-  // fast shutdown).  See https://crbug.com/597963.
-  FeatureObserverHistogram().Count(
-      static_cast<int>(WebFeature::kOBSOLETE_PageDestruction));
-  UpdateMeasurements();
-}
-
-void UseCounter::LegacyCounter::CountFeature(WebFeature feature) {
-  feature_bits_.QuickSet(static_cast<int>(feature));
-}
-
-void UseCounter::LegacyCounter::CountCSS(CSSPropertyID property) {
-  css_bits_.QuickSet(property);
-}
-
-void UseCounter::LegacyCounter::UpdateMeasurements() {
-  EnumerationHistogram& feature_histogram = FeatureObserverHistogram();
-  feature_histogram.Count(static_cast<int>(WebFeature::kPageVisits));
-  for (size_t i = 0; i < static_cast<int>(WebFeature::kNumberOfFeatures); ++i) {
-    if (feature_bits_.QuickGet(i))
-      feature_histogram.Count(i);
-  }
-  // Clearing count bits is timing sensitive.
-  feature_bits_.ClearAll();
-
-  // FIXME: Sometimes this function is called more than once per page. The
-  // following bool guards against incrementing the page count when there are no
-  // CSS bits set. https://crbug.com/236262.
-  DEFINE_STATIC_LOCAL(
-      EnumerationHistogram, css_properties_histogram,
-      ("WebCore.FeatureObserver.CSSProperties", kMaximumCSSSampleId));
-  bool needs_pages_measured_update = false;
-  for (size_t i = firstCSSProperty; i < numCSSPropertyIDs; ++i) {
-    if (css_bits_.QuickGet(i)) {
-      int css_sample_id = MapCSSPropertyIdToCSSSampleIdForHistogram(
-          static_cast<CSSPropertyID>(i));
-      css_properties_histogram.Count(css_sample_id);
-      needs_pages_measured_update = true;
-    }
-  }
-
-  if (needs_pages_measured_update)
-    css_properties_histogram.Count(totalPagesMeasuredCSSSampleId());
-
-  css_bits_.ClearAll();
 }
 
 }  // namespace blink

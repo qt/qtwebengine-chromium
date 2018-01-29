@@ -46,7 +46,7 @@ public:
     }
 
     SkImageInfo onImageInfo() const override {
-        return fTarget->imageInfo();
+        return fTarget->imageInfo().makeColorSpace(fTargetCS);
     }
 
     void onDrawPaint(const SkPaint& paint) override {
@@ -286,8 +286,6 @@ public:
     }
 
     SkISize getBaseLayerSize() const override { return fTarget->getBaseLayerSize(); }
-    SkRect onGetLocalClipBounds() const override { return fTarget->getLocalClipBounds(); }
-    SkIRect onGetDeviceClipBounds() const override { return fTarget->getDeviceClipBounds(); }
     bool isClipEmpty() const override { return fTarget->isClipEmpty(); }
     bool isClipRect() const override { return fTarget->isClipRect(); }
     bool onPeekPixels(SkPixmap* pixmap) override { return fTarget->peekPixels(pixmap); }
@@ -306,6 +304,9 @@ public:
     GrContext* getGrContext() override { return fTarget->getGrContext(); }
     bool onGetProps(SkSurfaceProps* props) const override { return fTarget->getProps(props); }
     void onFlush() override { return fTarget->flush(); }
+    GrRenderTargetContext* internal_private_accessTopLayerRenderTargetContext() override {
+        return fTarget->internal_private_accessTopLayerRenderTargetContext();
+    }
 
 private:
     sk_sp<SkImage> prepareImage(const SkImage* image) {

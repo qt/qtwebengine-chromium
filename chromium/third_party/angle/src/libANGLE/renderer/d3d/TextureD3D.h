@@ -36,7 +36,7 @@ class TextureD3D : public TextureImpl
 {
   public:
     TextureD3D(const gl::TextureState &data, RendererD3D *renderer);
-    virtual ~TextureD3D();
+    ~TextureD3D() override;
 
     gl::Error onDestroy(const gl::Context *context) override;
 
@@ -50,7 +50,7 @@ class TextureD3D : public TextureImpl
 
     gl::Error getImageAndSyncFromStorage(const gl::Context *context,
                                          const gl::ImageIndex &index,
-                                         ImageD3D **outImage) const;
+                                         ImageD3D **outImage);
 
     GLint getBaseLevelWidth() const;
     GLint getBaseLevelHeight() const;
@@ -67,7 +67,7 @@ class TextureD3D : public TextureImpl
                                     GLsizei samples,
                                     GLint internalFormat,
                                     const gl::Extents &size,
-                                    GLboolean fixedSampleLocations) override;
+                                    bool fixedSampleLocations) override;
 
     bool isImmutable() const { return mImmutable; }
 
@@ -100,12 +100,6 @@ class TextureD3D : public TextureImpl
 
     void syncState(const gl::Texture::DirtyBits &dirtyBits) override;
 
-    gl::Error clearLevel(const gl::Context *context,
-                         const gl::ImageIndex &index,
-                         const gl::ColorF &clearColorValue,
-                         const float clearDepthValue,
-                         const unsigned int clearStencilValue);
-
     gl::Error initializeContents(const gl::Context *context,
                                  const gl::ImageIndex &imageIndex) override;
 
@@ -136,7 +130,7 @@ class TextureD3D : public TextureImpl
                                  const gl::PixelUnpackState &unpack,
                                  const uint8_t *pixels,
                                  ptrdiff_t layerOffset);
-    bool isFastUnpackable(const gl::PixelUnpackState &unpack, GLenum sizedInternalFormat);
+    bool isFastUnpackable(const gl::Buffer *unpackBuffer, GLenum sizedInternalFormat);
     gl::Error fastUnpackPixels(const gl::Context *context,
                                const gl::PixelUnpackState &unpack,
                                const uint8_t *pixels,
@@ -196,7 +190,7 @@ class TextureD3D_2D : public TextureD3D
 {
   public:
     TextureD3D_2D(const gl::TextureState &data, RendererD3D *renderer);
-    virtual ~TextureD3D_2D();
+    ~TextureD3D_2D() override;
 
     gl::Error onDestroy(const gl::Context *context) override;
 
@@ -316,7 +310,7 @@ class TextureD3D_2D : public TextureD3D
 
     bool isValidLevel(int level) const;
     bool isLevelComplete(int level) const;
-    virtual bool isImageComplete(const gl::ImageIndex &index) const override;
+    bool isImageComplete(const gl::ImageIndex &index) const override;
 
     gl::Error updateStorageLevel(const gl::Context *context, int level);
 
@@ -334,7 +328,7 @@ class TextureD3D_Cube : public TextureD3D
 {
   public:
     TextureD3D_Cube(const gl::TextureState &data, RendererD3D *renderer);
-    virtual ~TextureD3D_Cube();
+    ~TextureD3D_Cube() override;
 
     gl::Error onDestroy(const gl::Context *context) override;
 
@@ -452,7 +446,7 @@ class TextureD3D_Cube : public TextureD3D
     bool isValidFaceLevel(int faceIndex, int level) const;
     bool isFaceLevelComplete(int faceIndex, int level) const;
     bool isCubeComplete() const;
-    virtual bool isImageComplete(const gl::ImageIndex &index) const override;
+    bool isImageComplete(const gl::ImageIndex &index) const override;
     gl::Error updateStorageFaceLevel(const gl::Context *context, int faceIndex, int level);
 
     gl::Error redefineImage(const gl::Context *context,
@@ -469,7 +463,7 @@ class TextureD3D_3D : public TextureD3D
 {
   public:
     TextureD3D_3D(const gl::TextureState &data, RendererD3D *renderer);
-    virtual ~TextureD3D_3D();
+    ~TextureD3D_3D() override;
 
     gl::Error onDestroy(const gl::Context *context) override;
 
@@ -568,7 +562,7 @@ class TextureD3D_3D : public TextureD3D
 
     bool isValidLevel(int level) const;
     bool isLevelComplete(int level) const;
-    virtual bool isImageComplete(const gl::ImageIndex &index) const override;
+    bool isImageComplete(const gl::ImageIndex &index) const override;
     gl::Error updateStorageLevel(const gl::Context *context, int level);
 
     gl::Error redefineImage(const gl::Context *context,
@@ -584,7 +578,7 @@ class TextureD3D_2DArray : public TextureD3D
 {
   public:
     TextureD3D_2DArray(const gl::TextureState &data, RendererD3D *renderer);
-    virtual ~TextureD3D_2DArray();
+    ~TextureD3D_2DArray() override;
 
     gl::Error onDestroy(const gl::Context *context) override;
 
@@ -681,7 +675,7 @@ class TextureD3D_2DArray : public TextureD3D
 
     bool isValidLevel(int level) const;
     bool isLevelComplete(int level) const;
-    virtual bool isImageComplete(const gl::ImageIndex &index) const override;
+    bool isImageComplete(const gl::ImageIndex &index) const override;
     gl::Error updateStorageLevel(const gl::Context *context, int level);
 
     void deleteImages();
@@ -858,7 +852,7 @@ class TextureD3D_2DMultisample : public TextureD3D
                                     GLsizei samples,
                                     GLint internalFormat,
                                     const gl::Extents &size,
-                                    GLboolean fixedSampleLocations) override;
+                                    bool fixedSampleLocations) override;
 
     gl::Error bindTexImage(const gl::Context *context, egl::Surface *surface) override;
     gl::Error releaseTexImage(const gl::Context *context) override;

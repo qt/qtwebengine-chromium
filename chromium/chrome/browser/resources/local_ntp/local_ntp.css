@@ -9,8 +9,17 @@ html {
       /* We add an extra pixel because rounding errors on different zooms can
        * make the width shorter than it should be. */
       + 1px);
+  --tile-height: 128px;
   --tile-margin: 16px;
   --tile-width: 154px;
+  /* Two rows of tiles, margin between the rows, and 4px/8px of margin on top
+   * and bottom respectively. If you change this, also change the corresponding
+   * values in most_visited_single.css. */
+  --mv-tiles-height: calc(
+      4px + var(--tile-height) + var(--tile-margin) + var(--tile-height) + 8px);
+  /* Base height 16px, plus 8px each of padding on top and bottom. */
+  --mv-notice-height: calc(8px + 16px + 8px);
+  height: 100%;
 }
 
 /* width >= (3 cols * (16px + 154px) - 16px + 200px) */
@@ -34,20 +43,31 @@ body {
   cursor: default;
   font-family: arial, sans-serif;
   font-size: small;
+  height: 100%;
   margin: 0;
   overflow-x: hidden;
 }
 
+/* Button defaults vary by platform. Reset CSS so that the NTP can use buttons
+ * as a kind of clickable div. */
+button {
+  background: transparent;
+  border: 0;
+  margin: 0;
+  padding: 0;
+}
+
 #ntp-contents {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
   margin: 0 auto;
   text-align: -webkit-center;
   width: var(--content-width);
 }
 
 .non-google-page #ntp-contents {
-  left: calc(50% - var(--content-width)/2);
-  position: absolute;
-  top: calc(50% - 155px);
+  justify-content: center;
 }
 
 body.hide-fakebox-logo #logo,
@@ -79,11 +99,28 @@ body.hide-fakebox-logo #fakebox {
 #logo-default,
 #logo-doodle {
   opacity: 0;
+  visibility: hidden;
+}
+
+#logo-default.show-logo,
+#logo-doodle.show-logo {
+  opacity: 1;
+  visibility: visible;
+}
+
+#logo-doodle-button,
+#logo-doodle-iframe {
+  display: none;
+}
+
+#logo-doodle-button.show-logo,
+#logo-doodle-iframe.show-logo {
+  display: block;
 }
 
 #logo-default.fade,
 #logo-doodle.fade {
-  transition: opacity 130ms;
+  transition: opacity 130ms, visibility 130ms;
 }
 
 #logo-default,
@@ -125,23 +162,32 @@ body.alternate-logo #logo-non-white {
   top: 44px;
 }
 
-#logo-doodle-link {
-  cursor: pointer;
+#logo-doodle-button {
   margin: 0 auto;
 }
 
-.non-white-bg #logo-doodle-link {
+.non-white-bg #logo-doodle-button,
+.non-white-bg #logo-doodle-iframe {
   display: none;
+}
+
+#logo-doodle-iframe {
+  border: 0;
+  height: 228px;
+  width: 100%;
 }
 
 #logo-doodle-notifier {
   display: none;
 }
 .non-white-bg #logo-doodle-notifier {
+  background: transparent;
+  border: 0;
   cursor: pointer;
   display: inline-block;
   height: 24px;
   left: 148px;
+  padding: 0;
   position: relative;
   top: 100px;
   width: 24px;
@@ -213,6 +259,7 @@ body.alternate-logo #logo-non-white {
   font-size: 18px;
   height: 44px;
   line-height: 36px;
+  margin-bottom: 8px;
   max-width: 672px;
   outline: none;
   position: relative;
@@ -287,12 +334,13 @@ html[dir=rtl] #fakebox-cursor {
 #fakebox-microphone {
   background: url(googlemic_clr_24px.svg) no-repeat center;
   background-size: 24px 24px;
+  bottom: 0;
   cursor: pointer;
-  height: 21px;
   padding: 22px 12px 0;
   position: absolute;
   right: 0;
-  width: 17px;
+  top: 0;
+  width: 41px;
 }
 
 html[dir=rtl] #fakebox-microphone {
@@ -324,7 +372,10 @@ body.fakebox-focused #fakebox-cursor {
 }
 
 #most-visited {
-  margin-top: 64px;
+  height: 100%;
+  margin-top: 56px;
+  max-height: calc(var(--mv-tiles-height) + var(--mv-notice-height));
+  overflow: hidden;
   text-align: -webkit-center;
   user-select: none;
 }
@@ -335,11 +386,10 @@ body.fakebox-focused #fakebox-cursor {
 }
 
 #mv-tiles {
-  /* Two rows of tiles of 128px each, 16px of spacing between the rows, and
-   * 4px/8px of margin on top and bottom respectively. If you change this, also
-   * change the corresponding values in most_visited_single.css. */
-  height: calc(2*128px + 16px + 4px + 8px);
+  height: var(--mv-tiles-height);
   margin: 0;
+  /* Clamp to the remaining window height minus space for #mv-notice. */
+  max-height: calc(100% - var(--mv-notice-height));
   position: relative;
   text-align: -webkit-auto;
 }
@@ -379,7 +429,7 @@ html[dir=rtl] #mv-notice-x {
   font-size: 12px;
   font-weight: bold;
   opacity: 1;
-  padding: 10px 0;
+  padding: 8px 0;
 }
 
 #mv-notice span {
@@ -450,7 +500,9 @@ html[dir=rtl] #attribution,
 }
 
 #one-google {
-  position: fixed;
+  position: absolute;
+  right: 0;
+  top: 0;
   transition: opacity 130ms;
   z-index: 1;
 }

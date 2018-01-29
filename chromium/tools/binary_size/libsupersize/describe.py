@@ -52,7 +52,7 @@ def _Divide(a, b):
 
 
 def _IncludeInTotals(section_name):
-  return section_name != '.bss' and '(' not in section_name
+  return section_name != models.SECTION_BSS and '(' not in section_name
 
 
 def _GetSectionSizeInfo(section_sizes):
@@ -110,6 +110,9 @@ class Histogram(object):
     num_items = len(keys)
     num_cols = 6
     num_rows = (num_items + num_cols - 1) / num_cols  # Divide and round up.
+    # Needed for xrange to not throw due to step by 0.
+    if num_rows == 0:
+      return
     # Spaces needed by items in each column, to align on ':'.
     name_col_widths = []
     value_col_widths = []
@@ -149,6 +152,10 @@ class Describer(object):
   def _DescribeSymbol(self, sym, single_line=False):
     pass
 
+  def _DescribeIterable(self, obj):
+    for i, x in enumerate(obj):
+      yield '{}: {!r}'.format(i, x)
+
   def GenerateLines(self, obj):
     if isinstance(obj, models.DeltaSizeInfo):
       return self._DescribeDeltaSizeInfo(obj)
@@ -158,9 +165,11 @@ class Describer(object):
       return self._DescribeDeltaSymbolGroup(obj)
     if isinstance(obj, models.SymbolGroup):
       return self._DescribeSymbolGroup(obj)
-    if isinstance(obj, models.Symbol) or isinstance(obj, models.DeltaSymbol):
+    if isinstance(obj, (models.Symbol, models.DeltaSymbol)):
       return self._DescribeSymbol(obj)
-    return (repr(obj),)
+    if hasattr(obj, '__iter__'):
+      return self._DescribeIterable(obj)
+    return iter((repr(obj),))
 
 
 class DescriberText(Describer):
@@ -292,16 +301,16 @@ class DescriberText(Describer):
       section_sizes = collections.defaultdict(float)
       for s in group.IterLeafSymbols():
         section_sizes[s.section_name] += s.pss
-      histogram = Histogram()
-      for s in group:
-        histogram.Add(s.pss)
 
     # Apply this filter after calcualating size since an alias being removed
     # causes some symbols to be UNCHANGED, yet have pss != 0.
-    if group.IsDelta() and not self.verbose:
+    if group.IsDelta():
       group = group.WhereDiffStatusIs(models.DIFF_STATUS_UNCHANGED).Inverted()
 
     if self.summarize:
+      histogram = Histogram()
+      for s in group:
+        histogram.Add(s.pss)
       unique_paths = set()
       for s in group.IterLeafSymbols():
         # Ignore paths like foo/{shared}/2
@@ -316,8 +325,8 @@ class DescriberText(Describer):
       relevant_sections = [
           s for s in models.SECTION_TO_SECTION_NAME.itervalues()
           if s in section_sizes]
-      if models.SECTION_NAME_MULTIPLE in relevant_sections:
-        relevant_sections.remove(models.SECTION_NAME_MULTIPLE)
+      if models.SECTION_MULTIPLE in relevant_sections:
+        relevant_sections.remove(models.SECTION_MULTIPLE)
 
       size_summary = ' '.join(
           '{}={:<10}'.format(k, _PrettySize(int(section_sizes[k])))
@@ -391,8 +400,7 @@ class DescriberText(Describer):
   def _DescribeDeltaSymbolGroup(self, delta_group):
     if self.summarize:
       header_template = ('{} symbols added (+), {} changed (~), '
-                         '{} removed (-), {} unchanged ({})')
-      unchanged_msg = '=' if self.verbose else 'not shown'
+                         '{} removed (-), {} unchanged (not shown)')
       # Apply this filter since an alias being removed causes some symbols to be
       # UNCHANGED, yet have pss != 0.
       changed_delta_group = delta_group.WhereDiffStatusIs(
@@ -407,8 +415,7 @@ class DescriberText(Describer):
               counts[models.DIFF_STATUS_ADDED],
               counts[models.DIFF_STATUS_CHANGED],
               counts[models.DIFF_STATUS_REMOVED],
-              counts[models.DIFF_STATUS_UNCHANGED],
-              unchanged_msg),
+              counts[models.DIFF_STATUS_UNCHANGED]),
           'Of changed symbols, {} grew, {} shrank'.format(num_inc, num_dec),
           'Number of unique symbols {} -> {} ({:+})'.format(
               num_unique_before_symbols, num_unique_after_symbols,
@@ -457,6 +464,8 @@ class DescriberText(Describer):
 def DescribeSizeInfoCoverage(size_info):
   """Yields lines describing how accurate |size_info| is."""
   for section, section_name in models.SECTION_TO_SECTION_NAME.iteritems():
+    if section_name not in size_info.section_sizes:
+      continue
     expected_size = size_info.section_sizes[section_name]
 
     in_section = size_info.raw_symbols.WhereInSection(section_name)
@@ -481,15 +490,22 @@ def DescribeSizeInfoCoverage(size_info):
           len(anonymous_syms), int(anonymous_syms.pss),
           _Divide(star_syms.size, in_section.size))
 
+    if section == 'r':
+      string_literals = in_section.Filter(lambda s: s.IsStringLiteral())
+      yield '* Contains {} string literals. Total size={}, padding={}'.format(
+          len(string_literals), string_literals.size_without_padding,
+          string_literals.padding)
+
     aliased_symbols = in_section.Filter(lambda s: s.aliases)
-    if section == 't':
-      if len(aliased_symbols):
-        uniques = sum(1 for s in aliased_symbols.IterUniqueSymbols())
-        yield ('* Contains {} aliases, mapped to {} unique addresses '
-               '({} bytes)').format(
-                   len(aliased_symbols), uniques, aliased_symbols.size)
-      else:
-        yield '* Contains 0 aliases'
+    if len(aliased_symbols):
+      uniques = sum(1 for s in aliased_symbols.IterUniqueSymbols())
+      saved = sum(s.size_without_padding * (s.num_aliases - 1)
+                  for s in aliased_symbols.IterUniqueSymbols())
+      yield ('* Contains {} aliases, mapped to {} unique addresses '
+             '({} bytes saved)').format(
+                 len(aliased_symbols), uniques, saved)
+    else:
+      yield '* Contains 0 aliases'
 
     inlined_symbols = in_section.WhereObjectPathMatches('{shared}')
     if len(inlined_symbols):
@@ -540,9 +556,8 @@ class DescriberCsv(Describer):
   def _DescribeDeltaSymbolGroup(self, delta_group):
     yield self._RenderSymbolHeader(True);
     # Apply filter to remove UNCHANGED groups.
-    if not self.verbose:
-      delta_group = delta_group.WhereDiffStatusIs(
-          models.DIFF_STATUS_UNCHANGED).Inverted()
+    delta_group = delta_group.WhereDiffStatusIs(
+        models.DIFF_STATUS_UNCHANGED).Inverted()
     for sym in delta_group:
       yield self._RenderSymbolData(sym)
 

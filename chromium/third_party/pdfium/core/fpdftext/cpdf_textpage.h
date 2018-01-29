@@ -103,7 +103,13 @@ class CPDF_TextPage {
   std::vector<CFX_FloatRect> GetRectArray(int start, int nCount) const;
   int GetIndexAtPos(const CFX_PointF& point, const CFX_SizeF& tolerance) const;
   WideString GetTextByRect(const CFX_FloatRect& rect) const;
-  WideString GetPageText(int start = 0, int nCount = -1) const;
+
+  // Returns string with the text from |m_TextBuf| that are covered by the input
+  // range. |start| and |count| are in terms of the m_CharIndex, so the range
+  // will be converted into appropriate indices.
+  WideString GetPageText(int start, int count) const;
+  WideString GetAllPageText() const { return GetPageText(0, CountChars()); }
+
   int CountRects(int start, int nCount);
   void GetRect(int rectIndex,
                float& left,
@@ -161,7 +167,7 @@ class CPDF_TextPage {
   void SwapTempTextBuf(int32_t iCharListStartAppend, int32_t iBufStartAppend);
   bool IsRightToLeft(const CPDF_TextObject* pTextObj,
                      const CPDF_Font* pFont,
-                     int nItems) const;
+                     size_t nItems) const;
 
   UnownedPtr<const CPDF_Page> const m_pPage;
   std::vector<uint16_t> m_CharIndex;

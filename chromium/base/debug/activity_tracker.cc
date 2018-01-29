@@ -120,8 +120,8 @@ Time WallTimeFromTickTime(int64_t ticks_start, int64_t ticks, Time time_start) {
 
 }  // namespace
 
-OwningProcess::OwningProcess() {}
-OwningProcess::~OwningProcess() {}
+OwningProcess::OwningProcess() = default;
+OwningProcess::~OwningProcess() = default;
 
 void OwningProcess::Release_Initialize(int64_t pid) {
   uint32_t old_id = data_id.load(std::memory_order_acquire);
@@ -185,7 +185,7 @@ ActivityTrackerMemoryAllocator::ActivityTrackerMemoryAllocator(
   DCHECK(allocator);
 }
 
-ActivityTrackerMemoryAllocator::~ActivityTrackerMemoryAllocator() {}
+ActivityTrackerMemoryAllocator::~ActivityTrackerMemoryAllocator() = default;
 
 ActivityTrackerMemoryAllocator::Reference
 ActivityTrackerMemoryAllocator::GetObjectReference() {
@@ -276,9 +276,9 @@ void Activity::FillFrom(Activity* activity,
 #endif
 }
 
-ActivityUserData::TypedValue::TypedValue() {}
+ActivityUserData::TypedValue::TypedValue() = default;
 ActivityUserData::TypedValue::TypedValue(const TypedValue& other) = default;
-ActivityUserData::TypedValue::~TypedValue() {}
+ActivityUserData::TypedValue::~TypedValue() = default;
 
 StringPiece ActivityUserData::TypedValue::Get() const {
   DCHECK_EQ(RAW_VALUE, type_);
@@ -323,13 +323,13 @@ StringPiece ActivityUserData::TypedValue::GetStringReference() const {
 // These are required because std::atomic is (currently) not a POD type and
 // thus clang requires explicit out-of-line constructors and destructors even
 // when they do nothing.
-ActivityUserData::ValueInfo::ValueInfo() {}
+ActivityUserData::ValueInfo::ValueInfo() = default;
 ActivityUserData::ValueInfo::ValueInfo(ValueInfo&&) = default;
-ActivityUserData::ValueInfo::~ValueInfo() {}
-ActivityUserData::MemoryHeader::MemoryHeader() {}
-ActivityUserData::MemoryHeader::~MemoryHeader() {}
-ActivityUserData::FieldHeader::FieldHeader() {}
-ActivityUserData::FieldHeader::~FieldHeader() {}
+ActivityUserData::ValueInfo::~ValueInfo() = default;
+ActivityUserData::MemoryHeader::MemoryHeader() = default;
+ActivityUserData::MemoryHeader::~MemoryHeader() = default;
+ActivityUserData::FieldHeader::FieldHeader() = default;
+ActivityUserData::FieldHeader::~FieldHeader() = default;
 
 ActivityUserData::ActivityUserData() : ActivityUserData(nullptr, 0, -1) {}
 
@@ -362,7 +362,7 @@ ActivityUserData::ActivityUserData(void* memory, size_t size, int64_t pid)
   ImportExistingData();
 }
 
-ActivityUserData::~ActivityUserData() {}
+ActivityUserData::~ActivityUserData() = default;
 
 bool ActivityUserData::CreateSnapshot(Snapshot* output_snapshot) const {
   DCHECK(output_snapshot);
@@ -638,13 +638,11 @@ struct ThreadActivityTracker::Header {
 
   // A memory location used to indicate if changes have been made to the data
   // that would invalidate an in-progress read of its contents. The active
-  // tracker will zero the value whenever something gets popped from the
-  // stack. A monitoring tracker can write a non-zero value here, copy the
-  // stack contents, and read the value to know, if it is still non-zero, that
-  // the contents didn't change while being copied. This can handle concurrent
-  // snapshot operations only if each snapshot writes a different bit (which
-  // is not the current implementation so no parallel snapshots allowed).
-  std::atomic<uint32_t> data_unchanged;
+  // tracker will increment the value whenever something gets popped from the
+  // stack. A monitoring tracker can check the value before and after access
+  // to know, if it's still the same, that the contents didn't change while
+  // being copied.
+  std::atomic<uint32_t> data_version;
 
   // The last "exception" activity. This can't be stored on the stack because
   // that could get popped as things unwind.
@@ -657,8 +655,8 @@ struct ThreadActivityTracker::Header {
   char thread_name[32];
 };
 
-ThreadActivityTracker::Snapshot::Snapshot() {}
-ThreadActivityTracker::Snapshot::~Snapshot() {}
+ThreadActivityTracker::Snapshot::Snapshot() = default;
+ThreadActivityTracker::Snapshot::~Snapshot() = default;
 
 ThreadActivityTracker::ScopedActivity::ScopedActivity(
     ThreadActivityTracker* tracker,
@@ -728,7 +726,7 @@ ThreadActivityTracker::ThreadActivityTracker(void* base, size_t size)
     DCHECK_EQ(0, header_->start_ticks);
     DCHECK_EQ(0U, header_->stack_slots);
     DCHECK_EQ(0U, header_->current_depth.load(std::memory_order_relaxed));
-    DCHECK_EQ(0U, header_->data_unchanged.load(std::memory_order_relaxed));
+    DCHECK_EQ(0U, header_->data_version.load(std::memory_order_relaxed));
     DCHECK_EQ(0, stack_[0].time_internal);
     DCHECK_EQ(0U, stack_[0].origin_address);
     DCHECK_EQ(0U, stack_[0].call_stack[0]);
@@ -760,7 +758,7 @@ ThreadActivityTracker::ThreadActivityTracker(void* base, size_t size)
   }
 }
 
-ThreadActivityTracker::~ThreadActivityTracker() {}
+ThreadActivityTracker::~ThreadActivityTracker() = default;
 
 ThreadActivityTracker::ActivityId ThreadActivityTracker::PushActivity(
     const void* program_counter,
@@ -840,12 +838,11 @@ void ThreadActivityTracker::PopActivity(ActivityId id) {
          CalledOnValidThread());
 
   // The stack has shrunk meaning that some other thread trying to copy the
-  // contents for reporting purposes could get bad data. That thread would
-  // have written a non-zero value into |data_unchanged|; clearing it here
-  // will let that thread detect that something did change. This needs to
+  // contents for reporting purposes could get bad data. Increment the data
+  // version so that it con tell that things have changed. This needs to
   // happen after the atomic |depth| operation above so a "release" store
   // is required.
-  header_->data_unchanged.store(0, std::memory_order_release);
+  header_->data_version.fetch_add(1, std::memory_order_release);
 }
 
 std::unique_ptr<ActivityUserData> ThreadActivityTracker::GetUserData(
@@ -894,7 +891,7 @@ void ThreadActivityTracker::RecordExceptionActivity(const void* program_counter,
 
   // The data has changed meaning that some other thread trying to copy the
   // contents for reporting purposes could get bad data.
-  header_->data_unchanged.store(0, std::memory_order_relaxed);
+  header_->data_version.fetch_add(1, std::memory_order_relaxed);
 }
 
 bool ThreadActivityTracker::IsValid() const {
@@ -940,12 +937,13 @@ bool ThreadActivityTracker::CreateSnapshot(Snapshot* output_snapshot) const {
     const int64_t starting_process_id = header_->owner.process_id;
     const int64_t starting_thread_id = header_->thread_ref.as_id;
 
-    // Write a non-zero value to |data_unchanged| so it's possible to detect
-    // at the end that nothing has changed since copying the data began. A
-    // "cst" operation is required to ensure it occurs before everything else.
-    // Using "cst" memory ordering is relatively expensive but this is only
-    // done during analysis so doesn't directly affect the worker threads.
-    header_->data_unchanged.store(1, std::memory_order_seq_cst);
+    // Note the current |data_version| so it's possible to detect at the end
+    // that nothing has changed since copying the data began. A "cst" operation
+    // is required to ensure it occurs before everything else. Using "cst"
+    // memory ordering is relatively expensive but this is only done during
+    // analysis so doesn't directly affect the worker threads.
+    const uint32_t pre_version =
+        header_->data_version.load(std::memory_order_seq_cst);
 
     // Fetching the current depth also "acquires" the contents of the stack.
     depth = header_->current_depth.load(std::memory_order_acquire);
@@ -965,7 +963,7 @@ bool ThreadActivityTracker::CreateSnapshot(Snapshot* output_snapshot) const {
 
     // Retry if something changed during the copy. A "cst" operation ensures
     // it must happen after all the above operations.
-    if (!header_->data_unchanged.load(std::memory_order_seq_cst))
+    if (header_->data_version.load(std::memory_order_seq_cst) != pre_version)
       continue;
 
     // Stack copied. Record it's full depth.
@@ -1025,6 +1023,10 @@ const void* ThreadActivityTracker::GetBaseAddress() {
   return header_;
 }
 
+uint32_t ThreadActivityTracker::GetDataVersionForTesting() {
+  return header_->data_version.load(std::memory_order_relaxed);
+}
+
 void ThreadActivityTracker::SetOwningProcessIdForTesting(int64_t pid,
                                                          int64_t stamp) {
   header_->owner.SetOwningProcessIdForTesting(pid, stamp);
@@ -1080,18 +1082,18 @@ ThreadActivityTracker::CreateUserDataForActivity(
 // of std::atomic because the latter can create global ctors and dtors.
 subtle::AtomicWord GlobalActivityTracker::g_tracker_ = 0;
 
-GlobalActivityTracker::ModuleInfo::ModuleInfo() {}
+GlobalActivityTracker::ModuleInfo::ModuleInfo() = default;
 GlobalActivityTracker::ModuleInfo::ModuleInfo(ModuleInfo&& rhs) = default;
 GlobalActivityTracker::ModuleInfo::ModuleInfo(const ModuleInfo& rhs) = default;
-GlobalActivityTracker::ModuleInfo::~ModuleInfo() {}
+GlobalActivityTracker::ModuleInfo::~ModuleInfo() = default;
 
 GlobalActivityTracker::ModuleInfo& GlobalActivityTracker::ModuleInfo::operator=(
     ModuleInfo&& rhs) = default;
 GlobalActivityTracker::ModuleInfo& GlobalActivityTracker::ModuleInfo::operator=(
     const ModuleInfo& rhs) = default;
 
-GlobalActivityTracker::ModuleInfoRecord::ModuleInfoRecord() {}
-GlobalActivityTracker::ModuleInfoRecord::~ModuleInfoRecord() {}
+GlobalActivityTracker::ModuleInfoRecord::ModuleInfoRecord() = default;
+GlobalActivityTracker::ModuleInfoRecord::~ModuleInfoRecord() = default;
 
 bool GlobalActivityTracker::ModuleInfoRecord::DecodeTo(
     GlobalActivityTracker::ModuleInfo* info,
@@ -1223,7 +1225,7 @@ GlobalActivityTracker::ThreadSafeUserData::ThreadSafeUserData(void* memory,
                                                               int64_t pid)
     : ActivityUserData(memory, size, pid) {}
 
-GlobalActivityTracker::ThreadSafeUserData::~ThreadSafeUserData() {}
+GlobalActivityTracker::ThreadSafeUserData::~ThreadSafeUserData() = default;
 
 void GlobalActivityTracker::ThreadSafeUserData::Set(StringPiece name,
                                                     ValueType type,
@@ -1262,7 +1264,7 @@ void GlobalActivityTracker::CreateWithAllocator(
 
 #if !defined(OS_NACL)
 // static
-void GlobalActivityTracker::CreateWithFile(const FilePath& file_path,
+bool GlobalActivityTracker::CreateWithFile(const FilePath& file_path,
                                            size_t size,
                                            uint64_t id,
                                            StringPiece name,
@@ -1272,21 +1274,23 @@ void GlobalActivityTracker::CreateWithFile(const FilePath& file_path,
 
   // Create and map the file into memory and make it globally available.
   std::unique_ptr<MemoryMappedFile> mapped_file(new MemoryMappedFile());
-  bool success =
-      mapped_file->Initialize(File(file_path,
-                                   File::FLAG_CREATE_ALWAYS | File::FLAG_READ |
-                                   File::FLAG_WRITE | File::FLAG_SHARE_DELETE),
-                              {0, static_cast<int64_t>(size)},
-                              MemoryMappedFile::READ_WRITE_EXTEND);
-  DCHECK(success);
+  bool success = mapped_file->Initialize(
+      File(file_path, File::FLAG_CREATE_ALWAYS | File::FLAG_READ |
+                          File::FLAG_WRITE | File::FLAG_SHARE_DELETE),
+      {0, size}, MemoryMappedFile::READ_WRITE_EXTEND);
+  if (!success)
+    return false;
+  if (!FilePersistentMemoryAllocator::IsFileAcceptable(*mapped_file, false))
+    return false;
   CreateWithAllocator(std::make_unique<FilePersistentMemoryAllocator>(
                           std::move(mapped_file), size, id, name, false),
                       stack_depth, 0);
+  return true;
 }
 #endif  // !defined(OS_NACL)
 
 // static
-void GlobalActivityTracker::CreateWithLocalMemory(size_t size,
+bool GlobalActivityTracker::CreateWithLocalMemory(size_t size,
                                                   uint64_t id,
                                                   StringPiece name,
                                                   int stack_depth,
@@ -1294,6 +1298,37 @@ void GlobalActivityTracker::CreateWithLocalMemory(size_t size,
   CreateWithAllocator(
       std::make_unique<LocalPersistentMemoryAllocator>(size, id, name),
       stack_depth, process_id);
+  return true;
+}
+
+// static
+bool GlobalActivityTracker::CreateWithSharedMemory(
+    std::unique_ptr<SharedMemory> shm,
+    uint64_t id,
+    StringPiece name,
+    int stack_depth) {
+  if (shm->mapped_size() == 0 ||
+      !SharedPersistentMemoryAllocator::IsSharedMemoryAcceptable(*shm)) {
+    return false;
+  }
+  CreateWithAllocator(std::make_unique<SharedPersistentMemoryAllocator>(
+                          std::move(shm), id, name, false),
+                      stack_depth, 0);
+  return true;
+}
+
+// static
+bool GlobalActivityTracker::CreateWithSharedMemoryHandle(
+    const SharedMemoryHandle& handle,
+    size_t size,
+    uint64_t id,
+    StringPiece name,
+    int stack_depth) {
+  std::unique_ptr<SharedMemory> shm(
+      new SharedMemory(handle, /*readonly=*/false));
+  if (!shm->Map(size))
+    return false;
+  return CreateWithSharedMemory(std::move(shm), id, name, stack_depth);
 }
 
 // static
@@ -1406,7 +1441,8 @@ void GlobalActivityTracker::RecordProcessLaunch(
     // TODO(bcwhite): Measure this in UMA.
     NOTREACHED() << "Process #" << process_id
                  << " was previously recorded as \"launched\""
-                 << " with no corresponding exit.";
+                 << " with no corresponding exit.\n"
+                 << known_processes_[pid];
     known_processes_.erase(pid);
   }
 
@@ -1495,6 +1531,8 @@ void GlobalActivityTracker::CleanupAfterProcess(int64_t process_id,
     while ((ref = iter.GetNextOfType(kTypeIdProcessDataRecord)) != 0) {
       const void* memory = allocator_->GetAsArray<char>(
           ref, kTypeIdProcessDataRecord, PersistentMemoryAllocator::kSizeAny);
+      if (!memory)
+        continue;
       int64_t found_id;
       int64_t create_stamp;
       if (ActivityUserData::GetOwningProcessId(memory, &found_id,
@@ -1532,6 +1570,8 @@ void GlobalActivityTracker::CleanupAfterProcess(int64_t process_id,
       case ModuleInfoRecord::kPersistentTypeId: {
         const void* memory = allocator_->GetAsArray<char>(
             ref, type, PersistentMemoryAllocator::kSizeAny);
+        if (!memory)
+          continue;
         int64_t found_id;
         int64_t create_stamp;
 

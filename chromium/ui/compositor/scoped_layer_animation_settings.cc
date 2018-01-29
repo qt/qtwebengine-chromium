@@ -96,7 +96,7 @@ void AddObserverToSettings(
 void AddScopedDeferredPaintingObserverRecursive(
     ui::Layer* layer,
     ui::ScopedLayerAnimationSettings* settings) {
-  auto observer = base::MakeUnique<ScopedDeferredPainting>(layer);
+  auto observer = std::make_unique<ScopedDeferredPainting>(layer);
   AddObserverToSettings(settings, std::move(observer));
   for (auto* child : layer->children())
     AddScopedDeferredPaintingObserverRecursive(child, settings);
@@ -127,10 +127,13 @@ ScopedLayerAnimationSettings::~ScopedLayerAnimationSettings() {
   animator_->set_tween_type(old_tween_type_);
   animator_->set_preemption_strategy(old_preemption_strategy_);
 
-  for (std::set<ImplicitAnimationObserver*>::const_iterator i =
-       observers_.begin(); i != observers_.end(); ++i) {
-    animator_->observers_.RemoveObserver(*i);
-    (*i)->SetActive(true);
+  for (auto* observer : observers_) {
+    // Directly remove |observer| from |LayerAnimator::observers_| rather than
+    // calling LayerAnimator::RemoveObserver(), to avoid removing it from the
+    // observer list of LayerAnimationSequences that have already been
+    // scheduled.
+    animator_->observers_.RemoveObserver(observer);
+    observer->SetActive(true);
   }
 }
 
@@ -177,7 +180,7 @@ ScopedLayerAnimationSettings::GetPreemptionStrategy() const {
 }
 
 void ScopedLayerAnimationSettings::CacheRenderSurface() {
-  auto observer = base::MakeUnique<ScopedRenderSurfaceCaching>(
+  auto observer = std::make_unique<ScopedRenderSurfaceCaching>(
       animator_->delegate()->GetLayer());
   AddObserverToSettings(this, std::move(observer));
 }
@@ -188,7 +191,7 @@ void ScopedLayerAnimationSettings::DeferPaint() {
 }
 
 void ScopedLayerAnimationSettings::TrilinearFiltering() {
-  auto observer = base::MakeUnique<ScopedTrilinearFiltering>(
+  auto observer = std::make_unique<ScopedTrilinearFiltering>(
       animator_->delegate()->GetLayer());
   AddObserverToSettings(this, std::move(observer));
 }

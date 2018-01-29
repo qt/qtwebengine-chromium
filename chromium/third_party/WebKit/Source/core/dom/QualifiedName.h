@@ -54,11 +54,12 @@ class CORE_EXPORT QualifiedName {
  public:
   class QualifiedNameImpl : public RefCounted<QualifiedNameImpl> {
    public:
-    static RefPtr<QualifiedNameImpl> Create(const AtomicString& prefix,
-                                            const AtomicString& local_name,
-                                            const AtomicString& namespace_uri,
-                                            bool is_static) {
-      return WTF::AdoptRef(
+    static scoped_refptr<QualifiedNameImpl> Create(
+        const AtomicString& prefix,
+        const AtomicString& local_name,
+        const AtomicString& namespace_uri,
+        bool is_static) {
+      return base::AdoptRef(
           new QualifiedNameImpl(prefix, local_name, namespace_uri, is_static));
     }
 
@@ -136,7 +137,13 @@ class CORE_EXPORT QualifiedName {
   const AtomicString& NamespaceURI() const { return impl_->namespace_; }
 
   // Uppercased localName, cached for efficiency
-  const AtomicString& LocalNameUpper() const;
+  const AtomicString& LocalNameUpper() const {
+    if (impl_->local_name_upper_)
+      return impl_->local_name_upper_;
+    return LocalNameUpperSlow();
+  }
+
+  const AtomicString& LocalNameUpperSlow() const;
 
   String ToString() const;
 
@@ -164,7 +171,7 @@ class CORE_EXPORT QualifiedName {
                 const AtomicString& namespace_uri,
                 bool is_static);
 
-  RefPtr<QualifiedNameImpl> impl_;
+  scoped_refptr<QualifiedNameImpl> impl_;
 };
 
 extern const QualifiedName& g_any_name;
@@ -231,14 +238,15 @@ struct HashTraits<blink::QualifiedName>
 
   static bool IsDeletedValue(const blink::QualifiedName& value) {
     using QualifiedNameImpl = blink::QualifiedName::QualifiedNameImpl;
-    return HashTraits<RefPtr<QualifiedNameImpl>>::IsDeletedValue(value.impl_);
+    return HashTraits<scoped_refptr<QualifiedNameImpl>>::IsDeletedValue(
+        value.impl_);
   }
 
   static void ConstructDeletedValue(blink::QualifiedName& slot,
                                     bool zero_value) {
     using QualifiedNameImpl = blink::QualifiedName::QualifiedNameImpl;
-    HashTraits<RefPtr<QualifiedNameImpl>>::ConstructDeletedValue(slot.impl_,
-                                                                 zero_value);
+    HashTraits<scoped_refptr<QualifiedNameImpl>>::ConstructDeletedValue(
+        slot.impl_, zero_value);
   }
 };
 

@@ -109,6 +109,8 @@
          dont_initialize_uninitialized_locals)               \
   GPU_OP(DONT_REMOVE_INVARIANT_FOR_FRAGMENT_INPUT,           \
          dont_remove_invariant_for_fragment_input)           \
+  GPU_OP(DONT_USE_LOOPS_TO_INITIALIZE_VARIABLES,             \
+         dont_use_loops_to_initialize_variables)             \
   GPU_OP(ETC1_POWER_OF_TWO_ONLY,                             \
          etc1_power_of_two_only)                             \
   GPU_OP(EMULATE_ABS_INT_FUNCTION,                           \
@@ -117,6 +119,8 @@
          emulate_isnan_on_float)                             \
   GPU_OP(EXIT_ON_CONTEXT_LOST,                               \
          exit_on_context_lost)                               \
+  GPU_OP(FLUSH_ON_FRAMEBUFFER_CHANGE,                        \
+         flush_on_framebuffer_change)                        \
   GPU_OP(FORCE_CUBE_COMPLETE,                                \
          force_cube_complete)                                \
   GPU_OP(FORCE_CUBE_MAP_POSITIVE_X_ALLOCATION,               \

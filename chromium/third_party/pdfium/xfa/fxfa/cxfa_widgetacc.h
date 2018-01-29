@@ -8,17 +8,18 @@
 #define XFA_FXFA_CXFA_WIDGETACC_H_
 
 #include <memory>
+#include <utility>
 
 #include "core/fxcrt/fx_coordinates.h"
 #include "core/fxcrt/retain_ptr.h"
 #include "core/fxge/dib/cfx_dibitmap.h"
 #include "core/fxge/fx_dib.h"
-#include "xfa/fxfa/parser/cxfa_box.h"
-#include "xfa/fxfa/parser/cxfa_event.h"
-#include "xfa/fxfa/parser/cxfa_image.h"
-#include "xfa/fxfa/parser/cxfa_margin.h"
-#include "xfa/fxfa/parser/cxfa_script.h"
-#include "xfa/fxfa/parser/cxfa_value.h"
+#include "xfa/fxfa/parser/cxfa_boxdata.h"
+#include "xfa/fxfa/parser/cxfa_eventdata.h"
+#include "xfa/fxfa/parser/cxfa_imagedata.h"
+#include "xfa/fxfa/parser/cxfa_margindata.h"
+#include "xfa/fxfa/parser/cxfa_scriptdata.h"
+#include "xfa/fxfa/parser/cxfa_valuedata.h"
 #include "xfa/fxfa/parser/cxfa_widgetdata.h"
 
 class CFGAS_GEFont;
@@ -35,43 +36,45 @@ class IXFA_AppProvider;
 class CXFA_WidgetAcc : public CXFA_WidgetData {
  public:
   CXFA_WidgetAcc(CXFA_FFDocView* pDocView, CXFA_Node* pNode);
-  ~CXFA_WidgetAcc();
+  ~CXFA_WidgetAcc() override;
 
-  bool GetName(WideString& wsName, int32_t iNameType = 0);
-  bool ProcessValueChanged();
   void ResetData();
 
-  void SetImageEdit(const WideString& wsContentType,
-                    const WideString& wsHref,
-                    const WideString& wsData);
-
   CXFA_WidgetAcc* GetExclGroup();
-  CXFA_FFDocView* GetDocView();
   CXFA_FFDoc* GetDoc();
-  CXFA_FFApp* GetApp();
-  IXFA_AppProvider* GetAppProvider();
 
-  int32_t ProcessEvent(int32_t iActivity, CXFA_EventParam* pEventParam);
-  int32_t ProcessEvent(const CXFA_Event& event, CXFA_EventParam* pEventParam);
+  bool ProcessValueChanged();
+  int32_t ProcessEvent(XFA_AttributeEnum iActivity,
+                       CXFA_EventParam* pEventParam);
+  int32_t ProcessEvent(const CXFA_EventData& eventData,
+                       CXFA_EventParam* pEventParam);
   int32_t ProcessCalculate();
-  int32_t ProcessValidate(int32_t iFlags = 0);
-  int32_t ExecuteScript(CXFA_Script script,
-                        CXFA_EventParam* pEventParam,
-                        CFXJSE_Value** pRetValue = nullptr);
+  int32_t ProcessValidate(int32_t iFlags);
+  int32_t ExecuteScript(const CXFA_ScriptData& scriptData,
+                        CXFA_EventParam* pEventParam);
+  std::pair<int32_t, bool> ExecuteBoolScript(CXFA_ScriptData scriptData,
+                                             CXFA_EventParam* pEventParam);
 
   CXFA_FFWidget* GetNextWidget(CXFA_FFWidget* pWidget);
   void StartWidgetLayout(float& fCalcWidth, float& fCalcHeight);
   bool FindSplitPos(int32_t iBlockIndex, float& fCalcHeight);
+
   bool LoadCaption();
+  CXFA_TextLayout* GetCaptionTextLayout();
+
   void LoadText();
+  CXFA_TextLayout* GetTextLayout();
+
   bool LoadImageImage();
   bool LoadImageEditImage();
   void GetImageDpi(int32_t& iImageXDpi, int32_t& iImageYDpi);
   void GetImageEditDpi(int32_t& iImageXDpi, int32_t& iImageYDpi);
-  CXFA_TextLayout* GetCaptionTextLayout();
-  CXFA_TextLayout* GetTextLayout();
+
   RetainPtr<CFX_DIBitmap> GetImageImage();
   RetainPtr<CFX_DIBitmap> GetImageEditImage();
+  void SetImageEdit(const WideString& wsContentType,
+                    const WideString& wsHref,
+                    const WideString& wsData);
   void SetImageImage(const RetainPtr<CFX_DIBitmap>& newImage);
   void SetImageEditImage(const RetainPtr<CFX_DIBitmap>& newImage);
   void UpdateUIDisplay(CXFA_FFWidget* pExcept = nullptr);
@@ -81,15 +84,16 @@ class CXFA_WidgetAcc : public CXFA_WidgetData {
   float GetFontSize();
   FX_ARGB GetTextColor();
   float GetLineHeight();
-  CXFA_WidgetLayoutData* GetWidgetLayoutData();
 
  private:
-  void ProcessScriptTestValidate(CXFA_Validate validate,
+  IXFA_AppProvider* GetAppProvider();
+  void ProcessScriptTestValidate(CXFA_ValidateData validateData,
                                  int32_t iRet,
-                                 CFXJSE_Value* pRetValue,
+                                 bool pRetValue,
                                  bool bVersionFlag);
-  int32_t ProcessFormatTestValidate(CXFA_Validate validate, bool bVersionFlag);
-  int32_t ProcessNullTestValidate(CXFA_Validate validate,
+  int32_t ProcessFormatTestValidate(CXFA_ValidateData validateData,
+                                    bool bVersionFlag);
+  int32_t ProcessNullTestValidate(CXFA_ValidateData validateData,
                                   int32_t iFlags,
                                   bool bVersionFlag);
   WideString GetValidateCaptionName(bool bVersionFlag);
@@ -100,6 +104,10 @@ class CXFA_WidgetAcc : public CXFA_WidgetData {
   bool CalculateTextEditAutoSize(CFX_SizeF& size);
   bool CalculateCheckButtonAutoSize(CFX_SizeF& size);
   bool CalculatePushButtonAutoSize(CFX_SizeF& size);
+  CFX_SizeF CalculateImageSize(float img_width,
+                               float img_height,
+                               float dpi_x,
+                               float dpi_y);
   bool CalculateImageEditAutoSize(CFX_SizeF& size);
   bool CalculateImageAutoSize(CFX_SizeF& size);
   bool CalculateTextAutoSize(CFX_SizeF& size);

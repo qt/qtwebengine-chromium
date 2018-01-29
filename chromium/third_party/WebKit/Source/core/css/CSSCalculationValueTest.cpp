@@ -31,8 +31,8 @@
 #include "core/css/CSSCalculationValue.h"
 
 #include "core/css/CSSPrimitiveValue.h"
+#include "core/css/CSSPropertyValueSet.h"
 #include "core/css/CSSToLengthConversionData.h"
-#include "core/css/StylePropertySet.h"
 #include "core/layout/api/LayoutViewItem.h"
 #include "core/style/ComputedStyle.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -60,9 +60,10 @@ void TestAccumulatePixelsAndPercent(
 CSSLengthArray& SetLengthArray(CSSLengthArray& length_array, String text) {
   for (double& x : length_array.values)
     x = 0;
-  MutableStylePropertySet* property_set =
-      MutableStylePropertySet::Create(kHTMLQuirksMode);
-  property_set->SetProperty(CSSPropertyLeft, text);
+  MutableCSSPropertyValueSet* property_set =
+      MutableCSSPropertyValueSet::Create(kHTMLQuirksMode);
+  property_set->SetProperty(CSSPropertyLeft, text, /* important */ false,
+                            SecureContextMode::kInsecureContext);
   ToCSSPrimitiveValue(property_set->GetPropertyCSSValue(CSSPropertyLeft))
       ->AccumulateLengthArray(length_array);
   return length_array;
@@ -77,7 +78,7 @@ bool LengthArraysEqual(CSSLengthArray& a, CSSLengthArray& b) {
 }
 
 TEST(CSSCalculationValue, AccumulatePixelsAndPercent) {
-  RefPtr<ComputedStyle> style = ComputedStyle::Create();
+  scoped_refptr<ComputedStyle> style = ComputedStyle::Create();
   style->SetEffectiveZoom(5);
   CSSToLengthConversionData conversion_data(style.get(), style.get(),
                                             LayoutViewItem(nullptr),
@@ -146,7 +147,7 @@ TEST(CSSCalculationValue, AccumulatePixelsAndPercent) {
 }
 
 TEST(CSSCalculationValue, RefCount) {
-  RefPtr<CalculationValue> calc =
+  scoped_refptr<CalculationValue> calc =
       CalculationValue::Create(PixelsAndPercent(1, 2), kValueRangeAll);
 
   // FIXME: Test the Length construction without using the ref count value.

@@ -17,6 +17,42 @@ const char* kNGInlineItemTypeStrings[] = {
     "Text",     "Control",  "AtomicInline",        "OpenTag",
     "CloseTag", "Floating", "OutOfFlowPositioned", "BidiControl"};
 
+// Returns true if this item is "empty", i.e. if the node contains only empty
+// items it will produce a single zero block-size line box.
+static bool IsEmptyItem(NGInlineItem::NGInlineItemType type,
+                        const ComputedStyle* style,
+                        LayoutObject* layout_object) {
+  if (type == NGInlineItem::kAtomicInline || type == NGInlineItem::kControl ||
+      type == NGInlineItem::kText)
+    return false;
+
+  if (type == NGInlineItem::kOpenTag) {
+    DCHECK(style && layout_object);
+
+    if (style->BorderStart().NonZero() || !style->PaddingStart().IsZero())
+      return false;
+
+    // Non-zero margin can prevent "empty" only in non-quirks mode.
+    // https://quirks.spec.whatwg.org/#the-line-height-calculation-quirk
+    if (!style->MarginStart().IsZero() &&
+        !layout_object->GetDocument().InLineHeightQuirksMode())
+      return false;
+  }
+
+  if (type == NGInlineItem::kCloseTag) {
+    DCHECK(style && layout_object);
+
+    if (style->BorderEnd().NonZero() || !style->PaddingEnd().IsZero())
+      return false;
+
+    if (!style->MarginEnd().IsZero() &&
+        !layout_object->GetDocument().InLineHeightQuirksMode())
+      return false;
+  }
+
+  return true;
+}
+
 }  // namespace
 
 NGInlineItem::NGInlineItem(NGInlineItemType type,
@@ -31,7 +67,8 @@ NGInlineItem::NGInlineItem(NGInlineItemType type,
       layout_object_(layout_object),
       type_(type),
       bidi_level_(UBIDI_LTR),
-      shape_options_(kPreContext | kPostContext) {
+      shape_options_(kPreContext | kPostContext),
+      is_empty_item_(::blink::IsEmptyItem(type, style, layout_object)) {
   DCHECK_GE(end, start);
 }
 
@@ -108,33 +145,6 @@ void NGInlineItem::SetOffset(unsigned start, unsigned end) {
 void NGInlineItem::SetEndOffset(unsigned end_offset) {
   DCHECK_GE(end_offset, start_offset_);
   end_offset_ = end_offset;
-}
-
-LayoutUnit NGInlineItem::InlineSize() const {
-  if (Type() == NGInlineItem::kText)
-    return LayoutUnit(shape_result_->Width());
-
-  DCHECK_NE(Type(), NGInlineItem::kAtomicInline)
-      << "Use NGInlineLayoutAlgorithm::InlineSize";
-  // Bidi controls and out-of-flow objects do not have in-flow widths.
-  return LayoutUnit();
-}
-
-LayoutUnit NGInlineItem::InlineSize(unsigned start, unsigned end) const {
-  DCHECK_GE(start, StartOffset());
-  DCHECK_LE(start, end);
-  DCHECK_LE(end, EndOffset());
-
-  if (start == end)
-    return LayoutUnit();
-  if (start == start_offset_ && end == end_offset_)
-    return InlineSize();
-
-  DCHECK_EQ(Type(), NGInlineItem::kText);
-  return LayoutUnit(ShapeResultBuffer::GetCharacterRange(
-                        shape_result_, Direction(), shape_result_->Width(),
-                        start - StartOffset(), end - StartOffset())
-                        .Width());
 }
 
 bool NGInlineItem::HasStartEdge() const {

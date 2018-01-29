@@ -505,8 +505,8 @@ IN_PROC_BROWSER_TEST_P(TouchSelectionControllerClientAuraSiteIsolationTest,
   ui::TouchSelectionControllerTestApi selection_controller_test_api(
       selection_controller);
 
-  scoped_refptr<FrameRectChangedMessageFilter> filter =
-      new FrameRectChangedMessageFilter();
+  scoped_refptr<UpdateResizeParamsMessageFilter> filter =
+      new UpdateResizeParamsMessageFilter();
   root->current_frame_host()->GetProcess()->AddFilter(filter.get());
 
   // Find the location of some text to select.
@@ -587,7 +587,7 @@ IN_PROC_BROWSER_TEST_P(TouchSelectionControllerClientAuraSiteIsolationTest,
   EXPECT_FALSE(ui::TouchSelectionMenuRunner::GetInstance()->IsRunning());
 
   // Make sure we wait for the scroll to actually happen.
-  filter->Wait();
+  filter->WaitForRect();
 
   // End scrolling: touch handles should re-appear.
   ui::GestureEventDetails scroll_end_details(ui::ET_GESTURE_SCROLL_END);
@@ -848,7 +848,7 @@ IN_PROC_BROWSER_TEST_F(TouchSelectionControllerClientAuraTest,
 
   const int window_width = rwhva->GetNativeView()->bounds().width();
   const float overscroll_threshold =
-      GetOverscrollConfig(OVERSCROLL_CONFIG_HORIZ_THRESHOLD_START_TOUCHSCREEN);
+      GetOverscrollConfig(OverscrollConfig::THRESHOLD_START_TOUCHSCREEN);
   const float scroll_amount = window_width * overscroll_threshold + 1;
   event_x += scroll_amount;
   ui::GestureEventDetails scroll_update_details(ui::ET_GESTURE_SCROLL_UPDATE,

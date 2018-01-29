@@ -22,6 +22,7 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "device/geolocation/location_arbitrator.h"
+#include "device/geolocation/public/cpp/geoposition.h"
 #include "device/geolocation/wifi_data_provider.h"
 #include "net/base/net_errors.h"
 #include "net/url_request/test_url_fetcher_factory.h"
@@ -40,7 +41,7 @@ class MessageLoopQuitListener {
   }
 
   void OnLocationUpdate(const LocationProvider* provider,
-                        const Geoposition& position) {
+                        const mojom::Geoposition& position) {
     EXPECT_EQ(client_message_loop_, base::MessageLoop::current());
     updated_provider_ = provider;
   }
@@ -177,8 +178,8 @@ class GeolocationNetworkProviderTest : public testing::Test {
     }
   }
 
-  static Geoposition CreateReferencePosition(int id) {
-    Geoposition pos;
+  static mojom::Geoposition CreateReferencePosition(int id) {
+    mojom::Geoposition pos;
     pos.latitude = id;
     pos.longitude = -(id + 1);
     pos.altitude = 2 * id;
@@ -290,7 +291,7 @@ TEST_F(GeolocationNetworkProviderTest, CreateDestroy) {
 TEST_F(GeolocationNetworkProviderTest, EmptyApiKey) {
   const std::string api_key = "";
   std::unique_ptr<LocationProvider> provider(CreateProvider(true, api_key));
-  EXPECT_TRUE(provider->StartProvider(false));
+  provider->StartProvider(false);
   net::TestURLFetcher* fetcher = get_url_fetcher_and_advance_id();
   ASSERT_TRUE(fetcher);
   EXPECT_FALSE(fetcher->GetOriginalURL().has_query());
@@ -301,7 +302,7 @@ TEST_F(GeolocationNetworkProviderTest, EmptyApiKey) {
 TEST_F(GeolocationNetworkProviderTest, NonEmptyApiKey) {
   const std::string api_key = "something";
   std::unique_ptr<LocationProvider> provider(CreateProvider(true, api_key));
-  EXPECT_TRUE(provider->StartProvider(false));
+  provider->StartProvider(false);
   net::TestURLFetcher* fetcher = get_url_fetcher_and_advance_id();
   ASSERT_TRUE(fetcher);
   EXPECT_TRUE(fetcher->GetOriginalURL().has_query());
@@ -312,7 +313,7 @@ TEST_F(GeolocationNetworkProviderTest, NonEmptyApiKey) {
 // representing a valid request.
 TEST_F(GeolocationNetworkProviderTest, StartProvider) {
   std::unique_ptr<LocationProvider> provider(CreateProvider(true));
-  EXPECT_TRUE(provider->StartProvider(false));
+  provider->StartProvider(false);
   net::TestURLFetcher* fetcher = get_url_fetcher_and_advance_id();
   ASSERT_TRUE(fetcher);
   CheckRequestIsValid(*fetcher, 0, 0);
@@ -322,7 +323,7 @@ TEST_F(GeolocationNetworkProviderTest, StartProvider) {
 // points represented in the request is truncated to fit within 2048 characters.
 TEST_F(GeolocationNetworkProviderTest, StartProviderLongRequest) {
   std::unique_ptr<LocationProvider> provider(CreateProvider(true));
-  EXPECT_TRUE(provider->StartProvider(false));
+  provider->StartProvider(false);
   // Create Wifi scan data with too many access points.
   const int kFirstScanAps = 20;
   wifi_data_provider_->SetData(CreateReferenceWifiScanData(kFirstScanAps));
@@ -349,7 +350,7 @@ TEST_F(GeolocationNetworkProviderTest, StartProviderLongRequest) {
 // 7. Wifi data changes back to (2.) -> no new request, provide cached position.
 TEST_F(GeolocationNetworkProviderTest, MultipleWifiScansComplete) {
   std::unique_ptr<LocationProvider> provider(CreateProvider(true));
-  EXPECT_TRUE(provider->StartProvider(false));
+  provider->StartProvider(false);
 
   net::TestURLFetcher* fetcher = get_url_fetcher_and_advance_id();
   ASSERT_TRUE(fetcher);
@@ -364,8 +365,8 @@ TEST_F(GeolocationNetworkProviderTest, MultipleWifiScansComplete) {
   fetcher->SetResponseString(kNoFixNetworkResponse);
   fetcher->delegate()->OnURLFetchComplete(fetcher);
 
-  Geoposition position = provider->GetPosition();
-  EXPECT_FALSE(position.Validate());
+  mojom::Geoposition position = provider->GetPosition();
+  EXPECT_FALSE(ValidateGeoposition(position));
 
   // 2. Now wifi data arrives -- SetData will notify listeners.
   const int kFirstScanAps = 6;
@@ -395,7 +396,7 @@ TEST_F(GeolocationNetworkProviderTest, MultipleWifiScansComplete) {
   EXPECT_EQ(-0.1, position.longitude);
   EXPECT_EQ(1200.4, position.accuracy);
   EXPECT_FALSE(position.timestamp.is_null());
-  EXPECT_TRUE(position.Validate());
+  EXPECT_TRUE(ValidateGeoposition(position));
 
   // 4. Wifi updated again, with one less AP. This is 'close enough' to the
   // previous scan, so no new request made.
@@ -408,7 +409,7 @@ TEST_F(GeolocationNetworkProviderTest, MultipleWifiScansComplete) {
   position = provider->GetPosition();
   EXPECT_EQ(51.0, position.latitude);
   EXPECT_EQ(-0.1, position.longitude);
-  EXPECT_TRUE(position.Validate());
+  EXPECT_TRUE(ValidateGeoposition(position));
 
   // 5. Now a third scan with more than twice the original APs -> new request.
   const int kThirdScanAps = kFirstScanAps * 2 + 1;
@@ -426,7 +427,7 @@ TEST_F(GeolocationNetworkProviderTest, MultipleWifiScansComplete) {
 
   // Error means we now no longer have a fix.
   position = provider->GetPosition();
-  EXPECT_FALSE(position.Validate());
+  EXPECT_FALSE(ValidateGeoposition(position));
 
   // 7. Wifi scan returns to original set: should be serviced from cache.
   wifi_data_provider_->SetData(CreateReferenceWifiScanData(kFirstScanAps));
@@ -436,7 +437,7 @@ TEST_F(GeolocationNetworkProviderTest, MultipleWifiScansComplete) {
   position = provider->GetPosition();
   EXPECT_EQ(51.0, position.latitude);
   EXPECT_EQ(-0.1, position.longitude);
-  EXPECT_TRUE(position.Validate());
+  EXPECT_TRUE(ValidateGeoposition(position));
 }
 
 // Tests that, if no Wifi scan data is available at startup, the provider
@@ -445,7 +446,7 @@ TEST_F(GeolocationNetworkProviderTest, NoRequestOnStartupUntilWifiData) {
   MessageLoopQuitListener listener;
   wifi_data_provider_->set_got_data(false);  // No initial Wifi data.
   std::unique_ptr<LocationProvider> provider(CreateProvider(true));
-  EXPECT_TRUE(provider->StartProvider(false));
+  provider->StartProvider(false);
 
   provider->SetUpdateCallback(base::Bind(
       &MessageLoopQuitListener::OnLocationUpdate, base::Unretained(&listener)));
@@ -466,7 +467,7 @@ TEST_F(GeolocationNetworkProviderTest, NoRequestOnStartupUntilWifiData) {
 TEST_F(GeolocationNetworkProviderTest, NewDataReplacesExistingNetworkRequest) {
   // Send initial request with empty data
   std::unique_ptr<LocationProvider> provider(CreateProvider(true));
-  EXPECT_TRUE(provider->StartProvider(false));
+  provider->StartProvider(false);
   net::TestURLFetcher* fetcher = get_url_fetcher_and_advance_id();
   EXPECT_TRUE(fetcher);
 
@@ -482,7 +483,7 @@ TEST_F(GeolocationNetworkProviderTest, NewDataReplacesExistingNetworkRequest) {
 // user granting permission.
 TEST_F(GeolocationNetworkProviderTest, NetworkRequestDeferredForPermission) {
   std::unique_ptr<LocationProvider> provider(CreateProvider(false));
-  EXPECT_TRUE(provider->StartProvider(false));
+  provider->StartProvider(false);
   net::TestURLFetcher* fetcher = get_url_fetcher_and_advance_id();
   EXPECT_FALSE(fetcher);
   provider->OnPermissionGranted();
@@ -496,7 +497,7 @@ TEST_F(GeolocationNetworkProviderTest, NetworkRequestDeferredForPermission) {
 TEST_F(GeolocationNetworkProviderTest,
        NetworkRequestWithWifiDataDeferredForPermission) {
   std::unique_ptr<LocationProvider> provider(CreateProvider(false));
-  EXPECT_TRUE(provider->StartProvider(false));
+  provider->StartProvider(false);
   net::TestURLFetcher* fetcher = get_url_fetcher_and_advance_id();
   EXPECT_FALSE(fetcher);
 
@@ -522,10 +523,10 @@ TEST_F(GeolocationNetworkProviderTest, NetworkPositionCache) {
 
   const int kCacheSize = NetworkLocationProvider::PositionCache::kMaximumSize;
   for (int i = 1; i < kCacheSize * 2 + 1; ++i) {
-    Geoposition pos = CreateReferencePosition(i);
+    mojom::Geoposition pos = CreateReferencePosition(i);
     bool ret = cache.CachePosition(CreateReferenceWifiScanData(i), pos);
     EXPECT_TRUE(ret) << i;
-    const Geoposition* item =
+    const mojom::Geoposition* item =
         cache.FindPosition(CreateReferenceWifiScanData(i));
     ASSERT_TRUE(item) << i;
     EXPECT_EQ(pos.latitude, item->latitude) << i;

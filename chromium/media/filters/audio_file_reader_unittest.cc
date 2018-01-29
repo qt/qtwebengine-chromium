@@ -24,7 +24,7 @@ namespace media {
 class AudioFileReaderTest : public testing::Test {
  public:
   AudioFileReaderTest() : packet_verification_disabled_(false) {}
-  ~AudioFileReaderTest() override {}
+  ~AudioFileReaderTest() override = default;
 
   void Initialize(const char* filename) {
     data_ = ReadTestDataFile(filename);
@@ -68,9 +68,6 @@ class AudioFileReaderTest : public testing::Test {
     for (int i = 0; i < kTestPasses; ++i) {
       for (int j = 0; j < kReads; ++j) {
         ASSERT_TRUE(reader_->ReadPacketForTesting(&packet));
-
-        // Remove metadata from the packet data section before hashing.
-        av_packet_split_side_data(&packet);
 
         // On the first pass save the MD5 hash of each packet, on subsequent
         // passes ensure it matches.

@@ -16,7 +16,6 @@
 #include "core/html/parser/HTMLDocumentParser.h"
 #include "core/probe/CoreProbes.h"
 #include "platform/Histogram.h"
-#include "platform/wtf/CurrentTime.h"
 #include "platform/wtf/Time.h"
 #include "public/platform/Platform.h"
 
@@ -137,17 +136,33 @@ void PerformanceMonitor::WillExecuteScript(ExecutionContext* context) {
   // In V2, timing of script execution along with style & layout updates will be
   // accounted for detailed and more accurate attribution.
   ++script_depth_;
-  if (!task_execution_context_)
-    task_execution_context_ = context;
-  else if (task_execution_context_ != context)
-    task_has_multiple_contexts_ = true;
+  UpdateTaskAttribution(context);
 }
 
 void PerformanceMonitor::DidExecuteScript() {
   --script_depth_;
 }
 
+void PerformanceMonitor::UpdateTaskAttribution(ExecutionContext* context) {
+  // If |context| is not a document, unable to attribute a frame context.
+  if (!context || !context->IsDocument())
+    return;
+
+  UpdateTaskShouldBeReported(ToDocument(context)->GetFrame());
+  if (!task_execution_context_)
+    task_execution_context_ = context;
+  else if (task_execution_context_ != context)
+    task_has_multiple_contexts_ = true;
+}
+
+void PerformanceMonitor::UpdateTaskShouldBeReported(LocalFrame* frame) {
+  if (frame && local_root_ == &(frame->LocalFrameRoot()))
+    task_should_be_reported_ = true;
+}
+
 void PerformanceMonitor::Will(const probe::RecalculateStyle& probe) {
+  UpdateTaskShouldBeReported(probe.document ? probe.document->GetFrame()
+                                            : nullptr);
   if (enabled_ && thresholds_[kLongLayout] && script_depth_)
     probe.CaptureStartTime();
 }
@@ -158,6 +173,8 @@ void PerformanceMonitor::Did(const probe::RecalculateStyle& probe) {
 }
 
 void PerformanceMonitor::Will(const probe::UpdateLayout& probe) {
+  UpdateTaskShouldBeReported(probe.document ? probe.document->GetFrame()
+                                            : nullptr);
   ++layout_depth_;
   if (!enabled_)
     return;
@@ -226,6 +243,7 @@ void PerformanceMonitor::Did(const probe::CallFunction& probe) {
 }
 
 void PerformanceMonitor::Will(const probe::V8Compile& probe) {
+  UpdateTaskAttribution(probe.context);
   if (!enabled_ || !thresholds_[kLongTask])
     return;
 
@@ -256,7 +274,7 @@ void PerformanceMonitor::Did(const probe::V8Compile& probe) {
 
 void PerformanceMonitor::Will(const probe::UserCallback& probe) {
   ++user_callback_depth_;
-
+  UpdateTaskAttribution(probe.context);
   if (!enabled_ || user_callback_depth_ != 1 ||
       !thresholds_[probe.recurring ? kRecurringHandler : kHandler])
     return;
@@ -284,6 +302,7 @@ void PerformanceMonitor::WillProcessTask(double start_time) {
   // as it is needed in ReportTaskTime which occurs after didProcessTask.
   task_execution_context_ = nullptr;
   task_has_multiple_contexts_ = false;
+  task_should_be_reported_ = false;
 
   if (!enabled_)
     return;
@@ -298,7 +317,7 @@ void PerformanceMonitor::WillProcessTask(double start_time) {
 }
 
 void PerformanceMonitor::DidProcessTask(double start_time, double end_time) {
-  if (!enabled_)
+  if (!enabled_ || !task_should_be_reported_)
     return;
   double layout_threshold = thresholds_[kLongLayout];
   if (layout_threshold && per_task_style_and_layout_time_ > layout_threshold) {
@@ -341,7 +360,7 @@ void PerformanceMonitor::InnerReportGenericViolation(
   }
 }
 
-DEFINE_TRACE(PerformanceMonitor) {
+void PerformanceMonitor::Trace(blink::Visitor* visitor) {
   visitor->Trace(local_root_);
   visitor->Trace(task_execution_context_);
   visitor->Trace(subscriptions_);

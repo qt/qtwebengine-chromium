@@ -14,7 +14,6 @@ namespace net {
 
 namespace {
 
-#if BUILDFLAG(USE_BYTE_CERTS)
 TEST(X509TypesTest, ParseDNVerisign) {
   CertPrincipal verisign;
   EXPECT_TRUE(verisign.ParseDistinguishedName(VerisignDN, sizeof(VerisignDN)));
@@ -102,7 +101,6 @@ TEST(X509TypesTest, ParseDNEntrust) {
   EXPECT_EQ("(c) 1999 Entrust.net Limited",
             entrust.organization_unit_names[1]);
 }
-#endif
 
 const struct CertDateTestData {
   CertDateFormat format;
@@ -163,8 +161,8 @@ void PrintTo(const CertDateTestData& data, std::ostream* os) {
 
 class X509CertTypesDateTest : public testing::TestWithParam<CertDateTestData> {
   public:
-    virtual ~X509CertTypesDateTest() {}
-    void SetUp() override { test_data_ = GetParam(); }
+   virtual ~X509CertTypesDateTest() = default;
+   void SetUp() override { test_data_ = GetParam(); }
 
   protected:
    CertDateTestData test_data_;

@@ -31,6 +31,7 @@
 #include "bindings/core/v8/V8CSSStyleDeclaration.h"
 
 #include <algorithm>
+#include "base/memory/scoped_refptr.h"
 #include "bindings/core/v8/ExceptionState.h"
 #include "bindings/core/v8/V8BindingForCore.h"
 #include "core/CSSPropertyNames.h"
@@ -39,11 +40,10 @@
 #include "core/css/CSSStyleDeclaration.h"
 #include "core/css/CSSValue.h"
 #include "core/css/parser/CSSParser.h"
-#include "core/css/properties/CSSPropertyAPI.h"
+#include "core/css/properties/CSSProperty.h"
 #include "core/dom/events/EventTarget.h"
 #include "core/html/custom/CEReactionsScope.h"
 #include "platform/wtf/ASCIICType.h"
-#include "platform/wtf/RefPtr.h"
 #include "platform/wtf/StdLibExtras.h"
 #include "platform/wtf/Vector.h"
 #include "platform/wtf/text/StringBuilder.h"
@@ -141,9 +141,9 @@ static CSSPropertyID CssPropertyInfo(const AtomicString& name) {
   if (unresolved_property == CSSPropertyVariable)
     unresolved_property = CSSPropertyInvalid;
   map.insert(name, unresolved_property);
-  DCHECK(!unresolved_property ||
-         CSSPropertyAPI::Get(resolveCSSPropertyID(unresolved_property))
-             .IsEnabled());
+  DCHECK(
+      !unresolved_property ||
+      CSSProperty::Get(resolveCSSPropertyID(unresolved_property)).IsEnabled());
   return unresolved_property;
 }
 
@@ -156,7 +156,7 @@ void V8CSSStyleDeclaration::namedPropertyEnumeratorCustom(
   if (property_names.IsEmpty()) {
     for (int id = firstCSSProperty; id <= lastCSSProperty; ++id) {
       CSSPropertyID property_id = static_cast<CSSPropertyID>(id);
-      if (CSSPropertyAPI::Get(resolveCSSPropertyID(property_id)).IsEnabled())
+      if (CSSProperty::Get(resolveCSSPropertyID(property_id)).IsEnabled())
         property_names.push_back(getJSPropertyName(property_id));
     }
     std::sort(property_names.begin(), property_names.end(),
@@ -222,6 +222,8 @@ void V8CSSStyleDeclaration::namedPropertySetterCustom(
     return;
 
   CEReactionsScope ce_reactions_scope;
+  ExecutionContext* execution_context =
+      ToExecutionContext(info.Holder()->CreationContext());
 
   TOSTRING_VOID(V8StringResource<kTreatNullAsNullString>, property_value,
                 value);
@@ -229,7 +231,8 @@ void V8CSSStyleDeclaration::namedPropertySetterCustom(
       info.GetIsolate(), ExceptionState::kSetterContext, "CSSStyleDeclaration",
       getPropertyName(resolveCSSPropertyID(unresolved_property)));
   impl->SetPropertyInternal(unresolved_property, String(), property_value,
-                            false, exception_state);
+                            false, execution_context->GetSecureContextMode(),
+                            exception_state);
 
   V8SetReturnValue(info, value);
 }

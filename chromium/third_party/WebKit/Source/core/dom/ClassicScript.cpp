@@ -15,8 +15,7 @@
 
 namespace blink {
 
-
-DEFINE_TRACE(ClassicScript) {
+void ClassicScript::Trace(blink::Visitor* visitor) {
   Script::Trace(visitor);
   visitor->Trace(script_source_code_);
 }
@@ -41,8 +40,8 @@ void ClassicScript::RunScript(LocalFrame* frame,
         GetScriptSourceCode().GetResource()->CalculateAccessControlStatus();
   }
 
-  frame->GetScriptController().ExecuteScriptInMainWorld(GetScriptSourceCode(),
-                                                        access_control_status);
+  frame->GetScriptController().ExecuteScriptInMainWorld(
+      GetScriptSourceCode(), FetchOptions(), access_control_status);
 }
 
 }  // namespace blink

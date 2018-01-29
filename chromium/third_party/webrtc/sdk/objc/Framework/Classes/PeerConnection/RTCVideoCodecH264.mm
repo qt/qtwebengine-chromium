@@ -20,9 +20,6 @@
 #include "system_wrappers/include/field_trial.h"
 
 const char kHighProfileExperiment[] = "WebRTC-H264HighProfile";
-static NSString *kH264CodecName = @"H264";
-static NSString *kLevel31ConstrainedHigh = @"640c1f";
-static NSString *kLevel31ConstrainedBaseline = @"42e01f";
 
 bool IsHighProfileEnabled() {
   return webrtc::field_trial::IsEnabled(kHighProfileExperiment);
@@ -36,7 +33,7 @@ bool IsHighProfileEnabled() {
 - (webrtc::CodecSpecificInfo)nativeCodecSpecificInfo {
   webrtc::CodecSpecificInfo codecSpecificInfo;
   codecSpecificInfo.codecType = webrtc::kVideoCodecH264;
-  codecSpecificInfo.codec_name = [kH264CodecName cStringUsingEncoding:NSUTF8StringEncoding];
+  codecSpecificInfo.codec_name = [kRTCVideoCodecH264Name cStringUsingEncoding:NSUTF8StringEncoding];
   codecSpecificInfo.codecSpecific.H264.packetization_mode =
       (webrtc::H264PacketizationMode)_packetizationMode;
 
@@ -50,11 +47,11 @@ bool IsHighProfileEnabled() {
 
 - (NSArray<RTCVideoCodecInfo *> *)supportedCodecs {
   NSMutableArray<RTCVideoCodecInfo *> *codecs = [NSMutableArray array];
-  NSString *codecName = kH264CodecName;
+  NSString *codecName = kRTCVideoCodecH264Name;
 
   if (IsHighProfileEnabled()) {
     NSDictionary<NSString *, NSString *> *constrainedHighParams = @{
-      @"profile-level-id" : kLevel31ConstrainedHigh,
+      @"profile-level-id" : kRTCLevel31ConstrainedHigh,
       @"level-asymmetry-allowed" : @"1",
       @"packetization-mode" : @"1",
     };
@@ -64,7 +61,7 @@ bool IsHighProfileEnabled() {
   }
 
   NSDictionary<NSString *, NSString *> *constrainedBaselineParams = @{
-    @"profile-level-id" : kLevel31ConstrainedBaseline,
+    @"profile-level-id" : kRTCLevel31ConstrainedBaseline,
     @"level-asymmetry-allowed" : @"1",
     @"packetization-mode" : @"1",
   };
@@ -89,7 +86,7 @@ bool IsHighProfileEnabled() {
 }
 
 - (NSArray<RTCVideoCodecInfo *> *)supportedCodecs {
-  NSString *codecName = kH264CodecName;
+  NSString *codecName = kRTCVideoCodecH264Name;
   return @[ [[RTCVideoCodecInfo alloc] initWithName:codecName parameters:nil] ];
 }
 

@@ -76,6 +76,7 @@
 #include "content/public/common/content_client.h"
 #include "content/public/common/content_constants.h"
 #include "content/public/common/content_features.h"
+#include "content/public/common/url_utils.h"
 #include "media/base/mime_util.h"
 #include "net/base/escape.h"
 #include "skia/ext/platform_canvas.h"
@@ -138,6 +139,10 @@ bool ShouldTreatNavigationAsReload(const NavigationEntry* entry) {
   if (!entry)
     return false;
 
+  // Skip navigations initiated by external applications.
+  if (entry->GetTransitionType() & ui::PAGE_TRANSITION_FROM_API)
+    return false;
+
   // We treat (PAGE_TRANSITION_RELOAD | PAGE_TRANSITION_FROM_ADDRESS_BAR),
   // PAGE_TRANSITION_TYPED or PAGE_TRANSITION_LINK transitions as navigations
   // which should be treated as reloads.
@@ -197,12 +202,9 @@ std::unique_ptr<NavigationEntry> NavigationController::CreateNavigationEntry(
       &loaded_url, browser_context, &reverse_on_redirect);
 
   NavigationEntryImpl* entry = new NavigationEntryImpl(
-      NULL,  // The site instance for tabs is sent on navigation
-             // (WebContents::GetSiteInstance).
-      loaded_url,
-      referrer,
-      base::string16(),
-      transition,
+      nullptr,  // The site instance for tabs is sent on navigation
+                // (WebContents::GetSiteInstance).
+      loaded_url, referrer, base::string16(), transition,
       is_renderer_initiated);
   entry->SetVirtualURL(dest_url);
   entry->set_user_typed_url(dest_url);
@@ -309,7 +311,7 @@ void NavigationControllerImpl::Reload(ReloadType reload_type,
     return;
   }
 
-  NavigationEntryImpl* entry = NULL;
+  NavigationEntryImpl* entry = nullptr;
   int current_index = -1;
 
   // If we are reloading the initial navigation, just use the current
@@ -516,7 +518,7 @@ int NavigationControllerImpl::GetCurrentEntryIndex() const {
 
 NavigationEntryImpl* NavigationControllerImpl::GetLastCommittedEntry() const {
   if (last_committed_entry_index_ == -1)
-    return NULL;
+    return nullptr;
   return entries_[last_committed_entry_index_].get();
 }
 
@@ -861,7 +863,6 @@ bool NavigationControllerImpl::RendererDidNavigate(
                                    navigation_handle);
       break;
     case NAVIGATION_TYPE_EXISTING_PAGE:
-      details->did_replace_entry = details->is_same_document;
       RendererDidNavigateToExistingPage(rfh, params, details->is_same_document,
                                         was_restored, navigation_handle);
       break;
@@ -924,12 +925,10 @@ bool NavigationControllerImpl::RendererDidNavigate(
       active_entry->GetFrameEntry(rfh->frame_tree_node());
   if (frame_entry && frame_entry->site_instance() != rfh->GetSiteInstance())
     frame_entry = nullptr;
-  // Update the frame-specific PageState and RedirectChain
-  // We may not find a frame_entry in some cases; ignore the PageState if so.
+  // Make sure we've updated the PageState in one of the helper methods.
   // TODO(creis): Remove the "if" once https://crbug.com/522193 is fixed.
   if (frame_entry) {
-    frame_entry->SetPageState(params.page_state);
-    frame_entry->set_redirect_chain(params.redirects);
+    DCHECK(params.page_state == frame_entry->page_state());
   }
 
   // Use histogram to track memory impact of redirect chain because it's now
@@ -1003,18 +1002,6 @@ NavigationType NavigationControllerImpl::ClassifyNavigation(
     return NAVIGATION_TYPE_NEW_SUBFRAME;
   }
 
-  // Cross-process location.replace navigations should be classified as New with
-  // replacement rather than ExistingPage, since it is not safe to reuse the
-  // NavigationEntry.
-  // TODO(creis): Have the renderer classify location.replace as
-  // did_create_new_entry for all cases and eliminate this special case.  This
-  // requires updating several test expectations.  See https://crbug.com/596707.
-  if (!rfh->GetParent() && GetLastCommittedEntry() &&
-      GetLastCommittedEntry()->site_instance() != rfh->GetSiteInstance() &&
-      params.should_replace_current_entry) {
-    return NAVIGATION_TYPE_NEW_PAGE;
-  }
-
   // We only clear the session history when navigating to a new page.
   DCHECK(!params.history_list_was_cleared);
 
@@ -1041,8 +1028,7 @@ NavigationType NavigationControllerImpl::ClassifyNavigation(
     if (!last_committed)
       return NAVIGATION_TYPE_NAV_IGNORE;
 
-    // This is history.replaceState(), history.reload(), or a client-side
-    // redirect.
+    // This is history.replaceState() or history.reload().
     return NAVIGATION_TYPE_EXISTING_PAGE;
   }
 
@@ -1117,7 +1103,9 @@ void NavigationControllerImpl::RendererDidNavigateToNewPage(
     FrameNavigationEntry* frame_entry = new FrameNavigationEntry(
         rfh->frame_tree_node()->unique_name(), params.item_sequence_number,
         params.document_sequence_number, rfh->GetSiteInstance(), nullptr,
-        params.url, params.referrer, params.method, params.post_id);
+        params.url, params.referrer, params.redirects, params.page_state,
+        params.method, params.post_id);
+
     new_entry = GetLastCommittedEntry()->CloneAndReplace(
         frame_entry, true, rfh->frame_tree_node(),
         delegate_->GetFrameTree()->root());
@@ -1164,7 +1152,7 @@ void NavigationControllerImpl::RendererDidNavigateToNewPage(
     new_entry = pending_entry_->Clone();
 
     update_virtual_url = new_entry->update_virtual_url_with_url();
-    new_entry->GetSSL() = handle->ssl_status();
+    new_entry->GetSSL() = SSLStatus(handle->GetSSLInfo());
 
     if (params.url.SchemeIs(url::kHttpsScheme) && !rfh->GetParent() &&
         handle->GetNetErrorCode() == net::OK) {
@@ -1192,7 +1180,7 @@ void NavigationControllerImpl::RendererDidNavigateToNewPage(
     // to show chrome://bookmarks/#1 when the bookmarks webui extension changes
     // the URL.
     update_virtual_url = needs_update;
-    new_entry->GetSSL() = handle->ssl_status();
+    new_entry->GetSSL() = SSLStatus(handle->GetSSLInfo());
 
     if (params.url.SchemeIs(url::kHttpsScheme) && !rfh->GetParent() &&
         handle->GetNetErrorCode() == net::OK) {
@@ -1223,6 +1211,8 @@ void NavigationControllerImpl::RendererDidNavigateToNewPage(
   frame_entry->set_frame_unique_name(rfh->frame_tree_node()->unique_name());
   frame_entry->set_item_sequence_number(params.item_sequence_number);
   frame_entry->set_document_sequence_number(params.document_sequence_number);
+  frame_entry->set_redirect_chain(params.redirects);
+  frame_entry->SetPageState(params.page_state);
   frame_entry->set_method(params.method);
   frame_entry->set_post_id(params.post_id);
 
@@ -1259,9 +1249,6 @@ void NavigationControllerImpl::RendererDidNavigateToExistingPage(
   // We should only get here for main frame navigations.
   DCHECK(!rfh->GetParent());
 
-  // TODO(creis): Classify location.replace as NEW_PAGE instead of EXISTING_PAGE
-  // in https://crbug.com/596707.
-
   NavigationEntryImpl* entry;
   if (params.intended_as_new_entry) {
     // This was intended as a new entry but the pending entry was lost in the
@@ -1271,7 +1258,7 @@ void NavigationControllerImpl::RendererDidNavigateToExistingPage(
     // If this is a same document navigation, then there's no SSLStatus in the
     // NavigationHandle so don't overwrite the existing entry's SSLStatus.
     if (!is_same_document)
-      entry->GetSSL() = handle->ssl_status();
+      entry->GetSSL() = SSLStatus(handle->GetSSLInfo());
 
     if (params.url.SchemeIs(url::kHttpsScheme) && !rfh->GetParent() &&
         handle->GetNetErrorCode() == net::OK) {
@@ -1305,12 +1292,14 @@ void NavigationControllerImpl::RendererDidNavigateToExistingPage(
         entry->GetSSL() = last_entry->GetSSL();
       }
     } else {
-      // When restoring a tab, the serialized NavigationEntry doesn't have the
-      // SSL state.
-      // Only copy in the restore case since this code path can be taken during
-      // navigation. See http://crbug.com/727892
-      if (was_restored)
-        entry->GetSSL() = handle->ssl_status();
+      // In rapid back/forward navigations |handle| sometimes won't have a cert
+      // (http://crbug.com/727892). So we use the handle's cert if it exists,
+      // otherwise we only reuse the existing cert if the origins match.
+      if (handle->GetSSLInfo().is_valid()) {
+        entry->GetSSL() = SSLStatus(handle->GetSSLInfo());
+      } else if (entry->GetURL().GetOrigin() != handle->GetURL().GetOrigin()) {
+        entry->GetSSL() = SSLStatus();
+      }
     }
 
     if (params.url.SchemeIs(url::kHttpsScheme) && !rfh->GetParent() &&
@@ -1339,14 +1328,14 @@ void NavigationControllerImpl::RendererDidNavigateToExistingPage(
     }
   } else {
     // This is renderer-initiated. The only kinds of renderer-initated
-    // navigations that are EXISTING_PAGE are reloads and location.replace,
+    // navigations that are EXISTING_PAGE are reloads and history.replaceState,
     // which land us at the last committed entry.
     entry = GetLastCommittedEntry();
 
     // If this is a same document navigation, then there's no SSLStatus in the
     // NavigationHandle so don't overwrite the existing entry's SSLStatus.
     if (!is_same_document)
-      entry->GetSSL() = handle->ssl_status();
+      entry->GetSSL() = SSLStatus(handle->GetSSLInfo());
 
     if (params.url.SchemeIs(url::kHttpsScheme) && !rfh->GetParent() &&
         handle->GetNetErrorCode() == net::OK) {
@@ -1438,7 +1427,7 @@ void NavigationControllerImpl::RendererDidNavigateToSamePage(
   // If a user presses enter in the omnibox and the server redirects, the URL
   // might change (but it's still considered a SAME_PAGE navigation). So we must
   // update the SSL status.
-  existing_entry->GetSSL() = handle->ssl_status();
+  existing_entry->GetSSL() = SSLStatus(handle->GetSSLInfo());
 
   if (existing_entry->GetURL().SchemeIs(url::kHttpsScheme) &&
       !rfh->GetParent() && handle->GetNetErrorCode() == net::OK) {
@@ -1479,7 +1468,9 @@ void NavigationControllerImpl::RendererDidNavigateNewSubframe(
   scoped_refptr<FrameNavigationEntry> frame_entry(new FrameNavigationEntry(
       rfh->frame_tree_node()->unique_name(), params.item_sequence_number,
       params.document_sequence_number, rfh->GetSiteInstance(), nullptr,
-      params.url, params.referrer, params.method, params.post_id));
+      params.url, params.referrer, params.redirects, params.page_state,
+      params.method, params.post_id));
+
   std::unique_ptr<NavigationEntryImpl> new_entry =
       GetLastCommittedEntry()->CloneAndReplace(
           frame_entry.get(), is_same_document, rfh->frame_tree_node(),
@@ -1801,7 +1792,7 @@ NavigationControllerImpl::GetSessionStorageNamespace(SiteInstance* instance) {
 SessionStorageNamespace*
 NavigationControllerImpl::GetDefaultSessionStorageNamespace() {
   // TODO(ajwong): Remove if statement in GetSessionStorageNamespace().
-  return GetSessionStorageNamespace(NULL);
+  return GetSessionStorageNamespace(nullptr);
 }
 
 const SessionStorageNamespaceMap&
@@ -2105,7 +2096,7 @@ void NavigationControllerImpl::FindFramesToNavigate(
     if (old_item &&
         new_item->document_sequence_number() ==
             old_item->document_sequence_number() &&
-        !frame->current_frame_host()->last_committed_url().is_empty()) {
+        !frame->current_frame_host()->GetLastCommittedURL().is_empty()) {
       same_document_loads->push_back(std::make_pair(frame, new_item));
 
       // TODO(avi, creis): This is a bug; we should not return here. Rather, we
@@ -2259,7 +2250,7 @@ int NavigationControllerImpl::GetEntryIndexWithUniqueID(
 
 NavigationEntryImpl* NavigationControllerImpl::GetTransientEntry() const {
   if (transient_entry_index_ == -1)
-    return NULL;
+    return nullptr;
   return entries_[transient_entry_index_].get();
 }
 

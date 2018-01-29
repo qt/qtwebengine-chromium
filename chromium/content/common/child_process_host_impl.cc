@@ -22,7 +22,7 @@
 #include "base/third_party/dynamic_annotations/dynamic_annotations.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "build/build_config.h"
-#include "content/common/child_process_messages.h"
+#include "content/public/common/bind_interface_helpers.h"
 #include "content/public/common/child_process_host_delegate.h"
 #include "content/public/common/content_paths.h"
 #include "content/public/common/content_switches.h"
@@ -36,8 +36,6 @@
 
 #if defined(OS_LINUX)
 #include "base/linux_util.h"
-#elif defined(OS_WIN)
-#include "content/common/font_cache_dispatcher_win.h"
 #endif  // OS_LINUX
 
 namespace {
@@ -79,12 +77,7 @@ base::FilePath ChildProcessHost::GetChildPath(int flags) {
 }
 
 ChildProcessHostImpl::ChildProcessHostImpl(ChildProcessHostDelegate* delegate)
-    : delegate_(delegate),
-      opening_channel_(false) {
-#if defined(OS_WIN)
-  AddFilter(new FontCacheDispatcher());
-#endif
-}
+    : delegate_(delegate), opening_channel_(false) {}
 
 ChildProcessHostImpl::~ChildProcessHostImpl() {
   // If a channel was never created than it wasn't registered and the filters
@@ -113,15 +106,15 @@ void ChildProcessHostImpl::BindInterface(
 }
 
 void ChildProcessHostImpl::ForceShutdown() {
-  Send(new ChildProcessMsg_Shutdown());
+  child_control_->ProcessShutdown();
 }
 
 void ChildProcessHostImpl::CreateChannelMojo() {
-
   mojo::MessagePipe pipe;
   BindInterface(IPC::mojom::ChannelBootstrap::Name_, std::move(pipe.handle1));
-  channel_ = IPC::ChannelMojo::Create(std::move(pipe.handle0),
-                                      IPC::Channel::MODE_SERVER, this);
+  channel_ = IPC::ChannelMojo::Create(
+      std::move(pipe.handle0), IPC::Channel::MODE_SERVER, this,
+      base::ThreadTaskRunnerHandle::Get(), base::ThreadTaskRunnerHandle::Get());
   DCHECK(channel_);
 
   bool initialized = InitChannel();
@@ -134,12 +127,20 @@ bool ChildProcessHostImpl::InitChannel() {
 
   for (size_t i = 0; i < filters_.size(); ++i)
     filters_[i]->OnFilterAdded(channel_.get());
+
   delegate_->OnChannelInitialized(channel_.get());
+
+  // We want to bind this interface as early as possible, but the constructor is
+  // too early. |delegate_| may not be fully initialized at that point and thus
+  // may be unable to properly fulfill the BindInterface() call. Instead we bind
+  // here since the |delegate_| has already been initialized and this is the
+  // first potential use of the interface.
+  content::BindInterface(this, &child_control_);
 
   // Make sure these messages get sent first.
 #if BUILDFLAG(IPC_MESSAGE_LOG_ENABLED)
   bool enabled = IPC::Logging::GetInstance()->Enabled();
-  Send(new ChildProcessMsg_SetIPCLoggingEnabled(enabled));
+  child_control_->SetIPCLoggingEnabled(enabled);
 #endif
 
   opening_channel_ = true;
@@ -212,14 +213,6 @@ bool ChildProcessHostImpl::OnMessageReceived(const IPC::Message& msg) {
   }
 
   if (!handled) {
-    handled = true;
-    IPC_BEGIN_MESSAGE_MAP(ChildProcessHostImpl, msg)
-      IPC_MESSAGE_HANDLER(ChildProcessHostMsg_ShutdownRequest,
-                          OnShutdownRequest)
-      IPC_MESSAGE_UNHANDLED(handled = false)
-    IPC_END_MESSAGE_MAP()
-
-    if (!handled)
       handled = delegate_->OnMessageReceived(msg);
   }
 
@@ -256,11 +249,6 @@ void ChildProcessHostImpl::OnChannelError() {
 
 void ChildProcessHostImpl::OnBadMessageReceived(const IPC::Message& message) {
   delegate_->OnBadMessageReceived(message);
-}
-
-void ChildProcessHostImpl::OnShutdownRequest() {
-  if (delegate_->CanShutdown())
-    Send(new ChildProcessMsg_Shutdown());
 }
 
 }  // namespace content

@@ -28,6 +28,7 @@
 #include "content/public/browser/web_contents_observer.h"
 #include "content/public/browser/web_ui.h"
 #include "content/public/common/stop_find_action.h"
+#include "third_party/WebKit/common/sandbox_flags.h"
 #include "third_party/skia/include/core/SkColor.h"
 #include "ui/accessibility/ax_tree_update.h"
 #include "ui/base/window_open_disposition.h"
@@ -65,7 +66,6 @@ namespace content {
 class BrowserContext;
 class BrowserPluginGuestDelegate;
 class InterstitialPage;
-class PageState;
 class RenderFrameHost;
 class RenderViewHost;
 class RenderWidgetHost;
@@ -170,6 +170,9 @@ class WebContents : public PageNavigator,
     // Note that the pre-created renderer process may not be used if the first
     // navigation requires a dedicated or privileged process, such as a WebUI.
     bool initialize_renderer;
+
+    // Sandboxing flags set on the new WebContents.
+    blink::WebSandboxFlags starting_sandbox_flags;
   };
 
   // Creates a new WebContents.
@@ -639,12 +642,6 @@ class WebContents : public PageNavigator,
   virtual void SetClosedByUserGesture(bool value) = 0;
   virtual bool GetClosedByUserGesture() const = 0;
 
-  // Opens view-source tab for this contents.
-  virtual void ViewSource() = 0;
-
-  virtual void ViewFrameSource(const GURL& url,
-                               const PageState& page_state) = 0;
-
   // Gets the minimum/maximum zoom percent.
   virtual int GetMinimumZoomPercent() const = 0;
   virtual int GetMaximumZoomPercent() const = 0;
@@ -741,6 +738,10 @@ class WebContents : public PageNavigator,
   // Returns true if audio has recently been audible from the WebContents.
   virtual bool WasRecentlyAudible() = 0;
 
+  // Returns true if audio has been audible from the WebContents since the last
+  // navigation.
+  virtual bool WasEverAudible() = 0;
+
   // The callback invoked when the renderer responds to a request for the main
   // frame document's manifest. The url will be empty if the document specifies
   // no manifest, and the manifest will be empty if any other failures occurred.
@@ -765,24 +766,6 @@ class WebContents : public PageNavigator,
   // should not yet be resumed. Then the client is responsible for calling this
   // as soon as they are ready.
   virtual void ResumeLoadingCreatedWebContents() = 0;
-
-  // Called when the WebContents has displayed a password field on an
-  // HTTP page. This method modifies the appropriate NavigationEntry's
-  // SSLStatus to record the sensitive input field, so that embedders
-  // can adjust the UI if desired.
-  virtual void OnPasswordInputShownOnHttp() = 0;
-
-  // Called when the WebContents has hidden all password fields on an
-  // HTTP page. This method modifies the appropriate NavigationEntry's
-  // SSLStatus to remove the presence of sensitive input fields, so that
-  // embedders can adjust the UI if desired.
-  virtual void OnAllPasswordInputsHiddenOnHttp() = 0;
-
-  // Called when the WebContents has displayed a credit card field on an
-  // HTTP page. This method modifies the appropriate NavigationEntry's
-  // SSLStatus to record the sensitive input field, so that embedders
-  // can adjust the UI if desired.
-  virtual void OnCreditCardInputShownOnHttp() = 0;
 
   // Sets whether the WebContents is for overlaying content on a page.
   virtual void SetIsOverlayContent(bool is_overlay_content) = 0;

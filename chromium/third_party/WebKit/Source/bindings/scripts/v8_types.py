@@ -209,7 +209,7 @@ def cpp_type(idl_type, extended_attributes=None, raw_type=False, used_as_rvalue_
         return CPP_SPECIAL_CONVERSION_RULES[base_idl_type]
 
     if base_idl_type == 'SerializedScriptValue':
-        return 'RefPtr<%s>' % base_idl_type
+        return 'scoped_refptr<%s>' % base_idl_type
     if idl_type.is_string_type:
         if not raw_type:
             return 'const String&' if used_as_rvalue_type else 'String'
@@ -323,6 +323,8 @@ def implemented_as(idl_type):
     base_idl_type = idl_type.base_type
     if base_idl_type in IdlType.implemented_as_interfaces:
         return IdlType.implemented_as_interfaces[base_idl_type]
+    elif idl_type.is_callback_function or idl_type.is_callback_interface:
+        return 'V8%s' % base_idl_type
     return base_idl_type
 
 
@@ -659,8 +661,7 @@ def v8_value_to_cpp_value(idl_type, extended_attributes, v8_value, variable_name
     elif idl_type.use_output_parameter_for_result:
         cpp_expression_format = 'V8{idl_type}::ToImpl({isolate}, {v8_value}, {variable_name}, exceptionState)'
     elif idl_type.is_callback_function:
-        cpp_expression_format = (
-            'V8{idl_type}::Create(ScriptState::Current({isolate}), {v8_value})')
+        cpp_expression_format = 'V8{idl_type}::Create({v8_value}.As<v8::Function>())'
     elif idl_type.v8_conversion_needs_exception_state:
         # Effectively, this if branch means everything with v8_conversion_needs_exception_state == True
         # except for unions and dictionary interfaces.

@@ -49,11 +49,11 @@ class CORE_EXPORT StyleSheetContents
     : public GarbageCollectedFinalized<StyleSheetContents> {
  public:
   static StyleSheetContents* Create(const CSSParserContext* context) {
-    return new StyleSheetContents(0, String(), context);
+    return new StyleSheetContents(nullptr, String(), context);
   }
   static StyleSheetContents* Create(const String& original_url,
                                     const CSSParserContext* context) {
-    return new StyleSheetContents(0, original_url, context);
+    return new StyleSheetContents(nullptr, original_url, context);
   }
   static StyleSheetContents* Create(StyleRuleImport* owner_rule,
                                     const String& original_url,
@@ -67,8 +67,8 @@ class CORE_EXPORT StyleSheetContents
 
   const CSSParserContext* ParserContext() const { return parser_context_; }
 
-  const AtomicString& DefaultNamespace() { return default_namespace_; }
-  const AtomicString& NamespaceURIFromPrefix(const AtomicString& prefix);
+  const AtomicString& DefaultNamespace() const { return default_namespace_; }
+  const AtomicString& NamespaceURIFromPrefix(const AtomicString& prefix) const;
 
   void ParseAuthorStyleSheet(const CSSStyleSheetResource*,
                              const SecurityOrigin*);
@@ -186,7 +186,7 @@ class CORE_EXPORT StyleSheetContents
 
   String SourceMapURL() const { return source_map_url_; }
 
-  DECLARE_TRACE();
+  void Trace(blink::Visitor*);
 
  private:
   StyleSheetContents(StyleRuleImport* owner_rule,

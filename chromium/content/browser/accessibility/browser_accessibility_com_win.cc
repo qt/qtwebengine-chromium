@@ -16,9 +16,7 @@
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/win/enum_variant.h"
-#include "base/win/scoped_comptr.h"
 #include "base/win/windows_version.h"
-#include "content/browser/accessibility/browser_accessibility_event_win.h"
 #include "content/browser/accessibility/browser_accessibility_manager_win.h"
 #include "content/browser/accessibility/browser_accessibility_state_impl.h"
 #include "content/browser/accessibility/browser_accessibility_win.h"
@@ -40,8 +38,10 @@ const uint32_t kScreenReaderAndHTMLAccessibilityModes =
 
 namespace content {
 
-using AXPlatformPositionInstance = AXPlatformPosition::AXPositionInstance;
-using AXPlatformRange = ui::AXRange<AXPlatformPositionInstance::element_type>;
+using BrowserAccessibilityPositionInstance =
+    BrowserAccessibilityPosition::AXPositionInstance;
+using AXPlatformRange =
+    ui::AXRange<BrowserAccessibilityPositionInstance::element_type>;
 
 // These nonstandard GUIDs are taken directly from the Mozilla sources
 // (accessible/src/msaa/nsAccessNodeWrap.cpp); some documentation is here:
@@ -1713,32 +1713,12 @@ void BrowserAccessibilityComWin::ComputeStylesIfNeeded() {
     return;
 
   std::map<int, std::vector<base::string16>> attributes_map;
-  if (owner()->PlatformIsLeaf() || owner()->IsSimpleTextControl()) {
+  if (owner()->PlatformIsLeaf() || owner()->IsPlainTextField()) {
     attributes_map[0] = ComputeTextAttributes();
-    std::map<int, std::vector<base::string16>> spelling_attributes =
+    const std::map<int, std::vector<base::string16>> spelling_attributes =
         GetSpellingAttributes();
-    for (auto& spelling_attribute : spelling_attributes) {
-      auto attributes_iterator = attributes_map.find(spelling_attribute.first);
-      if (attributes_iterator == attributes_map.end()) {
-        attributes_map[spelling_attribute.first] =
-            std::move(spelling_attribute.second);
-      } else {
-        std::vector<base::string16>& existing_attributes =
-            attributes_iterator->second;
-
-        // There might be a spelling attribute already in the list of text
-        // attributes, originating from "aria-invalid".
-        auto existing_spelling_attribute =
-            std::find(existing_attributes.begin(), existing_attributes.end(),
-                      L"invalid:false");
-        if (existing_spelling_attribute != existing_attributes.end())
-          existing_attributes.erase(existing_spelling_attribute);
-
-        existing_attributes.insert(existing_attributes.end(),
-                                   spelling_attribute.second.begin(),
-                                   spelling_attribute.second.end());
-      }
-    }
+    MergeSpellingIntoTextAttributes(spelling_attributes, 0 /* start_offset */,
+                                    &attributes_map);
     win_attributes_->offset_to_text_attributes.swap(attributes_map);
     return;
   }
@@ -1762,10 +1742,15 @@ void BrowserAccessibilityComWin::ComputeStylesIfNeeded() {
       }
     }
 
-    if (child->owner()->IsTextOnlyObject())
+    if (child->owner()->IsTextOnlyObject()) {
+      const std::map<int, std::vector<base::string16>> spelling_attributes =
+          child->GetSpellingAttributes();
+      MergeSpellingIntoTextAttributes(spelling_attributes, start_offset,
+                                      &attributes_map);
       start_offset += child->GetText().length();
-    else
+    } else {
       start_offset += 1;
+    }
   }
 
   win_attributes_->offset_to_text_attributes.swap(attributes_map);
@@ -1777,9 +1762,9 @@ void BrowserAccessibilityComWin::ComputeStylesIfNeeded() {
 // tree positions.
 // TODO(nektar): Remove this function once selection fixes in Blink are
 // thoroughly tested and convert to tree positions.
-AXPlatformPosition::AXPositionInstance
+BrowserAccessibilityPosition::AXPositionInstance
 BrowserAccessibilityComWin::CreatePositionForSelectionAt(int offset) const {
-  AXPlatformPositionInstance position =
+  BrowserAccessibilityPositionInstance position =
       owner()->CreatePositionAt(offset)->AsLeafTextPosition();
   if (position->GetAnchor() &&
       position->GetAnchor()->GetRole() == ui::AX_ROLE_INLINE_TEXT_BOX) {
@@ -1903,12 +1888,13 @@ void BrowserAccessibilityComWin::UpdateStep3FireEvents(
       FireNativeEvent(IA2_EVENT_TEXT_INSERTED);
     }
 
-    // Changing a static text node can affect the IAccessibleText hypertext
-    // of the parent node, so force an update on the parent.
+    // Changing a static text node can affect the IA2 hypertext of its parent
+    // and, if the node is in a simple text control, the hypertext of the text
+    // control itself.
     BrowserAccessibilityComWin* parent =
         ToBrowserAccessibilityComWin(owner()->PlatformGetParent());
-    if (parent && owner()->IsTextOnlyObject() &&
-        name() != old_win_attributes_->name) {
+    if (parent && (parent->owner()->HasState(ui::AX_STATE_EDITABLE) ||
+                   owner()->IsTextOnlyObject())) {
       parent->owner()->UpdatePlatformAttributes();
     }
   }
@@ -1996,8 +1982,7 @@ std::vector<base::string16> BrowserAccessibilityComWin::ComputeTextAttributes()
     // We assume that there are 96 pixels per inch on a standard display.
     // TODO(nektar): Figure out the current value of pixels per inch.
     float points = font_size * 72.0 / 96.0;
-    attributes.push_back(L"font-size:" +
-                         base::UTF8ToUTF16(base::DoubleToString(points)) +
+    attributes.push_back(L"font-size:" + base::NumberToString16(points) +
                          L"pt");
   }
 
@@ -2149,7 +2134,7 @@ BrowserAccessibilityComWin::GetSpellingAttributes() {
       spelling_attributes[end_offset] = end_attributes;
     }
   }
-  if (owner()->IsSimpleTextControl()) {
+  if (owner()->IsPlainTextField()) {
     int start_offset = 0;
     for (BrowserAccessibility* static_text =
              BrowserAccessibilityManager::NextTextOnlyObject(
@@ -2211,6 +2196,39 @@ HRESULT BrowserAccessibilityComWin::GetStringAttributeAsBstr(
   return S_OK;
 }
 
+// static
+void BrowserAccessibilityComWin::MergeSpellingIntoTextAttributes(
+    const std::map<int, std::vector<base::string16>>& spelling_attributes,
+    int start_offset,
+    std::map<int, std::vector<base::string16>>* text_attributes) {
+  if (!text_attributes) {
+    NOTREACHED();
+    return;
+  }
+
+  for (const auto& spelling_attribute : spelling_attributes) {
+    int offset = start_offset + spelling_attribute.first;
+    const auto iterator = text_attributes->find(offset);
+    if (iterator == text_attributes->end()) {
+      text_attributes->emplace(offset, spelling_attribute.second);
+    } else {
+      std::vector<base::string16>& existing_attributes = iterator->second;
+      // There might be a spelling attribute already in the list of text
+      // attributes, originating from "aria-invalid", that is being overwritten
+      // by a spelling marker.
+      auto existing_spelling_attribute =
+          std::find(existing_attributes.begin(), existing_attributes.end(),
+                    L"invalid:false");
+      if (existing_spelling_attribute != existing_attributes.end())
+        existing_attributes.erase(existing_spelling_attribute);
+
+      existing_attributes.insert(existing_attributes.end(),
+                                 spelling_attribute.second.begin(),
+                                 spelling_attribute.second.end());
+    }
+  }
+}
+
 // Static
 void BrowserAccessibilityComWin::SanitizeStringAttributeForIA2(
     const base::string16& input,
@@ -2230,9 +2248,9 @@ void BrowserAccessibilityComWin::SetIA2HypertextSelection(LONG start_offset,
                                                           LONG end_offset) {
   HandleSpecialTextOffset(&start_offset);
   HandleSpecialTextOffset(&end_offset);
-  AXPlatformPositionInstance start_position =
+  BrowserAccessibilityPositionInstance start_position =
       CreatePositionForSelectionAt(static_cast<int>(start_offset));
-  AXPlatformPositionInstance end_position =
+  BrowserAccessibilityPositionInstance end_position =
       CreatePositionForSelectionAt(static_cast<int>(end_offset));
   Manager()->SetSelection(
       AXPlatformRange(std::move(start_position), std::move(end_position)));
@@ -2242,28 +2260,29 @@ LONG BrowserAccessibilityComWin::FindBoundary(
     IA2TextBoundaryType ia2_boundary,
     LONG start_offset,
     ui::TextBoundaryDirection direction) {
-  // If the boundary is relative to the caret, use the selection
-  // affinity, otherwise default to downstream affinity.
-  ui::AXTextAffinity affinity =
-      start_offset == IA2_TEXT_OFFSET_CARET
-          ? Manager()->GetTreeData().sel_focus_affinity
-          : ui::AX_TEXT_AFFINITY_DOWNSTREAM;
-
   HandleSpecialTextOffset(&start_offset);
+  // If the |start_offset| is equal to the location of the caret, then use the
+  // focus affinity, otherwise default to downstream affinity.
+  ui::AXTextAffinity affinity = ui::AX_TEXT_AFFINITY_DOWNSTREAM;
+  int selection_start, selection_end;
+  GetSelectionOffsets(&selection_start, &selection_end);
+  if (selection_end >= 0 && start_offset == selection_end)
+    affinity = Manager()->GetTreeData().sel_focus_affinity;
+
   if (ia2_boundary == IA2_TEXT_BOUNDARY_WORD) {
     switch (direction) {
       case ui::FORWARDS_DIRECTION: {
-        AXPlatformPositionInstance position =
+        BrowserAccessibilityPositionInstance position =
             owner()->CreatePositionAt(static_cast<int>(start_offset), affinity);
-        AXPlatformPositionInstance next_word =
+        BrowserAccessibilityPositionInstance next_word =
             position->CreateNextWordStartPosition(
                 ui::AXBoundaryBehavior::StopAtAnchorBoundary);
         return next_word->text_offset();
       }
       case ui::BACKWARDS_DIRECTION: {
-        AXPlatformPositionInstance position =
+        BrowserAccessibilityPositionInstance position =
             owner()->CreatePositionAt(static_cast<int>(start_offset), affinity);
-        AXPlatformPositionInstance previous_word =
+        BrowserAccessibilityPositionInstance previous_word =
             position->CreatePreviousWordStartPosition(
                 ui::AXBoundaryBehavior::StopIfAlreadyAtBoundary);
         return previous_word->text_offset();
@@ -2274,17 +2293,17 @@ LONG BrowserAccessibilityComWin::FindBoundary(
   if (ia2_boundary == IA2_TEXT_BOUNDARY_LINE) {
     switch (direction) {
       case ui::FORWARDS_DIRECTION: {
-        AXPlatformPositionInstance position =
+        BrowserAccessibilityPositionInstance position =
             owner()->CreatePositionAt(static_cast<int>(start_offset), affinity);
-        AXPlatformPositionInstance next_line =
+        BrowserAccessibilityPositionInstance next_line =
             position->CreateNextLineStartPosition(
                 ui::AXBoundaryBehavior::StopAtAnchorBoundary);
         return next_line->text_offset();
       }
       case ui::BACKWARDS_DIRECTION: {
-        AXPlatformPositionInstance position =
+        BrowserAccessibilityPositionInstance position =
             owner()->CreatePositionAt(static_cast<int>(start_offset), affinity);
-        AXPlatformPositionInstance previous_line =
+        BrowserAccessibilityPositionInstance previous_line =
             position->CreatePreviousLineStartPosition(
                 ui::AXBoundaryBehavior::StopIfAlreadyAtBoundary);
         return previous_line->text_offset();
@@ -2356,9 +2375,10 @@ bool BrowserAccessibilityComWin::IsListBoxOptionOrMenuListOption() {
 }
 
 void BrowserAccessibilityComWin::FireNativeEvent(LONG win_event_type) const {
-  (new BrowserAccessibilityEventWin(BrowserAccessibilityEvent::FromTreeChange,
-                                    ui::AX_EVENT_NONE, win_event_type, owner()))
-      ->Fire();
+  if (owner()->PlatformIsChildOfLeaf())
+    return;
+  Manager()->ToBrowserAccessibilityManagerWin()->FireWinAccessibilityEvent(
+      win_event_type, owner());
 }
 
 BrowserAccessibilityComWin* ToBrowserAccessibilityComWin(

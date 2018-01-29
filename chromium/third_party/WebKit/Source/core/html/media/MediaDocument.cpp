@@ -25,6 +25,7 @@
 
 #include "core/html/media/MediaDocument.h"
 
+#include "base/macros.h"
 #include "bindings/core/v8/ExceptionState.h"
 #include "bindings/core/v8/add_event_listener_options_or_boolean.h"
 #include "core/dom/ElementTraversal.h"
@@ -42,7 +43,7 @@
 #include "core/html/HTMLHtmlElement.h"
 #include "core/html/HTMLMetaElement.h"
 #include "core/html/HTMLSourceElement.h"
-#include "core/html/HTMLVideoElement.h"
+#include "core/html/media/HTMLVideoElement.h"
 #include "core/html_names.h"
 #include "core/loader/DocumentLoader.h"
 #include "core/loader/FrameLoader.h"
@@ -71,8 +72,6 @@ class MediaDocumentParser : public RawDataDocumentParser {
 };
 
 class MediaLoadedEventListener final : public EventListener {
-  WTF_MAKE_NONCOPYABLE(MediaLoadedEventListener);
-
  public:
   static MediaLoadedEventListener* Create() {
     return new MediaLoadedEventListener();
@@ -89,10 +88,12 @@ class MediaLoadedEventListener final : public EventListener {
     HTMLVideoElement* media =
         static_cast<HTMLVideoElement*>(event->target()->ToNode());
     std::unique_ptr<UserGestureIndicator> gesture =
-        LocalFrame::CreateUserGesture(media->GetDocument().GetFrame());
+        Frame::NotifyUserActivation(media->GetDocument().GetFrame());
     // TODO(shaktisahu): Enable fullscreen after https://crbug/698353 is fixed.
     media->Play();
   }
+
+  DISALLOW_COPY_AND_ASSIGN(MediaLoadedEventListener);
 };
 
 void MediaDocumentParser::CreateDocumentStructure() {

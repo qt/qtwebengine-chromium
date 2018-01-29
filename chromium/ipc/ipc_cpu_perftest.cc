@@ -26,7 +26,7 @@ namespace IPC {
 namespace {
 
 struct TestParams {
-  TestParams() {}
+  TestParams() = default;
   TestParams(size_t in_message_size,
              size_t in_frames_per_second,
              size_t in_messages_per_frame,
@@ -225,11 +225,12 @@ class ChannelSteadyPingPongTest : public IPCChannelMojoTestBase {
           base::WaitableEvent::InitialState::NOT_SIGNALED);
       channel_proxy = IPC::SyncChannel::Create(
           TakeHandle().release(), IPC::Channel::MODE_SERVER, &listener,
-          GetIOThreadTaskRunner(), false, shutdown_event.get());
+          GetIOThreadTaskRunner(), base::ThreadTaskRunnerHandle::Get(), false,
+          shutdown_event.get());
     } else {
       channel_proxy = IPC::ChannelProxy::Create(
           TakeHandle().release(), IPC::Channel::MODE_SERVER, &listener,
-          GetIOThreadTaskRunner());
+          GetIOThreadTaskRunner(), base::ThreadTaskRunnerHandle::Get());
     }
     listener.Init(channel_proxy.get());
 

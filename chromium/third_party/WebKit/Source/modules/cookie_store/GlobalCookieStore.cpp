@@ -12,8 +12,8 @@
 #include "modules/cookie_store/CookieStore.h"
 #include "platform/Supplementable.h"
 #include "platform/heap/Handle.h"
-#include "public/platform/InterfaceProvider.h"
 #include "services/network/public/interfaces/restricted_cookie_manager.mojom-blink.h"
+#include "services/service_manager/public/cpp/interface_provider.h"
 
 namespace blink {
 
@@ -38,7 +38,7 @@ class GlobalCookieStoreImpl final
 
   CookieStore* GetCookieStore();
 
-  DEFINE_INLINE_VIRTUAL_TRACE() {
+  virtual void Trace(blink::Visitor* visitor) {
     visitor->Trace(cookie_store_);
     Supplement<T>::Trace(visitor);
   }
@@ -52,8 +52,11 @@ class GlobalCookieStoreImpl final
   CookieStore* GetCookieStore(ExecutionContext* execution_context) {
     if (!cookie_store_) {
       network::mojom::blink::RestrictedCookieManagerPtr cookie_manager_ptr;
-      execution_context->GetInterfaceProvider()->GetInterface(
-          mojo::MakeRequest(&cookie_manager_ptr));
+      service_manager::InterfaceProvider* interface_provider =
+          execution_context->GetInterfaceProvider();
+      if (!interface_provider)
+        return nullptr;
+      interface_provider->GetInterface(mojo::MakeRequest(&cookie_manager_ptr));
       cookie_store_ =
           CookieStore::Create(execution_context, std::move(cookie_manager_ptr));
     }

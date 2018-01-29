@@ -118,7 +118,7 @@ const LayoutLocale* LayoutLocale::Get(const AtomicString& locale) {
 
   auto result = FontGlobalContext::GetLayoutLocaleMap().insert(locale, nullptr);
   if (result.is_new_entry)
-    result.stored_value->value = WTF::AdoptRef(new LayoutLocale(locale));
+    result.stored_value->value = base::AdoptRef(new LayoutLocale(locale));
   return result.stored_value->value.get();
 }
 
@@ -146,9 +146,9 @@ const LayoutLocale& LayoutLocale::GetSystem() {
   return *locale;
 }
 
-RefPtr<LayoutLocale> LayoutLocale::CreateForTesting(
+scoped_refptr<LayoutLocale> LayoutLocale::CreateForTesting(
     const AtomicString& locale) {
-  return WTF::AdoptRef(new LayoutLocale(locale));
+  return base::AdoptRef(new LayoutLocale(locale));
 }
 
 Hyphenation* LayoutLocale::GetHyphenation() const {
@@ -160,8 +160,9 @@ Hyphenation* LayoutLocale::GetHyphenation() const {
   return hyphenation_.get();
 }
 
-void LayoutLocale::SetHyphenationForTesting(const AtomicString& locale_string,
-                                            RefPtr<Hyphenation> hyphenation) {
+void LayoutLocale::SetHyphenationForTesting(
+    const AtomicString& locale_string,
+    scoped_refptr<Hyphenation> hyphenation) {
   const LayoutLocale& locale = ValueOrDefault(Get(locale_string));
   locale.hyphenation_computed_ = true;
   locale.hyphenation_ = std::move(hyphenation);

@@ -3,7 +3,9 @@
 // found in the LICENSE file.
 
 // IPC messages for extensions.
-// Multiply-included message file, hence no include guard.
+
+#ifndef EXTENSIONS_COMMON_EXTENSION_MESSAGES_H_
+#define EXTENSIONS_COMMON_EXTENSION_MESSAGES_H_
 
 #include <stdint.h>
 
@@ -158,7 +160,7 @@ IPC_STRUCT_BEGIN(ExtensionMsg_ExecuteCode_Params)
   IPC_STRUCT_MEMBER(bool, match_about_blank)
 
   // When to inject the code.
-  IPC_STRUCT_MEMBER(int, run_at)
+  IPC_STRUCT_MEMBER(extensions::UserScript::RunLocation, run_at)
 
   // Whether to execute code in the main world (as opposed to an isolated
   // world).
@@ -284,8 +286,8 @@ IPC_STRUCT_BEGIN(ServiceWorkerIdentifier)
 IPC_STRUCT_END()
 
 // Singly-included section for custom IPC traits.
-#ifndef EXTENSIONS_COMMON_EXTENSION_MESSAGES_H_
-#define EXTENSIONS_COMMON_EXTENSION_MESSAGES_H_
+#ifndef INTERNAL_EXTENSIONS_COMMON_EXTENSION_MESSAGES_H_
+#define INTERNAL_EXTENSIONS_COMMON_EXTENSION_MESSAGES_H_
 
 // IPC_MESSAGE macros choke on extra , in the std::map, when expanding. We need
 // to typedef it to avoid that.
@@ -353,7 +355,7 @@ struct ExtensionMsg_Loaded_Params {
 };
 
 struct ExtensionHostMsg_AutomationQuerySelector_Error {
-  enum Value { kNone, kNoMainFrame, kNoDocument, kNodeDestroyed };
+  enum Value { kNone, kNoDocument, kNodeDestroyed };
 
   ExtensionHostMsg_AutomationQuerySelector_Error() : value(kNone) {}
 
@@ -444,7 +446,7 @@ struct ParamTraits<ExtensionMsg_Loaded_Params> {
 
 }  // namespace IPC
 
-#endif  // EXTENSIONS_COMMON_EXTENSION_MESSAGES_H_
+#endif  // INTERNAL_EXTENSIONS_COMMON_EXTENSION_MESSAGES_H_
 
 IPC_ENUM_TRAITS_MAX_VALUE(
     ExtensionHostMsg_AutomationQuerySelector_Error::Value,
@@ -654,7 +656,7 @@ IPC_MESSAGE_CONTROL3(ExtensionMsg_SetSessionInfo,
                      bool /* is_lock_screen_context */)
 
 // Notify the renderer that its window has closed.
-IPC_MESSAGE_ROUTED0(ExtensionMsg_AppWindowClosed)
+IPC_MESSAGE_ROUTED1(ExtensionMsg_AppWindowClosed, bool /* send_onclosed */)
 
 // Notify the renderer that an extension wants notifications when certain
 // searches match the active page.  This message replaces the old set of
@@ -870,7 +872,7 @@ IPC_SYNC_MESSAGE_CONTROL0_1(ExtensionHostMsg_GenerateUniqueID,
 
 // Notify the browser that an app window is ready and can resume resource
 // requests.
-IPC_MESSAGE_CONTROL1(ExtensionHostMsg_AppWindowReady, int /* route_id */)
+IPC_MESSAGE_ROUTED0(ExtensionHostMsg_AppWindowReady)
 
 // Sent by the renderer when the draggable regions are updated.
 IPC_MESSAGE_ROUTED1(ExtensionHostMsg_UpdateDraggableRegions,
@@ -976,3 +978,5 @@ IPC_MESSAGE_CONTROL2(ExtensionHostMsg_IncrementServiceWorkerActivity,
 IPC_MESSAGE_CONTROL2(ExtensionHostMsg_DecrementServiceWorkerActivity,
                      int64_t /* service_worker_version_id */,
                      std::string /* request_uuid */)
+
+#endif  // EXTENSIONS_COMMON_EXTENSION_MESSAGES_H_

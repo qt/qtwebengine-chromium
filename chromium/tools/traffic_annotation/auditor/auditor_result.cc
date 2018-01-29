@@ -20,7 +20,8 @@ AuditorResult::AuditorResult(Type type,
          type == AuditorResult::Type::RESULT_IGNORE ||
          type == AuditorResult::Type::ERROR_FATAL ||
          type == AuditorResult::Type::ERROR_DUPLICATE_UNIQUE_ID_HASH_CODE ||
-         type == AuditorResult::Type::ERROR_MERGE_FAILED);
+         type == AuditorResult::Type::ERROR_MERGE_FAILED ||
+         type == AuditorResult::Type::ERROR_ANNOTATIONS_XML_UPDATE);
   DCHECK(!message.empty() || type == AuditorResult::Type::RESULT_OK ||
          type == AuditorResult::Type::RESULT_IGNORE ||
          type == AuditorResult::Type::ERROR_MISSING_TAG_USED ||
@@ -44,13 +45,10 @@ AuditorResult::AuditorResult(Type type)
                                    std::string(),
                                    kNoCodeLineSpecified) {}
 
-AuditorResult::AuditorResult(const AuditorResult& other)
-    : type_(other.type_),
-      details_(other.details_),
-      file_path_(other.file_path_),
-      line_(other.line_){};
+AuditorResult::AuditorResult(const AuditorResult& other) = default;
+;
 
-AuditorResult::~AuditorResult() {}
+AuditorResult::~AuditorResult() = default;
 
 void AuditorResult::AddDetail(const std::string& message) {
   details_.push_back(message);
@@ -145,6 +143,17 @@ std::string AuditorResult::ToText() const {
           "Annotation at '%s:%i' is assigned without annotations API "
           "functions.",
           file_path_.c_str(), line_);
+
+    case AuditorResult::Type::ERROR_ANNOTATIONS_XML_UPDATE:
+      DCHECK(details_.size());
+      return base::StringPrintf(
+          "'tools/traffic_annotation/summary/annotations.xml' requires update. "
+          "It is recommended to run traffic_annotation_auditor locally to do "
+          "the updates automatically (please refer to tools/traffic_annotation/"
+          "auditor/README.md), but you can also apply the following edit(s) to "
+          "do it manually:%s\n\n If you are using build flags that modify "
+          "files (like jumbo), rerun the auditor using --all-files switch.",
+          details_[0].c_str());
 
     default:
       return std::string();

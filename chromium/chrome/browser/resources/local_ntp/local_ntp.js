@@ -9,6 +9,15 @@
 
 
 /**
+ * Whether the most visited tiles have finished loading, i.e. we've received the
+ * 'loaded' postMessage from the iframe. Used by tests to detect that loading
+ * has completed.
+ * @type {boolean}
+ */
+var tilesAreLoaded = false;
+
+
+/**
  * Controls rendering the new tab page for InstantExtended.
  * @return {Object} A limited interface for testing the local NTP.
  */
@@ -68,7 +77,8 @@ var CLASSES = {
   // Vertically centers the most visited section for a non-Google provided page.
   NON_GOOGLE_PAGE: 'non-google-page',
   NON_WHITE_BG: 'non-white-bg',
-  RTL: 'rtl'  // Right-to-left language text.
+  RTL: 'rtl',              // Right-to-left language text.
+  SHOW_LOGO: 'show-logo',  // Marks logo/doodle that should be shown.
 };
 
 
@@ -89,7 +99,8 @@ var IDS = {
   LOGO_DEFAULT: 'logo-default',
   LOGO_DOODLE: 'logo-doodle',
   LOGO_DOODLE_IMAGE: 'logo-doodle-image',
-  LOGO_DOODLE_LINK: 'logo-doodle-link',
+  LOGO_DOODLE_IFRAME: 'logo-doodle-iframe',
+  LOGO_DOODLE_BUTTON: 'logo-doodle-button',
   LOGO_DOODLE_NOTIFIER: 'logo-doodle-notifier',
   NOTIFICATION: 'mv-notice',
   NOTIFICATION_CLOSE_BUTTON: 'mv-notice-x',
@@ -99,6 +110,18 @@ var IDS = {
   TILES: 'mv-tiles',
   TILES_IFRAME: 'mv-single',
   UNDO_LINK: 'mv-undo'
+};
+
+
+/**
+ * Counterpart of search_provider_logos::LogoType.
+ * @enum {string}
+ * @const
+ */
+var LOGO_TYPE = {
+  SIMPLE: 'SIMPLE',
+  ANIMATED: 'ANIMATED',
+  INTERACTIVE: 'INTERACTIVE',
 };
 
 
@@ -532,6 +555,7 @@ function handlePostMessage(event) {
   var cmd = event.data.cmd;
   var args = event.data;
   if (cmd == 'loaded') {
+    tilesAreLoaded = true;
     if (configData.isGooglePage && !$('one-google-loader')) {
       // Load the OneGoogleBar script. It'll create a global variable name "og"
       // which is a dict corresponding to the native OneGoogleBarData type.
@@ -656,6 +680,9 @@ function init() {
       // Got a (possibly empty) ddl object. Show logo or doodle.
       showLogoOrDoodle(
           ddl.image || null, ddl.metadata || null, /*fromCache=*/true);
+      // Never hide an interactive doodle if it was already shown.
+      if (ddl.metadata && (ddl.metadata.type === LOGO_TYPE.INTERACTIVE))
+        return;
       // If we got a valid ddl object (from cache), load a fresh one.
       if (ddl.v !== null) {
         loadDoodle(ddl.v, function(ddl) {
@@ -675,6 +702,9 @@ function init() {
       state.notheme = true;
       window.history.replaceState(state, document.title);
       onThemeChange();
+      if (e.detail === 0) {  // Activated by keyboard.
+        $(IDS.LOGO_DOODLE_BUTTON).focus();
+      }
     });
   } else {
     document.body.classList.add(CLASSES.NON_GOOGLE_PAGE);
@@ -702,7 +732,8 @@ function init() {
   // Create the most visited iframe.
   var iframe = document.createElement('iframe');
   iframe.id = IDS.TILES_IFRAME;
-  iframe.tabIndex = 1;
+  iframe.name = IDS.TILES_IFRAME;
+  iframe.title = configData.translatedStrings.mostVisitedTitle;
   iframe.src = 'chrome-search://most-visited/single.html?' + args.join('&');
   $(IDS.TILES).appendChild(iframe);
 
@@ -784,16 +815,6 @@ var loadDoodle = function(v, onload) {
 };
 
 
-/** Returns true if |element| is fully hidden. Returns false if fully visible,
- * fading in, or fading out.
- * @param {HTMLElement} element
- */
-var isFadedOut = function(element) {
-  return (element.style.opacity == 0) &&
-      (window.getComputedStyle(element).opacity == 0);
-};
-
-
 /** Returns true if the doodle given by |image| and |metadata| is currently
  * visible. If |image| is null, returns true when the default logo is visible;
  * if non-null, checks that it matches the doodle that is currently visible.
@@ -804,39 +825,54 @@ var isFadedOut = function(element) {
  * @returns {boolean}
  */
 var isDoodleCurrentlyVisible = function(image, metadata) {
-  var haveDoodle = ($(IDS.LOGO_DOODLE).style.opacity != 0);
+  var haveDoodle = ($(IDS.LOGO_DOODLE).classList.contains(CLASSES.SHOW_LOGO));
   var wantDoodle = (image !== null) && (metadata !== null);
   if (!haveDoodle || !wantDoodle)
     return haveDoodle === wantDoodle;
 
   // Have a visible doodle and a query doodle. Test that they match.
-  var logoDoodleImage = $(IDS.LOGO_DOODLE_IMAGE);
-  return (logoDoodleImage.src === image) ||
-      (logoDoodleImage.src === metadata.animatedUrl);
+  if (metadata.type === LOGO_TYPE.INTERACTIVE) {
+    var logoDoodleIframe = $(IDS.LOGO_DOODLE_IFRAME);
+    return logoDoodleIframe.classList.contains(CLASSES.SHOW_LOGO) &&
+        (logoDoodleIframe.src === metadata.fullPageUrl);
+  } else {
+    var logoDoodleImage = $(IDS.LOGO_DOODLE_IMAGE);
+    var logoDoodleButton = $(IDS.LOGO_DOODLE_BUTTON);
+    return logoDoodleButton.classList.contains(CLASSES.SHOW_LOGO) &&
+        ((logoDoodleImage.src === image) ||
+         (logoDoodleImage.src === metadata.animatedUrl));
+  }
 };
 
 
 var showLogoOrDoodle = function(image, metadata, fromCache) {
   if (metadata !== null) {
     applyDoodleMetadata(metadata);
-    $(IDS.LOGO_DOODLE_IMAGE).src = image;
-    $(IDS.LOGO_DOODLE).style.opacity = 1;
+    if (metadata.type === LOGO_TYPE.INTERACTIVE) {
+      $(IDS.LOGO_DOODLE_BUTTON).classList.remove(CLASSES.SHOW_LOGO);
+      $(IDS.LOGO_DOODLE_IFRAME).classList.add(CLASSES.SHOW_LOGO);
+    } else {
+      $(IDS.LOGO_DOODLE_IMAGE).src = image;
+      $(IDS.LOGO_DOODLE_BUTTON).classList.add(CLASSES.SHOW_LOGO);
+      $(IDS.LOGO_DOODLE_IFRAME).classList.remove(CLASSES.SHOW_LOGO);
 
-    var isCta = !!metadata.animatedUrl;
-    var eventType = isCta ?
-        (fromCache ? LOG_TYPE.NTP_CTA_LOGO_SHOWN_FROM_CACHE :
-                     LOG_TYPE.NTP_CTA_LOGO_SHOWN_FRESH) :
-        (fromCache ? LOG_TYPE.NTP_STATIC_LOGO_SHOWN_FROM_CACHE :
-                     LOG_TYPE.NTP_STATIC_LOGO_SHOWN_FRESH);
-    ntpApiHandle.logEvent(eventType);
+      var isCta = !!metadata.animatedUrl;
+      var eventType = isCta ?
+          (fromCache ? LOG_TYPE.NTP_CTA_LOGO_SHOWN_FROM_CACHE :
+                       LOG_TYPE.NTP_CTA_LOGO_SHOWN_FRESH) :
+          (fromCache ? LOG_TYPE.NTP_STATIC_LOGO_SHOWN_FROM_CACHE :
+                       LOG_TYPE.NTP_STATIC_LOGO_SHOWN_FRESH);
+      ntpApiHandle.logEvent(eventType);
+    }
+    $(IDS.LOGO_DOODLE).classList.add(CLASSES.SHOW_LOGO);
   } else {
-    $(IDS.LOGO_DEFAULT).style.opacity = 1;
+    $(IDS.LOGO_DEFAULT).classList.add(CLASSES.SHOW_LOGO);
   }
 };
 
 
 /** The image and metadata that should be shown, according to the latest fetch.
- * After a logo fades out, onDoodleTransitionEnd fades in a logo according to
+ * After a logo fades out, onDoodleFadeOutComplete fades in a logo according to
  * targetDoodle.
  */
 var targetDoodle = {
@@ -852,14 +888,18 @@ var targetDoodle = {
  * @param {HTMLElement} element
  */
 var startFadeOut = function(element) {
+  if (!element.classList.contains(CLASSES.SHOW_LOGO)) {
+    return;
+  }
+
   // Compute style now, to ensure that the transition from 1 -> 0 is properly
   // recognized. Otherwise, if a 0 -> 1 -> 0 transition is too fast, the
   // element might stay invisible instead of appearing then fading out.
   window.getComputedStyle(element).opacity;
 
   element.classList.add(CLASSES.FADE);
-  element.addEventListener('transitionend', onDoodleTransitionEnd);
-  element.style.opacity = 0;
+  element.classList.remove(CLASSES.SHOW_LOGO);
+  element.addEventListener('transitionend', onDoodleFadeOutComplete);
 };
 
 
@@ -886,51 +926,55 @@ var fadeToLogoOrDoodle = function(image, metadata) {
   targetDoodle.image = image;
   targetDoodle.metadata = metadata;
 
-  // Start fading out the current logo or doodle. onDoodleTransitionEnd will
+  // Start fading out the current logo or doodle. onDoodleFadeOutComplete will
   // apply the change when the fade-out finishes.
   startFadeOut($(IDS.LOGO_DEFAULT));
   startFadeOut($(IDS.LOGO_DOODLE));
 };
 
 
-var onDoodleTransitionEnd = function(e) {
-  var logoDoodle = $(IDS.LOGO_DOODLE);
-  var logoDoodleImage = $(IDS.LOGO_DOODLE_IMAGE);
-  var logoDefault = $(IDS.LOGO_DEFAULT);
+var onDoodleFadeOutComplete = function(e) {
+  // Fade-out finished. Start fading in the appropriate logo.
+  $(IDS.LOGO_DOODLE).classList.add(CLASSES.FADE);
+  $(IDS.LOGO_DEFAULT).classList.add(CLASSES.FADE);
+  showLogoOrDoodle(
+      targetDoodle.image, targetDoodle.metadata, /*fromCache=*/false);
 
-  if (isFadedOut(logoDoodle) && isFadedOut(logoDefault)) {
-    // Fade-out finished. Start fading in the appropriate logo.
-    showLogoOrDoodle(
-        targetDoodle.image, targetDoodle.metadata, /*fromCache=*/false);
-
-    logoDefault.removeEventListener('transitionend', onDoodleTransitionEnd);
-    logoDoodle.removeEventListener('transitionend', onDoodleTransitionEnd);
-  }
+  this.removeEventListener('transitionend', onDoodleFadeOutComplete);
 };
 
 
 var applyDoodleMetadata = function(metadata) {
-  var logoDoodleLink = $(IDS.LOGO_DOODLE_LINK);
+  var logoDoodleButton = $(IDS.LOGO_DOODLE_BUTTON);
   var logoDoodleImage = $(IDS.LOGO_DOODLE_IMAGE);
+  var logoDoodleIframe = $(IDS.LOGO_DOODLE_IFRAME);
 
-  logoDoodleImage.title = metadata.altText;
-
-  if (metadata.animatedUrl) {
-    logoDoodleLink.removeAttribute('href');
-    logoDoodleLink.onclick = function(e) {
-      ntpApiHandle.logEvent(LOG_TYPE.NTP_CTA_LOGO_CLICKED);
-      e.preventDefault();
-      logoDoodleImage.src = metadata.animatedUrl;
-      logoDoodleLink.href = metadata.onClickUrl;
-      logoDoodleLink.onclick = function() {
-        ntpApiHandle.logEvent(LOG_TYPE.NTP_ANIMATED_LOGO_CLICKED);
+  switch (metadata.type) {
+    case LOGO_TYPE.SIMPLE:
+      logoDoodleImage.title = metadata.altText;
+      logoDoodleButton.onclick = function() {
+        ntpApiHandle.logEvent(LOG_TYPE.NTP_STATIC_LOGO_CLICKED);
+        window.location = metadata.onClickUrl;
       };
-    };
-  } else {
-    logoDoodleLink.href = metadata.onClickUrl;
-    logoDoodleLink.onclick = function() {
-      ntpApiHandle.logEvent(LOG_TYPE.NTP_STATIC_LOGO_CLICKED);
-    };
+      break;
+
+    case LOGO_TYPE.ANIMATED:
+      logoDoodleImage.title = metadata.altText;
+      logoDoodleButton.onclick = function(e) {
+        ntpApiHandle.logEvent(LOG_TYPE.NTP_CTA_LOGO_CLICKED);
+        e.preventDefault();
+        logoDoodleImage.src = metadata.animatedUrl;
+        logoDoodleButton.onclick = function() {
+          ntpApiHandle.logEvent(LOG_TYPE.NTP_ANIMATED_LOGO_CLICKED);
+          window.location = metadata.onClickUrl;
+        };
+      };
+      break;
+
+    case LOGO_TYPE.INTERACTIVE:
+      logoDoodleIframe.title = metadata.altText;
+      logoDoodleIframe.src = metadata.fullPageUrl;
+      break;
   }
 };
 

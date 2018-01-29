@@ -57,10 +57,8 @@ Label::Label(const base::string16& text, int text_context, int text_style)
   SetLineHeight(style::GetLineHeight(text_context, text_style));
 
   // If an explicit style is given, ignore color changes due to the NativeTheme.
-  if (text_style != style::STYLE_PRIMARY) {
-    SetEnabledColor(
-        style::GetColor(text_context, text_style, GetNativeTheme()));
-  }
+  if (text_style != style::STYLE_PRIMARY)
+    SetEnabledColor(style::GetColor(*this, text_context, text_style));
 }
 
 Label::Label(const base::string16& text, const CustomFont& font)
@@ -282,7 +280,7 @@ bool Label::SetSelectable(bool value) {
   if (!IsSelectionSupported())
     return false;
 
-  selection_controller_ = base::MakeUnique<SelectionController>(this);
+  selection_controller_ = std::make_unique<SelectionController>(this);
   return true;
 }
 
@@ -353,8 +351,17 @@ gfx::Size Label::GetMinimumSize() const {
     size.set_width(gfx::Canvas::GetStringWidth(
         base::string16(gfx::kEllipsisUTF16), font_list()));
   }
-  if (!multi_line())
-    size.SetToMin(GetTextSize());
+
+  if (!multi_line()) {
+    if (elide_behavior_ == gfx::NO_ELIDE) {
+      // If elision is disabled on single-line Labels, use text size as minimum.
+      // This is OK because clients can use |gfx::ElideBehavior::TRUNCATE|
+      // to get a non-eliding Label that should size itself less aggressively.
+      size.SetToMax(GetTextSize());
+    } else {
+      size.SetToMin(GetTextSize());
+    }
+  }
   size.Enlarge(GetInsets().width(), GetInsets().height());
   return size;
 }
@@ -1003,7 +1010,7 @@ void Label::ApplyTextColors() const {
 void Label::UpdateColorsFromTheme(const ui::NativeTheme* theme) {
   if (!enabled_color_set_) {
     requested_enabled_color_ =
-        style::GetColor(text_context_, style::STYLE_PRIMARY, theme);
+        style::GetColor(*this, text_context_, style::STYLE_PRIMARY);
   }
   if (!background_color_set_) {
     background_color_ =

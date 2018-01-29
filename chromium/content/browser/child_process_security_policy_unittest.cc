@@ -57,8 +57,7 @@ class ChildProcessSecurityPolicyTestBrowserClient
 
 class ChildProcessSecurityPolicyTest : public testing::Test {
  public:
-  ChildProcessSecurityPolicyTest() : old_browser_client_(NULL) {
-  }
+  ChildProcessSecurityPolicyTest() : old_browser_client_(nullptr) {}
 
   void SetUp() override {
     old_browser_client_ = SetBrowserClientForTesting(&test_browser_client_);
@@ -944,7 +943,7 @@ TEST_F(ChildProcessSecurityPolicyTest, OriginGranting) {
   EXPECT_FALSE(p->CanSetAsOriginHeader(kRendererID, url_foo2));
   EXPECT_FALSE(p->CanSetAsOriginHeader(kRendererID, url_bar));
 
-  p->GrantOrigin(kRendererID, url::Origin(url_foo1));
+  p->GrantOrigin(kRendererID, url::Origin::Create(url_foo1));
 
   EXPECT_TRUE(p->CanRequestURL(kRendererID, url_foo1));
   EXPECT_TRUE(p->CanRequestURL(kRendererID, url_foo2));

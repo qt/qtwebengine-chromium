@@ -10,8 +10,6 @@
 
 #include "api/video/video_frame_buffer.h"
 
-#include "libyuv/convert.h"
-#include "api/video/i420_buffer.h"
 #include "rtc_base/checks.h"
 
 namespace webrtc {
@@ -25,6 +23,16 @@ rtc::scoped_refptr<const I420BufferInterface> VideoFrameBuffer::GetI420()
     const {
   RTC_CHECK(type() == Type::kI420);
   return static_cast<const I420BufferInterface*>(this);
+}
+
+I420ABufferInterface* VideoFrameBuffer::GetI420A() {
+  RTC_CHECK(type() == Type::kI420A);
+  return static_cast<I420ABufferInterface*>(this);
+}
+
+const I420ABufferInterface* VideoFrameBuffer::GetI420A() const {
+  RTC_CHECK(type() == Type::kI420A);
+  return static_cast<const I420ABufferInterface*>(this);
 }
 
 I444BufferInterface* VideoFrameBuffer::GetI444() {
@@ -53,6 +61,10 @@ rtc::scoped_refptr<I420BufferInterface> I420BufferInterface::ToI420() {
   return this;
 }
 
+VideoFrameBuffer::Type I420ABufferInterface::type() const {
+  return Type::kI420A;
+}
+
 VideoFrameBuffer::Type I444BufferInterface::type() const {
   return Type::kI444;
 }
@@ -63,17 +75,6 @@ int I444BufferInterface::ChromaWidth() const {
 
 int I444BufferInterface::ChromaHeight() const {
   return height();
-}
-
-rtc::scoped_refptr<I420BufferInterface> I444BufferInterface::ToI420() {
-  rtc::scoped_refptr<I420Buffer> i420_buffer =
-      I420Buffer::Create(width(), height());
-  libyuv::I444ToI420(DataY(), StrideY(), DataU(), StrideU(), DataV(), StrideV(),
-                     i420_buffer->MutableDataY(), i420_buffer->StrideY(),
-                     i420_buffer->MutableDataU(), i420_buffer->StrideU(),
-                     i420_buffer->MutableDataV(), i420_buffer->StrideV(),
-                     width(), height());
-  return i420_buffer;
 }
 
 }  // namespace webrtc

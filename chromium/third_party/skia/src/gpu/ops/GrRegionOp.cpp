@@ -13,6 +13,7 @@
 #include "GrResourceProvider.h"
 #include "GrSimpleMeshDrawOpHelper.h"
 #include "SkMatrixPriv.h"
+#include "SkPointPriv.h"
 #include "SkRegion.h"
 
 static const int kVertsPerInstance = 4;
@@ -34,7 +35,8 @@ static void tesselate_region(intptr_t vertices,
     while (!iter.done()) {
         SkRect rect = SkRect::Make(iter.rect());
         SkPoint* position = (SkPoint*)verts;
-        position->setRectFan(rect.fLeft, rect.fTop, rect.fRight, rect.fBottom, vertexStride);
+        SkPointPriv::SetRectTriStrip(position, rect.fLeft, rect.fTop, rect.fRight, rect.fBottom,
+                vertexStride);
 
         static const int kColorOffset = sizeof(SkPoint);
         GrColor* vertColor = reinterpret_cast<GrColor*>(verts + kColorOffset);
@@ -123,7 +125,7 @@ private:
             return;
         }
         size_t vertexStride = gp->getVertexStride();
-        sk_sp<const GrBuffer> indexBuffer(target->resourceProvider()->refQuadIndexBuffer());
+        sk_sp<const GrBuffer> indexBuffer = target->resourceProvider()->refQuadIndexBuffer();
         PatternHelper helper(GrPrimitiveType::kTriangles);
         void* vertices =
                 helper.init(target, vertexStride, indexBuffer.get(), kVertsPerInstance,

@@ -31,6 +31,8 @@ template struct std::hash<WideString>;
 
 namespace {
 
+constexpr wchar_t kTrimChars[] = L"\x09\x0a\x0b\x0c\x0d\x20";
+
 const wchar_t* FX_wcsstr(const wchar_t* haystack,
                          int haystack_len,
                          const wchar_t* needle,
@@ -246,6 +248,30 @@ pdfium::Optional<size_t> GuessSizeForVSWPrintf(const wchar_t* pFormat,
   return pdfium::Optional<size_t>(nMaxLen);
 }
 
+// Returns string unless we ran out of space.
+pdfium::Optional<WideString> TryVSWPrintf(size_t size,
+                                          const wchar_t* pFormat,
+                                          va_list argList) {
+  WideString str;
+  wchar_t* buffer = str.GetBuffer(size);
+
+  // In the following two calls, there's always space in the buffer for
+  // a terminating NUL that's not included in nMaxLen.
+  // For vswprintf(), MSAN won't untaint the buffer on a truncated write's
+  // -1 return code even though the buffer is written. Probably just as well
+  // not to trust the vendor's implementation to write anything anyways.
+  // See https://crbug.com/705912.
+  memset(buffer, 0, (size + 1) * sizeof(wchar_t));
+  int ret = vswprintf(buffer, size + 1, pFormat, argList);
+
+  bool bSufficientBuffer = ret >= 0 || buffer[size - 1] == 0;
+  if (!bSufficientBuffer)
+    return {};
+
+  str.ReleaseBuffer(str.GetStringLength());
+  return {str};
+}
+
 #ifndef NDEBUG
 bool IsValidCodePage(uint16_t codepage) {
   switch (codepage) {
@@ -284,6 +310,45 @@ namespace fxcrt {
 
 static_assert(sizeof(WideString) <= sizeof(wchar_t*),
               "Strings must not require more space than pointers");
+
+// static
+WideString WideString::FormatV(const wchar_t* format, va_list argList) {
+  va_list argListCopy;
+  va_copy(argListCopy, argList);
+  int maxLen = vswprintf(nullptr, 0, format, argListCopy);
+  va_end(argListCopy);
+
+  if (maxLen <= 0) {
+    va_copy(argListCopy, argList);
+    auto guess = GuessSizeForVSWPrintf(format, argListCopy);
+    va_end(argListCopy);
+
+    if (!guess.has_value())
+      return L"";
+    maxLen = pdfium::base::checked_cast<int>(guess.value());
+  }
+
+  while (maxLen < 32 * 1024) {
+    va_copy(argListCopy, argList);
+    pdfium::Optional<WideString> ret =
+        TryVSWPrintf(static_cast<size_t>(maxLen), format, argListCopy);
+    va_end(argListCopy);
+
+    if (ret)
+      return *ret;
+    maxLen *= 2;
+  }
+  return L"";
+}
+
+// static
+WideString WideString::Format(const wchar_t* pFormat, ...) {
+  va_list argList;
+  va_start(argList, pFormat);
+  WideString ret = FormatV(pFormat, argList);
+  va_end(argList);
+  return ret;
+}
 
 WideString::WideString() {}
 
@@ -434,13 +499,39 @@ bool WideString::operator==(const WideString& other) const {
                  m_pData->m_nDataLength) == 0;
 }
 
-bool WideString::operator<(const WideString& str) const {
-  if (m_pData == str.m_pData)
+bool WideString::operator<(const wchar_t* ptr) const {
+  if (!m_pData && !ptr)
+    return false;
+  if (c_str() == ptr)
     return false;
 
+  size_t len = GetLength();
+  size_t other_len = ptr ? wcslen(ptr) : 0;
+  int result = wmemcmp(c_str(), ptr, std::min(len, other_len));
+  return result < 0 || (result == 0 && len < other_len);
+}
+
+bool WideString::operator<(const WideStringView& str) const {
+  if (!m_pData && !str.unterminated_c_str())
+    return false;
+  if (c_str() == str.unterminated_c_str())
+    return false;
+
+  size_t len = GetLength();
+  size_t other_len = str.GetLength();
   int result =
-      wmemcmp(c_str(), str.c_str(), std::min(GetLength(), str.GetLength()));
-  return result < 0 || (result == 0 && GetLength() < str.GetLength());
+      wmemcmp(c_str(), str.unterminated_c_str(), std::min(len, other_len));
+  return result < 0 || (result == 0 && len < other_len);
+}
+
+bool WideString::operator<(const WideString& other) const {
+  if (m_pData == other.m_pData)
+    return false;
+
+  size_t len = GetLength();
+  size_t other_len = other.GetLength();
+  int result = wmemcmp(c_str(), other.c_str(), std::min(len, other_len));
+  return result < 0 || (result == 0 && len < other_len);
 }
 
 void WideString::AssignCopy(const wchar_t* pSrcData, size_t nSrcLen) {
@@ -640,57 +731,6 @@ void WideString::AllocCopy(WideString& dest,
   dest.m_pData.Swap(pNewData);
 }
 
-bool WideString::TryVSWPrintf(size_t size,
-                              const wchar_t* pFormat,
-                              va_list argList) {
-  GetBuffer(size);
-  if (!m_pData)
-    return true;
-
-  // In the following two calls, there's always space in the buffer for
-  // a terminating NUL that's not included in nMaxLen.
-  // For vswprintf(), MSAN won't untaint the buffer on a truncated write's
-  // -1 return code even though the buffer is written. Probably just as well
-  // not to trust the vendor's implementation to write anything anyways.
-  // See https://crbug.com/705912.
-  memset(m_pData->m_String, 0, (size + 1) * sizeof(wchar_t));
-  int ret = vswprintf(m_pData->m_String, size + 1, pFormat, argList);
-  bool bSufficientBuffer = ret >= 0 || m_pData->m_String[size - 1] == 0;
-  ReleaseBuffer(GetStringLength());
-  return bSufficientBuffer;
-}
-
-void WideString::FormatV(const wchar_t* format, va_list argList) {
-  va_list argListCopy;
-  va_copy(argListCopy, argList);
-  int maxLen = vswprintf(nullptr, 0, format, argListCopy);
-  va_end(argListCopy);
-  if (maxLen <= 0) {
-    va_copy(argListCopy, argList);
-    auto guess = GuessSizeForVSWPrintf(format, argListCopy);
-    va_end(argListCopy);
-    if (!guess.has_value())
-      return;
-    maxLen = pdfium::base::checked_cast<int>(guess.value());
-  }
-  while (maxLen < 32 * 1024) {
-    va_copy(argListCopy, argList);
-    bool bSufficientBuffer =
-        TryVSWPrintf(static_cast<size_t>(maxLen), format, argListCopy);
-    va_end(argListCopy);
-    if (bSufficientBuffer)
-      break;
-    maxLen *= 2;
-  }
-}
-
-void WideString::Format(const wchar_t* pFormat, ...) {
-  va_list argList;
-  va_start(argList, pFormat);
-  FormatV(pFormat, argList);
-  va_end(argList);
-}
-
 size_t WideString::Insert(size_t location, wchar_t ch) {
   const size_t cur_length = m_pData ? m_pData->m_nDataLength : 0;
   if (!IsValidLength(location))
@@ -880,45 +920,36 @@ void WideString::SetAt(size_t index, wchar_t c) {
 
 int WideString::Compare(const wchar_t* lpsz) const {
   if (m_pData)
-    return wcscmp(m_pData->m_String, lpsz);
+    return lpsz ? wcscmp(m_pData->m_String, lpsz) : 1;
   return (!lpsz || lpsz[0] == 0) ? 0 : -1;
 }
 
 int WideString::Compare(const WideString& str) const {
-  if (!m_pData) {
-    if (!str.m_pData) {
-      return 0;
-    }
-    return -1;
-  }
-  if (!str.m_pData) {
+  if (!m_pData)
+    return str.m_pData ? -1 : 0;
+  if (!str.m_pData)
     return 1;
-  }
+
   size_t this_len = m_pData->m_nDataLength;
   size_t that_len = str.m_pData->m_nDataLength;
   size_t min_len = std::min(this_len, that_len);
   for (size_t i = 0; i < min_len; i++) {
-    if (m_pData->m_String[i] < str.m_pData->m_String[i]) {
+    if (m_pData->m_String[i] < str.m_pData->m_String[i])
       return -1;
-    }
-    if (m_pData->m_String[i] > str.m_pData->m_String[i]) {
+    if (m_pData->m_String[i] > str.m_pData->m_String[i])
       return 1;
-    }
   }
-  if (this_len < that_len) {
+  if (this_len < that_len)
     return -1;
-  }
-  if (this_len > that_len) {
+  if (this_len > that_len)
     return 1;
-  }
   return 0;
 }
 
 int WideString::CompareNoCase(const wchar_t* lpsz) const {
-  if (!m_pData) {
-    return (!lpsz || lpsz[0] == 0) ? 0 : -1;
-  }
-  return FXSYS_wcsicmp(m_pData->m_String, lpsz);
+  if (m_pData)
+    return lpsz ? FXSYS_wcsicmp(m_pData->m_String, lpsz) : 1;
+  return (!lpsz || lpsz[0] == 0) ? 0 : -1;
 }
 
 size_t WideString::WStringLength(const unsigned short* str) {
@@ -929,32 +960,33 @@ size_t WideString::WStringLength(const unsigned short* str) {
   return len;
 }
 
-void WideString::TrimRight(const WideStringView& pTargets) {
-  if (IsEmpty() || pTargets.IsEmpty())
-    return;
-
-  size_t pos = GetLength();
-  while (pos && pTargets.Contains(m_pData->m_String[pos - 1]))
-    pos--;
-
-  if (pos < m_pData->m_nDataLength) {
-    ReallocBeforeWrite(m_pData->m_nDataLength);
-    m_pData->m_String[pos] = 0;
-    m_pData->m_nDataLength = pos;
-  }
+void WideString::Trim() {
+  TrimRight(kTrimChars);
+  TrimLeft(kTrimChars);
 }
 
-void WideString::TrimRight(wchar_t chTarget) {
-  wchar_t str[2] = {chTarget, 0};
+void WideString::Trim(wchar_t target) {
+  wchar_t str[2] = {target, 0};
   TrimRight(str);
+  TrimLeft(str);
 }
 
-void WideString::TrimRight() {
-  TrimRight(L"\x09\x0a\x0b\x0c\x0d\x20");
+void WideString::Trim(const WideStringView& targets) {
+  TrimRight(targets);
+  TrimLeft(targets);
 }
 
-void WideString::TrimLeft(const WideStringView& pTargets) {
-  if (!m_pData || pTargets.IsEmpty())
+void WideString::TrimLeft() {
+  TrimLeft(kTrimChars);
+}
+
+void WideString::TrimLeft(wchar_t target) {
+  wchar_t str[2] = {target, 0};
+  TrimLeft(str);
+}
+
+void WideString::TrimLeft(const WideStringView& targets) {
+  if (!m_pData || targets.IsEmpty())
     return;
 
   size_t len = GetLength();
@@ -964,13 +996,12 @@ void WideString::TrimLeft(const WideStringView& pTargets) {
   size_t pos = 0;
   while (pos < len) {
     size_t i = 0;
-    while (i < pTargets.GetLength() &&
-           pTargets.CharAt(i) != m_pData->m_String[pos]) {
+    while (i < targets.GetLength() &&
+           targets.CharAt(i) != m_pData->m_String[pos]) {
       i++;
     }
-    if (i == pTargets.GetLength()) {
+    if (i == targets.GetLength())
       break;
-    }
     pos++;
   }
   if (!pos)
@@ -983,14 +1014,30 @@ void WideString::TrimLeft(const WideStringView& pTargets) {
   m_pData->m_nDataLength = nDataLength;
 }
 
-void WideString::TrimLeft(wchar_t chTarget) {
-  wchar_t str[2] = {chTarget, 0};
-  TrimLeft(str);
+void WideString::TrimRight() {
+  TrimRight(kTrimChars);
 }
 
-void WideString::TrimLeft() {
-  TrimLeft(L"\x09\x0a\x0b\x0c\x0d\x20");
+void WideString::TrimRight(wchar_t target) {
+  wchar_t str[2] = {target, 0};
+  TrimRight(str);
 }
+
+void WideString::TrimRight(const WideStringView& targets) {
+  if (IsEmpty() || targets.IsEmpty())
+    return;
+
+  size_t pos = GetLength();
+  while (pos && targets.Contains(m_pData->m_String[pos - 1]))
+    pos--;
+
+  if (pos < m_pData->m_nDataLength) {
+    ReallocBeforeWrite(m_pData->m_nDataLength);
+    m_pData->m_String[pos] = 0;
+    m_pData->m_nDataLength = pos;
+  }
+}
+
 float FX_wtof(const wchar_t* str, int len) {
   if (len == 0) {
     return 0.0;

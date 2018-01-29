@@ -86,16 +86,28 @@ void TaskSchedulerImpl::Start(const TaskScheduler::InitParams& init_params) {
 
   single_thread_task_runner_manager_.Start();
 
+  const SchedulerWorkerPoolImpl::WorkerEnvironment worker_environment =
+#if defined(OS_WIN)
+      init_params.shared_worker_pool_environment ==
+              InitParams::SharedWorkerPoolEnvironment::COM_MTA
+          ? SchedulerWorkerPoolImpl::WorkerEnvironment::COM_MTA
+          : SchedulerWorkerPoolImpl::WorkerEnvironment::NONE;
+#else
+      SchedulerWorkerPoolImpl::WorkerEnvironment::NONE;
+#endif
+
   worker_pools_[BACKGROUND]->Start(init_params.background_worker_pool_params,
-                                   service_thread_task_runner);
+                                   service_thread_task_runner,
+                                   worker_environment);
   worker_pools_[BACKGROUND_BLOCKING]->Start(
       init_params.background_blocking_worker_pool_params,
-      service_thread_task_runner);
+      service_thread_task_runner, worker_environment);
   worker_pools_[FOREGROUND]->Start(init_params.foreground_worker_pool_params,
-                                   service_thread_task_runner);
+                                   service_thread_task_runner,
+                                   worker_environment);
   worker_pools_[FOREGROUND_BLOCKING]->Start(
       init_params.foreground_blocking_worker_pool_params,
-      service_thread_task_runner);
+      service_thread_task_runner, worker_environment);
 }
 
 void TaskSchedulerImpl::PostDelayedTaskWithTraits(const Location& from_here,
@@ -171,12 +183,16 @@ void TaskSchedulerImpl::JoinForTesting() {
 #if DCHECK_IS_ON()
   DCHECK(!join_for_testing_returned_.IsSet());
 #endif
+  // The service thread must be stopped before the workers are joined, otherwise
+  // tasks scheduled by the DelayedTaskManager might be posted between joining
+  // those workers and stopping the service thread which will cause a CHECK. See
+  // https://crbug.com/771701.
+  service_thread_.Stop();
   single_thread_task_runner_manager_.JoinForTesting();
   for (const auto& worker_pool : worker_pools_)
     worker_pool->DisallowWorkerCleanupForTesting();
   for (const auto& worker_pool : worker_pools_)
     worker_pool->JoinForTesting();
-  service_thread_.Stop();
 #if DCHECK_IS_ON()
   join_for_testing_returned_.Set();
 #endif

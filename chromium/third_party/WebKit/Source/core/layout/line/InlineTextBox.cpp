@@ -34,8 +34,10 @@
 #include "core/layout/line/AbstractInlineTextBox.h"
 #include "core/layout/line/EllipsisBox.h"
 #include "core/paint/InlineTextBoxPainter.h"
+#include "core/paint/PaintInfo.h"
 #include "platform/fonts/CharacterRange.h"
 #include "platform/fonts/FontCache.h"
+#include "platform/graphics/paint/PaintController.h"
 #include "platform/wtf/Vector.h"
 #include "platform/wtf/text/StringBuilder.h"
 
@@ -196,12 +198,15 @@ SelectionState InlineTextBox::GetSelectionState() const {
     // kStartAndEnd is invalid operation.
     bool start =
         (state != SelectionState::kEnd &&
-         selection.LayoutSelectionStart().value_or(0) >= start_ &&
-         selection.LayoutSelectionStart().value_or(0) <=
+         static_cast<int>(selection.LayoutSelectionStart().value_or(0)) >=
+             start_ &&
+         static_cast<int>(selection.LayoutSelectionStart().value_or(0)) <=
              start_ + len_ + end_of_line_adjustment_for_css_line_break);
     bool end = (state != SelectionState::kStart &&
-                selection.LayoutSelectionEnd().value_or(0) > start_ &&
-                selection.LayoutSelectionEnd().value_or(0) <= last_selectable);
+                static_cast<int>(selection.LayoutSelectionEnd().value_or(0)) >
+                    start_ &&
+                static_cast<int>(selection.LayoutSelectionEnd().value_or(0)) <=
+                    last_selectable);
     if (start && end)
       state = SelectionState::kStartAndEnd;
     else if (start)
@@ -209,9 +214,11 @@ SelectionState InlineTextBox::GetSelectionState() const {
     else if (end)
       state = SelectionState::kEnd;
     else if ((state == SelectionState::kEnd ||
-              selection.LayoutSelectionStart().value_or(0) < start_) &&
+              static_cast<int>(selection.LayoutSelectionStart().value_or(0)) <
+                  start_) &&
              (state == SelectionState::kStart ||
-              selection.LayoutSelectionEnd().value_or(0) > last_selectable))
+              static_cast<int>(selection.LayoutSelectionEnd().value_or(0)) >
+                  last_selectable))
       state = SelectionState::kInside;
     else if (state == SelectionState::kStartAndEnd)
       state = SelectionState::kNone;
@@ -302,7 +309,7 @@ LayoutRect InlineTextBox::LocalSelectionRect(
   StringBuilder characters_with_hyphen;
   bool respect_hyphen = e_pos == len_ && HasHyphen();
   TextRun text_run = ConstructTextRun(
-      style_to_use, respect_hyphen ? &characters_with_hyphen : 0);
+      style_to_use, respect_hyphen ? &characters_with_hyphen : nullptr);
 
   LayoutPoint starting_point = LayoutPoint(LogicalLeft(), sel_top);
   LayoutRect r;
@@ -541,6 +548,10 @@ void InlineTextBox::Paint(const PaintInfo& paint_info,
                           LayoutUnit /*lineTop*/,
                           LayoutUnit /*lineBottom*/) const {
   InlineTextBoxPainter(*this).Paint(paint_info, paint_offset);
+  if (GetLineLayoutItem().ContainsOnlyWhitespaceOrNbsp() !=
+      OnlyWhitespaceOrNbsp::kYes) {
+    paint_info.context.GetPaintController().SetTextPainted();
+  }
 }
 
 void InlineTextBox::SelectionStartEnd(int& s_pos, int& e_pos) const {
@@ -592,6 +603,10 @@ void InlineTextBox::PaintTextMatchMarkerForeground(
     const Font& font) const {
   InlineTextBoxPainter(*this).PaintTextMatchMarkerForeground(
       paint_info, box_origin, marker, style, font);
+  if (GetLineLayoutItem().ContainsOnlyWhitespaceOrNbsp() !=
+      OnlyWhitespaceOrNbsp::kYes) {
+    paint_info.context.GetPaintController().SetTextPainted();
+  }
 }
 
 void InlineTextBox::PaintTextMatchMarkerBackground(

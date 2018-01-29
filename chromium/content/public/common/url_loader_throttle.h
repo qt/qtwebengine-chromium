@@ -8,6 +8,8 @@
 #include "content/common/content_export.h"
 #include "content/public/common/resource_type.h"
 
+class GURL;
+
 namespace net {
 struct RedirectInfo;
 }
@@ -15,6 +17,7 @@ struct RedirectInfo;
 namespace content {
 
 struct ResourceRequest;
+struct ResourceResponseHead;
 
 // A URLLoaderThrottle gets notified at various points during the process of
 // loading a resource. At each stage, it has the opportunity to defer the
@@ -69,7 +72,10 @@ class CONTENT_EXPORT URLLoaderThrottle {
                                    bool* defer);
 
   // Called when the response headers and meta data are available.
-  virtual void WillProcessResponse(bool* defer);
+  // TODO(776312): Migrate this URL to ResourceResponseHead.
+  virtual void WillProcessResponse(const GURL& response_url,
+                                   const ResourceResponseHead& response_head,
+                                   bool* defer);
 
   void set_delegate(Delegate* delegate) { delegate_ = delegate; }
 

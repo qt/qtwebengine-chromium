@@ -20,32 +20,21 @@
 
 namespace blink {
 
-using NGTextFragmentPainterTest = PaintControllerPaintTest;
+class NGTextFragmentPainterTest : public PaintControllerPaintTest,
+                                  private ScopedLayoutNGForTest,
+                                  private ScopedLayoutNGPaintFragmentsForTest {
+ public:
+  NGTextFragmentPainterTest(LocalFrameClient* local_frame_client = nullptr)
+      : PaintControllerPaintTest(local_frame_client),
+        ScopedLayoutNGForTest(true),
+        ScopedLayoutNGPaintFragmentsForTest(true) {}
+};
+
 INSTANTIATE_TEST_CASE_P(All,
                         NGTextFragmentPainterTest,
                         ::testing::Values(0, kRootLayerScrolling));
 
-class EnableLayoutNGForScope {
- public:
-  EnableLayoutNGForScope() {
-    layout_ng_ = RuntimeEnabledFeatures::LayoutNGEnabled();
-    paint_fragments_ = RuntimeEnabledFeatures::LayoutNGPaintFragmentsEnabled();
-    RuntimeEnabledFeatures::SetLayoutNGEnabled(true);
-    RuntimeEnabledFeatures::SetLayoutNGPaintFragmentsEnabled(true);
-  }
-  ~EnableLayoutNGForScope() {
-    RuntimeEnabledFeatures::SetLayoutNGEnabled(layout_ng_);
-    RuntimeEnabledFeatures::SetLayoutNGPaintFragmentsEnabled(paint_fragments_);
-  }
-
- private:
-  bool layout_ng_;
-  bool paint_fragments_;
-};
-
 TEST_P(NGTextFragmentPainterTest, TestTextStyle) {
-  EnableLayoutNGForScope enable_layout_ng;
-
   SetBodyInnerHTML(R"HTML(
     <!DOCTYPE html>
     <body>
@@ -74,17 +63,14 @@ TEST_P(NGTextFragmentPainterTest, TestTextStyle) {
 
   const NGPaintFragment& root_fragment = *block_flow.PaintFragment();
   EXPECT_EQ(1u, root_fragment.Children().size());
-  const NGPaintFragment& box_fragment = *root_fragment.Children()[0];
-  EXPECT_EQ(1u, box_fragment.Children().size());
-  const NGPaintFragment& line_box_fragment = *box_fragment.Children()[0];
+  const NGPaintFragment& line_box_fragment = *root_fragment.Children()[0];
   EXPECT_EQ(1u, line_box_fragment.Children().size());
   const NGPaintFragment& text_fragment = *line_box_fragment.Children()[0];
 
   EXPECT_DISPLAY_LIST(
-      RootPaintController().GetDisplayItemList(), 4,
+      RootPaintController().GetDisplayItemList(), 3,
       TestDisplayItem(*background_client, DisplayItem::kDocumentBackground),
       TestDisplayItem(root_fragment, DisplayItem::kBoxDecorationBackground),
-      TestDisplayItem(box_fragment, DisplayItem::kBoxDecorationBackground),
       TestDisplayItem(text_fragment, kForegroundType));
 }
 

@@ -18,13 +18,14 @@ CSSPaintValue::CSSPaintValue(CSSCustomIdentValue* name)
       name_(name),
       paint_image_generator_observer_(new Observer(this)) {}
 
-CSSPaintValue::CSSPaintValue(CSSCustomIdentValue* name,
-                             Vector<RefPtr<CSSVariableData>>& variable_data)
+CSSPaintValue::CSSPaintValue(
+    CSSCustomIdentValue* name,
+    Vector<scoped_refptr<CSSVariableData>>& variable_data)
     : CSSPaintValue(name) {
   argument_variable_data_.swap(variable_data);
 }
 
-CSSPaintValue::~CSSPaintValue() {}
+CSSPaintValue::~CSSPaintValue() = default;
 
 String CSSPaintValue::CustomCSSText() const {
   StringBuilder result;
@@ -42,24 +43,23 @@ String CSSPaintValue::GetName() const {
   return name_->Value();
 }
 
-RefPtr<Image> CSSPaintValue::GetImage(const ImageResourceObserver& client,
-                                      const Document& document,
-                                      const ComputedStyle&,
-                                      const IntSize& container_size,
-                                      const LayoutSize* logical_size) {
+scoped_refptr<Image> CSSPaintValue::GetImage(
+    const ImageResourceObserver& client,
+    const Document& document,
+    const ComputedStyle&,
+    const IntSize& container_size) {
   if (!generator_) {
     generator_ = CSSPaintImageGenerator::Create(
         GetName(), document, paint_image_generator_observer_);
   }
 
-  if (!ParseInputArguments())
+  if (!ParseInputArguments(document))
     return nullptr;
 
-  return generator_->Paint(client, container_size, parsed_input_arguments_,
-                           logical_size);
+  return generator_->Paint(client, container_size, parsed_input_arguments_);
 }
 
-bool CSSPaintValue::ParseInputArguments() {
+bool CSSPaintValue::ParseInputArguments(const Document& document) {
   if (input_arguments_invalid_)
     return false;
 
@@ -80,8 +80,11 @@ bool CSSPaintValue::ParseInputArguments() {
   parsed_input_arguments_ = new CSSStyleValueVector();
 
   for (size_t i = 0; i < argument_variable_data_.size(); ++i) {
-    const CSSValue* parsed_value =
-        argument_variable_data_[i]->ParseForSyntax(input_argument_types[i]);
+    // If we are parsing a paint() function, we must be a secure context.
+    DCHECK_EQ(SecureContextMode::kSecureContext,
+              document.GetSecureContextMode());
+    const CSSValue* parsed_value = argument_variable_data_[i]->ParseForSyntax(
+        input_argument_types[i], SecureContextMode::kSecureContext);
     if (!parsed_value) {
       input_arguments_invalid_ = true;
       parsed_input_arguments_ = nullptr;
@@ -102,7 +105,8 @@ void CSSPaintValue::PaintImageGeneratorReady() {
     // TODO(ikilpatrick): We shouldn't be casting like this or mutate the layout
     // tree from a const pointer.
     const_cast<ImageResourceObserver*>(client)->ImageChanged(
-        static_cast<WrappedImagePtr>(this));
+        static_cast<WrappedImagePtr>(this),
+        ImageResourceObserver::CanDeferInvalidation::kNo);
   }
 }
 
@@ -116,7 +120,7 @@ bool CSSPaintValue::Equals(const CSSPaintValue& other) const {
          CustomCSSText() == other.CustomCSSText();
 }
 
-DEFINE_TRACE_AFTER_DISPATCH(CSSPaintValue) {
+void CSSPaintValue::TraceAfterDispatch(blink::Visitor* visitor) {
   visitor->Trace(name_);
   visitor->Trace(generator_);
   visitor->Trace(paint_image_generator_observer_);

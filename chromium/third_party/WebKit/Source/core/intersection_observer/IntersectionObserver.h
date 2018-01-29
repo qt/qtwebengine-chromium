@@ -25,15 +25,12 @@ class IntersectionObserverInit;
 class ScriptState;
 class V8IntersectionObserverCallback;
 
-class CORE_EXPORT IntersectionObserver final
-    : public GarbageCollectedFinalized<IntersectionObserver>,
-      public ScriptWrappable {
+class CORE_EXPORT IntersectionObserver final : public ScriptWrappable {
   DEFINE_WRAPPERTYPEINFO();
 
  public:
-  using EventCallback =
-      Function<void(const HeapVector<Member<IntersectionObserverEntry>>&),
-               WTF::kSameThreadAffinity>;
+  using EventCallback = WTF::RepeatingFunction<void(
+      const HeapVector<Member<IntersectionObserverEntry>>&)>;
 
   static IntersectionObserver* Create(const IntersectionObserverInit&,
                                       IntersectionObserverDelegate&,
@@ -69,7 +66,8 @@ class CORE_EXPORT IntersectionObserver final
 
   // This is the document which is responsible for running
   // computeIntersectionObservations at frame generation time.
-  Document& TrackingDocument() const;
+  // This can return nullptr when no tracking document is available.
+  Document* TrackingDocument() const;
 
   const Length& TopMargin() const { return top_margin_; }
   const Length& RightMargin() const { return right_margin_; }
@@ -85,8 +83,8 @@ class CORE_EXPORT IntersectionObserver final
     return observations_;
   }
 
-  DECLARE_TRACE();
-  DECLARE_TRACE_WRAPPERS();
+  void Trace(blink::Visitor*);
+  void TraceWrappers(const ScriptWrappableVisitor*) const;
 
  private:
   explicit IntersectionObserver(IntersectionObserverDelegate&,

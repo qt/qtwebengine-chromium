@@ -80,11 +80,12 @@ class PropertyTreePrinter {
   }
 
   void CollectPropertyNodes(const LayoutObject& object) {
-    if (const ObjectPaintProperties* properties =
-            object.FirstFragment() ? object.FirstFragment()->PaintProperties()
-                                   : nullptr)
-      Traits::AddObjectPaintProperties(object, *properties, *this);
-    for (LayoutObject* child = object.SlowFirstChild(); child;
+    for (const auto* fragment = &object.FirstFragment(); fragment;
+         fragment = fragment->NextFragment()) {
+      if (const auto* properties = fragment->PaintProperties())
+        Traits::AddObjectPaintProperties(object, *properties, *this);
+    }
+    for (const auto* child = object.SlowFirstChild(); child;
          child = child->NextSibling())
       CollectPropertyNodes(*child);
   }
@@ -151,8 +152,6 @@ class PropertyTreePrinterTraits<TransformPaintPropertyNode> {
       printer.AddPropertyNode(t, "SvgLocalToBorderBoxTransform", object);
     if (const auto* t = properties.ScrollTranslation())
       printer.AddPropertyNode(t, "ScrollTranslation", object);
-    if (const auto* t = properties.ScrollbarPaintOffset())
-      printer.AddPropertyNode(t, "ScrollbarPaintOffset", object);
   }
 };
 
@@ -374,8 +373,7 @@ class PaintPropertyTreeGraphBuilder {
 
   void WriteObjectPaintPropertyNodes(const LayoutObject& object) {
     const ObjectPaintProperties* properties =
-        object.FirstFragment() ? object.FirstFragment()->PaintProperties()
-                               : nullptr;
+        object.FirstFragment().PaintProperties();
     if (!properties)
       return;
     const TransformPaintPropertyNode* paint_offset =
@@ -397,11 +395,6 @@ class PaintPropertyTreeGraphBuilder {
         properties->ScrollTranslation();
     if (scroll_translation)
       WritePaintPropertyNode(*scroll_translation, &object, "scrollTranslation");
-    const TransformPaintPropertyNode* scrollbar_paint_offset =
-        properties->ScrollbarPaintOffset();
-    if (scrollbar_paint_offset)
-      WritePaintPropertyNode(*scrollbar_paint_offset, &object,
-                             "scrollbarPaintOffset");
     const EffectPaintPropertyNode* effect = properties->Effect();
     if (effect)
       WritePaintPropertyNode(*effect, &object, "effect");
@@ -534,20 +527,23 @@ CORE_EXPORT void showAllPropertyTrees(const blink::LocalFrameView& rootFrame) {
 }
 
 void showTransformPropertyTree(const blink::LocalFrameView& rootFrame) {
-  fprintf(stderr, "%s\n",
-          transformPropertyTreeAsString(rootFrame).Utf8().data());
+  LOG(ERROR) << "Transform tree:\n"
+             << transformPropertyTreeAsString(rootFrame).Utf8().data();
 }
 
 void showClipPropertyTree(const blink::LocalFrameView& rootFrame) {
-  fprintf(stderr, "%s\n", clipPropertyTreeAsString(rootFrame).Utf8().data());
+  LOG(ERROR) << "Clip tree:\n"
+             << clipPropertyTreeAsString(rootFrame).Utf8().data();
 }
 
 void showEffectPropertyTree(const blink::LocalFrameView& rootFrame) {
-  fprintf(stderr, "%s\n", effectPropertyTreeAsString(rootFrame).Utf8().data());
+  LOG(ERROR) << "Effect tree:\n"
+             << effectPropertyTreeAsString(rootFrame).Utf8().data();
 }
 
 void showScrollPropertyTree(const blink::LocalFrameView& rootFrame) {
-  fprintf(stderr, "%s\n", scrollPropertyTreeAsString(rootFrame).Utf8().data());
+  LOG(ERROR) << "Scroll tree:\n"
+             << scrollPropertyTreeAsString(rootFrame).Utf8().data();
 }
 
 String transformPropertyTreeAsString(const blink::LocalFrameView& rootFrame) {

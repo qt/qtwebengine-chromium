@@ -20,10 +20,8 @@ web-platform-tests, including tips for writing and reviewing tests.
 
 ## Importing tests
 
-Chromium has a mirror
-([web-platform-tests](https://chromium.googlesource.com/external/w3c/web-platform-tests/)
-of the
-GitHub repos, and periodically imports a subset of the tests so that they are
+Chromium has a [mirror](https://chromium.googlesource.com/external/w3c/web-platform-tests/)
+of the GitHub repo and periodically imports a subset of the tests to
 run as part of the regular Blink layout test testing process.
 
 The goals of this process are to be able to run web-platform-tests unmodified
@@ -212,6 +210,13 @@ resolve the conflict.
 
 It's still possible to make direct pull requests to web-platform-tests, see
 http://web-platform-tests.org/appendix/github-intro.html.
+
+## Running tests
+
+Same as Blink layout tests, you can use
+[`run-webkit-tests`](layout_tests.md#running-the-tests) to run any WPT test.
+
+One thing to note is that glob patterns for WPT tests are not yet supported.
 
 ## Reviewing tests
 

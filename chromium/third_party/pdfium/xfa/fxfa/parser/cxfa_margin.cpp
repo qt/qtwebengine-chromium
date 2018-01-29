@@ -1,4 +1,4 @@
-// Copyright 2016 PDFium Authors. All rights reserved.
+// Copyright 2017 PDFium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,24 +6,32 @@
 
 #include "xfa/fxfa/parser/cxfa_margin.h"
 
-CXFA_Margin::CXFA_Margin(CXFA_Node* pNode) : CXFA_Data(pNode) {}
+namespace {
 
-bool CXFA_Margin::GetLeftInset(float& fInset, float fDefInset) const {
-  fInset = fDefInset;
-  return TryMeasure(XFA_ATTRIBUTE_LeftInset, fInset);
-}
+const CXFA_Node::PropertyData kPropertyData[] = {{XFA_Element::Extras, 1, 0},
+                                                 {XFA_Element::Unknown, 0, 0}};
+const CXFA_Node::AttributeData kAttributeData[] = {
+    {XFA_Attribute::Id, XFA_AttributeType::CData, nullptr},
+    {XFA_Attribute::Use, XFA_AttributeType::CData, nullptr},
+    {XFA_Attribute::LeftInset, XFA_AttributeType::Measure, (void*)L"0in"},
+    {XFA_Attribute::BottomInset, XFA_AttributeType::Measure, (void*)L"0in"},
+    {XFA_Attribute::TopInset, XFA_AttributeType::Measure, (void*)L"0in"},
+    {XFA_Attribute::RightInset, XFA_AttributeType::Measure, (void*)L"0in"},
+    {XFA_Attribute::Usehref, XFA_AttributeType::CData, nullptr},
+    {XFA_Attribute::Unknown, XFA_AttributeType::Integer, nullptr}};
 
-bool CXFA_Margin::GetTopInset(float& fInset, float fDefInset) const {
-  fInset = fDefInset;
-  return TryMeasure(XFA_ATTRIBUTE_TopInset, fInset);
-}
+constexpr wchar_t kName[] = L"margin";
 
-bool CXFA_Margin::GetRightInset(float& fInset, float fDefInset) const {
-  fInset = fDefInset;
-  return TryMeasure(XFA_ATTRIBUTE_RightInset, fInset);
-}
+}  // namespace
 
-bool CXFA_Margin::GetBottomInset(float& fInset, float fDefInset) const {
-  fInset = fDefInset;
-  return TryMeasure(XFA_ATTRIBUTE_BottomInset, fInset);
-}
+CXFA_Margin::CXFA_Margin(CXFA_Document* doc, XFA_PacketType packet)
+    : CXFA_Node(doc,
+                packet,
+                (XFA_XDPPACKET_Template | XFA_XDPPACKET_Form),
+                XFA_ObjectType::Node,
+                XFA_Element::Margin,
+                kPropertyData,
+                kAttributeData,
+                kName) {}
+
+CXFA_Margin::~CXFA_Margin() {}

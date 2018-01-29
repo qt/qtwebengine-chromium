@@ -29,6 +29,7 @@
 #ifndef DocumentMarkerController_h
 #define DocumentMarkerController_h
 
+#include "base/macros.h"
 #include "core/CoreExport.h"
 #include "core/dom/SynchronousMutationObserver.h"
 #include "core/editing/iterators/TextIterator.h"
@@ -50,7 +51,6 @@ class SuggestionMarkerProperties;
 class CORE_EXPORT DocumentMarkerController final
     : public GarbageCollected<DocumentMarkerController>,
       public SynchronousMutationObserver {
-  WTF_MAKE_NONCOPYABLE(DocumentMarkerController);
   USING_GARBAGE_COLLECTED_MIXIN(DocumentMarkerController);
 
  public:
@@ -73,13 +73,13 @@ class CORE_EXPORT DocumentMarkerController final
   void AddSuggestionMarker(const EphemeralRange&,
                            const SuggestionMarkerProperties&);
 
-  void MoveMarkers(Node* src_node, int length, Node* dst_node);
+  void MoveMarkers(const Node* src_node, int length, const Node* dst_node);
 
   void PrepareForDestruction();
   void RemoveMarkersInRange(const EphemeralRange&, DocumentMarker::MarkerTypes);
   void RemoveMarkersOfTypes(DocumentMarker::MarkerTypes);
   void RemoveMarkersForNode(
-      Node*,
+      const Node*,
       DocumentMarker::MarkerTypes = DocumentMarker::AllMarkers());
   void RemoveSpellingMarkersUnderWords(const Vector<String>& words);
   void RemoveSuggestionMarkerByTag(const Node*, int32_t marker_tag);
@@ -89,11 +89,11 @@ class CORE_EXPORT DocumentMarkerController final
   bool SetTextMatchMarkersActive(const EphemeralRange&, bool);
   // Returns true if markers within a range defined by a node, |startOffset| and
   // |endOffset| are found.
-  bool SetTextMatchMarkersActive(Node*,
+  bool SetTextMatchMarkersActive(const Node*,
                                  unsigned start_offset,
                                  unsigned end_offset,
                                  bool);
-  bool HasMarkers(Node* node) const { return markers_.Contains(node); }
+  bool HasMarkers(const Node* node) const { return markers_.Contains(node); }
 
   // TODO(rlanday): can these methods for retrieving markers be consolidated
   // without hurting efficiency?
@@ -117,7 +117,7 @@ class CORE_EXPORT DocumentMarkerController final
   MarkersIntersectingRange(const EphemeralRangeInFlatTree&,
                            DocumentMarker::MarkerTypes);
   DocumentMarkerVector MarkersFor(
-      Node*,
+      const Node*,
       DocumentMarker::MarkerTypes = DocumentMarker::AllMarkers());
   DocumentMarkerVector Markers();
 
@@ -125,7 +125,7 @@ class CORE_EXPORT DocumentMarkerController final
   void InvalidateRectsForAllTextMatchMarkers();
   void InvalidateRectsForTextMatchMarkersInNode(const Node&);
 
-  DECLARE_TRACE();
+  void Trace(blink::Visitor*);
 
 #ifndef NDEBUG
   void ShowMarkers() const;
@@ -143,7 +143,7 @@ class CORE_EXPORT DocumentMarkerController final
   void AddMarkerInternal(
       const EphemeralRange&,
       std::function<DocumentMarker*(int, int)> create_marker_from_offsets);
-  void AddMarkerToNode(Node*, DocumentMarker*);
+  void AddMarkerToNode(const Node*, DocumentMarker*);
 
   using MarkerLists = HeapVector<Member<DocumentMarkerList>,
                                  DocumentMarker::kMarkerTypeIndexesCount>;
@@ -153,7 +153,7 @@ class CORE_EXPORT DocumentMarkerController final
   bool PossiblyHasMarkers(DocumentMarker::MarkerTypes);
   void RemoveMarkersFromList(MarkerMap::iterator, DocumentMarker::MarkerTypes);
   void RemoveMarkers(TextIterator&, DocumentMarker::MarkerTypes);
-  void RemoveMarkersInternal(Node*,
+  void RemoveMarkersInternal(const Node*,
                              unsigned start_offset,
                              int length,
                              DocumentMarker::MarkerTypes);
@@ -163,6 +163,8 @@ class CORE_EXPORT DocumentMarkerController final
   // without going through the map.
   DocumentMarker::MarkerTypes possibly_existing_marker_types_;
   const Member<Document> document_;
+
+  DISALLOW_COPY_AND_ASSIGN(DocumentMarkerController);
 };
 
 }  // namespace blink

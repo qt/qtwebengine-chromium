@@ -11,8 +11,8 @@
 #include "xfa/fwl/cfwl_widget.h"
 #include "xfa/fxfa/cxfa_ffwidget.h"
 #include "xfa/fxfa/cxfa_fwltheme.h"
-#include "xfa/fxgraphics/cxfa_color.h"
-#include "xfa/fxgraphics/cxfa_path.h"
+#include "xfa/fxgraphics/cxfa_gecolor.h"
+#include "xfa/fxgraphics/cxfa_gepath.h"
 
 CFWL_EditTP::CFWL_EditTP() {}
 
@@ -21,16 +21,17 @@ CFWL_EditTP::~CFWL_EditTP() {}
 void CFWL_EditTP::DrawBackground(CFWL_ThemeBackground* pParams) {
   if (CFWL_Part::CombTextLine == pParams->m_iPart) {
     CXFA_FFWidget* pWidget = XFA_ThemeGetOuterWidget(pParams->m_pWidget);
+    CXFA_BorderData borderUIData = pWidget->GetDataAcc()->GetUIBorderData();
     FX_ARGB cr = 0xFF000000;
     float fWidth = 1.0f;
-    if (CXFA_Border borderUI = pWidget->GetDataAcc()->GetUIBorder()) {
-      CXFA_Edge edge = borderUI.GetEdge(0);
-      if (edge) {
-        cr = edge.GetColor();
-        fWidth = edge.GetThickness();
+    if (borderUIData.HasValidNode()) {
+      CXFA_EdgeData edgeData = borderUIData.GetEdgeData(0);
+      if (edgeData.HasValidNode()) {
+        cr = edgeData.GetColor();
+        fWidth = edgeData.GetThickness();
       }
     }
-    pParams->m_pGraphics->SetStrokeColor(CXFA_Color(cr));
+    pParams->m_pGraphics->SetStrokeColor(CXFA_GEColor(cr));
     pParams->m_pGraphics->SetLineWidth(fWidth);
     pParams->m_pGraphics->StrokePath(pParams->m_pPath, &pParams->m_matrix);
     return;
@@ -45,22 +46,22 @@ void CFWL_EditTP::DrawBackground(CFWL_ThemeBackground* pParams) {
       if (pParams->m_pPath) {
         CXFA_Graphics* pGraphics = pParams->m_pGraphics;
         pGraphics->SaveGraphState();
-        pGraphics->SetFillColor(CXFA_Color(FWLTHEME_COLOR_BKSelected));
+        pGraphics->SetFillColor(CXFA_GEColor(FWLTHEME_COLOR_BKSelected));
         pGraphics->FillPath(pParams->m_pPath, FXFILL_WINDING,
                             &pParams->m_matrix);
         pGraphics->RestoreGraphState();
       } else {
-        CXFA_Path path;
+        CXFA_GEPath path;
         path.AddRectangle(pParams->m_rtPart.left, pParams->m_rtPart.top,
                           pParams->m_rtPart.width, pParams->m_rtPart.height);
-        CXFA_Color cr(FWLTHEME_COLOR_Background);
+        CXFA_GEColor cr(FWLTHEME_COLOR_Background);
         if (!pParams->m_bStaticBackground) {
           if (pParams->m_dwStates & CFWL_PartState_Disabled)
-            cr = CXFA_Color(FWLTHEME_COLOR_EDGERB1);
+            cr = CXFA_GEColor(FWLTHEME_COLOR_EDGERB1);
           else if (pParams->m_dwStates & CFWL_PartState_ReadOnly)
-            cr = CXFA_Color(ArgbEncode(255, 236, 233, 216));
+            cr = CXFA_GEColor(ArgbEncode(255, 236, 233, 216));
           else
-            cr = CXFA_Color(0xFFFFFFFF);
+            cr = CXFA_GEColor(0xFFFFFFFF);
         }
         pParams->m_pGraphics->SaveGraphState();
         pParams->m_pGraphics->SetFillColor(cr);
@@ -71,7 +72,7 @@ void CFWL_EditTP::DrawBackground(CFWL_ThemeBackground* pParams) {
       break;
     }
     case CFWL_Part::CombTextLine: {
-      pParams->m_pGraphics->SetStrokeColor(CXFA_Color(0xFF000000));
+      pParams->m_pGraphics->SetStrokeColor(CXFA_GEColor(0xFF000000));
       pParams->m_pGraphics->SetLineWidth(1.0f);
       pParams->m_pGraphics->StrokePath(pParams->m_pPath, &pParams->m_matrix);
       break;

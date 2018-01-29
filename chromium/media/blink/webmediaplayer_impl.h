@@ -41,7 +41,7 @@
 #include "media/blink/webmediaplayer_util.h"
 #include "media/filters/pipeline_controller.h"
 #include "media/mojo/interfaces/video_decode_stats_recorder.mojom.h"
-#include "media/renderers/skcanvas_video_renderer.h"
+#include "media/renderers/paint_canvas_video_renderer.h"
 #include "third_party/WebKit/public/platform/WebAudioSourceProvider.h"
 #include "third_party/WebKit/public/platform/WebContentDecryptionModuleResult.h"
 #include "third_party/WebKit/public/platform/WebMediaPlayer.h"
@@ -105,11 +105,14 @@ class MEDIA_BLINK_EXPORT WebMediaPlayerImpl
       WebMediaPlayerDelegate* delegate,
       std::unique_ptr<RendererFactorySelector> renderer_factory_selector,
       UrlIndex* url_index,
+      std::unique_ptr<VideoFrameCompositor> compositor,
       std::unique_ptr<WebMediaPlayerParams> params);
   ~WebMediaPlayerImpl() override;
 
   // WebSurfaceLayerBridgeObserver implementation.
-  void OnWebLayerReplaced() override;
+  void OnWebLayerUpdated() override;
+  void RegisterContentsLayer(blink::WebLayer* web_layer) override;
+  void UnregisterContentsLayer(blink::WebLayer* web_layer) override;
 
   void Load(LoadType load_type,
             const blink::WebMediaPlayerSource& source,
@@ -219,6 +222,8 @@ class MEDIA_BLINK_EXPORT WebMediaPlayerImpl
   void OnIdleTimeout() override;
   void OnPlay() override;
   void OnPause() override;
+  void OnSeekForward(double seconds) override;
+  void OnSeekBackward(double seconds) override;
   void OnVolumeMultiplierUpdate(double multiplier) override;
   void OnBecamePersistentVideo(bool value) override;
 
@@ -573,6 +578,9 @@ class MEDIA_BLINK_EXPORT WebMediaPlayerImpl
   // SetPlaybackRate(0) is being executed.
   double playback_rate_;
 
+  // Counter that limits spam to |media_log_| of |playback_rate_| changes.
+  int num_playback_rate_logs_;
+
   // Set while paused. |paused_time_| is only valid when |paused_| is true.
   bool paused_;
   base::TimeDelta paused_time_;
@@ -614,7 +622,7 @@ class MEDIA_BLINK_EXPORT WebMediaPlayerImpl
   // WebMediaPlayer may also receive directives (play, pause) from the delegate
   // via the WebMediaPlayerDelegate::Observer interface after registration.
   //
-  // NOTE: HTMLMediaElement is a Blink::SuspendableObject, and will receive a
+  // NOTE: HTMLMediaElement is a Blink::PausableObject, and will receive a
   // call to contextDestroyed() when Blink::Document::shutdown() is called.
   // Document::shutdown() is called before the frame detaches (and before the
   // frame is destroyed). RenderFrameImpl owns |delegate_| and is guaranteed
@@ -660,7 +668,7 @@ class MEDIA_BLINK_EXPORT WebMediaPlayerImpl
   scoped_refptr<base::SingleThreadTaskRunner> vfc_task_runner_;
   std::unique_ptr<VideoFrameCompositor>
       compositor_;  // Deleted on |vfc_task_runner_|.
-  SkCanvasVideoRenderer skcanvas_video_renderer_;
+  PaintCanvasVideoRenderer video_renderer_;
 
   // The compositor layer for displaying the video content when using composited
   // playback.

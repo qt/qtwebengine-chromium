@@ -179,6 +179,13 @@ enum ssl_open_record_t dtls_open_record(SSL *ssl, uint8_t *out_type,
                                         size_t *out_consumed,
                                         uint8_t *out_alert, Span<uint8_t> in) {
   *out_consumed = 0;
+  if (ssl->s3->read_shutdown == ssl_shutdown_close_notify) {
+    return ssl_open_record_close_notify;
+  }
+
+  if (in.empty()) {
+    return ssl_open_record_partial;
+  }
 
   CBS cbs = CBS(in);
 
@@ -268,10 +275,10 @@ static const SSLAEADContext *get_write_aead(const SSL *ssl,
                                             enum dtls1_use_epoch_t use_epoch) {
   if (use_epoch == dtls1_use_previous_epoch) {
     assert(ssl->d1->w_epoch >= 1);
-    return ssl->d1->last_aead_write_ctx;
+    return ssl->d1->last_aead_write_ctx.get();
   }
 
-  return ssl->s3->aead_write_ctx;
+  return ssl->s3->aead_write_ctx.get();
 }
 
 size_t dtls_max_seal_overhead(const SSL *ssl,
@@ -296,12 +303,12 @@ int dtls_seal_record(SSL *ssl, uint8_t *out, size_t *out_len, size_t max_out,
 
   // Determine the parameters for the current epoch.
   uint16_t epoch = ssl->d1->w_epoch;
-  SSLAEADContext *aead = ssl->s3->aead_write_ctx;
+  SSLAEADContext *aead = ssl->s3->aead_write_ctx.get();
   uint8_t *seq = ssl->s3->write_sequence;
   if (use_epoch == dtls1_use_previous_epoch) {
     assert(ssl->d1->w_epoch >= 1);
     epoch = ssl->d1->w_epoch - 1;
-    aead = ssl->d1->last_aead_write_ctx;
+    aead = ssl->d1->last_aead_write_ctx.get();
     seq = ssl->d1->last_write_sequence;
   }
 

@@ -180,7 +180,7 @@ public:
         SkPath::Verb verb;
 
         SkPoint pts[4];
-        while ((verb = iter.next(pts)) != SkPath::kDone_Verb) {
+        while ((verb = iter.next(pts, false)) != SkPath::kDone_Verb) {
             if (SkPath::kMove_Verb == verb && !first) {
                 return true;
             }
@@ -265,7 +265,7 @@ private:
         SkASSERT(vertexCount <= fVerticesInChunk);
         SkASSERT(indexCount <= fIndicesInChunk);
 
-        if (vertexCount > 0) {
+        if (this->isIndexed() ? SkToBool(indexCount) : SkToBool(vertexCount)) {
             if (!this->isIndexed()) {
                 fMesh.setNonIndexedNonInstanced(vertexCount);
             } else {
@@ -568,8 +568,10 @@ bool GrDefaultPathRenderer::internalDrawPath(GrRenderTargetContext* renderTarget
     SkScalar srcSpaceTol = GrPathUtils::scaleToleranceToSrc(tol, viewMatrix, path.getBounds());
 
     SkRect devBounds;
-    GetPathDevBounds(path, renderTargetContext->width(), renderTargetContext->height(), viewMatrix,
-                     &devBounds);
+    GetPathDevBounds(path,
+                     renderTargetContext->asRenderTargetProxy()->worstCaseWidth(),
+                     renderTargetContext->asRenderTargetProxy()->worstCaseHeight(),
+                     viewMatrix, &devBounds);
 
     for (int p = 0; p < passCount; ++p) {
         if (lastPassIsBounds && (p == passCount-1)) {

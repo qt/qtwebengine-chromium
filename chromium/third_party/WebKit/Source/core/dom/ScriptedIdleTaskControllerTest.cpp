@@ -7,8 +7,9 @@
 #include "bindings/core/v8/v8_idle_request_callback.h"
 #include "core/dom/IdleRequestOptions.h"
 #include "core/testing/NullExecutionContext.h"
+#include "platform/scheduler/child/web_scheduler.h"
 #include "platform/testing/TestingPlatformSupport.h"
-#include "platform/wtf/CurrentTime.h"
+#include "platform/wtf/Time.h"
 #include "public/platform/Platform.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -26,6 +27,7 @@ class MockScriptedIdleTaskControllerScheduler final : public WebScheduler {
   WebTaskRunner* LoadingTaskRunner() override { return nullptr; }
   WebTaskRunner* TimerTaskRunner() override { return nullptr; }
   WebTaskRunner* CompositorTaskRunner() override { return nullptr; }
+  WebTaskRunner* V8TaskRunner() override { return nullptr; }
   void Shutdown() override {}
   bool ShouldYieldForHighPriorityWork() override { return should_yield_; }
   bool CanExceedIdleDeadlineIfRequired() override { return false; }

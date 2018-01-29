@@ -53,6 +53,7 @@ buildflag_header("ui_features") {
   header = "ui_features.h"
   flags = [
     "ENABLE_HIDPI=$enable_hidpi",
+    "ENABLE_MUS=$enable_mus",
     "USE_XKBCOMMON=$use_xkbcommon",
     "MAC_VIEWS_BROWSER=$mac_views_browser",
     "HAS_NATIVE_ACCESSIBILITY=$has_native_accessibility",
@@ -135,8 +136,6 @@ component("base") {
     "cocoa/nsgraphics_context_additions.mm",
     "cocoa/nsview_additions.h",
     "cocoa/nsview_additions.mm",
-    "cocoa/quartzcore_additions.h",
-    "cocoa/quartzcore_additions.mm",
     "cocoa/remote_layer_api.h",
     "cocoa/remote_layer_api.mm",
     "cocoa/scoped_cg_context_smooth_fonts.h",
@@ -268,6 +267,8 @@ component("base") {
     "touch/touch_editing_controller.h",
     "ui_base_export.h",
     "ui_base_exports.cc",
+    "ui_base_features.cc",
+    "ui_base_features.h",
     "ui_base_paths.cc",
     "ui_base_paths.h",
     "ui_base_switches.cc",
@@ -281,6 +282,8 @@ component("base") {
     "user_activity/user_activity_observer.h",
     "view_prop.cc",
     "view_prop.h",
+    "webui/i18n_source_stream.cc",
+    "webui/i18n_source_stream.h",
     "webui/jstemplate_builder.cc",
     "webui/jstemplate_builder.h",
     "webui/web_ui_util.cc",
@@ -342,6 +345,8 @@ component("base") {
       "clipboard/custom_data_helper.h",
       "clipboard/scoped_clipboard_writer.cc",
       "clipboard/scoped_clipboard_writer.h",
+      "cocoa/bubble_closer.h",
+      "cocoa/bubble_closer.mm",
       "cursor/cursor_util.cc",
       "cursor/cursor_util.h",
       "default_theme_provider.cc",
@@ -556,7 +561,6 @@ component("base") {
       "Carbon.framework",
       "CoreVideo.framework",
       "Foundation.framework",
-      "QuartzCore.framework",
     ]
   }
 
@@ -654,11 +658,12 @@ static_library("test_support") {
     "test/ui_controls_internal_win.h",
     "test/ui_controls_mac.mm",
     "test/ui_controls_win.cc",
-    "test/user_interactive_test_case.h",
   ]
 
   if (!is_ios) {
     sources += [
+      "test/menu_test_observer.h",
+      "test/menu_test_observer.mm",
       "test/nswindow_fullscreen_notification_waiter.h",
       "test/nswindow_fullscreen_notification_waiter.mm",
       "test/scoped_fake_full_keyboard_access.h",
@@ -671,6 +676,8 @@ static_library("test_support") {
       "test/scoped_preferred_scroller_style_mac.mm",
       "test/test_clipboard.cc",
       "test/test_clipboard.h",
+      "test/view_tree_validator.h",
+      "test/view_tree_validator.mm",
       "test/windowed_nsnotification_observer.h",
       "test/windowed_nsnotification_observer.mm",
     ]
@@ -685,12 +692,6 @@ static_library("test_support") {
     ]
   }
 
-  if (is_mac) {
-    sources += [ "test/user_interactive_test_case_mac.mm" ]
-  } else {
-    sources += [ "test/user_interactive_test_case.cc" ]
-  }
-
   public_deps = [
     ":base",
   ]
@@ -700,6 +701,7 @@ static_library("test_support") {
     "//skia",
     "//testing/gtest",
     "//ui/base:ui_data_pack",
+    "//ui/display:test_support",
     "//ui/events:events_base",
     "//ui/events:test_support",
     "//ui/gfx",
@@ -789,11 +791,13 @@ test("ui_base_unittests") {
     "test/page_transition_types_unittest.cc",
     "test/run_all_unittests.cc",
     "user_activity/user_activity_detector_unittest.cc",
+    "webui/i18n_source_stream_unittest.cc",
   ]
   if (!is_ios) {
     sources += [
       "test/scoped_fake_nswindow_fullscreen_unittest.mm",
       "test/test_clipboard_unittest.cc",
+      "test/view_tree_validator_unittest.mm",
     ]
   }
 
@@ -820,6 +824,7 @@ test("ui_base_unittests") {
       "accelerators/menu_label_accelerator_util_linux_unittest.cc",
       "clipboard/custom_data_helper_unittest.cc",
       "cocoa/base_view_unittest.mm",
+      "cocoa/bubble_closer_unittest.mm",
       "cocoa/cocoa_base_utils_unittest.mm",
       "cocoa/constrained_window/constrained_window_animation_unittest.mm",
       "cocoa/controls/blue_label_button_unittest.mm",
@@ -878,6 +883,7 @@ test("ui_base_unittests") {
     "//base/test:test_support",
     "//mojo/edk/system",
     "//net",
+    "//net:test_support",
     "//skia",
     "//testing/gmock",
     "//testing/gtest",

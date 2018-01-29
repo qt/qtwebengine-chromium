@@ -4,12 +4,12 @@
 
 /**
  * @fileoverview
- * 'settings-internet-config' is a Settings wrapper for network-config.
+ * 'internet-config' is a Settings dialog wrapper for network-config.
  */
 Polymer({
-  is: 'settings-internet-config',
+  is: 'internet-config',
 
-  behaviors: [settings.RouteObserverBehavior, I18nBehavior],
+  behaviors: [I18nBehavior],
 
   properties: {
     /**
@@ -18,18 +18,49 @@ Polymer({
      */
     networkingPrivate: Object,
 
+    /** @type {!chrome.networkingPrivate.GlobalPolicy|undefined} */
+    globalPolicy: Object,
+
+    /** @private */
+    shareAllowEnable_: {
+      type: Boolean,
+      value: function() {
+        return loadTimeData.getBoolean('shareNetworkAllowEnable');
+      }
+    },
+
+    /** @private */
+    shareDefault_: {
+      type: Boolean,
+      value: function() {
+        return loadTimeData.getBoolean('shareNetworkDefault');
+      }
+    },
+
     /**
      * The GUID when an existing network is being configured. This will be
      * empty when configuring a new network.
      * @private
      */
-    guid_: String,
+    guid: String,
+
+    /**
+     * The type of network to be configured.
+     * @private {!chrome.networkingPrivate.NetworkType}
+     */
+    type: String,
+
+    /**
+     * The name of network (for display while the network details are fetched).
+     * @private
+     */
+    name: String,
 
     /** @private */
-    enableConnect_: String,
+    enableConnect_: Boolean,
 
     /** @private */
-    enableSave_: String,
+    enableSave_: Boolean,
 
     /**
      * The current properties if an existing network is being configured, or
@@ -40,69 +71,72 @@ Polymer({
     networkProperties_: Object,
   },
 
-  /**
-   * settings.RouteObserverBehavior
-   * @param {!settings.Route} route
-   * @protected
-   */
-  currentRouteChanged: function(route) {
-    if (route != settings.routes.NETWORK_CONFIG)
-      return;
-
-    var queryParams = settings.getQueryParameters();
-    this.guid_ = queryParams.get('guid') || '';
+  open: function() {
+    var dialog = /** @type {!CrDialogElement} */ (this.$.dialog);
+    if (!dialog.open)
+      dialog.showModal();
 
     // Set networkProperties for new configurations and for existing
     // configurations until the current properties are loaded.
-    var name = queryParams.get('name') || '';
-    var typeParam = queryParams.get('type');
-    var type = (typeParam && CrOnc.getValidType(typeParam)) || CrOnc.Type.WI_FI;
-    assert(type && type != CrOnc.Type.ALL);
+    assert(this.type && this.type != CrOnc.Type.ALL);
     this.networkProperties_ = {
-      GUID: this.guid_,
-      Name: name,
-      Type: type,
+      GUID: this.guid,
+      Name: this.name,
+      Type: this.type,
     };
-
-    // First focus this page (which will focus a button), then init the config
-    // element which will focus an enabled element if any.
-    this.focus();
     this.$.networkConfig.init();
   },
 
-  focus() {
-    var e = this.$$('paper-button:not([disabled])');
-    assert(e);  // The 'cancel' button should never be disabled.
-    e.focus();
-  },
-
-  /** @private */
-  close_: function() {
-    if (settings.getCurrentRoute() == settings.routes.NETWORK_CONFIG)
-      settings.navigateToPreviousRoute();
+  close: function() {
+    var dialog = /** @type {!CrDialogElement} */ (this.$.dialog);
+    if (dialog.open)
+      dialog.close();
   },
 
   /**
    * @return {string}
    * @private
    */
-  getTitle_: function() {
-    return this.networkProperties_.Name ||
-        this.i18n('OncType' + this.networkProperties_.Type);
+  getDialogTitle_: function() {
+    var name = this.networkProperties_.Name;
+    if (name)
+      return this.i18n('internetConfigName', name);
+    var type = this.i18n('OncType' + this.networkProperties_.Type);
+    return this.i18n('internetJoinType', type);
+  },
+
+  /**
+   * @return {boolean}
+   * @private
+   */
+  isConfigured_: function() {
+    var source = this.networkProperties_.Source;
+    return !!this.guid && !!source && source != CrOnc.Source.NONE;
+  },
+
+  /**
+   * @return {string}
+   * @private
+   */
+  getSaveOrConnectLabel_: function() {
+    return this.i18n(this.isConfigured_() ? 'save' : 'networkButtonConnect');
+  },
+
+  /**
+   * @return {boolean}
+   * @private
+   */
+  getSaveOrConnectEnabled_: function() {
+    return this.isConfigured_() ? this.enableSave_ : this.enableConnect_;
   },
 
   /** @private */
   onCancelTap_: function() {
-    this.close_();
+    this.close();
   },
 
   /** @private */
-  onSaveTap_: function() {
-    this.$.networkConfig.saveOrConnect();
-  },
-
-  /** @private */
-  onConnectTap_: function() {
+  onSaveOrConnectTap_: function() {
     this.$.networkConfig.saveOrConnect();
   },
 });

@@ -7,6 +7,7 @@
 
 #include "core/CoreExport.h"
 #include "core/loader/modulescript/ModuleScriptCreationParams.h"
+#include "platform/heap/HeapAllocator.h"
 #include "platform/loader/fetch/FetchParameters.h"
 #include "platform/wtf/Optional.h"
 
@@ -24,7 +25,7 @@ class CORE_EXPORT ModuleScriptFetcher
    public:
     virtual void NotifyFetchFinished(
         const WTF::Optional<ModuleScriptCreationParams>&,
-        ConsoleMessage* error_message) = 0;
+        const HeapVector<Member<ConsoleMessage>>& error_messages) = 0;
   };
 
   ModuleScriptFetcher() = default;
@@ -34,11 +35,11 @@ class CORE_EXPORT ModuleScriptFetcher
   // ScriptResource::Fetch() requires it.
   virtual void Fetch(FetchParameters&, Client*) = 0;
 
-  DECLARE_VIRTUAL_TRACE();
+  virtual void Trace(blink::Visitor*);
 
  protected:
   void NotifyFetchFinished(const WTF::Optional<ModuleScriptCreationParams>&,
-                           ConsoleMessage*);
+                           const HeapVector<Member<ConsoleMessage>>&);
 
   void SetClient(Client*);
 

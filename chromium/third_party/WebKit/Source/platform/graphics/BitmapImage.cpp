@@ -26,7 +26,9 @@
 
 #include "platform/graphics/BitmapImage.h"
 
+#include "base/memory/scoped_refptr.h"
 #include "base/metrics/histogram_macros.h"
+#include "base/time/default_tick_clock.h"
 #include "platform/Timer.h"
 #include "platform/geometry/FloatRect.h"
 #include "platform/graphics/BitmapImageMetrics.h"
@@ -43,7 +45,6 @@
 #include "platform/scheduler/child/web_scheduler.h"
 #include "platform/wtf/Assertions.h"
 #include "platform/wtf/PtrUtil.h"
-#include "platform/wtf/RefPtr.h"
 #include "platform/wtf/text/WTFString.h"
 #include "public/web/WebSettings.h"
 
@@ -80,8 +81,8 @@ BitmapImage::BitmapImage(ImageObserver* observer, bool is_multipart)
       repetition_count_status_(kUnknown),
       repetition_count_(kAnimationNone),
       repetitions_complete_(0),
-      desired_frame_start_time_(0),
       frame_count_(0),
+      clock_(base::DefaultTickClock::GetInstance()),
       task_runner_(Platform::Current()
                        ->CurrentThread()
                        ->Scheduler()
@@ -105,7 +106,7 @@ void BitmapImage::DestroyDecodedData() {
   NotifyMemoryChanged();
 }
 
-RefPtr<SharedBuffer> BitmapImage::Data() {
+scoped_refptr<SharedBuffer> BitmapImage::Data() {
   return decoder_ ? decoder_->Data() : nullptr;
 }
 
@@ -194,7 +195,7 @@ bool BitmapImage::GetHotSpot(IntPoint& hot_spot) const {
   return decoder_ && decoder_->HotSpot(hot_spot);
 }
 
-Image::SizeAvailability BitmapImage::SetData(RefPtr<SharedBuffer> data,
+Image::SizeAvailability BitmapImage::SetData(scoped_refptr<SharedBuffer> data,
                                              bool all_data_received) {
   if (!data)
     return kSizeAvailable;
@@ -410,9 +411,12 @@ PaintImage BitmapImage::PaintImageForCurrentFrame() {
   return FrameAtIndex(current_frame_index_);
 }
 
-RefPtr<Image> BitmapImage::ImageForDefaultFrame() {
+scoped_refptr<Image> BitmapImage::ImageForDefaultFrame() {
   if (FrameCount() > 1) {
     PaintImage paint_image = FrameAtIndex(PaintImage::kDefaultFrameIndex);
+    if (!paint_image)
+      return nullptr;
+
     if (paint_image.ShouldAnimate()) {
       // To prevent the compositor from animating this image, we set the
       // animation count to kAnimationNone. This makes the image essentially
@@ -505,8 +509,7 @@ bool BitmapImage::ShouldAnimate() {
 }
 
 void BitmapImage::StartAnimation() {
-  last_num_frames_skipped_ =
-      StartAnimationInternal(MonotonicallyIncreasingTime());
+  last_num_frames_skipped_ = StartAnimationInternal(clock_->NowTicks());
   if (!last_num_frames_skipped_.has_value())
     return;
 
@@ -514,7 +517,7 @@ void BitmapImage::StartAnimation() {
                               last_num_frames_skipped_.value());
 }
 
-Optional<size_t> BitmapImage::StartAnimationInternal(const double time) {
+Optional<size_t> BitmapImage::StartAnimationInternal(TimeTicks time) {
   // If the |frame_timer_| is set, it indicates that a task is already pending
   // to advance the current frame of the animation. We don't need to schedule
   // a task to advance the animation in that case.
@@ -522,7 +525,7 @@ Optional<size_t> BitmapImage::StartAnimationInternal(const double time) {
     return WTF::nullopt;
 
   // If we aren't already animating, set now as the animation start time.
-  if (!desired_frame_start_time_)
+  if (desired_frame_start_time_.is_null())
     desired_frame_start_time_ = time;
 
   // Don't advance the animation to an incomplete frame.
@@ -543,16 +546,13 @@ Optional<size_t> BitmapImage::StartAnimationInternal(const double time) {
   // Determine time for next frame to start.  By ignoring paint and timer lag
   // in this calculation, we make the animation appear to run at its desired
   // rate regardless of how fast it's being repainted.
-  // TODO(vmpstr): This function can probably deal in TimeTicks/TimeDelta
-  // instead.
-  const double current_duration =
-      FrameDurationAtIndex(current_frame_index_).InSecondsF();
+  TimeDelta current_duration = FrameDurationAtIndex(current_frame_index_);
   desired_frame_start_time_ += current_duration;
 
   // When an animated image is more than five minutes out of date, the
   // user probably doesn't care about resyncing and we could burn a lot of
   // time looping through frames below.  Just reset the timings.
-  const double kCAnimationResyncCutoff = 5 * 60;
+  constexpr TimeDelta kCAnimationResyncCutoff = TimeDelta::FromMinutes(5);
   if ((time - desired_frame_start_time_) > kCAnimationResyncCutoff)
     desired_frame_start_time_ = time + current_duration;
 
@@ -574,8 +574,9 @@ Optional<size_t> BitmapImage::StartAnimationInternal(const double time) {
     // Haven't yet reached time for next frame to start; delay until then
     frame_timer_ = WTF::WrapUnique(new TaskRunnerTimer<BitmapImage>(
         task_runner_, this, &BitmapImage::AdvanceAnimation));
-    frame_timer_->StartOneShot(std::max(desired_frame_start_time_ - time, 0.),
-                               BLINK_FROM_HERE);
+    frame_timer_->StartOneShot(
+        std::max(desired_frame_start_time_ - time, TimeDelta()),
+        BLINK_FROM_HERE);
 
     // No frames needed to be skipped to advance to the next frame.
     return Optional<size_t>(0u);
@@ -613,8 +614,7 @@ Optional<size_t> BitmapImage::StartAnimationInternal(const double time) {
 
     DCHECK_EQ(current_frame_index_, next_frame);
     frames_advanced++;
-    desired_frame_start_time_ +=
-        FrameDurationAtIndex(current_frame_index_).InSecondsF();
+    desired_frame_start_time_ += FrameDurationAtIndex(current_frame_index_);
   }
 
   DCHECK_GT(frames_advanced, 0u);
@@ -633,25 +633,10 @@ Optional<size_t> BitmapImage::StartAnimationInternal(const double time) {
   // the task for the next frame (which may not happen in the call below), it
   // always updates the |desired_frame_start_time_| based on the current frame
   // duration.
-  desired_frame_start_time_ -=
-      FrameDurationAtIndex(current_frame_index_).InSecondsF();
+  desired_frame_start_time_ -= FrameDurationAtIndex(current_frame_index_);
 
-  // Set up the timer for the next frame if required. Note that we have
-  // already advanced to the current_frame_index_ after catching up. And in
-  // the loop above, we either could not advance the animation further or we
-  // advanced it up till the desired time for the current frame. This ensures
-  // that calling StartAnimationInternal here with the same |time| will not
-  // need to perform any catch up skipping.
-  StartAnimationInternal(time);
-
-  // At this point, we've advanced to the |current_frame_index_|, and requested
-  // an invalidation from the observers, and potentially scheduled a task for
-  // further advancing the animation. If the task runs before the next draw,
-  // current_frame_index_ will be skipped, if not, we will draw with it. For the
-  // purpose of keeping the UMA tracking simple, we always exclude the
-  // |current_frame_index_|, since if we do end up drawing before the task runs,
-  // we won't emit an UMA entry for advancing to the next frame with no
-  // skipping.
+  // Don't include the |current_frame_index_|, which will be used on the next
+  // paint, in the number of frames skipped.
   return Optional<size_t>(frames_advanced - 1);
 }
 
@@ -665,7 +650,7 @@ void BitmapImage::ResetAnimation() {
   StopAnimation();
   current_frame_index_ = 0;
   repetitions_complete_ = 0;
-  desired_frame_start_time_ = 0;
+  desired_frame_start_time_ = TimeTicks();
   animation_finished_ = false;
   cached_frame_ = PaintImage();
   reset_animation_sequence_id_++;
@@ -680,12 +665,11 @@ bool BitmapImage::MaybeAnimated() {
   return decoder_ && decoder_->RepetitionCount() != kAnimationNone;
 }
 
-void BitmapImage::AdvanceTime(double delta_time_in_seconds) {
-  if (desired_frame_start_time_)
-    desired_frame_start_time_ -= delta_time_in_seconds;
+void BitmapImage::AdvanceTime(TimeDelta delta) {
+  if (!desired_frame_start_time_.is_null())
+    desired_frame_start_time_ -= delta;
   else
-    desired_frame_start_time_ =
-        MonotonicallyIncreasingTime() - delta_time_in_seconds;
+    desired_frame_start_time_ = clock_->NowTicks() - delta;
 }
 
 void BitmapImage::AdvanceAnimation(TimerBase*) {
@@ -720,7 +704,7 @@ bool BitmapImage::InternalAdvanceAnimation(AnimationAdvancement advancement) {
          repetitions_complete_ > repetition_count_) ||
         animation_policy_ == kImageAnimationPolicyAnimateOnce) {
       animation_finished_ = true;
-      desired_frame_start_time_ = 0;
+      desired_frame_start_time_ = TimeTicks();
 
       // We skipped to the last frame and cannot advance further. The
       // observer will not receive animationAdvanced notifications while
@@ -731,7 +715,7 @@ bool BitmapImage::InternalAdvanceAnimation(AnimationAdvancement advancement) {
         frame_timer_ = WTF::WrapUnique(new TaskRunnerTimer<BitmapImage>(
             task_runner_, this,
             &BitmapImage::NotifyObserversOfAnimationAdvance));
-        frame_timer_->StartOneShot(0, BLINK_FROM_HERE);
+        frame_timer_->StartOneShot(TimeDelta(), BLINK_FROM_HERE);
       }
 
       return false;

@@ -89,7 +89,7 @@ class CORE_EXPORT UseCounter {
     // remove a reference to the observer and stop notifications.
     virtual bool OnCountFeature(WebFeature) = 0;
 
-    DEFINE_INLINE_VIRTUAL_TRACE() {}
+    virtual void Trace(blink::Visitor* visitor) {}
   };
 
   // "count" sets the bit for this feature to 1. Repeated calls are ignored.
@@ -150,7 +150,7 @@ class CORE_EXPORT UseCounter {
       WebFeature blockedCrossOrigin,
       WebFeature blockedSameOrigin);
 
-  DECLARE_TRACE();
+  void Trace(blink::Visitor*);
 
  private:
   // Notifies that a feature is newly counted to |m_observers|. This shouldn't
@@ -169,31 +169,12 @@ class CORE_EXPORT UseCounter {
   // the duration of a page but can change when a new page is loaded.
   Context context_;
 
-  // Track what features/properties have been reported to the (non-legacy)
-  // histograms.
+  // Track what features/properties have been reported to the histograms.
   BitVector features_recorded_;
   BitVector css_recorded_;
   BitVector animated_css_recorded_;
 
   HeapHashSet<Member<Observer>> observers_;
-
-  // Encapsulates the work to preserve the old "FeatureObserver" histogram with
-  // original semantics
-  // TODO(rbyers): remove this - http://crbug.com/676837
-  class CORE_EXPORT LegacyCounter {
-   public:
-    LegacyCounter();
-    ~LegacyCounter();
-    void CountFeature(WebFeature);
-    void CountCSS(CSSPropertyID);
-    void UpdateMeasurements();
-
-   private:
-    // Tracks what features/properties need to be reported to the legacy
-    // histograms.
-    BitVector feature_bits_;
-    BitVector css_bits_;
-  } legacy_counter_;
 };
 
 }  // namespace blink

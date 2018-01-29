@@ -8,11 +8,9 @@
 #include "bindings/modules/v8/v8_remote_playback_availability_callback.h"
 #include "core/dom/DOMException.h"
 #include "core/dom/Document.h"
-#include "core/dom/TaskRunnerHelper.h"
-#include "core/dom/UserGestureIndicator.h"
 #include "core/dom/events/Event.h"
-#include "core/html/HTMLMediaElement.h"
-#include "core/html/HTMLVideoElement.h"
+#include "core/html/media/HTMLMediaElement.h"
+#include "core/html/media/HTMLVideoElement.h"
 #include "core/html_names.h"
 #include "core/probe/CoreProbes.h"
 #include "modules/EventTargetModules.h"
@@ -21,6 +19,7 @@
 #include "modules/remoteplayback/RemotePlaybackConnectionCallbacks.h"
 #include "platform/MemoryCoordinator.h"
 #include "platform/wtf/text/Base64.h"
+#include "public/platform/TaskType.h"
 #include "public/platform/modules/presentation/WebPresentationClient.h"
 #include "public/platform/modules/presentation/WebPresentationError.h"
 #include "public/platform/modules/presentation/WebPresentationInfo.h"
@@ -51,7 +50,7 @@ void RunRemotePlaybackTask(ExecutionContext* context,
                            WTF::Closure task,
                            std::unique_ptr<int> task_id) {
   probe::AsyncTask async_task(context, task_id.get());
-  task();
+  std::move(task).Run();
 }
 
 WebURL GetAvailabilityUrl(const WebURL& source, bool is_source_supported) {
@@ -65,7 +64,7 @@ WebURL GetAvailabilityUrl(const WebURL& source, bool is_source_supported) {
   String encoded_source =
       WTF::Base64URLEncode(source_string.data(), source_string.length());
 
-  return KURL(kParsedURLString, "remote-playback://" + encoded_source);
+  return KURL("remote-playback://" + encoded_source);
 }
 
 bool IsBackgroundAvailabilityMonitoringDisabled() {
@@ -183,7 +182,7 @@ ScriptPromise RemotePlayback::prompt(ScriptState* script_state) {
     return promise;
   }
 
-  if (!UserGestureIndicator::ProcessingUserGesture()) {
+  if (!Frame::HasTransientUserActivation(media_element_->GetFrame())) {
     resolver->Reject(DOMException::Create(
         kInvalidAccessError,
         "RemotePlayback::prompt() requires user gesture."));
@@ -238,7 +237,7 @@ void RemotePlayback::PromptInternal() {
     if (client && !availability_urls_.IsEmpty()) {
       client->StartPresentation(
           availability_urls_,
-          WTF::MakeUnique<RemotePlaybackConnectionCallbacks>(this));
+          std::make_unique<RemotePlaybackConnectionCallbacks>(this));
     } else {
       // TODO(yuryu): Wrapping PromptCancelled with WTF::Closure as
       // InspectorInstrumentation requires a globally unique pointer to track
@@ -246,10 +245,11 @@ void RemotePlayback::PromptInternal() {
       // task id.
       WTF::Closure task =
           WTF::Bind(&RemotePlayback::PromptCancelled, WrapPersistent(this));
-      std::unique_ptr<int> task_id = WTF::MakeUnique<int>(0);
+      std::unique_ptr<int> task_id = std::make_unique<int>(0);
       probe::AsyncTaskScheduled(GetExecutionContext(), "promptCancelled",
                                 task_id.get());
-      TaskRunnerHelper::Get(TaskType::kMediaElementEvent, GetExecutionContext())
+      GetExecutionContext()
+          ->GetTaskRunner(TaskType::kMediaElementEvent)
           ->PostTask(BLINK_FROM_HERE,
                      WTF::Bind(RunRemotePlaybackTask,
                                WrapPersistent(GetExecutionContext()),
@@ -283,10 +283,11 @@ int RemotePlayback::WatchAvailabilityInternal(
   // We can remove the wrapper if InspectorInstrumentation returns a task id.
   WTF::Closure task = WTF::Bind(&RemotePlayback::NotifyInitialAvailability,
                                 WrapPersistent(this), id);
-  std::unique_ptr<int> task_id = WTF::MakeUnique<int>(0);
+  std::unique_ptr<int> task_id = std::make_unique<int>(0);
   probe::AsyncTaskScheduled(GetExecutionContext(), "watchAvailabilityCallback",
                             task_id.get());
-  TaskRunnerHelper::Get(TaskType::kMediaElementEvent, GetExecutionContext())
+  GetExecutionContext()
+      ->GetTaskRunner(TaskType::kMediaElementEvent)
       ->PostTask(BLINK_FROM_HERE,
                  WTF::Bind(RunRemotePlaybackTask,
                            WrapPersistent(GetExecutionContext()),
@@ -590,7 +591,7 @@ void RemotePlayback::MaybeStartListeningForAvailability() {
   is_listening_ = true;
 }
 
-DEFINE_TRACE(RemotePlayback) {
+void RemotePlayback::Trace(blink::Visitor* visitor) {
   visitor->Trace(availability_callbacks_);
   visitor->Trace(prompt_promise_resolver_);
   visitor->Trace(media_element_);
@@ -598,7 +599,8 @@ DEFINE_TRACE(RemotePlayback) {
   ContextLifecycleObserver::Trace(visitor);
 }
 
-DEFINE_TRACE_WRAPPERS(RemotePlayback) {
+void RemotePlayback::TraceWrappers(
+    const ScriptWrappableVisitor* visitor) const {
   for (auto callback : availability_callbacks_.Values())
     visitor->TraceWrappers(callback);
   EventTargetWithInlineData::TraceWrappers(visitor);

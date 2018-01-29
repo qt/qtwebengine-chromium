@@ -58,6 +58,7 @@ class InputHandler : public DevToolsDomainHandler,
       Maybe<bool> auto_repeat,
       Maybe<bool> is_keypad,
       Maybe<bool> is_system_key,
+      Maybe<int> location,
       std::unique_ptr<DispatchKeyEventCallback> callback) override;
 
   void DispatchMouseEvent(
@@ -125,7 +126,9 @@ class InputHandler : public DevToolsDomainHandler,
  private:
   // InputEventObserver
   void OnInputEvent(const blink::WebInputEvent& event) override;
-  void OnInputEventAck(const blink::WebInputEvent& event) override;
+  void OnInputEventAck(InputEventAckSource source,
+                       InputEventAckState state,
+                       const blink::WebInputEvent& event) override;
 
   void SynthesizeRepeatingScroll(
       SyntheticSmoothScrollGestureParams gesture_params,

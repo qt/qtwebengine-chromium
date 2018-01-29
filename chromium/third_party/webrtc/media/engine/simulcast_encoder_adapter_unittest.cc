@@ -12,10 +12,14 @@
 #include <memory>
 #include <vector>
 
+#include "api/video_codecs/sdp_video_format.h"
+#include "api/video_codecs/video_encoder_factory.h"
 #include "common_video/include/video_frame_buffer.h"
+#include "media/engine/internalencoderfactory.h"
 #include "media/engine/simulcast_encoder_adapter.h"
 #include "modules/video_coding/codecs/vp8/simulcast_test_utility.h"
 #include "modules/video_coding/include/video_codec_interface.h"
+#include "rtc_base/ptr_util.h"
 #include "test/gmock.h"
 
 namespace webrtc {
@@ -23,39 +27,18 @@ namespace testing {
 
 class TestSimulcastEncoderAdapter : public TestVp8Simulcast {
  public:
-  TestSimulcastEncoderAdapter() : factory_(new Vp8EncoderFactory()) {}
+  TestSimulcastEncoderAdapter() : factory_(new InternalEncoderFactory()) {}
 
  protected:
-  class Vp8EncoderFactory : public cricket::WebRtcVideoEncoderFactory {
-   public:
-    Vp8EncoderFactory() {
-      supported_codecs_.push_back(cricket::VideoCodec("VP8"));
-    }
-
-    const std::vector<cricket::VideoCodec>& supported_codecs() const override {
-      return supported_codecs_;
-    }
-
-    VideoEncoder* CreateVideoEncoder(
-        const cricket::VideoCodec& codec) override {
-      return VP8Encoder::Create();
-    }
-
-    void DestroyVideoEncoder(VideoEncoder* encoder) override { delete encoder; }
-
-    virtual ~Vp8EncoderFactory() {}
-
-   private:
-    std::vector<cricket::VideoCodec> supported_codecs_;
-  };
-
-  VP8Encoder* CreateEncoder() override {
-    return new SimulcastEncoderAdapter(factory_.get());
+  std::unique_ptr<VP8Encoder> CreateEncoder() override {
+    return rtc::MakeUnique<SimulcastEncoderAdapter>(factory_.get());
   }
-  VP8Decoder* CreateDecoder() override { return VP8Decoder::Create(); }
+  std::unique_ptr<VP8Decoder> CreateDecoder() override {
+    return VP8Decoder::Create();
+  }
 
  private:
-  std::unique_ptr<Vp8EncoderFactory> factory_;
+  std::unique_ptr<VideoEncoderFactory> factory_;
 };
 
 TEST_F(TestSimulcastEncoderAdapter, TestKeyFrameRequestsOnAllStreams) {
@@ -110,8 +93,34 @@ TEST_F(TestSimulcastEncoderAdapter, TestSpatioTemporalLayers321PatternEncoder) {
   TestVp8Simulcast::TestSpatioTemporalLayers321PatternEncoder();
 }
 
+class MockVideoEncoder;
+
+class MockVideoEncoderFactory : public VideoEncoderFactory {
+ public:
+  std::vector<SdpVideoFormat> GetSupportedFormats() const override;
+
+  std::unique_ptr<VideoEncoder> CreateVideoEncoder(
+      const SdpVideoFormat& format) override;
+
+  CodecInfo QueryVideoEncoder(const SdpVideoFormat& format) const override;
+
+  const std::vector<MockVideoEncoder*>& encoders() const;
+  void SetEncoderNames(const std::vector<const char*>& encoder_names);
+  void set_init_encode_return_value(int32_t value);
+
+  void DestroyVideoEncoder(VideoEncoder* encoder);
+
+ private:
+  int32_t init_encode_return_value_ = 0;
+  std::vector<MockVideoEncoder*> encoders_;
+  std::vector<const char*> encoder_names_;
+};
+
 class MockVideoEncoder : public VideoEncoder {
  public:
+  explicit MockVideoEncoder(MockVideoEncoderFactory* factory)
+      : factory_(factory) {}
+
   // TODO(nisse): Valid overrides commented out, because the gmock
   // methods don't use any override declarations, and we want to avoid
   // warnings from -Winconsistent-missing-override. See
@@ -149,7 +158,7 @@ class MockVideoEncoder : public VideoEncoder {
     return supports_native_handle_;
   }
 
-  virtual ~MockVideoEncoder() {}
+  virtual ~MockVideoEncoder() { factory_->DestroyVideoEncoder(this); }
 
   const VideoCodec& codec() const { return codec_; }
 
@@ -176,6 +185,7 @@ class MockVideoEncoder : public VideoEncoder {
   MOCK_CONST_METHOD0(ImplementationName, const char*());
 
  private:
+  MockVideoEncoderFactory* const factory_;
   bool supports_native_handle_ = false;
   int32_t init_encode_return_value_ = 0;
   BitrateAllocation last_set_bitrate_;
@@ -184,53 +194,50 @@ class MockVideoEncoder : public VideoEncoder {
   EncodedImageCallback* callback_;
 };
 
-class MockVideoEncoderFactory : public cricket::WebRtcVideoEncoderFactory {
- public:
-  MockVideoEncoderFactory() {
-    supported_codecs_.push_back(cricket::VideoCodec("VP8"));
-  }
+std::vector<SdpVideoFormat> MockVideoEncoderFactory::GetSupportedFormats()
+    const {
+  std::vector<SdpVideoFormat> formats = {SdpVideoFormat("VP8")};
+  return formats;
+}
 
-  const std::vector<cricket::VideoCodec>& supported_codecs() const override {
-    return supported_codecs_;
-  }
+std::unique_ptr<VideoEncoder> MockVideoEncoderFactory::CreateVideoEncoder(
+    const SdpVideoFormat& format) {
+  std::unique_ptr<MockVideoEncoder> encoder(
+      new ::testing::NiceMock<MockVideoEncoder>(this));
+  encoder->set_init_encode_return_value(init_encode_return_value_);
+  const char* encoder_name = encoder_names_.empty()
+                                 ? "codec_implementation_name"
+                                 : encoder_names_[encoders_.size()];
+  ON_CALL(*encoder, ImplementationName()).WillByDefault(Return(encoder_name));
+  encoders_.push_back(encoder.get());
+  return encoder;
+}
 
-  VideoEncoder* CreateVideoEncoder(const cricket::VideoCodec& codec) override {
-    MockVideoEncoder* encoder = new ::testing::NiceMock<MockVideoEncoder>();
-    encoder->set_init_encode_return_value(init_encode_return_value_);
-    const char* encoder_name = encoder_names_.empty()
-                                   ? "codec_implementation_name"
-                                   : encoder_names_[encoders_.size()];
-    ON_CALL(*encoder, ImplementationName()).WillByDefault(Return(encoder_name));
-    encoders_.push_back(encoder);
-    return encoder;
-  }
-
-  void DestroyVideoEncoder(VideoEncoder* encoder) override {
-    for (size_t i = 0; i < encoders_.size(); ++i) {
-      if (encoders_[i] == encoder) {
-        encoders_.erase(encoders_.begin() + i);
-        break;
-      }
+void MockVideoEncoderFactory::DestroyVideoEncoder(VideoEncoder* encoder) {
+  for (size_t i = 0; i < encoders_.size(); ++i) {
+    if (encoders_[i] == encoder) {
+      encoders_.erase(encoders_.begin() + i);
+      break;
     }
-    delete encoder;
   }
+}
 
-  virtual ~MockVideoEncoderFactory() {}
+VideoEncoderFactory::CodecInfo MockVideoEncoderFactory::QueryVideoEncoder(
+    const SdpVideoFormat& format) const {
+  return CodecInfo();
+}
 
-  const std::vector<MockVideoEncoder*>& encoders() const { return encoders_; }
-  void SetEncoderNames(const std::vector<const char*>& encoder_names) {
-    encoder_names_ = encoder_names;
-  }
-  void set_init_encode_return_value(int32_t value) {
-    init_encode_return_value_ = value;
-  }
-
- private:
-  std::vector<cricket::VideoCodec> supported_codecs_;
-  int32_t init_encode_return_value_ = 0;
-  std::vector<MockVideoEncoder*> encoders_;
-  std::vector<const char*> encoder_names_;
-};
+const std::vector<MockVideoEncoder*>& MockVideoEncoderFactory::encoders()
+    const {
+  return encoders_;
+}
+void MockVideoEncoderFactory::SetEncoderNames(
+    const std::vector<const char*>& encoder_names) {
+  encoder_names_ = encoder_names;
+}
+void MockVideoEncoderFactory::set_init_encode_return_value(int32_t value) {
+  init_encode_return_value_ = value;
+}
 
 class TestSimulcastEncoderAdapterFakeHelper {
  public:

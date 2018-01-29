@@ -10,7 +10,6 @@
 #include "platform/bindings/ScriptWrappable.h"
 #include "platform/bindings/TraceWrapperMember.h"
 #include "platform/heap/Handle.h"
-#include "public/platform/WebVector.h"
 #include "public/platform/modules/indexeddb/WebIDBTypes.h"
 
 namespace blink {
@@ -21,8 +20,7 @@ class IDBObserverInit;
 class IDBTransaction;
 class V8IDBObserverCallback;
 
-class MODULES_EXPORT IDBObserver final : public GarbageCollected<IDBObserver>,
-                                         public ScriptWrappable {
+class MODULES_EXPORT IDBObserver final : public ScriptWrappable {
   DEFINE_WRAPPERTYPEINFO();
 
  public:
@@ -37,8 +35,8 @@ class MODULES_EXPORT IDBObserver final : public GarbageCollected<IDBObserver>,
                ExceptionState&);
   void unobserve(IDBDatabase*, ExceptionState&);
 
-  DECLARE_TRACE();
-  DECLARE_TRACE_WRAPPERS();
+  void Trace(blink::Visitor*);
+  void TraceWrappers(const ScriptWrappableVisitor*) const;
 
  private:
   explicit IDBObserver(V8IDBObserverCallback*);

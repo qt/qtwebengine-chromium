@@ -31,7 +31,7 @@ class VR final : public EventTargetWithInlineData,
   DEFINE_ATTRIBUTE_EVENT_LISTENER(deviceconnect);
   DEFINE_ATTRIBUTE_EVENT_LISTENER(devicedisconnect);
 
-  ScriptPromise getDevices(ScriptState*);
+  ScriptPromise requestDevice(ScriptState*);
 
   // VRServiceClient overrides.
   void OnDisplayConnected(device::mojom::blink::VRMagicWindowProviderPtr,
@@ -48,13 +48,13 @@ class VR final : public EventTargetWithInlineData,
 
   void Dispose();
 
-  DECLARE_VIRTUAL_TRACE();
+  void Trace(blink::Visitor*) override;
 
  private:
   explicit VR(LocalFrame& frame);
 
   void OnDevicesSynced();
-  void OnGetDevices();
+  void ResolveRequestDevice();
 
   bool devices_synced_;
 

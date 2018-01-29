@@ -12,6 +12,7 @@
 #include "bindings/core/v8/V8BindingForCore.h"
 #include "core/dom/DOMException.h"
 #include "core/inspector/ConsoleMessage.h"
+#include "modules/payments/BasicCardHelper.h"
 #include "modules/payments/PaymentInstrument.h"
 #include "modules/payments/PaymentManager.h"
 #include "platform/wtf/Vector.h"
@@ -33,8 +34,7 @@ bool rejectError(ScriptPromiseResolver* resolver,
           DOMException::Create(kNotSupportedError, "Not implemented yet"));
       return true;
     case payments::mojom::blink::PaymentHandlerStatus::NOT_FOUND:
-      resolver->Reject(DOMException::Create(kNotFoundError,
-                                            "There is no stored instrument"));
+      resolver->Resolve();
       return true;
     case payments::mojom::blink::PaymentHandlerStatus::NO_ACTIVE_WORKER:
       resolver->Reject(
@@ -55,14 +55,8 @@ bool rejectError(ScriptPromiseResolver* resolver,
       // fetching payment handler's name and/or icon from its web app manifest.
       // The origin or name will be used to label this payment handler in
       // UI in this case, so only show warnning message instead of reject the
-      // promise.
-      ExecutionContext* context =
-          ExecutionContext::From(resolver->GetScriptState());
-      context->AddConsoleMessage(ConsoleMessage::Create(
-          kJSMessageSource, kWarningMessageLevel,
-          "Unable to fetch payment handler's name and/or icon from its web app "
-          "manifest. User may not recognize this payment handler in UI, "
-          "because it will be labeled only by its origin."));
+      // promise. The warning message was printed by
+      // payment_app_info_fetcher.cc.
       return false;
   }
   NOTREACHED();
@@ -200,6 +194,11 @@ ScriptPromise PaymentInstruments::set(ScriptState* script_state,
       return exception_state.Reject(script_state);
     }
     instrument->stringified_capabilities = ToCoreString(value);
+    if (instrument->enabled_methods.Contains("basic-card")) {
+      BasicCardHelper::ParseBasiccardData(
+          details.capabilities(), instrument->supported_networks,
+          instrument->supported_types, exception_state);
+    }
   } else {
     instrument->stringified_capabilities = WTF::g_empty_string;
   }
@@ -227,8 +226,6 @@ ScriptPromise PaymentInstruments::clear(ScriptState* script_state) {
                 WrapPersistent(this), WrapPersistent(resolver))));
   return promise;
 }
-
-DEFINE_TRACE(PaymentInstruments) {}
 
 void PaymentInstruments::onDeletePaymentInstrument(
     ScriptPromiseResolver* resolver,

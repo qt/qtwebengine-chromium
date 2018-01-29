@@ -44,7 +44,7 @@ const gfx::Font::Weight kHoverWeight = gfx::Font::Weight::NORMAL;
 const gfx::Font::Weight kActiveWeight = gfx::Font::Weight::BOLD;
 const gfx::Font::Weight kInactiveWeight = gfx::Font::Weight::NORMAL;
 
-const int kHarmonyTabStripTabHeight = 40;
+const int kHarmonyTabStripTabHeight = 32;
 
 // The View containing the text for each tab in the tab strip.
 class TabLabel : public Label {
@@ -281,9 +281,11 @@ MdTab::~MdTab() {}
 void MdTab::OnStateChanged() {
   ui::NativeTheme* theme = GetNativeTheme();
 
-  SkColor font_color = selected()
-      ? theme->GetSystemColor(ui::NativeTheme::kColorId_ProminentButtonColor)
-      : theme->GetSystemColor(ui::NativeTheme::kColorId_ButtonEnabledColor);
+  SkColor font_color =
+      selected()
+          ? theme->GetSystemColor(ui::NativeTheme::kColorId_TabTitleColorActive)
+          : theme->GetSystemColor(
+                ui::NativeTheme::kColorId_TabTitleColorInactive);
   title()->SetEnabledColor(font_color);
 
   gfx::Font::Weight font_weight = gfx::Font::Weight::MEDIUM;
@@ -434,7 +436,7 @@ void MdTabStrip::OnPaintBorder(gfx::Canvas* canvas) {
   canvas->FillRect(gfx::Rect(0, max_y - kUnselectedBorderThickness, width(),
                              kUnselectedBorderThickness),
                    GetNativeTheme()->GetSystemColor(
-                       ui::NativeTheme::kColorId_UnfocusedBorderColor));
+                       ui::NativeTheme::kColorId_TabBottomBorder));
 
   int min_x = 0;
   int max_x = 0;

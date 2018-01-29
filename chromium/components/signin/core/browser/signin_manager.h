@@ -45,6 +45,7 @@ class GoogleServiceAuthError;
 class PrefService;
 class ProfileOAuth2TokenService;
 class SigninClient;
+class SigninErrorController;
 
 class SigninManager : public SigninManagerBase,
                       public AccountTrackerService::Observer,
@@ -66,7 +67,8 @@ class SigninManager : public SigninManagerBase,
   SigninManager(SigninClient* client,
                 ProfileOAuth2TokenService* token_service,
                 AccountTrackerService* account_tracker_service,
-                GaiaCookieManagerService* cookie_manager_service);
+                GaiaCookieManagerService* cookie_manager_service,
+                SigninErrorController* signin_error_controller);
   ~SigninManager() override;
 
   // Returns true if the username is allowed based on the policy string.
@@ -103,9 +105,15 @@ class SigninManager : public SigninManagerBase,
 
   // Signs a user out, removing the preference, erasing all keys
   // associated with the authenticated user, and canceling all auth in progress.
-  // It removes removes all accounts from Chrome by revoking all refresh
-  // tokens.
+  // It removes all accounts from Chrome by revoking all refresh tokens.
   void SignOutAndRemoveAllAccounts(
+      signin_metrics::ProfileSignout signout_source_metric,
+      signin_metrics::SignoutDelete signout_delete_metric);
+
+  // Signs a user out, removing the preference, erasing all keys
+  // associated with the authenticated user, and canceling all auth in progress.
+  // Does not remove the accounts from the token service.
+  void SignOutAndKeepAllAccounts(
       signin_metrics::ProfileSignout signout_source_metric,
       signin_metrics::SignoutDelete signout_delete_metric);
 

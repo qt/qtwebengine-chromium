@@ -31,8 +31,8 @@ scoped_refptr<cc::SurfaceLayer> CreateSurfaceLayer(
     bool surface_opaque) {
   // manager must outlive compositors using it.
   auto layer = cc::SurfaceLayer::Create(surface_manager->reference_factory());
-  layer->SetPrimarySurfaceInfo(surface_info);
-  layer->SetFallbackSurfaceInfo(surface_info);
+  layer->SetPrimarySurfaceId(surface_info.id());
+  layer->SetFallbackSurfaceId(surface_info.id());
   layer->SetBounds(surface_info.size_in_pixels());
   layer->SetIsDrawable(true);
   layer->SetContentsOpaque(surface_opaque);
@@ -186,6 +186,15 @@ void DelegatedFrameHostAndroid::DidReceiveCompositorFrameAck(
   client_->DidReceiveCompositorFrameAck();
 }
 
+void DelegatedFrameHostAndroid::DidPresentCompositorFrame(
+    uint32_t presentation_token,
+    base::TimeTicks time,
+    base::TimeDelta refresh,
+    uint32_t flags) {}
+
+void DelegatedFrameHostAndroid::DidDiscardCompositorFrame(
+    uint32_t presentation_token) {}
+
 void DelegatedFrameHostAndroid::OnBeginFrame(const viz::BeginFrameArgs& args) {
   begin_frame_source_.OnBeginFrame(args);
 }
@@ -207,6 +216,10 @@ void DelegatedFrameHostAndroid::OnFirstSurfaceActivation(
     const viz::SurfaceInfo& surface_info) {
   // TODO(fsamuel): Once surface synchronization is turned on, the fallback
   // surface should be set here.
+}
+
+void DelegatedFrameHostAndroid::OnFrameTokenChanged(uint32_t frame_token) {
+  client_->OnFrameTokenChanged(frame_token);
 }
 
 void DelegatedFrameHostAndroid::CreateNewCompositorFrameSinkSupport() {

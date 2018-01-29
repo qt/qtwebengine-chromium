@@ -61,6 +61,7 @@
 #include "media/base/test_data_util.h"
 #include "media/gpu/fake_video_decode_accelerator.h"
 #include "media/gpu/features.h"
+#include "media/gpu/format_utils.h"
 #include "media/gpu/gpu_video_decode_accelerator_factory.h"
 #include "media/gpu/rendering_helper.h"
 #include "media/gpu/video_accelerator_unittest_helpers.h"
@@ -339,23 +340,6 @@ scoped_refptr<TextureRef> TextureRef::Create(
     const base::Closure& no_longer_needed_cb) {
   return base::WrapRefCounted(new TextureRef(texture_id, no_longer_needed_cb));
 }
-
-#if defined(OS_CHROMEOS)
-gfx::BufferFormat VideoPixelFormatToGfxBufferFormat(
-    VideoPixelFormat pixel_format) {
-  switch (pixel_format) {
-    case VideoPixelFormat::PIXEL_FORMAT_ARGB:
-      return gfx::BufferFormat::BGRA_8888;
-    case VideoPixelFormat::PIXEL_FORMAT_XRGB:
-      return gfx::BufferFormat::BGRX_8888;
-    case VideoPixelFormat::PIXEL_FORMAT_NV12:
-      return gfx::BufferFormat::YUV_420_BIPLANAR;
-    default:
-      LOG_ASSERT(false) << "Unknown VideoPixelFormat";
-      return gfx::BufferFormat::BGRX_8888;
-  }
-}
-#endif
 
 // static
 scoped_refptr<TextureRef> TextureRef::CreatePreallocated(
@@ -745,7 +729,8 @@ void GLRenderingVDAClient::PictureReady(const Picture& picture) {
     return;
 
   gfx::Rect visible_rect = picture.visible_rect();
-  EXPECT_TRUE(visible_rect.IsEmpty() || visible_rect == gfx::Rect(frame_size_));
+  if (!visible_rect.IsEmpty())
+    EXPECT_EQ(gfx::Rect(frame_size_), visible_rect);
 
   base::TimeTicks now = base::TimeTicks::Now();
 

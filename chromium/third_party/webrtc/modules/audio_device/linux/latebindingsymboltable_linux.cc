@@ -19,9 +19,9 @@
 namespace webrtc {
 namespace adm_linux {
 
-inline static const char *GetDllError() {
+inline static const char* GetDllError() {
 #ifdef WEBRTC_LINUX
-  char *err = dlerror();
+  char* err = dlerror();
   if (err) {
     return err;
   } else {
@@ -39,7 +39,7 @@ DllHandle InternalLoadDll(const char dll_name[]) {
 #error Not implemented
 #endif
   if (handle == kInvalidDllHandle) {
-    LOG(LS_WARNING) << "Can't load " << dll_name << " : " << GetDllError();
+    RTC_LOG(LS_WARNING) << "Can't load " << dll_name << " : " << GetDllError();
   }
   return handle;
 }
@@ -55,7 +55,7 @@ void InternalUnloadDll(DllHandle handle) {
 // https://code.google.com/p/address-sanitizer/issues/detail?id=89
 #if !defined(ADDRESS_SANITIZER)
   if (dlclose(handle) != 0) {
-    LOG(LS_ERROR) << GetDllError();
+    RTC_LOG(LS_ERROR) << GetDllError();
   }
 #endif  // !defined(ADDRESS_SANITIZER)
 #else
@@ -64,16 +64,16 @@ void InternalUnloadDll(DllHandle handle) {
 }
 
 static bool LoadSymbol(DllHandle handle,
-                       const char *symbol_name,
-                       void **symbol) {
+                       const char* symbol_name,
+                       void** symbol) {
 #ifdef WEBRTC_LINUX
   *symbol = dlsym(handle, symbol_name);
-  char *err = dlerror();
+  char* err = dlerror();
   if (err) {
-    LOG(LS_ERROR) << "Error loading symbol " << symbol_name << " : " << err;
+    RTC_LOG(LS_ERROR) << "Error loading symbol " << symbol_name << " : " << err;
     return false;
   } else if (!*symbol) {
-    LOG(LS_ERROR) << "Symbol " << symbol_name << " is NULL";
+    RTC_LOG(LS_ERROR) << "Symbol " << symbol_name << " is NULL";
     return false;
   }
   return true;
@@ -87,8 +87,8 @@ static bool LoadSymbol(DllHandle handle,
 // caller may later interpret as a valid address.
 bool InternalLoadSymbols(DllHandle handle,
                          int num_symbols,
-                         const char *const symbol_names[],
-                         void *symbols[]) {
+                         const char* const symbol_names[],
+                         void* symbols[]) {
 #ifdef WEBRTC_LINUX
   // Clear any old errors.
   dlerror();

@@ -7,9 +7,10 @@
 #include <vector>
 
 #include "base/process/process_handle.h"
-#include "services/resource_coordinator/coordination_unit/coordination_unit_base.h"
+#include "base/time/time.h"
 #include "services/resource_coordinator/coordination_unit/frame_coordination_unit_impl.h"
 #include "services/resource_coordinator/coordination_unit/page_coordination_unit_impl.h"
+#include "services/resource_coordinator/coordination_unit/process_coordination_unit_impl.h"
 #include "services/service_manager/public/cpp/bind_source_info.h"
 
 namespace resource_coordinator {
@@ -21,10 +22,9 @@ CoordinationUnitIntrospectorImpl::~CoordinationUnitIntrospectorImpl() = default;
 void CoordinationUnitIntrospectorImpl::GetProcessToURLMap(
     const GetProcessToURLMapCallback& callback) {
   std::vector<resource_coordinator::mojom::ProcessInfoPtr> process_infos;
-  std::vector<CoordinationUnitBase*> process_cus =
-      CoordinationUnitBase::GetCoordinationUnitsOfType(
-          CoordinationUnitType::kProcess);
-  for (CoordinationUnitBase* process_cu : process_cus) {
+  std::vector<ProcessCoordinationUnitImpl*> process_cus =
+      ProcessCoordinationUnitImpl::GetAllProcessCoordinationUnits();
+  for (auto* process_cu : process_cus) {
     int64_t pid;
     if (!process_cu->GetProperty(mojom::PropertyType::kPID, &pid))
       continue;
@@ -33,12 +33,16 @@ void CoordinationUnitIntrospectorImpl::GetProcessToURLMap(
     process_info->pid = pid;
     DCHECK_NE(base::kNullProcessId, process_info->pid);
 
-    std::set<CoordinationUnitBase*> page_cus =
-        process_cu->GetAssociatedCoordinationUnitsOfType(
-            CoordinationUnitType::kPage);
+    int64_t launch_time;
+    if (process_cu->GetProperty(mojom::PropertyType::kLaunchTime,
+                                &launch_time)) {
+      process_info->launch_time = base::Time::FromTimeT(launch_time);
+    }
+
+    std::set<PageCoordinationUnitImpl*> page_cus =
+        process_cu->GetAssociatedPageCoordinationUnits();
     std::vector<resource_coordinator::mojom::PageInfoPtr> page_infos;
-    for (CoordinationUnitBase* cu : page_cus) {
-      auto* page_cu = CoordinationUnitBase::ToPageCoordinationUnit(cu);
+    for (PageCoordinationUnitImpl* page_cu : page_cus) {
       int64_t ukm_source_id;
       if (page_cu->GetProperty(
               resource_coordinator::mojom::PropertyType::kUKMSourceId,

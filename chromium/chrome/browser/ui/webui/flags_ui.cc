@@ -41,6 +41,7 @@
 
 #if defined(OS_CHROMEOS)
 #include "base/sys_info.h"
+#include "chrome/browser/chromeos/login/session/user_session_manager.h"
 #include "chrome/browser/chromeos/ownership/owner_settings_service_chromeos.h"
 #include "chrome/browser/chromeos/ownership/owner_settings_service_chromeos_factory.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
@@ -107,6 +108,7 @@ content::WebUIDataSource* CreateFlagsUIHTMLSource() {
 
   source->AddResourcePath(flags_ui::kFlagsJS, IDR_FLAGS_UI_FLAGS_JS);
   source->SetDefaultResource(IDR_FLAGS_UI_FLAGS_HTML);
+  source->UseGzip();
   return source;
 }
 
@@ -244,6 +246,11 @@ void FlagsDOMHandler::HandleRestartBrowser(const base::ListValue* args) {
   about_flags::ConvertFlagsToSwitches(flags_storage_.get(),
                                       &user_flags,
                                       flags_ui::kAddSentinels);
+
+  // Apply additional switches from policy that should not be dropped when
+  // applying flags..
+  chromeos::UserSessionManager::MaybeAppendPolicySwitches(&user_flags);
+
   base::CommandLine::StringVector flags;
   // argv[0] is the program name |base::CommandLine::NO_PROGRAM|.
   flags.assign(user_flags.argv().begin() + 1, user_flags.argv().end());

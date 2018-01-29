@@ -40,6 +40,8 @@ content::WebUIDataSource* CreatePolicyToolUIHtmlSource() {
   source->AddLocalizedString("errorFileCorrupted",
                              IDS_POLICY_TOOL_CORRUPTED_FILE);
   source->AddLocalizedString("enableEditing", IDS_POLICY_TOOL_ENABLE_EDITING);
+  source->AddLocalizedString("errorDeleteFailed",
+                             IDS_POLICY_TOOL_DELETE_FAILED);
   // Overwrite the title value added by PolicyUIHandler.
   source->AddLocalizedString("title", IDS_POLICY_TOOL_TITLE);
 
@@ -50,6 +52,7 @@ content::WebUIDataSource* CreatePolicyToolUIHtmlSource() {
   source->AddResourcePath("policy_tool.js", IDR_POLICY_TOOL_JS);
 
   source->SetDefaultResource(IDR_POLICY_TOOL_HTML);
+  source->UseGzip();
   return source;
 }
 

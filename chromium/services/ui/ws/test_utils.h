@@ -51,6 +51,7 @@ namespace test {
 const ClientSpecificId kWindowManagerClientId = kWindowServerClientId + 1;
 const std::string kWindowManagerClientIdString =
     std::to_string(kWindowManagerClientId);
+const ClientSpecificId kEmbedTreeWindowId = 1;
 
 // Collection of utilities useful in creating mus tests.
 
@@ -150,7 +151,8 @@ class WindowTreeTestApi {
                              bool is_primary_display,
                              const ClientWindowId& client_window_id) {
     return tree_->ProcessSetDisplayRoot(display_to_create, viewport_metrics,
-                                        is_primary_display, client_window_id);
+                                        is_primary_display, client_window_id,
+                                        std::vector<display::Display>());
   }
 
   bool ProcessSwapDisplayRoots(int64_t display_id1, int64_t display_id2) {
@@ -194,6 +196,7 @@ class EventDispatcherTestApi {
   }
   ServerWindow* capture_window() { return ed_->capture_window_; }
   EventTargeter* event_targeter() { return ed_->event_targeter_.get(); }
+  bool IsObservingWindow(ServerWindow* window);
 
  private:
   EventDispatcher* ed_;
@@ -378,6 +381,7 @@ class TestWindowManager : public mojom::WindowManager {
     on_accelerator_called_ = false;
   }
 
+  const std::string& last_wm_action() const { return last_wm_action_; }
   bool on_perform_move_loop_called() { return on_perform_move_loop_called_; }
   bool on_accelerator_called() { return on_accelerator_called_; }
   uint32_t on_accelerator_id() { return on_accelerator_id_; }
@@ -390,6 +394,9 @@ class TestWindowManager : public mojom::WindowManager {
  private:
   // WindowManager:
   void OnConnect() override;
+  void WmOnAcceleratedWidgetForDisplay(
+      int64_t display,
+      gpu::SurfaceHandle surface_handle) override;
   void WmNewDisplayAdded(
       const display::Display& display,
       ui::mojom::WindowDataPtr root,
@@ -409,7 +416,7 @@ class TestWindowManager : public mojom::WindowManager {
   void WmSetCanFocus(uint32_t window_id, bool can_focus) override {}
   void WmCreateTopLevelWindow(
       uint32_t change_id,
-      ClientSpecificId requesting_client_id,
+      const viz::FrameSinkId& frame_sink_id,
       const std::unordered_map<std::string, std::vector<uint8_t>>& properties)
       override;
   void WmClientJankinessChanged(ClientSpecificId client_id,
@@ -430,11 +437,15 @@ class TestWindowManager : public mojom::WindowManager {
   void WmStackAbove(uint32_t change_id, uint32_t above_id,
                     uint32_t below_id) override;
   void WmStackAtTop(uint32_t change_id, uint32_t window_id) override;
+  void WmPerformWmAction(uint32_t window_id,
+                         const std::string& action) override;
   void OnAccelerator(uint32_t ack_id,
                      uint32_t accelerator_id,
                      std::unique_ptr<ui::Event> event) override;
   void OnCursorTouchVisibleChanged(bool enabled) override;
   void OnEventBlockedByModalWindow(uint32_t window_id) override;
+
+  std::string last_wm_action_;
 
   bool on_perform_move_loop_called_ = false;
   bool on_set_modal_type_called_ = false;
@@ -582,7 +593,7 @@ class TestWindowTreeBinding : public WindowTreeBinding {
  public:
   TestWindowTreeBinding(WindowTree* tree,
                         std::unique_ptr<TestWindowTreeClient> client =
-                            base::MakeUnique<TestWindowTreeClient>());
+                            std::make_unique<TestWindowTreeClient>());
   ~TestWindowTreeBinding() override;
 
   std::unique_ptr<TestWindowTreeClient> ReleaseClient() {
@@ -636,6 +647,12 @@ class TestWindowServerDelegate : public WindowServerDelegate {
   std::vector<TestWindowTreeBinding*>* bindings() { return &bindings_; }
 
   bool got_on_no_more_displays() const { return got_on_no_more_displays_; }
+
+  // Does an Embed() in |tree| at |window| returning the TestWindowTreeBinding
+  // that resulred (null on failure).
+  TestWindowTreeBinding* Embed(WindowTree* tree,
+                               ServerWindow* window,
+                               int flags = 0);
 
   // WindowServerDelegate:
   void StartDisplayInit() override;
@@ -728,6 +745,10 @@ class WindowEventTargetingHelper {
   TestWindowTreeClient* wm_client() { return wm_client_; }
   WindowServer* window_server() { return ws_test_helper_.window_server(); }
 
+  TestWindowServerDelegate* test_window_server_delegate() {
+    return ws_test_helper_.window_server_delegate();
+  }
+
  private:
   WindowServerTestHelper ws_test_helper_;
   // TestWindowTreeClient that is used for the WM client. Owned by
@@ -737,7 +758,7 @@ class WindowEventTargetingHelper {
   TestDisplayBinding* display_binding_ = nullptr;
   // Owned by WindowServer's DisplayManager.
   Display* display_ = nullptr;
-  ClientSpecificId next_primary_tree_window_id_ = 1;
+  ClientSpecificId next_primary_tree_window_id_ = kEmbedTreeWindowId;
 
   DISALLOW_COPY_AND_ASSIGN(WindowEventTargetingHelper);
 };
@@ -866,7 +887,8 @@ ServerWindow* NewWindowInTree(WindowTree* tree,
                               ClientWindowId* client_id = nullptr);
 ServerWindow* NewWindowInTreeWithParent(WindowTree* tree,
                                         ServerWindow* parent,
-                                        ClientWindowId* client_id = nullptr);
+                                        ClientWindowId* client_id = nullptr,
+                                        const gfx::Rect& bounds = gfx::Rect());
 
 // Converts an atomic 32 to a point. The cursor location is represented as an
 // atomic 32.

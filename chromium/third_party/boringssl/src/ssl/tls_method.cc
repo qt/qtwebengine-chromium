@@ -67,60 +67,50 @@
 
 namespace bssl {
 
-static int ssl3_supports_cipher(const SSL_CIPHER *cipher) { return 1; }
-
 static void ssl3_on_handshake_complete(SSL *ssl) {
   // The handshake should have released its final message.
   assert(!ssl->s3->has_message);
 
-  // During the handshake, |init_buf| is retained. Release if it there is no
-  // excess in it.
+  // During the handshake, |hs_buf| is retained. Release if it there is no
+  // excess in it. There may be excess left if there server sent Finished and
+  // HelloRequest in the same record.
   //
-  // TODO(davidben): The second check is always true but will not be once we
-  // switch to copying the entire handshake record. Replace this comment with an
-  // explanation when that happens and a TODO to reject it.
-  if (ssl->init_buf != NULL && ssl->init_buf->length == 0) {
-    BUF_MEM_free(ssl->init_buf);
-    ssl->init_buf = NULL;
+  // TODO(davidben): SChannel does not support this. Reject this case.
+  if (ssl->s3->hs_buf && ssl->s3->hs_buf->length == 0) {
+    ssl->s3->hs_buf.reset();
   }
 }
 
-static int ssl3_set_read_state(SSL *ssl, UniquePtr<SSLAEADContext> aead_ctx) {
-  if (ssl->s3->rrec.length != 0) {
-    // There may not be unprocessed record data at a cipher change.
+static bool ssl3_set_read_state(SSL *ssl, UniquePtr<SSLAEADContext> aead_ctx) {
+  // Cipher changes are forbidden if the current epoch has leftover data.
+  if (tls_has_unprocessed_handshake_data(ssl)) {
     OPENSSL_PUT_ERROR(SSL, SSL_R_BUFFERED_MESSAGES_ON_CIPHER_CHANGE);
-    ssl3_send_alert(ssl, SSL3_AL_FATAL, SSL_AD_UNEXPECTED_MESSAGE);
-    return 0;
+    ssl_send_alert(ssl, SSL3_AL_FATAL, SSL_AD_UNEXPECTED_MESSAGE);
+    return false;
   }
 
   OPENSSL_memset(ssl->s3->read_sequence, 0, sizeof(ssl->s3->read_sequence));
-
-  Delete(ssl->s3->aead_read_ctx);
-  ssl->s3->aead_read_ctx = aead_ctx.release();
-  return 1;
+  ssl->s3->aead_read_ctx = std::move(aead_ctx);
+  return true;
 }
 
-static int ssl3_set_write_state(SSL *ssl, UniquePtr<SSLAEADContext> aead_ctx) {
+static bool ssl3_set_write_state(SSL *ssl, UniquePtr<SSLAEADContext> aead_ctx) {
   OPENSSL_memset(ssl->s3->write_sequence, 0, sizeof(ssl->s3->write_sequence));
-
-  Delete(ssl->s3->aead_write_ctx);
-  ssl->s3->aead_write_ctx = aead_ctx.release();
-  return 1;
+  ssl->s3->aead_write_ctx = std::move(aead_ctx);
+  return true;
 }
 
 static const SSL_PROTOCOL_METHOD kTLSProtocolMethod = {
-    0 /* is_dtls */,
+    false /* is_dtls */,
     ssl3_new,
     ssl3_free,
     ssl3_get_message,
-    ssl3_read_message,
     ssl3_next_message,
-    ssl3_read_app_data,
-    ssl3_read_change_cipher_spec,
-    ssl3_read_close_notify,
+    ssl3_open_handshake,
+    ssl3_open_change_cipher_spec,
+    ssl3_open_app_data,
     ssl3_write_app_data,
     ssl3_dispatch_alert,
-    ssl3_supports_cipher,
     ssl3_init_message,
     ssl3_finish_message,
     ssl3_add_message,

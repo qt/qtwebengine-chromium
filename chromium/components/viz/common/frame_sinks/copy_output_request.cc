@@ -8,7 +8,6 @@
 #include "base/logging.h"
 #include "base/trace_event/trace_event.h"
 #include "components/viz/common/frame_sinks/copy_output_result.h"
-#include "components/viz/common/quads/texture_mailbox.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 
 namespace viz {
@@ -60,11 +59,17 @@ void CopyOutputRequest::SendResult(std::unique_ptr<CopyOutputResult> result) {
   }
 }
 
-void CopyOutputRequest::SetTextureMailbox(
-    const TextureMailbox& texture_mailbox) {
+bool CopyOutputRequest::SendsResultsInCurrentSequence() const {
+  return !result_task_runner_ ||
+         result_task_runner_->RunsTasksInCurrentSequence();
+}
+
+void CopyOutputRequest::SetMailbox(const gpu::Mailbox& mailbox,
+                                   const gpu::SyncToken& sync_token) {
   DCHECK_EQ(result_format_, ResultFormat::RGBA_TEXTURE);
-  DCHECK(texture_mailbox.IsTexture());
-  texture_mailbox_ = texture_mailbox;
+  DCHECK(!mailbox.IsZero());
+  mailbox_ = mailbox;
+  sync_token_ = sync_token;
 }
 
 // static

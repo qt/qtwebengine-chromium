@@ -68,7 +68,8 @@ void AnimationTicker::DetachElement() {
   element_id_ = ElementId();
 }
 
-void AnimationTicker::Tick(base::TimeTicks monotonic_time) {
+void AnimationTicker::Tick(base::TimeTicks monotonic_time,
+                           const AnimationTimeProvider* tick_provider) {
   DCHECK(has_bound_element_animations());
   if (!element_animations_->has_element_in_any_list())
     return;
@@ -76,8 +77,13 @@ void AnimationTicker::Tick(base::TimeTicks monotonic_time) {
   if (needs_to_start_animations_)
     StartAnimations(monotonic_time);
 
-  for (auto& animation : animations_)
-    TickAnimation(monotonic_time, animation.get(), element_animations_.get());
+  base::TimeTicks tick_time = monotonic_time;
+  for (auto& animation : animations_) {
+    if (tick_provider)
+      tick_time = tick_provider->GetTimeForAnimation(*animation);
+
+    TickAnimation(tick_time, animation.get(), element_animations_.get());
+  }
 
   last_tick_time_ = monotonic_time;
   element_animations_->UpdateClientAnimationState();
@@ -380,6 +386,14 @@ bool AnimationTicker::HasTickingAnimation() const {
       return true;
   }
   return false;
+}
+
+size_t AnimationTicker::TickingAnimationsCount() const {
+  size_t ticking_animations_count = 0;
+  for (const auto& it : animations_)
+    if (!it->is_finished())
+      ticking_animations_count++;
+  return ticking_animations_count;
 }
 
 bool AnimationTicker::HasNonDeletedAnimation() const {

@@ -54,8 +54,6 @@ const gpu::GpuPreferences GetGpuPreferencesFromCommandLine() {
       command_line->HasSwitch(switches::kSingleProcess);
   gpu_preferences.in_process_gpu =
       command_line->HasSwitch(switches::kInProcessGPU);
-  gpu_preferences.ui_prioritize_in_gpu_process =
-      command_line->HasSwitch(switches::kUIPrioritizeInGpuProcess);
   gpu_preferences.disable_accelerated_video_decode =
       command_line->HasSwitch(switches::kDisableAcceleratedVideoDecode);
 #if defined(OS_CHROMEOS)
@@ -120,12 +118,21 @@ const gpu::GpuPreferences GetGpuPreferencesFromCommandLine() {
       command_line->HasSwitch(switches::kGLShaderIntermOutput);
   gpu_preferences.emulate_shader_precision =
       command_line->HasSwitch(switches::kEmulateShaderPrecision);
+  gpu_preferences.enable_raster_decoder =
+      command_line->HasSwitch(switches::kEnableRasterDecoder);
   gpu_preferences.enable_gpu_service_logging =
       command_line->HasSwitch(switches::kEnableGPUServiceLogging);
   gpu_preferences.enable_gpu_service_tracing =
       command_line->HasSwitch(switches::kEnableGPUServiceTracing);
   gpu_preferences.use_passthrough_cmd_decoder =
       gpu::gles2::UsePassthroughCommandDecoder(command_line);
+  gpu_preferences.gpu_startup_dialog =
+      command_line->HasSwitch(switches::kGpuStartupDialog);
+  gpu_preferences.disable_gpu_watchdog =
+      command_line->HasSwitch(switches::kDisableGpuWatchdog) ||
+      (gpu_preferences.single_process || gpu_preferences.in_process_gpu);
+  gpu_preferences.gpu_sandbox_start_early =
+      command_line->HasSwitch(switches::kGpuSandboxStartEarly);
   // Some of these preferences are set or adjusted in
   // GpuDataManagerImplPrivate::AppendGpuCommandLine.
   return gpu_preferences;

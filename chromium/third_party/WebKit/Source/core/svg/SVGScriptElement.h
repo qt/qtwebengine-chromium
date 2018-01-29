@@ -48,8 +48,8 @@ class SVGScriptElement final : public SVGElement,
 
   bool IsScriptElement() const override { return true; }
 
-  DECLARE_VIRTUAL_TRACE();
-  DECLARE_TRACE_WRAPPERS();
+  virtual void Trace(blink::Visitor*);
+  void TraceWrappers(const ScriptWrappableVisitor*) const;
 
  private:
   SVGScriptElement(Document&,
@@ -86,11 +86,13 @@ class SVGScriptElement final : public SVGElement,
   bool IsConnected() const override;
   bool HasChildren() const override;
   const AtomicString& GetNonceForElement() const override;
+  bool ElementHasDuplicateAttributes() const override {
+    return HasDuplicateAttribute();
+  }
   bool AllowInlineScriptForCSP(const AtomicString& nonce,
                                const WTF::OrdinalNumber&,
                                const String& script_content,
                                ContentSecurityPolicy::InlineType) override;
-  AtomicString InitiatorName() const override;
   Document& GetDocument() const override;
   void DispatchLoadEvent() override;
   void DispatchErrorEvent() override;

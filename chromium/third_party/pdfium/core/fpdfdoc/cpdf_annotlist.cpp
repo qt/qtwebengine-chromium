@@ -11,6 +11,7 @@
 #include <utility>
 
 #include "core/fpdfapi/page/cpdf_page.h"
+#include "core/fpdfapi/parser/cpdf_array.h"
 #include "core/fpdfapi/parser/cpdf_document.h"
 #include "core/fpdfapi/parser/cpdf_name.h"
 #include "core/fpdfapi/parser/cpdf_number.h"
@@ -74,6 +75,47 @@ std::unique_ptr<CPDF_Annot> CreatePopupAnnot(CPDF_Annot* pAnnot,
   return pPopupAnnot;
 }
 
+void GenerateAP(CPDF_Document* pDoc, CPDF_Dictionary* pAnnotDict) {
+  if (!pAnnotDict || pAnnotDict->GetStringFor("Subtype") != "Widget")
+    return;
+
+  CPDF_Object* pFieldTypeObj = FPDF_GetFieldAttr(pAnnotDict, "FT");
+  if (!pFieldTypeObj)
+    return;
+
+  ByteString field_type = pFieldTypeObj->GetString();
+  if (field_type == "Tx") {
+    CPVT_GenerateAP::GenerateFormAP(CPVT_GenerateAP::kTextField, pDoc,
+                                    pAnnotDict);
+    return;
+  }
+
+  CPDF_Object* pFieldFlagsObj = FPDF_GetFieldAttr(pAnnotDict, "Ff");
+  uint32_t flags = pFieldFlagsObj ? pFieldFlagsObj->GetInteger() : 0;
+  if (field_type == "Ch") {
+    CPVT_GenerateAP::GenerateFormAP((flags & (1 << 17))
+                                        ? CPVT_GenerateAP::kComboBox
+                                        : CPVT_GenerateAP::kListBox,
+                                    pDoc, pAnnotDict);
+    return;
+  }
+
+  if (field_type != "Btn")
+    return;
+  if (flags & (1 << 16))
+    return;
+  if (pAnnotDict->KeyExist("AS"))
+    return;
+
+  CPDF_Dictionary* pParentDict = pAnnotDict->GetDictFor("Parent");
+  if (!pParentDict || !pParentDict->KeyExist("AS"))
+    return;
+
+  pAnnotDict->SetNewFor<CPDF_String>("AS", pParentDict->GetStringFor("AS"),
+                                     false);
+  return;
+}
+
 }  // namespace
 
 CPDF_AnnotList::CPDF_AnnotList(CPDF_Page* pPage)
@@ -102,7 +144,7 @@ CPDF_AnnotList::CPDF_AnnotList(CPDF_Page* pPage)
     m_AnnotList.push_back(pdfium::MakeUnique<CPDF_Annot>(pDict, m_pDocument));
     if (bRegenerateAP && subtype == "Widget" &&
         CPDF_InterForm::IsUpdateAPEnabled() && !pDict->GetDictFor("AP")) {
-      FPDF_GenerateAP(m_pDocument, pDict);
+      GenerateAP(m_pDocument, pDict);
     }
   }
 

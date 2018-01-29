@@ -19,9 +19,8 @@
 #include "chromeos/network/network_connection_observer.h"
 #include "chromeos/network/network_state_handler_observer.h"
 #include "components/arc/common/net.mojom.h"
-#include "components/arc/instance_holder.h"
+#include "components/arc/connection_observer.h"
 #include "components/keyed_service/core/keyed_service.h"
-#include "mojo/public/cpp/bindings/binding.h"
 
 namespace content {
 class BrowserContext;
@@ -33,7 +32,7 @@ class ArcBridgeService;
 
 // Private implementation of ArcNetHost.
 class ArcNetHostImpl : public KeyedService,
-                       public InstanceHolder<mojom::NetInstance>::Observer,
+                       public ConnectionObserver<mojom::NetInstance>,
                        public chromeos::NetworkConnectionObserver,
                        public chromeos::NetworkStateHandlerObserver,
                        public mojom::NetHost {
@@ -87,17 +86,20 @@ class ArcNetHostImpl : public KeyedService,
   void DefaultNetworkChanged(const chromeos::NetworkState* network) override;
   void NetworkConnectionStateChanged(
       const chromeos::NetworkState* network) override;
+  void NetworkListChanged() override;
   void DeviceListChanged() override;
   void GetDefaultNetwork(GetDefaultNetworkCallback callback) override;
 
   // Overriden from chromeos::NetworkConnectionObserver.
   void DisconnectRequested(const std::string& service_path) override;
 
-  // Overridden from ArcBridgeService::InterfaceObserver<mojom::NetInstance>:
-  void OnInstanceReady() override;
-  void OnInstanceClosed() override;
+  // Overridden from ConnectionObserver<mojom::NetInstance>:
+  void OnConnectionReady() override;
+  void OnConnectionClosed() override;
 
  private:
+  const chromeos::NetworkState* GetDefaultNetworkFromChrome();
+  void UpdateDefaultNetwork();
   void DefaultNetworkSuccessCallback(const std::string& service_path,
                                      const base::DictionaryValue& dictionary);
 
@@ -154,7 +156,6 @@ class ArcNetHostImpl : public KeyedService,
   std::string arc_vpn_service_path_;
 
   THREAD_CHECKER(thread_checker_);
-  mojo::Binding<mojom::NetHost> binding_;
   base::WeakPtrFactory<ArcNetHostImpl> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(ArcNetHostImpl);

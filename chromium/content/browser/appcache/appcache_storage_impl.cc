@@ -37,15 +37,14 @@
 #include "storage/browser/quota/quota_client.h"
 #include "storage/browser/quota/quota_manager.h"
 #include "storage/browser/quota/quota_manager_proxy.h"
-#include "storage/browser/quota/special_storage_policy.h"
 
 namespace content {
 
 // Hard coded default when not using quota management.
 static const int kDefaultQuota = 5 * 1024 * 1024;
 
-static const int kMaxDiskCacheSize = 250 * 1024 * 1024;
-static const int kMaxMemDiskCacheSize = 10 * 1024 * 1024;
+static const int kMaxAppCacheDiskCacheSize = 250 * 1024 * 1024;
+static const int kMaxAppCacheMemDiskCacheSize = 10 * 1024 * 1024;
 static const base::FilePath::CharType kDiskCacheDirectoryName[] =
     FILE_PATH_LITERAL("Cache");
 
@@ -75,9 +74,11 @@ bool DeleteGroupAndRelatedRecords(
   return success;
 }
 
+}  // namespace
+
 // Destroys |database|. If there is appcache data to be deleted
 // (|force_keep_session_state| is false), deletes session-only appcache data.
-void ClearSessionOnlyOrigins(
+void AppCacheStorageImpl::ClearSessionOnlyOrigins(
     AppCacheDatabase* database,
     scoped_refptr<storage::SpecialStoragePolicy> special_storage_policy,
     bool force_keep_session_state) {
@@ -132,8 +133,6 @@ void ClearSessionOnlyOrigins(
     }  // for each group
   }  // for each origin
 }
-
-}  // namespace
 
 // DatabaseTask -----------------------------------------
 
@@ -205,7 +204,7 @@ void AppCacheStorageImpl::DatabaseTask::Schedule() {
 void AppCacheStorageImpl::DatabaseTask::CancelCompletion() {
   DCHECK(io_thread_->RunsTasksInCurrentSequence());
   delegates_.clear();
-  storage_ = NULL;
+  storage_ = nullptr;
 }
 
 void AppCacheStorageImpl::DatabaseTask::CallRun(
@@ -645,7 +644,7 @@ AppCacheStorageImpl::StoreGroupAndCacheTask::StoreGroupAndCacheTask(
 }
 
 void AppCacheStorageImpl::StoreGroupAndCacheTask::GetQuotaThenSchedule() {
-  storage::QuotaManager* quota_manager = NULL;
+  storage::QuotaManager* quota_manager = nullptr;
   if (storage_->service()->quota_manager_proxy()) {
     quota_manager =
         storage_->service()->quota_manager_proxy()->quota_manager();
@@ -810,8 +809,8 @@ void AppCacheStorageImpl::StoreGroupAndCacheTask::RunCompleted() {
       delegates_,
       OnGroupAndNewestCacheStored(
           group_.get(), cache_.get(), success_, would_exceed_quota_));
-  group_ = NULL;
-  cache_ = NULL;
+  group_ = nullptr;
+  cache_ = nullptr;
 
   // TODO(michaeln): if (would_exceed_quota_) what if the current usage
   // also exceeds the quota? http://crbug.com/83968
@@ -821,8 +820,8 @@ void AppCacheStorageImpl::StoreGroupAndCacheTask::CancelCompletion() {
   // Overriden to safely drop our reference to the group and cache
   // which are not thread safe refcounted.
   DatabaseTask::CancelCompletion();
-  group_ = NULL;
-  cache_ = NULL;
+  group_ = nullptr;
+  cache_ = nullptr;
 }
 
 // FindMainResponseTask -------
@@ -870,7 +869,7 @@ class NetworkNamespaceHelper {
         WhiteListMap::value_type(cache_id, AppCacheNamespaceVector()));
     if (result.second)
       GetOnlineWhiteListForCache(cache_id, &result.first->second);
-    return AppCache::FindNamespace(result.first->second, url) != NULL;
+    return AppCache::FindNamespace(result.first->second, url) != nullptr;
   }
 
  private:
@@ -1223,14 +1222,14 @@ void AppCacheStorageImpl::MakeGroupObsoleteTask::RunCompleted() {
   }
   FOR_EACH_DELEGATE(
       delegates_, OnGroupMadeObsolete(group_.get(), success_, response_code_));
-  group_ = NULL;
+  group_ = nullptr;
 }
 
 void AppCacheStorageImpl::MakeGroupObsoleteTask::CancelCompletion() {
   // Overriden to safely drop our reference to the group
   // which is not thread safe refcounted.
   DatabaseTask::CancelCompletion();
-  group_ = NULL;
+  group_ = nullptr;
 }
 
 // GetDeletableResponseIdsTask -------
@@ -1393,7 +1392,7 @@ AppCacheStorageImpl::AppCacheStorageImpl(AppCacheServiceImpl* service)
       is_response_deletion_scheduled_(false),
       did_start_deleting_responses_(false),
       last_deletable_response_rowid_(0),
-      database_(NULL),
+      database_(nullptr),
       is_disabled_(false),
       delete_and_start_over_pending_(false),
       expecting_cleanup_complete_on_disable_(false),
@@ -1413,7 +1412,7 @@ AppCacheStorageImpl::~AppCacheStorageImpl() {
                                     service()->force_keep_session_state()))) {
     delete database_;
   }
-  database_ = NULL;  // So no further database tasks can be scheduled.
+  database_ = nullptr;  // So no further database tasks can be scheduled.
 }
 
 void AppCacheStorageImpl::Initialize(
@@ -1456,7 +1455,7 @@ void AppCacheStorageImpl::GetAllInfo(Delegate* delegate) {
 void AppCacheStorageImpl::LoadCache(int64_t id, Delegate* delegate) {
   DCHECK(delegate);
   if (is_disabled_) {
-    delegate->OnCacheLoaded(NULL, id);
+    delegate->OnCacheLoaded(nullptr, id);
     return;
   }
 
@@ -1486,7 +1485,7 @@ void AppCacheStorageImpl::LoadOrCreateGroup(
     const GURL& manifest_url, Delegate* delegate) {
   DCHECK(delegate);
   if (is_disabled_) {
-    delegate->OnGroupLoaded(NULL, manifest_url);
+    delegate->OnGroupLoaded(nullptr, manifest_url);
     return;
   }
 
@@ -1843,7 +1842,7 @@ AppCacheStorageImpl::GetPendingCacheLoadTask(int64_t cache_id) {
   PendingCacheLoads::iterator found = pending_cache_loads_.find(cache_id);
   if (found != pending_cache_loads_.end())
     return found->second;
-  return NULL;
+  return nullptr;
 }
 
 AppCacheStorageImpl::GroupLoadTask*
@@ -1851,7 +1850,7 @@ AppCacheStorageImpl::GetPendingGroupLoadTask(const GURL& manifest_url) {
   PendingGroupLoads::iterator found = pending_group_loads_.find(manifest_url);
   if (found != pending_group_loads_.end())
     return found->second;
-  return NULL;
+  return nullptr;
 }
 
 void AppCacheStorageImpl::GetPendingForeignMarkingsForCache(
@@ -1888,14 +1887,14 @@ AppCacheDiskCache* AppCacheStorageImpl::disk_cache() {
     disk_cache_.reset(new AppCacheDiskCache);
     if (is_incognito_) {
       rv = disk_cache_->InitWithMemBackend(
-          kMaxMemDiskCacheSize,
+          kMaxAppCacheMemDiskCacheSize,
           base::Bind(&AppCacheStorageImpl::OnDiskCacheInitialized,
                      base::Unretained(this)));
     } else {
       expecting_cleanup_complete_on_disable_ = true;
       rv = disk_cache_->InitWithDiskBackend(
-          cache_directory_.Append(kDiskCacheDirectoryName), kMaxDiskCacheSize,
-          false,
+          cache_directory_.Append(kDiskCacheDirectoryName),
+          kMaxAppCacheDiskCacheSize, false,
           base::BindOnce(&AppCacheStorageImpl::OnDiskCacheCleanupComplete,
                          weak_factory_.GetWeakPtr()),
           base::Bind(&AppCacheStorageImpl::OnDiskCacheInitialized,

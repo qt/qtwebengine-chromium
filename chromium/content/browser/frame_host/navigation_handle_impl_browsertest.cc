@@ -5,9 +5,11 @@
 #include "base/command_line.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/memory/weak_ptr.h"
+#include "base/strings/stringprintf.h"
 #include "content/browser/frame_host/debug_urls.h"
 #include "content/browser/frame_host/navigation_handle_impl.h"
 #include "content/browser/web_contents/web_contents_impl.h"
+#include "content/public/browser/navigation_throttle.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "content/public/common/bindings_policy.h"
@@ -31,6 +33,13 @@
 #include "ui/base/page_transition_types.h"
 #include "url/url_constants.h"
 
+namespace {
+
+// Text to place in an HTML body. Should not contain any markup.
+const char kBodyTextContent[] = "some plain text content";
+
+}  // namespace
+
 namespace content {
 
 namespace {
@@ -42,18 +51,22 @@ class TestNavigationThrottle : public NavigationThrottle {
  public:
   TestNavigationThrottle(
       NavigationHandle* handle,
-      NavigationThrottle::ThrottleAction will_start_result,
-      NavigationThrottle::ThrottleAction will_redirect_result,
-      NavigationThrottle::ThrottleAction will_process_result,
+      NavigationThrottle::ThrottleCheckResult will_start_result,
+      NavigationThrottle::ThrottleCheckResult will_redirect_result,
+      NavigationThrottle::ThrottleCheckResult will_fail_result,
+      NavigationThrottle::ThrottleCheckResult will_process_result,
       base::Closure did_call_will_start,
       base::Closure did_call_will_redirect,
+      base::Closure did_call_will_fail,
       base::Closure did_call_will_process)
       : NavigationThrottle(handle),
         will_start_result_(will_start_result),
         will_redirect_result_(will_redirect_result),
+        will_fail_result_(will_fail_result),
         will_process_result_(will_process_result),
         did_call_will_start_(did_call_will_start),
         did_call_will_redirect_(did_call_will_redirect),
+        did_call_will_fail_(did_call_will_fail),
         did_call_will_process_(did_call_will_process) {}
   ~TestNavigationThrottle() override {}
 
@@ -92,6 +105,16 @@ class TestNavigationThrottle : public NavigationThrottle {
     return will_redirect_result_;
   }
 
+  NavigationThrottle::ThrottleCheckResult WillFailRequest() override {
+    NavigationHandleImpl* navigation_handle_impl =
+        static_cast<NavigationHandleImpl*>(navigation_handle());
+    CHECK_EQ(request_context_type_,
+             navigation_handle_impl->request_context_type());
+
+    BrowserThread::PostTask(BrowserThread::UI, FROM_HERE, did_call_will_fail_);
+    return will_fail_result_;
+  }
+
   NavigationThrottle::ThrottleCheckResult WillProcessResponse() override {
     NavigationHandleImpl* navigation_handle_impl =
         static_cast<NavigationHandleImpl*>(navigation_handle());
@@ -103,11 +126,13 @@ class TestNavigationThrottle : public NavigationThrottle {
     return will_process_result_;
   }
 
-  NavigationThrottle::ThrottleAction will_start_result_;
-  NavigationThrottle::ThrottleAction will_redirect_result_;
-  NavigationThrottle::ThrottleAction will_process_result_;
+  NavigationThrottle::ThrottleCheckResult will_start_result_;
+  NavigationThrottle::ThrottleCheckResult will_redirect_result_;
+  NavigationThrottle::ThrottleCheckResult will_fail_result_;
+  NavigationThrottle::ThrottleCheckResult will_process_result_;
   base::Closure did_call_will_start_;
   base::Closure did_call_will_redirect_;
+  base::Closure did_call_will_fail_;
   base::Closure did_call_will_process_;
   RequestContextType request_context_type_ = REQUEST_CONTEXT_TYPE_UNSPECIFIED;
 };
@@ -120,13 +145,15 @@ class TestNavigationThrottleInstaller : public WebContentsObserver {
  public:
   TestNavigationThrottleInstaller(
       WebContents* web_contents,
-      NavigationThrottle::ThrottleAction will_start_result,
-      NavigationThrottle::ThrottleAction will_redirect_result,
-      NavigationThrottle::ThrottleAction will_process_result,
+      NavigationThrottle::ThrottleCheckResult will_start_result,
+      NavigationThrottle::ThrottleCheckResult will_redirect_result,
+      NavigationThrottle::ThrottleCheckResult will_fail_result,
+      NavigationThrottle::ThrottleCheckResult will_process_result,
       const GURL& expected_start_url = GURL())
       : WebContentsObserver(web_contents),
         will_start_result_(will_start_result),
         will_redirect_result_(will_redirect_result),
+        will_fail_result_(will_fail_result),
         will_process_result_(will_process_result),
         expected_start_url_(expected_start_url),
         weak_factory_(this) {}
@@ -150,6 +177,14 @@ class TestNavigationThrottleInstaller : public WebContentsObserver {
     will_redirect_loop_runner_ = nullptr;
   }
 
+  void WaitForThrottleWillFail() {
+    if (will_fail_called_)
+      return;
+    will_fail_loop_runner_ = new MessageLoopRunner();
+    will_fail_loop_runner_->Run();
+    will_fail_loop_runner_ = nullptr;
+  }
+
   void WaitForThrottleWillProcess() {
     if (will_process_called_)
       return;
@@ -168,6 +203,7 @@ class TestNavigationThrottleInstaller : public WebContentsObserver {
 
   int will_start_called() { return will_start_called_; }
   int will_redirect_called() { return will_redirect_called_; }
+  int will_fail_called() { return will_fail_called_; }
   int will_process_called() { return will_process_called_; }
 
   int install_count() { return install_count_; }
@@ -185,6 +221,12 @@ class TestNavigationThrottleInstaller : public WebContentsObserver {
       will_redirect_loop_runner_->Quit();
   }
 
+  virtual void DidCallWillFailRequest() {
+    will_fail_called_++;
+    if (will_fail_loop_runner_)
+      will_fail_loop_runner_->Quit();
+  }
+
   virtual void DidCallWillProcessResponse() {
     will_process_called_++;
     if (will_process_loop_runner_)
@@ -198,10 +240,13 @@ class TestNavigationThrottleInstaller : public WebContentsObserver {
       return;
 
     std::unique_ptr<NavigationThrottle> throttle(new TestNavigationThrottle(
-        handle, will_start_result_, will_redirect_result_, will_process_result_,
+        handle, will_start_result_, will_redirect_result_, will_fail_result_,
+        will_process_result_,
         base::Bind(&TestNavigationThrottleInstaller::DidCallWillStartRequest,
                    weak_factory_.GetWeakPtr()),
         base::Bind(&TestNavigationThrottleInstaller::DidCallWillRedirectRequest,
+                   weak_factory_.GetWeakPtr()),
+        base::Bind(&TestNavigationThrottleInstaller::DidCallWillFailRequest,
                    weak_factory_.GetWeakPtr()),
         base::Bind(&TestNavigationThrottleInstaller::DidCallWillProcessResponse,
                    weak_factory_.GetWeakPtr())));
@@ -218,16 +263,19 @@ class TestNavigationThrottleInstaller : public WebContentsObserver {
       navigation_throttle_ = nullptr;
   }
 
-  NavigationThrottle::ThrottleAction will_start_result_;
-  NavigationThrottle::ThrottleAction will_redirect_result_;
-  NavigationThrottle::ThrottleAction will_process_result_;
+  NavigationThrottle::ThrottleCheckResult will_start_result_;
+  NavigationThrottle::ThrottleCheckResult will_redirect_result_;
+  NavigationThrottle::ThrottleCheckResult will_fail_result_;
+  NavigationThrottle::ThrottleCheckResult will_process_result_;
   int will_start_called_ = 0;
   int will_redirect_called_ = 0;
+  int will_fail_called_ = 0;
   int will_process_called_ = 0;
   TestNavigationThrottle* navigation_throttle_ = nullptr;
   int install_count_ = 0;
   scoped_refptr<MessageLoopRunner> will_start_loop_runner_;
   scoped_refptr<MessageLoopRunner> will_redirect_loop_runner_;
+  scoped_refptr<MessageLoopRunner> will_fail_loop_runner_;
   scoped_refptr<MessageLoopRunner> will_process_loop_runner_;
   GURL expected_start_url_;
 
@@ -244,17 +292,20 @@ class TestDeferringNavigationThrottleInstaller
  public:
   TestDeferringNavigationThrottleInstaller(
       WebContents* web_contents,
-      NavigationThrottle::ThrottleAction will_start_result,
-      NavigationThrottle::ThrottleAction will_redirect_result,
-      NavigationThrottle::ThrottleAction will_process_result,
+      NavigationThrottle::ThrottleCheckResult will_start_result,
+      NavigationThrottle::ThrottleCheckResult will_redirect_result,
+      NavigationThrottle::ThrottleCheckResult will_fail_result,
+      NavigationThrottle::ThrottleCheckResult will_process_result,
       GURL expected_start_url = GURL())
       : TestNavigationThrottleInstaller(web_contents,
+                                        NavigationThrottle::DEFER,
                                         NavigationThrottle::DEFER,
                                         NavigationThrottle::DEFER,
                                         NavigationThrottle::DEFER,
                                         expected_start_url),
         will_start_deferred_result_(will_start_result),
         will_redirect_deferred_result_(will_redirect_result),
+        will_fail_deferred_result_(will_fail_result),
         will_process_deferred_result_(will_process_result) {}
 
  protected:
@@ -268,15 +319,21 @@ class TestDeferringNavigationThrottleInstaller
     Continue(will_redirect_deferred_result_);
   }
 
+  void DidCallWillFailRequest() override {
+    TestNavigationThrottleInstaller::DidCallWillStartRequest();
+    Continue(will_fail_deferred_result_);
+  }
+
   void DidCallWillProcessResponse() override {
     TestNavigationThrottleInstaller::DidCallWillStartRequest();
     Continue(will_process_deferred_result_);
   }
 
  private:
-  NavigationThrottle::ThrottleAction will_start_deferred_result_;
-  NavigationThrottle::ThrottleAction will_redirect_deferred_result_;
-  NavigationThrottle::ThrottleAction will_process_deferred_result_;
+  NavigationThrottle::ThrottleCheckResult will_start_deferred_result_;
+  NavigationThrottle::ThrottleCheckResult will_redirect_deferred_result_;
+  NavigationThrottle::ThrottleCheckResult will_fail_deferred_result_;
+  NavigationThrottle::ThrottleCheckResult will_process_deferred_result_;
 };
 
 // Records all navigation start URLs from the WebContents.
@@ -473,6 +530,28 @@ IN_PROC_BROWSER_TEST_F(NavigationHandleImplBrowserTest, VerifyRedirect) {
   }
 }
 
+// Ensure that a certificate error results in a committed navigation with
+// the appropriate error code on the handle.
+IN_PROC_BROWSER_TEST_F(NavigationHandleImplBrowserTest,
+                       VerifyCertErrorFailure) {
+  if (!IsBrowserSideNavigationEnabled()) {
+    return;
+  }
+
+  net::EmbeddedTestServer https_server(net::EmbeddedTestServer::TYPE_HTTPS);
+  https_server.SetSSLConfig(net::EmbeddedTestServer::CERT_MISMATCHED_NAME);
+  ASSERT_TRUE(https_server.Start());
+  GURL url(https_server.GetURL("/title1.html"));
+
+  NavigationHandleObserver observer(shell()->web_contents(), url);
+
+  EXPECT_FALSE(NavigateToURL(shell(), url));
+
+  EXPECT_TRUE(observer.has_committed());
+  EXPECT_TRUE(observer.is_error());
+  EXPECT_EQ(net::ERR_CERT_COMMON_NAME_INVALID, observer.net_error_code());
+}
+
 // Ensure that the IsRendererInitiated() method on NavigationHandle behaves
 // correctly.
 IN_PROC_BROWSER_TEST_F(NavigationHandleImplBrowserTest,
@@ -632,7 +711,8 @@ IN_PROC_BROWSER_TEST_F(NavigationHandleImplBrowserTest, ThrottleCancelStart) {
   NavigationHandleObserver observer(shell()->web_contents(), redirect_url);
   TestNavigationThrottleInstaller installer(
       shell()->web_contents(), NavigationThrottle::CANCEL,
-      NavigationThrottle::PROCEED, NavigationThrottle::PROCEED);
+      NavigationThrottle::PROCEED, NavigationThrottle::PROCEED,
+      NavigationThrottle::PROCEED);
 
   EXPECT_FALSE(NavigateToURL(shell(), redirect_url));
 
@@ -658,7 +738,8 @@ IN_PROC_BROWSER_TEST_F(NavigationHandleImplBrowserTest,
     NavigationHandleObserver observer(shell()->web_contents(), redirect_url);
     TestNavigationThrottleInstaller installer(
         shell()->web_contents(), NavigationThrottle::PROCEED,
-        NavigationThrottle::CANCEL, NavigationThrottle::PROCEED);
+        NavigationThrottle::CANCEL, NavigationThrottle::PROCEED,
+        NavigationThrottle::PROCEED);
 
     EXPECT_FALSE(NavigateToURL(shell(), redirect_url));
 
@@ -674,7 +755,8 @@ IN_PROC_BROWSER_TEST_F(NavigationHandleImplBrowserTest,
     NavigationHandleObserver observer(shell()->web_contents(), no_redirect_url);
     TestNavigationThrottleInstaller installer(
         shell()->web_contents(), NavigationThrottle::PROCEED,
-        NavigationThrottle::CANCEL, NavigationThrottle::PROCEED);
+        NavigationThrottle::CANCEL, NavigationThrottle::PROCEED,
+        NavigationThrottle::PROCEED);
 
     EXPECT_TRUE(NavigateToURL(shell(), no_redirect_url));
 
@@ -682,6 +764,80 @@ IN_PROC_BROWSER_TEST_F(NavigationHandleImplBrowserTest,
     EXPECT_FALSE(observer.is_error());
     EXPECT_FALSE(observer.was_redirected());
     EXPECT_EQ(shell()->web_contents()->GetLastCommittedURL(), no_redirect_url);
+  }
+}
+
+// Ensure that a NavigationThrottle can respond CANCEL when a navigation fails.
+IN_PROC_BROWSER_TEST_F(NavigationHandleImplBrowserTest, ThrottleCancelFailure) {
+  if (!IsBrowserSideNavigationEnabled()) {
+    return;
+  }
+
+  net::EmbeddedTestServer https_server(net::EmbeddedTestServer::TYPE_HTTPS);
+  https_server.SetSSLConfig(net::EmbeddedTestServer::CERT_MISMATCHED_NAME);
+  ASSERT_TRUE(https_server.Start());
+  GURL url(https_server.GetURL("/title1.html"));
+
+  // A navigation with a cert error failure should be canceled. CANCEL has a
+  // default net error of ERR_ABORTED, which should prevent the navigation from
+  // committing.
+  {
+    TestNavigationThrottleInstaller installer(
+        shell()->web_contents(), NavigationThrottle::PROCEED,
+        NavigationThrottle::PROCEED, NavigationThrottle::CANCEL,
+        NavigationThrottle::PROCEED);
+
+    NavigationHandleObserver observer(shell()->web_contents(), url);
+
+    EXPECT_FALSE(observer.has_committed());
+    EXPECT_FALSE(observer.is_error());
+
+    EXPECT_FALSE(NavigateToURL(shell(), url));
+
+    EXPECT_FALSE(installer.will_fail_called());
+    EXPECT_FALSE(observer.has_committed());
+    EXPECT_TRUE(observer.is_error());
+    EXPECT_EQ(net::ERR_ABORTED, observer.net_error_code());
+  }
+
+  // A navigation with a cert error failure should be canceled.
+  // A custom net error should result in a committed error page.
+  {
+    TestNavigationThrottleInstaller installer(
+        shell()->web_contents(), NavigationThrottle::PROCEED,
+        NavigationThrottle::PROCEED,
+        NavigationThrottle::ThrottleCheckResult(NavigationThrottle::CANCEL,
+                                                net::ERR_CERT_DATE_INVALID),
+        NavigationThrottle::PROCEED);
+
+    NavigationHandleObserver observer(shell()->web_contents(), url);
+
+    EXPECT_FALSE(observer.has_committed());
+    EXPECT_FALSE(observer.is_error());
+
+    EXPECT_FALSE(NavigateToURL(shell(), url));
+
+    EXPECT_TRUE(installer.will_fail_called());
+    EXPECT_TRUE(observer.has_committed());
+    EXPECT_TRUE(observer.is_error());
+    EXPECT_EQ(net::ERR_CERT_DATE_INVALID, observer.net_error_code());
+  }
+
+  // A navigation without a cert error should be successful, without calling
+  // WillFailRequest() on the throttle. (We set the failure method response to
+  // CANCEL, but that shouldn't matter if the test passes.)
+  {
+    GURL url(embedded_test_server()->GetURL("/title2.html"));
+    NavigationHandleObserver observer(shell()->web_contents(), url);
+    TestNavigationThrottleInstaller installer(
+        shell()->web_contents(), NavigationThrottle::PROCEED,
+        NavigationThrottle::PROCEED, NavigationThrottle::CANCEL,
+        NavigationThrottle::PROCEED);
+
+    EXPECT_TRUE(NavigateToURL(shell(), url));
+
+    EXPECT_FALSE(installer.will_fail_called());
+    EXPECT_FALSE(observer.is_error());
   }
 }
 
@@ -697,7 +853,8 @@ IN_PROC_BROWSER_TEST_F(NavigationHandleImplBrowserTest,
   NavigationHandleObserver observer(shell()->web_contents(), redirect_url);
   TestNavigationThrottleInstaller installer(
       shell()->web_contents(), NavigationThrottle::PROCEED,
-      NavigationThrottle::PROCEED, NavigationThrottle::CANCEL);
+      NavigationThrottle::PROCEED, NavigationThrottle::PROCEED,
+      NavigationThrottle::CANCEL);
 
   EXPECT_FALSE(NavigateToURL(shell(), redirect_url));
 
@@ -721,7 +878,8 @@ IN_PROC_BROWSER_TEST_F(NavigationHandleImplBrowserTest, ThrottleDefer) {
   NavigationHandleObserver observer(shell()->web_contents(), redirect_url);
   TestNavigationThrottleInstaller installer(
       shell()->web_contents(), NavigationThrottle::DEFER,
-      NavigationThrottle::DEFER, NavigationThrottle::DEFER);
+      NavigationThrottle::DEFER, NavigationThrottle::DEFER,
+      NavigationThrottle::DEFER);
 
   shell()->LoadURL(redirect_url);
 
@@ -729,6 +887,7 @@ IN_PROC_BROWSER_TEST_F(NavigationHandleImplBrowserTest, ThrottleDefer) {
   installer.WaitForThrottleWillStart();
   EXPECT_EQ(1, installer.will_start_called());
   EXPECT_EQ(0, installer.will_redirect_called());
+  EXPECT_EQ(0, installer.will_fail_called());
   EXPECT_EQ(0, installer.will_process_called());
   installer.navigation_throttle()->ResumeNavigation();
 
@@ -736,6 +895,7 @@ IN_PROC_BROWSER_TEST_F(NavigationHandleImplBrowserTest, ThrottleDefer) {
   installer.WaitForThrottleWillRedirect();
   EXPECT_EQ(1, installer.will_start_called());
   EXPECT_EQ(1, installer.will_redirect_called());
+  EXPECT_EQ(0, installer.will_fail_called());
   EXPECT_EQ(0, installer.will_process_called());
   installer.navigation_throttle()->ResumeNavigation();
 
@@ -743,6 +903,7 @@ IN_PROC_BROWSER_TEST_F(NavigationHandleImplBrowserTest, ThrottleDefer) {
   installer.WaitForThrottleWillProcess();
   EXPECT_EQ(1, installer.will_start_called());
   EXPECT_EQ(1, installer.will_redirect_called());
+  EXPECT_EQ(0, installer.will_fail_called());
   EXPECT_EQ(1, installer.will_process_called());
   installer.navigation_throttle()->ResumeNavigation();
 
@@ -754,6 +915,51 @@ IN_PROC_BROWSER_TEST_F(NavigationHandleImplBrowserTest, ThrottleDefer) {
   EXPECT_FALSE(observer.is_error());
   EXPECT_EQ(shell()->web_contents()->GetLastCommittedURL(),
             GURL(embedded_test_server()->GetURL("bar.com", "/title2.html")));
+}
+
+// Ensure that a NavigationThrottle can defer and resume the navigation at
+// navigation start and navigation failure.
+IN_PROC_BROWSER_TEST_F(NavigationHandleImplBrowserTest, ThrottleDeferFailure) {
+  if (!IsBrowserSideNavigationEnabled()) {
+    return;
+  }
+
+  net::EmbeddedTestServer https_server(net::EmbeddedTestServer::TYPE_HTTPS);
+  https_server.SetSSLConfig(net::EmbeddedTestServer::CERT_MISMATCHED_NAME);
+  ASSERT_TRUE(https_server.Start());
+  GURL failure_url(https_server.GetURL("/title1.html"));
+
+  TestNavigationObserver navigation_observer(shell()->web_contents(), 1);
+  NavigationHandleObserver observer(shell()->web_contents(), failure_url);
+  TestNavigationThrottleInstaller installer(
+      shell()->web_contents(), NavigationThrottle::DEFER,
+      NavigationThrottle::DEFER, NavigationThrottle::DEFER,
+      NavigationThrottle::DEFER);
+
+  shell()->LoadURL(failure_url);
+
+  // Wait for WillStartRequest.
+  installer.WaitForThrottleWillStart();
+  EXPECT_EQ(1, installer.will_start_called());
+  EXPECT_EQ(0, installer.will_redirect_called());
+  EXPECT_EQ(0, installer.will_fail_called());
+  EXPECT_EQ(0, installer.will_process_called());
+  installer.navigation_throttle()->ResumeNavigation();
+
+  // Wait for WillFailRequest.
+  installer.WaitForThrottleWillFail();
+  EXPECT_EQ(1, installer.will_start_called());
+  EXPECT_EQ(0, installer.will_redirect_called());
+  EXPECT_EQ(1, installer.will_fail_called());
+  EXPECT_EQ(0, installer.will_process_called());
+  installer.navigation_throttle()->ResumeNavigation();
+
+  // Wait for the end of the navigation.
+  navigation_observer.Wait();
+
+  EXPECT_TRUE(observer.has_committed());
+  EXPECT_TRUE(observer.is_error());
+  EXPECT_EQ(net::ERR_CERT_COMMON_NAME_INVALID, observer.net_error_code());
 }
 
 // Ensure that a NavigationThrottle can block the navigation and collapse the
@@ -806,12 +1012,12 @@ IN_PROC_BROWSER_TEST_F(NavigationHandleImplBrowserTest,
           new TestDeferringNavigationThrottleInstaller(
               shell()->web_contents(), test_case.will_start_result,
               test_case.will_redirect_result, NavigationThrottle::PROCEED,
-              blocked_subframe_url));
+              NavigationThrottle::PROCEED, blocked_subframe_url));
     } else {
       subframe_throttle_installer.reset(new TestNavigationThrottleInstaller(
           shell()->web_contents(), test_case.will_start_result,
           test_case.will_redirect_result, NavigationThrottle::PROCEED,
-          blocked_subframe_url));
+          NavigationThrottle::PROCEED, blocked_subframe_url));
     }
 
     {
@@ -874,7 +1080,7 @@ IN_PROC_BROWSER_TEST_F(NavigationHandleImplBrowserTest,
   TestNavigationThrottleInstaller subframe_throttle_installer(
       shell()->web_contents(), NavigationThrottle::BLOCK_REQUEST_AND_COLLAPSE,
       NavigationThrottle::PROCEED, NavigationThrottle::PROCEED,
-      blocked_subframe_url);
+      NavigationThrottle::PROCEED, blocked_subframe_url);
 
   {
     SCOPED_TRACE("Initial navigation blocked on main frame load.");
@@ -917,7 +1123,8 @@ IN_PROC_BROWSER_TEST_F(NavigationHandleImplBrowserTest,
 
   TestNavigationThrottleInstaller installer(
       shell()->web_contents(), NavigationThrottle::PROCEED,
-      NavigationThrottle::PROCEED, NavigationThrottle::PROCEED);
+      NavigationThrottle::PROCEED, NavigationThrottle::PROCEED,
+      NavigationThrottle::PROCEED);
   TestNavigationManager main_manager(shell()->web_contents(), main_url);
   TestNavigationManager b_manager(shell()->web_contents(), b_url);
   TestNavigationManager c_manager(shell()->web_contents(), c_url);
@@ -968,7 +1175,8 @@ IN_PROC_BROWSER_TEST_F(NavigationHandleImplBrowserTest,
 
   TestNavigationThrottleInstaller installer(
       shell()->web_contents(), NavigationThrottle::PROCEED,
-      NavigationThrottle::PROCEED, NavigationThrottle::PROCEED);
+      NavigationThrottle::PROCEED, NavigationThrottle::PROCEED,
+      NavigationThrottle::PROCEED);
   TestNavigationManager link_manager(shell()->web_contents(), link_url);
   NavigationStartUrlRecorder url_recorder(shell()->web_contents());
 
@@ -1004,7 +1212,8 @@ IN_PROC_BROWSER_TEST_F(NavigationHandleImplBrowserTest,
 
   TestNavigationThrottleInstaller installer(
       shell()->web_contents(), NavigationThrottle::PROCEED,
-      NavigationThrottle::PROCEED, NavigationThrottle::PROCEED);
+      NavigationThrottle::PROCEED, NavigationThrottle::PROCEED,
+      NavigationThrottle::PROCEED);
   TestNavigationManager post_manager(shell()->web_contents(), post_url);
   NavigationStartUrlRecorder url_recorder(shell()->web_contents());
 
@@ -1041,7 +1250,8 @@ IN_PROC_BROWSER_TEST_F(NavigationHandleImplBrowserTest,
     // WillStartRequest.
     TestNavigationThrottleInstaller installer(
         shell()->web_contents(), NavigationThrottle::CANCEL_AND_IGNORE,
-        NavigationThrottle::PROCEED, NavigationThrottle::PROCEED);
+        NavigationThrottle::PROCEED, NavigationThrottle::PROCEED,
+        NavigationThrottle::PROCEED);
     NavigationHandleObserver observer(shell()->web_contents(), kUrl);
 
     // Try to navigate to the url. The navigation should be canceled and the
@@ -1055,7 +1265,8 @@ IN_PROC_BROWSER_TEST_F(NavigationHandleImplBrowserTest,
     // WillRedirectRequest.
     TestNavigationThrottleInstaller installer(
         shell()->web_contents(), NavigationThrottle::PROCEED,
-        NavigationThrottle::CANCEL_AND_IGNORE, NavigationThrottle::PROCEED);
+        NavigationThrottle::CANCEL_AND_IGNORE, NavigationThrottle::PROCEED,
+        NavigationThrottle::PROCEED);
     NavigationHandleObserver observer(shell()->web_contents(), kRedirectingUrl);
 
     // Try to navigate to the url. The navigation should be canceled and the
@@ -1069,7 +1280,8 @@ IN_PROC_BROWSER_TEST_F(NavigationHandleImplBrowserTest,
     // WillProcessResponse.
     TestNavigationThrottleInstaller installer(
         shell()->web_contents(), NavigationThrottle::PROCEED,
-        NavigationThrottle::PROCEED, NavigationThrottle::CANCEL_AND_IGNORE);
+        NavigationThrottle::PROCEED, NavigationThrottle::PROCEED,
+        NavigationThrottle::CANCEL_AND_IGNORE);
     NavigationHandleObserver observer(shell()->web_contents(), kUrl);
 
     // Try to navigate to the url. The navigation should be canceled and the
@@ -1083,7 +1295,8 @@ IN_PROC_BROWSER_TEST_F(NavigationHandleImplBrowserTest,
     // WillStartRequest.
     TestNavigationThrottleInstaller installer(
         shell()->web_contents(), NavigationThrottle::BLOCK_REQUEST,
-        NavigationThrottle::PROCEED, NavigationThrottle::PROCEED);
+        NavigationThrottle::PROCEED, NavigationThrottle::PROCEED,
+        NavigationThrottle::PROCEED);
     NavigationHandleObserver observer(shell()->web_contents(), kUrl);
 
     // Try to navigate to the url. The navigation should be canceled and the
@@ -1098,7 +1311,8 @@ IN_PROC_BROWSER_TEST_F(NavigationHandleImplBrowserTest,
     // WillRedirectRequest.
     TestNavigationThrottleInstaller installer(
         shell()->web_contents(), NavigationThrottle::PROCEED,
-        NavigationThrottle::BLOCK_REQUEST, NavigationThrottle::PROCEED);
+        NavigationThrottle::BLOCK_REQUEST, NavigationThrottle::PROCEED,
+        NavigationThrottle::PROCEED);
     NavigationHandleObserver observer(shell()->web_contents(), kRedirectingUrl);
 
     // Try to navigate to the url. The navigation should be canceled and the
@@ -1128,7 +1342,8 @@ IN_PROC_BROWSER_TEST_F(NavigationHandleImplBrowserTest,
   // WillStartRequest.
   TestNavigationThrottleInstaller installer(
       shell()->web_contents(), NavigationThrottle::CANCEL_AND_IGNORE,
-      NavigationThrottle::PROCEED, NavigationThrottle::PROCEED);
+      NavigationThrottle::PROCEED, NavigationThrottle::PROCEED,
+      NavigationThrottle::PROCEED);
 
   EXPECT_FALSE(NavigateToURL(shell(), kUrl2));
 }
@@ -1146,7 +1361,8 @@ class NavigationHandleImplHttpsUpgradeBrowserTest
     NavigationStartUrlRecorder url_recorder(shell()->web_contents());
     TestNavigationThrottleInstaller installer(
         shell()->web_contents(), NavigationThrottle::PROCEED,
-        NavigationThrottle::PROCEED, NavigationThrottle::PROCEED);
+        NavigationThrottle::PROCEED, NavigationThrottle::PROCEED,
+        NavigationThrottle::PROCEED);
     TestNavigationManager navigation_manager(shell()->web_contents(),
                                              iframe_secure_url);
 
@@ -1208,7 +1424,8 @@ IN_PROC_BROWSER_TEST_F(NavigationHandleImplBrowserTest,
   {
     TestNavigationThrottleInstaller installer(
         shell()->web_contents(), NavigationThrottle::PROCEED,
-        NavigationThrottle::PROCEED, NavigationThrottle::PROCEED);
+        NavigationThrottle::PROCEED, NavigationThrottle::PROCEED,
+        NavigationThrottle::PROCEED);
     NavigationHandleObserver observer(shell()->web_contents(), url);
     EXPECT_TRUE(NavigateToURL(shell(), url));
     EXPECT_EQ(1, installer.will_start_called());
@@ -1220,7 +1437,8 @@ IN_PROC_BROWSER_TEST_F(NavigationHandleImplBrowserTest,
   {
     TestNavigationThrottleInstaller installer(
         shell()->web_contents(), NavigationThrottle::PROCEED,
-        NavigationThrottle::PROCEED, NavigationThrottle::PROCEED);
+        NavigationThrottle::PROCEED, NavigationThrottle::PROCEED,
+        NavigationThrottle::PROCEED);
     NavigationHandleObserver observer(shell()->web_contents(), url_fragment_1);
     EXPECT_TRUE(NavigateToURL(shell(), url_fragment_1));
     EXPECT_EQ(0, installer.will_start_called());
@@ -1232,7 +1450,8 @@ IN_PROC_BROWSER_TEST_F(NavigationHandleImplBrowserTest,
   {
     TestNavigationThrottleInstaller installer(
         shell()->web_contents(), NavigationThrottle::PROCEED,
-        NavigationThrottle::PROCEED, NavigationThrottle::PROCEED);
+        NavigationThrottle::PROCEED, NavigationThrottle::PROCEED,
+        NavigationThrottle::PROCEED);
     NavigationHandleObserver observer(shell()->web_contents(), url_fragment_2);
     EXPECT_TRUE(NavigateToURL(shell(), url_fragment_2));
     EXPECT_EQ(0, installer.will_start_called());
@@ -1244,7 +1463,8 @@ IN_PROC_BROWSER_TEST_F(NavigationHandleImplBrowserTest,
   {
     TestNavigationThrottleInstaller installer(
         shell()->web_contents(), NavigationThrottle::PROCEED,
-        NavigationThrottle::PROCEED, NavigationThrottle::PROCEED);
+        NavigationThrottle::PROCEED, NavigationThrottle::PROCEED,
+        NavigationThrottle::PROCEED);
     NavigationHandleObserver observer(shell()->web_contents(), url_fragment_2);
     EXPECT_TRUE(NavigateToURL(shell(), url_fragment_2));
     EXPECT_EQ(1, installer.will_start_called());
@@ -1256,7 +1476,8 @@ IN_PROC_BROWSER_TEST_F(NavigationHandleImplBrowserTest,
   {
     TestNavigationThrottleInstaller installer(
         shell()->web_contents(), NavigationThrottle::PROCEED,
-        NavigationThrottle::PROCEED, NavigationThrottle::PROCEED);
+        NavigationThrottle::PROCEED, NavigationThrottle::PROCEED,
+        NavigationThrottle::PROCEED);
     NavigationHandleObserver observer(shell()->web_contents(), url);
     EXPECT_TRUE(NavigateToURL(shell(), url));
     EXPECT_EQ(1, installer.will_start_called());
@@ -1322,7 +1543,8 @@ IN_PROC_BROWSER_TEST_F(NavigationHandleImplBrowserTest, BlockedOnRedirect) {
   // WillRedirectRequest.
   TestNavigationThrottleInstaller installer(
       shell()->web_contents(), NavigationThrottle::PROCEED,
-      NavigationThrottle::BLOCK_REQUEST, NavigationThrottle::PROCEED);
+      NavigationThrottle::BLOCK_REQUEST, NavigationThrottle::PROCEED,
+      NavigationThrottle::PROCEED);
   NavigationHandleObserver observer(shell()->web_contents(), kRedirectingUrl);
   NavigationLogger logger(shell()->web_contents());
 
@@ -1408,9 +1630,10 @@ IN_PROC_BROWSER_TEST_F(PlzNavigateNavigationHandleImplBrowserTest,
   scoped_refptr<SiteInstance> site_instance =
       shell()->web_contents()->GetMainFrame()->GetSiteInstance();
 
-  auto installer = base::MakeUnique<TestNavigationThrottleInstaller>(
+  auto installer = std::make_unique<TestNavigationThrottleInstaller>(
       shell()->web_contents(), NavigationThrottle::BLOCK_REQUEST,
-      NavigationThrottle::PROCEED, NavigationThrottle::PROCEED);
+      NavigationThrottle::PROCEED, NavigationThrottle::PROCEED,
+      NavigationThrottle::PROCEED);
 
   {
     // A blocked, renderer-initiated navigation should commit an error page
@@ -1476,9 +1699,10 @@ IN_PROC_BROWSER_TEST_F(PlzNavigateNavigationHandleImplBrowserTest,
               shell()->web_contents()->GetMainFrame()->GetSiteInstance());
   }
 
-  installer = base::MakeUnique<TestNavigationThrottleInstaller>(
+  installer = std::make_unique<TestNavigationThrottleInstaller>(
       shell()->web_contents(), NavigationThrottle::BLOCK_REQUEST,
-      NavigationThrottle::PROCEED, NavigationThrottle::PROCEED);
+      NavigationThrottle::PROCEED, NavigationThrottle::PROCEED,
+      NavigationThrottle::PROCEED);
 
   {
     // A blocked, browser-initiated navigation should commit an error page in a
@@ -1553,7 +1777,8 @@ IN_PROC_BROWSER_TEST_F(PlzNavigateNavigationHandleImplBrowserTest,
   GURL blocked_url("http://blocked-by-throttle.example.cc");
   TestNavigationThrottleInstaller installer(
       web_contents, NavigationThrottle::BLOCK_REQUEST,
-      NavigationThrottle::PROCEED, NavigationThrottle::PROCEED);
+      NavigationThrottle::PROCEED, NavigationThrottle::PROCEED,
+      NavigationThrottle::PROCEED);
   NavigationHandleObserver commit_observer(web_contents, blocked_url);
   EXPECT_FALSE(NavigateToURL(shell(), blocked_url));
   NavigationEntry* last_committed =
@@ -1698,7 +1923,8 @@ IN_PROC_BROWSER_TEST_F(NavigationHandleImplBrowserTest,
                                                  iframe_url);
       TestNavigationThrottleInstaller installer(
           shell()->web_contents(), NavigationThrottle::PROCEED,
-          NavigationThrottle::PROCEED, NavigationThrottle::PROCEED);
+          NavigationThrottle::PROCEED, NavigationThrottle::PROCEED,
+          NavigationThrottle::PROCEED);
 
       NavigateIframeToURL(shell()->web_contents(), "child0", iframe_url);
 
@@ -1756,7 +1982,8 @@ IN_PROC_BROWSER_TEST_F(NavigationHandleImplDownloadBrowserTest,
   NavigationHandleObserver observer(shell()->web_contents(), url);
   TestNavigationThrottleInstaller installer(
       shell()->web_contents(), NavigationThrottle::CANCEL,
-      NavigationThrottle::PROCEED, NavigationThrottle::PROCEED);
+      NavigationThrottle::PROCEED, NavigationThrottle::PROCEED,
+      NavigationThrottle::PROCEED);
 
   EXPECT_FALSE(NavigateToURL(shell(), url));
   EXPECT_FALSE(observer.has_committed());
@@ -1782,7 +2009,8 @@ IN_PROC_BROWSER_TEST_F(NavigationHandleImplDownloadBrowserTest,
   NavigationHandleObserver observer(shell()->web_contents(), redirect_url);
   TestNavigationThrottleInstaller installer(
       shell()->web_contents(), NavigationThrottle::PROCEED,
-      NavigationThrottle::CANCEL, NavigationThrottle::PROCEED);
+      NavigationThrottle::CANCEL, NavigationThrottle::PROCEED,
+      NavigationThrottle::PROCEED);
 
   EXPECT_FALSE(NavigateToURL(shell(), redirect_url));
 
@@ -1790,6 +2018,38 @@ IN_PROC_BROWSER_TEST_F(NavigationHandleImplDownloadBrowserTest,
   EXPECT_FALSE(observer.is_download());
   EXPECT_TRUE(observer.is_error());
   EXPECT_TRUE(observer.was_redirected());
+}
+
+IN_PROC_BROWSER_TEST_F(NavigationHandleImplBrowserTest,
+                       ThrottleFailureWithErrorPageContent) {
+  if (!IsBrowserSideNavigationEnabled())
+    return;
+
+  net::EmbeddedTestServer https_server(net::EmbeddedTestServer::TYPE_HTTPS);
+  https_server.SetSSLConfig(net::EmbeddedTestServer::CERT_MISMATCHED_NAME);
+  ASSERT_TRUE(https_server.Start());
+  GURL url(https_server.GetURL("/title1.html"));
+
+  NavigationThrottle::ThrottleCheckResult cancel_result = {
+      NavigationThrottle::CANCEL, net::ERR_CERT_COMMON_NAME_INVALID,
+      base::StringPrintf("<html><body>%s</body><html>", kBodyTextContent)};
+
+  NavigationHandleObserver observer(shell()->web_contents(), url);
+  TestNavigationThrottleInstaller installer(
+      shell()->web_contents(), NavigationThrottle::PROCEED,
+      NavigationThrottle::PROCEED, cancel_result, NavigationThrottle::PROCEED);
+
+  EXPECT_FALSE(NavigateToURL(shell(), url));
+
+  EXPECT_TRUE(observer.has_committed());
+  EXPECT_TRUE(observer.is_error());
+
+  std::string result;
+  const std::string javascript =
+      "domAutomationController.send(document.body.textContent)";
+  content::RenderFrameHost* rfh = shell()->web_contents()->GetMainFrame();
+  ASSERT_TRUE(content::ExecuteScriptAndExtractString(rfh, javascript, &result));
+  EXPECT_EQ(kBodyTextContent, result);
 }
 
 }  // namespace content

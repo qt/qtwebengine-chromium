@@ -991,6 +991,7 @@ TEST_F(PasswordManagerTest, AttemptedSavePasswordSameOriginInsecureScheme) {
   secure_form.signon_realm = secure_form.origin.spec();
 
   PasswordForm insecure_form(MakeSimpleForm());
+  insecure_form.username_element += ASCIIToUTF16("1");
   insecure_form.username_value = ASCIIToUTF16("compromised_user");
   insecure_form.password_value = ASCIIToUTF16("C0mpr0m1s3d_P4ss");
   insecure_form.origin = GURL("http://example.com/home");
@@ -1027,7 +1028,7 @@ TEST_F(PasswordManagerTest, AttemptedSavePasswordSameOriginInsecureScheme) {
   manager()->OnPasswordFormsRendered(&driver_, observed, true);
   OnPasswordFormSubmitted(insecure_form);
 
-  // Expect no further calls to |ProptUserToSaveOrUpdatePassword| due to
+  // Expect no further calls to |PromptUserToSaveOrUpdatePassword| due to
   // insecure origin.
   EXPECT_CALL(client_, PromptUserToSaveOrUpdatePasswordPtr(_)).Times(0);
 
@@ -2148,6 +2149,42 @@ TEST_F(PasswordManagerTest, ProcessAutofillPredictions) {
   EXPECT_CALL(driver_, AutofillDataReceived(predictions));
 
   manager()->ProcessAutofillPredictions(&driver_, forms);
+}
+
+// Let the PasswordManager see no password forms. As a default, it should
+// suggest the last commited navigation entry to check for being enabled.
+TEST_F(PasswordManagerTest, EntryToCheck_Default) {
+  EXPECT_EQ(PasswordManager::NavigationEntryToCheck::LAST_COMMITTED,
+            manager()->entry_to_check());
+  manager()->OnPasswordFormsParsed(nullptr, std::vector<PasswordForm>());
+  EXPECT_EQ(PasswordManager::NavigationEntryToCheck::LAST_COMMITTED,
+            manager()->entry_to_check());
+}
+
+// If the PasswordManager sees HTML password forms, it should suggest the last
+// commited navigation entry to check for being enabled.
+TEST_F(PasswordManagerTest, EntryToCheck_HTML) {
+  PasswordForm html_form;
+  html_form.scheme = PasswordForm::SCHEME_HTML;
+  html_form.origin = GURL("http://accounts.google.com/");
+  html_form.signon_realm = "http://accounts.google.com/";
+  EXPECT_CALL(*store_, GetLogins(_, _));
+  manager()->OnPasswordFormsParsed(nullptr, {html_form});
+  EXPECT_EQ(PasswordManager::NavigationEntryToCheck::LAST_COMMITTED,
+            manager()->entry_to_check());
+}
+
+// If the PasswordManager sees HTTP auth password forms, it should suggest the
+// visible navigation entry to check for being enabled.
+TEST_F(PasswordManagerTest, EntryToCheck_HTTP_auth) {
+  PasswordForm http_auth_form;
+  http_auth_form.scheme = PasswordForm::SCHEME_BASIC;
+  http_auth_form.origin = GURL("http://accounts.google.com/");
+  http_auth_form.signon_realm = "http://accounts.google.com/";
+  EXPECT_CALL(*store_, GetLogins(_, _));
+  manager()->OnPasswordFormsParsed(nullptr, {http_auth_form});
+  EXPECT_EQ(PasswordManager::NavigationEntryToCheck::VISIBLE,
+            manager()->entry_to_check());
 }
 
 // Sync password hash should be updated upon submission of change password page.

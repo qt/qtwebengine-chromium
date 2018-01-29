@@ -32,6 +32,7 @@
 
 #include <memory>
 
+#include "base/memory/scoped_refptr.h"
 #include "bindings/core/v8/V8BindingForTesting.h"
 #include "core/dom/DOMException.h"
 #include "core/dom/Document.h"
@@ -50,8 +51,6 @@
 #include "platform/SharedBuffer.h"
 #include "platform/testing/TestingPlatformSupport.h"
 #include "platform/wtf/PtrUtil.h"
-#include "platform/wtf/RefPtr.h"
-#include "platform/wtf/Vector.h"
 #include "public/platform/WebURLLoaderMockFactory.h"
 #include "public/platform/WebURLResponse.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -104,7 +103,7 @@ class IDBTransactionTest : public ::testing::Test {
         kWebIDBTransactionModeReadOnly, db_.Get());
 
     IDBKeyPath store_key_path("primaryKey");
-    RefPtr<IDBObjectStoreMetadata> store_metadata = WTF::AdoptRef(
+    scoped_refptr<IDBObjectStoreMetadata> store_metadata = base::AdoptRef(
         new IDBObjectStoreMetadata("store", kStoreId, store_key_path, true, 1));
     store_ = IDBObjectStore::Create(store_metadata, transaction_);
   }
@@ -195,7 +194,7 @@ TEST_F(IDBTransactionTest, ContextDestroyedAfterDone) {
 TEST_F(IDBTransactionTest, ContextDestroyedWithQueuedResult) {
   V8TestingScope scope;
   std::unique_ptr<MockWebIDBDatabase> backend = MockWebIDBDatabase::Create();
-  EXPECT_CALL(*backend, AckReceivedBlobs(testing::_)).Times(1);
+  EXPECT_CALL(*backend, AckReceivedBlobs(::testing::_)).Times(1);
   EXPECT_CALL(*backend, Close()).Times(1);
   BuildTransaction(scope, std::move(backend));
 
@@ -232,7 +231,7 @@ TEST_F(IDBTransactionTest, ContextDestroyedWithQueuedResult) {
 TEST_F(IDBTransactionTest, ContextDestroyedWithTwoQueuedResults) {
   V8TestingScope scope;
   std::unique_ptr<MockWebIDBDatabase> backend = MockWebIDBDatabase::Create();
-  EXPECT_CALL(*backend, AckReceivedBlobs(testing::_)).Times(2);
+  EXPECT_CALL(*backend, AckReceivedBlobs(::testing::_)).Times(2);
   EXPECT_CALL(*backend, Close()).Times(1);
   BuildTransaction(scope, std::move(backend));
 
@@ -276,7 +275,7 @@ TEST_F(IDBTransactionTest, DocumentShutdownWithQueuedAndBlockedResults) {
 
   V8TestingScope scope;
   std::unique_ptr<MockWebIDBDatabase> backend = MockWebIDBDatabase::Create();
-  EXPECT_CALL(*backend, AckReceivedBlobs(testing::_)).Times(1);
+  EXPECT_CALL(*backend, AckReceivedBlobs(::testing::_)).Times(1);
   EXPECT_CALL(*backend, Close()).Times(1);
   BuildTransaction(scope, std::move(backend));
 

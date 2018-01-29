@@ -321,7 +321,7 @@ void RtpVideoStreamReceiver::OnRtpPacket(const RtpPacketReceived& packet) {
       if (packet.GetExtension<AbsoluteSendTime>(&send_time)) {
         ss << ", abs send time: " << send_time;
       }
-      LOG(LS_INFO) << ss.str();
+      RTC_LOG(LS_INFO) << ss.str();
       last_packet_log_ms_ = now_ms;
     }
   }
@@ -434,7 +434,7 @@ void RtpVideoStreamReceiver::RemoveSecondarySink(
     // We might be rolling-back a call whose setup failed mid-way. In such a
     // case, it's simpler to remove "everything" rather than remember what
     // has already been added.
-    LOG(LS_WARNING) << "Removal of unknown sink.";
+    RTC_LOG(LS_WARNING) << "Removal of unknown sink.";
     return;
   }
   secondary_sinks_.erase(it);
@@ -482,7 +482,7 @@ void RtpVideoStreamReceiver::NotifyReceiverOfFecPacket(
   int8_t last_media_payload_type =
       rtp_payload_registry_.last_received_media_payload_type();
   if (last_media_payload_type < 0) {
-    LOG(LS_WARNING) << "Failed to get last media payload type.";
+    RTC_LOG(LS_WARNING) << "Failed to get last media payload type.";
     return;
   }
   // Fake an empty media packet.
@@ -493,7 +493,7 @@ void RtpVideoStreamReceiver::NotifyReceiverOfFecPacket(
   const auto pl =
       rtp_payload_registry_.PayloadTypeToPayload(last_media_payload_type);
   if (!pl) {
-    LOG(LS_WARNING) << "Failed to get payload specifics.";
+    RTC_LOG(LS_WARNING) << "Failed to get payload specifics.";
     return;
   }
   rtp_header.type.Video.codec = pl->typeSpecific.video_payload().videoCodecType;
@@ -533,12 +533,20 @@ bool RtpVideoStreamReceiver::DeliverRtcp(const uint8_t* rtcp_packet,
   uint32_t ntp_secs = 0;
   uint32_t ntp_frac = 0;
   uint32_t rtp_timestamp = 0;
-  if (rtp_rtcp_->RemoteNTP(&ntp_secs, &ntp_frac, nullptr, nullptr,
-                           &rtp_timestamp) != 0) {
+  uint32_t recieved_ntp_secs = 0;
+  uint32_t recieved_ntp_frac = 0;
+  if (rtp_rtcp_->RemoteNTP(&ntp_secs, &ntp_frac, &recieved_ntp_secs,
+                           &recieved_ntp_frac, &rtp_timestamp) != 0) {
     // Waiting for RTCP.
     return true;
   }
-  ntp_estimator_.UpdateRtcpTimestamp(rtt, ntp_secs, ntp_frac, rtp_timestamp);
+  NtpTime recieved_ntp(recieved_ntp_secs, recieved_ntp_frac);
+  int64_t time_since_recieved =
+      clock_->CurrentNtpInMilliseconds() - recieved_ntp.ToMs();
+  // Don't use old SRs to estimate time.
+  if (time_since_recieved <= 1) {
+    ntp_estimator_.UpdateRtcpTimestamp(rtt, ntp_secs, ntp_frac, rtp_timestamp);
+  }
 
   return true;
 }
@@ -641,8 +649,8 @@ void RtpVideoStreamReceiver::InsertSpsPpsIntoTracker(uint8_t payload_type) {
   if (codec_params_it == pt_codec_params_.end())
     return;
 
-  LOG(LS_INFO) << "Found out of band supplied codec parameters for"
-               << " payload type: " << static_cast<int>(payload_type);
+  RTC_LOG(LS_INFO) << "Found out of band supplied codec parameters for"
+                   << " payload type: " << static_cast<int>(payload_type);
 
   H264SpropParameterSets sprop_decoder;
   auto sprop_base64_it =

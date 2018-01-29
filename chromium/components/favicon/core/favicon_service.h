@@ -35,8 +35,8 @@ class FaviconService : public KeyedService {
   // |icon_url| is the URL of the icon itself.
   // (e.g. <http://www.google.com/favicon.ico>)
 
-  // Requests the favicon at |icon_url| of type favicon_base::FAVICON and of
-  // size gfx::kFaviconSize. The returned gfx::Image is populated with
+  // Requests the favicon at |icon_url| of type favicon_base::IconType::kFavicon
+  // and of size gfx::kFaviconSize. The returned gfx::Image is populated with
   // representations for all of the scale factors supported by the platform
   // (e.g. MacOS). If data is unavailable for some or all of the scale factors,
   // the bitmaps with the best matching sizes are resized.
@@ -77,11 +77,11 @@ class FaviconService : public KeyedService {
   // (e.g. <http://www.google.com>)
 
   // Requests the favicon for the page at |page_url| of type
-  // favicon_base::FAVICON and of size gfx::kFaviconSize. The returned
-  // gfx::Image is populated with representations for all of the scale factors
-  // supported by the platform (e.g. MacOS). If data is unavailable for some or
-  // all of the scale factors, the bitmaps with the best matching sizes are
-  // resized.
+  // favicon_base::IconType::kFavicon and of size gfx::kFaviconSize. The
+  // returned gfx::Image is populated with representations for all of the scale
+  // factors supported by the platform (e.g. MacOS). If data is unavailable for
+  // some or all of the scale factors, the bitmaps with the best matching sizes
+  // are resized.
   virtual base::CancelableTaskTracker::TaskId GetFaviconImageForPageURL(
       const GURL& page_url,
       const favicon_base::FaviconImageCallback& callback,
@@ -94,7 +94,7 @@ class FaviconService : public KeyedService {
   // If |desired_size_in_pixel| is 0, the largest favicon bitmap is returned.
   virtual base::CancelableTaskTracker::TaskId GetRawFaviconForPageURL(
       const GURL& page_url,
-      int icon_types,
+      const favicon_base::IconTypeSet& icon_types,
       int desired_size_in_pixel,
       const favicon_base::FaviconRawBitmapCallback& callback,
       base::CancelableTaskTracker* tracker) = 0;
@@ -102,14 +102,14 @@ class FaviconService : public KeyedService {
   // See HistoryService::GetLargestFaviconForPageURL().
   virtual base::CancelableTaskTracker::TaskId GetLargestRawFaviconForPageURL(
       const GURL& page_url,
-      const std::vector<int>& icon_types,
+      const std::vector<favicon_base::IconTypeSet>& icon_types,
       int minimum_size_in_pixels,
       const favicon_base::FaviconRawBitmapCallback& callback,
       base::CancelableTaskTracker* tracker) = 0;
 
   virtual base::CancelableTaskTracker::TaskId GetFaviconForPageURL(
       const GURL& page_url,
-      int icon_types,
+      const favicon_base::IconTypeSet& icon_types,
       int desired_size_in_dip,
       const favicon_base::FaviconResultsCallback& callback,
       base::CancelableTaskTracker* tracker) = 0;
@@ -127,6 +127,10 @@ class FaviconService : public KeyedService {
       int desired_size_in_dip,
       const favicon_base::FaviconResultsCallback& callback,
       base::CancelableTaskTracker* tracker) = 0;
+
+  // Deletes favicon mappings for each URL in |page_urls| and their redirects.
+  virtual void DeleteFaviconMappings(const base::flat_set<GURL>& page_urls,
+                                     favicon_base::IconType icon_type) = 0;
 
   // Used to request a bitmap for the favicon with |favicon_id| which is not
   // resized from the size it is stored at in the database. If there are
@@ -180,6 +184,14 @@ class FaviconService : public KeyedService {
                            const GURL& icon_url,
                            favicon_base::IconType icon_type,
                            const gfx::Image& image) = 0;
+
+  // Causes each page in |page_urls_to_write| to be associated to the same
+  // icon as the page |page_url_to_read| for icon types matching |icon_types|.
+  // No-op if |page_url_to_read| has no mappings for |icon_types|.
+  virtual void CloneFaviconMappingsForPages(
+      const GURL& page_url_to_read,
+      const favicon_base::IconTypeSet& icon_types,
+      const base::flat_set<GURL>& page_urls_to_write) = 0;
 
   // Same as SetFavicons with three differences:
   // 1) It will be a no-op if there is an existing cached favicon for *any* type

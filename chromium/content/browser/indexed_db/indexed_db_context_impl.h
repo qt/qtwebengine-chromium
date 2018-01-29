@@ -47,6 +47,8 @@ class CONTENT_EXPORT IndexedDBContextImpl : public IndexedDBContext {
     FORCE_CLOSE_BACKING_STORE_FAILURE,
     FORCE_CLOSE_INTERNALS_PAGE,
     FORCE_CLOSE_COPY_ORIGIN,
+    // Append new values here and update IDBContextForcedCloseReason in
+    // enums.xml.
     FORCE_CLOSE_REASON_MAX
   };
 
@@ -159,6 +161,10 @@ class CONTENT_EXPORT IndexedDBContextImpl : public IndexedDBContext {
   friend class IndexedDBQuotaClientTest;
 
   class IndexedDBGetUsageAndQuotaCallback;
+
+  static void ClearSessionOnlyOrigins(
+      const base::FilePath& indexeddb_path,
+      scoped_refptr<storage::SpecialStoragePolicy> special_storage_policy);
 
   base::FilePath GetBlobStorePath(const url::Origin& origin) const;
   base::FilePath GetLevelDBPath(const url::Origin& origin) const;

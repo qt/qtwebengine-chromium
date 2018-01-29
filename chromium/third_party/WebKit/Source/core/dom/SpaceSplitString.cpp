@@ -169,19 +169,19 @@ SpaceSplitString::Data::~Data() {
     SharedDataMap().erase(key_string_);
 }
 
-RefPtr<SpaceSplitString::Data> SpaceSplitString::Data::Create(
+scoped_refptr<SpaceSplitString::Data> SpaceSplitString::Data::Create(
     const AtomicString& string) {
   Data*& data = SharedDataMap().insert(string, nullptr).stored_value->value;
   if (!data) {
     data = new Data(string);
-    return WTF::AdoptRef(data);
+    return base::AdoptRef(data);
   }
   return data;
 }
 
-RefPtr<SpaceSplitString::Data> SpaceSplitString::Data::CreateUnique(
+scoped_refptr<SpaceSplitString::Data> SpaceSplitString::Data::CreateUnique(
     const Data& other) {
-  return WTF::AdoptRef(new SpaceSplitString::Data(other));
+  return base::AdoptRef(new SpaceSplitString::Data(other));
 }
 
 SpaceSplitString::Data::Data(const AtomicString& string) : key_string_(string) {

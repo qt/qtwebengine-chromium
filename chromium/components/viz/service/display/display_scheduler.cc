@@ -156,7 +156,7 @@ bool DisplayScheduler::UpdateHasPendingSurfaces() {
     // Surface is ready if it hasn't received the current BeginFrame or receives
     // BeginFrames from a different source and thus likely belongs to a
     // different surface hierarchy.
-    uint32_t source_id = current_begin_frame_args_.source_id;
+    uint64_t source_id = current_begin_frame_args_.source_id;
     uint64_t sequence_number = current_begin_frame_args_.sequence_number;
     if (!state.last_args.IsValid() || state.last_args.source_id != source_id ||
         state.last_args.sequence_number != sequence_number) {
@@ -335,7 +335,7 @@ void DisplayScheduler::OnSurfaceDamageExpected(const SurfaceId& surface_id,
     ScheduleBeginFrameDeadline();
 }
 
-void DisplayScheduler::OnSurfaceWillDraw(const SurfaceId& surface_id) {}
+void DisplayScheduler::OnSurfaceSubtreeDamaged(const SurfaceId& surface_id) {}
 
 base::TimeTicks DisplayScheduler::DesiredBeginFrameDeadlineTime() const {
   switch (AdjustedBeginFrameDeadlineMode()) {

@@ -55,15 +55,21 @@ FPDF_StructTree_Close(FPDF_STRUCTTREE struct_tree) {
 FPDF_EXPORT int FPDF_CALLCONV
 FPDF_StructTree_CountChildren(FPDF_STRUCTTREE struct_tree) {
   CPDF_StructTree* tree = ToStructTree(struct_tree);
-  return tree ? tree->CountTopElements() : -1;
+  if (!tree)
+    return -1;
+
+  pdfium::base::CheckedNumeric<int> tmp_size = tree->CountTopElements();
+  return tmp_size.ValueOrDefault(-1);
 }
 
 FPDF_EXPORT FPDF_STRUCTELEMENT FPDF_CALLCONV
 FPDF_StructTree_GetChildAtIndex(FPDF_STRUCTTREE struct_tree, int index) {
   CPDF_StructTree* tree = ToStructTree(struct_tree);
-  if (!tree || index < 0 || index >= tree->CountTopElements())
+  if (!tree || index < 0 ||
+      static_cast<size_t>(index) >= tree->CountTopElements()) {
     return nullptr;
-  return tree->GetTopElement(index);
+  }
+  return tree->GetTopElement(static_cast<size_t>(index));
 }
 
 FPDF_EXPORT unsigned long FPDF_CALLCONV
@@ -99,15 +105,19 @@ FPDF_StructElement_GetTitle(FPDF_STRUCTELEMENT struct_element,
 FPDF_EXPORT int FPDF_CALLCONV
 FPDF_StructElement_CountChildren(FPDF_STRUCTELEMENT struct_element) {
   CPDF_StructElement* elem = ToStructTreeElement(struct_element);
-  return elem ? elem->CountKids() : -1;
+  if (!elem)
+    return -1;
+
+  pdfium::base::CheckedNumeric<int> tmp_size = elem->CountKids();
+  return tmp_size.ValueOrDefault(-1);
 }
 
 FPDF_EXPORT FPDF_STRUCTELEMENT FPDF_CALLCONV
 FPDF_StructElement_GetChildAtIndex(FPDF_STRUCTELEMENT struct_element,
                                    int index) {
   CPDF_StructElement* elem = ToStructTreeElement(struct_element);
-  if (!elem || index < 0 || index >= elem->CountKids())
+  if (!elem || index < 0 || static_cast<size_t>(index) >= elem->CountKids())
     return nullptr;
 
-  return elem->GetKidIfElement(index);
+  return elem->GetKidIfElement(static_cast<size_t>(index));
 }

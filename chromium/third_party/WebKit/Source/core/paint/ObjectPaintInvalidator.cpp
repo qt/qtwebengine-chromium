@@ -141,22 +141,24 @@ DISABLE_CFI_PERF
 void ObjectPaintInvalidator::InvalidatePaintOfPreviousVisualRect(
     const LayoutBoxModelObject& paint_invalidation_container,
     PaintInvalidationReason reason) {
-  DCHECK(!RuntimeEnabledFeatures::SlimmingPaintV2Enabled());
   // It's caller's responsibility to ensure enclosingSelfPaintingLayer's
   // needsRepaint is set.  Don't set the flag here because getting
   // enclosingSelfPaintLayer has cost and the caller can use various ways (e.g.
   // PaintInvalidatinState::enclosingSelfPaintingLayer()) to reduce the cost.
   DCHECK(!object_.PaintingLayer() || object_.PaintingLayer()->NeedsRepaint());
 
-  // These disablers are valid because we want to use the current
-  // compositing/invalidation status.
-  DisablePaintInvalidationStateAsserts invalidation_disabler;
-  DisableCompositingQueryAsserts compositing_disabler;
+  // For SPv175, raster invalidation will be issued after painting.
+  if (!RuntimeEnabledFeatures::SlimmingPaintV175Enabled()) {
+    // These disablers are valid because we want to use the current
+    // compositing/invalidation status.
+    DisablePaintInvalidationStateAsserts invalidation_disabler;
+    DisableCompositingQueryAsserts compositing_disabler;
 
-  LayoutRect invalidation_rect = object_.VisualRect();
-  InvalidatePaintUsingContainer(paint_invalidation_container, invalidation_rect,
-                                reason);
-  object_.InvalidateDisplayItemClients(reason);
+    LayoutRect invalidation_rect = object_.FragmentsVisualRectBoundingBox();
+    InvalidatePaintUsingContainer(paint_invalidation_container,
+                                  invalidation_rect, reason);
+    object_.InvalidateDisplayItemClients(reason);
+  }
 
   // This method may be used to invalidate paint of an object changing paint
   // invalidation container.  Clear previous visual rect on the original paint
@@ -199,7 +201,6 @@ void ObjectPaintInvalidator::
 void ObjectPaintInvalidator::
     InvalidatePaintIncludingNonSelfPaintingLayerDescendants(
         const LayoutBoxModelObject& paint_invalidation_container) {
-  DCHECK(!RuntimeEnabledFeatures::SlimmingPaintV2Enabled());
   SlowSetPaintingLayerNeedsRepaint();
   InvalidatePaintIncludingNonSelfPaintingLayerDescendantsInternal(
       paint_invalidation_container);
@@ -269,7 +270,7 @@ void ObjectPaintInvalidator::SetBackingNeedsPaintInvalidationInRect(
     const LayoutBoxModelObject& paint_invalidation_container,
     const LayoutRect& rect,
     PaintInvalidationReason reason) {
-  DCHECK(!RuntimeEnabledFeatures::SlimmingPaintV2Enabled());
+  DCHECK(!RuntimeEnabledFeatures::SlimmingPaintV175Enabled());
   // https://bugs.webkit.org/show_bug.cgi?id=61159 describes an unreproducible
   // crash here, so assert but check that the layer is composited.
   DCHECK(paint_invalidation_container.GetCompositingState() != kNotComposited);
@@ -309,7 +310,7 @@ void ObjectPaintInvalidator::InvalidatePaintUsingContainer(
     const LayoutBoxModelObject& paint_invalidation_container,
     const LayoutRect& dirty_rect,
     PaintInvalidationReason invalidation_reason) {
-  DCHECK(!RuntimeEnabledFeatures::SlimmingPaintV2Enabled());
+  DCHECK(!RuntimeEnabledFeatures::SlimmingPaintV175Enabled());
 
   if (paint_invalidation_container.GetFrameView()->ShouldThrottleRendering())
     return;
@@ -362,7 +363,7 @@ void ObjectPaintInvalidatorWithContext::FullyInvalidatePaint(
     PaintInvalidationReason reason,
     const LayoutRect& old_visual_rect,
     const LayoutRect& new_visual_rect) {
-  DCHECK(!RuntimeEnabledFeatures::SlimmingPaintV2Enabled());
+  DCHECK(!RuntimeEnabledFeatures::SlimmingPaintV175Enabled());
   // The following logic avoids invalidating twice if one set of bounds contains
   // the other.
   if (!new_visual_rect.Contains(old_visual_rect)) {
@@ -411,7 +412,7 @@ void ObjectPaintInvalidatorWithContext::InvalidatePaintRectangleWithContext(
   // on the same backing, skip the invalidation.
   if (ParentFullyInvalidatedOnSameBacking() &&
       (context_.parent_context->old_visual_rect.Contains(rect) ||
-       object_.Parent()->VisualRect().Contains(rect))) {
+       object_.Parent()->FragmentsVisualRectBoundingBox().Contains(rect))) {
     if (!object_.GetFrameView()->IsTrackingPaintInvalidations())
       return;
     // If we are tracking paint invalidations (e.g. when running a text-based-
@@ -458,7 +459,8 @@ ObjectPaintInvalidatorWithContext::ComputePaintInvalidationReason() {
 
   if (!(context_.subtree_flags &
         PaintInvalidatorContext::kInvalidateEmptyVisualRect) &&
-      context_.old_visual_rect.IsEmpty() && object_.VisualRect().IsEmpty())
+      context_.old_visual_rect.IsEmpty() &&
+      context_.fragment_data->VisualRect().IsEmpty())
     return PaintInvalidationReason::kNone;
 
   if (background_obscuration_changed)
@@ -480,17 +482,18 @@ ObjectPaintInvalidatorWithContext::ComputePaintInvalidationReason() {
   // to do a full invalidation of either old bounds or new bounds.
   if (context_.old_visual_rect.IsEmpty())
     return PaintInvalidationReason::kAppeared;
-  if (object_.VisualRect().IsEmpty())
+  if (context_.fragment_data->VisualRect().IsEmpty())
     return PaintInvalidationReason::kDisappeared;
 
   // If we shifted, we don't know the exact reason so we are conservative and
   // trigger a full invalidation. Shifting could be caused by some layout
   // property (left / top) or some in-flow layoutObject inserted / removed
   // before us in the tree.
-  if (object_.VisualRect().Location() != context_.old_visual_rect.Location())
+  if (context_.fragment_data->VisualRect().Location() !=
+      context_.old_visual_rect.Location())
     return PaintInvalidationReason::kGeometry;
 
-  if (object_.LocationInBacking() != context_.old_location)
+  if (context_.fragment_data->LocationInBacking() != context_.old_location)
     return PaintInvalidationReason::kGeometry;
 
   // Incremental invalidation is only applicable to LayoutBoxes. Return
@@ -501,7 +504,7 @@ ObjectPaintInvalidatorWithContext::ComputePaintInvalidationReason() {
   if (object_.IsBox())
     return PaintInvalidationReason::kIncremental;
 
-  if (context_.old_visual_rect != object_.VisualRect())
+  if (context_.old_visual_rect != context_.fragment_data->VisualRect())
     return PaintInvalidationReason::kGeometry;
 
   return PaintInvalidationReason::kNone;
@@ -536,7 +539,7 @@ void ObjectPaintInvalidatorWithContext::InvalidateSelection(
   if (!full_invalidation) {
     // TODO(crbug.com/732612): Implement partial raster invalidation for
     // selection.
-    if (!RuntimeEnabledFeatures::SlimmingPaintV2Enabled()) {
+    if (!RuntimeEnabledFeatures::SlimmingPaintV175Enabled()) {
       FullyInvalidatePaint(PaintInvalidationReason::kSelection,
                            old_selection_rect, new_selection_rect);
     }
@@ -564,7 +567,7 @@ void ObjectPaintInvalidatorWithContext::InvalidatePartialRect(
   if (rect.IsEmpty())
     return;
 
-  if (RuntimeEnabledFeatures::SlimmingPaintV2Enabled()) {
+  if (RuntimeEnabledFeatures::SlimmingPaintV175Enabled()) {
     // PaintController will handle raster invalidation of the partial rect.
     object_.GetMutableForPainting().SetPartialInvalidationRect(rect);
   } else {
@@ -593,7 +596,7 @@ ObjectPaintInvalidatorWithContext::InvalidatePaintWithComputedReason(
       // for paint offset mutation, but incurs no pixel difference (i.e. bounds
       // stay the same) so no rect-based invalidation is issued. See
       // crbug.com/508383 and crbug.com/515977.
-      if (!RuntimeEnabledFeatures::SlimmingPaintV2Enabled() &&
+      if (!RuntimeEnabledFeatures::SlimmingPaintV175Enabled() &&
           (context_.subtree_flags &
            PaintInvalidatorContext::kSubtreeInvalidationChecking) &&
           !object_.IsSVGChild()) {
@@ -614,13 +617,13 @@ ObjectPaintInvalidatorWithContext::InvalidatePaintWithComputedReason(
       return PaintInvalidationReason::kDelayedFull;
     default:
       DCHECK(IsImmediateFullPaintInvalidationReason(reason));
-      if (!RuntimeEnabledFeatures::SlimmingPaintV2Enabled()) {
+      if (!RuntimeEnabledFeatures::SlimmingPaintV175Enabled()) {
         // This allows descendants to know the computed reason if it's different
         // from the original reason before paint invalidation.
         object_.GetMutableForPainting()
             .SetShouldDoFullPaintInvalidationWithoutGeometryChange(reason);
         FullyInvalidatePaint(reason, context_.old_visual_rect,
-                             object_.VisualRect());
+                             context_.fragment_data->VisualRect());
       }
   }
 

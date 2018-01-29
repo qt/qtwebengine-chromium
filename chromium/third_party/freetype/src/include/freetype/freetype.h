@@ -138,6 +138,7 @@ FT_BEGIN_HEADER
   /*    FT_FACE_FLAG_TRICKY                                                */
   /*    FT_FACE_FLAG_KERNING                                               */
   /*    FT_FACE_FLAG_MULTIPLE_MASTERS                                      */
+  /*    FT_FACE_FLAG_VARIATION                                             */
   /*    FT_FACE_FLAG_GLYPH_NAMES                                           */
   /*    FT_FACE_FLAG_EXTERNAL_STREAM                                       */
   /*    FT_FACE_FLAG_HINTER                                                */
@@ -147,14 +148,16 @@ FT_BEGIN_HEADER
   /*    FT_HAS_KERNING                                                     */
   /*    FT_HAS_FIXED_SIZES                                                 */
   /*    FT_HAS_GLYPH_NAMES                                                 */
-  /*    FT_HAS_MULTIPLE_MASTERS                                            */
   /*    FT_HAS_COLOR                                                       */
+  /*    FT_HAS_MULTIPLE_MASTERS                                            */
   /*                                                                       */
   /*    FT_IS_SFNT                                                         */
   /*    FT_IS_SCALABLE                                                     */
   /*    FT_IS_FIXED_WIDTH                                                  */
   /*    FT_IS_CID_KEYED                                                    */
   /*    FT_IS_TRICKY                                                       */
+  /*    FT_IS_NAMED_INSTANCE                                               */
+  /*    FT_IS_VARIATION                                                    */
   /*                                                                       */
   /*    FT_STYLE_FLAG_BOLD                                                 */
   /*    FT_STYLE_FLAG_ITALIC                                               */
@@ -901,6 +904,13 @@ FT_BEGIN_HEADER
   /*                           Bit 31 is always zero (this is,             */
   /*                           `face_index' is always a positive value).   */
   /*                                                                       */
+  /*                           [Since 2.8.2] Changing the design           */
+  /*                           coordinates with                            */
+  /*                           @FT_Set_Var_Design_Coordinates or           */
+  /*                           @FT_Set_Var_Blend_Coordinates does not      */
+  /*                           influence the named instance index value    */
+  /*                           (only @FT_Set_Named_Instance does that).    */
+  /*                                                                       */
   /*    face_flags          :: A set of bit flags that give important      */
   /*                           information about the face; see             */
   /*                           @FT_FACE_FLAG_XXX for the details.          */
@@ -909,7 +919,7 @@ FT_BEGIN_HEADER
   /*                           flags indicating the style of the face; see */
   /*                           @FT_STYLE_FLAG_XXX for the details.         */
   /*                                                                       */
-  /*                           [Since 2.6.1]  Bits 16-30 hold the number   */
+  /*                           [Since 2.6.1] Bits 16-30 hold the number    */
   /*                           of named instances available for the        */
   /*                           current face if we have a GX or OpenType    */
   /*                           variation (sub)font.  Bit 31 is always zero */
@@ -1052,6 +1062,9 @@ FT_BEGIN_HEADER
   /*    friends) if the font contains an `MVAR' table: `ascender',         */
   /*    `descender', `height', `underline_position', and                   */
   /*    `underline_thickness'.                                             */
+  /*                                                                       */
+  /*    Especially for TrueType fonts see also the documentation for       */
+  /*    @FT_Size_Metrics.                                                  */
   /*                                                                       */
   typedef struct  FT_FaceRec_
   {
@@ -1216,6 +1229,13 @@ FT_BEGIN_HEADER
   /*      [Since 2.5.1] The face has color glyph tables.  To access color  */
   /*      glyphs use @FT_LOAD_COLOR.                                       */
   /*                                                                       */
+  /*    FT_FACE_FLAG_VARIATION ::                                          */
+  /*      [Since 2.8.2] Set if the current face (or named instance) has    */
+  /*      been altered with @FT_Set_MM_Design_Coordinates,                 */
+  /*      @FT_Set_Var_Design_Coordinates, or                               */
+  /*      @FT_Set_Var_Blend_Coordinates.  This flag is unset by a call to  */
+  /*      @FT_Set_Named_Instance.                                          */
+  /*                                                                       */
 #define FT_FACE_FLAG_SCALABLE          ( 1L <<  0 )
 #define FT_FACE_FLAG_FIXED_SIZES       ( 1L <<  1 )
 #define FT_FACE_FLAG_FIXED_WIDTH       ( 1L <<  2 )
@@ -1231,6 +1251,7 @@ FT_BEGIN_HEADER
 #define FT_FACE_FLAG_CID_KEYED         ( 1L << 12 )
 #define FT_FACE_FLAG_TRICKY            ( 1L << 13 )
 #define FT_FACE_FLAG_COLOR             ( 1L << 14 )
+#define FT_FACE_FLAG_VARIATION         ( 1L << 15 )
 
 
   /*************************************************************************
@@ -1392,12 +1413,35 @@ FT_BEGIN_HEADER
    *   A macro that returns true whenever a face object is a named instance
    *   of a GX or OpenType variation font.
    *
+   *   [Since 2.8.2] Changing the design coordinates with
+   *   @FT_Set_Var_Design_Coordinates or @FT_Set_Var_Blend_Coordinates does
+   *   not influence the return value of this macro (only
+   *   @FT_Set_Named_Instance does that).
+   *
    * @since:
    *   2.7
    *
    */
 #define FT_IS_NAMED_INSTANCE( face ) \
           ( (face)->face_index & 0x7FFF0000L )
+
+
+  /*************************************************************************
+   *
+   * @macro:
+   *   FT_IS_VARIATION( face )
+   *
+   * @description:
+   *   A macro that returns true whenever a face object has been altered
+   *   by @FT_Set_MM_Design_Coordinates, @FT_Set_Var_Design_Coordinates, or
+   *   @FT_Set_Var_Blend_Coordinates.
+   *
+   * @since:
+   *   2.8.2
+   *
+   */
+#define FT_IS_VARIATION( face ) \
+          ( (face)->face_flags & FT_FACE_FLAG_VARIATION )
 
 
   /*************************************************************************
@@ -1541,7 +1585,7 @@ FT_BEGIN_HEADER
   /*    to the following.                                                  */
   /*                                                                       */
   /*    {                                                                  */
-  /*      scaled_ascender = FT_MulFix( face->root.ascender,                */
+  /*      scaled_ascender = FT_MulFix( face->ascender,                     */
   /*                                   size_metrics->y_scale );            */
   /*    }                                                                  */
   /*                                                                       */
@@ -1554,6 +1598,43 @@ FT_BEGIN_HEADER
   /*    client applications to perform such computations.                  */
   /*                                                                       */
   /*    The `FT_Size_Metrics' structure is valid for bitmap fonts also.    */
+  /*                                                                       */
+  /*                                                                       */
+  /*    *TrueType* *fonts* *with* *native* *bytecode* *hinting*            */
+  /*                                                                       */
+  /*    All applications that handle TrueType fonts with native hinting    */
+  /*    must be aware that TTFs expect different rounding of vertical font */
+  /*    dimensions.  The application has to cater for this, especially if  */
+  /*    it wants to rely on a TTF's vertical data (for example, to         */
+  /*    properly align box characters vertically).                         */
+  /*                                                                       */
+  /*    Only the application knows _in_ _advance_ that it is going to use  */
+  /*    native hinting for TTFs!  FreeType, on the other hand, selects the */
+  /*    hinting mode not at the time of creating an @FT_Size object but    */
+  /*    much later, namely while calling @FT_Load_Glyph.                   */
+  /*                                                                       */
+  /*    Here is some pseudo code that illustrates a possible solution.     */
+  /*                                                                       */
+  /*    {                                                                  */
+  /*      font_format = FT_Get_Font_Format( face );                        */
+  /*                                                                       */
+  /*      if ( !strcmp( font_format, "TrueType" ) &&                       */
+  /*           do_native_bytecode_hinting         )                        */
+  /*      {                                                                */
+  /*        ascender  = ROUND( FT_MulFix( face->ascender,                  */
+  /*                                      size_metrics->y_scale ) );       */
+  /*        descender = ROUND( FT_MulFix( face->descender,                 */
+  /*                                      size_metrics->y_scale ) );       */
+  /*      }                                                                */
+  /*      else                                                             */
+  /*      {                                                                */
+  /*        ascender  = size_metrics->ascender;                            */
+  /*        descender = size_metrics->descender;                           */
+  /*      }                                                                */
+  /*                                                                       */
+  /*      height      = size_metrics->height;                              */
+  /*      max_advance = size_metrics->max_advance;                         */
+  /*    }                                                                  */
   /*                                                                       */
   typedef struct  FT_Size_Metrics_
   {
@@ -1696,17 +1777,13 @@ FT_BEGIN_HEADER
   /*                         @FT_GLYPH_FORMAT_COMPOSITE, but other values  */
   /*                         are possible.                                 */
   /*                                                                       */
-  /*    bitmap            :: This field is used as a bitmap descriptor     */
-  /*                         when the slot format is                       */
-  /*                         @FT_GLYPH_FORMAT_BITMAP.  Note that the       */
-  /*                         address and content of the bitmap buffer can  */
-  /*                         change between calls of @FT_Load_Glyph and a  */
-  /*                         few other functions.                          */
+  /*    bitmap            :: This field is used as a bitmap descriptor.    */
+  /*                         Note that the address and content of the      */
+  /*                         bitmap buffer can change between calls of     */
+  /*                         @FT_Load_Glyph and a few other functions.     */
   /*                                                                       */
   /*    bitmap_left       :: The bitmap's left bearing expressed in        */
-  /*                         integer pixels.  Only valid if the format is  */
-  /*                         @FT_GLYPH_FORMAT_BITMAP, this is, if the      */
-  /*                         glyph slot contains a bitmap.                 */
+  /*                         integer pixels.                               */
   /*                                                                       */
   /*    bitmap_top        :: The bitmap's top bearing expressed in integer */
   /*                         pixels.  This is the distance from the        */
@@ -1753,7 +1830,9 @@ FT_BEGIN_HEADER
   /*    If @FT_Load_Glyph is called with default flags (see                */
   /*    @FT_LOAD_DEFAULT) the glyph image is loaded in the glyph slot in   */
   /*    its native format (e.g., an outline glyph for TrueType and Type~1  */
-  /*    formats).                                                          */
+  /*    formats).  [Since 2.8.2] The prospective bitmap metrics are        */
+  /*    calculated according to @FT_LOAD_TARGET_XXX and other flags even   */
+  /*    for the outline glyph, even if @FT_LOAD_RENDER is not set.         */
   /*                                                                       */
   /*    This image can later be converted into a bitmap by calling         */
   /*    @FT_Render_Glyph.  This function searches the current renderer for */
@@ -3479,6 +3558,13 @@ FT_BEGIN_HEADER
   /*    PostScript Names for Fonts Using OpenType Font Variations'.        */
   /*                                                                       */
   /*      http://wwwimages.adobe.com/content/dam/Adobe/en/devnet/font/pdfs/5902.AdobePSNameGeneration.html */
+  /*                                                                       */
+  /*    [Since 2.8.2] Special PostScript names for named instances are     */
+  /*    only returned if the named instance is set with                    */
+  /*    @FT_Set_Named_Instance (and the font has corresponding entries in  */
+  /*    its `fvar' table).  If @FT_IS_VARIATION returns true, the          */
+  /*    algorithmically derived PostScript name is provided, not looking   */
+  /*    up special entries for named instances.                            */
   /*                                                                       */
   FT_EXPORT( const char* )
   FT_Get_Postscript_Name( FT_Face  face );

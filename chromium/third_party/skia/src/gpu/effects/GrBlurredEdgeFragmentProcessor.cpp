@@ -10,7 +10,6 @@
  */
 #include "GrBlurredEdgeFragmentProcessor.h"
 #if SK_SUPPORT_GPU
-#include "glsl/GrGLSLColorSpaceXformHelper.h"
 #include "glsl/GrGLSLFragmentProcessor.h"
 #include "glsl/GrGLSLFragmentShaderBuilder.h"
 #include "glsl/GrGLSLProgramBuilder.h"
@@ -24,13 +23,16 @@ public:
         const GrBlurredEdgeFragmentProcessor& _outer =
                 args.fFp.cast<GrBlurredEdgeFragmentProcessor>();
         (void)_outer;
+        auto mode = _outer.mode();
+        (void)mode;
         fragBuilder->codeAppendf(
                 "half factor = half(1.0 - float(%s.w));\n@switch (%d) {\n    case 0:\n        "
                 "factor = half(exp(float(float(-factor * factor) * 4.0)) - "
                 "0.017999999999999999);\n        break;\n    case 1:\n        factor = "
                 "half(smoothstep(1.0, 0.0, float(factor)));\n        break;\n}\n%s = "
                 "half4(factor);\n",
-                args.fInputColor ? args.fInputColor : "half4(1)", _outer.mode(), args.fOutputColor);
+                args.fInputColor ? args.fInputColor : "half4(1)", (int)_outer.mode(),
+                args.fOutputColor);
     }
 
 private:
@@ -42,7 +44,7 @@ GrGLSLFragmentProcessor* GrBlurredEdgeFragmentProcessor::onCreateGLSLInstance() 
 }
 void GrBlurredEdgeFragmentProcessor::onGetGLSLProcessorKey(const GrShaderCaps& caps,
                                                            GrProcessorKeyBuilder* b) const {
-    b->add32(fMode);
+    b->add32((int32_t)fMode);
 }
 bool GrBlurredEdgeFragmentProcessor::onIsEqual(const GrFragmentProcessor& other) const {
     const GrBlurredEdgeFragmentProcessor& that = other.cast<GrBlurredEdgeFragmentProcessor>();

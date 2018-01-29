@@ -9,8 +9,8 @@
 #include "modules/notifications/Notification.h"
 #include "modules/notifications/NotificationOptions.h"
 #include "platform/weborigin/KURL.h"
-#include "platform/wtf/CurrentTime.h"
 #include "platform/wtf/HashMap.h"
+#include "platform/wtf/Time.h"
 #include "platform/wtf/Vector.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -46,17 +46,16 @@ const char kNotificationActionPlaceholder[] = "Placeholder...";
 const unsigned kNotificationVibrationUnnormalized[] = {10, 1000000, 50, 42};
 const int kNotificationVibrationNormalized[] = {10, 10000, 50};
 
-// Execution context that implements the VirtualCompleteURL method to complete
+// Execution context that implements the CompleteURL method to complete
 // URLs that are assumed to be relative against a given base URL.
 class CompleteUrlExecutionContext final : public NullExecutionContext {
  public:
-  explicit CompleteUrlExecutionContext(const String& base)
-      : base_(kParsedURLString, base) {}
+  explicit CompleteUrlExecutionContext(const String& base) : base_(base) {}
 
  protected:
   ~CompleteUrlExecutionContext() final = default;
 
-  KURL VirtualCompleteURL(const String& url) const override {
+  KURL CompleteURL(const String& url) const override {
     return KURL(base_, url);
   }
 
@@ -126,7 +125,7 @@ TEST_F(NotificationDataTest, ReflectProperties) {
   EXPECT_EQ(kNotificationBody, notification_data.body);
   EXPECT_EQ(kNotificationTag, notification_data.tag);
 
-  KURL base(kParsedURLString, kNotificationBaseUrl);
+  KURL base(kNotificationBaseUrl);
 
   // URLs should be resolved against the base URL of the execution context.
   EXPECT_EQ(WebURL(KURL(base, kNotificationImage)), notification_data.image);

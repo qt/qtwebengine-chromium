@@ -71,7 +71,7 @@ inline SVGPatternElement::SVGPatternElement(Document& document)
   AddToPropertyMap(pattern_content_units_);
 }
 
-DEFINE_TRACE(SVGPatternElement) {
+void SVGPatternElement::Trace(blink::Visitor* visitor) {
   visitor->Trace(x_);
   visitor->Trace(y_);
   visitor->Trace(width_);
@@ -90,7 +90,7 @@ DEFINE_NODE_FACTORY(SVGPatternElement)
 void SVGPatternElement::CollectStyleForPresentationAttribute(
     const QualifiedName& name,
     const AtomicString& value,
-    MutableStylePropertySet* style) {
+    MutableCSSPropertyValueSet* style) {
   if (name == SVGNames::patternTransformAttr) {
     AddPropertyToPresentationAttributeStyle(
         style, CSSPropertyTransform,

@@ -74,11 +74,6 @@ int32_t FakeAudioCaptureModule::ActiveAudioLayer(
   return 0;
 }
 
-webrtc::AudioDeviceModule::ErrorCode FakeAudioCaptureModule::LastError() const {
-  RTC_NOTREACHED();
-  return webrtc::AudioDeviceModule::kAdmErrNone;
-}
-
 int32_t FakeAudioCaptureModule::RegisterAudioCallback(
     webrtc::AudioTransport* audio_callback) {
   rtc::CritScope cs(&crit_callback_);
@@ -393,66 +388,9 @@ int32_t FakeAudioCaptureModule::StereoRecording(bool* /*enabled*/) const {
   return 0;
 }
 
-int32_t FakeAudioCaptureModule::SetRecordingChannel(
-    const ChannelType channel) {
-  if (channel != AudioDeviceModule::kChannelBoth) {
-    // There is no right or left in mono. I.e. kChannelBoth should be used for
-    // mono.
-    RTC_NOTREACHED();
-    return -1;
-  }
-  return 0;
-}
-
-int32_t FakeAudioCaptureModule::RecordingChannel(ChannelType* channel) const {
-  // Stereo recording not supported. However, WebRTC ADM returns kChannelBoth
-  // in that case. Do the same here.
-  *channel = AudioDeviceModule::kChannelBoth;
-  return 0;
-}
-
 int32_t FakeAudioCaptureModule::PlayoutDelay(uint16_t* delay_ms) const {
   // No delay since audio frames are dropped.
   *delay_ms = 0;
-  return 0;
-}
-
-int32_t FakeAudioCaptureModule::RecordingDelay(uint16_t* /*delay_ms*/) const {
-  RTC_NOTREACHED();
-  return 0;
-}
-
-int32_t FakeAudioCaptureModule::SetRecordingSampleRate(
-    const uint32_t /*samples_per_sec*/) {
-  RTC_NOTREACHED();
-  return 0;
-}
-
-int32_t FakeAudioCaptureModule::RecordingSampleRate(
-    uint32_t* /*samples_per_sec*/) const {
-  RTC_NOTREACHED();
-  return 0;
-}
-
-int32_t FakeAudioCaptureModule::SetPlayoutSampleRate(
-    const uint32_t /*samples_per_sec*/) {
-  RTC_NOTREACHED();
-  return 0;
-}
-
-int32_t FakeAudioCaptureModule::PlayoutSampleRate(
-    uint32_t* /*samples_per_sec*/) const {
-  RTC_NOTREACHED();
-  return 0;
-}
-
-int32_t FakeAudioCaptureModule::SetLoudspeakerStatus(bool /*enable*/) {
-  RTC_NOTREACHED();
-  return 0;
-}
-
-int32_t FakeAudioCaptureModule::GetLoudspeakerStatus(bool* /*enabled*/) const {
-  RTC_NOTREACHED();
   return 0;
 }
 

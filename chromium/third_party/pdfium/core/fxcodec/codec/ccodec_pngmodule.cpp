@@ -14,10 +14,11 @@
 #include "core/fxge/fx_dib.h"
 #include "third_party/base/ptr_util.h"
 
-extern "C" {
-#undef FAR
+#ifdef USE_SYSTEM_LIBPNG
+#include <png.h>
+#else
 #include "third_party/libpng16/png.h"
-}  // extern "C"
+#endif
 
 #define PNG_ERROR_SIZE 256
 
@@ -183,8 +184,8 @@ static void _png_get_row_func(png_structp png_ptr,
   if (!pContext)
     return;
 
-  uint8_t* src_buf = nullptr;
-  if (!pContext->m_pDelegate->PngAskScanlineBuf(row_num, src_buf))
+  uint8_t* src_buf;
+  if (!pContext->m_pDelegate->PngAskScanlineBuf(row_num, &src_buf))
     png_error(png_ptr, "Ask Scanline buffer Callback Error");
 
   if (src_buf)

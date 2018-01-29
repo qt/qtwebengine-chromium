@@ -6,13 +6,13 @@
 #define ObjectPaintProperties_h
 
 #include <memory>
+#include "base/memory/scoped_refptr.h"
 #include "core/CoreExport.h"
 #include "platform/graphics/paint/ClipPaintPropertyNode.h"
 #include "platform/graphics/paint/EffectPaintPropertyNode.h"
 #include "platform/graphics/paint/ScrollPaintPropertyNode.h"
 #include "platform/graphics/paint/TransformPaintPropertyNode.h"
 #include "platform/wtf/PtrUtil.h"
-#include "platform/wtf/RefPtr.h"
 
 namespace blink {
 
@@ -50,17 +50,10 @@ class CORE_EXPORT ObjectPaintProperties {
   // +---[ transform ]                    The space created by CSS transform.
   //     |                                This is the local border box space.
   //     +---[ perspective ]              The space created by CSS perspective.
-  //     |   +---[ svgLocalToBorderBoxTransform ] Additional transform for
-  //     |                                children of the outermost root SVG.
-  //     |              OR                (SVG does not support scrolling.)
-  //     |   +---[ scrollTranslation ]    The space created by overflow clip.
-  //     +---[ scrollbarPaintOffset ]     TODO(trchen): Remove this once we bake
-  //                                      the paint offset into frameRect.  This
-  //                                      is equivalent to the local border box
-  //                                      space above, with pixel snapped paint
-  //                                      offset baked in. It is really
-  //                                      redundant, but it is a pain to teach
-  //                                      scrollbars to paint with an offset.
+  //         +---[ svgLocalToBorderBoxTransform ] Additional transform for
+  //                                      children of the outermost root SVG.
+  //                    OR                (SVG does not support scrolling.)
+  //         +---[ scrollTranslation ]    The space created by overflow clip.
   const TransformPaintPropertyNode* PaintOffsetTranslation() const {
     return paint_offset_translation_.get();
   }
@@ -76,9 +69,6 @@ class CORE_EXPORT ObjectPaintProperties {
   const ScrollPaintPropertyNode* Scroll() const { return scroll_.get(); }
   const TransformPaintPropertyNode* ScrollTranslation() const {
     return scroll_translation_.get();
-  }
-  const TransformPaintPropertyNode* ScrollbarPaintOffset() const {
-    return scrollbar_paint_offset_.get();
   }
 
   // The hierarchy of the effect subtree created by a LayoutObject is as
@@ -159,7 +149,6 @@ class CORE_EXPORT ObjectPaintProperties {
   }
   bool ClearScroll() { return Clear(scroll_); }
   bool ClearScrollTranslation() { return Clear(scroll_translation_); }
-  bool ClearScrollbarPaintOffset() { return Clear(scrollbar_paint_offset_); }
 
   class UpdateResult {
    public:
@@ -203,10 +192,6 @@ class CORE_EXPORT ObjectPaintProperties {
         << "SVG elements cannot scroll so there should never be both a scroll "
            "translation and an SVG local to border box transform.";
     return Update(scroll_translation_, std::forward<Args>(args)...);
-  }
-  template <typename... Args>
-  UpdateResult UpdateScrollbarPaintOffset(Args&&... args) {
-    return Update(scrollbar_paint_offset_, std::forward<Args>(args)...);
   }
   template <typename... Args>
   UpdateResult UpdateEffect(Args&&... args) {
@@ -281,8 +266,6 @@ class CORE_EXPORT ObjectPaintProperties {
       cloned->scroll_ = scroll_->Clone();
     if (scroll_translation_)
       cloned->scroll_translation_ = scroll_translation_->Clone();
-    if (scrollbar_paint_offset_)
-      cloned->scrollbar_paint_offset_ = scrollbar_paint_offset_->Clone();
     return cloned;
   }
 #endif
@@ -294,7 +277,7 @@ class CORE_EXPORT ObjectPaintProperties {
   // deleted), and false otherwise. See the class-level comment ("update & clear
   // implementation note") for details about why this is needed for efficiency.
   template <typename PaintPropertyNode>
-  bool Clear(RefPtr<PaintPropertyNode>& field) {
+  bool Clear(scoped_refptr<PaintPropertyNode>& field) {
     if (field) {
       field = nullptr;
       return true;
@@ -306,7 +289,7 @@ class CORE_EXPORT ObjectPaintProperties {
   // created), and false otherwise. See the class-level comment ("update & clear
   // implementation note") for details about why this is needed for efficiency.
   template <typename PaintPropertyNode, typename... Args>
-  UpdateResult Update(RefPtr<PaintPropertyNode>& field, Args&&... args) {
+  UpdateResult Update(scoped_refptr<PaintPropertyNode>& field, Args&&... args) {
     if (field) {
       return field->Update(std::forward<Args>(args)...)
                  ? UpdateResult::kValueChanged
@@ -318,23 +301,22 @@ class CORE_EXPORT ObjectPaintProperties {
 
   // ATTENTION! Make sure to keep FindPropertiesNeedingUpdate.h in sync when
   // new properites are added!
-  RefPtr<TransformPaintPropertyNode> paint_offset_translation_;
-  RefPtr<TransformPaintPropertyNode> transform_;
-  RefPtr<EffectPaintPropertyNode> effect_;
-  RefPtr<EffectPaintPropertyNode> filter_;
-  RefPtr<EffectPaintPropertyNode> mask_;
-  RefPtr<ClipPaintPropertyNode> fragment_clip_;
-  RefPtr<ClipPaintPropertyNode> mask_clip_;
-  RefPtr<ClipPaintPropertyNode> css_clip_;
-  RefPtr<ClipPaintPropertyNode> css_clip_fixed_position_;
-  RefPtr<ClipPaintPropertyNode> inner_border_radius_clip_;
-  RefPtr<ClipPaintPropertyNode> overflow_clip_;
-  RefPtr<TransformPaintPropertyNode> perspective_;
+  scoped_refptr<TransformPaintPropertyNode> paint_offset_translation_;
+  scoped_refptr<TransformPaintPropertyNode> transform_;
+  scoped_refptr<EffectPaintPropertyNode> effect_;
+  scoped_refptr<EffectPaintPropertyNode> filter_;
+  scoped_refptr<EffectPaintPropertyNode> mask_;
+  scoped_refptr<ClipPaintPropertyNode> fragment_clip_;
+  scoped_refptr<ClipPaintPropertyNode> mask_clip_;
+  scoped_refptr<ClipPaintPropertyNode> css_clip_;
+  scoped_refptr<ClipPaintPropertyNode> css_clip_fixed_position_;
+  scoped_refptr<ClipPaintPropertyNode> inner_border_radius_clip_;
+  scoped_refptr<ClipPaintPropertyNode> overflow_clip_;
+  scoped_refptr<TransformPaintPropertyNode> perspective_;
   // TODO(pdr): Only LayoutSVGRoot needs this and it should be moved there.
-  RefPtr<TransformPaintPropertyNode> svg_local_to_border_box_transform_;
-  RefPtr<ScrollPaintPropertyNode> scroll_;
-  RefPtr<TransformPaintPropertyNode> scroll_translation_;
-  RefPtr<TransformPaintPropertyNode> scrollbar_paint_offset_;
+  scoped_refptr<TransformPaintPropertyNode> svg_local_to_border_box_transform_;
+  scoped_refptr<ScrollPaintPropertyNode> scroll_;
+  scoped_refptr<TransformPaintPropertyNode> scroll_translation_;
 };
 
 }  // namespace blink

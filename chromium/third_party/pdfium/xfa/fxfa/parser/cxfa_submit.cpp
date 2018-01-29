@@ -1,4 +1,4 @@
-// Copyright 2016 PDFium Authors. All rights reserved.
+// Copyright 2017 PDFium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,22 +6,34 @@
 
 #include "xfa/fxfa/parser/cxfa_submit.h"
 
-#include "xfa/fxfa/parser/cxfa_node.h"
+namespace {
 
-CXFA_Submit::CXFA_Submit(CXFA_Node* pNode) : CXFA_Data(pNode) {}
+const CXFA_Node::PropertyData kPropertyData[] = {{XFA_Element::Encrypt, 1, 0},
+                                                 {XFA_Element::Unknown, 0, 0}};
+const CXFA_Node::AttributeData kAttributeData[] = {
+    {XFA_Attribute::Id, XFA_AttributeType::CData, nullptr},
+    {XFA_Attribute::Use, XFA_AttributeType::CData, nullptr},
+    {XFA_Attribute::Format, XFA_AttributeType::Enum,
+     (void*)XFA_AttributeEnum::Xdp},
+    {XFA_Attribute::EmbedPDF, XFA_AttributeType::Boolean, (void*)0},
+    {XFA_Attribute::Usehref, XFA_AttributeType::CData, nullptr},
+    {XFA_Attribute::Target, XFA_AttributeType::CData, nullptr},
+    {XFA_Attribute::TextEncoding, XFA_AttributeType::CData, nullptr},
+    {XFA_Attribute::XdpContent, XFA_AttributeType::CData, nullptr},
+    {XFA_Attribute::Unknown, XFA_AttributeType::Integer, nullptr}};
 
-bool CXFA_Submit::IsSubmitEmbedPDF() {
-  return m_pNode->GetBoolean(XFA_ATTRIBUTE_EmbedPDF);
-}
+constexpr wchar_t kName[] = L"submit";
 
-int32_t CXFA_Submit::GetSubmitFormat() {
-  return m_pNode->GetEnum(XFA_ATTRIBUTE_Format);
-}
+}  // namespace
 
-void CXFA_Submit::GetSubmitTarget(WideStringView& wsTarget) {
-  m_pNode->TryCData(XFA_ATTRIBUTE_Target, wsTarget);
-}
+CXFA_Submit::CXFA_Submit(CXFA_Document* doc, XFA_PacketType packet)
+    : CXFA_Node(doc,
+                packet,
+                (XFA_XDPPACKET_Template | XFA_XDPPACKET_Form),
+                XFA_ObjectType::Node,
+                XFA_Element::Submit,
+                kPropertyData,
+                kAttributeData,
+                kName) {}
 
-void CXFA_Submit::GetSubmitXDPContent(WideStringView& wsContent) {
-  m_pNode->TryCData(XFA_ATTRIBUTE_XdpContent, wsContent);
-}
+CXFA_Submit::~CXFA_Submit() {}

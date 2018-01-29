@@ -9,6 +9,8 @@
 #ifndef LIBANGLE_VALIDATION_ES2_H_
 #define LIBANGLE_VALIDATION_ES2_H_
 
+#include "libANGLE/PackedGLEnums.h"
+
 #include <GLES2/gl2.h>
 #include <GLES2/gl2ext.h>
 
@@ -200,17 +202,20 @@ bool ValidateCompressedTexSubImage2DRobustANGLE(Context *context,
 
 bool ValidateBindTexture(Context *context, GLenum target, GLuint texture);
 
-bool ValidateGetBufferPointervOES(Context *context, GLenum target, GLenum pname, void **params);
-bool ValidateMapBufferOES(Context *context, GLenum target, GLenum access);
-bool ValidateUnmapBufferOES(Context *context, GLenum target);
+bool ValidateGetBufferPointervOES(Context *context,
+                                  BufferBinding target,
+                                  GLenum pname,
+                                  void **params);
+bool ValidateMapBufferOES(Context *context, BufferBinding target, GLenum access);
+bool ValidateUnmapBufferOES(Context *context, BufferBinding target);
 bool ValidateMapBufferRangeEXT(Context *context,
-                               GLenum target,
+                               BufferBinding target,
                                GLintptr offset,
                                GLsizeiptr length,
                                GLbitfield access);
-bool ValidateMapBufferBase(Context *context, GLenum target);
+bool ValidateMapBufferBase(Context *context, BufferBinding target);
 bool ValidateFlushMappedBufferRangeEXT(Context *context,
-                                       GLenum target,
+                                       BufferBinding target,
                                        GLintptr offset,
                                        GLsizeiptr length);
 
@@ -345,17 +350,17 @@ bool ValidateCompressedCopyTextureCHROMIUM(Context *context, GLuint sourceId, GL
 
 bool ValidateCreateShader(Context *context, GLenum type);
 bool ValidateBufferData(ValidationContext *context,
-                        GLenum target,
+                        BufferBinding target,
                         GLsizeiptr size,
                         const void *data,
-                        GLenum usage);
+                        BufferUsage usage);
 bool ValidateBufferSubData(ValidationContext *context,
-                           GLenum target,
+                           BufferBinding target,
                            GLintptr offset,
                            GLsizeiptr size,
                            const void *data);
 
-bool ValidateRequestExtensionANGLE(ValidationContext *context, const GLchar *name);
+bool ValidateRequestExtensionANGLE(Context *context, const GLchar *name);
 
 bool ValidateActiveTexture(ValidationContext *context, GLenum texture);
 bool ValidateAttachShader(ValidationContext *context, GLuint program, GLuint shader);
@@ -363,7 +368,7 @@ bool ValidateBindAttribLocation(ValidationContext *context,
                                 GLuint program,
                                 GLuint index,
                                 const GLchar *name);
-bool ValidateBindBuffer(ValidationContext *context, GLenum target, GLuint buffer);
+bool ValidateBindBuffer(ValidationContext *context, BufferBinding target, GLuint buffer);
 bool ValidateBindFramebuffer(ValidationContext *context, GLenum target, GLuint framebuffer);
 bool ValidateBindRenderbuffer(ValidationContext *context, GLenum target, GLuint renderbuffer);
 bool ValidateBlendColor(ValidationContext *context,
@@ -418,7 +423,7 @@ bool ValidateColorMask(ValidationContext *context,
                        GLboolean alpha);
 bool ValidateCompileShader(ValidationContext *context, GLuint shader);
 bool ValidateCreateProgram(ValidationContext *context);
-bool ValidateCullFace(ValidationContext *context, GLenum mode);
+bool ValidateCullFace(ValidationContext *context, CullFaceMode mode);
 bool ValidateDeleteProgram(ValidationContext *context, GLuint program);
 bool ValidateDeleteShader(ValidationContext *context, GLuint shader);
 bool ValidateDepthFunc(ValidationContext *context, GLenum func);
@@ -642,7 +647,7 @@ bool ValidateGenFramebuffers(Context *context, GLint n, GLuint *framebuffers);
 bool ValidateGenRenderbuffers(Context *context, GLint n, GLuint *renderbuffers);
 bool ValidateGenTextures(Context *context, GLint n, GLuint *textures);
 bool ValidateGetBufferParameteriv(ValidationContext *context,
-                                  GLenum target,
+                                  BufferBinding target,
                                   GLenum pname,
                                   GLint *params);
 bool ValidateGetRenderbufferParameteriv(Context *context,

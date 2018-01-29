@@ -20,9 +20,12 @@ CPDF_PageObjectHolder::CPDF_PageObjectHolder(CPDF_Document* pDoc,
       m_pDocument(pDoc),
       m_pPageResources(nullptr),
       m_pResources(nullptr),
-      m_Transparency(0),
+      m_iTransparency(0),
       m_bBackgroundAlphaNeeded(false),
-      m_ParseState(CONTENT_NOT_PARSED) {}
+      m_ParseState(CONTENT_NOT_PARSED) {
+  // TODO(thestig): Check if |m_pFormDict| is never a nullptr and simplify
+  // callers that checks for that.
+}
 
 CPDF_PageObjectHolder::~CPDF_PageObjectHolder() {}
 
@@ -34,8 +37,7 @@ void CPDF_PageObjectHolder::ContinueParse(IFX_PauseIndicator* pPause) {
   if (!m_pParser)
     return;
 
-  m_pParser->Continue(pPause);
-  if (m_pParser->GetStatus() != CPDF_ContentParser::Done)
+  if (m_pParser->Continue(pPause))
     return;
 
   m_ParseState = CONTENT_PARSED;
@@ -81,11 +83,11 @@ void CPDF_PageObjectHolder::LoadTransInfo() {
   if (pGroup->GetStringFor("S") != "Transparency") {
     return;
   }
-  m_Transparency |= PDFTRANS_GROUP;
+  m_iTransparency |= PDFTRANS_GROUP;
   if (pGroup->GetIntegerFor("I")) {
-    m_Transparency |= PDFTRANS_ISOLATED;
+    m_iTransparency |= PDFTRANS_ISOLATED;
   }
   if (pGroup->GetIntegerFor("K")) {
-    m_Transparency |= PDFTRANS_KNOCKOUT;
+    m_iTransparency |= PDFTRANS_KNOCKOUT;
   }
 }

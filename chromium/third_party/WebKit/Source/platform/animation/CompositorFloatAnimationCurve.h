@@ -6,13 +6,13 @@
 #define CompositorFloatAnimationCurve_h
 
 #include <memory>
+#include "base/memory/scoped_refptr.h"
 #include "platform/PlatformExport.h"
 #include "platform/animation/CompositorAnimationCurve.h"
 #include "platform/animation/CompositorFloatKeyframe.h"
 #include "platform/animation/TimingFunction.h"
 #include "platform/wtf/Noncopyable.h"
 #include "platform/wtf/PtrUtil.h"
-#include "platform/wtf/RefPtr.h"
 #include "platform/wtf/Vector.h"
 
 namespace cc {
@@ -51,7 +51,7 @@ class PLATFORM_EXPORT CompositorFloatAnimationCurve
   using Keyframes = Vector<std::unique_ptr<CompositorFloatKeyframe>>;
   Keyframes KeyframesForTesting() const;
 
-  RefPtr<TimingFunction> GetTimingFunctionForTesting() const;
+  scoped_refptr<TimingFunction> GetTimingFunctionForTesting() const;
 
  private:
   CompositorFloatAnimationCurve();

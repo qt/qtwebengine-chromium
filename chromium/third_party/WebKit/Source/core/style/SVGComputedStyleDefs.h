@@ -28,13 +28,13 @@
 #ifndef SVGComputedStyleDefs_h
 #define SVGComputedStyleDefs_h
 
+#include "base/memory/scoped_refptr.h"
 #include "core/CoreExport.h"
 #include "core/style/StylePath.h"
 #include "platform/Length.h"
 #include "platform/graphics/Color.h"
 #include "platform/wtf/Allocator.h"
 #include "platform/wtf/RefCounted.h"
-#include "platform/wtf/RefPtr.h"
 #include "platform/wtf/RefVector.h"
 #include "platform/wtf/text/WTFString.h"
 
@@ -122,11 +122,11 @@ enum EPaintOrder {
 // Inherited/Non-Inherited Style Datastructures
 class StyleFillData : public RefCounted<StyleFillData> {
  public:
-  static RefPtr<StyleFillData> Create() {
-    return WTF::AdoptRef(new StyleFillData);
+  static scoped_refptr<StyleFillData> Create() {
+    return base::AdoptRef(new StyleFillData);
   }
-  RefPtr<StyleFillData> Copy() const {
-    return WTF::AdoptRef(new StyleFillData(*this));
+  scoped_refptr<StyleFillData> Copy() const {
+    return base::AdoptRef(new StyleFillData(*this));
   }
 
   bool operator==(const StyleFillData&) const;
@@ -170,12 +170,12 @@ class UnzoomedLength {
 
 class CORE_EXPORT StyleStrokeData : public RefCounted<StyleStrokeData> {
  public:
-  static RefPtr<StyleStrokeData> Create() {
-    return WTF::AdoptRef(new StyleStrokeData);
+  static scoped_refptr<StyleStrokeData> Create() {
+    return base::AdoptRef(new StyleStrokeData);
   }
 
-  RefPtr<StyleStrokeData> Copy() const {
-    return WTF::AdoptRef(new StyleStrokeData(*this));
+  scoped_refptr<StyleStrokeData> Copy() const {
+    return base::AdoptRef(new StyleStrokeData(*this));
   }
 
   bool operator==(const StyleStrokeData&) const;
@@ -188,7 +188,7 @@ class CORE_EXPORT StyleStrokeData : public RefCounted<StyleStrokeData> {
 
   UnzoomedLength width;
   Length dash_offset;
-  RefPtr<SVGDashArray> dash_array;
+  scoped_refptr<SVGDashArray> dash_array;
 
   SVGPaintType paint_type;
   Color paint_color;
@@ -204,11 +204,11 @@ class CORE_EXPORT StyleStrokeData : public RefCounted<StyleStrokeData> {
 
 class StyleStopData : public RefCounted<StyleStopData> {
  public:
-  static RefPtr<StyleStopData> Create() {
-    return WTF::AdoptRef(new StyleStopData);
+  static scoped_refptr<StyleStopData> Create() {
+    return base::AdoptRef(new StyleStopData);
   }
-  RefPtr<StyleStopData> Copy() const {
-    return WTF::AdoptRef(new StyleStopData(*this));
+  scoped_refptr<StyleStopData> Copy() const {
+    return base::AdoptRef(new StyleStopData(*this));
   }
 
   bool operator==(const StyleStopData&) const;
@@ -227,11 +227,11 @@ class StyleStopData : public RefCounted<StyleStopData> {
 // Note: the rule for this class is, *no inheritance* of these props
 class CORE_EXPORT StyleMiscData : public RefCounted<StyleMiscData> {
  public:
-  static RefPtr<StyleMiscData> Create() {
-    return WTF::AdoptRef(new StyleMiscData);
+  static scoped_refptr<StyleMiscData> Create() {
+    return base::AdoptRef(new StyleMiscData);
   }
-  RefPtr<StyleMiscData> Copy() const {
-    return WTF::AdoptRef(new StyleMiscData(*this));
+  scoped_refptr<StyleMiscData> Copy() const {
+    return base::AdoptRef(new StyleMiscData(*this));
   }
 
   bool operator==(const StyleMiscData&) const;
@@ -253,11 +253,11 @@ class CORE_EXPORT StyleMiscData : public RefCounted<StyleMiscData> {
 // Non-inherited resources
 class StyleResourceData : public RefCounted<StyleResourceData> {
  public:
-  static RefPtr<StyleResourceData> Create() {
-    return WTF::AdoptRef(new StyleResourceData);
+  static scoped_refptr<StyleResourceData> Create() {
+    return base::AdoptRef(new StyleResourceData);
   }
-  RefPtr<StyleResourceData> Copy() const {
-    return WTF::AdoptRef(new StyleResourceData(*this));
+  scoped_refptr<StyleResourceData> Copy() const {
+    return base::AdoptRef(new StyleResourceData(*this));
   }
 
   bool operator==(const StyleResourceData&) const;
@@ -276,11 +276,11 @@ class StyleResourceData : public RefCounted<StyleResourceData> {
 class StyleInheritedResourceData
     : public RefCounted<StyleInheritedResourceData> {
  public:
-  static RefPtr<StyleInheritedResourceData> Create() {
-    return WTF::AdoptRef(new StyleInheritedResourceData);
+  static scoped_refptr<StyleInheritedResourceData> Create() {
+    return base::AdoptRef(new StyleInheritedResourceData);
   }
-  RefPtr<StyleInheritedResourceData> Copy() const {
-    return WTF::AdoptRef(new StyleInheritedResourceData(*this));
+  scoped_refptr<StyleInheritedResourceData> Copy() const {
+    return base::AdoptRef(new StyleInheritedResourceData(*this));
   }
 
   bool operator==(const StyleInheritedResourceData&) const;
@@ -300,15 +300,15 @@ class StyleInheritedResourceData
 // Geometry properties
 class StyleGeometryData : public RefCounted<StyleGeometryData> {
  public:
-  static RefPtr<StyleGeometryData> Create() {
-    return WTF::AdoptRef(new StyleGeometryData);
+  static scoped_refptr<StyleGeometryData> Create() {
+    return base::AdoptRef(new StyleGeometryData);
   }
-  RefPtr<StyleGeometryData> Copy() const;
+  scoped_refptr<StyleGeometryData> Copy() const;
   bool operator==(const StyleGeometryData&) const;
   bool operator!=(const StyleGeometryData& other) const {
     return !(*this == other);
   }
-  RefPtr<StylePath> d;
+  scoped_refptr<StylePath> d;
   Length cx;
   Length cy;
   Length x;

@@ -32,7 +32,7 @@
 #include "core/clipboard/DataTransfer.h"
 #include "core/clipboard/Pasteboard.h"
 #include "core/css/CSSComputedStyleDeclaration.h"
-#include "core/css/StylePropertySet.h"
+#include "core/css/CSSPropertyValueSet.h"
 #include "core/dom/AXObjectCache.h"
 #include "core/dom/DocumentFragment.h"
 #include "core/dom/ElementTraversal.h"
@@ -111,8 +111,6 @@ void DispatchInputEvent(Element* target,
                         InputEvent::InputType input_type,
                         const String& data,
                         InputEvent::EventIsComposing is_composing) {
-  if (!RuntimeEnabledFeatures::InputEventEnabled())
-    return;
   if (!target)
     return;
   // TODO(chongz): Pass appreciate |ranges| after it's defined on spec.
@@ -339,13 +337,13 @@ bool Editor::CanCut() const {
 
 static HTMLImageElement* ImageElementFromImageDocument(Document* document) {
   if (!document)
-    return 0;
+    return nullptr;
   if (!document->IsImageDocument())
-    return 0;
+    return nullptr;
 
   HTMLElement* body = document->body();
   if (!body)
-    return 0;
+    return nullptr;
 
   return ToHTMLImageElementOrNull(body->firstChild());
 }
@@ -563,7 +561,7 @@ void Editor::WriteSelectionToPasteboard() {
                                              CanSmartCopyOrDelete());
 }
 
-static RefPtr<Image> ImageFromNode(const Node& node) {
+static scoped_refptr<Image> ImageFromNode(const Node& node) {
   DCHECK(!node.GetDocument().NeedsLayoutTreeUpdate());
   DocumentLifecycle::DisallowTransitionScope disallow_transition(
       node.GetDocument().Lifecycle());
@@ -598,7 +596,7 @@ static void WriteImageNodeToPasteboard(Pasteboard* pasteboard,
   DCHECK(pasteboard);
   DCHECK(node);
 
-  RefPtr<Image> image = ImageFromNode(*node);
+  scoped_refptr<Image> image = ImageFromNode(*node);
   if (!image.get())
     return;
 
@@ -818,7 +816,7 @@ Element* Editor::FindEventTargetFromSelection() const {
       GetFrameSelection().ComputeVisibleSelectionInDOMTreeDeprecated());
 }
 
-void Editor::ApplyStyle(StylePropertySet* style,
+void Editor::ApplyStyle(CSSPropertyValueSet* style,
                         InputEvent::InputType input_type) {
   const VisibleSelection& selection =
       GetFrameSelection().ComputeVisibleSelectionInDOMTreeDeprecated();
@@ -837,7 +835,7 @@ void Editor::ApplyStyle(StylePropertySet* style,
       ->Apply();
 }
 
-void Editor::ApplyParagraphStyle(StylePropertySet* style,
+void Editor::ApplyParagraphStyle(CSSPropertyValueSet* style,
                                  InputEvent::InputType input_type) {
   if (GetFrame()
           .Selection()
@@ -852,7 +850,7 @@ void Editor::ApplyParagraphStyle(StylePropertySet* style,
       ->Apply();
 }
 
-void Editor::ApplyStyleToSelection(StylePropertySet* style,
+void Editor::ApplyStyleToSelection(CSSPropertyValueSet* style,
                                    InputEvent::InputType input_type) {
   if (!style || style->IsEmpty() || !CanEditRichly())
     return;
@@ -860,7 +858,7 @@ void Editor::ApplyStyleToSelection(StylePropertySet* style,
   ApplyStyle(style, input_type);
 }
 
-void Editor::ApplyParagraphStyleToSelection(StylePropertySet* style,
+void Editor::ApplyParagraphStyleToSelection(CSSPropertyValueSet* style,
                                             InputEvent::InputType input_type) {
   if (!style || style->IsEmpty() || !CanEditRichly())
     return;
@@ -870,20 +868,28 @@ void Editor::ApplyParagraphStyleToSelection(StylePropertySet* style,
 
 bool Editor::SelectionStartHasStyle(CSSPropertyID property_id,
                                     const String& value) const {
-  EditingStyle* style_to_check = EditingStyle::Create(property_id, value);
+  const SecureContextMode secure_context_mode =
+      frame_->GetDocument()->GetSecureContextMode();
+
+  EditingStyle* style_to_check =
+      EditingStyle::Create(property_id, value, secure_context_mode);
   EditingStyle* style_at_start =
       EditingStyleUtilities::CreateStyleAtSelectionStart(
           GetFrameSelection().ComputeVisibleSelectionInDOMTreeDeprecated(),
           property_id == CSSPropertyBackgroundColor, style_to_check->Style());
-  return style_to_check->TriStateOfStyle(style_at_start) !=
+  return style_to_check->TriStateOfStyle(style_at_start, secure_context_mode) !=
          EditingTriState::kFalse;
 }
 
 EditingTriState Editor::SelectionHasStyle(CSSPropertyID property_id,
                                           const String& value) const {
-  return EditingStyle::Create(property_id, value)
+  const SecureContextMode secure_context_mode =
+      frame_->GetDocument()->GetSecureContextMode();
+
+  return EditingStyle::Create(property_id, value, secure_context_mode)
       ->TriStateOfStyle(
-          GetFrameSelection().ComputeVisibleSelectionInDOMTreeDeprecated());
+          GetFrameSelection().ComputeVisibleSelectionInDOMTreeDeprecated(),
+          secure_context_mode);
 }
 
 String Editor::SelectionStartCSSPropertyValue(CSSPropertyID property_id) {
@@ -1380,14 +1386,14 @@ void Editor::SetBaseWritingDirection(WritingDirection direction) {
     return;
   }
 
-  MutableStylePropertySet* style =
-      MutableStylePropertySet::Create(kHTMLQuirksMode);
+  MutableCSSPropertyValueSet* style =
+      MutableCSSPropertyValueSet::Create(kHTMLQuirksMode);
   style->SetProperty(
       CSSPropertyDirection,
       direction == LeftToRightWritingDirection
           ? "ltr"
           : direction == RightToLeftWritingDirection ? "rtl" : "inherit",
-      false);
+      /* important */ false, GetFrame().GetDocument()->GetSecureContextMode());
   ApplyParagraphStyleToSelection(
       style, InputEvent::InputType::kFormatSetBlockTextDirection);
 }
@@ -1483,11 +1489,12 @@ void Editor::ChangeSelectionAfterCommand(
   // Ranges for selections that are no longer valid
   bool selection_did_not_change_dom_position =
       new_selection == GetFrameSelection().GetSelectionInDOMTree();
-  GetFrameSelection().SetSelection(
-      new_selection,
-      SetSelectionOptions::Builder(options)
-          .SetShouldShowHandle(GetFrameSelection().IsHandleVisible())
-          .Build());
+  const bool handle_visible =
+      GetFrameSelection().IsHandleVisible() && new_selection.IsRange();
+  GetFrameSelection().SetSelection(new_selection,
+                                   SetSelectionOptions::Builder(options)
+                                       .SetShouldShowHandle(handle_visible)
+                                       .Build());
 
   // Some editing operations change the selection visually without affecting its
   // position within the DOM. For example when you press return in the following
@@ -1545,7 +1552,7 @@ IntRect Editor::FirstRectForRange(const EphemeralRange& range) const {
       start_caret_rect.Height());
 }
 
-void Editor::ComputeAndSetTypingStyle(StylePropertySet* style,
+void Editor::ComputeAndSetTypingStyle(CSSPropertyValueSet* style,
                                       InputEvent::InputType input_type) {
   if (!style || style->IsEmpty()) {
     ClearTypingStyle();
@@ -1761,6 +1768,10 @@ FrameSelection& Editor::GetFrameSelection() const {
   return GetFrame().Selection();
 }
 
+void Editor::SetMark() {
+  mark_ = GetFrameSelection().ComputeVisibleSelectionInDOMTree();
+}
+
 void Editor::ToggleOverwriteModeEnabled() {
   overwrite_mode_enabled_ = !overwrite_mode_enabled_;
   GetFrameSelection().SetShouldShowBlockCursor(overwrite_mode_enabled_);
@@ -1825,7 +1836,7 @@ void Editor::ReplaceSelection(const String& text) {
                            InputEvent::InputType::kInsertReplacementText);
 }
 
-DEFINE_TRACE(Editor) {
+void Editor::Trace(blink::Visitor* visitor) {
   visitor->Trace(frame_);
   visitor->Trace(last_edit_command_);
   visitor->Trace(undo_stack_);

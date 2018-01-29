@@ -44,9 +44,9 @@ class TextureImpl : public FramebufferAttachmentObjectImpl
 {
   public:
     TextureImpl(const gl::TextureState &state);
-    virtual ~TextureImpl();
+    ~TextureImpl() override;
 
-    virtual gl::Error onDestroy(const gl::Context *context) { return gl::NoError(); }
+    virtual gl::Error onDestroy(const gl::Context *context);
 
     virtual gl::Error setImage(const gl::Context *context,
                                GLenum target,
@@ -130,7 +130,7 @@ class TextureImpl : public FramebufferAttachmentObjectImpl
                                             GLsizei samples,
                                             GLint internalformat,
                                             const gl::Extents &size,
-                                            GLboolean fixedSampleLocations) = 0;
+                                            bool fixedSampleLocations) = 0;
 
     virtual gl::Error setEGLImageTarget(const gl::Context *context,
                                         GLenum target,

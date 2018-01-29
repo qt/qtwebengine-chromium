@@ -15,9 +15,9 @@
 
 class GrMockTexture : public GrTexture {
 public:
-    GrMockTexture(GrMockGpu* gpu, SkBudgeted budgeted, const GrSurfaceDesc& desc, bool hasMipLevels,
-                  const GrMockTextureInfo& info)
-            : GrMockTexture(gpu, desc, hasMipLevels, info) {
+    GrMockTexture(GrMockGpu* gpu, SkBudgeted budgeted, const GrSurfaceDesc& desc,
+                  GrMipMapsStatus mipMapsStatus, const GrMockTextureInfo& info)
+            : GrMockTexture(gpu, desc, mipMapsStatus, info) {
         this->registerWithCache(budgeted);
     }
     ~GrMockTexture() override {
@@ -36,14 +36,18 @@ public:
 
 protected:
     // constructor for subclasses
-    GrMockTexture(GrMockGpu* gpu, const GrSurfaceDesc& desc, bool hasMipLevels,
+    GrMockTexture(GrMockGpu* gpu, const GrSurfaceDesc& desc, GrMipMapsStatus mipMapsStatus,
                   const GrMockTextureInfo& info)
             : GrSurface(gpu, desc)
             , INHERITED(gpu, desc, kITexture2DSampler_GrSLType, GrSamplerState::Filter::kMipMap,
-                        hasMipLevels, hasMipLevels)
+                        mipMapsStatus)
             , fInfo(info)
             , fReleaseProc(nullptr)
             , fReleaseCtx(nullptr) {}
+
+    bool onStealBackendTexture(GrBackendTexture*, SkImage::BackendTextureReleaseProc*) override {
+        return false;
+    }
 
 private:
     GrMockTextureInfo fInfo;
@@ -56,9 +60,9 @@ private:
 class GrMockTextureRenderTarget : public GrMockTexture, public GrRenderTarget {
 public:
     GrMockTextureRenderTarget(GrMockGpu* gpu, SkBudgeted budgeted, const GrSurfaceDesc& desc,
-                              bool hasMipLevels, const GrMockTextureInfo& texInfo)
+                              GrMipMapsStatus mipMapsStatus, const GrMockTextureInfo& texInfo)
             : GrSurface(gpu, desc)
-            , GrMockTexture(gpu, desc, hasMipLevels, texInfo)
+            , GrMockTexture(gpu, desc, mipMapsStatus, texInfo)
             , GrRenderTarget(gpu, desc) {
         this->registerWithCache(budgeted);
     }
@@ -85,13 +89,13 @@ private:
     size_t onGpuMemorySize() const override {
         return GrSurface::ComputeSize(this->config(), this->width(), this->height(),
                                       this->numStencilSamples(),
-                                      this->texturePriv().hasMipMaps());
+                                      this->texturePriv().mipMapped());
     }
 
     void computeScratchKey(GrScratchKey* key) const override {
         GrTexturePriv::ComputeScratchKey(this->config(), this->width(), this->height(),
                                          true, this->numStencilSamples(),
-                                         this->texturePriv().hasMipMaps(), key);
+                                         this->texturePriv().mipMapped(), key);
     }
 };
 

@@ -42,7 +42,7 @@ namespace blink {
 namespace {
 
 void CopyToActiveInterpolationsMap(
-    const Vector<RefPtr<Interpolation>>& source,
+    const Vector<scoped_refptr<Interpolation>>& source,
     EffectStack::PropertyHandleFilter property_handle_filter,
     ActiveInterpolationsMap& target) {
   for (const auto& interpolation : source) {
@@ -76,7 +76,7 @@ void CopyNewAnimationsToActiveInterpolationsMap(
     EffectStack::PropertyHandleFilter property_handle_filter,
     ActiveInterpolationsMap& result) {
   for (const auto& new_animation : new_animations) {
-    Vector<RefPtr<Interpolation>> sample;
+    Vector<scoped_refptr<Interpolation>> sample;
     new_animation->Sample(sample);
     if (!sample.IsEmpty())
       CopyToActiveInterpolationsMap(sample, property_handle_filter, result);
@@ -163,12 +163,12 @@ void EffectStack::RemoveRedundantSampledEffects() {
   sampled_effects_.Shrink(new_size);
 }
 
-DEFINE_TRACE(EffectStack) {
+void EffectStack::Trace(blink::Visitor* visitor) {
   visitor->Trace(sampled_effects_);
 }
 
 bool EffectStack::GetAnimatedBoundingBox(FloatBox& box,
-                                         CSSPropertyID property) const {
+                                         const CSSProperty& property) const {
   FloatBox original_box(box);
   for (const auto& sampled_effect : sampled_effects_) {
     if (sampled_effect->Effect() &&

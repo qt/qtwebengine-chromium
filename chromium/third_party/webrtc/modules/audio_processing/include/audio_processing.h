@@ -20,7 +20,9 @@
 #include <string.h>
 #include <vector>
 
+#include "api/optional.h"
 #include "modules/audio_processing/beamformer/array_util.h"
+#include "modules/audio_processing/include/audio_processing_statistics.h"
 #include "modules/audio_processing/include/config.h"
 #include "rtc_base/arraysize.h"
 #include "rtc_base/deprecation.h"
@@ -43,6 +45,7 @@ class ProcessingConfig;
 
 class EchoCancellation;
 class EchoControlMobile;
+class EchoControlFactory;
 class GainControl;
 class HighPassFilter;
 class LevelEstimator;
@@ -109,7 +112,7 @@ static const int kAgcStartupMinVolume = 85;
 #else
 static const int kAgcStartupMinVolume = 0;
 #endif  // defined(WEBRTC_CHROMIUM_BUILD)
-static constexpr int kClippedLevelMin = 170;
+static constexpr int kClippedLevelMin = 70;
 struct ExperimentalAgc {
   ExperimentalAgc() = default;
   explicit ExperimentalAgc(bool enabled) : enabled(enabled) {}
@@ -266,71 +269,9 @@ class AudioProcessing : public rtc::RefCountInterface {
       bool enabled = false;
     } high_pass_filter;
 
-    // Enables the next generation AEC functionality. This feature replaces the
-    // standard methods for echo removal in the AEC.
-    // The functionality is not yet activated in the code and turning this on
-    // does not yet have the desired behavior.
+    // Deprecated way of activating AEC3.
+    // TODO(gustaf): Remove when possible.
     struct EchoCanceller3 {
-      struct Param {
-        struct Delay {
-          size_t default_delay = 5;
-        } delay;
-
-        struct Erle {
-          float min = 1.f;
-          float max_l = 8.f;
-          float max_h = 1.5f;
-        } erle;
-
-        struct EpStrength {
-          float lf = 10.f;
-          float mf = 10.f;
-          float hf = 10.f;
-          float default_len = 0.f;
-          bool echo_can_saturate = true;
-          bool bounded_erl = false;
-        } ep_strength;
-
-        struct Mask {
-          float m1 = 0.01f;
-          float m2 = 0.0001f;
-          float m3 = 0.01f;
-          float m4 = 0.1f;
-          float m5 = 0.3f;
-          float m6 = 0.0001f;
-          float m7 = 0.01f;
-          float m8 = 0.0001f;
-          float m9 = 0.1f;
-        } gain_mask;
-
-        struct EchoAudibility {
-          float low_render_limit = 4 * 64.f;
-          float normal_render_limit = 64.f;
-        } echo_audibility;
-
-        struct RenderLevels {
-          float active_render_limit = 100.f;
-          float poor_excitation_render_limit = 150.f;
-        } render_levels;
-
-        struct GainUpdates {
-          struct GainChanges {
-            float max_inc;
-            float max_dec;
-            float rate_inc;
-            float rate_dec;
-            float min_inc;
-            float min_dec;
-          };
-
-          GainChanges low_noise = {3.f, 3.f, 1.5f, 1.5f, 1.5f, 1.5f};
-          GainChanges normal = {2.f, 2.f, 1.5f, 1.5f, 1.2f, 1.2f};
-          GainChanges saturation = {1.2f, 1.2f, 1.5f, 1.5f, 1.f, 1.f};
-          GainChanges nonlinear = {1.5f, 1.5f, 1.2f, 1.2f, 1.1f, 1.1f};
-
-          float floor_first_increase = 0.0001f;
-        } gain_updates;
-      } param;
       bool enabled = false;
     } echo_canceller3;
 
@@ -340,6 +281,7 @@ class AudioProcessing : public rtc::RefCountInterface {
     // does not yet have the desired behavior.
     struct GainController2 {
       bool enabled = false;
+      float fixed_gain_db = 0.f;
     } gain_controller2;
 
     // Explicit copy assignment implementation to avoid issues with memory
@@ -381,6 +323,7 @@ class AudioProcessing : public rtc::RefCountInterface {
   static AudioProcessing* Create(
       const webrtc::Config& config,
       std::unique_ptr<PostProcessing> capture_post_processor,
+      std::unique_ptr<EchoControlFactory> echo_control_factory,
       NonlinearBeamformer* beamformer);
   ~AudioProcessing() override {}
 
@@ -624,6 +567,10 @@ class AudioProcessing : public rtc::RefCountInterface {
 
   // TODO(ivoc): Make this pure virtual when all subclasses have been updated.
   virtual AudioProcessingStatistics GetStatistics() const;
+
+  // This returns the stats as optionals and it will replace the regular
+  // GetStatistics.
+  virtual AudioProcessingStats GetStatistics(bool has_remote_tracks) const;
 
   // These provide access to the component interfaces and should never return
   // NULL. The pointers will be valid for the lifetime of the APM instance.
@@ -962,7 +909,23 @@ class EchoControl {
   // Processes the capture signal in order to remove the echo.
   virtual void ProcessCapture(AudioBuffer* capture, bool echo_path_change) = 0;
 
+  struct Metrics {
+    double echo_return_loss;
+    double echo_return_loss_enhancement;
+    int delay_ms;
+  };
+
+  // Collect current metrics from the echo controller.
+  virtual Metrics GetMetrics() const = 0;
+
   virtual ~EchoControl() {}
+};
+
+// Interface for a factory that creates EchoControllers.
+class EchoControlFactory {
+ public:
+  virtual std::unique_ptr<EchoControl> Create(int sample_rate_hz) = 0;
+  virtual ~EchoControlFactory() = default;
 };
 
 // The automatic gain control (AGC) component brings the signal to an
@@ -1183,6 +1146,80 @@ class VoiceDetection {
 
  protected:
   virtual ~VoiceDetection() {}
+};
+
+// Configuration struct for EchoCanceller3
+struct EchoCanceller3Config {
+  struct Delay {
+    size_t default_delay = 5;
+    size_t down_sampling_factor = 4;
+    size_t num_filters = 4;
+  } delay;
+
+  struct Erle {
+    float min = 1.f;
+    float max_l = 8.f;
+    float max_h = 1.5f;
+  } erle;
+
+  struct EpStrength {
+    float lf = 10.f;
+    float mf = 10.f;
+    float hf = 10.f;
+    float default_len = 0.f;
+    bool echo_can_saturate = true;
+    bool bounded_erl = false;
+  } ep_strength;
+
+  struct Mask {
+    float m1 = 0.01f;
+    float m2 = 0.0001f;
+    float m3 = 0.01f;
+    float m4 = 0.1f;
+    float m5 = 0.3f;
+    float m6 = 0.0001f;
+    float m7 = 0.01f;
+    float m8 = 0.0001f;
+    float m9 = 0.1f;
+  } gain_mask;
+
+  struct EchoAudibility {
+    float low_render_limit = 4 * 64.f;
+    float normal_render_limit = 64.f;
+  } echo_audibility;
+
+  struct RenderLevels {
+    float active_render_limit = 100.f;
+    float poor_excitation_render_limit = 150.f;
+  } render_levels;
+
+  struct GainUpdates {
+    struct GainChanges {
+      float max_inc;
+      float max_dec;
+      float rate_inc;
+      float rate_dec;
+      float min_inc;
+      float min_dec;
+    };
+
+    GainChanges low_noise = {3.f, 3.f, 1.5f, 1.5f, 1.5f, 1.5f};
+    GainChanges normal = {2.f, 2.f, 1.5f, 1.5f, 1.2f, 1.2f};
+    GainChanges saturation = {1.2f, 1.2f, 1.5f, 1.5f, 1.f, 1.f};
+    GainChanges nonlinear = {1.5f, 1.5f, 1.2f, 1.2f, 1.1f, 1.1f};
+
+    float floor_first_increase = 0.0001f;
+  } gain_updates;
+};
+
+class EchoCanceller3Factory : public EchoControlFactory {
+ public:
+  EchoCanceller3Factory();
+  EchoCanceller3Factory(const EchoCanceller3Config& config);
+  std::unique_ptr<EchoControl> Create(int sample_rate_hz) override;
+
+ private:
+  EchoCanceller3Config config_;
 };
 }  // namespace webrtc
 

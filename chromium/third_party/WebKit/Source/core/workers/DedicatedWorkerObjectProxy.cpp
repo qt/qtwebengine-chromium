@@ -35,9 +35,9 @@
 #include "bindings/core/v8/serialization/SerializedScriptValue.h"
 #include "core/dom/Document.h"
 #include "core/dom/ExecutionContext.h"
-#include "core/dom/TaskRunnerHelper.h"
 #include "core/events/MessageEvent.h"
 #include "core/inspector/ConsoleMessage.h"
+#include "core/inspector/ThreadDebugger.h"
 #include "core/workers/DedicatedWorkerMessagingProxy.h"
 #include "core/workers/ParentFrameTaskRunners.h"
 #include "core/workers/WorkerGlobalScope.h"
@@ -47,6 +47,7 @@
 #include "platform/wtf/Functional.h"
 #include "platform/wtf/PtrUtil.h"
 #include "public/platform/Platform.h"
+#include "public/platform/TaskType.h"
 
 namespace blink {
 
@@ -61,26 +62,32 @@ std::unique_ptr<DedicatedWorkerObjectProxy> DedicatedWorkerObjectProxy::Create(
 DedicatedWorkerObjectProxy::~DedicatedWorkerObjectProxy() {}
 
 void DedicatedWorkerObjectProxy::PostMessageToWorkerObject(
-    RefPtr<SerializedScriptValue> message,
-    Vector<MessagePortChannel> channels) {
+    scoped_refptr<SerializedScriptValue> message,
+    Vector<MessagePortChannel> channels,
+    const v8_inspector::V8StackTraceId& stack_id) {
   GetParentFrameTaskRunners()
       ->Get(TaskType::kPostedMessage)
       ->PostTask(BLINK_FROM_HERE,
                  CrossThreadBind(
                      &DedicatedWorkerMessagingProxy::PostMessageToWorkerObject,
                      messaging_proxy_weak_ptr_, std::move(message),
-                     WTF::Passed(std::move(channels))));
+                     WTF::Passed(std::move(channels)), stack_id));
 }
 
 void DedicatedWorkerObjectProxy::ProcessMessageFromWorkerObject(
-    RefPtr<SerializedScriptValue> message,
+    scoped_refptr<SerializedScriptValue> message,
     Vector<MessagePortChannel> channels,
-    WorkerThread* worker_thread) {
+    WorkerThread* worker_thread,
+    const v8_inspector::V8StackTraceId& stack_id) {
   WorkerGlobalScope* global_scope =
       ToWorkerGlobalScope(worker_thread->GlobalScope());
   MessagePortArray* ports =
       MessagePort::EntanglePorts(*global_scope, std::move(channels));
+
+  ThreadDebugger* debugger = ThreadDebugger::From(worker_thread->GetIsolate());
+  debugger->ExternalAsyncTaskStarted(stack_id);
   global_scope->DispatchEvent(MessageEvent::Create(ports, std::move(message)));
+  debugger->ExternalAsyncTaskFinished(stack_id);
 }
 
 void DedicatedWorkerObjectProxy::ProcessUnhandledException(

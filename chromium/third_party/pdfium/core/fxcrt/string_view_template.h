@@ -64,7 +64,7 @@ class StringViewTemplate {
 
   // Any changes to |vec| invalidate the string.
   explicit StringViewTemplate(const std::vector<UnsignedType>& vec) {
-    m_Length = pdfium::CollectionSize<size_t>(vec);
+    m_Length = vec.size();
     m_Ptr = m_Length ? vec.data() : nullptr;
   }
 
@@ -150,7 +150,7 @@ class StringViewTemplate {
   }
 
   pdfium::Optional<size_t> Find(CharType ch) const {
-    const UnsignedType* found = reinterpret_cast<const UnsignedType*>(FXSYS_chr(
+    const auto* found = reinterpret_cast<const UnsignedType*>(FXSYS_chr(
         reinterpret_cast<const CharType*>(m_Ptr.Get()), ch, m_Length));
 
     return found ? pdfium::Optional<size_t>(found - m_Ptr.Get())
@@ -227,10 +227,13 @@ template <typename T>
 inline bool operator==(const T* lhs, const StringViewTemplate<T>& rhs) {
   return rhs == lhs;
 }
-
 template <typename T>
 inline bool operator!=(const T* lhs, const StringViewTemplate<T>& rhs) {
   return rhs != lhs;
+}
+template <typename T>
+inline bool operator<(const T* lhs, const StringViewTemplate<T>& rhs) {
+  return rhs > lhs;
 }
 
 extern template class StringViewTemplate<char>;

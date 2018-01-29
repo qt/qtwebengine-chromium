@@ -84,7 +84,7 @@ HTMLTextAreaElement* HTMLTextAreaElement::Create(Document& document) {
 }
 
 void HTMLTextAreaElement::DidAddUserAgentShadowRoot(ShadowRoot& root) {
-  root.AppendChild(TextControlInnerEditorElement::Create(GetDocument()));
+  root.AppendChild(CreateInnerEditorElement());
 }
 
 const AtomicString& HTMLTextAreaElement::FormControlType() const {
@@ -126,7 +126,7 @@ bool HTMLTextAreaElement::IsPresentationAttribute(
 void HTMLTextAreaElement::CollectStyleForPresentationAttribute(
     const QualifiedName& name,
     const AtomicString& value,
-    MutableStylePropertySet* style) {
+    MutableCSSPropertyValueSet* style) {
   if (name == wrapAttr) {
     if (ShouldWrapText()) {
       AddPropertyToPresentationAttributeStyle(style, CSSPropertyWhiteSpace,
@@ -152,7 +152,7 @@ void HTMLTextAreaElement::ParseAttribute(
   if (name == rowsAttr) {
     unsigned rows = 0;
     if (value.IsEmpty() || !ParseHTMLNonNegativeInteger(value, rows) ||
-        rows <= 0)
+        rows <= 0 || rows > 0x7fffffffu)
       rows = kDefaultRows;
     if (rows_ != rows) {
       rows_ = rows;
@@ -165,7 +165,7 @@ void HTMLTextAreaElement::ParseAttribute(
   } else if (name == colsAttr) {
     unsigned cols = 0;
     if (value.IsEmpty() || !ParseHTMLNonNegativeInteger(value, cols) ||
-        cols <= 0)
+        cols <= 0 || cols > 0x7fffffffu)
       cols = kDefaultCols;
     if (cols_ != cols) {
       cols_ = cols;
@@ -246,8 +246,9 @@ bool HTMLTextAreaElement::ShouldShowFocusRingOnMouseFocus() const {
   return true;
 }
 
-void HTMLTextAreaElement::UpdateFocusAppearance(
-    SelectionBehaviorOnFocus selection_behavior) {
+void HTMLTextAreaElement::UpdateFocusAppearanceWithOptions(
+    SelectionBehaviorOnFocus selection_behavior,
+    const FocusOptions& options) {
   switch (selection_behavior) {
     case SelectionBehaviorOnFocus::kReset:  // Fallthrough.
     case SelectionBehaviorOnFocus::kRestore:
@@ -256,8 +257,10 @@ void HTMLTextAreaElement::UpdateFocusAppearance(
     case SelectionBehaviorOnFocus::kNone:
       return;
   }
-  if (GetDocument().GetFrame())
-    GetDocument().GetFrame()->Selection().RevealSelection();
+  if (!options.preventScroll()) {
+    if (GetDocument().GetFrame())
+      GetDocument().GetFrame()->Selection().RevealSelection();
+  }
 }
 
 void HTMLTextAreaElement::DefaultEventHandler(Event* event) {
@@ -394,6 +397,10 @@ void HTMLTextAreaElement::SetValueCommon(
   normalized_value.Replace("\r\n", "\n");
   normalized_value.Replace('\r', '\n');
 
+  // Clear the suggested value. Use the base class version to not trigger a view
+  // update.
+  TextControlElement::SetSuggestedValue(String());
+
   // Return early because we don't want to trigger other side effects when the
   // value isn't changing. This is interoperable.
   if (normalized_value == value())
@@ -411,7 +418,6 @@ void HTMLTextAreaElement::SetValueCommon(
   SetNeedsStyleRecalc(
       kSubtreeStyleChange,
       StyleChangeReasonForTracing::Create(StyleChangeReason::kControlValue));
-  suggested_value_ = String();
   SetNeedsValidityCheck();
   if (IsFinishedParsingChildren() &&
       selection == TextControlSetValueSelection::kSetSelectionToEnd) {
@@ -471,18 +477,8 @@ void HTMLTextAreaElement::setDefaultValue(const String& default_value) {
     SetNonDirtyValue(value);
 }
 
-String HTMLTextAreaElement::SuggestedValue() const {
-  return suggested_value_;
-}
-
 void HTMLTextAreaElement::SetSuggestedValue(const String& value) {
-  suggested_value_ = value;
-
-  if (!value.IsNull())
-    SetInnerEditorValue(suggested_value_);
-  else
-    SetInnerEditorValue(value_);
-  UpdatePlaceholderVisibility();
+  TextControlElement::SetSuggestedValue(value);
   SetNeedsStyleRecalc(
       kSubtreeStyleChange,
       StyleChangeReasonForTracing::Create(StyleChangeReason::kControlValue));
@@ -572,11 +568,13 @@ void HTMLTextAreaElement::AccessKeyAction(bool) {
 }
 
 void HTMLTextAreaElement::setCols(unsigned cols) {
-  SetUnsignedIntegralAttribute(colsAttr, cols ? cols : kDefaultCols);
+  SetUnsignedIntegralAttribute(colsAttr, cols ? cols : kDefaultCols,
+                               kDefaultCols);
 }
 
 void HTMLTextAreaElement::setRows(unsigned rows) {
-  SetUnsignedIntegralAttribute(rowsAttr, rows ? rows : kDefaultRows);
+  SetUnsignedIntegralAttribute(rowsAttr, rows ? rows : kDefaultRows,
+                               kDefaultRows);
 }
 
 bool HTMLTextAreaElement::MatchesReadOnlyPseudoClass() const {
@@ -593,7 +591,7 @@ void HTMLTextAreaElement::SetPlaceholderVisibility(bool visible) {
 
 void HTMLTextAreaElement::UpdatePlaceholderText() {
   HTMLElement* placeholder = PlaceholderElement();
-  const AtomicString& placeholder_text = FastGetAttribute(placeholderAttr);
+  const String placeholder_text = GetPlaceholderValue();
   if (placeholder_text.IsEmpty()) {
     if (placeholder)
       UserAgentShadowRoot()->RemoveChild(placeholder);
@@ -610,6 +608,11 @@ void HTMLTextAreaElement::UpdatePlaceholderText() {
     UserAgentShadowRoot()->InsertBefore(placeholder, InnerEditorElement());
   }
   placeholder->setTextContent(placeholder_text);
+}
+
+String HTMLTextAreaElement::GetPlaceholderValue() const {
+  return !SuggestedValue().IsEmpty() ? SuggestedValue()
+                                     : FastGetAttribute(placeholderAttr);
 }
 
 bool HTMLTextAreaElement::IsInteractiveContent() const {

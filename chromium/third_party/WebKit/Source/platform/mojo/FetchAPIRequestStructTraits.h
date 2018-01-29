@@ -16,16 +16,6 @@ class KURL;
 namespace mojo {
 
 template <>
-struct EnumTraits<::blink::mojom::FetchCredentialsMode,
-                  ::blink::WebURLRequest::FetchCredentialsMode> {
-  static ::blink::mojom::FetchCredentialsMode ToMojom(
-      ::blink::WebURLRequest::FetchCredentialsMode input);
-
-  static bool FromMojom(::blink::mojom::FetchCredentialsMode input,
-                        ::blink::WebURLRequest::FetchCredentialsMode* out);
-};
-
-template <>
 struct EnumTraits<::blink::mojom::FetchRedirectMode,
                   ::blink::WebURLRequest::FetchRedirectMode> {
   static ::blink::mojom::FetchRedirectMode ToMojom(
@@ -33,16 +23,6 @@ struct EnumTraits<::blink::mojom::FetchRedirectMode,
 
   static bool FromMojom(::blink::mojom::FetchRedirectMode input,
                         ::blink::WebURLRequest::FetchRedirectMode* out);
-};
-
-template <>
-struct EnumTraits<::blink::mojom::FetchRequestMode,
-                  ::blink::WebURLRequest::FetchRequestMode> {
-  static ::blink::mojom::FetchRequestMode ToMojom(
-      ::blink::WebURLRequest::FetchRequestMode input);
-
-  static bool FromMojom(::blink::mojom::FetchRequestMode input,
-                        ::blink::WebURLRequest::FetchRequestMode* out);
 };
 
 template <>
@@ -68,7 +48,7 @@ struct EnumTraits<::blink::mojom::RequestContextType,
 template <>
 struct StructTraits<::blink::mojom::FetchAPIRequestDataView,
                     ::blink::WebServiceWorkerRequest> {
-  static ::blink::WebURLRequest::FetchRequestMode mode(
+  static ::network::mojom::FetchRequestMode mode(
       const ::blink::WebServiceWorkerRequest& request) {
     return request.Mode();
   }
@@ -99,15 +79,20 @@ struct StructTraits<::blink::mojom::FetchAPIRequestDataView,
 
   static uint64_t blob_size(const ::blink::WebServiceWorkerRequest&);
 
-  static storage::mojom::blink::BlobPtr blob(
+  static blink::mojom::blink::BlobPtr blob(
       const ::blink::WebServiceWorkerRequest&);
 
   static const ::blink::Referrer& referrer(
       const ::blink::WebServiceWorkerRequest&);
 
-  static ::blink::WebURLRequest::FetchCredentialsMode credentials_mode(
+  static ::network::mojom::FetchCredentialsMode credentials_mode(
       const ::blink::WebServiceWorkerRequest& request) {
     return request.CredentialsMode();
+  }
+
+  static ::blink::mojom::FetchCacheMode cache_mode(
+      const ::blink::WebServiceWorkerRequest& request) {
+    return request.CacheMode();
   }
 
   static ::blink::WebURLRequest::FetchRedirectMode redirect_mode(
@@ -116,6 +101,9 @@ struct StructTraits<::blink::mojom::FetchAPIRequestDataView,
   }
 
   static WTF::String integrity(const ::blink::WebServiceWorkerRequest&);
+  static bool keepalive(const ::blink::WebServiceWorkerRequest& request) {
+    return request.Keepalive();
+  }
   static WTF::String client_id(const ::blink::WebServiceWorkerRequest&);
 
   static bool is_reload(const ::blink::WebServiceWorkerRequest& request) {

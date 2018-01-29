@@ -106,8 +106,7 @@ BASE_EXPORT int64_t SaturatedSub(TimeDelta delta, int64_t value);
 
 class BASE_EXPORT TimeDelta {
  public:
-  TimeDelta() : delta_(0) {
-  }
+  constexpr TimeDelta() : delta_(0) {}
 
   // Converts units of time to TimeDeltas.
   static constexpr TimeDelta FromDays(int days);
@@ -458,6 +457,33 @@ class BASE_EXPORT Time : public time_internal::TimeBase<Time> {
   // by kMicrosecondsPerSecond, then the QPC value should not exceed
   // (2^63 - 1) / 1E6. If it exceeds that threshold, we divide then multiply.
   static constexpr int64_t kQPCOverflowThreshold = INT64_C(0x8637BD05AF7);
+#endif
+
+// kExplodedMinYear and kExplodedMaxYear define the platform-specific limits
+// for values passed to FromUTCExploded() and FromLocalExploded(). Those
+// functions will return false if passed values outside these limits. The limits
+// are inclusive, meaning that the API should support all dates within a given
+// limit year.
+#if defined(OS_WIN)
+  static constexpr int kExplodedMinYear = 1601;
+  static constexpr int kExplodedMaxYear = 30827;
+#elif defined(OS_IOS)
+  static constexpr int kExplodedMinYear = std::numeric_limits<int>::min();
+  static constexpr int kExplodedMaxYear = std::numeric_limits<int>::max();
+#elif defined(OS_MACOSX)
+  static constexpr int kExplodedMinYear = 1902;
+  static constexpr int kExplodedMaxYear = std::numeric_limits<int>::max();
+#elif defined(OS_ANDROID)
+  // Though we use 64-bit time APIs on both 32 and 64 bit Android, some OS
+  // versions like KitKat (ARM but not x86 emulator) can't handle some early
+  // dates (e.g. before 1170). So we set min conservatively here.
+  static constexpr int kExplodedMinYear = 1902;
+  static constexpr int kExplodedMaxYear = std::numeric_limits<int>::max();
+#else
+  static constexpr int kExplodedMinYear =
+      (sizeof(time_t) == 4 ? 1902 : std::numeric_limits<int>::min());
+  static constexpr int kExplodedMaxYear =
+      (sizeof(time_t) == 4 ? 2037 : std::numeric_limits<int>::max());
 #endif
 
   // Represents an exploded time that can be formatted nicely. This is kind of

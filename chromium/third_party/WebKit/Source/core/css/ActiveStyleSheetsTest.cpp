@@ -16,16 +16,17 @@
 #include "core/dom/ShadowRootInit.h"
 #include "core/frame/LocalFrameView.h"
 #include "core/html/HTMLElement.h"
-#include "core/testing/DummyPageHolder.h"
+#include "core/testing/PageTestBase.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace blink {
 
-class ActiveStyleSheetsTest : public ::testing::Test {
+class ActiveStyleSheetsTest : public PageTestBase {
  protected:
   static CSSStyleSheet* CreateSheet(const String& css_text = String()) {
     StyleSheetContents* contents =
-        StyleSheetContents::Create(CSSParserContext::Create(kHTMLStandardMode));
+        StyleSheetContents::Create(CSSParserContext::Create(
+            kHTMLStandardMode, SecureContextMode::kInsecureContext));
     contents->ParseString(css_text);
     contents->EnsureRuleSet(MediaQueryEvaluator(),
                             kRuleHasDocumentSecurityOrigin);
@@ -35,16 +36,7 @@ class ActiveStyleSheetsTest : public ::testing::Test {
 
 class ApplyRulesetsTest : public ActiveStyleSheetsTest {
  protected:
-  void SetUp() override {
-    dummy_page_holder_ = DummyPageHolder::Create(IntSize(800, 600));
-  }
-
-  Document& GetDocument() { return dummy_page_holder_->GetDocument(); }
-  StyleEngine& GetStyleEngine() { return GetDocument().GetStyleEngine(); }
   ShadowRoot& AttachShadow(Element& host);
-
- private:
-  std::unique_ptr<DummyPageHolder> dummy_page_holder_;
 };
 
 ShadowRoot& ApplyRulesetsTest::AttachShadow(Element& host) {
@@ -421,7 +413,7 @@ TEST_F(ActiveStyleSheetsTest, CompareActiveStyleSheets_AddRemoveNonMatchingMQ) {
   EXPECT_EQ(0u, changed_rule_sets.size());
 
   CSSStyleSheet* sheet1 = CreateSheet();
-  RefPtr<MediaQuerySet> mq =
+  scoped_refptr<MediaQuerySet> mq =
       MediaQueryParser::ParseMediaQuerySet("(min-width: 9000px)");
   sheet1->SetMediaQueries(mq);
   sheet1->MatchesMediaQueries(MediaQueryEvaluator());
@@ -440,7 +432,7 @@ TEST_F(ActiveStyleSheetsTest, CompareActiveStyleSheets_AddRemoveNonMatchingMQ) {
 }
 
 TEST_F(ApplyRulesetsTest, AddUniversalRuleToDocument) {
-  GetDocument().View()->UpdateAllLifecyclePhases();
+  UpdateAllLifecyclePhases();
 
   CSSStyleSheet* sheet = CreateSheet("body * { color:red }");
 
@@ -456,11 +448,11 @@ TEST_F(ApplyRulesetsTest, AddUniversalRuleToDocument) {
 
 TEST_F(ApplyRulesetsTest, AddUniversalRuleToShadowTree) {
   GetDocument().body()->SetInnerHTMLFromString("<div id=host></div>");
-  Element* host = GetDocument().getElementById("host");
+  Element* host = GetElementById("host");
   ASSERT_TRUE(host);
 
   ShadowRoot& shadow_root = AttachShadow(*host);
-  GetDocument().View()->UpdateAllLifecyclePhases();
+  UpdateAllLifecyclePhases();
 
   CSSStyleSheet* sheet = CreateSheet("body * { color:red }");
 
@@ -476,7 +468,7 @@ TEST_F(ApplyRulesetsTest, AddUniversalRuleToShadowTree) {
 }
 
 TEST_F(ApplyRulesetsTest, AddFontFaceRuleToDocument) {
-  GetDocument().View()->UpdateAllLifecyclePhases();
+  UpdateAllLifecyclePhases();
 
   CSSStyleSheet* sheet =
       CreateSheet("@font-face { font-family: ahum; src: url(ahum.ttf) }");
@@ -493,11 +485,11 @@ TEST_F(ApplyRulesetsTest, AddFontFaceRuleToDocument) {
 
 TEST_F(ApplyRulesetsTest, AddFontFaceRuleToShadowTree) {
   GetDocument().body()->SetInnerHTMLFromString("<div id=host></div>");
-  Element* host = GetDocument().getElementById("host");
+  Element* host = GetElementById("host");
   ASSERT_TRUE(host);
 
   ShadowRoot& shadow_root = AttachShadow(*host);
-  GetDocument().View()->UpdateAllLifecyclePhases();
+  UpdateAllLifecyclePhases();
 
   CSSStyleSheet* sheet =
       CreateSheet("@font-face { font-family: ahum; src: url(ahum.ttf) }");
@@ -517,13 +509,13 @@ TEST_F(ApplyRulesetsTest, AddFontFaceRuleToShadowTree) {
 
 TEST_F(ApplyRulesetsTest, RemoveSheetFromShadowTree) {
   GetDocument().body()->SetInnerHTMLFromString("<div id=host></div>");
-  Element* host = GetDocument().getElementById("host");
+  Element* host = GetElementById("host");
   ASSERT_TRUE(host);
 
   ShadowRoot& shadow_root = AttachShadow(*host);
   shadow_root.SetInnerHTMLFromString(
       "<style>::slotted(#dummy){color:pink}</style>");
-  GetDocument().View()->UpdateAllLifecyclePhases();
+  UpdateAllLifecyclePhases();
 
   EXPECT_TRUE(GetStyleEngine().TreeBoundaryCrossingScopes().IsEmpty());
   ASSERT_EQ(1u, shadow_root.StyleSheets().length());

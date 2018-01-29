@@ -72,7 +72,7 @@ class VideoCaptureBufferPoolTest
   VideoCaptureBufferPoolTest()
       : expected_dropped_id_(0),
         pool_(new media::VideoCaptureBufferPoolImpl(
-            base::MakeUnique<media::VideoCaptureBufferTrackerFactoryImpl>(),
+            std::make_unique<media::VideoCaptureBufferTrackerFactoryImpl>(),
             kTestBufferPoolSize)) {}
 
   void ExpectDroppedId(int expected_dropped_id) {
@@ -276,7 +276,7 @@ TEST_P(VideoCaptureBufferPoolTest, BufferPool) {
   // the lifetime of the underlying memory.
   buffer3.reset();
   ASSERT_EQ(2.0 / kTestBufferPoolSize, pool_->GetBufferPoolUtilization());
-  pool_ = NULL;
+  pool_ = nullptr;
 
   // Touch the memory.
   if (buffer2->data() != nullptr)

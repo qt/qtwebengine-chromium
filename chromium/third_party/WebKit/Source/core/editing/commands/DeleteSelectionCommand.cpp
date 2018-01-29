@@ -148,8 +148,8 @@ void DeleteSelectionCommand::InitializeStartEnd(Position& start,
     return;
 
   while (1) {
-    start_special_container = 0;
-    end_special_container = 0;
+    start_special_container = nullptr;
+    end_special_container = nullptr;
 
     Position s =
         PositionBeforeContainingSpecialElement(start, &start_special_container);
@@ -618,6 +618,7 @@ void DeleteSelectionCommand::HandleGeneralDelete(EditingState* editing_state) {
       return;
   }
 
+  GetDocument().UpdateStyleAndLayoutIgnorePendingStylesheets();
   if (start_offset >= CaretMaxOffset(start_node) && start_node->IsTextNode()) {
     Text* text = ToText(start_node);
     if (text->length() > (unsigned)CaretMaxOffset(start_node))
@@ -698,6 +699,7 @@ void DeleteSelectionCommand::HandleGeneralDelete(EditingState* editing_state) {
           return;
         node = next_node;
       } else {
+        GetDocument().UpdateStyleAndLayoutIgnorePendingStylesheets();
         Node& n = NodeTraversal::LastWithinOrSelf(*node);
         if (downstream_end_.AnchorNode() == n &&
             downstream_end_.ComputeEditingOffset() >= CaretMaxOffset(&n)) {
@@ -710,6 +712,10 @@ void DeleteSelectionCommand::HandleGeneralDelete(EditingState* editing_state) {
         }
       }
     }
+
+    // TODO(editing-dev): Hoist updateStyleAndLayoutIgnorePendingStylesheets
+    // to caller. See http://crbug.com/590369 for more details.
+    GetDocument().UpdateStyleAndLayoutIgnorePendingStylesheets();
 
     if (downstream_end_.AnchorNode() != start_node &&
         !upstream_start_.AnchorNode()->IsDescendantOf(
@@ -1243,7 +1249,7 @@ bool DeleteSelectionCommand::PreservesTypingStyle() const {
   return typing_style_;
 }
 
-DEFINE_TRACE(DeleteSelectionCommand) {
+void DeleteSelectionCommand::Trace(blink::Visitor* visitor) {
   visitor->Trace(selection_to_delete_);
   visitor->Trace(upstream_start_);
   visitor->Trace(downstream_start_);

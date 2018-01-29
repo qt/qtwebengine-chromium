@@ -6,6 +6,7 @@
 
 #include <stddef.h>
 
+#include <algorithm>
 #include <memory>
 #include <utility>
 
@@ -25,19 +26,18 @@
 #include "base/time/time.h"
 #include "base/values.h"
 #include "build/build_config.h"
-#include "content/grit/content_resources.h"
-#include "content/public/child/v8_value_converter.h"
 #include "content/public/common/content_features.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/url_constants.h"
 #include "content/public/renderer/render_frame.h"
 #include "content/public/renderer/render_thread.h"
+#include "content/public/renderer/v8_value_converter.h"
 #include "extensions/common/api/messaging/message.h"
 #include "extensions/common/constants.h"
 #include "extensions/common/extension_api.h"
+#include "extensions/common/extension_features.h"
 #include "extensions/common/extension_messages.h"
 #include "extensions/common/extension_urls.h"
-#include "extensions/common/feature_switch.h"
 #include "extensions/common/features/behavior_feature.h"
 #include "extensions/common/features/feature.h"
 #include "extensions/common/features/feature_channel.h"
@@ -74,6 +74,7 @@
 #include "extensions/renderer/js_extension_bindings_system.h"
 #include "extensions/renderer/logging_native_handler.h"
 #include "extensions/renderer/messaging_bindings.h"
+#include "extensions/renderer/messaging_util.h"
 #include "extensions/renderer/module_system.h"
 #include "extensions/renderer/native_extension_bindings_system.h"
 #include "extensions/renderer/process_info_native_handler.h"
@@ -101,6 +102,7 @@
 #include "extensions/renderer/worker_thread_dispatcher.h"
 #include "gin/converter.h"
 #include "mojo/public/js/constants.h"
+#include "mojo/public/js/grit/mojo_bindings_resources.h"
 #include "third_party/WebKit/public/platform/WebRuntimeFeatures.h"
 #include "third_party/WebKit/public/platform/WebString.h"
 #include "third_party/WebKit/public/platform/WebURLRequest.h"
@@ -120,7 +122,6 @@ using blink::WebDocument;
 using blink::WebScopedUserGesture;
 using blink::WebSecurityPolicy;
 using blink::WebString;
-using blink::WebVector;
 using blink::WebView;
 using content::RenderThread;
 
@@ -202,7 +203,7 @@ Dispatcher::Dispatcher(std::unique_ptr<DispatcherDelegate> delegate)
 
   std::unique_ptr<IPCMessageSender> ipc_message_sender =
       IPCMessageSender::CreateMainThreadIPCMessageSender();
-  if (FeatureSwitch::native_crx_bindings()->IsEnabled()) {
+  if (base::FeatureList::IsEnabled(features::kNativeCrxBindings)) {
     // This Unretained is safe because the IPCMessageSender is guaranteed to
     // outlive the bindings system.
     auto system = std::make_unique<NativeExtensionBindingsSystem>(
@@ -278,6 +279,7 @@ Dispatcher::~Dispatcher() {
 
 void Dispatcher::OnRenderFrameCreated(content::RenderFrame* render_frame) {
   script_injection_manager_->OnRenderFrameCreated(render_frame);
+  content_watcher_->OnRenderFrameCreated(render_frame);
 }
 
 bool Dispatcher::IsExtensionActive(const std::string& extension_id) const {
@@ -568,13 +570,6 @@ void Dispatcher::DidCreateDocumentElement(blink::WebLocalFrame* frame) {
     frame->GetDocument().InsertStyleSheet(
         WebString::FromUTF8(extension_css.data(), extension_css.length()));
   }
-
-  // In testing, the document lifetime events can happen after the render
-  // process shutdown event.
-  // See: http://crbug.com/21508 and http://crbug.com/500851
-  if (content_watcher_) {
-    content_watcher_->DidCreateDocumentElement(frame);
-  }
 }
 
 void Dispatcher::RunScriptsAtDocumentStart(content::RenderFrame* render_frame) {
@@ -651,9 +646,9 @@ void Dispatcher::InvokeModuleSystemMethod(content::RenderFrame* render_frame,
 }
 
 // static
-std::vector<std::pair<const char*, int>> Dispatcher::GetJsResources() {
+std::vector<Dispatcher::JsResourceInfo> Dispatcher::GetJsResources() {
   // Libraries.
-  std::vector<std::pair<const char*, int>> resources = {
+  std::vector<JsResourceInfo> resources = {
       {"appView", IDR_APP_VIEW_JS},
       {"entryIdManager", IDR_ENTRY_ID_MANAGER},
       {"extensionOptions", IDR_EXTENSION_OPTIONS_JS},
@@ -697,7 +692,7 @@ std::vector<std::pair<const char*, int>> Dispatcher::GetJsResources() {
       {"webViewInternal", IDR_WEB_VIEW_INTERNAL_CUSTOM_BINDINGS_JS},
 
       {mojo::kAssociatedBindingsModuleName, IDR_MOJO_ASSOCIATED_BINDINGS_JS},
-      {mojo::kBindingsModuleName, IDR_MOJO_BINDINGS_JS},
+      {mojo::kBindingsModuleName, IDR_MOJO_BINDINGS_JS_DEPRECATED},
       {mojo::kBufferModuleName, IDR_MOJO_BUFFER_JS},
       {mojo::kCodecModuleName, IDR_MOJO_CODEC_JS},
       {mojo::kConnectorModuleName, IDR_MOJO_CONNECTOR_JS},
@@ -722,6 +717,7 @@ std::vector<std::pair<const char*, int>> Dispatcher::GetJsResources() {
       {mojo::kValidatorModuleName, IDR_MOJO_VALIDATOR_JS},
       {"async_waiter", IDR_ASYNC_WAITER_JS},
       {"keep_alive", IDR_KEEP_ALIVE_JS},
+      {"mojo_bindings", IDR_MOJO_BINDINGS_JS, true},
       {"extensions/common/mojo/keep_alive.mojom", IDR_KEEP_ALIVE_MOJOM_JS},
 
       // Custom bindings.
@@ -745,20 +741,20 @@ std::vector<std::pair<const char*, int>> Dispatcher::GetJsResources() {
       {"platformApp", IDR_PLATFORM_APP_JS},
   };
 
-  if (!FeatureSwitch::native_crx_bindings()->IsEnabled()) {
-    resources.emplace_back("binding", IDR_BINDING_JS);
-    resources.emplace_back(kEventBindings, IDR_EVENT_BINDINGS_JS);
-    resources.emplace_back("lastError", IDR_LAST_ERROR_JS);
-    resources.emplace_back("sendRequest", IDR_SEND_REQUEST_JS);
+  if (!base::FeatureList::IsEnabled(features::kNativeCrxBindings)) {
+    resources.push_back({"binding", IDR_BINDING_JS});
+    resources.push_back({kEventBindings, IDR_EVENT_BINDINGS_JS});
+    resources.push_back({"lastError", IDR_LAST_ERROR_JS});
+    resources.push_back({"sendRequest", IDR_SEND_REQUEST_JS});
 
     // Custom types sources.
-    resources.emplace_back("StorageArea", IDR_STORAGE_AREA_JS);
+    resources.push_back({"StorageArea", IDR_STORAGE_AREA_JS});
   }
 
   if (base::FeatureList::IsEnabled(::features::kGuestViewCrossProcessFrames)) {
-    resources.emplace_back("guestViewIframe", IDR_GUEST_VIEW_IFRAME_JS);
-    resources.emplace_back("guestViewIframeContainer",
-                           IDR_GUEST_VIEW_IFRAME_CONTAINER_JS);
+    resources.push_back({"guestViewIframe", IDR_GUEST_VIEW_IFRAME_JS});
+    resources.push_back(
+        {"guestViewIframeContainer", IDR_GUEST_VIEW_IFRAME_CONTAINER_JS});
   }
 
   return resources;
@@ -930,6 +926,13 @@ void Dispatcher::OnActivateExtension(const std::string& extension_id) {
     LOG(FATAL) << extension_id << " was never loaded: " << error;
   }
 
+  // It's possible that the same extension might generate multiple activation
+  // messages, for example from an extension background page followed by an
+  // extension subframe on a regular tab.  Ensure that any given extension is
+  // only activated once.
+  if (IsExtensionActive(extension_id))
+    return;
+
   active_extension_ids_.insert(extension_id);
 
   // This is called when starting a new extension page, so start the idle
@@ -1067,6 +1070,9 @@ void Dispatcher::OnSetSessionInfo(version_info::Channel channel,
     blink::WebSecurityPolicy::RegisterURLSchemeAsAllowingServiceWorkers(
         blink::WebString::FromUTF8(extensions::kExtensionScheme));
   }
+
+  blink::WebSecurityPolicy::RegisterURLSchemeAsAllowingWasmEvalCSP(
+      blink::WebString::FromUTF8(extensions::kExtensionScheme));
 }
 
 void Dispatcher::OnSetScriptingWhitelist(
@@ -1341,9 +1347,7 @@ void Dispatcher::RegisterNativeHandlers(
   int manifest_version = extension ? extension->manifest_version() : 1;
   bool is_component_extension =
       extension && Manifest::IsComponentLocation(extension->location());
-  bool send_request_disabled =
-      (extension && Manifest::IsUnpackedLocation(extension->location()) &&
-       BackgroundInfo::HasLazyBackgroundPage(extension));
+  bool send_request_disabled = messaging_util::IsSendRequestDisabled(context);
   module_system->RegisterNativeHandler(
       "process",
       std::unique_ptr<NativeHandler>(new ProcessInfoNativeHandler(
@@ -1378,10 +1382,9 @@ void Dispatcher::UpdateContentCapabilities(ScriptContext* context) {
 }
 
 void Dispatcher::PopulateSourceMap() {
-  const std::vector<std::pair<const char*, int>> resources = GetJsResources();
-  for (const auto& resource : resources) {
-    source_map_.RegisterSource(resource.first, resource.second);
-  }
+  const std::vector<JsResourceInfo> resources = GetJsResources();
+  for (const auto& resource : resources)
+    source_map_.RegisterSource(resource.name, resource.id, resource.gzipped);
   delegate_->PopulateSourceMap(&source_map_);
 }
 

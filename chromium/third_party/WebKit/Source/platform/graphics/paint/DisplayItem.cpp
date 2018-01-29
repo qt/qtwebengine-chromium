@@ -12,14 +12,11 @@ struct SameSizeAsDisplayItem {
   LayoutRect rect;
   LayoutUnit outset;
   int i;
-#ifndef NDEBUG
-  WTF::String debug_string_;
-#endif
 };
 static_assert(sizeof(DisplayItem) == sizeof(SameSizeAsDisplayItem),
               "DisplayItem should stay small");
 
-#ifndef NDEBUG
+#if DCHECK_IS_ON()
 
 static WTF::String PaintPhaseAsDebugString(int paint_phase) {
   // Must be kept in sync with PaintPhase.
@@ -90,6 +87,7 @@ static WTF::String SpecialDrawingTypeAsDebugString(DisplayItem::Type type) {
     DEBUG_STRING_CASE(PrintedContentPDFURLRect);
     DEBUG_STRING_CASE(Resizer);
     DEBUG_STRING_CASE(SVGClip);
+    DEBUG_STRING_CASE(SVGClipBoundsHack);
     DEBUG_STRING_CASE(SVGFilter);
     DEBUG_STRING_CASE(SVGMask);
     DEBUG_STRING_CASE(ScrollbarBackButtonEnd);
@@ -225,17 +223,10 @@ WTF::String DisplayItem::AsDebugString() const {
 }
 
 void DisplayItem::PropertiesAsJSON(JSONObject& json) const {
-  if (!HasValidClient()) {
-    json.SetBoolean("validClient", false);
-    json.SetString("originalDebugString", ClientDebugString());
-    return;
-  }
+  if (IsTombstone())
+    json.SetBoolean("ISTOMBSTONE", true);
 
-  json.SetString("client",
-                 ClientDebugString().IsEmpty()
-                     ? String::Format("%p", &Client())
-                     : String::Format("%p %s", &Client(),
-                                      ClientDebugString().Utf8().data()));
+  json.SetString("client", String::Format("%p", &Client()));
   json.SetString("visualRect", VisualRect().ToString());
   if (OutsetForRasterEffects())
     json.SetDouble("outset", OutsetForRasterEffects().ToDouble());

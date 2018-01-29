@@ -19,7 +19,6 @@
 #include "SkCommonFlags.h"
 #include "SkData.h"
 #include "SkDebugCanvas.h"
-#include "SkDeferredCanvas.h"
 #include "SkDeferredDisplayListRecorder.h"
 #include "SkDocument.h"
 #include "SkExecutor.h"
@@ -942,7 +941,7 @@ Error ImageGenSrc::draw(SkCanvas* canvas) const {
             break;
         case kPlatform_Mode: {
 #if defined(SK_BUILD_FOR_MAC) || defined(SK_BUILD_FOR_IOS)
-            gen.reset(SkImageGeneratorCG::NewFromEncodedCG(encoded.get()));
+            gen = SkImageGeneratorCG::MakeFromEncodedCG(encoded);
 #elif defined(SK_BUILD_FOR_WIN)
             gen.reset(SkImageGeneratorWIC::NewFromEncodedWIC(encoded.get()));
 #endif
@@ -1961,16 +1960,6 @@ Error ViaPicture::draw(const Src& src, SkBitmap* bitmap, SkWStream* stream, SkSt
 
 /*~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~*/
 
-Error ViaDefer::draw(const Src& src, SkBitmap* bitmap, SkWStream* stream, SkString* log) const {
-    auto size = src.size();
-    return draw_to_canvas(fSink.get(), bitmap, stream, log, size, [&](SkCanvas* canvas) -> Error {
-        SkDeferredCanvas deferred(canvas, SkDeferredCanvas::kEager);
-        return src.draw(&deferred);
-    });
-}
-
-/*~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~*/
-
 Error ViaPipe::draw(const Src& src, SkBitmap* bitmap, SkWStream* stream, SkString* log) const {
     auto size = src.size();
     return draw_to_canvas(fSink.get(), bitmap, stream, log, size, [&](SkCanvas* canvas) -> Error {
@@ -2153,10 +2142,13 @@ ViaCSXform::ViaCSXform(Sink* sink, sk_sp<SkColorSpace> cs, bool colorSpin)
 Error ViaCSXform::draw(const Src& src, SkBitmap* bitmap, SkWStream* stream, SkString* log) const {
     return draw_to_canvas(fSink.get(), bitmap, stream, log, src.size(),
                           [&](SkCanvas* canvas) -> Error {
-        auto proxy = SkCreateColorSpaceXformCanvas(canvas, fCS);
-        Error err = src.draw(proxy.get());
-        if (!err.isEmpty()) {
-            return err;
+        {
+            SkAutoCanvasRestore acr(canvas, true);
+            auto proxy = SkCreateColorSpaceXformCanvas(canvas, fCS);
+            Error err = src.draw(proxy.get());
+            if (!err.isEmpty()) {
+                return err;
+            }
         }
 
         // Undo the color spin, so we can look at the pixels in Gold.
@@ -2164,19 +2156,15 @@ Error ViaCSXform::draw(const Src& src, SkBitmap* bitmap, SkWStream* stream, SkSt
             SkBitmap pixels;
             pixels.allocPixels(canvas->imageInfo());
             canvas->readPixels(pixels, 0, 0);
-            for (int y = 0; y < pixels.height(); y++) {
-                for (int x = 0; x < pixels.width(); x++) {
-                    uint32_t pixel = *pixels.getAddr32(x, y);
-                    uint8_t r = SkGetPackedR32(pixel);
-                    uint8_t g = SkGetPackedG32(pixel);
-                    uint8_t b = SkGetPackedB32(pixel);
-                    uint8_t a = SkGetPackedA32(pixel);
-                    *pixels.getAddr32(x, y) =
-                            SkSwizzle_RGBA_to_PMColor(b << 0 | r << 8 | g << 16 | a << 24);
-                }
-            }
 
-            canvas->writePixels(pixels, 0, 0);
+            SkPaint rotateColors;
+            SkScalar matrix[20] = { 0, 0, 1, 0, 0,   // B -> R
+                                    1, 0, 0, 0, 0,   // R -> G
+                                    0, 1, 0, 0, 0,   // G -> B
+                                    0, 0, 0, 1, 0 };
+            rotateColors.setBlendMode(SkBlendMode::kSrc);
+            rotateColors.setColorFilter(SkColorFilter::MakeMatrixFilterRowMajor255(matrix));
+            canvas->drawBitmap(pixels, 0, 0, &rotateColors);
         }
 
         return "";

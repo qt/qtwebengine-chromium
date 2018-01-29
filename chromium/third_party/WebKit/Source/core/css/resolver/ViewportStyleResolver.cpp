@@ -32,11 +32,11 @@
 #include "core/CSSValueKeywords.h"
 #include "core/css/CSSDefaultStyleSheets.h"
 #include "core/css/CSSPrimitiveValueMappings.h"
+#include "core/css/CSSPropertyValueSet.h"
 #include "core/css/CSSStyleSheet.h"
 #include "core/css/CSSToLengthConversionData.h"
 #include "core/css/DocumentStyleSheetCollection.h"
 #include "core/css/MediaValuesInitialViewport.h"
-#include "core/css/StylePropertySet.h"
 #include "core/css/StyleRule.h"
 #include "core/css/StyleRuleImport.h"
 #include "core/css/StyleSheetContents.h"
@@ -159,7 +159,7 @@ void ViewportStyleResolver::CollectViewportRulesFromAuthorSheet(
 
 void ViewportStyleResolver::AddViewportRule(StyleRuleViewport& viewport_rule,
                                             Origin origin) {
-  StylePropertySet& property_set = viewport_rule.MutableProperties();
+  CSSPropertyValueSet& property_set = viewport_rule.MutableProperties();
 
   unsigned property_count = property_set.PropertyCount();
   if (!property_count)
@@ -175,9 +175,10 @@ void ViewportStyleResolver::AddViewportRule(StyleRuleViewport& viewport_rule,
 
   // We cannot use mergeAndOverrideOnConflict() here because it doesn't
   // respect the !important declaration (but addRespectingCascade() does).
-  for (unsigned i = 0; i < property_count; ++i)
+  for (unsigned i = 0; i < property_count; ++i) {
     property_set_->AddRespectingCascade(
-        property_set.PropertyAt(i).ToCSSProperty());
+        property_set.PropertyAt(i).ToCSSPropertyValue());
+  }
 }
 
 void ViewportStyleResolver::Resolve() {
@@ -347,7 +348,7 @@ void ViewportStyleResolver::UpdateViewport(
   needs_update_ = kNoUpdate;
 }
 
-DEFINE_TRACE(ViewportStyleResolver) {
+void ViewportStyleResolver::Trace(blink::Visitor* visitor) {
   visitor->Trace(document_);
   visitor->Trace(property_set_);
   visitor->Trace(initial_viewport_medium_);

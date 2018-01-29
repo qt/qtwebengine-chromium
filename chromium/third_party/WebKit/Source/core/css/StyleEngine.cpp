@@ -42,6 +42,7 @@
 #include "core/css/resolver/StyleRuleUsageTracker.h"
 #include "core/css/resolver/ViewportStyleResolver.h"
 #include "core/dom/Element.h"
+#include "core/dom/ElementShadow.h"
 #include "core/dom/ElementTraversal.h"
 #include "core/dom/ProcessingInstruction.h"
 #include "core/dom/ShadowRoot.h"
@@ -80,7 +81,7 @@ StyleEngine::StyleEngine(Document& document)
     global_rule_set_ = CSSGlobalRuleSet::Create();
 }
 
-StyleEngine::~StyleEngine() {}
+StyleEngine::~StyleEngine() = default;
 
 inline Document* StyleEngine::Master() {
   if (IsMaster())
@@ -139,19 +140,32 @@ StyleEngine::StyleSheetsForStyleSheetList(TreeScope& tree_scope) {
   return collection.StyleSheetsForStyleSheetList();
 }
 
-WebStyleSheetId StyleEngine::InjectAuthorSheet(
-    StyleSheetContents* author_sheet) {
-  injected_author_style_sheets_.push_back(
-      std::make_pair(++injected_author_sheets_id_count_,
-                     CSSStyleSheet::Create(author_sheet, *document_)));
+WebStyleSheetId StyleEngine::InjectSheet(StyleSheetContents* sheet,
+                                         WebDocument::CSSOrigin origin) {
+  if (origin == WebDocument::kUserOrigin) {
+    injected_user_style_sheets_.push_back(
+        std::make_pair(++injected_sheets_id_count_,
+                       CSSStyleSheet::Create(sheet, *document_)));
+    MarkUserStyleDirty();
+  } else {
+    injected_author_style_sheets_.push_back(
+        std::make_pair(++injected_sheets_id_count_,
+                       CSSStyleSheet::Create(sheet, *document_)));
+    MarkDocumentDirty();
+  }
 
-  MarkDocumentDirty();
-  return injected_author_sheets_id_count_;
+  return injected_sheets_id_count_;
 }
 
-void StyleEngine::RemoveInjectedAuthorSheet(WebStyleSheetId author_sheet_id) {
+void StyleEngine::RemoveInjectedSheet(WebStyleSheetId sheet_id) {
+  for (size_t i = 0; i < injected_user_style_sheets_.size(); ++i) {
+    if (injected_user_style_sheets_[i].first == sheet_id) {
+      injected_user_style_sheets_.EraseAt(i);
+      MarkUserStyleDirty();
+    }
+  }
   for (size_t i = 0; i < injected_author_style_sheets_.size(); ++i) {
-    if (injected_author_style_sheets_[i].first == author_sheet_id) {
+    if (injected_author_style_sheets_[i].first == sheet_id) {
       injected_author_style_sheets_.EraseAt(i);
       MarkDocumentDirty();
     }
@@ -275,7 +289,7 @@ void StyleEngine::WatchedSelectorsChanged() {
 }
 
 bool StyleEngine::ShouldUpdateDocumentStyleSheetCollection() const {
-  return all_tree_scopes_dirty_ || document_scope_dirty_;
+  return all_tree_scopes_dirty_ || document_scope_dirty_ || font_cache_dirty_;
 }
 
 bool StyleEngine::ShouldUpdateShadowTreeStyleSheetCollection() const {
@@ -339,6 +353,21 @@ void StyleEngine::UpdateActiveStyleSheetsInShadow(
   }
 }
 
+void StyleEngine::UpdateActiveUserStyleSheets() {
+  DCHECK(user_style_dirty_);
+
+  ActiveStyleSheetVector new_active_sheets;
+  for (auto& sheet : injected_user_style_sheets_) {
+    if (RuleSet* rule_set = RuleSetForSheet(*sheet.second))
+      new_active_sheets.push_back(std::make_pair(sheet.second, rule_set));
+  }
+
+  ApplyRuleSetChanges(*document_, active_user_style_sheets_, new_active_sheets,
+                      kInvalidateAllScopes);
+
+  new_active_sheets.swap(active_user_style_sheets_);
+}
+
 void StyleEngine::UpdateActiveStyleSheets() {
   if (!NeedsActiveStyleSheetUpdate())
     return;
@@ -348,6 +377,9 @@ void StyleEngine::UpdateActiveStyleSheets() {
   DCHECK(GetDocument().IsActive());
 
   TRACE_EVENT0("blink,blink_style", "StyleEngine::updateActiveStyleSheets");
+
+  if (user_style_dirty_)
+    UpdateActiveUserStyleSheets();
 
   if (ShouldUpdateDocumentStyleSheetCollection())
     GetDocumentStyleSheetCollection().UpdateActiveStyleSheets(*this);
@@ -372,6 +404,7 @@ void StyleEngine::UpdateActiveStyleSheets() {
   document_scope_dirty_ = false;
   all_tree_scopes_dirty_ = false;
   tree_scopes_removed_ = false;
+  user_style_dirty_ = false;
 }
 
 void StyleEngine::UpdateViewport() {
@@ -504,6 +537,20 @@ void StyleEngine::ClearFontCache() {
     resolver_->InvalidateMatchedPropertiesCache();
 }
 
+void StyleEngine::RefreshFontCache() {
+  DCHECK(IsFontCacheDirty());
+
+  ClearFontCache();
+
+  // Rebuild the font cache with @font-face rules from user style sheets.
+  for (unsigned i = 0; i < active_user_style_sheets_.size(); ++i) {
+    DCHECK(active_user_style_sheets_[i].second);
+    AddFontFaceRules(*active_user_style_sheets_[i].second);
+  }
+
+  font_cache_dirty_ = false;
+}
+
 void StyleEngine::UpdateGenericFontFamilySettings() {
   // FIXME: we should not update generic font family settings when
   // document is inactive.
@@ -552,6 +599,11 @@ void StyleEngine::MarkDocumentDirty() {
     GetDocument().MasterDocument().GetStyleEngine().MarkDocumentDirty();
   else
     GetDocument().ScheduleLayoutTreeUpdateIfNeeded();
+}
+
+void StyleEngine::MarkUserStyleDirty() {
+  user_style_dirty_ = true;
+  GetDocument().ScheduleLayoutTreeUpdateIfNeeded();
 }
 
 CSSStyleSheet* StyleEngine::CreateSheet(Element& element,
@@ -929,7 +981,8 @@ void StyleEngine::InvalidateSlottedElements(HTMLSlotElement& slot) {
 
 void StyleEngine::ScheduleInvalidationsForRuleSets(
     TreeScope& tree_scope,
-    const HeapHashSet<Member<RuleSet>>& rule_sets) {
+    const HeapHashSet<Member<RuleSet>>& rule_sets,
+    InvalidationScope invalidation_scope) {
 #if DCHECK_IS_ON()
   // Full scope recalcs should be handled while collecting the ruleSets before
   // calling this method.
@@ -962,6 +1015,16 @@ void StyleEngine::ScheduleInvalidationsForRuleSets(
     ScheduleRuleSetInvalidationsForElement(*element, rule_sets);
     if (invalidate_slotted && IsHTMLSlotElement(element))
       InvalidateSlottedElements(ToHTMLSlotElement(*element));
+
+    if (invalidation_scope == kInvalidateAllScopes) {
+      ElementShadow* shadow = element->Shadow();
+      ShadowRoot* shadow_root = shadow ? &shadow->OldestShadowRoot() : nullptr;
+      while (shadow_root) {
+        ScheduleInvalidationsForRuleSets(*shadow_root, rule_sets,
+                                         kInvalidateAllScopes);
+        shadow_root = shadow_root->YoungerShadowRoot();
+      }
+    }
 
     if (element->GetStyleChangeType() < kSubtreeStyleChange)
       element = ElementTraversal::Next(*element, stay_within);
@@ -1071,6 +1134,15 @@ void StyleEngine::HtmlImportAddedOrRemoved() {
   }
 }
 
+void StyleEngine::V0ShadowAddedOnV1Document() {
+  // No need to look into the ScopedStyleResolver for document, as ::slotted
+  // never matches anything in a document tree.
+  for (TreeScope* tree_scope : active_tree_scopes_) {
+    if (ScopedStyleResolver* resolver = tree_scope->GetScopedStyleResolver())
+      resolver->V0ShadowAddedOnV1Document();
+  }
+}
+
 namespace {
 
 enum RuleSetFlags {
@@ -1098,19 +1170,31 @@ unsigned GetRuleSetFlags(const HeapHashSet<Member<RuleSet>> rule_sets) {
 void StyleEngine::ApplyRuleSetChanges(
     TreeScope& tree_scope,
     const ActiveStyleSheetVector& old_style_sheets,
-    const ActiveStyleSheetVector& new_style_sheets) {
+    const ActiveStyleSheetVector& new_style_sheets,
+    InvalidationScope invalidation_scope) {
   DCHECK(IsMaster());
   DCHECK(global_rule_set_);
   HeapHashSet<Member<RuleSet>> changed_rule_sets;
 
-  ScopedStyleResolver* scoped_resolver = tree_scope.GetScopedStyleResolver();
-  bool append_all_sheets =
-      scoped_resolver && scoped_resolver->NeedsAppendAllSheets();
-
   ActiveSheetsChange change = CompareActiveStyleSheets(
       old_style_sheets, new_style_sheets, changed_rule_sets);
-  if (change == kNoActiveSheetsChanged && !append_all_sheets)
-    return;
+  bool append_all_sheets = false;
+
+  if (invalidation_scope == kInvalidateCurrentScope) {
+    if (ScopedStyleResolver* scoped_resolver =
+            tree_scope.GetScopedStyleResolver())
+      append_all_sheets = scoped_resolver->NeedsAppendAllSheets();
+
+    // When the font cache is dirty we have to rebuild it and then add all the
+    // @font-face rules in the document scope.
+    if (IsFontCacheDirty()) {
+      DCHECK(tree_scope.RootNode().IsDocumentNode());
+      append_all_sheets = true;
+    }
+
+    if (change == kNoActiveSheetsChanged && !append_all_sheets)
+      return;
+  }
 
   // With rules added or removed, we need to re-aggregate rule meta data.
   global_rule_set_->MarkDirty();
@@ -1118,29 +1202,53 @@ void StyleEngine::ApplyRuleSetChanges(
   unsigned changed_rule_flags = GetRuleSetFlags(changed_rule_sets);
   bool fonts_changed = tree_scope.RootNode().IsDocumentNode() &&
                        (changed_rule_flags & kFontFaceRules);
+  bool keyframes_changed = changed_rule_flags & kKeyframesRules;
   unsigned append_start_index = 0;
 
-  // We don't need to clear the font cache if new sheets are appended.
-  if (fonts_changed && change == kActiveSheetsChanged)
-    ClearFontCache();
-
-  // - If all sheets were removed, we remove the ScopedStyleResolver.
-  // - If new sheets were appended to existing ones, start appending after the
-  //   common prefix.
-  // - For other diffs, reset author style and re-add all sheets for the
-  //   TreeScope.
-  if (tree_scope.GetScopedStyleResolver()) {
-    if (new_style_sheets.IsEmpty())
-      ResetAuthorStyle(tree_scope);
-    else if (change == kActiveSheetsAppended && !append_all_sheets)
-      append_start_index = old_style_sheets.size();
-    else
-      tree_scope.GetScopedStyleResolver()->ResetAuthorStyle();
+  // We don't need to mark the font cache dirty if new sheets are appended.
+  if (fonts_changed && (invalidation_scope == kInvalidateAllScopes ||
+                        change == kActiveSheetsChanged)) {
+    MarkFontCacheDirty();
   }
 
-  if (!new_style_sheets.IsEmpty()) {
-    tree_scope.EnsureScopedStyleResolver().AppendActiveStyleSheets(
-        append_start_index, new_style_sheets);
+  if (invalidation_scope == kInvalidateAllScopes) {
+    if (keyframes_changed) {
+      if (change == kActiveSheetsChanged)
+        ClearKeyframeRules();
+
+      for (auto it = new_style_sheets.begin();
+           it != new_style_sheets.end(); it++) {
+        DCHECK(it->second);
+        AddKeyframeRules(*it->second);
+      }
+    }
+  }
+
+  if (invalidation_scope == kInvalidateCurrentScope) {
+    if (IsFontCacheDirty()) {
+      DCHECK(tree_scope.RootNode().IsDocumentNode());
+      DCHECK(change != kActiveSheetsAppended || append_all_sheets);
+      RefreshFontCache();
+    }
+
+    // - If all sheets were removed, we remove the ScopedStyleResolver.
+    // - If new sheets were appended to existing ones, start appending after the
+    //   common prefix.
+    // - For other diffs, reset author style and re-add all sheets for the
+    //   TreeScope.
+    if (tree_scope.GetScopedStyleResolver()) {
+      if (new_style_sheets.IsEmpty())
+        ResetAuthorStyle(tree_scope);
+      else if (change == kActiveSheetsAppended && !append_all_sheets)
+        append_start_index = old_style_sheets.size();
+      else
+        tree_scope.GetScopedStyleResolver()->ResetAuthorStyle();
+    }
+
+    if (!new_style_sheets.IsEmpty()) {
+      tree_scope.EnsureScopedStyleResolver().AppendActiveStyleSheets(
+          append_start_index, new_style_sheets);
+    }
   }
 
   if (tree_scope.GetDocument().HasPendingForcedStyleRecalc())
@@ -1157,7 +1265,7 @@ void StyleEngine::ApplyRuleSetChanges(
   if (changed_rule_sets.IsEmpty())
     return;
 
-  if (changed_rule_flags & kKeyframesRules)
+  if (keyframes_changed)
     ScopedStyleResolver::KeyframesRulesAdded(tree_scope);
 
   Node& invalidation_root =
@@ -1172,7 +1280,8 @@ void StyleEngine::ApplyRuleSetChanges(
     return;
   }
 
-  ScheduleInvalidationsForRuleSets(tree_scope, changed_rule_sets);
+  ScheduleInvalidationsForRuleSets(tree_scope, changed_rule_sets,
+                                   invalidation_scope);
 }
 
 const MediaQueryEvaluator& StyleEngine::EnsureMediaQueryEvaluator() {
@@ -1275,9 +1384,69 @@ void StyleEngine::NodeWillBeRemoved(Node& node) {
   }
 }
 
-DEFINE_TRACE(StyleEngine) {
+void StyleEngine::CollectMatchingUserRules(
+    ElementRuleCollector& collector) const {
+  for (unsigned i = 0; i < active_user_style_sheets_.size(); ++i) {
+    DCHECK(active_user_style_sheets_[i].second);
+    collector.CollectMatchingRules(
+        MatchRequest(active_user_style_sheets_[i].second, nullptr,
+                     active_user_style_sheets_[i].first, i));
+  }
+}
+
+void StyleEngine::AddFontFaceRules(const RuleSet& rule_set) {
+  if (!font_selector_)
+    return;
+
+  const HeapVector<Member<StyleRuleFontFace>> font_face_rules =
+      rule_set.FontFaceRules();
+  for (auto& font_face_rule : font_face_rules) {
+    if (FontFace* font_face = FontFace::Create(document_, font_face_rule))
+      font_selector_->GetFontFaceCache()->Add(font_face_rule, font_face);
+  }
+  if (resolver_ && font_face_rules.size())
+    resolver_->InvalidateMatchedPropertiesCache();
+}
+
+void StyleEngine::AddKeyframeRules(const RuleSet& rule_set) {
+  const HeapVector<Member<StyleRuleKeyframes>> keyframes_rules =
+      rule_set.KeyframesRules();
+  for (unsigned i = 0; i < keyframes_rules.size(); ++i)
+    AddKeyframeStyle(keyframes_rules[i]);
+}
+
+void StyleEngine::AddKeyframeStyle(StyleRuleKeyframes* rule) {
+  AtomicString animation_name(rule->GetName());
+
+  if (rule->IsVendorPrefixed()) {
+    KeyframesRuleMap::iterator it = keyframes_rule_map_.find(animation_name);
+    if (it == keyframes_rule_map_.end())
+      keyframes_rule_map_.Set(animation_name, rule);
+    else if (it->value->IsVendorPrefixed())
+      keyframes_rule_map_.Set(animation_name, rule);
+  } else {
+    keyframes_rule_map_.Set(animation_name, rule);
+  }
+}
+
+StyleRuleKeyframes* StyleEngine::KeyframeStylesForAnimation(
+    const AtomicString& animation_name) {
+  if (keyframes_rule_map_.IsEmpty())
+    return nullptr;
+
+  KeyframesRuleMap::iterator it = keyframes_rule_map_.find(animation_name);
+  if (it == keyframes_rule_map_.end())
+    return nullptr;
+
+  return it->value.Get();
+}
+
+void StyleEngine::Trace(blink::Visitor* visitor) {
   visitor->Trace(document_);
+  visitor->Trace(injected_user_style_sheets_);
   visitor->Trace(injected_author_style_sheets_);
+  visitor->Trace(active_user_style_sheets_);
+  visitor->Trace(keyframes_rule_map_);
   visitor->Trace(inspector_style_sheet_);
   visitor->Trace(document_style_sheet_collection_);
   visitor->Trace(style_sheet_collection_map_);
@@ -1297,7 +1466,10 @@ DEFINE_TRACE(StyleEngine) {
   FontSelectorClient::Trace(visitor);
 }
 
-DEFINE_TRACE_WRAPPERS(StyleEngine) {
+void StyleEngine::TraceWrappers(const ScriptWrappableVisitor* visitor) const {
+  for (const auto& sheet : injected_user_style_sheets_) {
+    visitor->TraceWrappers(sheet.second);
+  }
   for (const auto& sheet : injected_author_style_sheets_) {
     visitor->TraceWrappers(sheet.second);
   }

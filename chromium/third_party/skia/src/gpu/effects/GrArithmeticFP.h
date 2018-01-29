@@ -14,7 +14,6 @@
 #if SK_SUPPORT_GPU
 #include "GrFragmentProcessor.h"
 #include "GrCoordTransform.h"
-#include "GrColorSpaceXform.h"
 class GrArithmeticFP : public GrFragmentProcessor {
 public:
     float k1() const { return fK1; }
@@ -26,7 +25,7 @@ public:
                                                      bool enforcePMColor,
                                                      std::unique_ptr<GrFragmentProcessor> child) {
         return std::unique_ptr<GrFragmentProcessor>(
-                new GrArithmeticFP(k1, k2, k3, k4, enforcePMColor, child->clone()));
+                new GrArithmeticFP(k1, k2, k3, k4, enforcePMColor, std::move(child)));
     }
     GrArithmeticFP(const GrArithmeticFP& src);
     std::unique_ptr<GrFragmentProcessor> clone() const override;

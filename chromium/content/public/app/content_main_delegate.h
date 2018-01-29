@@ -9,12 +9,19 @@
 #include <string>
 #include <vector>
 
+#include "base/callback_forward.h"
 #include "build/build_config.h"
 #include "content/common/content_export.h"
-#include "services/service_manager/background/background_service_manager.h"
 #include "services/service_manager/embedder/process_type.h"
-#include "services/service_manager/public/cpp/identity.h"
-#include "services/service_manager/public/cpp/service.h"
+
+namespace base {
+class CommandLine;
+}
+
+namespace service_manager {
+class BackgroundServiceManager;
+class Identity;
+}  // namespace service_manager
 
 namespace content {
 
@@ -69,7 +76,7 @@ class CONTENT_EXPORT ContentMainDelegate {
   // want it at all.
   virtual bool DelaySandboxInitialization(const std::string& process_type);
 
-#elif defined(OS_POSIX) && !defined(OS_ANDROID)
+#elif defined(OS_LINUX)
   // Tells the embedder that the zygote process is starting, and allows it to
   // specify one or more zygote delegates if it wishes by storing them in
   // |*delegates|.
@@ -78,7 +85,7 @@ class CONTENT_EXPORT ContentMainDelegate {
 
   // Called every time the zygote process forks.
   virtual void ZygoteForked() {}
-#endif  // OS_MACOSX
+#endif  // defined(OS_LINUX)
 
   // TODO(vadimt, yiyaoliu): Remove this function once crbug.com/453640 is
   // fixed.
@@ -94,13 +101,6 @@ class CONTENT_EXPORT ContentMainDelegate {
   virtual void AdjustServiceProcessCommandLine(
       const service_manager::Identity& identity,
       base::CommandLine* command_line);
-
-  // Indicates if the Service Manager should be terminated in response to a
-  // specific service instance quitting. If this returns |true|, the value in
-  // |*exit_code| will be returned from the Service Manager's process on exit.
-  virtual bool ShouldTerminateServiceManagerOnInstanceQuit(
-      const service_manager::Identity& identity,
-      int* exit_code);
 
   // Allows the embedder to perform arbitrary initialization within the Service
   // Manager process immediately before the Service Manager runs its main loop.

@@ -5,8 +5,8 @@
 #include "components/autofill/content/common/autofill_types_struct_traits.h"
 
 #include "base/i18n/rtl.h"
-#include "ipc/ipc_message_utils.h"
 #include "mojo/common/common_custom_types_struct_traits.h"
+#include "mojo/common/time_struct_traits.h"
 #include "url/mojo/origin_struct_traits.h"
 #include "url/mojo/url_gurl_struct_traits.h"
 
@@ -641,6 +641,7 @@ bool StructTraits<
   out->is_public_suffix_match = data.is_public_suffix_match();
   out->is_affiliation_based_match = data.is_affiliation_based_match();
   out->does_look_like_signup_form = data.does_look_like_signup_form();
+  out->only_for_fallback_saving = data.only_for_fallback_saving();
 
   return true;
 }

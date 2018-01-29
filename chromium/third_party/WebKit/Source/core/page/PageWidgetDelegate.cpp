@@ -45,7 +45,7 @@
 #include "platform/graphics/paint/DrawingRecorder.h"
 #include "platform/graphics/paint/PaintRecordBuilder.h"
 #include "platform/transforms/AffineTransform.h"
-#include "platform/wtf/CurrentTime.h"
+#include "platform/wtf/Time.h"
 #include "public/platform/WebInputEvent.h"
 
 namespace blink {
@@ -69,9 +69,7 @@ static void PaintInternal(Page& page,
   if (rect.IsEmpty())
     return;
 
-  IntRect int_rect(rect);
-  // TODO(enne): intRect is not correct: http://crbug.com/703231
-  PaintRecordBuilder builder(int_rect);
+  PaintRecordBuilder builder;
   {
     GraphicsContext& paint_context = builder.Context();
 
@@ -94,9 +92,9 @@ static void PaintInternal(Page& page,
       view->PaintWithLifecycleUpdate(paint_context, global_paint_flags,
                                      CullRect(dirty_rect));
     } else {
-      DrawingRecorder drawing_recorder(
+      DrawingRecorder recorder(
           paint_context, builder,
-          DisplayItem::kPageWidgetDelegateBackgroundFallback, dirty_rect);
+          DisplayItem::kPageWidgetDelegateBackgroundFallback);
       paint_context.FillRect(dirty_rect, Color::kWhite);
     }
   }

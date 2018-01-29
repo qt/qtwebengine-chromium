@@ -23,7 +23,7 @@ ReportingObserver::ReportingObserver(ExecutionContext* execution_context,
 
 void ReportingObserver::ReportToCallback(
     const HeapVector<Member<Report>>& reports) {
-  callback_->call(this, reports, this);
+  callback_->InvokeAndReportException(this, reports, this);
 }
 
 void ReportingObserver::observe() {
@@ -34,9 +34,10 @@ void ReportingObserver::disconnect() {
   ReportingContext::From(execution_context_)->UnregisterObserver(this);
 }
 
-DEFINE_TRACE(ReportingObserver) {
+void ReportingObserver::Trace(blink::Visitor* visitor) {
   visitor->Trace(execution_context_);
   visitor->Trace(callback_);
+  ScriptWrappable::Trace(visitor);
 }
 
 }  // namespace blink

@@ -40,7 +40,6 @@
 #include "core/dom/IdTargetObserver.h"
 #include "core/dom/ShadowRoot.h"
 #include "core/dom/SyncReattachContext.h"
-#include "core/dom/TaskRunnerHelper.h"
 #include "core/dom/V0InsertionPoint.h"
 #include "core/dom/events/ScopedEventQueue.h"
 #include "core/editing/FrameSelection.h"
@@ -74,6 +73,7 @@
 #include "platform/runtime_enabled_features.h"
 #include "platform/text/PlatformLocale.h"
 #include "platform/wtf/MathExtras.h"
+#include "public/platform/TaskType.h"
 
 namespace blink {
 
@@ -84,7 +84,7 @@ class ListAttributeTargetObserver : public IdTargetObserver {
  public:
   static ListAttributeTargetObserver* Create(const AtomicString& id,
                                              HTMLInputElement*);
-  DECLARE_VIRTUAL_TRACE();
+  void Trace(blink::Visitor*) override;
   void IdTargetChanged() override;
 
  private:
@@ -124,12 +124,15 @@ HTMLInputElement* HTMLInputElement::Create(Document& document,
                                            bool created_by_parser) {
   HTMLInputElement* input_element =
       new HTMLInputElement(document, created_by_parser);
-  if (!created_by_parser)
-    input_element->EnsureUserAgentShadowRoot();
+  if (!created_by_parser) {
+    DCHECK(input_element->input_type_view_->NeedsShadowSubtree());
+    input_element->CreateUserAgentShadowRoot();
+    input_element->CreateShadowSubtree();
+  }
   return input_element;
 }
 
-DEFINE_TRACE(HTMLInputElement) {
+void HTMLInputElement::Trace(blink::Visitor* visitor) {
   visitor->Trace(input_type_);
   visitor->Trace(input_type_view_);
   visitor->Trace(list_attribute_target_observer_);
@@ -145,10 +148,6 @@ HTMLImageLoader& HTMLInputElement::EnsureImageLoader() {
   if (!image_loader_)
     image_loader_ = HTMLImageLoader::Create(this);
   return *image_loader_;
-}
-
-void HTMLInputElement::DidAddUserAgentShadowRoot(ShadowRoot&) {
-  input_type_view_->CreateShadowSubtree();
 }
 
 HTMLInputElement::~HTMLInputElement() {}
@@ -295,8 +294,9 @@ bool HTMLInputElement::ShouldShowFocusRingOnMouseFocus() const {
   return input_type_->ShouldShowFocusRingOnMouseFocus();
 }
 
-void HTMLInputElement::UpdateFocusAppearance(
-    SelectionBehaviorOnFocus selection_behavior) {
+void HTMLInputElement::UpdateFocusAppearanceWithOptions(
+    SelectionBehaviorOnFocus selection_behavior,
+    const FocusOptions& options) {
   if (IsTextField()) {
     switch (selection_behavior) {
       case SelectionBehaviorOnFocus::kReset:
@@ -312,13 +312,15 @@ void HTMLInputElement::UpdateFocusAppearance(
     // FrameSelection::revealSelection().  It doesn't scroll correctly in a
     // case of RangeSelection. crbug.com/443061.
     GetDocument().EnsurePaintLocationDataValidForNode(this);
-    if (GetLayoutObject()) {
-      GetLayoutObject()->ScrollRectToVisible(BoundingBox());
+    if (!options.preventScroll()) {
+      if (GetLayoutObject())
+        GetLayoutObject()->ScrollRectToVisible(BoundingBox());
+      if (GetDocument().GetFrame())
+        GetDocument().GetFrame()->Selection().RevealSelection();
     }
-    if (GetDocument().GetFrame())
-      GetDocument().GetFrame()->Selection().RevealSelection();
   } else {
-    TextControlElement::UpdateFocusAppearance(selection_behavior);
+    TextControlElement::UpdateFocusAppearanceWithOptions(selection_behavior,
+                                                         options);
   }
 }
 
@@ -372,7 +374,10 @@ void HTMLInputElement::InitializeTypeInParsing() {
   String default_value = FastGetAttribute(valueAttr);
   if (input_type_->GetValueMode() == ValueMode::kValue)
     non_attribute_value_ = SanitizeValue(default_value);
-  EnsureUserAgentShadowRoot();
+  if (input_type_view_->NeedsShadowSubtree()) {
+    CreateUserAgentShadowRoot();
+    CreateShadowSubtree();
+  }
 
   SetNeedsWillValidateCheck();
 
@@ -400,6 +405,7 @@ void HTMLInputElement::UpdateType() {
   bool could_be_successful_submit_button = CanBeSuccessfulSubmitButton();
 
   input_type_view_->DestroyShadowSubtree();
+  DropInnerEditorElement();
   LazyReattachIfAttached();
 
   if (input_type_->SupportsRequired() != new_type->SupportsRequired() &&
@@ -425,7 +431,10 @@ void HTMLInputElement::UpdateType() {
 
   input_type_ = new_type;
   input_type_view_ = input_type_->CreateView();
-  input_type_view_->CreateShadowSubtree();
+  if (input_type_view_->NeedsShadowSubtree()) {
+    EnsureUserAgentShadowRoot();
+    CreateShadowSubtree();
+  }
 
   SetNeedsWillValidateCheck();
 
@@ -685,7 +694,7 @@ bool HTMLInputElement::IsPresentationAttribute(
 void HTMLInputElement::CollectStyleForPresentationAttribute(
     const QualifiedName& name,
     const AtomicString& value,
-    MutableStylePropertySet* style) {
+    MutableCSSPropertyValueSet* style) {
   if (name == vspaceAttr) {
     AddHTMLLengthToStyle(style, CSSPropertyMarginTop, value);
     AddHTMLLengthToStyle(style, CSSPropertyMarginBottom, value);
@@ -1049,15 +1058,11 @@ void HTMLInputElement::SetValueForUser(const String& value) {
   setValue(value, kDispatchChangeEvent);
 }
 
-const String& HTMLInputElement::SuggestedValue() const {
-  return suggested_value_;
-}
-
 void HTMLInputElement::SetSuggestedValue(const String& value) {
   if (!input_type_->CanSetSuggestedValue())
     return;
   needs_to_update_view_value_ = true;
-  suggested_value_ = SanitizeValue(value);
+  TextControlElement::SetSuggestedValue(SanitizeValue(value));
   SetNeedsStyleRecalc(
       kSubtreeStyleChange,
       StyleChangeReasonForTracing::Create(StyleChangeReason::kControlValue));
@@ -1101,14 +1106,16 @@ void HTMLInputElement::setValue(const String& value,
   if (!input_type_->CanSetValue(value))
     return;
 
+  // Clear the suggested value. Use the base class version to not trigger a view
+  // update.
+  TextControlElement::SetSuggestedValue(String());
+
   EventQueueScope scope;
   String sanitized_value = SanitizeValue(value);
   bool value_changed = sanitized_value != this->value();
 
   SetLastChangeWasNotUserEdit();
   needs_to_update_view_value_ = true;
-  // Prevent TextFieldInputType::setValue from using the suggested value.
-  suggested_value_ = String();
 
   input_type_->SetValue(sanitized_value, value_changed, event_behavior,
                         selection);
@@ -1180,7 +1187,9 @@ void HTMLInputElement::SetValueFromRenderer(const String& value) {
   // File upload controls will never use this.
   DCHECK_NE(type(), InputTypeNames::file);
 
-  suggested_value_ = String();
+  // Clear the suggested value. Use the base class version to not trigger a view
+  // update.
+  TextControlElement::SetSuggestedValue(String());
 
   // Renderer and our event handler are responsible for sanitizing values.
   DCHECK(value == input_type_->SanitizeUserInputValue(value) ||
@@ -1286,7 +1295,8 @@ void HTMLInputElement::DefaultEventHandler(Event* evt) {
   if (input_type_view_->ShouldSubmitImplicitly(evt)) {
     // FIXME: Remove type check.
     if (type() == InputTypeNames::search) {
-      TaskRunnerHelper::Get(TaskType::kUserInteraction, &GetDocument())
+      GetDocument()
+          .GetTaskRunner(TaskType::kUserInteraction)
           ->PostTask(BLINK_FROM_HERE, WTF::Bind(&HTMLInputElement::OnSearch,
                                                 WrapPersistent(this)));
     }
@@ -1321,6 +1331,10 @@ void HTMLInputElement::DefaultEventHandler(Event* evt) {
 
   if (!call_base_class_early && !evt->DefaultHandled())
     TextControlElement::DefaultEventHandler(evt);
+}
+
+void HTMLInputElement::CreateShadowSubtree() {
+  input_type_view_->CreateShadowSubtree();
 }
 
 bool HTMLInputElement::HasActivationBehavior() const {
@@ -1642,9 +1656,10 @@ void HTMLInputElement::SetListAttributeTargetObserver(
 }
 
 void HTMLInputElement::ResetListAttributeTargetObserver() {
-  if (isConnected()) {
+  const AtomicString& value = FastGetAttribute(listAttr);
+  if (!value.IsNull() && isConnected()) {
     SetListAttributeTargetObserver(
-        ListAttributeTargetObserver::Create(FastGetAttribute(listAttr), this));
+        ListAttributeTargetObserver::Create(value, this));
   } else {
     SetListAttributeTargetObserver(nullptr);
   }
@@ -1688,6 +1703,10 @@ bool HTMLInputElement::SupportsPlaceholder() const {
 
 void HTMLInputElement::UpdatePlaceholderText() {
   return input_type_view_->UpdatePlaceholderText();
+}
+
+String HTMLInputElement::GetPlaceholderValue() const {
+  return !SuggestedValue().IsEmpty() ? SuggestedValue() : StrippedPlaceholder();
 }
 
 bool HTMLInputElement::SupportsAutocapitalize() const {
@@ -1779,7 +1798,7 @@ ListAttributeTargetObserver::ListAttributeTargetObserver(
                        id),
       element_(element) {}
 
-DEFINE_TRACE(ListAttributeTargetObserver) {
+void ListAttributeTargetObserver::Trace(blink::Visitor* visitor) {
   visitor->Trace(element_);
   IdTargetObserver::Trace(visitor);
 }
@@ -1889,7 +1908,7 @@ bool HTMLInputElement::SupportsAutofocus() const {
   return input_type_->IsInteractiveContent();
 }
 
-RefPtr<ComputedStyle> HTMLInputElement::CustomStyleForLayoutObject() {
+scoped_refptr<ComputedStyle> HTMLInputElement::CustomStyleForLayoutObject() {
   return input_type_view_->CustomStyleForLayoutObject(
       OriginalStyleForLayoutObject());
 }

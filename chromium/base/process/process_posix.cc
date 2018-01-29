@@ -16,6 +16,7 @@
 #include "base/posix/eintr_wrapper.h"
 #include "base/process/kill.h"
 #include "base/third_party/dynamic_annotations/dynamic_annotations.h"
+#include "base/threading/thread_restrictions.h"
 #include "build/build_config.h"
 
 #if defined(OS_MACOSX)
@@ -224,8 +225,7 @@ namespace base {
 Process::Process(ProcessHandle handle) : process_(handle) {
 }
 
-Process::~Process() {
-}
+Process::~Process() = default;
 
 Process::Process(Process&& other) : process_(other.process_) {
   other.Close();
@@ -327,7 +327,7 @@ bool Process::Terminate(int exit_code, bool wait) const {
     // The process may not end immediately due to pending I/O
     bool exited = false;
     while (tries-- > 0) {
-      pid_t pid = HANDLE_EINTR(waitpid(process_, NULL, WNOHANG));
+      pid_t pid = HANDLE_EINTR(waitpid(process_, nullptr, WNOHANG));
       if (pid == process_) {
         exited = true;
         break;
@@ -354,7 +354,9 @@ bool Process::Terminate(int exit_code, bool wait) const {
       result = kill(process_, SIGKILL) == 0;
   }
 
-  if (!result)
+  if (result)
+    Exited(exit_code);
+  else
     DPLOG(ERROR) << "Unable to terminate process " << process_;
 
   return result;
@@ -366,11 +368,23 @@ bool Process::WaitForExit(int* exit_code) const {
 }
 
 bool Process::WaitForExitWithTimeout(TimeDelta timeout, int* exit_code) const {
+  if (!timeout.is_zero())
+    internal::AssertBaseSyncPrimitivesAllowed();
+
   // Record the event that this thread is blocking upon (for hang diagnosis).
   base::debug::ScopedProcessWaitActivity process_activity(this);
 
-  return WaitForExitWithTimeoutImpl(Handle(), exit_code, timeout);
+  int local_exit_code;
+  bool exited = WaitForExitWithTimeoutImpl(Handle(), &local_exit_code, timeout);
+  if (exited) {
+    Exited(local_exit_code);
+    if (exit_code)
+      *exit_code = local_exit_code;
+  }
+  return exited;
 }
+
+void Process::Exited(int exit_code) const {}
 
 #if !defined(OS_LINUX) && !defined(OS_MACOSX) && !defined(OS_AIX)
 bool Process::IsProcessBackgrounded() const {

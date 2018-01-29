@@ -73,7 +73,7 @@ class PLATFORM_EXPORT PlatformSpeechSynthesisUtterance final
 
   PlatformSpeechSynthesisUtteranceClient* Client() const { return client_; }
 
-  DECLARE_TRACE();
+  void Trace(blink::Visitor*);
 
  private:
   explicit PlatformSpeechSynthesisUtterance(
@@ -82,7 +82,7 @@ class PLATFORM_EXPORT PlatformSpeechSynthesisUtterance final
   Member<PlatformSpeechSynthesisUtteranceClient> client_;
   String text_;
   String lang_;
-  RefPtr<PlatformSpeechSynthesisVoice> voice_;
+  scoped_refptr<PlatformSpeechSynthesisVoice> voice_;
   float volume_;
   float rate_;
   float pitch_;

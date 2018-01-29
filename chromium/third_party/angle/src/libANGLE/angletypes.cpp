@@ -45,7 +45,7 @@ RasterizerState::RasterizerState()
 
     rasterizerDiscard   = false;
     cullFace            = false;
-    cullMode            = GL_BACK;
+    cullMode            = CullFaceMode::Back;
     frontFace           = GL_CCW;
     polygonOffsetFill   = false;
     polygonOffsetFactor = 0.0f;
@@ -77,6 +77,11 @@ BlendState::BlendState()
     blendEquationAlpha    = GL_FUNC_ADD;
     sampleAlphaToCoverage = false;
     dither                = true;
+}
+
+BlendState::BlendState(const BlendState &other)
+{
+    memcpy(this, &other, sizeof(BlendState));
 }
 
 bool operator==(const BlendState &a, const BlendState &b)
@@ -111,6 +116,11 @@ DepthStencilState::DepthStencilState()
     stencilBackPassDepthPass = GL_KEEP;
 }
 
+DepthStencilState::DepthStencilState(const DepthStencilState &other)
+{
+    memcpy(this, &other, sizeof(DepthStencilState));
+}
+
 bool operator==(const DepthStencilState &a, const DepthStencilState &b)
 {
     return memcmp(&a, &b, sizeof(DepthStencilState)) == 0;
@@ -138,14 +148,16 @@ SamplerState::SamplerState()
     sRGBDecode    = GL_DECODE_EXT;
 }
 
+SamplerState::SamplerState(const SamplerState &other) = default;
+
 // static
 SamplerState SamplerState::CreateDefaultForTarget(GLenum target)
 {
     SamplerState state;
 
-    // According to OES_EGL_image_external: For external textures, the default min filter is
-    // GL_LINEAR and the default s and t wrap modes are GL_CLAMP_TO_EDGE.
-    if (target == GL_TEXTURE_EXTERNAL_OES)
+    // According to OES_EGL_image_external and ARB_texture_rectangle: For external textures, the
+    // default min filter is GL_LINEAR and the default s and t wrap modes are GL_CLAMP_TO_EDGE.
+    if (target == GL_TEXTURE_EXTERNAL_OES || target == GL_TEXTURE_RECTANGLE_ANGLE)
     {
         state.minFilter = GL_LINEAR;
         state.wrapS     = GL_CLAMP_TO_EDGE;
@@ -154,6 +166,15 @@ SamplerState SamplerState::CreateDefaultForTarget(GLenum target)
 
     return state;
 }
+
+ImageUnit::ImageUnit()
+    : texture(), level(0), layered(false), layer(0), access(GL_READ_ONLY), format(GL_R32UI)
+{
+}
+
+ImageUnit::ImageUnit(const ImageUnit &other) = default;
+
+ImageUnit::~ImageUnit() = default;
 
 static void MinMax(int a, int b, int *minimum, int *maximum)
 {

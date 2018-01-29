@@ -68,7 +68,7 @@ GpuVideoDecoder::BufferData::BufferData(int32_t bbid,
       visible_rect(vr),
       natural_size(ns) {}
 
-GpuVideoDecoder::BufferData::~BufferData() {}
+GpuVideoDecoder::BufferData::~BufferData() = default;
 
 GpuVideoDecoder::GpuVideoDecoder(
     GpuVideoAcceleratorFactories* factories,
@@ -207,7 +207,8 @@ void GpuVideoDecoder::Initialize(const VideoDecoderConfig& config,
   needs_all_picture_buffers_to_decode_ =
       capabilities.flags &
       VideoDecodeAccelerator::Capabilities::NEEDS_ALL_PICTURE_BUFFERS_TO_DECODE;
-  needs_bitstream_conversion_ = (config.codec() == kCodecH264);
+  needs_bitstream_conversion_ =
+      (config.codec() == kCodecH264) || (config.codec() == kCodecHEVC);
   requires_texture_copy_ =
       !!(capabilities.flags &
          VideoDecodeAccelerator::Capabilities::REQUIRES_TEXTURE_COPY);
@@ -682,6 +683,8 @@ void GpuVideoDecoder::DeliverFrame(
   // floor and return.
   if (!pending_reset_cb_.is_null())
     return;
+
+  frame->metadata()->SetBoolean(VideoFrameMetadata::POWER_EFFICIENT, true);
 
   output_cb_.Run(frame);
 }

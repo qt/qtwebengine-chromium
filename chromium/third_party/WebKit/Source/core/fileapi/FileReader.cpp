@@ -35,7 +35,6 @@
 #include "core/dom/Document.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/dom/ExecutionContext.h"
-#include "core/dom/TaskRunnerHelper.h"
 #include "core/events/ProgressEvent.h"
 #include "core/fileapi/File.h"
 #include "core/frame/UseCounter.h"
@@ -43,10 +42,11 @@
 #include "core/typed_arrays/DOMArrayBuffer.h"
 #include "platform/Supplementable.h"
 #include "platform/wtf/AutoReset.h"
-#include "platform/wtf/CurrentTime.h"
 #include "platform/wtf/Deque.h"
 #include "platform/wtf/HashSet.h"
+#include "platform/wtf/Time.h"
 #include "platform/wtf/text/CString.h"
+#include "public/platform/TaskType.h"
 
 namespace blink {
 
@@ -76,7 +76,7 @@ class FileReader::ThrottlingController final
  public:
   static ThrottlingController* From(ExecutionContext* context) {
     if (!context)
-      return 0;
+      return nullptr;
 
     ThrottlingController* controller = static_cast<ThrottlingController*>(
         Supplement<ExecutionContext>::From(*context, SupplementName()));
@@ -118,7 +118,7 @@ class FileReader::ThrottlingController final
     probe::AsyncTaskCanceled(context, reader);
   }
 
-  DEFINE_INLINE_TRACE() {
+  void Trace(blink::Visitor* visitor) {
     visitor->Trace(pending_readers_);
     visitor->Trace(running_readers_);
     Supplement<ExecutionContext>::Trace(visitor);
@@ -346,7 +346,8 @@ void FileReader::abort() {
   // called from the event handler and we do not want the resource loading code
   // to be on the stack when doing so. The persistent reference keeps the
   // reader alive until the task has completed.
-  TaskRunnerHelper::Get(TaskType::kFileReading, GetExecutionContext())
+  GetExecutionContext()
+      ->GetTaskRunner(TaskType::kFileReading)
       ->PostTask(BLINK_FROM_HERE,
                  WTF::Bind(&FileReader::Terminate, WrapPersistent(this)));
 }
@@ -467,7 +468,7 @@ void FileReader::FireEvent(const AtomicString& type) {
         ProgressEvent::Create(type, false, loader_->BytesLoaded(), 0));
 }
 
-DEFINE_TRACE(FileReader) {
+void FileReader::Trace(blink::Visitor* visitor) {
   visitor->Trace(error_);
   EventTargetWithInlineData::Trace(visitor);
   ContextLifecycleObserver::Trace(visitor);

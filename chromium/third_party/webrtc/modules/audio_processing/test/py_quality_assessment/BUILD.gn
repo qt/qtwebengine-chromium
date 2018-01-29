@@ -54,6 +54,7 @@ copy("lib") {
   testonly = true
   sources = [
     "quality_assessment/__init__.py",
+    "quality_assessment/annotations.py",
     "quality_assessment/audioproc_wrapper.py",
     "quality_assessment/collect_data.py",
     "quality_assessment/data_access.py",
@@ -64,6 +65,8 @@ copy("lib") {
     "quality_assessment/evaluation.py",
     "quality_assessment/exceptions.py",
     "quality_assessment/export.py",
+    "quality_assessment/export_unittest.py",
+    "quality_assessment/external_vad.py",
     "quality_assessment/input_mixer.py",
     "quality_assessment/input_signal_creator.py",
     "quality_assessment/results.css",
@@ -97,9 +100,11 @@ group("unit_tests") {
   testonly = true
   visibility = [ ":*" ]  # Only targets in this file can depend on this.
   deps = [
+    ":apm_vad",
     ":fake_polqa",
     ":lib_unit_tests",
     ":scripts_unit_tests",
+    ":vad",
   ]
 }
 
@@ -116,11 +121,36 @@ rtc_executable("fake_polqa") {
   ]
 }
 
+rtc_executable("vad") {
+  sources = [
+    "quality_assessment/vad.cc",
+  ]
+  deps = [
+    "../../../..:webrtc_common",
+    "../../../../common_audio",
+    "../../../../rtc_base:rtc_base_approved",
+  ]
+}
+
+rtc_executable("apm_vad") {
+  sources = [
+    "quality_assessment/apm_vad.cc",
+  ]
+  deps = [
+    "../..",
+    "../../../..:webrtc_common",
+    "../../../../common_audio",
+    "../../../../rtc_base:rtc_base_approved",
+  ]
+}
+
 copy("lib_unit_tests") {
   testonly = true
   sources = [
+    "quality_assessment/annotations_unittest.py",
     "quality_assessment/echo_path_simulation_unittest.py",
     "quality_assessment/eval_scores_unittest.py",
+    "quality_assessment/fake_external_vad.py",
     "quality_assessment/input_mixer_unittest.py",
     "quality_assessment/signal_processing_unittest.py",
     "quality_assessment/simulation_unittest.py",

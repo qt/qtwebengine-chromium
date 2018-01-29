@@ -5,15 +5,19 @@
 #ifndef DedicatedWorker_h
 #define DedicatedWorker_h
 
+#include "base/memory/scoped_refptr.h"
+#include "bindings/core/v8/ActiveScriptWrappable.h"
 #include "core/CoreExport.h"
 #include "core/dom/MessagePort.h"
-#include "core/dom/SuspendableObject.h"
+#include "core/dom/PausableObject.h"
 #include "core/dom/events/EventListener.h"
 #include "core/dom/events/EventTarget.h"
 #include "core/workers/AbstractWorker.h"
-#include "platform/bindings/ActiveScriptWrappable.h"
 #include "platform/wtf/Forward.h"
-#include "platform/wtf/RefPtr.h"
+
+namespace v8_inspector {
+struct V8StackTraceId;
+}  // namespace v8_inspector
 
 namespace blink {
 
@@ -45,7 +49,7 @@ class CORE_EXPORT DedicatedWorker final
   ~DedicatedWorker() override;
 
   void postMessage(ScriptState*,
-                   RefPtr<SerializedScriptValue> message,
+                   scoped_refptr<SerializedScriptValue> message,
                    const MessagePortArray&,
                    ExceptionState&);
   static bool CanTransferArrayBuffersAndImageBitmaps() { return true; }
@@ -60,7 +64,7 @@ class CORE_EXPORT DedicatedWorker final
 
   DEFINE_ATTRIBUTE_EVENT_LISTENER(message);
 
-  DECLARE_VIRTUAL_TRACE();
+  void Trace(blink::Visitor*) override;
 
  private:
   DedicatedWorker(ExecutionContext*, const KURL& script_url);
@@ -76,7 +80,7 @@ class CORE_EXPORT DedicatedWorker final
 
   // Callbacks for |script_loader_|.
   void OnResponse();
-  void OnFinished();
+  void OnFinished(const v8_inspector::V8StackTraceId&);
 
   // Implements EventTarget (via AbstractWorker -> EventTargetWithInlineData).
   const AtomicString& InterfaceName() const final;
@@ -84,7 +88,7 @@ class CORE_EXPORT DedicatedWorker final
   const KURL script_url_;
   const Member<DedicatedWorkerMessagingProxy> context_proxy_;
 
-  RefPtr<WorkerScriptLoader> script_loader_;
+  scoped_refptr<WorkerScriptLoader> script_loader_;
 };
 
 }  // namespace blink

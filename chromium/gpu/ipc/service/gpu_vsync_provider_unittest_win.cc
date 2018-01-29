@@ -117,12 +117,14 @@ class FakeDelegate : public ImageTransportSurfaceDelegate,
   const GpuPreferences& GetGpuPreferences() const override {
     return gpu_preferences_;
   }
-  void SetLatencyInfoCallback(const LatencyInfoCallback& callback) override {}
+  void SetSnapshotRequestedCallback(const base::Closure& callback) override {}
   void UpdateVSyncParameters(base::TimeTicks timebase,
                              base::TimeDelta interval) override {
     // This shouldn't be called by GpuVSyncProviderWin
     NOTREACHED();
   }
+  void BufferPresented(uint64_t swap_id,
+                       const gfx::PresentationFeedback& feedback) override {}
 
   void AddFilter(IPC::MessageFilter* message_filter) override {
     channel_->AddFilter(message_filter);

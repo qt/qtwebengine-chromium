@@ -55,7 +55,7 @@ BOOL CALLBACK DismissOwnedPopups(HWND window, LPARAM arg) {
   if (::IsWindowVisible(window)) {
     const HWND owner = ::GetWindow(window, GW_OWNER);
     if (toplevel_hwnd == owner) {
-      ::PostMessage(window, WM_CANCELMODE, 0, 0);
+      ::PostMessageW(window, WM_CANCELMODE, 0, 0);
     }
   }
 
@@ -63,15 +63,15 @@ BOOL CALLBACK DismissOwnedPopups(HWND window, LPARAM arg) {
 }
 #endif  // defined(OS_WIN)
 
-gfx::Point GetScreenLocationFromEvent(const ui::LocatedEvent& event) {
+gfx::PointF GetScreenLocationFromEvent(const ui::LocatedEvent& event) {
   aura::Window* root =
       static_cast<aura::Window*>(event.target())->GetRootWindow();
   aura::client::ScreenPositionClient* spc =
       aura::client::GetScreenPositionClient(root);
   if (!spc)
-    return event.root_location();
+    return event.root_location_f();
 
-  gfx::Point screen_location(event.root_location());
+  gfx::PointF screen_location(event.root_location_f());
   spc->ConvertPointToScreen(root, &screen_location);
   return screen_location;
 }
@@ -200,8 +200,7 @@ bool RenderWidgetHostViewEventHandler::LockMouse() {
   }
 
   if (ShouldMoveToCenter()) {
-    synthetic_move_sent_ = true;
-    window_->MoveCursorTo(gfx::Rect(window_->bounds().size()).CenterPoint());
+    MoveCursorToCenter();
   }
   delegate_->SetTooltipsEnabled(false);
   return true;
@@ -229,7 +228,7 @@ void RenderWidgetHostViewEventHandler::UnlockMouse() {
   // not what sites expect. The delta is computed in the
   // ModifyEventMovementAndCoords function.
   global_mouse_position_ = unlocked_global_mouse_position_;
-  window_->MoveCursorTo(unlocked_mouse_position_);
+  window_->MoveCursorTo(gfx::ToFlooredPoint(unlocked_mouse_position_));
 
   aura::client::CursorClient* cursor_client =
       aura::client::GetCursorClient(root_window);
@@ -445,9 +444,12 @@ void RenderWidgetHostViewEventHandler::OnScrollEvent(ui::ScrollEvent* event) {
     }
     if (event->type() == ui::ET_SCROLL_FLING_START) {
       RecordAction(base::UserMetricsAction("TrackpadScrollFling"));
-      // Ignore the pending wheel end event to avoid sending a wheel event with
-      // kPhaseEnded before a GFS.
-      mouse_wheel_phase_handler_.IgnorePendingWheelEndEvent();
+      // The user has lifted their fingers.
+      mouse_wheel_phase_handler_.ResetScrollSequence();
+    } else if (event->type() == ui::ET_SCROLL_FLING_CANCEL) {
+      // The user has put their fingers down.
+      DCHECK_EQ(blink::kWebGestureDeviceTouchpad, gesture_event.source_device);
+      mouse_wheel_phase_handler_.ScrollingMayBegin();
     }
   }
 
@@ -546,11 +548,13 @@ void RenderWidgetHostViewEventHandler::OnGestureEvent(ui::GestureEvent* event) {
       // wheel based send a synthetic wheel event with kPhaseEnded to cancel
       // the current scroll.
       mouse_wheel_phase_handler_.DispatchPendingWheelEndEvent();
+      mouse_wheel_phase_handler_.SendWheelEndIfNeeded();
     } else if (event->type() == ui::ET_GESTURE_SCROLL_END) {
       // Make sure that the next wheel event will have phase = |kPhaseBegan|.
       // This is for maintaining the correct phase info when some of the wheel
       // events get ignored while a touchscreen scroll is going on.
       mouse_wheel_phase_handler_.IgnorePendingWheelEndEvent();
+      mouse_wheel_phase_handler_.ResetScrollSequence();
     } else if (event->type() == ui::ET_SCROLL_FLING_START) {
       RecordAction(base::UserMetricsAction("TouchscreenScrollFling"));
     }
@@ -740,8 +744,7 @@ void RenderWidgetHostViewEventHandler::HandleMouseEventWhileLocked(
   // needs to be moved back to the center.
   if (event->flags() & ui::EF_IS_NON_CLIENT) {
     // TODO(jonross): ideally this would not be done for mus (crbug.com/621412)
-    synthetic_move_sent_ = true;
-    window_->MoveCursorTo(center);
+    MoveCursorToCenter();
     return;
   }
 
@@ -780,10 +783,8 @@ void RenderWidgetHostViewEventHandler::HandleMouseEventWhileLocked(
     synthetic_move_sent_ = false;
   } else {
     // Check if the mouse has reached the border and needs to be centered.
-    if (ShouldMoveToCenter()) {
-      synthetic_move_sent_ = true;
-      window_->MoveCursorTo(center);
-    }
+    if (ShouldMoveToCenter())
+      MoveCursorToCenter();
     bool is_selection_popup = NeedsInputGrab(popup_child_host_view_);
     // Forward event to renderer.
     if (CanRendererHandleEvent(event, mouse_locked_, is_selection_popup) &&
@@ -819,8 +820,10 @@ void RenderWidgetHostViewEventHandler::ModifyEventMovementAndCoords(
   // We do not measure movement as the delta from cursor to center because
   // we may receive more mouse movement events before our warp has taken
   // effect.
-  event->movement_x = event->PositionInScreen().x - global_mouse_position_.x();
-  event->movement_y = event->PositionInScreen().y - global_mouse_position_.y();
+  event->movement_x = gfx::ToFlooredInt(event->PositionInScreen().x -
+                                        global_mouse_position_.x());
+  event->movement_y = gfx::ToFlooredInt(event->PositionInScreen().y -
+                                        global_mouse_position_.y());
 
   global_mouse_position_.SetPoint(event->PositionInScreen().x,
                                   event->PositionInScreen().y);
@@ -838,6 +841,21 @@ void RenderWidgetHostViewEventHandler::ModifyEventMovementAndCoords(
     unlocked_global_mouse_position_.SetPoint(event->PositionInScreen().x,
                                              event->PositionInScreen().y);
   }
+}
+
+void RenderWidgetHostViewEventHandler::MoveCursorToCenter() {
+#if defined(OS_WIN)
+  // TODO(crbug.com/781182): Set the global position when move cursor to center.
+  // This is a workaround for a bug from Windows update 16299, and should be remove
+  // once the bug is fixed in OS.
+  gfx::PointF center_in_screen(window_->GetBoundsInScreen().CenterPoint());
+  global_mouse_position_ = center_in_screen;
+#else
+  synthetic_move_sent_ = true;
+#endif
+
+  gfx::Point center(gfx::Rect(window_->bounds().size()).CenterPoint());
+  window_->MoveCursorTo(center);
 }
 
 void RenderWidgetHostViewEventHandler::SetKeyboardFocus() {
@@ -861,8 +879,8 @@ void RenderWidgetHostViewEventHandler::SetKeyboardFocus() {
 bool RenderWidgetHostViewEventHandler::ShouldMoveToCenter() {
   gfx::Rect rect = window_->bounds();
   rect = delegate_->ConvertRectToScreen(rect);
-  int border_x = rect.width() * kMouseLockBorderPercentage / 100;
-  int border_y = rect.height() * kMouseLockBorderPercentage / 100;
+  float border_x = rect.width() * kMouseLockBorderPercentage / 100.0;
+  float border_y = rect.height() * kMouseLockBorderPercentage / 100.0;
 
   return global_mouse_position_.x() < rect.x() + border_x ||
          global_mouse_position_.x() > rect.right() - border_x ||

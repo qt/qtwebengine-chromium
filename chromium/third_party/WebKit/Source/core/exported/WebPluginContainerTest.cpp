@@ -191,16 +191,15 @@ class TestPluginWithEditableText : public FakeWebPlugin {
 };
 
 class TestPluginWebFrameClient : public FrameTestHelpers::TestWebFrameClient {
-  WebLocalFrame* CreateChildFrame(
-      WebLocalFrame* parent,
-      WebTreeScopeType scope,
-      const WebString& name,
-      const WebString& fallback_name,
-      WebSandboxFlags sandbox_flags,
-      const WebParsedFeaturePolicy& container_policy,
-      const WebFrameOwnerProperties&) {
+  WebLocalFrame* CreateChildFrame(WebLocalFrame* parent,
+                                  WebTreeScopeType scope,
+                                  const WebString& name,
+                                  const WebString& fallback_name,
+                                  WebSandboxFlags sandbox_flags,
+                                  const ParsedFeaturePolicy& container_policy,
+                                  const WebFrameOwnerProperties&) {
     return CreateLocalChild(*parent, scope,
-                            WTF::MakeUnique<TestPluginWebFrameClient>());
+                            std::make_unique<TestPluginWebFrameClient>());
   }
 
   WebPlugin* CreatePlugin(const WebPluginParams& params) override {
@@ -262,7 +261,7 @@ void CreateAndHandleKeyboardEvent(WebElement* plugin_container_one_element,
   WebKeyboardEvent web_keyboard_event(WebInputEvent::kRawKeyDown, modifier_key,
                                       WebInputEvent::kTimeStampForTesting);
   web_keyboard_event.windows_key_code = key_code;
-  KeyboardEvent* key_event = KeyboardEvent::Create(web_keyboard_event, 0);
+  KeyboardEvent* key_event = KeyboardEvent::Create(web_keyboard_event, nullptr);
   ToWebPluginContainerImpl(plugin_container_one_element->PluginContainer())
       ->HandleEvent(key_event);
 }
@@ -1329,7 +1328,7 @@ TEST_F(WebPluginContainerTest, CompositedPluginSPv2) {
                                         EffectPaintPropertyNode::Root());
   PaintChunkProperties properties(property_tree_state);
 
-  paint_controller->UpdateCurrentPaintChunkProperties(nullptr, properties);
+  paint_controller->UpdateCurrentPaintChunkProperties(WTF::nullopt, properties);
   GraphicsContext graphics_context(*paint_controller);
   container->Paint(graphics_context, kGlobalPaintNormalPhase,
                    CullRect(IntRect(10, 10, 400, 300)));

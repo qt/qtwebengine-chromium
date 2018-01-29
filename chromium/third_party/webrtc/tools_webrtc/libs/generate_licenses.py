@@ -23,8 +23,11 @@ import subprocess
 
 LIB_TO_LICENSES_DICT = {
     'android_tools': ['third_party/android_tools/LICENSE'],
+    'auto': ['third_party/auto/src/LICENSE.txt'],
     'boringssl': ['third_party/boringssl/src/LICENSE'],
+    'errorprone': ['third_party/errorprone/LICENSE'],
     'expat': ['third_party/expat/files/COPYING'],
+    'guava': ['third_party/guava/LICENSE'],
     'ijar': ['third_party/ijar/LICENSE'],
     'jsoncpp': ['third_party/jsoncpp/LICENSE'],
     'libc++': ['buildtools/third_party/libc++/trunk/LICENSE.TXT'],
@@ -39,6 +42,7 @@ LIB_TO_LICENSES_DICT = {
     'protobuf': ['third_party/protobuf/LICENSE'],
     'usrsctp': ['third_party/usrsctp/LICENSE'],
     'webrtc': ['LICENSE', 'LICENSE_THIRD_PARTY'],
+    'zlib': ['LICENSE', 'third_party/zlib/LICENSE'],
 
     # Compile time dependencies, no license needed:
     'yasm': [],
@@ -46,6 +50,9 @@ LIB_TO_LICENSES_DICT = {
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(sys.argv[0]))
 CHECKOUT_ROOT = os.path.abspath(os.path.join(SCRIPT_DIR, os.pardir, os.pardir))
+sys.path.append(os.path.join(CHECKOUT_ROOT, 'build'))
+import find_depot_tools
+
 THIRD_PARTY_LIB_REGEX = r'^.*/third_party/([\w+]+).*$'
 
 class LicenseBuilder(object):
@@ -71,8 +78,15 @@ class LicenseBuilder(object):
 
   @staticmethod
   def _RunGN(buildfile_dir, target):
-    cmd = ['gn', 'desc', '--all', '--format=json',
-        os.path.abspath(buildfile_dir), target]
+    cmd = [
+      sys.executable,
+      os.path.join(find_depot_tools.DEPOT_TOOLS_PATH, 'gn.py'),
+      'desc',
+      '--all',
+      '--format=json',
+      os.path.abspath(buildfile_dir),
+      target,
+    ]
     logging.debug("Running: %r", cmd)
     output_json = subprocess.check_output(cmd, cwd=CHECKOUT_ROOT)
     logging.debug("Output: %s", output_json)

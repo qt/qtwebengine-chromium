@@ -109,8 +109,8 @@ Response InspectorDOMSnapshotAgent::getSnapshot(
       protocol::Array<protocol::DOMSnapshot::LayoutTreeNode>::create();
   computed_styles_ =
       protocol::Array<protocol::DOMSnapshot::ComputedStyle>::create();
-  computed_styles_map_ = WTF::MakeUnique<ComputedStylesMap>();
-  css_property_whitelist_ = WTF::MakeUnique<CSSPropertyWhitelist>();
+  computed_styles_map_ = std::make_unique<ComputedStylesMap>();
+  css_property_whitelist_ = std::make_unique<CSSPropertyWhitelist>();
 
   // Look up the CSSPropertyIDs for each entry in |style_whitelist|.
   for (size_t i = 0; i < style_whitelist->length(); i++) {
@@ -309,14 +309,11 @@ int InspectorDOMSnapshotAgent::VisitLayoutTreeNode(Node* node, int node_index) {
   if (!layout_object)
     return -1;
 
-  auto layout_tree_node =
-      protocol::DOMSnapshot::LayoutTreeNode::create()
-          .setDomNodeIndex(node_index)
-          .setBoundingBox(BuildRectForFloatRect(
-              node->IsElementNode()
-                  ? FloatRect(ToElement(node)->BoundsInViewport())
-                  : layout_object->AbsoluteBoundingBoxRect()))
-          .build();
+  auto layout_tree_node = protocol::DOMSnapshot::LayoutTreeNode::create()
+                              .setDomNodeIndex(node_index)
+                              .setBoundingBox(BuildRectForFloatRect(
+                                  layout_object->AbsoluteBoundingBoxRect()))
+                              .build();
 
   int style_index = GetStyleIndexForNode(node);
   if (style_index != -1)
@@ -326,9 +323,9 @@ int InspectorDOMSnapshotAgent::VisitLayoutTreeNode(Node* node, int node_index) {
     LayoutText* layout_text = ToLayoutText(layout_object);
     layout_tree_node->setLayoutText(layout_text->GetText());
     if (layout_text->HasTextBoxes()) {
-      std::unique_ptr<protocol::Array<protocol::CSS::InlineTextBox>>
+      std::unique_ptr<protocol::Array<protocol::DOMSnapshot::InlineTextBox>>
           inline_text_nodes =
-              protocol::Array<protocol::CSS::InlineTextBox>::create();
+              protocol::Array<protocol::DOMSnapshot::InlineTextBox>::create();
       for (const InlineTextBox* text_box = layout_text->FirstTextBox();
            text_box; text_box = text_box->NextTextBox()) {
         FloatRect local_coords_text_box_rect(text_box->FrameRect());
@@ -336,7 +333,7 @@ int InspectorDOMSnapshotAgent::VisitLayoutTreeNode(Node* node, int node_index) {
             layout_object->LocalToAbsoluteQuad(local_coords_text_box_rect)
                 .BoundingBox();
         inline_text_nodes->addItem(
-            protocol::CSS::InlineTextBox::create()
+            protocol::DOMSnapshot::InlineTextBox::create()
                 .setStartCharacterIndex(text_box->Start())
                 .setNumCharacters(text_box->Len())
                 .setBoundingBox(
@@ -394,7 +391,7 @@ int InspectorDOMSnapshotAgent::GetStyleIndexForNode(Node* node) {
   return index;
 }
 
-DEFINE_TRACE(InspectorDOMSnapshotAgent) {
+void InspectorDOMSnapshotAgent::Trace(blink::Visitor* visitor) {
   visitor->Trace(inspected_frames_);
   InspectorBaseAgent::Trace(visitor);
 }

@@ -395,8 +395,8 @@ Status DeleteBlobsInRange(IndexedDBBackingStore::Transaction* transaction,
       INTERNAL_CONSISTENCY_ERROR_UNTESTED(GET_IDBDATABASE_METADATA);
       return InternalInconsistencyStatus();
     }
-    transaction->PutBlobInfo(database_id, object_store_id, user_key, NULL,
-                             NULL);
+    transaction->PutBlobInfo(database_id, object_store_id, user_key, nullptr,
+                             nullptr);
   }
   return s;
 }
@@ -865,7 +865,7 @@ scoped_refptr<IndexedDBBackingStore> IndexedDBBackingStore::Open(
   data_loss_info->status = blink::kWebIDBDataLossNone;
   *status = Status::OK();
 
-  std::unique_ptr<LevelDBComparator> comparator(base::MakeUnique<Comparator>());
+  std::unique_ptr<LevelDBComparator> comparator(std::make_unique<Comparator>());
 
   if (!base::IsStringASCII(path_base.AsUTF8Unsafe())) {
     HistogramOpenStatus(
@@ -967,7 +967,7 @@ scoped_refptr<IndexedDBBackingStore> IndexedDBBackingStore::Open(
 
     LOG(ERROR) << "IndexedDB backing store cleanup succeeded, reopening";
     *status =
-        leveldb_factory->OpenLevelDB(file_path, comparator.get(), &db, NULL);
+        leveldb_factory->OpenLevelDB(file_path, comparator.get(), &db, nullptr);
     if (!status->ok()) {
       DCHECK(!db);
       LOG(ERROR) << "IndexedDB backing store reopen after recovery failed";
@@ -1021,7 +1021,7 @@ scoped_refptr<IndexedDBBackingStore> IndexedDBBackingStore::OpenInMemory(
     Status* status) {
   IDB_TRACE("IndexedDBBackingStore::OpenInMemory");
 
-  std::unique_ptr<LevelDBComparator> comparator(base::MakeUnique<Comparator>());
+  std::unique_ptr<LevelDBComparator> comparator(std::make_unique<Comparator>());
   std::unique_ptr<LevelDBDatabase> db =
       LevelDBDatabase::OpenInMemory(comparator.get());
   if (!db) {
@@ -1037,8 +1037,8 @@ scoped_refptr<IndexedDBBackingStore> IndexedDBBackingStore::OpenInMemory(
           db.get(), "IndexedDBBackingStore", task_runner,
           base::trace_event::MemoryDumpProvider::Options());
 
-  return Create(NULL /* indexed_db_factory */, origin, FilePath(),
-                NULL /* request_context */, std::move(db),
+  return Create(nullptr /* indexed_db_factory */, origin, FilePath(),
+                nullptr /* request_context */, std::move(db),
                 std::move(comparator), task_runner, status);
 }
 
@@ -1260,7 +1260,7 @@ Status IndexedDBBackingStore::DeleteRecord(
       database_id, object_store_id, record_identifier.primary_key());
   leveldb_transaction->Remove(object_store_data_key);
   Status s = transaction->PutBlobInfoIfNeeded(
-      database_id, object_store_id, object_store_data_key, NULL, NULL);
+      database_id, object_store_id, object_store_data_key, nullptr, nullptr);
   if (!s.ok())
     return s;
 
@@ -1490,7 +1490,7 @@ class IndexedDBBackingStore::Transaction::ChainedBlobWriterImpl
       content::BrowserThread::DeleteSoon(
           content::BrowserThread::IO, FROM_HERE, delegate_.release());
     if (aborted_) {
-      self_ref_ = NULL;
+      self_ref_ = nullptr;
       return;
     }
     if (iter_->size() != -1 && iter_->size() != bytes_written)
@@ -1601,7 +1601,7 @@ class LocalWriteClosure : public FileWriterDelegate::DelegateWriteCallback,
             task_runner_.get(), file_path, 0,
             storage::FileStreamWriter::CREATE_NEW_FILE));
     std::unique_ptr<FileWriterDelegate> delegate(
-        base::MakeUnique<FileWriterDelegate>(
+        std::make_unique<FileWriterDelegate>(
             std::move(writer), storage::FlushPolicy::FLUSH_ON_COMPLETION));
 
     DCHECK(blob_url.is_valid());
@@ -1653,7 +1653,7 @@ class LocalWriteClosure : public FileWriterDelegate::DelegateWriteCallback,
     IndexedDBBackingStore::Transaction::ChainedBlobWriter* raw_tmp =
         chained_blob_writer_.get();
     raw_tmp->AddRef();
-    chained_blob_writer_ = NULL;
+    chained_blob_writer_ = nullptr;
     task_runner_->ReleaseSoon(FROM_HERE, raw_tmp);
   }
   friend class base::RefCountedThreadSafe<LocalWriteClosure>;
@@ -2179,7 +2179,7 @@ IndexedDBBackingStore::Cursor::Cursor(
       transaction_(other->transaction_),
       database_id_(other->database_id_),
       cursor_options_(other->cursor_options_),
-      current_key_(base::MakeUnique<IndexedDBKey>(*other->current_key_)) {
+      current_key_(std::make_unique<IndexedDBKey>(*other->current_key_)) {
   if (other->iterator_) {
     iterator_ = transaction_->transaction()->CreateIterator();
 
@@ -2213,7 +2213,7 @@ bool IndexedDBBackingStore::Cursor::FirstSeek(Status* s) {
     if (!s->ok())
       return false;
   }
-  return Continue(0, READY, s);
+  return Continue(nullptr, READY, s);
 }
 
 bool IndexedDBBackingStore::Cursor::Advance(uint32_t count, Status* s) {
@@ -2469,7 +2469,7 @@ class ObjectStoreKeyCursorImpl : public IndexedDBBackingStore::Cursor {
   // IndexedDBBackingStore::Cursor
   IndexedDBValue* value() override {
     NOTREACHED();
-    return NULL;
+    return nullptr;
   }
   bool LoadCurrentRow(Status* s) override;
 
@@ -2620,7 +2620,7 @@ class IndexKeyCursorImpl : public IndexedDBBackingStore::Cursor {
   // IndexedDBBackingStore::Cursor
   IndexedDBValue* value() override {
     NOTREACHED();
-    return NULL;
+    return nullptr;
   }
   const IndexedDBKey& primary_key() const override { return *primary_key_; }
   const IndexedDBBackingStore::RecordIdentifier& record_identifier()
@@ -2649,7 +2649,7 @@ class IndexKeyCursorImpl : public IndexedDBBackingStore::Cursor {
  private:
   explicit IndexKeyCursorImpl(const IndexKeyCursorImpl* other)
       : IndexedDBBackingStore::Cursor(other),
-        primary_key_(base::MakeUnique<IndexedDBKey>(*other->primary_key_)) {}
+        primary_key_(std::make_unique<IndexedDBKey>(*other->primary_key_)) {}
 
   std::unique_ptr<IndexedDBKey> primary_key_;
 
@@ -2763,7 +2763,7 @@ class IndexCursorImpl : public IndexedDBBackingStore::Cursor {
  private:
   explicit IndexCursorImpl(const IndexCursorImpl* other)
       : IndexedDBBackingStore::Cursor(other),
-        primary_key_(base::MakeUnique<IndexedDBKey>(*other->primary_key_)),
+        primary_key_(std::make_unique<IndexedDBKey>(*other->primary_key_)),
         current_value_(other->current_value_),
         primary_leveldb_key_(other->primary_leveldb_key_) {}
 
@@ -2867,7 +2867,7 @@ IndexedDBBackingStore::OpenObjectStoreCursor(
     return std::unique_ptr<IndexedDBBackingStore::Cursor>();
   }
   std::unique_ptr<ObjectStoreCursorImpl> cursor(
-      base::MakeUnique<ObjectStoreCursorImpl>(this, transaction, database_id,
+      std::make_unique<ObjectStoreCursorImpl>(this, transaction, database_id,
                                               cursor_options));
   if (!cursor->FirstSeek(s))
     return std::unique_ptr<IndexedDBBackingStore::Cursor>();
@@ -2893,7 +2893,7 @@ IndexedDBBackingStore::OpenObjectStoreKeyCursor(
     return std::unique_ptr<IndexedDBBackingStore::Cursor>();
   }
   std::unique_ptr<ObjectStoreKeyCursorImpl> cursor(
-      base::MakeUnique<ObjectStoreKeyCursorImpl>(this, transaction, database_id,
+      std::make_unique<ObjectStoreKeyCursorImpl>(this, transaction, database_id,
                                                  cursor_options));
   if (!cursor->FirstSeek(s))
     return std::unique_ptr<IndexedDBBackingStore::Cursor>();
@@ -2918,7 +2918,7 @@ IndexedDBBackingStore::OpenIndexKeyCursor(
                           index_id, range, direction, &cursor_options, s))
     return std::unique_ptr<IndexedDBBackingStore::Cursor>();
   std::unique_ptr<IndexKeyCursorImpl> cursor(
-      base::MakeUnique<IndexKeyCursorImpl>(this, transaction, database_id,
+      std::make_unique<IndexKeyCursorImpl>(this, transaction, database_id,
                                            cursor_options));
   if (!cursor->FirstSeek(s))
     return std::unique_ptr<IndexedDBBackingStore::Cursor>();
@@ -3061,7 +3061,7 @@ bool IndexedDBBackingStore::Transaction::CollectBlobFilesToRemove() {
     if (!BlobEntryKey::FromObjectStoreDataKey(&key_piece, &blob_entry_key)) {
       NOTREACHED();
       INTERNAL_WRITE_ERROR_UNTESTED(TRANSACTION_COMMIT_METHOD);
-      transaction_ = NULL;
+      transaction_ = nullptr;
       return false;
     }
     if (database_id_ < 0)
@@ -3077,7 +3077,7 @@ bool IndexedDBBackingStore::Transaction::CollectBlobFilesToRemove() {
       std::vector<IndexedDBBlobInfo> blob_info;
       if (!DecodeBlobData(blob_entry_value_bytes, &blob_info)) {
         INTERNAL_READ_ERROR_UNTESTED(TRANSACTION_COMMIT_METHOD);
-        transaction_ = NULL;
+        transaction_ = nullptr;
         return false;
       }
       for (const auto& blob : blob_info) {
@@ -3115,7 +3115,7 @@ Status IndexedDBBackingStore::Transaction::CommitPhaseOne(
   s = HandleBlobPreTransaction(&new_blob_entries, &new_files_to_write);
   if (!s.ok()) {
     INTERNAL_WRITE_ERROR_UNTESTED(TRANSACTION_COMMIT_METHOD);
-    transaction_ = NULL;
+    transaction_ = nullptr;
     return s;
   }
 
@@ -3123,7 +3123,7 @@ Status IndexedDBBackingStore::Transaction::CommitPhaseOne(
          KeyPrefix::IsValidDatabaseId(database_id_));
   if (!CollectBlobFilesToRemove()) {
     INTERNAL_WRITE_ERROR_UNTESTED(TRANSACTION_COMMIT_METHOD);
-    transaction_ = NULL;
+    transaction_ = nullptr;
     return InternalInconsistencyStatus();
   }
 
@@ -3193,7 +3193,7 @@ Status IndexedDBBackingStore::Transaction::CommitPhaseTwo() {
   // reflect pending blob work - dead files that should be deleted
   // immediately, and live files to monitor.
   s = transaction_->Commit();
-  transaction_ = NULL;
+  transaction_ = nullptr;
 
   if (!s.ok()) {
     INTERNAL_WRITE_ERROR(TRANSACTION_COMMIT_METHOD);
@@ -3308,12 +3308,12 @@ void IndexedDBBackingStore::Transaction::Rollback() {
 
   if (chained_blob_writer_.get()) {
     chained_blob_writer_->Abort();
-    chained_blob_writer_ = NULL;
+    chained_blob_writer_ = nullptr;
   }
   if (!transaction_)
     return;
   transaction_->Rollback();
-  transaction_ = NULL;
+  transaction_ = nullptr;
 }
 
 uint64_t IndexedDBBackingStore::Transaction::GetTransactionSize() {
@@ -3351,7 +3351,7 @@ IndexedDBBackingStore::BlobChangeRecord::Clone() const {
 
   for (const auto& handle : handles_) {
     record->handles_.push_back(
-        base::MakeUnique<storage::BlobDataHandle>(*handle));
+        std::make_unique<storage::BlobDataHandle>(*handle));
   }
   return record;
 }
@@ -3405,7 +3405,7 @@ void IndexedDBBackingStore::Transaction::PutBlobInfo(
   BlobChangeRecord* record = nullptr;
   if (it == blob_change_map_.end()) {
     std::unique_ptr<BlobChangeRecord> new_record =
-        base::MakeUnique<BlobChangeRecord>(object_store_data_key,
+        std::make_unique<BlobChangeRecord>(object_store_data_key,
                                            object_store_id);
     record = new_record.get();
     blob_change_map_[object_store_data_key] = std::move(new_record);

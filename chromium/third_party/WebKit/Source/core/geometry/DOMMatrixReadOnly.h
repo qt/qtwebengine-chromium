@@ -22,9 +22,7 @@ class DOMMatrixInit;
 class DOMPoint;
 class DOMPointInit;
 
-class CORE_EXPORT DOMMatrixReadOnly
-    : public GarbageCollectedFinalized<DOMMatrixReadOnly>,
-      public ScriptWrappable {
+class CORE_EXPORT DOMMatrixReadOnly : public ScriptWrappable {
   DEFINE_WRAPPERTYPEINFO();
 
  public:
@@ -106,8 +104,6 @@ class CORE_EXPORT DOMMatrixReadOnly
 
   const TransformationMatrix& Matrix() const { return *matrix_; }
 
-  DEFINE_INLINE_TRACE() {}
-
  protected:
   DOMMatrixReadOnly() {}
   DOMMatrixReadOnly(const String&, ExceptionState&);
@@ -132,7 +128,9 @@ class CORE_EXPORT DOMMatrixReadOnly
     }
   }
 
-  void SetMatrixValueFromString(const String&, ExceptionState&);
+  void SetMatrixValueFromString(const ExecutionContext*,
+                                const String&,
+                                ExceptionState&);
 
   static bool ValidateAndFixup2D(DOMMatrix2DInit&, ExceptionState&);
   static bool ValidateAndFixup(DOMMatrixInit&, ExceptionState&);

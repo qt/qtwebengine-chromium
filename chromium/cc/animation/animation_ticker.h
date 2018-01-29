@@ -37,6 +37,11 @@ struct PropertyAnimationState;
 // ElementAnimations - there is only one ElementAnimations for a given target.
 class CC_ANIMATION_EXPORT AnimationTicker {
  public:
+  class AnimationTimeProvider {
+   public:
+    virtual base::TimeTicks GetTimeForAnimation(const Animation&) const = 0;
+  };
+
   explicit AnimationTicker(AnimationPlayer* animation_player);
   ~AnimationTicker();
 
@@ -74,7 +79,8 @@ class CC_ANIMATION_EXPORT AnimationTicker {
   void AttachElement(ElementId element_id);
   void DetachElement();
 
-  void Tick(base::TimeTicks monotonic_time);
+  void Tick(base::TimeTicks monotonic_time,
+            const AnimationTimeProvider* tick_provider);
   static void TickAnimation(base::TimeTicks monotonic_time,
                             Animation* animation,
                             AnimationTarget* target);
@@ -106,6 +112,7 @@ class CC_ANIMATION_EXPORT AnimationTicker {
   // Returns true if there are any animations that have neither finished nor
   // aborted.
   bool HasTickingAnimation() const;
+  size_t TickingAnimationsCount() const;
 
   bool HasNonDeletedAnimation() const;
 

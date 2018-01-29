@@ -58,12 +58,23 @@ class MockDeviceFactory : public video_capture::mojom::DeviceFactory {
                     CreateDeviceCallback callback) override {
     DoCreateDevice(device_id, &device_request, callback);
   }
+  void AddVirtualDevice(const media::VideoCaptureDeviceInfo& device_info,
+                        video_capture::mojom::ProducerPtr producer,
+                        video_capture::mojom::VirtualDeviceRequest
+                            virtual_device_request) override {
+    DoAddVirtualDevice(device_info, producer.get(), &virtual_device_request);
+  }
 
   MOCK_METHOD1(DoGetDeviceInfos, void(GetDeviceInfosCallback& callback));
   MOCK_METHOD3(DoCreateDevice,
                void(const std::string& device_id,
                     video_capture::mojom::DeviceRequest* device_request,
                     CreateDeviceCallback& callback));
+  MOCK_METHOD3(
+      DoAddVirtualDevice,
+      void(const media::VideoCaptureDeviceInfo& device_info,
+           video_capture::mojom::ProducerProxy* producer,
+           video_capture::mojom::VirtualDeviceRequest* virtual_device_request));
 };
 
 class MockVideoCaptureDeviceLauncherCallbacks
@@ -89,9 +100,9 @@ class ServiceVideoCaptureProviderTest : public testing::Test {
 
  protected:
   void SetUp() override {
-    auto mock_service_connector = base::MakeUnique<MockServiceConnector>();
+    auto mock_service_connector = std::make_unique<MockServiceConnector>();
     mock_service_connector_ = mock_service_connector.get();
-    provider_ = base::MakeUnique<ServiceVideoCaptureProvider>(
+    provider_ = std::make_unique<ServiceVideoCaptureProvider>(
         std::move(mock_service_connector), kIgnoreLogMessageCB);
 
     ON_CALL(*mock_service_connector_, BindFactoryProvider(_))

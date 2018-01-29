@@ -24,6 +24,7 @@
 #include "content/common/content_export.h"
 #include "content/public/browser/render_process_host.h"
 #include "services/viz/public/interfaces/compositing/compositor_frame_sink.mojom.h"
+#include "services/viz/public/interfaces/hit_test/hit_test_region_list.mojom.h"
 #include "ui/compositor/compositor.h"
 #include "ui/compositor/compositor_observer.h"
 #include "ui/compositor/compositor_vsync_manager.h"
@@ -72,6 +73,7 @@ class CONTENT_EXPORT DelegatedFrameHostClient {
 
   virtual void OnBeginFrame() = 0;
   virtual bool IsAutoResizeEnabled() const = 0;
+  virtual void OnFrameTokenChanged(uint32_t frame_token) = 0;
 };
 
 // The DelegatedFrameHost is used to host all of the RenderWidgetHostView state
@@ -89,7 +91,8 @@ class CONTENT_EXPORT DelegatedFrameHost
  public:
   DelegatedFrameHost(const viz::FrameSinkId& frame_sink_id,
                      DelegatedFrameHostClient* client,
-                     bool enable_surface_synchronization);
+                     bool enable_surface_synchronization,
+                     bool enable_viz);
   ~DelegatedFrameHost() override;
 
   // ui::CompositorObserver implementation.
@@ -98,6 +101,7 @@ class CONTENT_EXPORT DelegatedFrameHost
                             base::TimeTicks start_time) override;
   void OnCompositingEnded(ui::Compositor* compositor) override;
   void OnCompositingLockStateChanged(ui::Compositor* compositor) override;
+  void OnCompositingChildResizing(ui::Compositor* compositor) override;
   void OnCompositingShuttingDown(ui::Compositor* compositor) override;
 
   // ui::CompositorVSyncManager::Observer implementation.
@@ -113,6 +117,11 @@ class CONTENT_EXPORT DelegatedFrameHost
   // viz::mojom::CompositorFrameSinkClient implementation.
   void DidReceiveCompositorFrameAck(
       const std::vector<viz::ReturnedResource>& resources) override;
+  void DidPresentCompositorFrame(uint32_t presentation_token,
+                                 base::TimeTicks time,
+                                 base::TimeDelta refresh,
+                                 uint32_t flags) override;
+  void DidDiscardCompositorFrame(uint32_t presentation_token) override;
   void OnBeginFrame(const viz::BeginFrameArgs& args) override;
   void ReclaimResources(
       const std::vector<viz::ReturnedResource>& resources) override;
@@ -120,13 +129,16 @@ class CONTENT_EXPORT DelegatedFrameHost
 
   // viz::HostFrameSinkClient implementation.
   void OnFirstSurfaceActivation(const viz::SurfaceInfo& surface_info) override;
+  void OnFrameTokenChanged(uint32_t frame_token) override;
 
   // Public interface exposed to RenderWidgetHostView.
 
   void DidCreateNewRendererCompositorFrameSink(
       viz::mojom::CompositorFrameSinkClient* renderer_compositor_frame_sink);
-  void SubmitCompositorFrame(const viz::LocalSurfaceId& local_surface_id,
-                             viz::CompositorFrame frame);
+  void SubmitCompositorFrame(
+      const viz::LocalSurfaceId& local_surface_id,
+      viz::CompositorFrame frame,
+      viz::mojom::HitTestRegionListPtr hit_test_region_list);
   void ClearDelegatedFrame();
   void WasHidden();
   void WasShown(const ui::LatencyInfo& latency_info);
@@ -155,25 +167,25 @@ class CONTENT_EXPORT DelegatedFrameHost
   // Returns a null SurfaceId if this DelegatedFrameHost has not yet created
   // a compositor Surface.
   viz::SurfaceId SurfaceIdAtPoint(viz::SurfaceHittestDelegate* delegate,
-                                  const gfx::Point& point,
-                                  gfx::Point* transformed_point);
+                                  const gfx::PointF& point,
+                                  gfx::PointF* transformed_point);
 
   // Given the SurfaceID of a Surface that is contained within this class'
   // Surface, find the relative transform between the Surfaces and apply it
   // to a point. Returns false if a Surface has not yet been created or if
   // |original_surface| is not embedded within our current Surface.
-  bool TransformPointToLocalCoordSpace(const gfx::Point& point,
+  bool TransformPointToLocalCoordSpace(const gfx::PointF& point,
                                        const viz::SurfaceId& original_surface,
-                                       gfx::Point* transformed_point);
+                                       gfx::PointF* transformed_point);
 
   // Given a RenderWidgetHostViewBase that renders to a Surface that is
   // contained within this class' Surface, find the relative transform between
   // the Surfaces and apply it to a point. Returns false if a Surface has not
   // yet been created or if |target_view| is not a descendant RWHV from our
   // client.
-  bool TransformPointToCoordSpaceForView(const gfx::Point& point,
+  bool TransformPointToCoordSpaceForView(const gfx::PointF& point,
                                          RenderWidgetHostViewBase* target_view,
-                                         gfx::Point* transformed_point);
+                                         gfx::PointF* transformed_point);
 
   void SetNeedsBeginFrames(bool needs_begin_frames);
   void DidNotProduceFrame(const viz::BeginFrameAck& ack);
@@ -181,6 +193,9 @@ class CONTENT_EXPORT DelegatedFrameHost
   // Exposed for tests.
   viz::SurfaceId SurfaceIdForTesting() const {
     return viz::SurfaceId(frame_sink_id_, local_surface_id_);
+  }
+  viz::CompositorFrameSinkSupport* GetCompositorFrameSinkSupportForTesting() {
+    return support_.get();
   }
 
   bool HasPrimarySurfaceForTesting() const { return has_primary_surface_; }
@@ -195,6 +210,10 @@ class CONTENT_EXPORT DelegatedFrameHost
       const base::Callback<void(std::unique_ptr<viz::CopyOutputRequest>)>&
           callback) {
     request_copy_of_output_callback_for_testing_ = callback;
+  }
+
+  gfx::Size CurrentFrameSizeInDipForTesting() const {
+    return current_frame_size_in_dip_;
   }
 
  private:
@@ -214,10 +233,10 @@ class CONTENT_EXPORT DelegatedFrameHost
 
   bool ShouldSkipFrame(const gfx::Size& size_in_dip);
 
-  // Called when surface is being scheduled for a draw. This is provided as a
-  // callback to |support_|.
-  void WillDrawSurface(const viz::LocalSurfaceId& id,
-                       const gfx::Rect& damage_rect);
+  // Called when the renderer's surface or something that it embeds has damage.
+  // Usually when there is damage we should give a copy to |frame_subscriber_|.
+  void OnAggregatedSurfaceDamage(const viz::LocalSurfaceId& id,
+                                 const gfx::Rect& aggregated_damage_rect);
 
   // Lazily grab a resize lock if the aura window size doesn't match the current
   // frame size, to give time to the renderer.
@@ -259,11 +278,16 @@ class CONTENT_EXPORT DelegatedFrameHost
   void CreateCompositorFrameSinkSupport();
   void ResetCompositorFrameSinkSupport();
 
+  // Returns SurfaceReferenceFactory instance. If |enable_viz| is true then it
+  // will be a stub factory, otherwise it will be the real factory.
+  scoped_refptr<viz::SurfaceReferenceFactory> GetSurfaceReferenceFactory();
+
   const viz::FrameSinkId frame_sink_id_;
   viz::LocalSurfaceId local_surface_id_;
   DelegatedFrameHostClient* const client_;
   const bool enable_surface_synchronization_;
-  ui::Compositor* compositor_;
+  const bool enable_viz_;
+  ui::Compositor* compositor_ = nullptr;
 
   // The vsync manager we are observing for changes, if any.
   scoped_refptr<ui::CompositorVSyncManager> vsync_manager_;
@@ -274,11 +298,11 @@ class CONTENT_EXPORT DelegatedFrameHost
   base::TimeDelta vsync_interval_;
 
   // Overridable tick clock used for testing functions using current time.
-  std::unique_ptr<base::TickClock> tick_clock_;
+  base::TickClock* tick_clock_;
 
   // True after a delegated frame has been skipped, until a frame is not
   // skipped.
-  bool skipped_frames_;
+  bool skipped_frames_ = false;
   std::vector<ui::LatencyInfo> skipped_latency_info_list_;
 
   std::unique_ptr<ui::Layer> right_gutter_;

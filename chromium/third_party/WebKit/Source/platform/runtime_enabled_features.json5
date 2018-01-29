@@ -104,6 +104,7 @@
     },
     {
       name: "AudioWorklet",
+      origin_trial_feature_name: "AudioWorklet",
       status: "experimental",
     },
     {
@@ -130,6 +131,9 @@
       status: "stable",
     },
     {
+      name: "BlockingDownloadsInSandbox",
+    },
+    {
       name: "BlockMetaSetCookie",
       status: "experimental"
     },
@@ -140,6 +144,10 @@
     {
       name: "BudgetQuery",
       origin_trial_feature_name: "BudgetQuery",
+      status: "experimental",
+    },
+    {
+      name: "CacheStyleSheetWithMediaQueries",
       status: "experimental",
     },
     {
@@ -154,22 +162,11 @@
       status: "experimental",
     },
     {
-      name: "ClientHints",
-      status: "stable",
-    },
-    {
       name: "ClientHintsPersistent",
       status: "experimental",
     },
     {
       name: "ClientPlaceholdersForServerLoFi",
-    },
-    {
-      name: "CoalescedEvents",
-      status: "stable",
-    },
-    {
-      name: "ColorCanvasExtensions",
     },
     {
       name: "CompositedSelectionUpdate",
@@ -217,10 +214,6 @@
       status: "experimental",
     },
     {
-      name: "CSSApplyAtRules",
-      status: "experimental",
-    },
-    {
       name: "CSSBackdropFilter",
       status: "experimental",
     },
@@ -265,6 +258,10 @@
       status: "stable",
     },
     {
+      name: "CSSOverscrollBehavior",
+      status: "stable",
+    },
+    {
       name: "CSSPaintAPI",
       depends_on: ["Worklet"],
       status: "experimental",
@@ -273,10 +270,6 @@
       name: "CSSPaintAPIArguments",
       depends_on: ["CSSPaintAPI"],
       status: "experimental",
-    },
-    {
-      name: "CSSScrollBoundaryBehavior",
-      status: "stable",
     },
     {
       name: "CSSScrollSnapPoints",
@@ -292,7 +285,7 @@
     },
     {
       name: "CSSTransformBox",
-      status: "experimental",
+      status: "stable",
     },
     {
       name: "CSSTypedOM",
@@ -313,11 +306,6 @@
     {
       name: "CustomElementsBuiltin",
       status: "test",
-    },
-    {
-      name: "CustomSchemeHandler",
-      depends_on: ["NavigatorContentUtils"],
-      status: "experimental",
     },
     {
       name: "Database",
@@ -343,6 +331,11 @@
     {
       name: "DeviceMemoryHeader",
       status: "stable",
+    },
+    {
+      name: "DisableHardwareNoiseSuppression",
+      origin_trial_feature_name: "DisableHardwareNoiseSuppression",
+      status: "experimental",
     },
     {
       name: "DisplayList2dCanvas",
@@ -397,18 +390,34 @@
       status: "stable",
     },
     {
+      name: "FeaturePolicyAutoplayFeature",
+      status: "experimental"
+    },
+    {
       name: "FeaturePolicyExperimentalFeatures",
     },
     {
-      name: "FeaturePolicyForEncryptedMedia",
+      name: "FeaturePolicyForPermissions",
+      status: "stable"
+    },
+    {
+      name: "FeaturePolicyJavaScriptInterface",
       status: "experimental"
     },
     {
       name: "FetchRequestCache",
+      status: "stable",
+    },
+    {
+      name: "FetchRequestKeepalive",
       status: "experimental",
     },
     {
       name: "FileSystem",
+      status: "stable",
+    },
+    {
+      name: "FocusOptions",
       status: "stable",
     },
     {
@@ -426,9 +435,11 @@
       name: "ForceTallerSelectPopup",
     },
     {
-      name: "ForeignFetch",
-      origin_trial_feature_name: "ForeignFetch",
-      status: "experimental",
+      name: "FractionalMouseEvent",
+    },
+    {
+      name: "FractionalMouseTypePointerEvent",
+      status: "stable",
     },
     {
       name: "FractionalScrollOffsets",
@@ -457,6 +468,9 @@
       status: "stable",
     },
     {
+      name: "GetMatchedCSSRules",
+    },
+    {
       name: "HeapCompaction",
       status: "stable",
     },
@@ -477,7 +491,7 @@
       status: "test",
     },
     {
-      name: "ImageAsyncAttribute",
+      name: "ImageDecodingAttribute",
       status: "test",
     },
     {
@@ -485,12 +499,11 @@
       status: "test",
     },
     {
-      name: "InertAttribute",
-      status: "experimental",
+      name: "IncrementalShadowDOM",
     },
     {
-      name: "InputEvent",
-      status: "stable",
+      name: "InertAttribute",
+      status: "experimental",
     },
     {
       name: "InputModeAttribute",
@@ -507,7 +520,7 @@
     },
     {
       name: "JSImageDecode",
-      status: "test",
+      status: "stable",
     },
     {
       name: "KeyboardLock",
@@ -534,11 +547,6 @@
       status: "experimental",
     },
     {
-      name: "LinkServiceWorker",
-      origin_trial_feature_name: "ForeignFetch",
-      status: "experimental",
-    },
-    {
       name: "LoadingWithMojo",
     },
     {
@@ -549,8 +557,14 @@
       name: "LongTaskV2",
     },
     {
+      name: "LowLatencyCanvas",
+      origin_trial_feature_name: "LowLatencyCanvas",
+      status: "experimental",
+    },
+    {
       name: "MediaCapabilities",
-      status: "test",
+      origin_trial_feature_name: "MediaCapabilities",
+      status: "experimental",
     },
     {
       name: "MediaCapture",
@@ -583,10 +597,6 @@
       name: "MediaEngagementBypassAutoplayPolicies",
     },
     {
-      name: "MediaPlaybackRateOutOfRange",
-      status: "experimental",
-    },
-    {
       name: "MediaQueryShape",
       status: "experimental",
     },
@@ -602,10 +612,6 @@
     },
     {
       name: "MediaSourceNewAbortAndDuration",
-      status: "experimental",
-    },
-    {
-      name: "MediaStreamSpeech",
       status: "experimental",
     },
     {
@@ -629,11 +635,14 @@
       name: "ModernMediaControls",
     },
     {
-      name: "ModuleScripts",
-      status: "stable",
+      name: "ModulePreload",
+      status: "experimental",
     },
     {
       name: "ModuleScriptsDynamicImport",
+    },
+    {
+      name: "ModuleScriptsImportMetaUrl",
     },
     {
       name: "MojoBlobs",
@@ -676,6 +685,10 @@
       status: "stable",
     },
     {
+      name: "NetInfoSaveData",
+      status: "experimental",
+    },
+    {
       name: "NetworkService",
     },
     // Not a web exposed feature, enabled from the command line.
@@ -698,6 +711,9 @@
     {
       name: "Notifications",
       status: "stable",
+    },
+    {
+      name: "NotificationsWithMojo",
     },
     {
       name: "NullableDocumentDomain",
@@ -806,10 +822,14 @@
     },
     {
       name: "PreloadDefaultIsMetadata",
-      status: "experimental",
+      status: "stable",
     },
     {
       name: "Presentation",
+      status: "stable",
+    },
+    {
+      name: "PreventLayerSquashing",
       status: "stable",
     },
     {
@@ -818,6 +838,9 @@
     {
       name: "PushMessaging",
       status: "stable",
+    },
+    {
+      name: "PWAFullCodeCache"
     },
     {
       name: "ReducedReferrerGranularity",
@@ -850,8 +873,12 @@
       status: "experimental",
     },
     {
+      name: "RequireCSSExtensionForFile",
+      status: "stable",
+    },
+    {
       name: "ResizeObserver",
-      status: "experimental",
+      status: "stable",
     },
     {
       name: "ResourceLoadScheduler",
@@ -867,10 +894,6 @@
       name: "RootLayerScrolling",
     },
     {
-      name: "RTCRtpSender",
-      status: "experimental",
-    },
-    {
       name: "ScriptedSpeech",
       status: "stable",
     },
@@ -879,6 +902,10 @@
       name: "ScrollAnchoring",
       settable_from_internals: true,
       status: "experimental",
+    },
+    // Serialize and restore scroll anchors.
+    {
+      name: "ScrollAnchorSerialization",
     },
     {
       name: "ScrollCustomization",
@@ -912,7 +939,14 @@
       status: "experimental",
     },
     {
+      name: "ServiceWorkerScriptFullCodeCache",
+    },
+    {
       name: "ServiceWorkerScriptStreaming",
+    },
+    {
+      name: "ServiceWorkerUpdateViaCache",
+      status: "experimental",
     },
     {
       name: "SetRootScroller",
@@ -948,12 +982,6 @@
     {
       name: "SignatureBasedIntegrity",
       status: "experimental",
-    },
-    {
-      name: "SkipCompositingSmallScrollers",
-    },
-    {
-      name: "SlimmingPaintStrictCullRectClipping",
     },
     {
       name: "SlimmingPaintV175",
@@ -1042,15 +1070,14 @@
       status: "stable",
     },
     {
+      name: "UserActivationV2",
+    },
+    {
       name: "V8ContextSnapshot",
       status: "test",
     },
     {
       name: "V8IdleTasks",
-    },
-    {
-      name: "ValidationBubbleInRenderer",
-      status: "stable",
     },
     {
       name: "VibrateRequiresUserGesture",

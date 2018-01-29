@@ -91,6 +91,11 @@
 #define ANGLE_USE_SSE
 #endif
 
+// Mips and arm devices need to include stddef for size_t.
+#if defined(__mips__) || defined(__arm__) || defined(__aarch64__)
+#include <stddef.h>
+#endif
+
 // The MemoryBarrier function name collides with a macro under Windows
 // We will undef the macro so that the function name does not get replaced
 #undef MemoryBarrier

@@ -46,13 +46,13 @@ print_preview.AppStateRecentDestination;
  */
 function makeRecentDestination(destination) {
   return {
-    id: destination.id_,
-    origin: destination.origin_,
-    account: destination.account_ || '',
+    id: destination.id,
+    origin: destination.origin,
+    account: destination.account || '',
     capabilities: destination.capabilities,
-    displayName: destination.displayName_ || '',
-    extensionId: destination.extensionId_ || '',
-    extensionName: destination.extensionName_ || '',
+    displayName: destination.displayName || '',
+    extensionId: destination.extensionId || '',
+    extensionName: destination.extensionName || '',
   };
 }
 
@@ -65,6 +65,8 @@ cr.define('print_preview', function() {
     constructor() {
       /**
        * Internal representation of application state.
+       * Must contain only plain objects or classes that override the
+       * toJSON() method.
        * @private {!Object}
        */
       this.state_ = {};
@@ -100,7 +102,7 @@ cr.define('print_preview', function() {
      * @return {boolean} Whether the selected destination is valid.
      */
     isSelectedDestinationValid() {
-      var selected = this.selectedDestination;
+      const selected = this.selectedDestination;
       return !!selected && !!selected.id && !!selected.origin;
     }
 
@@ -143,7 +145,7 @@ cr.define('print_preview', function() {
     init(serializedAppStateStr) {
       if (serializedAppStateStr) {
         try {
-          var state = JSON.parse(serializedAppStateStr);
+          const state = JSON.parse(serializedAppStateStr);
           if (!!state &&
               state[print_preview.AppStateField.VERSION] == AppState.VERSION_) {
             this.state_ = /** @type {!Object} */ (state);
@@ -161,7 +163,8 @@ cr.define('print_preview', function() {
       } else if (!(this.state_[print_preview.AppStateField
                                    .RECENT_DESTINATIONS] instanceof
                    Array)) {
-        var tmp = this.state_[print_preview.AppStateField.RECENT_DESTINATIONS];
+        const tmp =
+            this.state_[print_preview.AppStateField.RECENT_DESTINATIONS];
         this.state_[print_preview.AppStateField.RECENT_DESTINATIONS] = [tmp];
       } else if (
           !this.state_[print_preview.AppStateField.RECENT_DESTINATIONS][0] ||
@@ -209,8 +212,8 @@ cr.define('print_preview', function() {
 
       // Determine if this destination is already in the recent destinations,
       // and where in the array it is located.
-      var newDestination = makeRecentDestination(dest);
-      var indexFound =
+      const newDestination = makeRecentDestination(dest);
+      let indexFound =
           this.state_[print_preview.AppStateField.RECENT_DESTINATIONS]
               .findIndex(function(recent) {
                 return (
@@ -219,7 +222,9 @@ cr.define('print_preview', function() {
               });
 
       // No change
-      if (indexFound == 0) {
+      if (indexFound == 0 &&
+          this.selectedDestination.capabilities ==
+              newDestination.capabilities) {
         this.persist_();
         return;
       }

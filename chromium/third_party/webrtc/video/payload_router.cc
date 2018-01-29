@@ -130,7 +130,7 @@ PayloadRouter::PayloadRouter(const std::vector<RtpRtcp*>& rtp_modules,
       rtp_modules_(rtp_modules),
       payload_type_(payload_type),
       forced_fallback_enabled_((webrtc::field_trial::IsEnabled(
-          "WebRTC-VP8-Forced-Fallback-Encoder"))) {
+          "WebRTC-VP8-Forced-Fallback-Encoder-v2"))) {
   RTC_DCHECK_EQ(ssrcs.size(), rtp_modules.size());
   // SSRCs are assumed to be sorted in the same order as |rtp_modules|.
   for (uint32_t ssrc : ssrcs) {
@@ -187,7 +187,8 @@ EncodedImageCallback::Result PayloadRouter::OnEncodedImage(
     CopyCodecSpecific(codec_specific_info, &rtp_video_header);
   rtp_video_header.rotation = encoded_image.rotation_;
   rtp_video_header.content_type = encoded_image.content_type_;
-  if (encoded_image.timing_.flags != TimingFrameFlags::kInvalid) {
+  if (encoded_image.timing_.flags != TimingFrameFlags::kInvalid &&
+      encoded_image.timing_.flags != TimingFrameFlags::kNotTriggered) {
     rtp_video_header.video_timing.encode_start_delta_ms =
         VideoSendTiming::GetDeltaCappedMs(
             encoded_image.capture_time_ms_,
@@ -198,10 +199,12 @@ EncodedImageCallback::Result PayloadRouter::OnEncodedImage(
             encoded_image.timing_.encode_finish_ms);
     rtp_video_header.video_timing.packetization_finish_delta_ms = 0;
     rtp_video_header.video_timing.pacer_exit_delta_ms = 0;
-    rtp_video_header.video_timing.network_timstamp_delta_ms = 0;
-    rtp_video_header.video_timing.network2_timstamp_delta_ms = 0;
+    rtp_video_header.video_timing.network_timestamp_delta_ms = 0;
+    rtp_video_header.video_timing.network2_timestamp_delta_ms = 0;
+    rtp_video_header.video_timing.flags = encoded_image.timing_.flags;
+  } else {
+    rtp_video_header.video_timing.flags = TimingFrameFlags::kInvalid;
   }
-  rtp_video_header.video_timing.flags = encoded_image.timing_.flags;
   rtp_video_header.playout_delay = encoded_image.playout_delay_;
 
   int stream_index = rtp_video_header.simulcastIdx;
@@ -235,12 +238,14 @@ void PayloadRouter::OnBitrateAllocationUpdated(
       // rtp stream, moving over the temporal layer allocation.
       for (size_t si = 0; si < rtp_modules_.size(); ++si) {
         // Don't send empty TargetBitrate messages on streams not being relayed.
-        if (bitrate.GetSpatialLayerSum(si) == 0)
+        if (!bitrate.IsSpatialLayerUsed(si))
           break;
 
         BitrateAllocation layer_bitrate;
-        for (int tl = 0; tl < kMaxTemporalStreams; ++tl)
-          layer_bitrate.SetBitrate(0, tl, bitrate.GetBitrate(si, tl));
+        for (int tl = 0; tl < kMaxTemporalStreams; ++tl) {
+          if (bitrate.HasBitrate(si, tl))
+            layer_bitrate.SetBitrate(0, tl, bitrate.GetBitrate(si, tl));
+        }
         rtp_modules_[si]->SetVideoBitrateAllocation(layer_bitrate);
       }
     }

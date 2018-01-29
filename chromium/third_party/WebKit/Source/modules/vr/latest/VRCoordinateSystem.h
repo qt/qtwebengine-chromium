@@ -15,8 +15,7 @@ namespace blink {
 class TransformationMatrix;
 class VRSession;
 
-class VRCoordinateSystem : public GarbageCollectedFinalized<VRCoordinateSystem>,
-                           public ScriptWrappable {
+class VRCoordinateSystem : public ScriptWrappable {
   DEFINE_WRAPPERTYPEINFO();
 
  public:
@@ -30,7 +29,7 @@ class VRCoordinateSystem : public GarbageCollectedFinalized<VRCoordinateSystem>,
   virtual std::unique_ptr<TransformationMatrix> TransformBasePose(
       const TransformationMatrix& base_pose) = 0;
 
-  DECLARE_VIRTUAL_TRACE();
+  virtual void Trace(blink::Visitor*);
 
  private:
   const Member<VRSession> session_;

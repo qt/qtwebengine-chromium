@@ -11,7 +11,7 @@
 #include "core/inspector/IdentifiersFactory.h"
 #include "core/inspector/InspectorDOMAgent.h"
 #include "core/inspector/ResolveNode.h"
-#include "third_party/WebKit/Source/platform/ScriptForbiddenScope.h"
+#include "third_party/WebKit/Source/platform/bindings/ScriptForbiddenScope.h"
 
 namespace blink {
 
@@ -87,7 +87,7 @@ InspectorLogAgent::InspectorLogAgent(
 
 InspectorLogAgent::~InspectorLogAgent() {}
 
-DEFINE_TRACE(InspectorLogAgent) {
+void InspectorLogAgent::Trace(blink::Visitor* visitor) {
   visitor->Trace(storage_);
   visitor->Trace(performance_monitor_);
   InspectorBaseAgent::Trace(visitor);

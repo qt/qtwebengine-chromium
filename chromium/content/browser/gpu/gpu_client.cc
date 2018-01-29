@@ -4,7 +4,6 @@
 
 #include "content/browser/gpu/gpu_client.h"
 
-#include "build/build_config.h"
 #include "content/browser/gpu/browser_gpu_memory_buffer_manager.h"
 #include "content/browser/gpu/gpu_process_host.h"
 #include "content/common/child_process_host_impl.h"
@@ -22,6 +21,7 @@ GpuClient::GpuClient(int render_process_id)
 }
 
 GpuClient::~GpuClient() {
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   bindings_.CloseAllBindings();
   OnError();
 }
@@ -31,6 +31,7 @@ void GpuClient::Add(ui::mojom::GpuRequest request) {
 }
 
 void GpuClient::OnError() {
+  ClearCallback();
   if (!bindings_.empty())
     return;
   BrowserGpuMemoryBufferManager* gpu_memory_buffer_manager =
@@ -39,33 +40,43 @@ void GpuClient::OnError() {
     gpu_memory_buffer_manager->ProcessRemoved(render_process_id_);
 }
 
+void GpuClient::PreEstablishGpuChannel() {
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
+  BrowserThread::PostTask(
+      BrowserThread::IO, FROM_HERE,
+      base::BindOnce(&GpuClient::EstablishGpuChannel, base::Unretained(this),
+                     EstablishGpuChannelCallback()));
+}
+
 void GpuClient::OnEstablishGpuChannel(
-    const EstablishGpuChannelCallback& callback,
-    const IPC::ChannelHandle& channel,
+    mojo::ScopedMessagePipeHandle channel_handle,
     const gpu::GPUInfo& gpu_info,
     const gpu::GpuFeatureInfo& gpu_feature_info,
     GpuProcessHost::EstablishChannelStatus status) {
-#if !defined(OS_ANDROID)
-  if (status == GpuProcessHost::EstablishChannelStatus::GPU_ACCESS_DENIED) {
-    // GPU access is not allowed. Notify the client immediately.
-    DCHECK(!channel.mojo_handle.is_valid());
-    callback.Run(render_process_id_, mojo::ScopedMessagePipeHandle(), gpu_info,
-                 gpu_feature_info);
-    return;
-  }
+  DCHECK_EQ(channel_handle.is_valid(),
+            status == GpuProcessHost::EstablishChannelStatus::SUCCESS);
+  gpu_channel_requested_ = false;
+  EstablishGpuChannelCallback callback = std::move(callback_);
+  DCHECK(!callback_);
 
   if (status == GpuProcessHost::EstablishChannelStatus::GPU_HOST_INVALID) {
     // GPU process may have crashed or been killed. Try again.
-    DCHECK(!channel.mojo_handle.is_valid());
     EstablishGpuChannel(callback);
     return;
   }
-  DCHECK(channel.mojo_handle.is_valid());
-#endif
-  mojo::ScopedMessagePipeHandle channel_handle;
-  channel_handle.reset(channel.mojo_handle);
-  callback.Run(render_process_id_, std::move(channel_handle), gpu_info,
-               gpu_feature_info);
+  if (callback) {
+    // A request is waiting.
+    callback.Run(render_process_id_, std::move(channel_handle), gpu_info,
+                 gpu_feature_info);
+    return;
+  }
+  if (status == GpuProcessHost::EstablishChannelStatus::SUCCESS) {
+    // This is the case we pre-establish a channel before a request arrives.
+    // Cache the channel for a future request.
+    channel_handle_ = std::move(channel_handle);
+    gpu_info_ = gpu_info;
+    gpu_feature_info_ = gpu_feature_info;
+  }
 }
 
 void GpuClient::OnCreateGpuMemoryBuffer(
@@ -74,16 +85,44 @@ void GpuClient::OnCreateGpuMemoryBuffer(
   callback.Run(handle);
 }
 
+void GpuClient::ClearCallback() {
+  if (!callback_)
+    return;
+  EstablishGpuChannelCallback callback = std::move(callback_);
+  callback.Run(render_process_id_, mojo::ScopedMessagePipeHandle(),
+               gpu::GPUInfo(), gpu::GpuFeatureInfo());
+  DCHECK(!callback_);
+}
+
 void GpuClient::EstablishGpuChannel(
     const EstablishGpuChannelCallback& callback) {
-  GpuProcessHost* host = GpuProcessHost::Get();
-  if (!host) {
-    OnEstablishGpuChannel(
-        callback, IPC::ChannelHandle(), gpu::GPUInfo(), gpu::GpuFeatureInfo(),
-        GpuProcessHost::EstablishChannelStatus::GPU_ACCESS_DENIED);
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
+  // At most one channel should be requested. So clear previous request first.
+  ClearCallback();
+  if (channel_handle_.is_valid()) {
+    // If a channel has been pre-established and cached,
+    //   1) if callback is valid, return it right away.
+    //   2) if callback is empty, it's PreEstablishGpyChannel() being called
+    //      more than once, no need to do anything.
+    if (callback) {
+      callback.Run(render_process_id_, std::move(channel_handle_), gpu_info_,
+                   gpu_feature_info_);
+      DCHECK(!channel_handle_.is_valid());
+    }
     return;
   }
-
+  GpuProcessHost* host = GpuProcessHost::Get();
+  if (!host) {
+    if (callback) {
+      callback.Run(render_process_id_, mojo::ScopedMessagePipeHandle(),
+                   gpu::GPUInfo(), gpu::GpuFeatureInfo());
+    }
+    return;
+  }
+  callback_ = callback;
+  if (gpu_channel_requested_)
+    return;
+  gpu_channel_requested_ = true;
   bool preempts = false;
   bool allow_view_command_buffers = false;
   bool allow_real_time_streams = false;
@@ -92,12 +131,12 @@ void GpuClient::EstablishGpuChannel(
       ChildProcessHostImpl::ChildProcessUniqueIdToTracingProcessId(
           render_process_id_),
       preempts, allow_view_command_buffers, allow_real_time_streams,
-      base::Bind(&GpuClient::OnEstablishGpuChannel, weak_factory_.GetWeakPtr(),
-                 callback));
+      base::Bind(&GpuClient::OnEstablishGpuChannel,
+                 weak_factory_.GetWeakPtr()));
 }
 
 void GpuClient::CreateJpegDecodeAccelerator(
-    media::mojom::GpuJpegDecodeAcceleratorRequest jda_request) {
+    media::mojom::JpegDecodeAcceleratorRequest jda_request) {
   GpuProcessHost* host = GpuProcessHost::Get();
   if (host)
     host->gpu_service()->CreateJpegDecodeAccelerator(std::move(jda_request));

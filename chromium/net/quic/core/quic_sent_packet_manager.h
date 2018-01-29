@@ -105,6 +105,8 @@ class QUIC_EXPORT_PRIVATE QuicSentPacketManager {
 
   void SetMaxPacingRate(QuicBandwidth max_pacing_rate);
 
+  QuicBandwidth MaxPacingRate() const;
+
   void SetHandshakeConfirmed();
 
   // Processes the incoming ack.
@@ -123,6 +125,9 @@ class QUIC_EXPORT_PRIVATE QuicSentPacketManager {
   // Retransmits the oldest pending packet there is still a tail loss probe
   // pending.  Invoked after OnRetransmissionTimeout.
   bool MaybeRetransmitTailLossProbe();
+
+  // Retransmits the oldest pending packet.
+  bool MaybeRetransmitOldestPacket(TransmissionType type);
 
   // Removes the retransmittable frames from all unencrypted packets to ensure
   // they don't get retransmitted.
@@ -229,6 +234,8 @@ class QUIC_EXPORT_PRIVATE QuicSentPacketManager {
   QuicPacketNumber largest_packet_peer_knows_is_acked() const {
     return largest_packet_peer_knows_is_acked_;
   }
+
+  bool handshake_confirmed() const { return handshake_confirmed_; }
 
  private:
   friend class test::QuicConnectionPeer;

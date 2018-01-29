@@ -20,6 +20,7 @@ namespace gfx {
 class Point;
 class Rect;
 class Vector2d;
+class Vector2dF;
 }  // namespace gfx
 
 namespace gpu {
@@ -284,6 +285,12 @@ class VIZ_COMMON_EXPORT GLHelper {
     // is required for computing texture coordinate transforms (and only because
     // the OpenGL ES 2.0 API lacks the ability to query this info).
     //
+    // |src_offset| is the offset in the source texture corresponding to point
+    // (0,0) in the source/output coordinate spaces. This prevents the need for
+    // extra texture copies just to re-position the source coordinate system.
+    // TODO(crbug.com/775740): This must be set to whole-numbered values for
+    // now, until the implementation is modified to handle fractional offsets.
+    //
     // |output_rect| selects the region to draw (in the scaled, not the source,
     // coordinate space). This is used to save work in cases where only a
     // portion needs to be re-scaled. The implementation will back-compute,
@@ -296,23 +303,49 @@ class VIZ_COMMON_EXPORT GLHelper {
     // and wrap_s/t set to CLAMP_TO_EDGE in this call.
     void Scale(GLuint src_texture,
                const gfx::Size& src_texture_size,
+               const gfx::Vector2dF& src_offset,
                GLuint dest_texture,
                const gfx::Rect& output_rect) {
-      ScaleToMultipleOutputs(src_texture, src_texture_size, dest_texture, 0,
-                             output_rect);
+      ScaleToMultipleOutputs(src_texture, src_texture_size, src_offset,
+                             dest_texture, 0, output_rect);
     }
 
     // Same as above, but for shaders that output to two textures at once.
     virtual void ScaleToMultipleOutputs(GLuint src_texture,
                                         const gfx::Size& src_texture_size,
+                                        const gfx::Vector2dF& src_offset,
                                         GLuint dest_texture_0,
                                         GLuint dest_texture_1,
                                         const gfx::Rect& output_rect) = 0;
+
+    // Given the |src_texture_size|, |src_offset| and |output_rect| arguments
+    // that would be passed to Scale(), compute the region of pixels in the
+    // source texture that would be sampled to produce a scaled result. The
+    // result is stored in |sampling_rect|, along with the |offset| to the (0,0)
+    // point relative to |sampling_rect|'s origin.
+    //
+    // This is used by clients that need to know the minimal portion of a source
+    // buffer that must be copied without affecting Scale()'s results. This
+    // method also accounts for vertical flipping.
+    virtual void ComputeRegionOfInfluence(const gfx::Size& src_texture_size,
+                                          const gfx::Vector2dF& src_offset,
+                                          const gfx::Rect& output_rect,
+                                          gfx::Rect* sampling_rect,
+                                          gfx::Vector2dF* offset) const = 0;
 
     // Returns true if from:to represent the same scale ratio as that provided
     // by this scaler.
     virtual bool IsSameScaleRatio(const gfx::Vector2d& from,
                                   const gfx::Vector2d& to) const = 0;
+
+    // Returns true if the scaler is assuming the source texture's content is
+    // vertically flipped.
+    virtual bool IsSamplingFlippedSource() const = 0;
+
+    // Returns true if the scaler will vertically-flip the output. Note that if
+    // both this method and IsSamplingFlippedSource() return true, then the
+    // scaler output will be right-side up.
+    virtual bool IsFlippingOutput() const = 0;
 
     // Returns the format to use when calling glReadPixels() to read-back the
     // output texture(s). This indicates whether the 0th and 2nd bytes in each
@@ -330,12 +363,24 @@ class VIZ_COMMON_EXPORT GLHelper {
   // Create a scaler that upscales or downscales at the given ratio
   // (scale_from:scale_to). Returns null on invalid arguments.
   //
+  // If |flipped_source| is true, then the scaler will assume the content of the
+  // source texture is vertically-flipped. This is required so that the scaler
+  // can correctly compute the sampling region.
+  //
+  // If |flip_output| is true, then the scaler will vertically-flip its output
+  // result. This is used when the output texture will be read-back into system
+  // memory, so that the rows do not have to be copied in reverse.
+  //
+  // If |swizzle| is true, the 0th and 2nd elements in each RGBA quad will be
+  // swapped. This is beneficial for optimizing read-back into system memory.
+  //
   // WARNING: The returned scaler assumes both this GLHelper and its
   // GLES2Interface/ContextSupport will outlive it!
   std::unique_ptr<ScalerInterface> CreateScaler(ScalerQuality quality,
                                                 const gfx::Vector2d& scale_from,
                                                 const gfx::Vector2d& scale_to,
-                                                bool vertically_flip_texture,
+                                                bool flipped_source,
+                                                bool flip_output,
                                                 bool swizzle);
 
   // Create a pipeline that will (optionally) scale a source texture, and then
@@ -349,8 +394,8 @@ class VIZ_COMMON_EXPORT GLHelper {
   // memory, note that a width 1/4 the actual |output_rect.width()| must be
   // used.
   //
-  // If |swizzle| is true, the 0th and 2nd elements in each RGBA quad will be
-  // swapped. This is beneficial for optimizing read-back into system memory.
+  // |flipped_source|, |flip_output|, and |swizzle| have the same meaning as
+  // that explained in the method comments for CreateScaler().
   //
   // If |use_mrt| is true, the pipeline will try to optimize the YUV conversion
   // using the multi-render-target extension, if the platform is capable.
@@ -364,8 +409,10 @@ class VIZ_COMMON_EXPORT GLHelper {
   //
   // WARNING: The returned I420Converter instance assumes both this GLHelper and
   // its GLES2Interface/ContextSupport will outlive it!
-  std::unique_ptr<I420Converter>
-  CreateI420Converter(bool vertically_flip_texture, bool swizzle, bool use_mrt);
+  std::unique_ptr<I420Converter> CreateI420Converter(bool flipped_source,
+                                                     bool flip_output,
+                                                     bool swizzle,
+                                                     bool use_mrt);
 
   // Create a readback pipeline that will (optionally) scale a source texture,
   // then convert it to YUV420 planar form, and finally read back that. This
@@ -385,6 +432,10 @@ class VIZ_COMMON_EXPORT GLHelper {
   std::unique_ptr<ReadbackYUVInterface> CreateReadbackPipelineYUV(
       bool vertically_flip_texture,
       bool use_mrt);
+
+  // Returns a ReadbackYUVInterface instance that is lazily created and owned by
+  // this class. |use_mrt| is always true for these instances.
+  ReadbackYUVInterface* GetReadbackPipelineYUV(bool vertically_flip_texture);
 
   // Returns the maximum number of draw buffers available,
   // 0 if GL_EXT_draw_buffers is not available.
@@ -415,6 +466,8 @@ class VIZ_COMMON_EXPORT GLHelper {
   std::unique_ptr<CopyTextureToImpl> copy_texture_to_impl_;
   std::unique_ptr<GLHelperScaling> scaler_impl_;
   std::unique_ptr<GLHelperReadbackSupport> readback_support_;
+  std::unique_ptr<ReadbackYUVInterface> shared_readback_yuv_flip_;
+  std::unique_ptr<ReadbackYUVInterface> shared_readback_yuv_noflip_;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(GLHelper);
@@ -422,26 +475,35 @@ class VIZ_COMMON_EXPORT GLHelper {
 
 // Splits an RGBA source texture's image into separate Y, U, and V planes. The U
 // and V planes are half-width and half-height, according to the I420 standard.
-class I420Converter {
+class VIZ_COMMON_EXPORT I420Converter {
  public:
   I420Converter();
   virtual ~I420Converter();
 
   // Transforms a RGBA |src_texture| into three textures, each containing bytes
   // in I420 planar form. See the GLHelper::ScalerInterface::Scale() method
-  // comments for the meaning/semantics of |src_texture_size| and |output_rect|.
-  // If |optional_scaler| is not null, it will first be used to scale the source
-  // texture into an intermediate texture before generating the Y+U+V planes.
+  // comments for the meaning/semantics of |src_texture_size|, |src_offset| and
+  // |output_rect|. If |optional_scaler| is not null, it will first be used to
+  // scale the source texture into an intermediate texture before generating the
+  // Y+U+V planes.
   //
   // See notes for CreateI420Converter() regarding the semantics of the output
   // textures.
   virtual void Convert(GLuint src_texture,
                        const gfx::Size& src_texture_size,
+                       const gfx::Vector2dF& src_offset,
                        GLHelper::ScalerInterface* optional_scaler,
                        const gfx::Rect& output_rect,
                        GLuint y_plane_texture,
                        GLuint u_plane_texture,
                        GLuint v_plane_texture) = 0;
+
+  // Returns true if the converter is assuming the source texture's content is
+  // vertically flipped.
+  virtual bool IsSamplingFlippedSource() const = 0;
+
+  // Returns true if the converter will vertically-flip the output.
+  virtual bool IsFlippingOutput() const = 0;
 
   // Returns the format to use when calling glReadPixels() to read-back the
   // output textures. This indicates whether the 0th and 2nd bytes in each RGBA
@@ -471,7 +533,7 @@ class I420Converter {
 //
 // TODO(crbug/754872): DEPRECATED. This will be removed soon, in favor of
 // I420Converter and readback implementation in GLRendererCopier.
-class ReadbackYUVInterface {
+class VIZ_COMMON_EXPORT ReadbackYUVInterface {
  public:
   ReadbackYUVInterface() {}
   virtual ~ReadbackYUVInterface() {}
@@ -482,6 +544,9 @@ class ReadbackYUVInterface {
 
   // Returns the currently-set scaler, or null.
   virtual GLHelper::ScalerInterface* scaler() const = 0;
+
+  // Returns true if the converter will vertically-flip the output.
+  virtual bool IsFlippingOutput() const = 0;
 
   // Transforms a RGBA texture into I420 planar form, and then reads it back
   // from the GPU into system memory. See the GLHelper::ScalerInterface::Scale()
@@ -495,7 +560,7 @@ class ReadbackYUVInterface {
   //   4. Read-back the planar data, copying it into the given output
   //      destination. |paste_location| specifies the where to place the output
   //      pixels: Rect(paste_location.origin(), output_rect.size()).
-  //   5. Run callback with true on success, false on failure (with no output
+  //   5. Run |callback| with true on success, false on failure (with no output
   //      modified).
   virtual void ReadbackYUV(const gpu::Mailbox& mailbox,
                            const gpu::SyncToken& sync_token,
@@ -509,6 +574,10 @@ class ReadbackYUVInterface {
                            unsigned char* v_plane_data,
                            const gfx::Point& paste_location,
                            const base::Callback<void(bool)>& callback) = 0;
+
+  // Returns the bitwise ORed set of GL backend state change that can be used to
+  // restore the GL state after ReadbackYUV() calls.
+  static uint32_t GetGrGLBackendStateChanges();
 };
 
 }  // namespace viz

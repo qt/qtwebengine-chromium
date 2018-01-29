@@ -38,6 +38,7 @@
 #include "content/public/renderer/navigation_state.h"
 #include "content/public/renderer/render_frame.h"
 #include "content/public/renderer/render_view.h"
+#include "net/base/registry_controlled_domains/registry_controlled_domain.h"
 #include "services/service_manager/public/cpp/interface_provider.h"
 #include "third_party/WebKit/public/platform/WebInputEvent.h"
 #include "third_party/WebKit/public/platform/WebSecurityOrigin.h"
@@ -428,12 +429,49 @@ void FindMatchesByUsername(const PasswordFormFillData& fill_data,
   }
 }
 
+// TODO(crbug.com/564578): This duplicates code from
+// components/password_manager/core/browser/psl_matching_helper.h. The logic
+// using this code should ultimately end up in
+// components/password_manager/core/browser, at which point it can use the
+// original code directly.
+std::string GetRegistryControlledDomain(const GURL& signon_realm) {
+  return net::registry_controlled_domains::GetDomainAndRegistry(
+      signon_realm,
+      net::registry_controlled_domains::INCLUDE_PRIVATE_REGISTRIES);
+}
+
+// TODO(crbug.com/564578): This duplicates code from
+// components/password_manager/core/browser/psl_matching_helper.h. The logic
+// using this code should ultimately end up in
+// components/password_manager/core/browser, at which point it can use the
+// original code directly.
+bool IsPublicSuffixDomainMatch(const std::string& url1,
+                               const std::string& url2) {
+  GURL gurl1(url1);
+  GURL gurl2(url2);
+
+  if (!gurl1.is_valid() || !gurl2.is_valid())
+    return false;
+
+  if (gurl1 == gurl2)
+    return true;
+
+  std::string domain1(GetRegistryControlledDomain(gurl1));
+  std::string domain2(GetRegistryControlledDomain(gurl2));
+
+  if (domain1.empty() || domain2.empty())
+    return false;
+
+  return gurl1.scheme() == gurl2.scheme() && domain1 == domain2 &&
+         gurl1.port() == gurl2.port();
+}
+
 // Annotate |forms| with form and field signatures as HTML attributes.
 void AnnotateFormsWithSignatures(
     blink::WebVector<blink::WebFormElement> forms) {
   for (blink::WebFormElement form : forms) {
     std::unique_ptr<PasswordForm> password_form(
-        CreatePasswordFormFromWebForm(form, nullptr, nullptr));
+        CreatePasswordFormFromWebForm(form, nullptr, nullptr, nullptr));
     if (password_form) {
       form.SetAttribute(
           blink::WebString::FromASCII(kDebugAttributeForFormSignature),
@@ -698,7 +736,8 @@ bool PasswordAutofillAgent::FillSuggestion(
   if (password_generation_agent_)
     password_generation_agent_->OnFieldAutofilled(password_element);
 
-  if (IsUsernameAmendable(username_element, element->IsPasswordField())) {
+  if (IsUsernameAmendable(username_element, element->IsPasswordField()) &&
+      username_element.Value().Utf16() != username) {
     username_element.SetAutofillValue(blink::WebString::FromUTF16(username));
     username_element.SetAutofilled(true);
     UpdateFieldValueAndPropertiesMaskMap(username_element, &username,
@@ -859,16 +898,12 @@ bool PasswordAutofillAgent::IsUsernameOrPasswordField(
   // to be the username field.
   std::unique_ptr<PasswordForm> password_form;
   if (element.Form().IsNull()) {
-    blink::WebLocalFrame* const element_frame =
-        element.GetDocument().GetFrame();
-    if (!element_frame)
-      return false;
-
-    password_form = CreatePasswordFormFromUnownedInputElements(
-        *element_frame, &field_value_and_properties_map_, &form_predictions_);
+    // To double check that element's frame and |render_frame()->GetWebFrame()|
+    // which is used in |GetPasswordFormFromUnownedInputElements| are identical.
+    DCHECK_EQ(element.GetDocument().GetFrame(), render_frame()->GetWebFrame());
+    password_form = GetPasswordFormFromUnownedInputElements();
   } else {
-    password_form = CreatePasswordFormFromWebForm(
-        element.Form(), &field_value_and_properties_map_, &form_predictions_);
+    password_form = GetPasswordFormFromWebForm(element.Form());
   }
 
   if (!password_form)
@@ -1091,7 +1126,7 @@ void PasswordAutofillAgent::SendPasswordForms(bool only_visible) {
     }
 
     std::unique_ptr<PasswordForm> password_form(
-        CreatePasswordFormFromWebForm(form, nullptr, &form_predictions_));
+        GetPasswordFormFromWebForm(form));
     if (password_form) {
       if (logger) {
         logger->LogPasswordForm(Logger::STRING_FORM_IS_PASSWORD,
@@ -1117,8 +1152,7 @@ void PasswordAutofillAgent::SendPasswordForms(bool only_visible) {
   }
   if (add_unowned_inputs) {
     std::unique_ptr<PasswordForm> password_form(
-        CreatePasswordFormFromUnownedInputElements(*frame, nullptr,
-                                                   &form_predictions_));
+        GetPasswordFormFromUnownedInputElements());
     if (password_form) {
       if (logger) {
         logger->LogPasswordForm(Logger::STRING_FORM_IS_PASSWORD,
@@ -1239,8 +1273,8 @@ void PasswordAutofillAgent::WillSubmitForm(const blink::WebFormElement& form) {
     LogHTMLForm(logger.get(), Logger::STRING_HTML_FORM_FOR_SUBMIT, form);
   }
 
-  std::unique_ptr<PasswordForm> submitted_form = CreatePasswordFormFromWebForm(
-      form, &field_value_and_properties_map_, &form_predictions_);
+  std::unique_ptr<PasswordForm> submitted_form =
+      GetPasswordFormFromWebForm(form);
 
   // If there is a provisionally saved password, copy over the previous
   // password value so we get the user's typed password, not the value that
@@ -1334,7 +1368,8 @@ void PasswordAutofillAgent::DidStartProvisionalLoad(
   ui::PageTransition type = navigation_state->GetTransitionType();
   if (ui::PageTransitionIsWebTriggerable(type) &&
       ui::PageTransitionIsNewNavigation(type) &&
-      !blink::WebUserGestureIndicator::IsProcessingUserGesture()) {
+      !blink::WebUserGestureIndicator::IsProcessingUserGesture(
+          navigated_frame)) {
     // If onsubmit has been called, try and save that form.
     if (provisionally_saved_form_.IsSet()) {
       if (logger) {
@@ -1366,8 +1401,8 @@ void PasswordAutofillAgent::DidStartProvisionalLoad(
           LogHTMLForm(logger.get(), Logger::STRING_FORM_FOUND_ON_PAGE,
                       form_element);
         }
-        std::unique_ptr<PasswordForm> form = CreatePasswordFormFromWebForm(
-            form_element, &field_value_and_properties_map_, &form_predictions_);
+        std::unique_ptr<PasswordForm> form =
+            GetPasswordFormFromWebForm(form_element);
         if (form) {
           form->submission_event = PasswordForm::SubmissionIndicatorEvent::
               FILLED_FORM_ON_START_PROVISIONAL_LOAD;
@@ -1376,9 +1411,7 @@ void PasswordAutofillAgent::DidStartProvisionalLoad(
       }
 
       std::unique_ptr<PasswordForm> form =
-          CreatePasswordFormFromUnownedInputElements(
-              *render_frame()->GetWebFrame(), &field_value_and_properties_map_,
-              &form_predictions_);
+          GetPasswordFormFromUnownedInputElements();
       if (form) {
         form->submission_event = PasswordForm::SubmissionIndicatorEvent::
             FILLED_INPUT_ELEMENTS_ON_START_PROVISIONAL_LOAD;
@@ -1542,6 +1575,27 @@ void PasswordAutofillAgent::FocusedNodeHasChanged(const blink::WebNode& node) {
                                        &field_value_and_properties_map_);
 }
 
+std::unique_ptr<PasswordForm> PasswordAutofillAgent::GetPasswordFormFromWebForm(
+    const blink::WebFormElement& web_form) {
+  return CreatePasswordFormFromWebForm(
+      web_form, &field_value_and_properties_map_, &form_predictions_,
+      &username_detector_cache_);
+}
+
+std::unique_ptr<PasswordForm>
+PasswordAutofillAgent::GetPasswordFormFromUnownedInputElements() {
+  blink::WebLocalFrame* frame = render_frame()->GetWebFrame();
+  // The element's frame might have been detached in the meantime (see
+  // http://crbug.com/585363, comments 5 and 6), in which case |frame| will
+  // be null. This was hardly caused by form submission (unless the user is
+  // supernaturally quick), so it is OK to drop the ball here.
+  if (!frame)
+    return nullptr;
+  return CreatePasswordFormFromUnownedInputElements(
+      *frame, &field_value_and_properties_map_, &form_predictions_,
+      &username_detector_cache_);
+}
+
 // mojom::PasswordAutofillAgent:
 void PasswordAutofillAgent::SetLoggingState(bool active) {
   logging_state_active_ = active;
@@ -1562,12 +1616,9 @@ void PasswordAutofillAgent::FindFocusedPasswordForm(
     blink::WebInputElement input = element.To<blink::WebInputElement>();
     if (input.IsPasswordField()) {
       if (!input.Form().IsNull()) {
-        password_form = CreatePasswordFormFromWebForm(
-            input.Form(), &field_value_and_properties_map_, &form_predictions_);
+        password_form = GetPasswordFormFromWebForm(input.Form());
       } else {
-        password_form = CreatePasswordFormFromUnownedInputElements(
-            *render_frame()->GetWebFrame(), &field_value_and_properties_map_,
-            &form_predictions_);
+        password_form = GetPasswordFormFromUnownedInputElements();
         // Only try to use this form if |input| is one of the password elements
         // for |password_form|.
         if (password_form->password_element !=
@@ -1662,6 +1713,7 @@ void PasswordAutofillAgent::FrameClosing() {
   }
   provisionally_saved_form_.Reset();
   field_value_and_properties_map_.clear();
+  username_detector_cache_.clear();
   sent_request_to_store_ = false;
   checked_safe_browsing_reputation_ = false;
   blacklisted_form_found_ = false;
@@ -1692,21 +1744,9 @@ void PasswordAutofillAgent::ProvisionallySavePassword(
 
   std::unique_ptr<PasswordForm> password_form;
   if (form.IsNull()) {
-    blink::WebLocalFrame* const element_frame =
-        element.GetDocument().GetFrame();
-    // The element's frame might have been detached in the meantime (see
-    // http://crbug.com/585363, comments 5 andelement.F 6), in which case
-    // frame() will return null. This was hardly caused by form submission
-    // (unless the user is supernaturally quick), so it is OK to drop the ball
-    // here.
-    if (!element_frame)
-      return;
-    DCHECK_EQ(element_frame, render_frame()->GetWebFrame());
-    password_form = CreatePasswordFormFromUnownedInputElements(
-        *element_frame, &field_value_and_properties_map_, &form_predictions_);
+    password_form = GetPasswordFormFromUnownedInputElements();
   } else {
-    password_form = CreatePasswordFormFromWebForm(
-        form, &field_value_and_properties_map_, &form_predictions_);
+    password_form = GetPasswordFormFromWebForm(form);
   }
   if (!password_form)
     return;
@@ -1775,7 +1815,8 @@ bool PasswordAutofillAgent::FillUserNameAndPassword(
   if (!username_element->IsNull() &&
       IsElementAutocompletable(*username_element)) {
     // TODO(crbug.com/507714): Why not setSuggestedValue?
-    username_element->SetAutofillValue(blink::WebString::FromUTF16(username));
+    if (username_element->Value().Utf16() != username)
+      username_element->SetAutofillValue(blink::WebString::FromUTF16(username));
     UpdateFieldValueAndPropertiesMaskMap(*username_element, &username,
                                          FieldPropertiesFlags::AUTOFILLED,
                                          field_value_and_properties_map);
@@ -1791,7 +1832,8 @@ bool PasswordAutofillAgent::FillUserNameAndPassword(
   // Wait to fill in the password until a user gesture occurs. This is to make
   // sure that we do not fill in the DOM with a password until we believe the
   // user is intentionally interacting with the page.
-  password_element->SetSuggestedValue(blink::WebString::FromUTF16(password));
+  if (password_element->Value().Utf16() != password)
+    password_element->SetSuggestedValue(blink::WebString::FromUTF16(password));
   UpdateFieldValueAndPropertiesMaskMap(*password_element, &password,
                                        FieldPropertiesFlags::AUTOFILLED,
                                        field_value_and_properties_map);
@@ -1822,7 +1864,9 @@ bool PasswordAutofillAgent::FillFormOnPasswordReceived(
 
   while (cur_frame->Parent()) {
     cur_frame = cur_frame->Parent();
-    if (!bottom_frame_origin.Equals(cur_frame->GetSecurityOrigin().ToString()))
+    if (!IsPublicSuffixDomainMatch(
+            bottom_frame_origin.Utf8(),
+            cur_frame->GetSecurityOrigin().ToString().Utf8()))
       return false;
   }
 

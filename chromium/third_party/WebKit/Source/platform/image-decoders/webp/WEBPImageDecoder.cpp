@@ -123,10 +123,10 @@ WEBPImageDecoder::WEBPImageDecoder(AlphaOption alpha_option,
                                    const ColorBehavior& color_behavior,
                                    size_t max_decoded_bytes)
     : ImageDecoder(alpha_option, color_behavior, max_decoded_bytes),
-      decoder_(0),
+      decoder_(nullptr),
       format_flags_(0),
       frame_background_has_alpha_(false),
-      demux_(0),
+      demux_(nullptr),
       demux_state_(WEBP_DEMUX_PARSING_HEADER),
       have_already_parsed_this_data_(false),
       repetition_count_(kAnimationLoopOnce),
@@ -142,14 +142,14 @@ WEBPImageDecoder::~WEBPImageDecoder() {
 
 void WEBPImageDecoder::Clear() {
   WebPDemuxDelete(demux_);
-  demux_ = 0;
+  demux_ = nullptr;
   consolidated_data_.reset();
   ClearDecoder();
 }
 
 void WEBPImageDecoder::ClearDecoder() {
   WebPIDelete(decoder_);
-  decoder_ = 0;
+  decoder_ = nullptr;
   decoded_height_ = 0;
   frame_background_has_alpha_ = false;
 }
@@ -313,7 +313,14 @@ void WEBPImageDecoder::ReadColorProfile() {
       reinterpret_cast<const char*>(chunk_iterator.chunk.bytes);
   size_t profile_size = chunk_iterator.chunk.size;
 
-  SetEmbeddedColorProfile(profile_data, profile_size);
+  sk_sp<SkColorSpace> color_space =
+      SkColorSpace::MakeICC(profile_data, profile_size);
+  if (color_space) {
+    if (color_space->type() == SkColorSpace::kRGB_Type)
+      SetEmbeddedColorSpace(std::move(color_space));
+  } else {
+    DLOG(ERROR) << "Failed to parse image ICC profile";
+  }
 
   WebPDemuxReleaseChunkIterator(&chunk_iterator);
 }
@@ -322,7 +329,7 @@ void WEBPImageDecoder::ApplyPostProcessing(size_t frame_index) {
   ImageFrame& buffer = frame_buffer_cache_[frame_index];
   int width;
   int decoded_height;
-  if (!WebPIDecGetRGB(decoder_, &decoded_height, &width, 0, 0))
+  if (!WebPIDecGetRGB(decoder_, &decoded_height, &width, nullptr, nullptr))
     return;  // See also https://bugs.webkit.org/show_bug.cgi?id=74062
   if (decoded_height <= 0)
     return;
@@ -348,9 +355,9 @@ void WEBPImageDecoder::ApplyPostProcessing(size_t frame_index) {
     for (int y = decoded_height_; y < decoded_height; ++y) {
       const int canvas_y = top + y;
       uint8_t* row = reinterpret_cast<uint8_t*>(buffer.GetAddr(left, canvas_y));
-      xform->apply(kDstFormat, row, kSrcFormat, row, width,
-                   kUnpremul_SkAlphaType);
-
+      bool color_converison_successful = xform->apply(
+          kDstFormat, row, kSrcFormat, row, width, kUnpremul_SkAlphaType);
+      DCHECK(color_converison_successful);
       uint8_t* pixel = row;
       for (int x = 0; x < width; ++x, pixel += 4) {
         const int canvas_x = left + x;

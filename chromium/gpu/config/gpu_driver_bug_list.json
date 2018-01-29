@@ -1,6 +1,5 @@
 {
   "name": "gpu driver bug list",
-  "version": "10.34",
   "entries": [
     {
       "id": 1,
@@ -78,8 +77,13 @@
     {
       "id": 20,
       "description": "Disable EXT_draw_buffers on GeForce GT 650M on Mac OS X due to driver bugs",
+      "cr_bugs": [180397, 779991],
       "os": {
-        "type": "macosx"
+        "type": "macosx",
+        "version": {
+          "op": "<",
+          "value": "10.12"
+        }
       },
       "vendor_id": "0x10de",
       "device_id": ["0x0fd5"],
@@ -2643,6 +2647,87 @@
       ]
     },
     {
+      "id": 243,
+      "description": "Program binaries don't contain transform feedback varyings on Mali GPUs",
+      "cr_bugs": [778871],
+      "os": {
+        "type": "chromeos"
+      },
+      "gl_vendor": "ARM.*",
+      "gl_renderer": "Mali.*",
+      "features": [
+        "disable_program_caching_for_transform_feedback"
+      ]
+    },
+    {
+      "id": 245,
+      "description": "Switching framebuffers without a flush can lead to crashes on Intel 9th Generation GPU Macs.",
+      "cr_bugs": [783979],
+      "os": {
+        "type": "macosx"
+      },
+      "vendor_id": "0x8086",
+      "device_id": ["0x1927", "0x1926", "0x191e", "0x1916", "0x1912", "0x1912",
+                    "0x191b", "0x193b", "0x591e", "0x5926", "0x5927", "0x5912",
+                    "0x5916", "0x591b", "0x3e92"],
+      "multi_gpu_category": "any",
+      "features": [
+        "flush_on_framebuffer_change"
+      ]
+    },
+    {
+      "id": 246,
+      "description": "Code produced by initializing variables using loops can trigger crashes on some Adreno drivers.",
+      "cr_bugs": [784817],
+      "os": {
+        "type": "android"
+      },
+      "gl_renderer": "Adreno \\(TM\\) *",
+      "features": [
+        "dont_use_loops_to_initialize_variables"
+      ]
+    },
+    {
+      "id": 247,
+      "description": "EXT_disjoint_timer_query is broken on Samsung Galaxy S6",
+      "cr_bugs": [702980],
+      "os": {
+        "type": "android"
+      },
+      "machine_model_name": ["SM-G930F"],
+      "gl_vendor": "ARM.*",
+      "gl_renderer": "Mali-T880",
+      "disabled_extensions": [
+        "GL_EXT_disjoint_timer_query"
+      ]
+    },
+    {
+      "id": 248,
+      "description": "Direct composition causes slow presents on Intel Sandybridge",
+      "cr_bugs": [775898, 785648],
+      "os": {
+        "type": "win"
+      },
+      "vendor_id": "0x8086",
+      "device_id": ["0x0116"],
+      "features": [
+        "disable_direct_composition"
+      ]
+    },
+    {
+      "id": 249,
+      "description": "Direct composition causes slow presents on old Nvidia GPUs",
+      "cr_bugs": [775898],
+      "os": {
+        "type": "win"
+      },
+      "vendor_id": "0x10de",
+      "device_id": ["0x10d8"],
+      "features": [
+        "disable_direct_composition"
+      ]
+    },
+    {
       "id": 250,
       "description": "Depth/stencil renderbuffers can't be resized on NVIDIA on macOS 10.13",
       "cr_bugs": [775202],
@@ -2658,9 +2743,18 @@
       "features": [
         "depth_stencil_renderbuffer_resize_emulation"
       ]
+    },
+    {
+      "id": 251,
+      "description": "Vivante GPUs shader cache breaks rendering",
+      "cr_bugs": [780498],
+      "os": {
+        "type": "android"
+      },
+      "gl_extensions": ".*GL_VIV_shader_binary.*",
+      "features": [
+        "disable_program_cache"
+      ]
     }
-  ],
-  "comment": [
-    "Please update the version number on top whenever you change this file"
   ]
 }

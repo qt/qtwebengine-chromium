@@ -25,8 +25,6 @@ enum IPCMessageStart {
   MediaMsgStart,
   PpapiMsgStart,
   FirefoxImporterUnittestMsgStart,
-  FileUtilitiesMsgStart,
-  DatabaseMsgStart,
   DOMStorageMsgStart,
   SpeechRecognitionMsgStart,
   SafeBrowsingMsgStart,
@@ -85,7 +83,6 @@ enum IPCMessageStart {
   // internal code. Contact gunsch@ before changing/removing.
   CastCryptoMsgStart,
   CastChannelMsgStart,
-  RenderProcessMsgStart,
   IPCTestMsgStart,
   DWriteFontProxyMsgStart,
   MediaPlayerDelegateMsgStart,

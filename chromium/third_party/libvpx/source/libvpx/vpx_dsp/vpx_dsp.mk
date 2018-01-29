@@ -50,7 +50,6 @@ DSP_SRCS-yes += intrapred.c
 DSP_SRCS-$(HAVE_SSE) += x86/intrapred_sse2.asm
 DSP_SRCS-$(HAVE_SSE2) += x86/intrapred_sse2.asm
 DSP_SRCS-$(HAVE_SSSE3) += x86/intrapred_ssse3.asm
-DSP_SRCS-$(HAVE_SSSE3) += x86/vpx_subpixel_8t_ssse3.asm
 DSP_SRCS-$(HAVE_VSX) += ppc/intrapred_vsx.c
 
 ifeq ($(CONFIG_VP9_HIGHBITDEPTH),yes)
@@ -89,6 +88,8 @@ DSP_SRCS-yes += vpx_filter.h
 
 DSP_SRCS-$(ARCH_X86)$(ARCH_X86_64) += x86/convolve.h
 DSP_SRCS-$(ARCH_X86)$(ARCH_X86_64) += x86/vpx_asm_stubs.c
+DSP_SRCS-$(HAVE_SSSE3) += x86/convolve_ssse3.h
+DSP_SRCS-$(HAVE_AVX2) += x86/convolve_avx2.h
 DSP_SRCS-$(HAVE_SSE2)  += x86/vpx_subpixel_8t_sse2.asm
 DSP_SRCS-$(HAVE_SSE2)  += x86/vpx_subpixel_bilinear_sse2.asm
 DSP_SRCS-$(HAVE_SSSE3) += x86/vpx_subpixel_8t_ssse3.asm
@@ -289,6 +290,7 @@ endif
 # avg
 DSP_SRCS-yes           += avg.c
 DSP_SRCS-$(HAVE_SSE2)  += x86/avg_intrin_sse2.c
+DSP_SRCS-$(HAVE_AVX2)  += x86/avg_intrin_avx2.c
 DSP_SRCS-$(HAVE_NEON)  += arm/avg_neon.c
 DSP_SRCS-$(HAVE_NEON)  += arm/hadamard_neon.c
 DSP_SRCS-$(HAVE_MSA)   += mips/avg_msa.c
@@ -325,6 +327,7 @@ DSP_SRCS-$(HAVE_SSSE3)  += x86/sad_ssse3.asm
 DSP_SRCS-$(HAVE_SSE4_1) += x86/sad_sse4.asm
 DSP_SRCS-$(HAVE_AVX2)   += x86/sad4d_avx2.c
 DSP_SRCS-$(HAVE_AVX2)   += x86/sad_avx2.c
+DSP_SRCS-$(HAVE_AVX512) += x86/sad4d_avx512.c
 
 DSP_SRCS-$(HAVE_SSE)    += x86/sad4d_sse2.asm
 DSP_SRCS-$(HAVE_SSE)    += x86/sad_sse2.asm
@@ -386,6 +389,7 @@ DSP_SRCS-$(HAVE_VSX)  += ppc/transpose_vsx.h
 DSP_SRCS-$(HAVE_VSX)  += ppc/bitdepth_conversion_vsx.h
 
 # X86 utilities
+DSP_SRCS-$(HAVE_SSE2) += x86/mem_sse2.h
 DSP_SRCS-$(HAVE_SSE2) += x86/transpose_sse2.h
 
 DSP_SRCS-no += $(DSP_SRCS_REMOVE-yes)

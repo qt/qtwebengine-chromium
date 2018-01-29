@@ -10,23 +10,29 @@
 #include "core/fxcrt/fx_string.h"
 #include "core/fxcrt/fx_system.h"
 
-struct FXCMAP_CMap {
-  enum MapType { None, Single, Range, Reverse };
-
-  const char* m_Name;
-  MapType m_WordMapType;
-  const uint16_t* m_pWordMap;
-  int m_WordCount;
-  MapType m_DWordMapType;
-  const uint16_t* m_pDWordMap;
-  int m_DWordCount;
-  int m_UseOffset;
+struct FXCMAP_DWordCIDMap {
+  uint16_t m_HiWord;
+  uint16_t m_LoWordLow;
+  uint16_t m_LoWordHigh;
+  uint16_t m_CID;
 };
 
-void FPDFAPI_FindEmbeddedCMap(const ByteString& name,
-                              int charset,
-                              int coding,
-                              const FXCMAP_CMap*& pMap);
+struct FXCMAP_CMap {
+  enum MapType : uint8_t { None, Single, Range };
+
+  const char* m_Name;
+  const uint16_t* m_pWordMap;
+  const FXCMAP_DWordCIDMap* m_pDWordMap;
+  uint16_t m_WordCount;
+  uint16_t m_DWordCount;
+  MapType m_WordMapType;
+  MapType m_DWordMapType;  // TODO(thestig): Remove.
+  int8_t m_UseOffset;
+};
+
+const FXCMAP_CMap* FPDFAPI_FindEmbeddedCMap(const ByteString& name,
+                                            int charset,
+                                            int coding);
 uint16_t FPDFAPI_CIDFromCharCode(const FXCMAP_CMap* pMap, uint32_t charcode);
 uint32_t FPDFAPI_CharCodeFromCID(const FXCMAP_CMap* pMap, uint16_t cid);
 

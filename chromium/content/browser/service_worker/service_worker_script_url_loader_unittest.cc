@@ -12,7 +12,6 @@
 #include "content/browser/service_worker/service_worker_context_core.h"
 #include "content/browser/service_worker/service_worker_disk_cache.h"
 #include "content/browser/url_loader_factory_getter.h"
-#include "content/public/common/resource_request_completion_status.h"
 #include "content/public/common/url_loader_factory.mojom.h"
 #include "content/public/test/test_browser_thread_bundle.h"
 #include "content/public/test/test_url_loader_client.h"
@@ -23,6 +22,7 @@
 #include "net/traffic_annotation/network_traffic_annotation.h"
 #include "net/traffic_annotation/network_traffic_annotation_test_helper.h"
 #include "net/url_request/redirect_info.h"
+#include "services/network/public/cpp/url_loader_completion_status.h"
 #include "third_party/WebKit/public/platform/modules/serviceworker/service_worker_registration.mojom.h"
 
 namespace content {
@@ -90,17 +90,16 @@ class MockNetworkURLLoaderFactory final : public mojom::URLLoaderFactory {
     ResourceResponseHead response_head;
     response_head.headers = info.headers;
     response_head.headers->GetMimeType(&response_head.mime_type);
-    base::Optional<net::SSLInfo> ssl_info;
     if (response.has_certificate_error) {
-      ssl_info.emplace();
-      ssl_info->cert_status = net::CERT_STATUS_DATE_INVALID;
+      response_head.cert_status = net::CERT_STATUS_DATE_INVALID;
     }
 
     if (response_head.headers->response_code() == 307) {
       client->OnReceiveRedirect(net::RedirectInfo(), response_head);
       return;
     }
-    client->OnReceiveResponse(response_head, ssl_info, nullptr);
+    client->OnReceiveResponse(response_head, base::nullopt /* ssl_info */,
+                              nullptr /* downloaded_file */);
 
     // Pass the response body to the client.
     uint32_t bytes_written = response.body.size();
@@ -110,7 +109,7 @@ class MockNetworkURLLoaderFactory final : public mojom::URLLoaderFactory {
     ASSERT_EQ(MOJO_RESULT_OK, result);
     client->OnStartLoadingResponseBody(std::move(data_pipe.consumer_handle));
 
-    ResourceRequestCompletionStatus status;
+    network::URLLoaderCompletionStatus status;
     status.error_code = net::OK;
     client->OnComplete(status);
   }
@@ -149,11 +148,10 @@ class ServiceWorkerScriptURLLoaderTest : public testing::Test {
 
     // Initialize URLLoaderFactory.
     mojom::URLLoaderFactoryPtr test_loader_factory;
-    mojo::MakeStrongBinding(
-        std::make_unique<MockNetworkURLLoaderFactory>(mock_server_.get()),
-        MakeRequest(&test_loader_factory));
+    mock_url_loader_factory_ =
+        std::make_unique<MockNetworkURLLoaderFactory>(mock_server_.get());
     helper_->url_loader_factory_getter()->SetNetworkFactoryForTesting(
-        std::move(test_loader_factory));
+        mock_url_loader_factory_.get());
   }
 
   void InitializeStorage() {
@@ -252,6 +250,7 @@ class ServiceWorkerScriptURLLoaderTest : public testing::Test {
 
  protected:
   TestBrowserThreadBundle thread_bundle_;
+  std::unique_ptr<MockNetworkURLLoaderFactory> mock_url_loader_factory_;
   std::unique_ptr<EmbeddedWorkerTestHelper> helper_;
 
   scoped_refptr<ServiceWorkerRegistration> registration_;
@@ -383,7 +382,7 @@ TEST_F(ServiceWorkerScriptURLLoaderTest, Error_CertificateError) {
 
   // The request should be failed because of the response with the certificate
   // error.
-  EXPECT_EQ(net::ERR_INSECURE_RESPONSE, client_.completion_status().error_code);
+  EXPECT_EQ(net::ERR_CERT_DATE_INVALID, client_.completion_status().error_code);
   EXPECT_FALSE(client_.has_received_response());
 
   // The response shouldn't be stored in the storage.

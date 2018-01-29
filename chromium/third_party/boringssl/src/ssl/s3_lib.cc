@@ -164,30 +164,35 @@
 
 namespace bssl {
 
-int ssl3_new(SSL *ssl) {
-  UniquePtr<SSLAEADContext> aead_read_ctx =
-      SSLAEADContext::CreateNullCipher(SSL_is_dtls(ssl));
-  UniquePtr<SSLAEADContext> aead_write_ctx =
-      SSLAEADContext::CreateNullCipher(SSL_is_dtls(ssl));
-  if (!aead_read_ctx || !aead_write_ctx) {
-    return 0;
+SSL3_STATE::SSL3_STATE()
+    : skip_early_data(false),
+      have_version(false),
+      v2_hello_done(false),
+      is_v2_hello(false),
+      has_message(false),
+      initial_handshake_complete(false),
+      session_reused(false),
+      send_connection_binding(false),
+      tlsext_channel_id_valid(false),
+      key_update_pending(false),
+      wpend_pending(false) {}
+
+SSL3_STATE::~SSL3_STATE() {}
+
+bool ssl3_new(SSL *ssl) {
+  UniquePtr<SSL3_STATE> s3 = MakeUnique<SSL3_STATE>();
+  if (!s3) {
+    return false;
   }
 
-  SSL3_STATE *s3 = (SSL3_STATE *)OPENSSL_malloc(sizeof *s3);
-  if (s3 == NULL) {
-    return 0;
-  }
-  OPENSSL_memset(s3, 0, sizeof *s3);
-
+  s3->aead_read_ctx = SSLAEADContext::CreateNullCipher(SSL_is_dtls(ssl));
+  s3->aead_write_ctx = SSLAEADContext::CreateNullCipher(SSL_is_dtls(ssl));
   s3->hs = ssl_handshake_new(ssl);
-  if (s3->hs == NULL) {
-    OPENSSL_free(s3);
-    return 0;
+  if (!s3->aead_read_ctx || !s3->aead_write_ctx || !s3->hs) {
+    return false;
   }
 
-  s3->aead_read_ctx = aead_read_ctx.release();
-  s3->aead_write_ctx = aead_write_ctx.release();
-  ssl->s3 = s3;
+  ssl->s3 = s3.release();
 
   // Set the version to the highest supported version.
   //
@@ -195,7 +200,7 @@ int ssl3_new(SSL *ssl) {
   // protocol version, and implement this pre-negotiation quirk in |SSL_version|
   // at the API boundary rather than in internal state.
   ssl->version = TLS1_2_VERSION;
-  return 1;
+  return true;
 }
 
 void ssl3_free(SSL *ssl) {
@@ -203,20 +208,7 @@ void ssl3_free(SSL *ssl) {
     return;
   }
 
-  ssl_read_buffer_clear(ssl);
-  ssl_write_buffer_clear(ssl);
-
-  SSL_SESSION_free(ssl->s3->established_session);
-  ssl_handshake_free(ssl->s3->hs);
-  OPENSSL_free(ssl->s3->next_proto_negotiated);
-  OPENSSL_free(ssl->s3->alpn_selected);
-  OPENSSL_free(ssl->s3->hostname);
-  Delete(ssl->s3->aead_read_ctx);
-  Delete(ssl->s3->aead_write_ctx);
-  BUF_MEM_free(ssl->s3->pending_flight);
-
-  OPENSSL_cleanse(ssl->s3, sizeof *ssl->s3);
-  OPENSSL_free(ssl->s3);
+  Delete(ssl->s3);
   ssl->s3 = NULL;
 }
 

@@ -29,30 +29,41 @@ namespace blink {
 //   placeholders for displaying them.
 class NGPaintFragment : public DisplayItemClient, public ImageResourceObserver {
  public:
-  explicit NGPaintFragment(RefPtr<const NGPhysicalFragment>);
+  explicit NGPaintFragment(scoped_refptr<const NGPhysicalFragment>,
+                           bool stop_at_block_layout_root = false);
 
   const NGPhysicalFragment& PhysicalFragment() const {
     return *physical_fragment_;
   }
 
-  const Vector<std::unique_ptr<const NGPaintFragment>>& Children() const {
+  const Vector<std::unique_ptr<NGPaintFragment>>& Children() const {
     return children_;
   }
 
+  // Update VisualRect() for this object and all its descendants from
+  // LayoutObject. Corresponding LayoutObject::VisualRect() must be computed and
+  // set beforehand.
+  void UpdateVisualRectFromLayoutObject();
+
+  // Collects rectangles that the outline of this object would be drawing along
+  // the outside of, even if the object isn't styled with a outline for now. The
+  // rects also cover continuations.
+  void AddOutlineRects(Vector<LayoutRect>*, const LayoutPoint& offset) const;
+
   // TODO(layout-dev): Implement when we have oveflow support.
   // TODO(eae): Switch to using NG geometry types.
-  bool HasOverflowClip() const { return false; }
-  bool ShouldClipOverflow() const { return false; }
-  bool HasSelfPaintingLayer() const { return false; }
-  LayoutRect VisualRect() const { return visual_rect_; }
-  LayoutRect VisualOverflowRect() const { return VisualRect(); }
-  LayoutRect OverflowClipRect(const LayoutPoint&,
+  bool HasOverflowClip() const;
+  bool ShouldClipOverflow() const;
+  bool HasSelfPaintingLayer() const;
+  LayoutRect VisualRect() const override { return visual_rect_; }
+  LayoutRect VisualOverflowRect() const;
+  LayoutRect OverflowClipRect(const LayoutPoint& location,
                               OverlayScrollbarClipBehavior) const {
-    return VisualRect();
+    return {location, VisualRect().Size()};
   }
 
   // DisplayItemClient methods.
-  String DebugName() const { return "NGPaintFragment"; }
+  String DebugName() const override { return "NGPaintFragment"; }
 
   // Commonly used functions for NGPhysicalFragment.
   Node* GetNode() const { return PhysicalFragment().GetNode(); }
@@ -66,12 +77,19 @@ class NGPaintFragment : public DisplayItemClient, public ImageResourceObserver {
  private:
   void SetVisualRect(const LayoutRect& rect) { visual_rect_ = rect; }
 
-  void PopulateDescendants();
+  void PopulateDescendants(bool stop_at_block_layout_root);
 
-  RefPtr<const NGPhysicalFragment> physical_fragment_;
+  // A context object used for UpdateVisualObject() and PopulateDescendants().
+  struct UpdateContext {
+    const LayoutObject* parent_box;
+    const NGPhysicalOffset offset_to_parent_box;
+  };
+  void UpdateVisualRectFromLayoutObject(const UpdateContext&);
+
+  scoped_refptr<const NGPhysicalFragment> physical_fragment_;
   LayoutRect visual_rect_;
 
-  Vector<std::unique_ptr<const NGPaintFragment>> children_;
+  Vector<std::unique_ptr<NGPaintFragment>> children_;
 };
 
 }  // namespace blink

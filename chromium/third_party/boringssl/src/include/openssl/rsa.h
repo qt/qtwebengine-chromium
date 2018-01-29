@@ -89,6 +89,9 @@ OPENSSL_EXPORT int RSA_up_ref(RSA *rsa);
 
 // Properties.
 
+// RSA_bits returns the size of |rsa|, in bits.
+OPENSSL_EXPORT unsigned RSA_bits(const RSA *rsa);
+
 // RSA_get0_key sets |*out_n|, |*out_e|, and |*out_d|, if non-NULL, to |rsa|'s
 // modulus, public exponent, and private exponent, respectively. If |rsa| is a
 // public key, the private exponent will be set to NULL.
@@ -427,10 +430,6 @@ OPENSSL_EXPORT int RSA_add_pkcs1_prefix(uint8_t **out_msg, size_t *out_msg_len,
 // from |cbs| and advances |cbs|. It returns a newly-allocated |RSA| or NULL on
 // error.
 OPENSSL_EXPORT RSA *RSA_parse_public_key(CBS *cbs);
-
-// RSA_parse_public_key_buggy behaves like |RSA_parse_public_key|, but it
-// tolerates some invalid encodings. Do not use this function.
-OPENSSL_EXPORT RSA *RSA_parse_public_key_buggy(CBS *cbs);
 
 // RSA_public_key_from_bytes parses |in| as a DER-encoded RSAPublicKey structure
 // (RFC 3447). It returns a newly-allocated |RSA| or NULL on error.

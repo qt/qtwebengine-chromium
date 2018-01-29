@@ -97,7 +97,7 @@ WindowEventDispatcher::WindowEventDispatcher(WindowTreeHost* host)
   ui::GestureRecognizer::Get()->AddGestureEventHelper(this);
   Env::GetInstance()->AddObserver(this);
   if (Env::GetInstance()->mode() == Env::Mode::MUS)
-    mus_mouse_location_updater_ = base::MakeUnique<MusMouseLocationUpdater>();
+    mus_mouse_location_updater_ = std::make_unique<MusMouseLocationUpdater>();
 }
 
 WindowEventDispatcher::~WindowEventDispatcher() {
@@ -698,9 +698,11 @@ void WindowEventDispatcher::OnWindowVisibilityChanged(Window* window,
     OnWindowHidden(window, WINDOW_HIDDEN);
 }
 
-void WindowEventDispatcher::OnWindowBoundsChanged(Window* window,
-                                                  const gfx::Rect& old_bounds,
-                                                  const gfx::Rect& new_bounds) {
+void WindowEventDispatcher::OnWindowBoundsChanged(
+    Window* window,
+    const gfx::Rect& old_bounds,
+    const gfx::Rect& new_bounds,
+    ui::PropertyChangeReason reason) {
   if (!host_->window()->Contains(window))
     return;
 
@@ -730,18 +732,26 @@ void WindowEventDispatcher::OnWindowBoundsChanged(Window* window,
   }
 }
 
-void WindowEventDispatcher::OnWindowTransforming(Window* window) {
-  if (!host_->window()->Contains(window))
-    return;
-
-  SynthesizeMouseMoveAfterChangeToWindow(window);
+void WindowEventDispatcher::OnWindowTargetTransformChanging(
+    Window* window,
+    const gfx::Transform& new_transform) {
+  window_transforming_ = true;
+  if (!synthesize_mouse_move_ && host_->window()->Contains(window))
+    SynthesizeMouseMoveAfterChangeToWindow(window);
 }
 
-void WindowEventDispatcher::OnWindowTransformed(Window* window) {
-  if (!host_->window()->Contains(window))
-    return;
-
-  SynthesizeMouseMoveAfterChangeToWindow(window);
+void WindowEventDispatcher::OnWindowTransformed(
+    Window* window,
+    ui::PropertyChangeReason reason) {
+  // Call SynthesizeMouseMoveAfterChangeToWindow() only if it's the first time
+  // that OnWindowTransformed() is called after
+  // OnWindowTargetTransformChanging() (to avoid generating multiple mouse
+  // events during animation).
+  if (window_transforming_ && !synthesize_mouse_move_ &&
+      host_->window()->Contains(window)) {
+    SynthesizeMouseMoveAfterChangeToWindow(window);
+  }
+  window_transforming_ = false;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -818,11 +828,12 @@ ui::EventDispatchDetails WindowEventDispatcher::SynthesizeMouseMoveEvent() {
     return details;
   synthesize_mouse_move_ = false;
 
-  // No need to generate mouse event if the cursor is invisible.
+  // No need to generate mouse event if the cursor is invisible and not locked.
   client::CursorClient* cursor_client =
       client::GetCursorClient(host_->window());
   if (cursor_client && (!cursor_client->IsMouseEventsEnabled() ||
-                        !cursor_client->IsCursorVisible())) {
+                        (!cursor_client->IsCursorVisible() &&
+                         !cursor_client->IsCursorLocked()))) {
     return details;
   }
 

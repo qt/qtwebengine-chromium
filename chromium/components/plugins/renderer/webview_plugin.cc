@@ -17,6 +17,7 @@
 #include "content/public/renderer/render_view.h"
 #include "gin/converter.h"
 #include "skia/ext/platform_canvas.h"
+#include "third_party/WebKit/common/page/page_visibility_state.mojom.h"
 #include "third_party/WebKit/public/platform/WebCoalescedInputEvent.h"
 #include "third_party/WebKit/public/platform/WebURL.h"
 #include "third_party/WebKit/public/platform/WebURLResponse.h"
@@ -255,7 +256,8 @@ void WebViewPlugin::DidFailLoading(const WebURLError& error) {
 WebViewPlugin::WebViewHelper::WebViewHelper(WebViewPlugin* plugin,
                                             const WebPreferences& preferences)
     : plugin_(plugin) {
-  web_view_ = WebView::Create(this, blink::kWebPageVisibilityStateVisible);
+  web_view_ =
+      WebView::Create(this, blink::mojom::PageVisibilityState::kVisible);
   // ApplyWebPreferences before making a WebLocalFrame so that the frame sees a
   // consistent view of our preferences.
   content::RenderView::ApplyWebPreferences(preferences, web_view_);
@@ -333,12 +335,9 @@ void WebViewPlugin::WebViewHelper::ScheduleAnimation() {
   }
 }
 
-std::unique_ptr<blink::WebURLLoader>
-WebViewPlugin::WebViewHelper::CreateURLLoader(
-    const blink::WebURLRequest& request,
-    scoped_refptr<base::SingleThreadTaskRunner> task_runner) {
-  // TODO(yhirano): Stop using Platform::CreateURLLoader() here.
-  return blink::Platform::Current()->CreateURLLoader(request, task_runner);
+std::unique_ptr<blink::WebURLLoaderFactory>
+WebViewPlugin::WebViewHelper::CreateURLLoaderFactory() {
+  return blink::Platform::Current()->CreateDefaultURLLoaderFactory();
 }
 
 void WebViewPlugin::WebViewHelper::DidClearWindowObject() {

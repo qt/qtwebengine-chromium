@@ -7,6 +7,7 @@
 
 #include <memory>
 
+#include "base/gtest_prod_util.h"
 #include "base/macros.h"
 #include "base/memory/singleton.h"
 #include "base/time/time.h"
@@ -50,6 +51,7 @@ class JavaScriptDialogManager : public content::JavaScriptDialogManager {
                            DialogClosedCallback callback,
                            bool* did_suppress_message) override;
   void RunBeforeUnloadDialog(content::WebContents* web_contents,
+                             content::RenderFrameHost* render_frame_host,
                              bool is_reload,
                              DialogClosedCallback callback) override;
   bool HandleJavaScriptDialog(content::WebContents* web_contents,
@@ -59,6 +61,7 @@ class JavaScriptDialogManager : public content::JavaScriptDialogManager {
                      bool reset_state) override;
 
  private:
+  FRIEND_TEST_ALL_PREFIXES(JavaScriptDialogManagerTest, GetTitle);
   friend struct base::DefaultSingletonTraits<JavaScriptDialogManager>;
 
   JavaScriptDialogManager();
@@ -76,6 +79,9 @@ class JavaScriptDialogManager : public content::JavaScriptDialogManager {
                       DialogClosedCallback callback,
                       bool success,
                       const base::string16& user_input);
+
+  static base::string16 GetTitleImpl(const GURL& parent_frame_url,
+                                     const GURL& alerting_frame_url);
 
   // Mapping between the WebContents and their extra data. The key
   // is a void* because the pointer is just a cookie and is never dereferenced.

@@ -8,6 +8,7 @@
 
 #include "base/bind.h"
 #include "base/memory/ptr_util.h"
+#include "ui/base/cursor/ozone/bitmap_cursor_factory_ozone.h"
 #include "ui/events/event.h"
 #include "ui/events/ozone/events_ozone.h"
 #include "ui/ozone/platform/wayland/wayland_connection.h"
@@ -29,10 +30,10 @@ class XDGShellObjectFactory {
       WaylandConnection* connection,
       WaylandWindow* wayland_window) {
     if (connection->shell_v6())
-      return base::MakeUnique<XDGSurfaceWrapperV6>(wayland_window);
+      return std::make_unique<XDGSurfaceWrapperV6>(wayland_window);
 
     DCHECK(connection->shell());
-    return base::MakeUnique<XDGSurfaceWrapperV5>(wayland_window);
+    return std::make_unique<XDGSurfaceWrapperV5>(wayland_window);
   }
 
  private:
@@ -163,7 +164,18 @@ void WaylandWindow::Restore() {
 }
 
 void WaylandWindow::SetCursor(PlatformCursor cursor) {
-  NOTIMPLEMENTED();
+  scoped_refptr<BitmapCursorOzone> bitmap =
+      BitmapCursorFactoryOzone::GetBitmapCursor(cursor);
+  if (bitmap_ == bitmap)
+    return;
+
+  bitmap_ = bitmap;
+
+  if (bitmap_) {
+    connection_->SetCursorBitmap(bitmap_->bitmaps(), bitmap_->hotspot());
+  } else {
+    connection_->SetCursorBitmap(std::vector<SkBitmap>(), gfx::Point());
+  }
 }
 
 void WaylandWindow::MoveCursorTo(const gfx::Point& location) {

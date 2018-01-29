@@ -71,7 +71,8 @@ void UpdateCachedRenderTarget(const gl::Context *context,
     }
     if (newRenderTarget != cachedRenderTarget)
     {
-        auto channel = (newRenderTarget ? newRenderTarget->getBroadcastChannel() : nullptr);
+        OnRenderTargetDirtyChannel *channel =
+            (newRenderTarget ? newRenderTarget->getBroadcastChannel() : nullptr);
         channelBinding->bind(channel);
         cachedRenderTarget = newRenderTarget;
     }
@@ -106,7 +107,7 @@ gl::Error Framebuffer11::markAttachmentsDirty(const gl::Context *context) const
         ANGLE_TRY(MarkAttachmentsDirty(context, &colorAttachment));
     }
 
-    auto dsAttachment = mState.getDepthOrStencilAttachment();
+    const gl::FramebufferAttachment *dsAttachment = mState.getDepthOrStencilAttachment();
     if (dsAttachment)
     {
         ANGLE_TRY(MarkAttachmentsDirty(context, dsAttachment));
@@ -198,7 +199,8 @@ gl::Error Framebuffer11::invalidateBase(const gl::Context *context,
 
                 size_t colorIndex =
                     (attachments[i] == GL_COLOR ? 0u : (attachments[i] - GL_COLOR_ATTACHMENT0));
-                auto colorAttachment = mState.getColorAttachment(colorIndex);
+                const gl::FramebufferAttachment *colorAttachment =
+                    mState.getColorAttachment(colorIndex);
                 if (colorAttachment)
                 {
                     ANGLE_TRY(invalidateAttachment(context, colorAttachment));
@@ -284,12 +286,12 @@ gl::Error Framebuffer11::readPixelsImpl(const gl::Context *context,
     const gl::FramebufferAttachment *readAttachment = mState.getReadAttachment();
     ASSERT(readAttachment);
 
-    gl::Buffer *packBuffer = pack.pixelBuffer.get();
+    gl::Buffer *packBuffer = context->getGLState().getTargetBuffer(gl::BufferBinding::PixelPack);
     if (packBuffer != nullptr)
     {
         Buffer11 *packBufferStorage = GetImplAs<Buffer11>(packBuffer);
         PackPixelsParams packParams(area, format, type, static_cast<GLuint>(outputPitch), pack,
-                                    reinterpret_cast<ptrdiff_t>(pixels));
+                                    packBuffer, reinterpret_cast<ptrdiff_t>(pixels));
 
         return packBufferStorage->packPixels(context, *readAttachment, packParams);
     }

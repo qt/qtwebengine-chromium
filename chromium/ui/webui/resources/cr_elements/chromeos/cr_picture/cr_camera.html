@@ -144,14 +144,16 @@
       </div>
       <div>
         <button is="paper-icon-button-light" id="takePhoto" tabindex="1"
-            title="[[takePhotoLabel]]" on-tap="takePhoto"
+            title="[[getTakePhotoLabel_(videomode, takePhotoLabel,
+                captureVideoLabel)]]" on-tap="takePhoto"
             disabled="[[!cameraOnline_]]">
         </button>
       </div>
       <div>
         <button is="paper-icon-button-light" id="switchMode" tabindex="2"
-            title="[[switchModeLabel]]" on-tap="onTapSwitchMode_"
-            disabled="[[!cameraOnline_]]" hidden="[[!videomodeEnabled]]">
+            title="[[getSwitchModeLabel_(videomode, switchModeToCameraLabel,
+                switchModeToVideoLabel)]]" on-tap="onTapSwitchMode_"
+            disabled="[[!cameraOnline_]]" hidden="[[!videoModeEnabled]]">
         </button>
       </div>
     </div>

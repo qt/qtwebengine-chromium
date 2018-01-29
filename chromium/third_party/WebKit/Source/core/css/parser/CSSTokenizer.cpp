@@ -9,7 +9,6 @@ namespace blink {
 }
 
 #include "core/css/parser/CSSParserIdioms.h"
-#include "core/css/parser/CSSParserObserverWrapper.h"
 #include "core/css/parser/CSSParserTokenRange.h"
 #include "core/html/parser/HTMLParserIdioms.h"
 #include "platform/wtf/text/CharacterNames.h"
@@ -298,7 +297,7 @@ CSSParserToken CSSTokenizer::NextToken() {
   // incremental tokenization of partial sources.
   // However, for now we follow the spec exactly.
   UChar cc = Consume();
-  CodePoint code_point_func = 0;
+  CodePoint code_point_func = nullptr;
 
   if (IsASCII(cc)) {
     SECURITY_DCHECK(cc < codePointsNumber);

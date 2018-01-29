@@ -10,6 +10,7 @@
 #include "SkBitmap.h"
 #include "SkColorData.h"
 #include "SkColorSpaceXformer.h"
+#include "SkImageFilterPriv.h"
 #include "SkOpts.h"
 #include "SkReadBuffer.h"
 #include "SkRect.h"
@@ -401,7 +402,7 @@ static void apply_morphology_rect(GrRenderTargetContext* renderTargetContext,
                                   const float bounds[2],
                                   GrMorphologyEffect::Direction direction) {
     GrPaint paint;
-    paint.setGammaCorrect(renderTargetContext->isGammaCorrect());
+    paint.setGammaCorrect(renderTargetContext->colorSpaceInfo().isGammaCorrect());
 
     paint.addColorFragmentProcessor(GrMorphologyEffect::Make(std::move(proxy),
                                                              direction, radius, morphType,
@@ -420,7 +421,7 @@ static void apply_morphology_rect_no_bounds(GrRenderTargetContext* renderTargetC
                                             GrMorphologyEffect::Type morphType,
                                             GrMorphologyEffect::Direction direction) {
     GrPaint paint;
-    paint.setGammaCorrect(renderTargetContext->isGammaCorrect());
+    paint.setGammaCorrect(renderTargetContext->colorSpaceInfo().isGammaCorrect());
 
     paint.addColorFragmentProcessor(GrMorphologyEffect::Make(std::move(proxy),
                                                              direction, radius, morphType));

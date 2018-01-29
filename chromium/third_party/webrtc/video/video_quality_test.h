@@ -18,6 +18,7 @@
 #include "media/engine/simulcast_encoder_adapter.h"
 #include "test/call_test.h"
 #include "test/frame_generator.h"
+#include "test/layer_filtering_transport.h"
 
 namespace webrtc {
 
@@ -136,12 +137,14 @@ class VideoQualityTest : public test::CallTest {
   void StartEncodedFrameLogs(VideoSendStream* stream);
   void StartEncodedFrameLogs(VideoReceiveStream* stream);
 
+  virtual std::unique_ptr<test::LayerFilteringTransport> CreateSendTransport();
+  virtual std::unique_ptr<test::DirectTransport> CreateReceiveTransport();
+
   // We need a more general capturer than the FrameGeneratorCapturer.
   std::unique_ptr<test::VideoCapturer> video_capturer_;
   std::vector<std::unique_ptr<test::VideoCapturer>> thumbnail_capturers_;
   std::unique_ptr<test::FrameGenerator> frame_generator_;
   std::unique_ptr<VideoEncoder> video_encoder_;
-  std::unique_ptr<cricket::WebRtcVideoEncoderFactory> vp8_encoder_factory_;
 
   std::vector<std::unique_ptr<VideoEncoder>> thumbnail_encoders_;
   std::vector<VideoSendStream::Config> thumbnail_send_configs_;

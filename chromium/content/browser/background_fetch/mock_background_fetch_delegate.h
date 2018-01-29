@@ -9,6 +9,7 @@
 #include <memory>
 #include <set>
 #include <string>
+#include <vector>
 
 #include "base/files/scoped_temp_dir.h"
 #include "content/public/browser/background_fetch_delegate.h"
@@ -16,7 +17,7 @@
 
 namespace net {
 class HttpResponseHeaders;
-}
+}  // namespace net
 
 namespace content {
 
@@ -62,16 +63,35 @@ class MockBackgroundFetchDelegate : public BackgroundFetchDelegate {
   ~MockBackgroundFetchDelegate() override;
 
   // BackgroundFetchDelegate implementation:
-  void DownloadUrl(const std::string& guid,
+  void CreateDownloadJob(
+      const std::string& job_unique_id,
+      const std::string& title,
+      const url::Origin& origin,
+      int completed_parts,
+      int total_parts,
+      const std::vector<std::string>& current_guids) override;
+  void DownloadUrl(const std::string& job_unique_id,
+                   const std::string& guid,
                    const std::string& method,
                    const GURL& url,
                    const net::NetworkTrafficAnnotationTag& traffic_annotation,
                    const net::HttpRequestHeaders& headers) override;
+  void Abort(const std::string& job_unique_id) override;
 
   void RegisterResponse(const GURL& url,
                         std::unique_ptr<TestResponse> response);
 
  private:
+  // Posts (to the default task runner) a callback that is only run if the job
+  // indicated by |job_unique_id| has not been aborted.
+  void PostAbortCheckingTask(const std::string& job_unique_id,
+                             base::OnceCallback<void()> callback);
+
+  // Immediately runs the callback if the job indicated by |job_unique_id| has
+  // not been aborted.
+  void RunAbortCheckingTask(const std::string& job_unique_id,
+                            base::OnceCallback<void()> callback);
+
   // Single-use responses registered for specific URLs.
   std::map<const GURL, std::unique_ptr<TestResponse>> url_responses_;
 
@@ -80,6 +100,12 @@ class MockBackgroundFetchDelegate : public BackgroundFetchDelegate {
 
   // Temporary directory in which successfully downloaded files will be stored.
   base::ScopedTempDir temp_directory_;
+
+  // Set of unique job ids that have been aborted.
+  std::set<std::string> aborted_jobs_;
+
+  // Map from download GUIDs to unique job ids.
+  std::map<std::string, std::string> download_guid_to_job_id_map_;
 
   DISALLOW_COPY_AND_ASSIGN(MockBackgroundFetchDelegate);
 };

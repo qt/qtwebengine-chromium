@@ -30,11 +30,6 @@
 #if INSIDE_BLINK
 template <typename T>
 class scoped_refptr;
-
-namespace WTF {
-template <typename T>
-using RefPtr = scoped_refptr<T>;
-}
 #endif
 
 namespace blink {
@@ -71,7 +66,7 @@ class BLINK_PLATFORM_EXPORT WebAudioBus {
   float* ChannelData(unsigned channel_index);
 
 #if INSIDE_BLINK
-  WTF::RefPtr<AudioBus> Release();
+  scoped_refptr<AudioBus> Release();
 #endif
 
  private:

@@ -73,14 +73,14 @@ class MODULES_EXPORT CryptoResultImpl final : public CryptoResult {
 
   WebCryptoResult Result() { return WebCryptoResult(this, cancel_.get()); }
 
-  DECLARE_VIRTUAL_TRACE();
+  virtual void Trace(blink::Visitor*);
 
  private:
   class Resolver;
   class ResultCancel : public CryptoResultCancel {
    public:
-    static RefPtr<ResultCancel> Create() {
-      return WTF::AdoptRef(new ResultCancel);
+    static scoped_refptr<ResultCancel> Create() {
+      return base::AdoptRef(new ResultCancel);
     }
 
     bool Cancelled() const override;
@@ -109,7 +109,7 @@ class MODULES_EXPORT CryptoResultImpl final : public CryptoResult {
   // check cancellation status via this result object. So, keep a separate
   // cancellation status object for the purpose, which will outlive the
   // result object and can be safely accessed by multiple threads.
-  RefPtr<ResultCancel> cancel_;
+  scoped_refptr<ResultCancel> cancel_;
 };
 
 }  // namespace blink

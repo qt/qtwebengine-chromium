@@ -79,11 +79,11 @@
 #include "core/plugins/PluginView.h"
 #include "core/probe/CoreProbes.h"
 #include "core/svg/SVGDocumentExtensions.h"
+#include "core/timing/DOMWindowPerformance.h"
 #include "core/timing/Performance.h"
 #include "platform/Histogram.h"
-#include "platform/PluginScriptForbiddenScope.h"
-#include "platform/ScriptForbiddenScope.h"
 #include "platform/WebFrameScheduler.h"
+#include "platform/bindings/ScriptForbiddenScope.h"
 #include "platform/graphics/paint/ClipRecorder.h"
 #include "platform/graphics/paint/PaintCanvas.h"
 #include "platform/graphics/paint/PaintController.h"
@@ -95,6 +95,7 @@
 #include "platform/loader/fetch/ResourceFetcher.h"
 #include "platform/loader/fetch/ResourceRequest.h"
 #include "platform/plugins/PluginData.h"
+#include "platform/plugins/PluginScriptForbiddenScope.h"
 #include "platform/runtime_enabled_features.h"
 #include "platform/scheduler/renderer/web_view_scheduler.h"
 #include "platform/text/TextStream.h"
@@ -215,7 +216,7 @@ LocalFrame::~LocalFrame() {
   DCHECK(!view_);
 }
 
-DEFINE_TRACE(LocalFrame) {
+void LocalFrame::Trace(blink::Visitor* visitor) {
   visitor->Trace(probe_sink_);
   visitor->Trace(performance_monitor_);
   visitor->Trace(idleness_detector_);
@@ -263,6 +264,11 @@ void LocalFrame::Reload(FrameLoadType load_type,
     DCHECK_EQ(kFrameLoadTypeReload, load_type);
     navigation_scheduler_->ScheduleReload();
   }
+}
+
+void LocalFrame::AddResourceTiming(const ResourceTimingInfo& info) {
+  DCHECK(IsAttached());
+  DOMWindowPerformance::performance(*DomWindow())->AddResourceTiming(info);
 }
 
 void LocalFrame::Detach(FrameDetachType type) {
@@ -579,7 +585,8 @@ void LocalFrame::SetPageAndTextZoomFactors(float page_zoom_factor,
       return;
   }
 
-  if (page_zoom_factor_ != page_zoom_factor) {
+  if (page_zoom_factor_ != page_zoom_factor &&
+      !RuntimeEnabledFeatures::RootLayerScrollingEnabled()) {
     if (LocalFrameView* view = this->View()) {
       // Update the scroll position when doing a full page zoom, so the content
       // stays in relatively the same position.
@@ -642,7 +649,8 @@ String LocalFrame::SelectedTextForClipboard() const {
   return Selection().SelectedTextForClipboard();
 }
 
-PositionWithAffinity LocalFrame::PositionForPoint(const IntPoint& frame_point) {
+PositionWithAffinity LocalFrame::PositionForPoint(
+    const LayoutPoint& frame_point) {
   HitTestResult result = GetEventHandler().HitTestResultAtPoint(frame_point);
   Node* node = result.InnerNodeOrImageMapImage();
   if (!node)
@@ -657,11 +665,11 @@ PositionWithAffinity LocalFrame::PositionForPoint(const IntPoint& frame_point) {
   return position;
 }
 
-Document* LocalFrame::DocumentAtPoint(const IntPoint& point_in_root_frame) {
+Document* LocalFrame::DocumentAtPoint(const LayoutPoint& point_in_root_frame) {
   if (!View())
     return nullptr;
 
-  IntPoint pt = View()->RootFrameToContents(point_in_root_frame);
+  LayoutPoint pt = View()->RootFrameToContents(point_in_root_frame);
 
   if (ContentLayoutItem().IsNull())
     return nullptr;
@@ -785,6 +793,11 @@ WebFrameScheduler* LocalFrame::FrameScheduler() {
   return frame_scheduler_.get();
 }
 
+scoped_refptr<WebTaskRunner> LocalFrame::GetTaskRunner(TaskType type) {
+  DCHECK(IsMainThread());
+  return frame_scheduler_->GetTaskRunner(type);
+}
+
 void LocalFrame::ScheduleVisualUpdateUnlessThrottled() {
   if (ShouldThrottleRendering())
     return;
@@ -798,7 +811,7 @@ bool LocalFrame::CanNavigate(const Frame& target_frame,
       CanNavigateWithoutFramebusting(target_frame, error_reason);
   const bool sandboxed =
       GetSecurityContext()->GetSandboxFlags() != kSandboxNone;
-  const bool has_user_gesture = HasReceivedUserGesture();
+  const bool has_user_gesture = HasBeenActivated();
 
   // Top navigation in sandbox with or w/o 'allow-top-navigation'.
   if (target_frame != this && sandboxed && target_frame == Tree().Top()) {
@@ -947,7 +960,7 @@ bool LocalFrame::CanNavigateWithoutFramebusting(const Frame& target_frame,
       if (GetSecurityContext()->IsSandboxed(kSandboxTopNavigation) &&
           !GetSecurityContext()->IsSandboxed(
               kSandboxTopNavigationByUserActivation) &&
-          !UserGestureIndicator::ProcessingUserGesture()) {
+          !Frame::HasTransientUserActivation(this)) {
         // With only 'allow-top-navigation-by-user-activation' (but not
         // 'allow-top-navigation'), top navigation requires a user gesture.
         reason =
@@ -1001,6 +1014,12 @@ bool LocalFrame::CanNavigateWithoutFramebusting(const Frame& target_frame,
 service_manager::InterfaceProvider& LocalFrame::GetInterfaceProvider() {
   DCHECK(Client());
   return *Client()->GetInterfaceProvider();
+}
+
+AssociatedInterfaceProvider*
+LocalFrame::GetRemoteNavigationAssociatedInterfaces() {
+  DCHECK(Client());
+  return Client()->GetRemoteNavigationAssociatedInterfaces();
 }
 
 LocalFrameClient* LocalFrame::Client() const {
@@ -1087,10 +1106,10 @@ void LocalFrame::MaybeAllowImagePlaceholder(FetchParameters& params) const {
   }
 }
 
-std::unique_ptr<WebURLLoader> LocalFrame::CreateURLLoader(
-    const ResourceRequest& request,
-    WebTaskRunner* task_runner) {
-  return Client()->CreateURLLoader(request, task_runner);
+WebURLLoaderFactory* LocalFrame::GetURLLoaderFactory() {
+  if (!url_loader_factory_)
+    url_loader_factory_ = Client()->CreateURLLoaderFactory();
+  return url_loader_factory_.get();
 }
 
 WebPluginContainerImpl* LocalFrame::GetWebPluginContainer(Node* node) const {
@@ -1120,8 +1139,9 @@ void LocalFrame::SetViewportIntersectionFromParent(
   }
 }
 
-void LocalFrame::ForceSynchronousDocumentInstall(const AtomicString& mime_type,
-                                                 RefPtr<SharedBuffer> data) {
+void LocalFrame::ForceSynchronousDocumentInstall(
+    const AtomicString& mime_type,
+    scoped_refptr<SharedBuffer> data) {
   CHECK(loader_.StateMachine()->IsDisplayingInitialEmptyDocument());
   DCHECK(!Client()->IsLocalFrameClientImpl());
 
@@ -1142,22 +1162,11 @@ void LocalFrame::ForceSynchronousDocumentInstall(const AtomicString& mime_type,
         return true;
       });
   GetDocument()->Parser()->Finish();
-}
 
-void LocalFrame::NotifyUserActivation() {
-  bool had_gesture = HasReceivedUserGesture();
-  if (!had_gesture)
-    UpdateUserActivationInFrameTree();
-  Client()->SetHasReceivedUserGesture(had_gesture);
-}
-
-// static
-std::unique_ptr<UserGestureIndicator> LocalFrame::CreateUserGesture(
-    LocalFrame* frame,
-    UserGestureToken::Status status) {
-  if (frame)
-    frame->NotifyUserActivation();
-  return WTF::MakeUnique<UserGestureIndicator>(status);
+  // Upon loading of the page, log PageVisits in UseCounter.
+  KURL url = GetDocument()->Url();
+  if (Client() && Client()->ShouldTrackUseCounter(url))
+    GetPage()->GetUseCounter().DidCommitLoad(url);
 }
 
 }  // namespace blink

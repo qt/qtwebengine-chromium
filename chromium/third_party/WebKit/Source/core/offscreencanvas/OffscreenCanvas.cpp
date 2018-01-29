@@ -115,7 +115,7 @@ ImageBitmap* OffscreenCanvas::transferToImageBitmap(
   return image;
 }
 
-RefPtr<Image> OffscreenCanvas::GetSourceImageForCanvas(
+scoped_refptr<Image> OffscreenCanvas::GetSourceImageForCanvas(
     SourceImageStatus* status,
     AccelerationHint hint,
     SnapshotReason reason,
@@ -131,7 +131,7 @@ RefPtr<Image> OffscreenCanvas::GetSourceImageForCanvas(
     *status = kZeroSizeCanvasSourceImageStatus;
     return nullptr;
   }
-  RefPtr<Image> image = context_->GetImage(hint, reason);
+  scoped_refptr<Image> image = context_->GetImage(hint, reason);
   if (!image) {
     *status = kInvalidSourceImageStatus;
   } else {
@@ -261,11 +261,7 @@ ImageBuffer* OffscreenCanvas::GetOrCreateImageBuffer() {
 
     IntSize surface_size(width(), height());
     std::unique_ptr<ImageBufferSurface> surface;
-    // TODO(zakerinasab): crbug.com/761424
-    // Remove the check for canvas color extensions to allow OffscreenCanvas
-    // use accelerated code path with color management.
-    if (!RuntimeEnabledFeatures::ColorCanvasExtensionsEnabled() &&
-        RuntimeEnabledFeatures::Accelerated2dCanvasEnabled() &&
+    if (RuntimeEnabledFeatures::Accelerated2dCanvasEnabled() &&
         !is_accelerated_2d_canvas_blacklisted) {
       surface.reset(new AcceleratedImageBufferSurface(surface_size,
                                                       context_->ColorParams()));
@@ -287,9 +283,8 @@ ImageBuffer* OffscreenCanvas::GetOrCreateImageBuffer() {
   return image_buffer_.get();
 }
 
-ScriptPromise OffscreenCanvas::Commit(RefPtr<StaticBitmapImage> image,
+ScriptPromise OffscreenCanvas::Commit(scoped_refptr<StaticBitmapImage> image,
                                       const SkIRect& damage_rect,
-                                      bool is_web_gl_software_rendering,
                                       ScriptState* script_state,
                                       ExceptionState& exception_state) {
   TRACE_EVENT0("blink", "OffscreenCanvas::Commit");
@@ -314,8 +309,6 @@ ScriptPromise OffscreenCanvas::Commit(RefPtr<StaticBitmapImage> image,
       current_frame_ = std::move(image);
       // union of rects is necessary in case some frames are skipped.
       current_frame_damage_rect_.join(damage_rect);
-      current_frame_is_web_gl_software_rendering_ =
-          is_web_gl_software_rendering;
       context_->NeedsFinalizeFrame();
     }
   } else if (image) {
@@ -326,7 +319,6 @@ ScriptPromise OffscreenCanvas::Commit(RefPtr<StaticBitmapImage> image,
     // resolved yet. (m_currentFrame==nullptr)
     current_frame_ = std::move(image);
     current_frame_damage_rect_.join(damage_rect);
-    current_frame_is_web_gl_software_rendering_ = is_web_gl_software_rendering;
   }
 
   return commit_promise_resolver_->Promise();
@@ -345,8 +337,7 @@ void OffscreenCanvas::DoCommit() {
   double commit_start_time = WTF::MonotonicallyIncreasingTime();
   DCHECK(current_frame_);
   GetOrCreateFrameDispatcher()->DispatchFrame(
-      std::move(current_frame_), commit_start_time, current_frame_damage_rect_,
-      current_frame_is_web_gl_software_rendering_);
+      std::move(current_frame_), commit_start_time, current_frame_damage_rect_);
   current_frame_damage_rect_ = SkIRect::MakeEmpty();
 }
 
@@ -423,7 +414,7 @@ FontSelector* OffscreenCanvas::GetFontSelector() {
   return ToWorkerGlobalScope(execution_context_)->GetFontSelector();
 }
 
-DEFINE_TRACE(OffscreenCanvas) {
+void OffscreenCanvas::Trace(blink::Visitor* visitor) {
   visitor->Trace(context_);
   visitor->Trace(execution_context_);
   visitor->Trace(commit_promise_resolver_);

@@ -217,8 +217,8 @@ void RecordCapability(size_t* call_count,
   ++(*call_count);
   const base::Value* capabilities = nullptr;
   if (capability) {
-    capabilities = capability->FindPathOfType({printing::kSettingCapabilities},
-                                              base::Value::Type::DICTIONARY);
+    capabilities = capability->FindKeyOfType(printing::kSettingCapabilities,
+                                             base::Value::Type::DICTIONARY);
   }
   *capability_out =
       capabilities ? base::DictionaryValue::From(
@@ -231,11 +231,12 @@ void RecordCapability(size_t* call_count,
 void RecordPrintResult(size_t* call_count,
                        bool* success_out,
                        std::string* status_out,
-                       bool success,
                        const base::Value& status) {
   ++(*call_count);
+  bool success = status.is_none();
+  std::string status_str = success ? kPrintRequestSuccess : status.GetString();
   *success_out = success;
-  *status_out = status.GetString();
+  *status_out = status_str;
 }
 
 // Used as a callback to StartGrantPrinterAccess in tests.
@@ -286,15 +287,15 @@ class FakePWGRasterConverter : public PWGRasterConverter {
   void Start(base::RefCountedMemory* data,
              const printing::PdfRenderSettings& conversion_settings,
              const printing::PwgRasterSettings& bitmap_settings,
-             const ResultCallback& callback) override {
+             ResultCallback callback) override {
     if (fail_conversion_) {
-      callback.Run(false, base::FilePath());
+      std::move(callback).Run(false, base::FilePath());
       return;
     }
 
     if (!initialized_ && !temp_dir_.CreateUniqueTempDir()) {
       ADD_FAILURE() << "Unable to create target dir for cenverter";
-      callback.Run(false, base::FilePath());
+      std::move(callback).Run(false, base::FilePath());
       return;
     }
 
@@ -305,14 +306,14 @@ class FakePWGRasterConverter : public PWGRasterConverter {
     int written = WriteFile(path_, data_str.c_str(), data_str.size());
     if (written != static_cast<int>(data_str.size())) {
       ADD_FAILURE() << "Failed to write pwg raster file.";
-      callback.Run(false, base::FilePath());
+      std::move(callback).Run(false, base::FilePath());
       return;
     }
 
     conversion_settings_ = conversion_settings;
     bitmap_settings_ = bitmap_settings;
 
-    callback.Run(true, path_);
+    std::move(callback).Run(true, path_);
   }
 
   // Makes |Start| method always return an error.
@@ -360,27 +361,27 @@ class FakePrinterProviderAPI : public PrinterProviderAPI {
 
   void DispatchGetCapabilityRequested(
       const std::string& destination_id,
-      const PrinterProviderAPI::GetCapabilityCallback& callback) override {
-    pending_capability_callbacks_.push(callback);
+      PrinterProviderAPI::GetCapabilityCallback callback) override {
+    pending_capability_callbacks_.push(std::move(callback));
   }
 
   void DispatchPrintRequested(
       const PrinterProviderPrintJob& job,
-      const PrinterProviderAPI::PrintCallback& callback) override {
+      PrinterProviderAPI::PrintCallback callback) override {
     PrintRequestInfo request_info;
-    request_info.callback = callback;
+    request_info.callback = std::move(callback);
     request_info.job = job;
 
-    pending_print_requests_.push(request_info);
+    pending_print_requests_.push(std::move(request_info));
   }
 
   void DispatchGetUsbPrinterInfoRequested(
       const std::string& extension_id,
       scoped_refptr<device::UsbDevice> device,
-      const PrinterProviderAPI::GetPrinterInfoCallback& callback) override {
+      PrinterProviderAPI::GetPrinterInfoCallback callback) override {
     EXPECT_EQ("fake extension id", extension_id);
     EXPECT_TRUE(device);
-    pending_usb_info_callbacks_.push(callback);
+    pending_usb_info_callbacks_.push(std::move(callback));
   }
 
   size_t pending_get_printers_count() const {
@@ -408,7 +409,7 @@ class FakePrinterProviderAPI : public PrinterProviderAPI {
   void TriggerNextGetCapabilityCallback(
       const base::DictionaryValue& description) {
     ASSERT_GT(pending_get_capability_count(), 0u);
-    pending_capability_callbacks_.front().Run(description);
+    std::move(pending_capability_callbacks_.front()).Run(description);
     pending_capability_callbacks_.pop();
   }
 
@@ -423,8 +424,10 @@ class FakePrinterProviderAPI : public PrinterProviderAPI {
 
   void TriggerNextPrintCallback(const std::string& result) {
     ASSERT_GT(pending_print_count(), 0u);
-    pending_print_requests_.front().callback.Run(result == kPrintRequestSuccess,
-                                                 result);
+    base::Value result_value;
+    if (result != kPrintRequestSuccess)
+      result_value = base::Value(result);
+    std::move(pending_print_requests_.front().callback).Run(result_value);
     pending_print_requests_.pop();
   }
 
@@ -435,7 +438,7 @@ class FakePrinterProviderAPI : public PrinterProviderAPI {
   void TriggerNextUsbPrinterInfoCallback(
       const base::DictionaryValue& printer_info) {
     ASSERT_GT(pending_usb_info_count(), 0u);
-    pending_usb_info_callbacks_.front().Run(printer_info);
+    std::move(pending_usb_info_callbacks_.front()).Run(printer_info);
     pending_usb_info_callbacks_.pop();
   }
 

@@ -283,7 +283,7 @@ MULTIPROCESS_TEST_MAIN(CrashingChildProcess) {
   ::signal(SIGSEGV, SIG_DFL);
 #endif
   // Make this process have a segmentation fault.
-  volatile int* oops = NULL;
+  volatile int* oops = nullptr;
   *oops = 0xDEAD;
   return 1;
 }
@@ -995,7 +995,7 @@ bool IsProcessDead(base::ProcessHandle child) {
   // waitpid() will actually reap the process which is exactly NOT what we
   // want to test for.  The good thing is that if it can't find the process
   // we'll get a nice value for errno which we can test for.
-  const pid_t result = HANDLE_EINTR(waitpid(child, NULL, WNOHANG));
+  const pid_t result = HANDLE_EINTR(waitpid(child, nullptr, WNOHANG));
   return result == -1 && errno == ECHILD;
 #endif
 }
@@ -1038,7 +1038,7 @@ MULTIPROCESS_TEST_MAIN(process_util_test_die_immediately) {
 class ReadFromPipeDelegate : public base::LaunchOptions::PreExecDelegate {
  public:
   explicit ReadFromPipeDelegate(int fd) : fd_(fd) {}
-  ~ReadFromPipeDelegate() override {}
+  ~ReadFromPipeDelegate() override = default;
   void RunAsyncSafe() override {
     char c;
     RAW_CHECK(HANDLE_EINTR(read(fd_, &c, 1)) == 1);

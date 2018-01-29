@@ -81,13 +81,14 @@ class WebGLRenderingContext final : public WebGLRenderingContextBase {
   void SetCanvasGetContextResult(RenderingContext&) final;
   void SetOffscreenCanvasGetContextResult(OffscreenRenderingContext&) final;
 
-  DECLARE_VIRTUAL_TRACE();
+  virtual void Trace(blink::Visitor*);
 
-  DECLARE_VIRTUAL_TRACE_WRAPPERS();
+  virtual void TraceWrappers(const ScriptWrappableVisitor*) const;
 
  private:
   WebGLRenderingContext(CanvasRenderingContextHost*,
                         std::unique_ptr<WebGraphicsContext3DProvider>,
+                        bool using_gpu_compositing,
                         const CanvasContextCreationAttributes&);
 
   // Enabled extension objects.

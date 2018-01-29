@@ -202,6 +202,30 @@ bool SetFillRuleAttribute(const sk_sp<SkSVGNode>& node, SkSVGAttribute attr,
     return true;
 }
 
+bool SetVisibilityAttribute(const sk_sp<SkSVGNode>& node, SkSVGAttribute attr,
+                            const char* stringValue) {
+    SkSVGVisibility visibility;
+    SkSVGAttributeParser parser(stringValue);
+    if (!parser.parseVisibility(&visibility)) {
+        return false;
+    }
+
+    node->setAttribute(attr, SkSVGVisibilityValue(visibility));
+    return true;
+}
+
+bool SetDashArrayAttribute(const sk_sp<SkSVGNode>& node, SkSVGAttribute attr,
+                           const char* stringValue) {
+    SkSVGDashArray dashArray;
+    SkSVGAttributeParser parser(stringValue);
+    if (!parser.parseDashArray(&dashArray)) {
+        return false;
+    }
+
+    node->setAttribute(attr, SkSVGDashArrayValue(dashArray));
+    return true;
+}
+
 SkString TrimmedString(const char* first, const char* last) {
     SkASSERT(first);
     SkASSERT(last);
@@ -304,6 +328,8 @@ SortedDictionaryEntry<AttrParseInfo> gAttributeParseInfo[] = {
     { "stop-color"       , { SkSVGAttribute::kStopColor        , SetColorAttribute        }},
     { "stop-opacity"     , { SkSVGAttribute::kStopOpacity      , SetNumberAttribute       }},
     { "stroke"           , { SkSVGAttribute::kStroke           , SetPaintAttribute        }},
+    { "stroke-dasharray" , { SkSVGAttribute::kStrokeDashArray  , SetDashArrayAttribute    }},
+    { "stroke-dashoffset", { SkSVGAttribute::kStrokeDashOffset , SetLengthAttribute       }},
     { "stroke-linecap"   , { SkSVGAttribute::kStrokeLineCap    , SetLineCapAttribute      }},
     { "stroke-linejoin"  , { SkSVGAttribute::kStrokeLineJoin   , SetLineJoinAttribute     }},
     { "stroke-miterlimit", { SkSVGAttribute::kStrokeMiterLimit , SetNumberAttribute       }},
@@ -312,6 +338,7 @@ SortedDictionaryEntry<AttrParseInfo> gAttributeParseInfo[] = {
     { "style"            , { SkSVGAttribute::kUnknown          , SetStyleAttributes       }},
     { "transform"        , { SkSVGAttribute::kTransform        , SetTransformAttribute    }},
     { "viewBox"          , { SkSVGAttribute::kViewBox          , SetViewBoxAttribute      }},
+    { "visibility"       , { SkSVGAttribute::kVisibility       , SetVisibilityAttribute   }},
     { "width"            , { SkSVGAttribute::kWidth            , SetLengthAttribute       }},
     { "x"                , { SkSVGAttribute::kX                , SetLengthAttribute       }},
     { "x1"               , { SkSVGAttribute::kX1               , SetLengthAttribute       }},

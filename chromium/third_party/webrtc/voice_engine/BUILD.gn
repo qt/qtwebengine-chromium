@@ -28,7 +28,6 @@ rtc_static_library("voice_engine") {
     "utility.h",
     "voe_base_impl.cc",
     "voe_base_impl.h",
-    "voice_engine_defines.h",
     "voice_engine_impl.cc",
     "voice_engine_impl.h",
   ]
@@ -58,10 +57,9 @@ rtc_static_library("voice_engine") {
     "../api:call_api",
     "../api:libjingle_peerconnection_api",
     "../api:optional",
+    "../api:refcountedbase",
     "../api:transport_api",
     "../api/audio_codecs:audio_codecs_api",
-    "../api/audio_codecs:builtin_audio_decoder_factory",
-    "../api/audio_codecs:builtin_audio_encoder_factory",
     "../audio/utility:audio_frame_operations",
     "../call:rtp_interfaces",
     "../common_audio",
@@ -69,7 +67,6 @@ rtc_static_library("voice_engine") {
     "../modules:module_api",
     "../modules/audio_coding:audio_format_conversion",
     "../modules/audio_coding:audio_network_adaptor_config",
-    "../modules/audio_coding:rent_a_codec",
     "../modules/audio_device",
     "../modules/audio_processing",
     "../modules/bitrate_controller",
@@ -101,6 +98,7 @@ if (rtc_include_tests) {
   rtc_test("voice_engine_unittests") {
     deps = [
       ":voice_engine",
+      "../api/audio_codecs:builtin_audio_decoder_factory",
       "../common_audio",
       "../modules:module_api",
       "../modules/audio_coding",

@@ -16,7 +16,7 @@
 #include "modules/audio_coding/neteq/decoder_database.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/logging.h"
-#include "rtc_base/safe_conversions.h"
+#include "rtc_base/numerics/safe_conversions.h"
 
 namespace webrtc {
 
@@ -100,7 +100,7 @@ bool RedPayloadSplitter::SplitRed(PacketList* packet_list) {
           // The block lengths in the RED headers do not match the overall
           // packet length. Something is corrupt. Discard this and the remaining
           // payloads from this packet.
-          LOG(LS_WARNING) << "SplitRed length mismatch";
+          RTC_LOG(LS_WARNING) << "SplitRed length mismatch";
           ret = false;
           break;
         }
@@ -119,7 +119,7 @@ bool RedPayloadSplitter::SplitRed(PacketList* packet_list) {
       // iterator |it|.
       packet_list->splice(it, std::move(new_packets));
     } else {
-      LOG(LS_WARNING) << "SplitRed too many blocks: " << new_headers.size();
+      RTC_LOG(LS_WARNING) << "SplitRed too many blocks: " << new_headers.size();
       ret = false;
     }
     // Remove |it| from the packet list. This operation effectively moves the

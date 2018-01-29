@@ -208,13 +208,10 @@ static void apply_shader(SkPaint* paint, int index) {
         paint->setRasterizer(rastBuilder.detach());
     }
 
-#ifdef SK_SUPPORT_LEGACY_EMBOSSMASKFILTER
-    SkScalar dir[] = { SK_Scalar1, SK_Scalar1, SK_Scalar1 };
-    paint->setMaskFilter(SkBlurMaskFilter::MakeEmboss(
-                SkBlurMask::ConvertRadiusToSigma(SkIntToScalar(3)), dir,
-                SK_Scalar1/4, SkIntToScalar(4)));
+    paint->setMaskFilter(SkEmbossMaskFilter::Make(
+                SkBlurMask::ConvertRadiusToSigma(SkIntToScalar(3)),
+                { { SK_Scalar1, SK_Scalar1, SK_Scalar1 }, 0, 128, 16*2 }));
     paint->setColor(SK_ColorBLUE);
-#endif
 }
 
 class DemoView : public SampleView {
@@ -303,12 +300,12 @@ protected:
         short utf16simple[] = {'u', 't', 'f', '1', '6', '!' };
 
         makePath(path);
-        SkTDArray<SkPoint>(pos);
+        SkTDArray<SkPoint> pos;
         pos.setCount(asciiLength);
         for (index = 0;  index < asciiLength; index++)
             pos[index].set(SkIntToScalar((unsigned int)index * 10),
                                        SkIntToScalar((unsigned int)index * 2));
-        SkTDArray<SkPoint>(pos2);
+        SkTDArray<SkPoint> pos2;
         pos2.setCount(asciiLength);
         for (index = 0;  index < asciiLength; index++)
             pos2[index].set(SkIntToScalar((unsigned int)index * 10),
@@ -434,7 +431,6 @@ protected:
 
     virtual SkView::Click* onFindClickHandler(SkScalar x, SkScalar y, unsigned modi) {
         fClickPt.set(x, y);
-        this->inval(nullptr);
         return this->INHERITED::onFindClickHandler(x, y, modi);
     }
 

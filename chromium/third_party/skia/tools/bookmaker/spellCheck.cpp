@@ -202,6 +202,8 @@ bool SpellCheck::check(Definition* def) {
             break;
         case MarkType::kList:
             break;
+        case MarkType::kLiteral:
+            break;
         case MarkType::kMarkChar:
             break;
         case MarkType::kMember:
@@ -212,13 +214,15 @@ bool SpellCheck::check(Definition* def) {
                 method_name += "()";
             }
             string formattedStr = def->formatFunction();
-            if (!def->isClone()) {
+            if (!def->isClone() && Definition::MethodType::kOperator != def->fMethodType) {
                 this->wordCheck(method_name);
             }
             fTableState = TableState::kNone;
             fMethod = def;
             } break;
         case MarkType::kNoExample:
+            break;
+        case MarkType::kOutdent:
             break;
         case MarkType::kParam: {
             if (TableState::kNone == fTableState) {
@@ -490,6 +494,7 @@ void SpellCheck::report(SkCommandLineFlags::StringArray report) {
     if (report.contains("all")) {
         int column = 0;
         char lastInitial = 'a';
+        int count = 0;
         for (auto iter : elems) {
             if (string::npos != iter.second.fFile.find("undocumented.bmh")) {
                 continue;
@@ -521,8 +526,9 @@ void SpellCheck::report(SkCommandLineFlags::StringArray report) {
             }
             SkDebugf("%s ", check.c_str());
             column += check.length();
+            ++count;
         }
-        SkDebugf("\n\n");
+        SkDebugf("\n\ncount = %d\n", count);
         return;
     }
     int index = 0;
@@ -607,7 +613,9 @@ void SpellCheck::wordCheck(const string& str) {
         std::istringstream ss(str);
         string token;
         while (std::getline(ss, token, '_')) {
-            this->wordCheck(token);
+            if (token.length()) {
+                this->wordCheck(token);
+            }
         }
         return;
     }

@@ -24,7 +24,7 @@
 #include "core/layout/svg/LayoutSVGInlineText.h"
 
 #include "core/css/CSSFontSelector.h"
-#include "core/css/FontSize.h"
+#include "core/css/FontSizeFunctions.h"
 #include "core/css/StyleEngine.h"
 #include "core/editing/TextAffinity.h"
 #include "core/frame/LocalFrameView.h"
@@ -43,18 +43,20 @@ namespace blink {
 // Turn tabs, newlines and carriage returns into spaces. In the future this
 // should be removed in favor of letting the generic white-space code handle
 // this.
-static RefPtr<StringImpl> NormalizeWhitespace(RefPtr<StringImpl> string) {
-  RefPtr<StringImpl> new_string = string->Replace('\t', ' ');
+static scoped_refptr<StringImpl> NormalizeWhitespace(
+    scoped_refptr<StringImpl> string) {
+  scoped_refptr<StringImpl> new_string = string->Replace('\t', ' ');
   new_string = new_string->Replace('\n', ' ');
   new_string = new_string->Replace('\r', ' ');
   return new_string;
 }
 
-LayoutSVGInlineText::LayoutSVGInlineText(Node* n, RefPtr<StringImpl> string)
+LayoutSVGInlineText::LayoutSVGInlineText(Node* n,
+                                         scoped_refptr<StringImpl> string)
     : LayoutText(n, NormalizeWhitespace(std::move(string))),
       scaling_factor_(1) {}
 
-void LayoutSVGInlineText::SetTextInternal(RefPtr<StringImpl> text) {
+void LayoutSVGInlineText::SetTextInternal(scoped_refptr<StringImpl> text) {
   LayoutText::SetTextInternal(NormalizeWhitespace(std::move(text)));
   if (LayoutSVGText* text_layout_object =
           LayoutSVGText::LocateLayoutSVGTextAncestor(this))
@@ -162,7 +164,7 @@ PositionWithAffinity LayoutSVGInlineText::PositionForPoint(
       font_data ? font_data->GetFontMetrics().FloatAscent() / scaling_factor_
                 : 0;
 
-  LayoutBlock* containing_block = this->ContainingBlock();
+  LayoutBlock* containing_block = ContainingBlock();
   DCHECK(containing_block);
 
   // Map local point to absolute point, as the character origins stored in the
@@ -398,7 +400,7 @@ void LayoutSVGInlineText::ComputeNewScaledFontForStyle(
     scaling_factor = 1;
 
   Document& document = layout_object.GetDocument();
-  float scaled_font_size = FontSize::GetComputedSizeFromSpecifiedSize(
+  float scaled_font_size = FontSizeFunctions::GetComputedSizeFromSpecifiedSize(
       &document, scaling_factor, unscaled_font_description.IsAbsoluteSize(),
       unscaled_font_description.SpecifiedSize(), kDoNotApplyMinimumForFontSize);
   if (scaled_font_size == unscaled_font_description.ComputedSize()) {

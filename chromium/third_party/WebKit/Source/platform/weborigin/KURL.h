@@ -61,11 +61,11 @@ namespace WTF {
 class TextEncoding;
 }
 
+class GURL;
+
 namespace blink {
 
 struct KURLHash;
-
-enum ParsedURLStringTag { kParsedURLString };
 
 class PLATFORM_EXPORT KURL {
   USING_FAST_MALLOC(KURL);
@@ -80,13 +80,15 @@ class PLATFORM_EXPORT KURL {
   KURL& operator=(const KURL&);
 
   // The argument is an absolute URL string. The string is assumed to be
-  // output of KURL::string() called on a valid KURL object, or indiscernible
-  // from such. It is usually best to avoid repeatedly parsing a string,
-  // unless memory saving outweigh the possible slow-downs.
-  KURL(ParsedURLStringTag, const String&);
+  // output of KURL::GetString() called on a valid KURL object, or
+  // indiscernible from such.
+  //
+  // It is usually best to avoid repeatedly parsing a String, unless memory
+  // saving outweigh the possible slow-downs.
+  explicit KURL(const String&);
 
   // Creates an isolated URL object suitable for sending to another thread.
-  static KURL CreateIsolated(ParsedURLStringTag, const String&);
+  static KURL CreateIsolated(const String&);
 
   // Resolves the relative URL with the given base URL. If provided, the
   // TextEncoding is used to encode non-ASCII characers. The base URL can be
@@ -211,6 +213,11 @@ class PLATFORM_EXPORT KURL {
   bool PotentiallyDanglingMarkup() const {
     return parsed_.potentially_dangling_markup;
   }
+
+  // Returns a GURL with the same properties. This can be used in platform/ and
+  // web/. However, in core/ and modules/, this should only be used to pass
+  // a GURL to a layer that is expecting one instead of a KURL or a WebURL.
+  operator GURL() const;
 
  private:
   friend struct WTF::HashTraits<blink::KURL>;

@@ -8,6 +8,8 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
+#include "api/audio_codecs/builtin_audio_decoder_factory.h"
+#include "api/audio_codecs/builtin_audio_encoder_factory.h"
 #include "p2p/base/fakeportallocator.h"
 #include "pc/mediasession.h"
 #include "pc/peerconnectionwrapper.h"
@@ -24,6 +26,7 @@
 namespace webrtc {
 
 using RTCConfiguration = PeerConnectionInterface::RTCConfiguration;
+using RTCOfferAnswerOptions = PeerConnectionInterface::RTCOfferAnswerOptions;
 using ::testing::Values;
 using ::testing::Combine;
 
@@ -40,7 +43,12 @@ class PeerConnectionCryptoUnitTest : public ::testing::Test {
 #endif
     pc_factory_ = CreatePeerConnectionFactory(
         rtc::Thread::Current(), rtc::Thread::Current(), rtc::Thread::Current(),
-        FakeAudioCaptureModule::Create(), nullptr, nullptr);
+        FakeAudioCaptureModule::Create(), CreateBuiltinAudioEncoderFactory(),
+        CreateBuiltinAudioDecoderFactory(), nullptr, nullptr);
+  }
+
+  WrapperPtr CreatePeerConnection() {
+    return CreatePeerConnection(RTCConfiguration());
   }
 
   WrapperPtr CreatePeerConnection(const RTCConfiguration& config) {
@@ -72,8 +80,28 @@ class PeerConnectionCryptoUnitTest : public ::testing::Test {
     if (!wrapper) {
       return nullptr;
     }
-    wrapper->AddAudioVideoStream("s", "a", "v");
+    wrapper->AddAudioTrack("a");
+    wrapper->AddVideoTrack("v");
     return wrapper;
+  }
+
+  cricket::ConnectionRole& AudioConnectionRole(
+      cricket::SessionDescription* desc) {
+    return ConnectionRoleFromContent(desc, cricket::GetFirstAudioContent(desc));
+  }
+
+  cricket::ConnectionRole& VideoConnectionRole(
+      cricket::SessionDescription* desc) {
+    return ConnectionRoleFromContent(desc, cricket::GetFirstVideoContent(desc));
+  }
+
+  cricket::ConnectionRole& ConnectionRoleFromContent(
+      cricket::SessionDescription* desc,
+      cricket::ContentInfo* content) {
+    RTC_DCHECK(content);
+    auto* transport_info = desc->GetTransportInfoByName(content->name);
+    RTC_DCHECK(transport_info);
+    return transport_info->description.connection_role;
   }
 
   std::unique_ptr<rtc::VirtualSocketServer> vss_;
@@ -601,5 +629,59 @@ INSTANTIATE_TEST_CASE_P(
             Values(CertGenTime::kBefore, CertGenTime::kDuring),
             Values(CertGenResult::kSucceed, CertGenResult::kFail),
             Values(1, 3)));
+
+// Test that we can create and set an answer correctly when different
+// SSL roles have been negotiated for different transports.
+// See: https://bugs.chromium.org/p/webrtc/issues/detail?id=4525
+TEST_F(PeerConnectionCryptoUnitTest, CreateAnswerWithDifferentSslRoles) {
+  auto caller = CreatePeerConnectionWithAudioVideo();
+  auto callee = CreatePeerConnectionWithAudioVideo();
+
+  RTCOfferAnswerOptions options_no_bundle;
+  options_no_bundle.use_rtp_mux = false;
+
+  // First, negotiate different SSL roles for audio and video.
+  ASSERT_TRUE(callee->SetRemoteDescription(caller->CreateOfferAndSetAsLocal()));
+  auto answer = callee->CreateAnswer(options_no_bundle);
+
+  AudioConnectionRole(answer->description()) = cricket::CONNECTIONROLE_ACTIVE;
+  VideoConnectionRole(answer->description()) = cricket::CONNECTIONROLE_PASSIVE;
+
+  ASSERT_TRUE(
+      callee->SetLocalDescription(CloneSessionDescription(answer.get())));
+  ASSERT_TRUE(caller->SetRemoteDescription(std::move(answer)));
+
+  // Now create an offer in the reverse direction, and ensure the initial
+  // offerer responds with an answer with the correct SSL roles.
+  ASSERT_TRUE(caller->SetRemoteDescription(callee->CreateOfferAndSetAsLocal()));
+  answer = caller->CreateAnswer(options_no_bundle);
+
+  EXPECT_EQ(cricket::CONNECTIONROLE_PASSIVE,
+            AudioConnectionRole(answer->description()));
+  EXPECT_EQ(cricket::CONNECTIONROLE_ACTIVE,
+            VideoConnectionRole(answer->description()));
+
+  ASSERT_TRUE(
+      caller->SetLocalDescription(CloneSessionDescription(answer.get())));
+  ASSERT_TRUE(callee->SetRemoteDescription(std::move(answer)));
+
+  // Lastly, start BUNDLE-ing on "audio", expecting that the "passive" role of
+  // audio is transferred over to video in the answer that completes the BUNDLE
+  // negotiation.
+  RTCOfferAnswerOptions options_bundle;
+  options_bundle.use_rtp_mux = true;
+
+  ASSERT_TRUE(caller->SetRemoteDescription(callee->CreateOfferAndSetAsLocal()));
+  answer = caller->CreateAnswer(options_bundle);
+
+  EXPECT_EQ(cricket::CONNECTIONROLE_PASSIVE,
+            AudioConnectionRole(answer->description()));
+  EXPECT_EQ(cricket::CONNECTIONROLE_PASSIVE,
+            VideoConnectionRole(answer->description()));
+
+  ASSERT_TRUE(
+      caller->SetLocalDescription(CloneSessionDescription(answer.get())));
+  ASSERT_TRUE(callee->SetRemoteDescription(std::move(answer)));
+}
 
 }  // namespace webrtc

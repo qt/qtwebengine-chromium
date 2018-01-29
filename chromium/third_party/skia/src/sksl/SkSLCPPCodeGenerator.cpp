@@ -13,8 +13,7 @@
 namespace SkSL {
 
 static bool needs_uniform_var(const Variable& var) {
-    return (var.fModifiers.fFlags & Modifiers::kUniform_Flag) &&
-           var.fType.fName != "colorSpaceXform";
+    return (var.fModifiers.fFlags & Modifiers::kUniform_Flag);
 }
 
 CPPCodeGenerator::CPPCodeGenerator(const Context* context, const Program* program,
@@ -116,8 +115,8 @@ void CPPCodeGenerator::writeIndexExpression(const IndexExpression& i) {
 }
 
 static String default_value(const Type& type) {
-    if (type.fName == "colorSpaceXform") {
-        return "float4x4(1.0)";
+    if (type.fName == "bool") {
+        return "false";
     }
     switch (type.kind()) {
         case Type::kScalar_Kind: return "0";
@@ -127,6 +126,13 @@ static String default_value(const Type& type) {
     }
 }
 
+static String default_value(const Variable& var) {
+    if (var.fModifiers.fLayout.fCType == "GrColor4f") {
+        return "GrColor4f::kIllegalConstructor";
+    }
+    return default_value(var.fType);
+}
+
 static bool is_private(const Variable& var) {
     return !(var.fModifiers.fFlags & Modifiers::kUniform_Flag) &&
            !(var.fModifiers.fFlags & Modifiers::kIn_Flag) &&
@@ -134,7 +140,8 @@ static bool is_private(const Variable& var) {
            var.fModifiers.fLayout.fBuiltin == -1;
 }
 
-void CPPCodeGenerator::writeRuntimeValue(const Type& type, const String& cppCode) {
+void CPPCodeGenerator::writeRuntimeValue(const Type& type, const Layout& layout,
+                                         const String& cppCode) {
     if (type.isFloat()) {
         this->write("%f");
         fFormatArgs.push_back(cppCode);
@@ -148,16 +155,36 @@ void CPPCodeGenerator::writeRuntimeValue(const Type& type, const String& cppCode
         this->write(type.name() + "(%f, %f)");
         fFormatArgs.push_back(cppCode + ".fX");
         fFormatArgs.push_back(cppCode + ".fY");
+    } else if (type == *fContext.fFloat4_Type || type == *fContext.fHalf4_Type) {
+        this->write(type.name() + "(%f, %f, %f, %f)");
+        if (layout.fCType == "SkPMColor") {
+            fFormatArgs.push_back("SkGetPackedR32(" + cppCode + ") / 255.0");
+            fFormatArgs.push_back("SkGetPackedG32(" + cppCode + ") / 255.0");
+            fFormatArgs.push_back("SkGetPackedB32(" + cppCode + ") / 255.0");
+            fFormatArgs.push_back("SkGetPackedA32(" + cppCode + ") / 255.0");
+        } else if (layout.fCType == "GrColor4f") {
+            fFormatArgs.push_back(cppCode + ".fRGBA[0]");
+            fFormatArgs.push_back(cppCode + ".fRGBA[1]");
+            fFormatArgs.push_back(cppCode + ".fRGBA[2]");
+            fFormatArgs.push_back(cppCode + ".fRGBA[3]");
+        } else {
+            fFormatArgs.push_back(cppCode + ".left()");
+            fFormatArgs.push_back(cppCode + ".top()");
+            fFormatArgs.push_back(cppCode + ".right()");
+            fFormatArgs.push_back(cppCode + ".bottom()");
+        }
+    } else if (type.kind() == Type::kEnum_Kind) {
+        this->write("%d");
+        fFormatArgs.push_back("(int) " + cppCode);
     } else {
-        this->write(type.name());
-        this->write("\n");
-        ABORT("unsupported runtime value type\n");
+        printf("unsupported runtime value type '%s'\n", String(type.fName).c_str());
+        ASSERT(false);
     }
 }
 
 void CPPCodeGenerator::writeVarInitializer(const Variable& var, const Expression& value) {
     if (is_private(var)) {
-        this->writeRuntimeValue(var.fType, var.fName);
+        this->writeRuntimeValue(var.fType, var.fModifiers.fLayout, var.fName);
     } else {
         this->writeExpression(value, kTopLevel_Precedence);
     }
@@ -180,7 +207,26 @@ void CPPCodeGenerator::writeIntLiteral(const IntLiteral& i) {
     this->write(to_string((int32_t) i.fValue));
 }
 
+void CPPCodeGenerator::writeSwizzle(const Swizzle& swizzle) {
+    if (fCPPMode) {
+        ASSERT(swizzle.fComponents.size() == 1); // no support for multiple swizzle components yet
+        this->writeExpression(*swizzle.fBase, kPostfix_Precedence);
+        switch (swizzle.fComponents[0]) {
+            case 0: this->write(".left()");   break;
+            case 1: this->write(".top()");    break;
+            case 2: this->write(".right()");  break;
+            case 3: this->write(".bottom()"); break;
+        }
+    } else {
+        INHERITED::writeSwizzle(swizzle);
+    }
+}
+
 void CPPCodeGenerator::writeVariableReference(const VariableReference& ref) {
+    if (fCPPMode) {
+        this->write(ref.fVariable.fName);
+        return;
+    }
     switch (ref.fVariable.fModifiers.fLayout.fBuiltin) {
         case SK_INCOLOR_BUILTIN:
             this->write("%s");
@@ -200,17 +246,8 @@ void CPPCodeGenerator::writeVariableReference(const VariableReference& ref) {
             if (ref.fVariable.fModifiers.fFlags & Modifiers::kUniform_Flag) {
                 this->write("%s");
                 String name = ref.fVariable.fName;
-                String var;
-                if (ref.fVariable.fType == *fContext.fColorSpaceXform_Type) {
-                    ASSERT(fNeedColorSpaceHelper);
-                    var = String::printf("fColorSpaceHelper.isValid() ? "
-                                         "args.fUniformHandler->getUniformCStr("
-                                                  "fColorSpaceHelper.gamutXformUniform()) : \"%s\"",
-                           default_value(ref.fVariable.fType).c_str());
-                } else {
-                    var = String::printf("args.fUniformHandler->getUniformCStr(%sVar)",
-                                         HCodeGenerator::FieldName(name.c_str()).c_str());
-                }
+                String var = String::printf("args.fUniformHandler->getUniformCStr(%sVar)",
+                                            HCodeGenerator::FieldName(name.c_str()).c_str());
                 String code;
                 if (ref.fVariable.fModifiers.fLayout.fWhen.size()) {
                     code = String::printf("%sVar.isValid() ? %s : \"%s\"",
@@ -223,7 +260,7 @@ void CPPCodeGenerator::writeVariableReference(const VariableReference& ref) {
                 fFormatArgs.push_back(code);
             } else if (SectionAndParameterHelper::IsParameter(ref.fVariable)) {
                 String name(ref.fVariable.fName);
-                this->writeRuntimeValue(ref.fVariable.fType,
+                this->writeRuntimeValue(ref.fVariable.fType, ref.fVariable.fModifiers.fLayout,
                                         String::printf("_outer.%s()", name.c_str()).c_str());
             } else {
                 this->write(ref.fVariable.fName);
@@ -276,21 +313,6 @@ void CPPCodeGenerator::writeFunctionCall(const FunctionCall& c) {
         fFormatArgs.push_back(childName + ".c_str()");
         return;
     }
-    if (c.fFunction.fBuiltin && c.fFunction.fName == "COLORSPACE") {
-        String tmpVar = "_tmpVar" + to_string(++fVarCount);
-        fFunctionHeader += "half4 " + tmpVar + ";";
-        ASSERT(c.fArguments.size() == 2);
-        this->write("%s");
-        fFormatArgs.push_back("fColorSpaceHelper.isValid() ? \"(" + tmpVar + " = \" : \"\"");
-        this->writeExpression(*c.fArguments[0], kTopLevel_Precedence);
-        ASSERT(c.fArguments[1]->fKind == Expression::kVariableReference_Kind);
-        String xform("args.fUniformHandler->getUniformCStr(fColorSpaceHelper.gamutXformUniform())");
-        this->write("%s");
-        fFormatArgs.push_back("fColorSpaceHelper.isValid() ? SkStringPrintf(\", "
-                              "half4(clamp((%s * half4(" + tmpVar + ".rgb, 1.0)).rgb, 0.0, " +
-                              tmpVar + ".a), " + tmpVar + ".a))\", " + xform + ").c_str() : \"\"");
-        return;
-    }
     INHERITED::writeFunctionCall(c);
     if (c.fFunction.fBuiltin && c.fFunction.fName == "texture") {
         this->write(".%s");
@@ -325,7 +347,7 @@ void CPPCodeGenerator::writeSetting(const Setting& s) {
     static constexpr const char* kPrefix = "sk_Args.";
     if (!strncmp(s.fName.c_str(), kPrefix, strlen(kPrefix))) {
         const char* name = s.fName.c_str() + strlen(kPrefix);
-        this->writeRuntimeValue(s.fType, HCodeGenerator::FieldName(name).c_str());
+        this->writeRuntimeValue(s.fType, Layout(), HCodeGenerator::FieldName(name).c_str());
     } else {
         this->write(s.fName.c_str());
     }
@@ -385,8 +407,7 @@ void CPPCodeGenerator::addUniform(const Variable& var) {
         type = "kFloat4_GrSLType";
     } else if (var.fType == *fContext.fHalf4_Type) {
         type = "kHalf4_GrSLType";
-    } else if (var.fType == *fContext.fFloat4x4_Type ||
-               var.fType == *fContext.fColorSpaceXform_Type) {
+    } else if (var.fType == *fContext.fFloat4x4_Type) {
         type = "kFloat4x4_GrSLType";
     } else if (var.fType == *fContext.fHalf4x4_Type) {
         type = "kHalf4x4_GrSLType";
@@ -418,9 +439,11 @@ void CPPCodeGenerator::writePrivateVars() {
                                       "fragmentProcessor variables must be declared 'in'");
                         return;
                     }
-                    this->writef("%s %s;\n",
-                                 HCodeGenerator::FieldType(fContext, decl.fVar->fType).c_str(),
-                                 String(decl.fVar->fName).c_str());
+                    this->writef("%s %s = %s;\n",
+                                 HCodeGenerator::FieldType(fContext, decl.fVar->fType,
+                                                           decl.fVar->fModifiers.fLayout).c_str(),
+                                 String(decl.fVar->fName).c_str(),
+                                 default_value(*decl.fVar).c_str());
                 }
             }
         }
@@ -434,12 +457,57 @@ void CPPCodeGenerator::writePrivateVarValues() {
             for (const auto& raw : decls->fVars) {
                 VarDeclaration& decl = (VarDeclaration&) *raw;
                 if (is_private(*decl.fVar) && decl.fValue) {
-                    this->writef("%s = %s;\n",
-                                 String(decl.fVar->fName).c_str(),
-                                 decl.fValue->description().c_str());
+                    this->writef("%s = ", String(decl.fVar->fName).c_str());
+                    fCPPMode = true;
+                    this->writeExpression(*decl.fValue, kAssignment_Precedence);
+                    fCPPMode = false;
+                    this->write(";\n");
                 }
             }
         }
+    }
+}
+
+static bool is_accessible(const Variable& var) {
+    return Type::kSampler_Kind != var.fType.kind() &&
+           Type::kOther_Kind != var.fType.kind();
+}
+
+void CPPCodeGenerator::writeCodeAppend(const String& code) {
+    // codeAppendf can only handle appending 1024 bytes at a time, so we need to break the string
+    // into chunks. Unfortunately we can't tell exactly how long the string is going to end up,
+    // because printf escape sequences get replaced by strings of unknown length, but keeping the
+    // format string below 512 bytes is probably safe.
+    static constexpr size_t maxChunkSize = 512;
+    size_t start = 0;
+    size_t index = 0;
+    size_t argStart = 0;
+    size_t argCount;
+    while (index < code.size()) {
+        argCount = 0;
+        this->write("        fragBuilder->codeAppendf(\"");
+        while (index < code.size() && index < start + maxChunkSize) {
+            if ('%' == code[index]) {
+                if (index == start + maxChunkSize - 1 || index == code.size() - 1) {
+                    break;
+                }
+                if (code[index + 1] != '%') {
+                    ++argCount;
+                }
+            } else if ('\\' == code[index] && index == start + maxChunkSize - 1) {
+                // avoid splitting an escape sequence that happens to fall across a chunk boundary
+                break;
+            }
+            ++index;
+        }
+        fOut->write(code.c_str() + start, index - start);
+        this->write("\"");
+        for (size_t i = argStart; i < argStart + argCount; ++i) {
+            this->writef(", %s", fFormatArgs[i].c_str());
+        }
+        this->write(");\n");
+        argStart += argCount;
+        start = index;
     }
 }
 
@@ -449,18 +517,25 @@ bool CPPCodeGenerator::writeEmitCode(std::vector<const Variable*>& uniforms) {
     this->writef("        const %s& _outer = args.fFp.cast<%s>();\n"
                  "        (void) _outer;\n",
                  fFullName.c_str(), fFullName.c_str());
+    for (const auto& p : fProgram.fElements) {
+        if (ProgramElement::kVar_Kind == p->fKind) {
+            const VarDeclarations* decls = (const VarDeclarations*) p.get();
+            for (const auto& raw : decls->fVars) {
+                VarDeclaration& decl = (VarDeclaration&) *raw;
+                String nameString(decl.fVar->fName);
+                const char* name = nameString.c_str();
+                if (SectionAndParameterHelper::IsParameter(*decl.fVar) &&
+                    is_accessible(*decl.fVar)) {
+                    this->writef("        auto %s = _outer.%s();\n"
+                                 "        (void) %s;\n",
+                                 name, name, name);
+                }
+            }
+        }
+    }
     this->writePrivateVarValues();
     for (const auto u : uniforms) {
         this->addUniform(*u);
-        if (u->fType == *fContext.fColorSpaceXform_Type) {
-            if (fNeedColorSpaceHelper) {
-                fErrors.error(u->fOffset, "only a single ColorSpaceXform is supported");
-            }
-            fNeedColorSpaceHelper = true;
-            this->writef("        fColorSpaceHelper.emitCode(args.fUniformHandler, "
-                                                            "_outer.%s().get());\n",
-                         String(u->fName).c_str());
-        }
     }
     this->writeSection(EMIT_CODE_SECTION);
     OutputStream* old = fOut;
@@ -468,13 +543,9 @@ bool CPPCodeGenerator::writeEmitCode(std::vector<const Variable*>& uniforms) {
     fOut = &mainBuffer;
     bool result = INHERITED::generateCode();
     fOut = old;
-    this->writef("%s        fragBuilder->codeAppendf(\"%s\"", fExtraEmitCodeCode.c_str(),
-                 mainBuffer.str().c_str());
-    for (const auto& s : fFormatArgs) {
-        this->writef(", %s", s.c_str());
-    }
-    this->write(");\n"
-                "    }\n");
+    this->writef("%s", fExtraEmitCodeCode.c_str());
+    this->writeCodeAppend(mainBuffer.str());
+    this->write("    }\n");
     return result;
 }
 
@@ -506,12 +577,6 @@ void CPPCodeGenerator::writeSetData(std::vector<const Variable*>& uniforms) {
                              "        %s.setMatrix4f(%sVar, %sValue);\n",
                              name, name, name, pdman, HCodeGenerator::FieldName(name).c_str(),
                              name);
-            } else if (u->fType == *fContext.fColorSpaceXform_Type) {
-                ASSERT(fNeedColorSpaceHelper);
-                this->writef("        if (fColorSpaceHelper.isValid()) {\n"
-                             "            fColorSpaceHelper.setData(%s, _outer.%s().get());\n"
-                             "        }\n",
-                             pdman, name);
             } else if (u->fType == *fContext.fFragmentProcessor_Type) {
                 // do nothing
             } else {
@@ -624,11 +689,6 @@ void CPPCodeGenerator::writeGetKey() {
     for (const auto& param : fSectionAndParameterHelper.getParameters()) {
         String nameString(param->fName);
         const char* name = nameString.c_str();
-        if (param->fType == *fContext.fColorSpaceXform_Type) {
-            this->writef("    b->add32(GrColorSpaceXform::XformKey(%s.get()));\n",
-                         HCodeGenerator::FieldName(name).c_str());
-            continue;
-        }
         if (param->fModifiers.fLayout.fKey != Layout::kNo_Key &&
             (param->fModifiers.fFlags & Modifiers::kUniform_Flag)) {
             fErrors.error(param->fOffset,
@@ -653,7 +713,7 @@ void CPPCodeGenerator::writeGetKey() {
                     this->writef("    b->add32(%s.height());\n",
                                  HCodeGenerator::FieldName(name).c_str());
                 } else {
-                    this->writef("    b->add32(%s);\n",
+                    this->writef("    b->add32((int32_t) %s);\n",
                                  HCodeGenerator::FieldName(name).c_str());
                 }
                 break;
@@ -692,8 +752,7 @@ bool CPPCodeGenerator::generateCode() {
     this->writef("#include \"%s.h\"\n"
                  "#if SK_SUPPORT_GPU\n", fullName);
     this->writeSection(CPP_SECTION);
-    this->writef("#include \"glsl/GrGLSLColorSpaceXformHelper.h\"\n"
-                 "#include \"glsl/GrGLSLFragmentProcessor.h\"\n"
+    this->writef("#include \"glsl/GrGLSLFragmentProcessor.h\"\n"
                  "#include \"glsl/GrGLSLFragmentShaderBuilder.h\"\n"
                  "#include \"glsl/GrGLSLProgramBuilder.h\"\n"
                  "#include \"SkSLCPP.h\"\n"
@@ -717,9 +776,6 @@ bool CPPCodeGenerator::generateCode() {
             this->writef("    UniformHandle %sVar;\n",
                          HCodeGenerator::FieldName(String(param->fName).c_str()).c_str());
         }
-    }
-    if (fNeedColorSpaceHelper) {
-        this->write("    GrGLSLColorSpaceXformHelper fColorSpaceHelper;\n");
     }
     this->writef("};\n"
                  "GrGLSLFragmentProcessor* %s::onCreateGLSLInstance() const {\n"

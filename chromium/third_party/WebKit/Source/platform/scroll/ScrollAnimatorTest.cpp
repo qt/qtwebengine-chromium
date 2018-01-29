@@ -32,6 +32,7 @@
 #include "platform/scheduler/child/web_scheduler.h"
 #include "platform/scroll/ScrollAnimatorBase.h"
 #include "platform/scroll/ScrollableArea.h"
+#include "platform/scroll/ScrollbarTheme.h"
 #include "public/platform/Platform.h"
 #include "public/platform/WebThread.h"
 #include "testing/gmock/include/gmock/gmock.h"
@@ -117,11 +118,15 @@ class MockScrollableAreaForAnimatorTest
     ScrollableArea::SetScrollOffset(offset, type, behavior);
   }
 
-  RefPtr<WebTaskRunner> GetTimerTaskRunner() const final {
+  scoped_refptr<WebTaskRunner> GetTimerTaskRunner() const final {
     return Platform::Current()->CurrentThread()->Scheduler()->TimerTaskRunner();
   }
 
-  DEFINE_INLINE_VIRTUAL_TRACE() {
+  ScrollbarTheme& GetPageScrollbarTheme() const override {
+    return ScrollbarTheme::DeprecatedStaticGetTheme();
+  }
+
+  virtual void Trace(blink::Visitor* visitor) {
     visitor->Trace(animator);
     ScrollableArea::Trace(visitor);
   }

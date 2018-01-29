@@ -29,11 +29,15 @@ class MODULES_EXPORT MediaControlInputElement : public HTMLInputElement,
   void SetOverflowElementIsWanted(bool) final;
   void MaybeRecordDisplayed() final;
 
-  DECLARE_VIRTUAL_TRACE();
+  virtual void Trace(blink::Visitor*);
 
   MediaControlInputElement* OverflowElementForTests() const {
     return overflow_element_;
   }
+
+  // Get the size of the element in pixels or the default if we cannot get the
+  // size because the element has not been layed out yet.
+  WebSize GetSizeOrDefault() const override;
 
  protected:
   MediaControlInputElement(MediaControlsImpl&, MediaControlElementType);

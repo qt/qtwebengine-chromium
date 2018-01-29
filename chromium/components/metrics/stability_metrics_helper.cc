@@ -15,10 +15,10 @@
 #include "build/build_config.h"
 #include "build/buildflag.h"
 #include "components/metrics/metrics_pref_names.h"
-#include "components/metrics/proto/system_profile.pb.h"
 #include "components/prefs/pref_registry_simple.h"
 #include "components/prefs/pref_service.h"
 #include "extensions/features/features.h"
+#include "third_party/metrics_proto/system_profile.pb.h"
 
 #if defined(OS_WIN)
 #include <windows.h>  // Needed for STATUS_* codes
@@ -166,12 +166,8 @@ void StabilityMetricsHelper::RegisterPrefs(PrefRegistrySimple* registry) {
   registry->RegisterInt64Pref(prefs::kUninstallMetricsPageLoadCount, 0);
 }
 
-// static
-void StabilityMetricsHelper::IncreaseRendererCrashCount(
-    PrefService* local_state) {
-  // It doesn't use IncrementPrefValue() because the function is static.
-  int value = local_state->GetInteger(prefs::kStabilityRendererCrashCount);
-  local_state->SetInteger(prefs::kStabilityRendererCrashCount, value + 1);
+void StabilityMetricsHelper::IncreaseRendererCrashCount() {
+  IncrementPrefValue(prefs::kStabilityRendererCrashCount);
 }
 
 void StabilityMetricsHelper::BrowserChildProcessCrashed() {

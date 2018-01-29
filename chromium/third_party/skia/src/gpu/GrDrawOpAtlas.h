@@ -29,7 +29,7 @@ struct GrDrawOpAtlasConfig {
  * This class manages one or more atlas textures on behalf of GrDrawOps. The draw ops that use the
  * atlas perform texture uploads when preparing their draws during flush. The class provides
  * facilities for using GrDrawOpUploadToken to detect data hazards. Op's uploads are performed in
- * "asap" mode until it is impossible to add data without overwriting texels read by draws that
+ * "ASAP" mode until it is impossible to add data without overwriting texels read by draws that
  * have not yet executed on the gpu. At that point, the atlas will attempt to allocate a new
  * atlas texture (or "page") of the same size, up to a maximum number of textures, and upload
  * to that texture. If that's not possible, the uploads are performed "inline" between draws. If a
@@ -51,7 +51,13 @@ struct GrDrawOpAtlasConfig {
  * and passes in the given GrDrawUploadToken.
  */
 class GrDrawOpAtlas {
+private:
+    static constexpr auto kMaxMultitexturePages = 4;
+
 public:
+    /** Is the atlas allowed to use more than one texture? */
+    enum class AllowMultitexturing : bool { kNo, kYes };
+
     /**
      * An AtlasID is an opaque handle which callers can use to determine if the atlas contains
      * a specific piece of data.
@@ -77,15 +83,16 @@ public:
      *                          direction
      *  @param numPlotsY        The number of plots the atlas should be broken up into in the Y
      *                          direction
+     *  @param allowMultitexturing Can the atlas use more than one texture.
      *  @param func             An eviction function which will be called whenever the atlas has to
      *                          evict data
-     *  @param data             User supplied data which will be passed into func whenver an
+     *  @param data             User supplied data which will be passed into func whenever an
      *                          eviction occurs
      *  @return                 An initialized GrDrawOpAtlas, or nullptr if creation fails
      */
-    static std::unique_ptr<GrDrawOpAtlas> Make(GrContext*, GrPixelConfig,
-                                               int width, int height,
+    static std::unique_ptr<GrDrawOpAtlas> Make(GrContext*, GrPixelConfig, int width, int height,
                                                int numPlotsX, int numPlotsY,
+                                               AllowMultitexturing allowMultitexturing,
                                                GrDrawOpAtlas::EvictionFunc func, void* data);
 
     /**
@@ -100,7 +107,7 @@ public:
      * 'setUseToken' with the currentToken from the GrDrawOp::Target, otherwise the next call to
      * addToAtlas might cause the previous data to be overwritten before it has been read.
      */
-    bool addToAtlas(AtlasID*, GrDrawOp::Target*, int width, int height, const void* image,
+    bool addToAtlas(AtlasID*, GrDeferredUploadTarget*, int width, int height, const void* image,
                     SkIPoint16* loc);
 
     GrContext* context() const { return fContext; }
@@ -117,7 +124,7 @@ public:
     }
 
     /** To ensure the atlas does not evict a given entry, the client must set the last use token. */
-    inline void setLastUseToken(AtlasID id, GrDrawOpUploadToken token) {
+    inline void setLastUseToken(AtlasID id, GrDeferredUploadToken token) {
         SkASSERT(this->hasID(id));
         uint32_t plotIdx = GetPlotIndexFromID(id);
         SkASSERT(plotIdx < fNumPlots);
@@ -134,7 +141,6 @@ public:
         data->fData = userData;
     }
 
-    static constexpr auto kMaxPages = 4;
     uint32_t pageCount() { return fNumPages; }
 
     /**
@@ -186,12 +192,12 @@ public:
         static constexpr int kMinItems = 4;
         static constexpr int kMaxPlots = 32;
         SkSTArray<kMinItems, PlotData, true> fPlotsToUpdate;
-        uint32_t fPlotAlreadyUpdated[kMaxPages];
+        uint32_t fPlotAlreadyUpdated[kMaxMultitexturePages];
 
         friend class GrDrawOpAtlas;
     };
 
-    void setLastUseTokenBulk(const BulkUseTokenUpdater& updater, GrDrawOpUploadToken token) {
+    void setLastUseTokenBulk(const BulkUseTokenUpdater& updater, GrDeferredUploadToken token) {
         int count = updater.fPlotsToUpdate.count();
         for (int i = 0; i < count; i++) {
             const BulkUseTokenUpdater::PlotData& pd = updater.fPlotsToUpdate[i];
@@ -205,7 +211,7 @@ public:
         }
     }
 
-    void compact(GrDrawOpUploadToken startTokenForNextFlush);
+    void compact(GrDeferredUploadToken startTokenForNextFlush);
 
     static constexpr auto kGlyphMaxDim = 256;
     static bool GlyphTooLargeForAtlas(int width, int height) {
@@ -217,8 +223,12 @@ public:
     }
 
 private:
-    GrDrawOpAtlas(GrContext*, GrPixelConfig config, int width, int height,
-                  int numPlotsX, int numPlotsY);
+    uint32_t maxPages() const {
+        return AllowMultitexturing::kYes == fAllowMultitexturing ? kMaxMultitexturePages : 1;
+    }
+
+    GrDrawOpAtlas(GrContext*, GrPixelConfig config, int width, int height, int numPlotsX,
+                  int numPlotsY, AllowMultitexturing allowMultitexturing);
 
     /**
      * The backing GrTexture for a GrDrawOpAtlas is broken into a spatial grid of Plots. The Plots
@@ -253,12 +263,12 @@ private:
          * use lastUse to determine when we can evict a plot from the cache, i.e. if the last use
          * has already flushed through the gpu then we can reuse the plot.
          */
-        GrDrawOpUploadToken lastUploadToken() const { return fLastUpload; }
-        GrDrawOpUploadToken lastUseToken() const { return fLastUse; }
-        void setLastUploadToken(GrDrawOpUploadToken token) { fLastUpload = token; }
-        void setLastUseToken(GrDrawOpUploadToken token) { fLastUse = token; }
+        GrDeferredUploadToken lastUploadToken() const { return fLastUpload; }
+        GrDeferredUploadToken lastUseToken() const { return fLastUse; }
+        void setLastUploadToken(GrDeferredUploadToken token) { fLastUpload = token; }
+        void setLastUseToken(GrDeferredUploadToken token) { fLastUse = token; }
 
-        void uploadToTexture(GrDrawOp::WritePixelsFn&, GrTextureProxy*);
+        void uploadToTexture(GrDeferredTextureUploadWritePixelsFn&, GrTextureProxy*);
         void resetRects();
 
         int flushesSinceLastUsed() { return fFlushesSinceLastUse; }
@@ -282,14 +292,14 @@ private:
         static GrDrawOpAtlas::AtlasID CreateId(uint32_t pageIdx, uint32_t plotIdx,
                                                uint64_t generation) {
             SkASSERT(pageIdx < (1 << 8));
-            SkASSERT(pageIdx < kMaxPages);
+            SkASSERT(pageIdx < kMaxMultitexturePages);
             SkASSERT(plotIdx < (1 << 8));
             SkASSERT(generation < ((uint64_t)1 << 48));
             return generation << 16 | plotIdx << 8 | pageIdx;
         }
 
-        GrDrawOpUploadToken   fLastUpload;
-        GrDrawOpUploadToken   fLastUse;
+        GrDeferredUploadToken fLastUpload;
+        GrDeferredUploadToken fLastUse;
         // the number of flushes since this plot has been last used
         int                   fFlushesSinceLastUse;
 
@@ -327,7 +337,7 @@ private:
         return (id >> 16) & 0xffffffffffff;
     }
 
-    inline bool updatePlot(GrDrawOp::Target*, AtlasID*, Plot*);
+    inline bool updatePlot(GrDeferredUploadTarget*, AtlasID*, Plot*);
 
     inline void makeMRU(Plot* plot, int pageIdx) {
         if (fPages[pageIdx].fPlotList.head() == plot) {
@@ -360,7 +370,7 @@ private:
 
     uint64_t              fAtlasGeneration;
     // nextTokenToFlush() value at the end of the previous flush
-    GrDrawOpUploadToken   fPrevFlushToken;
+    GrDeferredUploadToken fPrevFlushToken;
 
     struct EvictionData {
         EvictionFunc fFunc;
@@ -376,8 +386,9 @@ private:
         PlotList fPlotList;
     };
     // proxies kept separate to make it easier to pass them up to client
-    sk_sp<GrTextureProxy> fProxies[kMaxPages];
-    Page fPages[kMaxPages];
+    sk_sp<GrTextureProxy> fProxies[kMaxMultitexturePages];
+    Page fPages[kMaxMultitexturePages];
+    AllowMultitexturing fAllowMultitexturing;
     uint32_t fNumPages;
 };
 

@@ -14,6 +14,7 @@
 namespace blink {
 
 class LocalFrame;
+class ResourceFetcher;
 
 // IdlenessDetector observes network request count everytime a load is
 // finshed after DOMContentLoadedEventEnd is fired, and emit network almost idle
@@ -29,11 +30,17 @@ class CORE_EXPORT IdlenessDetector
   explicit IdlenessDetector(LocalFrame*);
 
   void Shutdown();
+  void WillCommitLoad();
   void DomContentLoadedEventFired();
-  void OnWillSendRequest();
+  // TODO(lpy) Don't need to pass in fetcher once the command line of disabling
+  // PlzNavigate is removed.
+  void OnWillSendRequest(ResourceFetcher*);
   void OnDidLoadResource();
 
-  DECLARE_TRACE();
+  double GetNetworkAlmostIdleTime();
+  double GetNetworkIdleTime();
+
+  void Trace(blink::Visitor*);
 
  private:
   friend class IdlenessDetectorTest;
@@ -57,8 +64,8 @@ class CORE_EXPORT IdlenessDetector
   double network_0_quiet_ = 0;
   double network_2_quiet_ = 0;
   // Record the actual start time of network quiet.
-  double network_0_quiet_start_time_;
-  double network_2_quiet_start_time_;
+  double network_0_quiet_start_time_ = 0;
+  double network_2_quiet_start_time_ = 0;
   TaskRunnerTimer<IdlenessDetector> network_quiet_timer_;
 };
 

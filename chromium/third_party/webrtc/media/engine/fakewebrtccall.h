@@ -65,6 +65,8 @@ class FakeAudioSendStream final : public webrtc::AudioSendStream {
                           int duration_ms) override;
   void SetMuted(bool muted) override;
   webrtc::AudioSendStream::Stats GetStats() const override;
+  webrtc::AudioSendStream::Stats GetStats(
+      bool has_remote_tracks) const override;
 
   int id_ = -1;
   TelephoneEvent latest_telephone_event_;
@@ -296,6 +298,9 @@ class FakeCall final : public webrtc::Call, public webrtc::PacketReceiver {
       const webrtc::Call::Config::BitrateConfig& bitrate_config) override;
   void SetBitrateConfigMask(
       const webrtc::Call::Config::BitrateConfigMask& mask) override;
+  void SetBitrateAllocationStrategy(
+      std::unique_ptr<rtc::BitrateAllocationStrategy>
+          bitrate_allocation_strategy) override;
   void OnNetworkRouteChanged(const std::string& transport_name,
                              const rtc::NetworkRoute& network_route) override {}
   void SignalChannelNetworkState(webrtc::MediaType media,

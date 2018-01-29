@@ -1839,13 +1839,13 @@ SpvId SPIRVCodeGenerator::writeConstructor(const Constructor& c, OutputStream& o
 
 SpvStorageClass_ get_storage_class(const Modifiers& modifiers) {
     if (modifiers.fFlags & Modifiers::kIn_Flag) {
-        ASSERT(!modifiers.fLayout.fPushConstant);
+        ASSERT(!(modifiers.fLayout.fFlags & Layout::kPushConstant_Flag));
         return SpvStorageClassInput;
     } else if (modifiers.fFlags & Modifiers::kOut_Flag) {
-        ASSERT(!modifiers.fLayout.fPushConstant);
+        ASSERT(!(modifiers.fLayout.fFlags & Layout::kPushConstant_Flag));
         return SpvStorageClassOutput;
     } else if (modifiers.fFlags & Modifiers::kUniform_Flag) {
-        if (modifiers.fLayout.fPushConstant) {
+        if (modifiers.fLayout.fFlags & Layout::kPushConstant_Flag) {
             return SpvStorageClassPushConstant;
         }
         return SpvStorageClassUniform;
@@ -2091,9 +2091,9 @@ SpvId SPIRVCodeGenerator::writeVariableReference(const VariableReference& ref, O
             fields.emplace_back(Modifiers(), SKSL_RTHEIGHT_NAME, fContext.fFloat_Type.get());
             StringFragment name("sksl_synthetic_uniforms");
             Type intfStruct(-1, name, fields);
-            Layout layout(-1, -1, 1, -1, -1, -1, -1, false, false, false,
-                          Layout::Format::kUnspecified, false, Layout::kUnspecified_Primitive, -1,
-                          -1, "", Layout::kNo_Key);
+            Layout layout(0, -1, -1, 1, -1, -1, -1, -1, Layout::Format::kUnspecified,
+                          Layout::kUnspecified_Primitive, -1, -1, "", Layout::kNo_Key,
+                          StringFragment());
             Variable* intfVar = new Variable(-1,
                                              Modifiers(layout, Modifiers::kUniform_Flag),
                                              name,
@@ -2608,11 +2608,11 @@ SpvId SPIRVCodeGenerator::writeTernaryExpression(const TernaryExpression& t, Out
 }
 
 std::unique_ptr<Expression> create_literal_1(const Context& context, const Type& type) {
-    if (type == *context.fInt_Type) {
-        return std::unique_ptr<Expression>(new IntLiteral(context, -1, 1));
+    if (type.isInteger()) {
+        return std::unique_ptr<Expression>(new IntLiteral(context, -1, 1, &type));
     }
-    else if (type == *context.fFloat_Type) {
-        return std::unique_ptr<Expression>(new FloatLiteral(context, -1, 1.0));
+    else if (type.isFloat()) {
+        return std::unique_ptr<Expression>(new FloatLiteral(context, -1, 1.0, &type));
     } else {
         ABORT("math is unsupported on type '%s'", type.name().c_str());
     }
@@ -2858,7 +2858,9 @@ void SPIRVCodeGenerator::writeLayout(const Layout& layout, SpvId target, int mem
 
 SpvId SPIRVCodeGenerator::writeInterfaceBlock(const InterfaceBlock& intf) {
     bool isBuffer = (0 != (intf.fVariable.fModifiers.fFlags & Modifiers::kBuffer_Flag));
-    MemoryLayout layout = (intf.fVariable.fModifiers.fLayout.fPushConstant || isBuffer) ?
+    bool pushConstant = (0 != (intf.fVariable.fModifiers.fLayout.fFlags &
+                               Layout::kPushConstant_Flag));
+    MemoryLayout layout = (pushConstant || isBuffer) ?
                           MemoryLayout(MemoryLayout::k430_Standard) :
                           fDefaultLayout;
     SpvId result = this->nextId();
@@ -3019,6 +3021,9 @@ void SPIRVCodeGenerator::writeStatement(const Statement& s, OutputStream& out) {
         case Statement::kDo_Kind:
             this->writeDoStatement((DoStatement&) s, out);
             break;
+        case Statement::kSwitch_Kind:
+            this->writeSwitchStatement((SwitchStatement&) s, out);
+            break;
         case Statement::kBreak_Kind:
             this->writeInstruction(SpvOpBranch, fBreakTarget.top(), out);
             break;
@@ -3167,6 +3172,48 @@ void SPIRVCodeGenerator::writeDoStatement(const DoStatement& d, OutputStream& ou
     this->writeLabel(end, out);
     fBreakTarget.pop();
     fContinueTarget.pop();
+}
+
+void SPIRVCodeGenerator::writeSwitchStatement(const SwitchStatement& s, OutputStream& out) {
+    SpvId value = this->writeExpression(*s.fValue, out);
+    std::vector<SpvId> labels;
+    SpvId end = this->nextId();
+    SpvId defaultLabel = end;
+    fBreakTarget.push(end);
+    int size = 3;
+    for (const auto& c : s.fCases) {
+        SpvId label = this->nextId();
+        labels.push_back(label);
+        if (c->fValue) {
+            size += 2;
+        } else {
+            defaultLabel = label;
+        }
+    }
+    labels.push_back(end);
+    this->writeInstruction(SpvOpSelectionMerge, end, SpvSelectionControlMaskNone, out);
+    this->writeOpCode(SpvOpSwitch, size, out);
+    this->writeWord(value, out);
+    this->writeWord(defaultLabel, out);
+    for (size_t i = 0; i < s.fCases.size(); ++i) {
+        if (!s.fCases[i]->fValue) {
+            continue;
+        }
+        ASSERT(s.fCases[i]->fValue->fKind == Expression::kIntLiteral_Kind);
+        this->writeWord(((IntLiteral&) *s.fCases[i]->fValue).fValue, out);
+        this->writeWord(labels[i], out);
+    }
+    for (size_t i = 0; i < s.fCases.size(); ++i) {
+        this->writeLabel(labels[i], out);
+        for (const auto& stmt : s.fCases[i]->fStatements) {
+            this->writeStatement(*stmt, out);
+        }
+        if (fCurrentBlock) {
+            this->writeInstruction(SpvOpBranch, labels[i + 1], out);
+        }
+    }
+    this->writeLabel(end, out);
+    fBreakTarget.pop();
 }
 
 void SPIRVCodeGenerator::writeReturnStatement(const ReturnStatement& r, OutputStream& out) {

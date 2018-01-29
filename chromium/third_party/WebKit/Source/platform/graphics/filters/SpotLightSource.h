@@ -30,11 +30,11 @@ namespace blink {
 
 class PLATFORM_EXPORT SpotLightSource final : public LightSource {
  public:
-  static RefPtr<SpotLightSource> Create(const FloatPoint3D& position,
-                                        const FloatPoint3D& direction,
-                                        float specular_exponent,
-                                        float limiting_cone_angle) {
-    return WTF::AdoptRef(new SpotLightSource(
+  static scoped_refptr<SpotLightSource> Create(const FloatPoint3D& position,
+                                               const FloatPoint3D& direction,
+                                               float specular_exponent,
+                                               float limiting_cone_angle) {
+    return base::AdoptRef(new SpotLightSource(
         position, direction, specular_exponent, limiting_cone_angle));
   }
 

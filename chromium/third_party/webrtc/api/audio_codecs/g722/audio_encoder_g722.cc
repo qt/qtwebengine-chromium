@@ -15,9 +15,9 @@
 
 #include "common_types.h"  // NOLINT(build/include)
 #include "modules/audio_coding/codecs/g722/audio_encoder_g722.h"
+#include "rtc_base/numerics/safe_conversions.h"
+#include "rtc_base/numerics/safe_minmax.h"
 #include "rtc_base/ptr_util.h"
-#include "rtc_base/safe_conversions.h"
-#include "rtc_base/safe_minmax.h"
 #include "rtc_base/string_to_number.h"
 
 namespace webrtc {
@@ -26,7 +26,7 @@ rtc::Optional<AudioEncoderG722Config> AudioEncoderG722::SdpToConfig(
     const SdpAudioFormat& format) {
   if (STR_CASE_CMP(format.name.c_str(), "g722") != 0 ||
       format.clockrate_hz != 8000) {
-    return rtc::Optional<AudioEncoderG722Config>();
+    return rtc::nullopt;
   }
 
   AudioEncoderG722Config config;
@@ -40,7 +40,7 @@ rtc::Optional<AudioEncoderG722Config> AudioEncoderG722::SdpToConfig(
     }
   }
   return config.IsOk() ? rtc::Optional<AudioEncoderG722Config>(config)
-                       : rtc::Optional<AudioEncoderG722Config>();
+                       : rtc::nullopt;
 }
 
 void AudioEncoderG722::AppendSupportedEncoders(

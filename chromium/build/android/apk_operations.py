@@ -65,7 +65,7 @@ def _InstallApk(devices, apk, install_dict):
     if install_dict:
       installer.Install(device, install_dict, apk=apk)
     else:
-      device.Install(apk)
+      device.Install(apk, reinstall=True)
 
   logging.info('Installing %sincremental apk.', '' if install_dict else 'non-')
   device_utils.DeviceUtils.parallel(devices).pMap(install)
@@ -80,9 +80,20 @@ def _UninstallApk(devices, install_dict, package_name):
   device_utils.DeviceUtils.parallel(devices).pMap(uninstall)
 
 
-def _LaunchUrl(devices, input_args, device_args_file, url, apk, package_name,
-               wait_for_java_debugger):
-  if input_args and device_args_file is None:
+def _NormalizeProcessName(debug_process_name, package_name):
+  if not debug_process_name:
+    debug_process_name = package_name
+  elif debug_process_name.startswith(':'):
+    debug_process_name = package_name + debug_process_name
+  elif '.' not in debug_process_name:
+    debug_process_name = package_name + ':' + debug_process_name
+  return debug_process_name
+
+
+def _LaunchUrl(devices, package_name, argv=None, command_line_flags_file=None,
+               url=None, apk=None, wait_for_java_debugger=False,
+               debug_process_name=None):
+  if argv and command_line_flags_file is None:
     raise Exception('This apk does not support any flags.')
   if url:
     # TODO(agrieve): Launch could be changed to require only package name by
@@ -94,23 +105,23 @@ def _LaunchUrl(devices, input_args, device_args_file, url, apk, package_name,
     if not view_activity:
       raise Exception('APK does not support launching with URLs.')
 
+  debug_process_name = _NormalizeProcessName(debug_process_name, package_name)
+
   def launch(device):
     # Set debug app in order to enable reading command line flags on user
     # builds.
-    cmd = ['am', 'set-debug-app', package_name]
+    cmd = ['am', 'set-debug-app', debug_process_name]
     if wait_for_java_debugger:
-      # To wait for debugging on a non-primary process:
-      #     am set-debug-app org.chromium.chrome:privileged_process0
       cmd[-1:-1] = ['-w']
     # Ignore error since it will fail if apk is not debuggable.
     device.RunShellCommand(cmd, check_return=False)
 
     # The flags are first updated with input args.
-    if device_args_file:
-      changer = flag_changer.FlagChanger(device, device_args_file)
+    if command_line_flags_file:
+      changer = flag_changer.FlagChanger(device, command_line_flags_file)
       flags = []
-      if input_args:
-        flags = shlex.split(input_args)
+      if argv:
+        flags = shlex.split(argv)
       changer.ReplaceFlags(flags)
     # Then launch the apk.
     if url is None:
@@ -124,15 +135,19 @@ def _LaunchUrl(devices, input_args, device_args_file, url, apk, package_name,
                                     package=package_name)
       device.StartActivity(launch_intent)
   device_utils.DeviceUtils.parallel(devices).pMap(launch)
+  if wait_for_java_debugger:
+    print ('Waiting for debugger to attach to process: ' +
+           _Colorize(debug_process_name, colorama.Fore.YELLOW))
 
 
-def _ChangeFlags(devices, input_args, device_args_file):
-  if input_args is None:
-    _DisplayArgs(devices, device_args_file)
+def _ChangeFlags(devices, argv, command_line_flags_file):
+  if argv is None:
+    _DisplayArgs(devices, command_line_flags_file)
   else:
-    flags = shlex.split(input_args)
+    flags = shlex.split(argv)
     def update(device):
-      flag_changer.FlagChanger(device, device_args_file).ReplaceFlags(flags)
+      changer = flag_changer.FlagChanger(device, command_line_flags_file)
+      changer.ReplaceFlags(flags)
     device_utils.DeviceUtils.parallel(devices).pMap(update)
 
 
@@ -144,8 +159,20 @@ def _TargetCpuToTargetArch(target_cpu):
   return target_cpu
 
 
-def _RunGdb(device, package_name, output_directory, target_cpu, extra_args,
-            verbose):
+def _RunGdb(device, package_name, debug_process_name, pid, output_directory,
+            target_cpu, extra_args, verbose):
+  if not pid:
+    debug_process_name = _NormalizeProcessName(debug_process_name, package_name)
+    pids_by_process_name = _GetPackagePids(device, package_name)
+    pid = pids_by_process_name.get(debug_process_name, [0])[0]
+  if not pid:
+    logging.warning('App not running. Sending launch intent.')
+    _LaunchUrl([device], package_name)
+    pids_by_process_name = _GetPackagePids(device, package_name)
+    pid = pids_by_process_name.get(debug_process_name, [0])[0]
+    if not pid:
+      raise Exception('Unable to find process "%s"' % debug_process_name)
+
   gdb_script_path = os.path.dirname(__file__) + '/adb_gdb'
   cmd = [
       gdb_script_path,
@@ -153,6 +180,7 @@ def _RunGdb(device, package_name, output_directory, target_cpu, extra_args,
       '--output-directory=%s' % output_directory,
       '--adb=%s' % adb_wrapper.AdbWrapper.GetAdbPath(),
       '--device=%s' % device.serial,
+      '--pid=%s' % pid,
       # Use one lib dir per device so that changing between devices does require
       # refetching the device libs.
       '--pull-libs-dir=/tmp/adb-gdb-libs-%s' % device.serial,
@@ -605,14 +633,15 @@ def _GenerateMissingAllFlagMessage(devices):
           _GenerateAvailableDevicesMessage(devices))
 
 
-def _DisplayArgs(devices, device_args_file):
+def _DisplayArgs(devices, command_line_flags_file):
   def flags_helper(d):
-    changer = flag_changer.FlagChanger(d, device_args_file)
+    changer = flag_changer.FlagChanger(d, command_line_flags_file)
     return changer.GetCurrentFlags()
 
   parallel_devices = device_utils.DeviceUtils.parallel(devices)
   outputs = parallel_devices.pMap(flags_helper).pGet(None)
-  print 'Existing flags per-device (via /data/local/tmp/%s):' % device_args_file
+  print 'Existing flags per-device (via /data/local/tmp/{}):'.format(
+      command_line_flags_file)
   for flags in _PrintPerDeviceOutput(devices, outputs, single_line=True):
     quoted_flags = ' '.join(pipes.quote(f) for f in flags)
     print quoted_flags or 'No flags set.'
@@ -651,6 +680,7 @@ def _SaveDeviceCaches(devices, output_directory):
 class _Command(object):
   name = None
   description = None
+  long_description = None
   needs_package_name = False
   needs_output_directory = False
   needs_apk_path = False
@@ -676,7 +706,10 @@ class _Command(object):
     pass
 
   def RegisterArgs(self, parser):
-    subp = parser.add_parser(self.name, help=self.description)
+    subp = parser.add_parser(
+        self.name, help=self.description,
+        description=self.long_description or self.description,
+        formatter_class=argparse.RawDescriptionHelpFormatter)
     self._parser = subp
     subp.set_defaults(command=self)
     subp.add_argument('--all',
@@ -854,12 +887,17 @@ class _LaunchCommand(_Command):
                        help='Pause execution until debugger attaches. Applies '
                             'only to the main process. To have renderers wait, '
                             'use --args="--renderer-wait-for-java-debugger"')
+    group.add_argument('--debug-process-name',
+                       help='Name of the process to debug. '
+                            'E.g. "privileged_process0", or "foo.bar:baz"')
     group.add_argument('url', nargs='?', help='A URL to launch with.')
 
   def Run(self):
-    _LaunchUrl(self.devices, self.args.args, self.args.command_line_flags_file,
-               self.args.url, self.apk_helper, self.args.package_name,
-               self.args.wait_for_java_debugger)
+    _LaunchUrl(self.devices, self.args.package_name, argv=self.args.args,
+               command_line_flags_file=self.args.command_line_flags_file,
+               url=self.args.url, apk=self.apk_helper,
+               wait_for_java_debugger=self.args.wait_for_java_debugger,
+               debug_process_name=self.args.debug_process_name)
 
 
 class _StopCommand(_Command):
@@ -899,6 +937,13 @@ class _ArgvCommand(_Command):
 class _GdbCommand(_Command):
   name = 'gdb'
   description = 'Runs //build/android/adb_gdb with apk-specific args.'
+  long_description = description + """
+
+To attach to a process other than the APK's main process, use --pid=1234.
+To list all PIDs, use the "ps" command.
+
+If no apk process is currently running, sends a launch intent.
+"""
   needs_package_name = True
   needs_output_directory = True
   accepts_args = True
@@ -907,13 +952,42 @@ class _GdbCommand(_Command):
 
   def Run(self):
     extra_args = shlex.split(self.args.args or '')
-    _RunGdb(self.devices[0], self.args.package_name, self.args.output_directory,
-            self.args.target_cpu, extra_args, bool(self.args.verbose_count))
+    _RunGdb(self.devices[0], self.args.package_name,
+            self.args.debug_process_name, self.args.pid,
+            self.args.output_directory, self.args.target_cpu, extra_args,
+            bool(self.args.verbose_count))
+
+  def _RegisterExtraArgs(self, group):
+    pid_group = group.add_mutually_exclusive_group()
+    pid_group.add_argument('--debug-process-name',
+                           help='Name of the process to attach to. '
+                                'E.g. "privileged_process0", or "foo.bar:baz"')
+    pid_group.add_argument('--pid',
+                           help='The process ID to attach to. Defaults to '
+                                'the main process for the package.')
 
 
 class _LogcatCommand(_Command):
   name = 'logcat'
-  description = 'Runs "adb logcat" filtering to just the current APK processes'
+  description = 'Runs "adb logcat" with filters relevant the current APK.'
+  long_description = description + """
+
+"Relevant filters" means:
+  * Log messages from processes belonging to the apk,
+  * Plus log messages from log tags: ActivityManager|DEBUG,
+  * Plus fatal logs from any process,
+  * Minus spamy dalvikvm logs (for pre-L devices).
+
+Colors:
+  * Primary process is white
+  * Other processes (gpu, renderer) are yellow
+  * Non-apk processes are grey
+  * UI thread has a bolded Thread-ID
+
+Java stack traces are detected and deobfuscated (for release builds).
+
+To disable filtering, (but keep coloring), use --verbose.
+"""
   needs_package_name = True
   supports_multiple_devices = False
 

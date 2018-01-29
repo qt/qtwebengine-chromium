@@ -8,36 +8,90 @@
 #include "bindings/core/v8/ScriptStreamer.h"
 #include "bindings/core/v8/V8BindingForCore.h"
 #include "core/dom/Document.h"
+#include "core/dom/DocumentWriteIntervention.h"
 #include "core/dom/ScriptLoader.h"
-#include "core/dom/TaskRunnerHelper.h"
 #include "core/frame/LocalFrame.h"
 #include "core/loader/SubresourceIntegrityHelper.h"
+#include "core/loader/resource/ScriptResource.h"
 #include "platform/bindings/ScriptState.h"
 #include "platform/loader/fetch/MemoryCache.h"
+#include "public/platform/TaskType.h"
 
 namespace blink {
 
-ClassicPendingScript* ClassicPendingScript::Create(ScriptElementBase* element,
-                                                   ScriptResource* resource) {
-  return new ClassicPendingScript(element, resource, TextPosition());
+ClassicPendingScript* ClassicPendingScript::Fetch(
+    const KURL& url,
+    Document& element_document,
+    const ScriptFetchOptions& options,
+    const WTF::TextEncoding& encoding,
+    ScriptElementBase* element,
+    FetchParameters::DeferOption defer) {
+  FetchParameters params = options.CreateFetchParameters(
+      url, element_document.GetSecurityOrigin(), encoding, defer);
+
+  ClassicPendingScript* pending_script = new ClassicPendingScript(
+      element, TextPosition(), ScriptSourceLocationType::kExternalFile, options,
+      true /* is_external */);
+
+  // [Intervention]
+  // For users on slow connections, we want to avoid blocking the parser in
+  // the main frame on script loads inserted via document.write, since it
+  // can add significant delays before page content is displayed on the
+  // screen.
+  pending_script->intervened_ =
+      MaybeDisallowFetchForDocWrittenScript(params, element_document);
+
+  // https://html.spec.whatwg.org/#fetch-a-classic-script
+  // Step 2. Set request's client to settings object. [spec text]
+  //
+  // Note: |element_document| corresponds to the settings object.
+  ScriptResource* resource =
+      ScriptResource::Fetch(params, element_document.Fetcher());
+  if (!resource)
+    return nullptr;
+  pending_script->SetResource(resource);
+  pending_script->CheckState();
+  return pending_script;
 }
 
-ClassicPendingScript* ClassicPendingScript::Create(
+ClassicPendingScript* ClassicPendingScript::CreateExternalForTest(
     ScriptElementBase* element,
-    const TextPosition& starting_position) {
-  return new ClassicPendingScript(element, nullptr, starting_position);
+    ScriptResource* resource) {
+  DCHECK(resource);
+  ClassicPendingScript* pending_script = new ClassicPendingScript(
+      element, TextPosition(), ScriptSourceLocationType::kExternalFile,
+      ScriptFetchOptions(), true /* is_external */);
+  pending_script->SetResource(resource);
+  pending_script->CheckState();
+  return pending_script;
+}
+
+ClassicPendingScript* ClassicPendingScript::CreateInline(
+    ScriptElementBase* element,
+    const TextPosition& starting_position,
+    ScriptSourceLocationType source_location_type,
+    const ScriptFetchOptions& options) {
+  ClassicPendingScript* pending_script =
+      new ClassicPendingScript(element, starting_position, source_location_type,
+                               options, false /* is_external */);
+  pending_script->CheckState();
+  return pending_script;
 }
 
 ClassicPendingScript::ClassicPendingScript(
     ScriptElementBase* element,
-    ScriptResource* resource,
-    const TextPosition& starting_position)
+    const TextPosition& starting_position,
+    ScriptSourceLocationType source_location_type,
+    const ScriptFetchOptions& options,
+    bool is_external)
     : PendingScript(element, starting_position),
-      ready_state_(resource ? kWaitingForResource : kReady),
+      options_(options),
+      source_location_type_(source_location_type),
+      is_external_(is_external),
+      ready_state_(is_external ? kWaitingForResource : kReady),
       integrity_failure_(false),
       is_currently_streaming_(false) {
-  CheckState();
-  SetResource(resource);
+  CHECK(GetElement());
   MemoryCoordinator::Instance().RegisterClient(this);
 }
 
@@ -47,6 +101,7 @@ NOINLINE void ClassicPendingScript::CheckState() const {
   // TODO(hiroshige): Turn these CHECK()s into DCHECK() before going to beta.
   CHECK(!prefinalizer_called_);
   CHECK(GetElement());
+  CHECK_EQ(is_external_, !!GetResource());
   CHECK(GetResource() || !streamer_);
   CHECK(!streamer_ || streamer_->GetResource() == GetResource());
 }
@@ -146,6 +201,11 @@ void ClassicPendingScript::NotifyFinished(Resource* resource) {
     }
   }
 
+  if (intervened_) {
+    PossiblyFetchBlockedDocWriteScript(resource, element->GetDocument(),
+                                       options_);
+  }
+
   // We are now waiting for script streaming to finish.
   // If there is no script streamer, this step completes immediately.
   AdvanceReadyState(kWaitingForStreaming);
@@ -155,12 +215,14 @@ void ClassicPendingScript::NotifyFinished(Resource* resource) {
     FinishWaitingForStreaming();
 }
 
-void ClassicPendingScript::NotifyAppendData(ScriptResource* resource) {
+void ClassicPendingScript::DataReceived(Resource* resource,
+                                        const char*,
+                                        size_t) {
   if (streamer_)
-    streamer_->NotifyAppendData(resource);
+    streamer_->NotifyAppendData(ToScriptResource(resource));
 }
 
-DEFINE_TRACE(ClassicPendingScript) {
+void ClassicPendingScript::Trace(blink::Visitor* visitor) {
   visitor->Trace(streamer_);
   ResourceOwner<ScriptResource>::Trace(visitor);
   MemoryCoordinatorClient::Trace(visitor);
@@ -173,25 +235,19 @@ ClassicScript* ClassicPendingScript::GetSource(const KURL& document_url,
   DCHECK(IsReady());
 
   error_occurred = ErrorOccurred();
-  const ScriptLoader* loader = GetElement()->Loader();
-  // Here, we use the nonce snapshot at "#prepare-a-script".
-  // Note that |loader| may be nullptr if ScriptStreamerTest.
-  const String& nonce = loader ? loader->Nonce() : String();
-  const ParserDisposition parser_state = (loader && loader->IsParserInserted())
-                                             ? kParserInserted
-                                             : kNotParserInserted;
-  if (!GetResource()) {
-    return ClassicScript::Create(
-        ScriptSourceCode(GetElement()->TextFromChildren(), document_url, nonce,
-                         parser_state, StartingPosition()));
+  if (!is_external_) {
+    ScriptSourceCode source_code(GetElement()->TextFromChildren(),
+                                 source_location_type_, document_url,
+                                 StartingPosition());
+    return ClassicScript::Create(source_code, options_);
   }
 
   DCHECK(GetResource()->IsLoaded());
   bool streamer_ready = (ready_state_ == kReady) && streamer_ &&
                         !streamer_->StreamingSuppressed();
-  return ClassicScript::Create(
-      ScriptSourceCode(streamer_ready ? streamer_ : nullptr, GetResource(),
-                       nonce, parser_state));
+  ScriptSourceCode source_code(streamer_ready ? streamer_ : nullptr,
+                               GetResource());
+  return ClassicScript::Create(source_code, options_);
 }
 
 void ClassicPendingScript::SetStreamer(ScriptStreamer* streamer) {
@@ -257,7 +313,7 @@ void ClassicPendingScript::AdvanceReadyState(ReadyState new_ready_state) {
       // start streaming by work done within the callback. (crbug.com/754360)
       WTF::Closure done = std::move(streamer_done_);
       if (done)
-        done();
+        std::move(done).Run();
       is_currently_streaming_ = false;
     }
   }
@@ -324,29 +380,19 @@ bool ClassicPendingScript::StartStreamingIfPossible(
                        ? TaskType::kNetworking
                        : TaskType::kNetworkingControl;
 
-  DCHECK_EQ(ready_state_ == kReady, GetResource()->IsLoaded());
   DCHECK(!streamer_);
   DCHECK(!IsCurrentlyStreaming());
   DCHECK(!streamer_done_);
-  bool success = false;
-  if (ready_state_ == kReady) {
-    ScriptStreamer::StartStreamingLoadedScript(
-        this, streamer_type, document->GetFrame()->GetSettings(), script_state,
-        TaskRunnerHelper::Get(task_type, document));
-    success = streamer_ && !streamer_->IsStreamingFinished();
-  } else {
-    ScriptStreamer::StartStreaming(
-        this, streamer_type, document->GetFrame()->GetSettings(), script_state,
-        TaskRunnerHelper::Get(task_type, document));
-    success = streamer_;
-  }
+  ScriptStreamer::StartStreaming(
+      this, streamer_type, document->GetFrame()->GetSettings(), script_state,
+      document->GetTaskRunner(task_type));
+  bool success = streamer_ && !streamer_->IsStreamingFinished();
 
   // If we have successfully started streaming, we are required to call the
   // callback.
   DCHECK_EQ(success, IsCurrentlyStreaming());
-  if (success) {
+  if (success)
     streamer_done_ = std::move(done);
-  }
   return success;
 }
 
@@ -355,17 +401,16 @@ bool ClassicPendingScript::IsCurrentlyStreaming() const {
 }
 
 bool ClassicPendingScript::WasCanceled() const {
-  if (!GetResource())
+  if (!is_external_)
     return false;
   return GetResource()->WasCanceled();
 }
 
-KURL ClassicPendingScript::UrlForClassicScript() const {
-  return GetResource()->Url();
-}
+KURL ClassicPendingScript::UrlForTracing() const {
+  if (!is_external_ || !GetResource())
+    return NullURL();
 
-void ClassicPendingScript::RemoveFromMemoryCache() {
-  GetMemoryCache()->Remove(GetResource());
+  return GetResource()->Url();
 }
 
 }  // namespace blink

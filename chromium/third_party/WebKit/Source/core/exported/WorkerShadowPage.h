@@ -44,6 +44,8 @@ class CORE_EXPORT WorkerShadowPage : public WebFrameClient {
 
     // Called when Initialize() is completed.
     virtual void OnShadowPageInitialized() = 0;
+
+    virtual const WebString& GetInstrumentationToken() = 0;
   };
 
   explicit WorkerShadowPage(Client*);
@@ -64,9 +66,8 @@ class CORE_EXPORT WorkerShadowPage : public WebFrameClient {
   // so the shadow page must also manually call Close() on the corresponding
   // frame and its widget.
   void DidFinishDocumentLoad() override;
-  std::unique_ptr<blink::WebURLLoader> CreateURLLoader(
-      const WebURLRequest&,
-      SingleThreadTaskRunnerRefPtr) override;
+  std::unique_ptr<blink::WebURLLoaderFactory> CreateURLLoaderFactory() override;
+  WebString GetInstrumentationToken() override;
 
   Document* GetDocument() { return main_frame_->GetFrame()->GetDocument(); }
   WebSettings* GetSettings() { return web_view_->GetSettings(); }
@@ -81,9 +82,9 @@ class CORE_EXPORT WorkerShadowPage : public WebFrameClient {
   enum class State { kUninitialized, kInitializing, kInitialized };
   void AdvanceState(State);
 
+  Client* client_;
   WebView* web_view_;
   Persistent<WebLocalFrameImpl> main_frame_;
-  Client* client_;
 
   State state_ = State::kUninitialized;
 };

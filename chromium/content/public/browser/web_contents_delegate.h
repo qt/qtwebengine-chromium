@@ -42,7 +42,6 @@ class FilePath;
 namespace content {
 class ColorChooser;
 class JavaScriptDialogManager;
-class PageState;
 class RenderFrameHost;
 class RenderWidgetHost;
 class SessionStorageNamespace;
@@ -238,15 +237,6 @@ class CONTENT_EXPORT WebContentsDelegate {
 
   // Returns true if the context menu operation was handled by the delegate.
   virtual bool HandleContextMenu(const content::ContextMenuParams& params);
-
-  // Opens source view for given WebContents that is navigated to the given
-  // page url.
-  virtual void ViewSourceForTab(WebContents* source, const GURL& page_url);
-
-  // Opens source view for the given subframe.
-  virtual void ViewSourceForFrame(WebContents* source,
-                                  const GURL& url,
-                                  const PageState& page_state);
 
   // Allows delegates to handle keyboard events before sending to the renderer.
   // See enum for description of return values.
@@ -503,22 +493,6 @@ class CONTENT_EXPORT WebContentsDelegate {
   // used.
   virtual gfx::Size GetSizeForNewRenderView(WebContents* web_contents) const;
 
-  // Notification that validation of a form displayed by the |web_contents|
-  // has failed. There can only be one message per |web_contents| at a time.
-  virtual void ShowValidationMessage(WebContents* web_contents,
-                                     const gfx::Rect& anchor_in_root_view,
-                                     const base::string16& main_text,
-                                     const base::string16& sub_text) {}
-
-  // Notification that the delegate should hide any showing form validation
-  // message.
-  virtual void HideValidationMessage(WebContents* web_contents) {}
-
-  // Notification that the form element that triggered the validation failure
-  // has moved.
-  virtual void MoveValidationMessage(WebContents* web_contents,
-                                     const gfx::Rect& anchor_in_root_view) {}
-
   // Returns true if the WebContents is never visible.
   virtual bool IsNeverVisible(WebContents* web_contents);
 
@@ -537,8 +511,8 @@ class CONTENT_EXPORT WebContentsDelegate {
   // Requests the app banner. This method is called from the DevTools.
   virtual void RequestAppBannerFromDevTools(content::WebContents* web_contents);
 
-  // Called when audio change occurs
-  virtual void OnAudioStateChanged(bool audible) {}
+  // Called when an audio change occurs.
+  virtual void OnAudioStateChanged(WebContents* web_contents, bool audible) {}
 
   // Called when a suspicious navigation of the main frame has been blocked.
   // Allows the delegate to provide some UI to let the user know about the
@@ -556,6 +530,15 @@ class CONTENT_EXPORT WebContentsDelegate {
                                                  bool allowed_per_prefs,
                                                  const url::Origin& origin,
                                                  const GURL& resource_url);
+
+  // Requests to get browser controls info such as the height of the top/bottom
+  // controls, and whether they will shrink the Blink's view size.
+  // Note that they are not complete in the sense that there is no API to tell
+  // content to poll these values again, except part of resize. But this is not
+  // needed by embedder because it's always accompanied by view size change.
+  virtual int GetTopControlsHeight() const;
+  virtual int GetBottomControlsHeight() const;
+  virtual bool DoBrowserControlsShrinkBlinkSize() const;
 
   // Give WebContentsDelegates the opportunity to adjust the previews state.
   virtual void AdjustPreviewsStateForNavigation(PreviewsState* previews_state) {

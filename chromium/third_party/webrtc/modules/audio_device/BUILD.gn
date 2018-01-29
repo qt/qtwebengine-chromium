@@ -320,12 +320,6 @@ if (rtc_include_tests) {
   rtc_source_set("audio_device_unittests") {
     testonly = true
 
-    # Skip restricting visibility on mobile platforms since the tests on those
-    # gets additional generated targets which would require many lines here to
-    # cover (which would be confusing to read and hard to maintain).
-    if (!is_android && !is_ios) {
-      visibility = [ "..:modules_unittests" ]
-    }
     sources = [
       "fine_audio_buffer_unittest.cc",
     ]
@@ -368,7 +362,7 @@ if (rtc_include_tests) {
 }
 
 if (!build_with_chromium && is_android) {
-  android_library("audio_device_java") {
+  rtc_android_library("audio_device_java") {
     java_files = [
       "android/java/src/org/webrtc/voiceengine/BuildInfo.java",
       "android/java/src/org/webrtc/voiceengine/WebRtcAudioEffects.java",
@@ -380,8 +374,5 @@ if (!build_with_chromium && is_android) {
     deps = [
       "../../rtc_base:base_java",
     ]
-
-    # TODO(sakal): Fix build hooks crbug.com/webrtc/8148
-    no_build_hooks = true
   }
 }

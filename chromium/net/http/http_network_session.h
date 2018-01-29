@@ -16,6 +16,7 @@
 #include <vector>
 
 #include "base/bind.h"
+#include "base/containers/flat_set.h"
 #include "base/memory/memory_coordinator_client.h"
 #include "base/memory/memory_pressure_monitor.h"
 #include "base/memory/ref_counted.h"
@@ -144,11 +145,21 @@ class NET_EXPORT HttpNetworkSession : public base::MemoryCoordinatorClient {
     // Retry requests which fail with QUIC_PROTOCOL_ERROR, and mark QUIC
     // broken if the retry succeeds.
     bool retry_without_alt_svc_on_quic_errors;
+    // If true, alt-svc headers advertising QUIC in IETF format will be
+    // supported.
+    bool support_ietf_format_quic_altsvc;
+    // If true, all QUIC sessions are closed when any local IP address changes.
+    bool quic_close_sessions_on_ip_change;
     // Specifies QUIC idle connection state lifetime.
     int quic_idle_connection_timeout_seconds;
     // Specifies the reduced ping timeout subsequent connections should use when
     // a connection was timed out with open streams.
     int quic_reduced_ping_timeout_seconds;
+    // Maximum time the session can be alive before crypto handshake is
+    // finished.
+    int quic_max_time_before_crypto_handshake_seconds;
+    // Maximum idle time before the crypto handshake has completed.
+    int quic_max_idle_time_before_crypto_handshake_seconds;
     // If true, QUIC will attempt to explicitly use default network for sockets.
     bool quic_connect_using_default_network;
     // If true, active QUIC sessions may be migrated onto a new network when
@@ -157,6 +168,13 @@ class NET_EXPORT HttpNetworkSession : public base::MemoryCoordinatorClient {
     // If true, active QUIC sessions experiencing poor connectivity may be
     // migrated onto a new network.
     bool quic_migrate_sessions_early;
+    // If true, connection migration v2 will be used to migrate existing
+    // sessions to network when the platform indicates that the default network
+    // is changing.
+    bool quic_migrate_sessions_on_network_change_v2;
+    // If true, connection migration v2 may be used to migrate active QUIC
+    // sessions to alternative network if current network connectivity is poor.
+    bool quic_migrate_sessions_early_v2;
     // If true, allows migration of QUIC connections to a server-specified
     // alternate server address.
     bool quic_allow_server_migration;
@@ -171,6 +189,8 @@ class NET_EXPORT HttpNetworkSession : public base::MemoryCoordinatorClient {
     bool quic_race_cert_verification;
     // If true, estimate the initial RTT for QUIC connections based on network.
     bool quic_estimate_initial_rtt;
+    // If non-empty, QUIC will only be spoken to hosts in this list.
+    base::flat_set<std::string> quic_host_whitelist;
 
     // Enable support for Token Binding.
     bool enable_token_binding;

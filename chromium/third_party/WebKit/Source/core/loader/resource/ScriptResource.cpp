@@ -61,23 +61,11 @@ ScriptResource::ScriptResource(
 
 ScriptResource::~ScriptResource() {}
 
-void ScriptResource::DidAddClient(ResourceClient* client) {
-  DCHECK(ScriptResourceClient::IsExpectedType(client));
-  Resource::DidAddClient(client);
-}
-
-void ScriptResource::AppendData(const char* data, size_t length) {
-  Resource::AppendData(data, length);
-  ResourceClientWalker<ScriptResourceClient> walker(Clients());
-  while (ScriptResourceClient* client = walker.Next())
-    client->NotifyAppendData(this);
-}
-
 void ScriptResource::OnMemoryDump(WebMemoryDumpLevelOfDetail level_of_detail,
                                   WebProcessMemoryDump* memory_dump) const {
   Resource::OnMemoryDump(level_of_detail, memory_dump);
   const String name = GetMemoryDumpName() + "/decoded_script";
-  auto dump = memory_dump->CreateMemoryAllocatorDump(name);
+  auto* dump = memory_dump->CreateMemoryAllocatorDump(name);
   dump->AddScalar("size", "bytes", source_text_.CharactersSizeInBytes());
   memory_dump->AddSuballocation(
       dump->Guid(), String(WTF::Partitions::kAllocatedObjectPoolName));

@@ -26,8 +26,8 @@
 #include "modules/audio_processing/logging/apm_data_dumper.h"
 #include "modules/audio_processing/test/echo_canceller_test_tools.h"
 #include "rtc_base/arraysize.h"
+#include "rtc_base/numerics/safe_minmax.h"
 #include "rtc_base/random.h"
-#include "rtc_base/safe_minmax.h"
 #include "system_wrappers/include/cpu_features_wrapper.h"
 #include "test/gtest.h"
 
@@ -305,7 +305,7 @@ TEST(AdaptiveFirFilter, FilterAndAdapt) {
   std::vector<std::vector<float>> x(3, std::vector<float>(kBlockSize, 0.f));
   std::vector<float> n(kBlockSize, 0.f);
   std::vector<float> y(kBlockSize, 0.f);
-  AecState aec_state(AudioProcessing::Config::EchoCanceller3{});
+  AecState aec_state(EchoCanceller3Config{});
   RenderSignalAnalyzer render_signal_analyzer;
   std::vector<float> e(kBlockSize, 0.f);
   std::array<float, kFftLength> s_scratch;
@@ -365,9 +365,8 @@ TEST(AdaptiveFirFilter, FilterAndAdapt) {
       filter.Adapt(render_buffer, G);
       aec_state.HandleEchoPathChange(EchoPathVariability(false, false));
       aec_state.Update(filter.FilterFrequencyResponse(),
-                       filter.FilterImpulseResponse(), true,
-                       rtc::Optional<size_t>(), render_buffer, E2_main, Y2,
-                       x[0], s, false);
+                       filter.FilterImpulseResponse(), true, rtc::nullopt,
+                       render_buffer, E2_main, Y2, x[0], s, false);
     }
     // Verify that the filter is able to perform well.
     EXPECT_LT(1000 * std::inner_product(e.begin(), e.end(), e.begin(), 0.f),

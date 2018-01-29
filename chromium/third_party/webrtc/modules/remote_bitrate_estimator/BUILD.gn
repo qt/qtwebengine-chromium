@@ -141,6 +141,7 @@ if (rtc_include_tests) {
       "../../rtc_base:gtest_prod",
       "../../rtc_base:rtc_base",
       "../../rtc_base:rtc_base_approved",
+      "../../rtc_base:rtc_numerics",
       "../../system_wrappers",
       "../../test:test_support",
       "../../voice_engine",
@@ -157,12 +158,6 @@ if (rtc_include_tests) {
   rtc_source_set("remote_bitrate_estimator_perf_tests") {
     testonly = true
 
-    # Skip restricting visibility on mobile platforms since the tests on those
-    # gets additional generated targets which would require many lines here to
-    # cover (which would be confusing to read and hard to maintain).
-    if (!is_android && !is_ios) {
-      visibility = [ "../..:webrtc_perf_tests" ]
-    }
     sources = [
       "remote_bitrate_estimators_test.cc",
     ]
@@ -182,12 +177,6 @@ if (rtc_include_tests) {
   rtc_source_set("remote_bitrate_estimator_unittests") {
     testonly = true
 
-    # Skip restricting visibility on mobile platforms since the tests on those
-    # gets additional generated targets which would require many lines here to
-    # cover (which would be confusing to read and hard to maintain).
-    if (!is_android && !is_ios) {
-      visibility = [ "..:modules_unittests" ]
-    }
     sources = [
       "aimd_rate_control_unittest.cc",
       "inter_arrival_unittest.cc",
@@ -245,6 +234,11 @@ if (rtc_include_tests) {
       "../../test:test_main",
       "//testing/gmock",
       "//testing/gtest",
+    ]
+    data = [
+      "//resources/sprint-uplink.rx",
+      "//resources/verizon4g-downlink.rx",
+      "//resources/google-wifi-3mbps.rx",
     ]
 
     if (!build_with_chromium && is_clang) {

@@ -37,6 +37,7 @@
 #include "platform/loader/fetch/ResourceError.h"
 #include "platform/loader/fetch/ResourceLoadPriority.h"
 #include "platform/loader/fetch/ResourceLoaderOptions.h"
+#include "platform/loader/fetch/ResourcePriority.h"
 #include "platform/loader/fetch/ResourceRequest.h"
 #include "platform/loader/fetch/ResourceResponse.h"
 #include "platform/loader/fetch/ResourceStatus.h"
@@ -45,11 +46,13 @@
 #include "platform/wtf/AutoReset.h"
 #include "platform/wtf/HashCountedSet.h"
 #include "platform/wtf/HashSet.h"
+#include "platform/wtf/Optional.h"
 #include "platform/wtf/text/AtomicString.h"
 #include "platform/wtf/text/TextEncoding.h"
 #include "platform/wtf/text/WTFString.h"
 #include "public/platform/CORSStatus.h"
 #include "public/platform/WebDataConsumerHandle.h"
+#include "public/platform/WebScopedVirtualTimePauser.h"
 
 namespace blink {
 
@@ -98,9 +101,9 @@ class PLATFORM_EXPORT Resource : public GarbageCollectedFinalized<Resource>,
     kReloadAlways,
   };
 
-  virtual ~Resource();
+  ~Resource() override;
 
-  DECLARE_VIRTUAL_TRACE();
+  void Trace(blink::Visitor*) override;
 
   virtual WTF::TextEncoding Encoding() const { return WTF::TextEncoding(); }
   virtual void AppendData(const char*, size_t);
@@ -113,7 +116,10 @@ class PLATFORM_EXPORT Resource : public GarbageCollectedFinalized<Resource>,
     preload_discovery_time_ = preload_discovery_time;
   }
 
-  const ResourceError& GetResourceError() const { return error_; }
+  const ResourceError& GetResourceError() const {
+    DCHECK(error_);
+    return *error_;
+  }
 
   void SetIdentifier(unsigned long identifier) { identifier_ = identifier; }
   unsigned long Identifier() const { return identifier_; }
@@ -145,6 +151,9 @@ class PLATFORM_EXPORT Resource : public GarbageCollectedFinalized<Resource>,
 
   void AddClient(ResourceClient*);
   void RemoveClient(ResourceClient*);
+  // Once called, this resource will not be canceled until load finishes
+  // even if associated with no client.
+  void SetDetachable() { detachable_ = true; }
 
   // If this Resource is already finished when AddFinishObserver is called, the
   // ResourceFinishObserver will be notified asynchronously by a task scheduled
@@ -195,8 +204,10 @@ class PLATFORM_EXPORT Resource : public GarbageCollectedFinalized<Resource>,
   virtual void Finish(double finish_time, WebTaskRunner*);
   void FinishForTest() { Finish(0.0, nullptr); }
 
-  virtual RefPtr<const SharedBuffer> ResourceBuffer() const { return data_; }
-  void SetResourceBuffer(RefPtr<SharedBuffer>);
+  virtual scoped_refptr<const SharedBuffer> ResourceBuffer() const {
+    return data_;
+  }
+  void SetResourceBuffer(scoped_refptr<SharedBuffer>);
 
   virtual bool WillFollowRedirect(const ResourceRequest&,
                                   const ResourceResponse&);
@@ -220,12 +231,12 @@ class PLATFORM_EXPORT Resource : public GarbageCollectedFinalized<Resource>,
 
   AtomicString HttpContentType() const;
 
-  bool WasCanceled() const { return error_.IsCancellation(); }
+  bool WasCanceled() const { return error_ && error_->IsCancellation(); }
   bool ErrorOccurred() const {
     return status_ == ResourceStatus::kLoadError ||
            status_ == ResourceStatus::kDecodeError;
   }
-  bool LoadFailedOrCanceled() const { return !error_.IsNull(); }
+  bool LoadFailedOrCanceled() const { return !!error_; }
 
   DataBufferingPolicy GetDataBufferingPolicy() const {
     return options_.data_buffering_policy;
@@ -336,6 +347,10 @@ class PLATFORM_EXPORT Resource : public GarbageCollectedFinalized<Resource>,
         : AutoReset(&resource->is_revalidation_start_forbidden_, true) {}
   };
 
+  WebScopedVirtualTimePauser& VirtualTimePauser() {
+    return virtual_time_pauser_;
+  }
+
  protected:
   Resource(const ResourceRequest&, Type, const ResourceLoaderOptions&);
 
@@ -427,9 +442,9 @@ class PLATFORM_EXPORT Resource : public GarbageCollectedFinalized<Resource>,
   CORSStatus cors_status_;
 
   Member<CachedMetadataHandlerImpl> cache_handler_;
-  RefPtr<SecurityOrigin> fetcher_security_origin_;
+  scoped_refptr<SecurityOrigin> fetcher_security_origin_;
 
-  ResourceError error_;
+  Optional<ResourceError> error_;
 
   double load_finish_time_;
 
@@ -455,6 +470,7 @@ class PLATFORM_EXPORT Resource : public GarbageCollectedFinalized<Resource>,
   bool is_add_remove_client_prohibited_;
   bool is_revalidation_start_forbidden_ = false;
   bool is_unused_preload_ = false;
+  bool detachable_ = false;
 
   ResourceIntegrityDisposition integrity_disposition_;
   IntegrityMetadataSet integrity_metadata_;
@@ -478,7 +494,9 @@ class PLATFORM_EXPORT Resource : public GarbageCollectedFinalized<Resource>,
   Member<ResourceLoader> loader_;
   ResourceResponse response_;
 
-  RefPtr<SharedBuffer> data_;
+  scoped_refptr<SharedBuffer> data_;
+
+  WebScopedVirtualTimePauser virtual_time_pauser_;
 };
 
 class ResourceFactory {

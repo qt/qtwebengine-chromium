@@ -32,6 +32,7 @@
 
 #include <v8-inspector.h>
 #include <memory>
+#include <utility>
 
 #include "bindings/core/v8/ScriptController.h"
 #include "bindings/core/v8/V8BindingForCore.h"
@@ -78,8 +79,8 @@
 #include "platform/graphics/paint/PaintController.h"
 #include "platform/instrumentation/tracing/TraceEvent.h"
 #include "platform/wtf/MathExtras.h"
-#include "platform/wtf/Noncopyable.h"
 #include "platform/wtf/PtrUtil.h"
+#include "platform/wtf/Vector.h"
 #include "platform/wtf/text/WTFString.h"
 #include "public/platform/Platform.h"
 #include "public/platform/WebLayerTreeView.h"
@@ -252,8 +253,9 @@ WebDevToolsAgentImpl::WebDevToolsAgentImpl(
       probe_sink_(web_local_frame_impl_->GetFrame()->GetProbeSink()),
       resource_content_loader_(InspectorResourceContentLoader::Create(
           web_local_frame_impl_->GetFrame())),
-      inspected_frames_(
-          InspectedFrames::Create(web_local_frame_impl_->GetFrame())),
+      inspected_frames_(new InspectedFrames(
+          web_local_frame_impl_->GetFrame(),
+          web_local_frame_impl_->GetFrame()->GetInstrumentationToken())),
       resource_container_(new InspectorResourceContainer(inspected_frames_)),
       trace_events_(new InspectorTraceEvents()),
       include_view_agents_(include_view_agents),
@@ -267,7 +269,7 @@ WebDevToolsAgentImpl::~WebDevToolsAgentImpl() {
   DCHECK(!client_);
 }
 
-DEFINE_TRACE(WebDevToolsAgentImpl) {
+void WebDevToolsAgentImpl::Trace(blink::Visitor* visitor) {
   visitor->Trace(web_local_frame_impl_);
   visitor->Trace(probe_sink_);
   visitor->Trace(resource_content_loader_);
@@ -298,7 +300,6 @@ void WebDevToolsAgentImpl::WillBeDestroyed() {
 }
 
 InspectorSession* WebDevToolsAgentImpl::InitializeSession(int session_id,
-                                                          const String& host_id,
                                                           String* state) {
   DCHECK(client_);
   ClientMessageLoopAdapter::EnsureMainThreadDebuggerCreated(client_);
@@ -318,8 +319,8 @@ InspectorSession* WebDevToolsAgentImpl::InitializeSession(int session_id,
       InspectorLayerTreeAgent::Create(inspected_frames_.Get(), this);
   session->Append(layer_tree_agent);
 
-  InspectorNetworkAgent* network_agent =
-      InspectorNetworkAgent::Create(inspected_frames_.Get());
+  InspectorNetworkAgent* network_agent = new InspectorNetworkAgent(
+      inspected_frames_.Get(), nullptr, session->V8Session());
   network_agents_.Set(session_id, network_agent);
   session->Append(network_agent);
 
@@ -374,8 +375,6 @@ InspectorSession* WebDevToolsAgentImpl::InitializeSession(int session_id,
   session->Append(new InspectorAuditsAgent(network_agent));
 
   tracing_agent->SetLayerTreeId(layer_tree_id_);
-  network_agent->SetHostId(host_id);
-  worker_agent->SetHostId(host_id);
 
   if (include_view_agents_) {
     // TODO(dgozman): we should actually pass the view instead of frame, but
@@ -412,19 +411,18 @@ void WebDevToolsAgentImpl::DestroySession(int session_id) {
     Platform::Current()->CurrentThread()->RemoveTaskObserver(this);
 }
 
-void WebDevToolsAgentImpl::Attach(const WebString& host_id, int session_id) {
+void WebDevToolsAgentImpl::Attach(int session_id) {
   if (!session_id || sessions_.find(session_id) != sessions_.end())
     return;
-  InitializeSession(session_id, host_id, nullptr);
+  InitializeSession(session_id, nullptr);
 }
 
-void WebDevToolsAgentImpl::Reattach(const WebString& host_id,
-                                    int session_id,
+void WebDevToolsAgentImpl::Reattach(int session_id,
                                     const WebString& saved_state) {
   if (!session_id || sessions_.find(session_id) != sessions_.end())
     return;
   String state = saved_state;
-  InspectorSession* session = InitializeSession(session_id, host_id, &state);
+  InspectorSession* session = InitializeSession(session_id, &state);
   session->Restore();
 }
 
@@ -552,7 +550,7 @@ void WebDevToolsAgentImpl::InspectElementAt(
   agent_it->value->Inspect(node);
 }
 
-void WebDevToolsAgentImpl::FailedToRequestDevTools() {
+void WebDevToolsAgentImpl::FailedToRequestDevTools(int session_id) {
   ClientMessageLoopAdapter::ResumeForCreateWindow();
 }
 
@@ -574,12 +572,19 @@ void WebDevToolsAgentImpl::PageLayoutInvalidated(bool resized) {
     it.value->PageLayoutInvalidated(resized);
 }
 
-void WebDevToolsAgentImpl::WaitForCreateWindow(LocalFrame* frame) {
-  if (!Attached())
+void WebDevToolsAgentImpl::WaitForCreateWindow(InspectorPageAgent* page_agent,
+                                               LocalFrame* frame) {
+  int session_id = -1;
+  for (auto& it : page_agents_) {
+    if (it.value == page_agent)
+      session_id = it.key;
+  }
+  if (session_id == -1)
     return;
-  if (client_ &&
-      client_->RequestDevToolsForFrame(WebLocalFrameImpl::FromFrame(frame)))
+  if (client_ && client_->RequestDevToolsForFrame(
+                     session_id, WebLocalFrameImpl::FromFrame(frame))) {
     ClientMessageLoopAdapter::PauseForCreateWindow(web_local_frame_impl_);
+  }
 }
 
 bool WebDevToolsAgentImpl::IsInspectorLayer(GraphicsLayer* layer) {
@@ -667,6 +672,8 @@ void WebDevToolsAgent::InterruptAndDispatch(int session_id,
 }
 
 bool WebDevToolsAgent::ShouldInterruptForMethod(const WebString& method) {
+  // Keep in sync with DevToolsSession::ShouldSendOnIO.
+  // TODO(dgozman): find a way to share this.
   return method == "Debugger.pause" || method == "Debugger.setBreakpoint" ||
          method == "Debugger.setBreakpointByUrl" ||
          method == "Debugger.removeBreakpoint" ||

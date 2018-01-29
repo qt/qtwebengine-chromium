@@ -5,18 +5,27 @@
 #ifndef AudioWorkletNode_h
 #define AudioWorkletNode_h
 
+#include "base/memory/scoped_refptr.h"
 #include "modules/webaudio/AudioNode.h"
 #include "modules/webaudio/AudioParamMap.h"
 #include "modules/webaudio/AudioWorkletNodeOptions.h"
-#include "platform/wtf/RefPtr.h"
 #include "platform/wtf/Threading.h"
 
 namespace blink {
 
+class AudioNodeInput;
 class AudioWorkletProcessor;
 class BaseAudioContext;
 class CrossThreadAudioParamInfo;
 class ExceptionState;
+class MessagePort;
+
+enum class AudioWorkletProcessorState {
+  kPending,
+  kRunning,
+  kStopped,
+  kError,
+};
 
 // AudioWorkletNode is a user-facing interface of custom audio processor in
 // Web Audio API. The integration of WebAudio renderer is done via
@@ -29,11 +38,11 @@ class ExceptionState;
 
 class AudioWorkletHandler final : public AudioHandler {
  public:
-  static RefPtr<AudioWorkletHandler> Create(
+  static scoped_refptr<AudioWorkletHandler> Create(
       AudioNode&,
       float sample_rate,
       String name,
-      HashMap<String, RefPtr<AudioParamHandler>> param_handler_map,
+      HashMap<String, scoped_refptr<AudioParamHandler>> param_handler_map,
       const AudioWorkletNodeOptions&);
 
   ~AudioWorkletHandler() override;
@@ -41,24 +50,29 @@ class AudioWorkletHandler final : public AudioHandler {
   // Called from render thread.
   void Process(size_t frames_to_process) override;
 
+  void CheckNumberOfChannelsForInput(AudioNodeInput*) override;
+
   double TailTime() const override;
   double LatencyTime() const override { return 0; }
 
   String Name() const { return name_; }
 
-  // Sets |AudioWorkletProcessor|. MUST be called on render thread.
+  // Sets |AudioWorkletProcessor| and changes the state of the processor.
+  // MUST be called from the render thread.
   void SetProcessorOnRenderThread(AudioWorkletProcessor*);
 
   // Finish |AudioWorkletProcessor| and set the tail time to zero, when
   // the user-supplied |process()| method returns false.
   void FinishProcessorOnRenderThread();
 
+  void NotifyProcessorStateChange(AudioWorkletProcessorState);
+
  private:
   AudioWorkletHandler(
       AudioNode&,
       float sample_rate,
       String name,
-      HashMap<String, RefPtr<AudioParamHandler>> param_handler_map,
+      HashMap<String, scoped_refptr<AudioParamHandler>> param_handler_map,
       const AudioWorkletNodeOptions&);
 
   String name_;
@@ -68,8 +82,11 @@ class AudioWorkletHandler final : public AudioHandler {
   // MUST be set/used by render thread.
   CrossThreadPersistent<AudioWorkletProcessor> processor_;
 
-  HashMap<String, RefPtr<AudioParamHandler>> param_handler_map_;
+  HashMap<String, scoped_refptr<AudioParamHandler>> param_handler_map_;
   HashMap<String, std::unique_ptr<AudioFloatArray>> param_value_map_;
+
+  // A reference to the main thread task runner.
+  scoped_refptr<WebTaskRunner> task_runner_;
 };
 
 class AudioWorkletNode final : public AudioNode,
@@ -88,18 +105,26 @@ class AudioWorkletNode final : public AudioNode,
   // ActiveScriptWrappable
   bool HasPendingActivity() const final;
 
+  void SetProcessorState(AudioWorkletProcessorState);
+
   // IDL
   AudioParamMap* parameters() const;
+  MessagePort* port() const;
+  String processorState() const;
+  DEFINE_ATTRIBUTE_EVENT_LISTENER(processorstatechange);
 
-  DECLARE_VIRTUAL_TRACE();
+  virtual void Trace(blink::Visitor*);
 
  private:
   AudioWorkletNode(BaseAudioContext&,
                    const String& name,
                    const AudioWorkletNodeOptions&,
-                   const Vector<CrossThreadAudioParamInfo>);
+                   const Vector<CrossThreadAudioParamInfo>,
+                   MessagePort* node_port);
 
   Member<AudioParamMap> parameter_map_;
+  Member<MessagePort> node_port_;
+  AudioWorkletProcessorState processor_state_;
 };
 
 }  // namespace blink

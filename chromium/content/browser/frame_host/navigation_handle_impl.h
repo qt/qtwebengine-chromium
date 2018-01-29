@@ -17,6 +17,7 @@
 #include "base/callback.h"
 #include "base/macros.h"
 #include "base/memory/ref_counted.h"
+#include "base/optional.h"
 #include "content/browser/frame_host/frame_tree_node.h"
 #include "content/browser/frame_host/render_frame_host_impl.h"
 #include "content/common/content_export.h"
@@ -25,7 +26,6 @@
 #include "content/public/browser/navigation_throttle.h"
 #include "content/public/browser/navigation_type.h"
 #include "content/public/browser/restore_type.h"
-#include "content/public/browser/ssl_status.h"
 #include "content/public/common/request_context_type.h"
 #include "third_party/WebKit/public/platform/WebMixedContentContextType.h"
 #include "url/gurl.h"
@@ -103,6 +103,8 @@ class CONTENT_EXPORT NavigationHandleImpl : public NavigationHandle {
     DEFERRING_START,
     WILL_REDIRECT_REQUEST,
     DEFERRING_REDIRECT,
+    WILL_FAIL_REQUEST,
+    DEFERRING_FAILURE,
     CANCELING,
     WILL_PROCESS_RESPONSE,
     DEFERRING_RESPONSE,
@@ -124,6 +126,7 @@ class CONTENT_EXPORT NavigationHandleImpl : public NavigationHandle {
   RenderFrameHostImpl* GetParentFrame() override;
   const base::TimeTicks& NavigationStart() override;
   bool IsPost() override;
+  const scoped_refptr<ResourceRequestBody>& GetResourceRequestBody() override;
   const Referrer& GetReferrer() override;
   bool HasUserGesture() override;
   ui::PageTransition GetPageTransition() override;
@@ -140,6 +143,8 @@ class CONTENT_EXPORT NavigationHandleImpl : public NavigationHandle {
   net::HostPortPair GetSocketAddress() override;
   const net::HttpResponseHeaders* GetResponseHeaders() override;
   net::HttpResponseInfo::ConnectionInfo GetConnectionInfo() override;
+  const net::SSLInfo& GetSSLInfo() override;
+  bool ShouldSSLErrorsBeFatal() override;
   void RegisterThrottleForTesting(
       std::unique_ptr<NavigationThrottle> navigation_throttle) override;
   NavigationThrottle::ThrottleCheckResult CallWillStartRequestForTesting(
@@ -153,6 +158,9 @@ class CONTENT_EXPORT NavigationHandleImpl : public NavigationHandle {
       bool new_method_is_post,
       const GURL& new_referrer_url,
       bool new_is_external_protocol) override;
+  NavigationThrottle::ThrottleCheckResult CallWillFailRequestForTesting(
+      base::Optional<net::SSLInfo> ssl_info,
+      bool should_ssl_errors_be_fatal) override;
   NavigationThrottle::ThrottleCheckResult CallWillProcessResponseForTesting(
       RenderFrameHost* render_frame_host,
       const std::string& raw_response_header) override;
@@ -240,13 +248,6 @@ class CONTENT_EXPORT NavigationHandleImpl : public NavigationHandle {
     render_frame_host_ = render_frame_host;
   }
 
-  // Returns the POST body associated with this navigation.  This will be
-  // null for GET and/or other non-POST requests (or if a response to a POST
-  // request was a redirect that changed the method to GET - for example 302).
-  const scoped_refptr<ResourceRequestBody>& resource_request_body() const {
-    return resource_request_body_;
-  }
-
   // PlzNavigate
   void InitServiceWorkerHandle(
       ServiceWorkerContextWrapper* service_worker_context);
@@ -307,6 +308,14 @@ class CONTENT_EXPORT NavigationHandleImpl : public NavigationHandle {
       RenderProcessHost* post_redirect_process,
       const ThrottleChecksFinishedCallback& callback);
 
+  // Called when the URLRequest will fail. |callback| will be called when all
+  // throttles check have completed. This will allow the caller to explicitly
+  // cancel the navigation (with a custom error code and/or custom error page
+  // HTML) or let the failure proceed as normal.
+  void WillFailRequest(base::Optional<net::SSLInfo> ssl_info,
+                       bool should_ssl_errors_be_fatal,
+                       const ThrottleChecksFinishedCallback& callback);
+
   // Called when the URLRequest has delivered response headers and metadata.
   // |callback| will be called when all throttle checks have completed,
   // allowing the caller to cancel the navigation or let it proceed.
@@ -320,7 +329,8 @@ class CONTENT_EXPORT NavigationHandleImpl : public NavigationHandle {
       RenderFrameHostImpl* render_frame_host,
       scoped_refptr<net::HttpResponseHeaders> response_headers,
       net::HttpResponseInfo::ConnectionInfo connection_info,
-      const SSLStatus& ssl_status,
+      const net::HostPortPair& socket_address,
+      const net::SSLInfo& ssl_info,
       const GlobalRequestID& request_id,
       bool should_replace_current_entry,
       bool is_download,
@@ -356,8 +366,6 @@ class CONTENT_EXPORT NavigationHandleImpl : public NavigationHandle {
   void set_navigation_data(std::unique_ptr<NavigationData> navigation_data) {
     navigation_data_ = std::move(navigation_data);
   }
-
-  SSLStatus ssl_status() { return ssl_status_; }
 
   // Called when the navigation is transferred to a different renderer.
   void Transfer();
@@ -419,6 +427,7 @@ class CONTENT_EXPORT NavigationHandleImpl : public NavigationHandle {
 
   NavigationThrottle::ThrottleCheckResult CheckWillStartRequest();
   NavigationThrottle::ThrottleCheckResult CheckWillRedirectRequest();
+  NavigationThrottle::ThrottleCheckResult CheckWillFailRequest();
   NavigationThrottle::ThrottleCheckResult CheckWillProcessResponse();
 
   void ResumeInternal();
@@ -485,6 +494,8 @@ class CONTENT_EXPORT NavigationHandleImpl : public NavigationHandle {
   bool subframe_entry_committed_;
   scoped_refptr<net::HttpResponseHeaders> response_headers_;
   net::HttpResponseInfo::ConnectionInfo connection_info_;
+  net::SSLInfo ssl_info_;
+  bool should_ssl_errors_be_fatal_;
 
   // The original url of the navigation. This may differ from |url_| if the
   // navigation encounters redirects.
@@ -559,8 +570,6 @@ class CONTENT_EXPORT NavigationHandleImpl : public NavigationHandle {
   // PlzNavigate
   // Embedder data from the UI thread tied to this navigation.
   std::unique_ptr<NavigationUIData> navigation_ui_data_;
-
-  SSLStatus ssl_status_;
 
   // The unique id to identify this to navigation with.
   int64_t navigation_id_;

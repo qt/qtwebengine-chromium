@@ -20,6 +20,7 @@
 #include "SkGlyphCache.h"
 #include "SkGr.h"
 #include "SkPath.h"
+#include "SkPointPriv.h"
 #include "SkTextBlobRunIterator.h"
 #include "SkTextFormatParams.h"
 #include "SkTextMapStateProc.h"
@@ -82,16 +83,9 @@ void GrStencilAndCoverTextContext::drawText(GrContext* context, GrRenderTargetCo
                      skPaint);
         }
         return;
-    } else if (fFallbackTextContext->canDraw(skPaint, viewMatrix, props,
-                                             *context->caps()->shaderCaps())) {
-        fFallbackTextContext->drawText(context, rtc, clip, skPaint, viewMatrix, props, text,
-                                       byteLength, x, y, clipBounds);
-        return;
     }
-
-    // fall back to drawing as a path
-    GrTextUtils::DrawTextAsPath(context, rtc, clip, skPaint, viewMatrix, text, byteLength, x, y,
-                                clipBounds);
+    fFallbackTextContext->drawText(context, rtc->textTarget(), clip, skPaint, viewMatrix, props,
+                                   text, byteLength, x, y, clipBounds);
 }
 
 void GrStencilAndCoverTextContext::drawPosText(GrContext* context, GrRenderTargetContext* rtc,
@@ -111,16 +105,10 @@ void GrStencilAndCoverTextContext::drawPosText(GrContext* context, GrRenderTarge
                      skPaint);
         }
         return;
-    } else if (fFallbackTextContext->canDraw(skPaint, viewMatrix, props,
-                                             *context->caps()->shaderCaps())) {
-        fFallbackTextContext->drawPosText(context, rtc, clip, skPaint, viewMatrix, props, text,
-                                          byteLength, pos, scalarsPerPosition, offset, clipBounds);
-        return;
     }
-
-    // fall back to drawing as a path
-    GrTextUtils::DrawPosTextAsPath(context, rtc, props, clip, skPaint, viewMatrix, text,
-                                   byteLength, pos, scalarsPerPosition, offset, clipBounds);
+    fFallbackTextContext->drawPosText(context, rtc->textTarget(), clip, skPaint, viewMatrix, props,
+                                      text, byteLength, pos, scalarsPerPosition, offset,
+                                      clipBounds);
 }
 
 void GrStencilAndCoverTextContext::uncachedDrawTextBlob(GrContext* context,
@@ -133,7 +121,7 @@ void GrStencilAndCoverTextContext::uncachedDrawTextBlob(GrContext* context,
                                                         SkScalar x, SkScalar y,
                                                         SkDrawFilter* drawFilter,
                                                         const SkIRect& clipBounds) {
-    GrTextUtils::Paint paint(&skPaint, rtc->getColorSpace(), rtc->getColorXformFromSRGB());
+    GrTextUtils::Paint paint(&skPaint, &rtc->colorSpaceInfo());
     GrTextUtils::RunPaint runPaint(&paint, drawFilter, props);
     SkTextBlobRunIterator it(blob);
     for (;!it.done(); it.next()) {
@@ -175,8 +163,8 @@ void GrStencilAndCoverTextContext::drawTextBlob(GrContext* context, GrRenderTarg
     }
 
     if (!this->internalCanDraw(skPaint)) {
-        fFallbackTextContext->drawTextBlob(context, rtc, clip, skPaint, viewMatrix, props, skBlob,
-                                           x, y, drawFilter, clipBounds);
+        fFallbackTextContext->drawTextBlob(context, rtc->textTarget(), clip, skPaint, viewMatrix,
+                                           props, skBlob, x, y, drawFilter, clipBounds);
         return;
     }
 
@@ -528,10 +516,8 @@ void GrStencilAndCoverTextContext::TextRun::setPosText(const char text[], size_t
 
 sk_sp<GrPathRange> GrStencilAndCoverTextContext::TextRun::createGlyphs(
                                                     GrResourceProvider* resourceProvider) const {
-    sk_sp<GrPathRange> glyphs;
-
-    glyphs.reset(static_cast<GrPathRange*>(
-            resourceProvider->findAndRefResourceByUniqueKey(fGlyphPathsKey)));
+    sk_sp<GrPathRange> glyphs =
+            resourceProvider->findByUniqueKey<GrPathRange>(fGlyphPathsKey);
     if (!glyphs) {
         if (fUsingRawGlyphPaths) {
             SkScalerContextEffects noeffects;
@@ -574,16 +560,6 @@ void GrStencilAndCoverTextContext::TextRun::draw(GrContext* ctx,
     SkASSERT(fInstanceData);
 
     if (fInstanceData->count()) {
-        static constexpr GrUserStencilSettings kCoverPass(
-            GrUserStencilSettings::StaticInit<
-                0x0000,
-                GrUserStencilTest::kNotEqual, // Stencil pass accounts for clip.
-                0xffff,
-                GrUserStencilOp::kZero,
-                GrUserStencilOp::kKeep,
-                0xffff>()
-        );
-
         sk_sp<GrPathRange> glyphs(this->createGlyphs(ctx->resourceProvider()));
         if (fLastDrawnGlyphsID != glyphs->uniqueID()) {
             // Either this is the first draw or the glyphs object was purged since last draw.
@@ -592,7 +568,8 @@ void GrStencilAndCoverTextContext::TextRun::draw(GrContext* ctx,
         }
 
         GrPaint grPaint;
-        if (!SkPaintToGrPaint(ctx, renderTargetContext, originalSkPaint, viewMatrix, &grPaint)) {
+        if (!SkPaintToGrPaint(ctx, renderTargetContext->colorSpaceInfo(), originalSkPaint,
+                              viewMatrix, &grPaint)) {
             return;
         }
 
@@ -623,9 +600,9 @@ void GrStencilAndCoverTextContext::TextRun::draw(GrContext* ctx,
             fallbackSkPaint.setStrokeWidth(fStyle.strokeRec().getWidth() * fTextRatio);
         }
 
-        fallbackTextContext->drawTextBlob(ctx, renderTargetContext, clip, fallbackSkPaint,
-                                          viewMatrix, props, fFallbackTextBlob.get(), x, y, nullptr,
-                                          clipBounds);
+        fallbackTextContext->drawTextBlob(ctx, renderTargetContext->textTarget(), clip,
+                                          fallbackSkPaint, viewMatrix, props,
+                                          fFallbackTextBlob.get(), x, y, nullptr, clipBounds);
     }
 }
 
@@ -695,7 +672,7 @@ void GrStencilAndCoverTextContext::FallbackBlobBuilder::flush() {
     // This will automatically merge with previous runs since we use the same font.
     const SkTextBlobBuilder::RunBuffer& buff = fBuilder->allocRunPos(fFont, fBuffIdx);
     memcpy(buff.glyphs, fGlyphIds, fBuffIdx * sizeof(uint16_t));
-    memcpy(buff.pos, fPositions[0].asScalars(), fBuffIdx * 2 * sizeof(SkScalar));
+    memcpy(buff.pos, SkPointPriv::AsScalars(fPositions[0]), fBuffIdx * 2 * sizeof(SkScalar));
     fBuffIdx = 0;
 }
 

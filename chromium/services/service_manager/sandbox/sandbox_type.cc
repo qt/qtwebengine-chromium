@@ -10,22 +10,32 @@
 
 namespace service_manager {
 
+bool IsUnsandboxedSandboxType(SandboxType sandbox_type) {
+  return
+#if defined(OS_WIN)
+      sandbox_type == SANDBOX_TYPE_NO_SANDBOX_AND_ELEVATED_PRIVILEGES ||
+#endif
+#if !defined(OS_LINUX)
+      // TODO(tsepez): Sandbox network process beyond linux.
+      sandbox_type == SANDBOX_TYPE_NETWORK ||
+#endif
+      sandbox_type == SANDBOX_TYPE_NO_SANDBOX;
+}
+
 void SetCommandLineFlagsForSandboxType(base::CommandLine* command_line,
                                        SandboxType sandbox_type) {
   switch (sandbox_type) {
     case SANDBOX_TYPE_NO_SANDBOX:
       command_line->AppendSwitch(switches::kNoSandbox);
       break;
+#if defined(OS_WIN)
+    case SANDBOX_TYPE_NO_SANDBOX_AND_ELEVATED_PRIVILEGES:
+      command_line->AppendSwitch(switches::kNoSandboxAndElevatedPrivileges);
+      break;
+#endif
     case SANDBOX_TYPE_RENDERER:
       DCHECK(command_line->GetSwitchValueASCII(switches::kProcessType) ==
              switches::kRendererProcess);
-      break;
-    case SANDBOX_TYPE_UTILITY:
-      DCHECK(command_line->GetSwitchValueASCII(switches::kProcessType) ==
-             switches::kUtilityProcess);
-      DCHECK(!command_line->HasSwitch(switches::kServiceSandboxType));
-      command_line->AppendSwitchASCII(switches::kServiceSandboxType,
-                                      switches::kUtilitySandbox);
       break;
     case SANDBOX_TYPE_GPU:
       DCHECK(command_line->GetSwitchValueASCII(switches::kProcessType) ==
@@ -41,33 +51,17 @@ void SetCommandLineFlagsForSandboxType(base::CommandLine* command_line,
                switches::kPpapiPluginProcess);
       }
       break;
+    case SANDBOX_TYPE_UTILITY:
     case SANDBOX_TYPE_NETWORK:
-      DCHECK(command_line->GetSwitchValueASCII(switches::kProcessType) ==
-             switches::kUtilityProcess);
-      DCHECK(!command_line->HasSwitch(switches::kServiceSandboxType));
-      command_line->AppendSwitchASCII(switches::kServiceSandboxType,
-                                      switches::kNetworkSandbox);
-      break;
     case SANDBOX_TYPE_CDM:
-      DCHECK(command_line->GetSwitchValueASCII(switches::kProcessType) ==
-             switches::kUtilityProcess);
-      DCHECK(!command_line->HasSwitch(switches::kServiceSandboxType));
-      command_line->AppendSwitchASCII(switches::kServiceSandboxType,
-                                      switches::kCdmSandbox);
-      break;
     case SANDBOX_TYPE_PDF_COMPOSITOR:
-      DCHECK(command_line->GetSwitchValueASCII(switches::kProcessType) ==
-             switches::kUtilityProcess);
-      DCHECK(!command_line->HasSwitch(switches::kServiceSandboxType));
-      command_line->AppendSwitchASCII(switches::kServiceSandboxType,
-                                      switches::kPdfCompositorSandbox);
-      break;
     case SANDBOX_TYPE_PROFILING:
       DCHECK(command_line->GetSwitchValueASCII(switches::kProcessType) ==
              switches::kUtilityProcess);
       DCHECK(!command_line->HasSwitch(switches::kServiceSandboxType));
-      command_line->AppendSwitchASCII(switches::kServiceSandboxType,
-                                      switches::kProfilingSandbox);
+      command_line->AppendSwitchASCII(
+          switches::kServiceSandboxType,
+          StringFromUtilitySandboxType(sandbox_type));
       break;
     default:
       break;
@@ -77,6 +71,11 @@ void SetCommandLineFlagsForSandboxType(base::CommandLine* command_line,
 SandboxType SandboxTypeFromCommandLine(const base::CommandLine& command_line) {
   if (command_line.HasSwitch(switches::kNoSandbox))
     return SANDBOX_TYPE_NO_SANDBOX;
+
+#if defined(OS_WIN)
+  if (command_line.HasSwitch(switches::kNoSandboxAndElevatedPrivileges))
+    return SANDBOX_TYPE_NO_SANDBOX_AND_ELEVATED_PRIVILEGES;
+#endif
 
   std::string process_type =
       command_line.GetSwitchValueASCII(switches::kProcessType);
@@ -105,9 +104,38 @@ SandboxType SandboxTypeFromCommandLine(const base::CommandLine& command_line) {
   return SANDBOX_TYPE_INVALID;
 }
 
+std::string StringFromUtilitySandboxType(SandboxType sandbox_type) {
+  switch (sandbox_type) {
+    case SANDBOX_TYPE_NO_SANDBOX:
+      return switches::kNoneSandbox;
+    case SANDBOX_TYPE_NETWORK:
+      return switches::kNetworkSandbox;
+    case SANDBOX_TYPE_PPAPI:
+      return switches::kPpapiSandbox;
+    case SANDBOX_TYPE_CDM:
+      return switches::kCdmSandbox;
+    case SANDBOX_TYPE_PDF_COMPOSITOR:
+      return switches::kPdfCompositorSandbox;
+    case SANDBOX_TYPE_PROFILING:
+      return switches::kProfilingSandbox;
+    case SANDBOX_TYPE_UTILITY:
+      return switches::kUtilitySandbox;
+    default:
+      NOTREACHED();
+      return std::string();
+  }
+}
+
 SandboxType UtilitySandboxTypeFromString(const std::string& sandbox_string) {
   if (sandbox_string == switches::kNoneSandbox)
     return SANDBOX_TYPE_NO_SANDBOX;
+  if (sandbox_string == switches::kNoneSandboxAndElevatedPrivileges) {
+#if defined(OS_WIN)
+    return SANDBOX_TYPE_NO_SANDBOX_AND_ELEVATED_PRIVILEGES;
+#else
+    return SANDBOX_TYPE_NO_SANDBOX;
+#endif
+  }
   if (sandbox_string == switches::kNetworkSandbox)
     return SANDBOX_TYPE_NETWORK;
   if (sandbox_string == switches::kPpapiSandbox)

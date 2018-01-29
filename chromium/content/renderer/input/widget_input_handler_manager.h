@@ -5,6 +5,7 @@
 #ifndef CONTENT_RENDERER_INPUT_WIDGET_INPUT_HANDLER_MANAGER_H_
 #define CONTENT_RENDERER_INPUT_WIDGET_INPUT_HANDLER_MANAGER_H_
 
+#include "content/common/content_export.h"
 #include "content/common/input/input_handler.mojom.h"
 #include "content/renderer/render_frame_impl.h"
 #include "mojo/public/cpp/bindings/associated_binding.h"
@@ -24,7 +25,7 @@ class MainThreadEventQueue;
 // This class maintains the compositor InputHandlerProxy and is
 // responsible for passing input events on the compositor and main threads.
 // The lifecycle of this object matches that of the RenderWidget.
-class WidgetInputHandlerManager
+class CONTENT_EXPORT WidgetInputHandlerManager
     : public base::RefCountedThreadSafe<WidgetInputHandlerManager>,
       public ui::InputHandlerProxyClient {
  public:
@@ -33,10 +34,11 @@ class WidgetInputHandlerManager
       scoped_refptr<base::SingleThreadTaskRunner> compositor_task_runner,
       blink::scheduler::RendererScheduler* renderer_scheduler);
   void AddAssociatedInterface(
-      mojom::WidgetInputHandlerAssociatedRequest interface_request);
+      mojom::WidgetInputHandlerAssociatedRequest interface_request,
+      mojom::WidgetInputHandlerHostPtr host);
 
-  void SetWidgetInputHandlerHost(mojom::WidgetInputHandlerHostPtr host);
-  void AddInterface(mojom::WidgetInputHandlerRequest interface_request);
+  void AddInterface(mojom::WidgetInputHandlerRequest interface_request,
+                    mojom::WidgetInputHandlerHostPtr host);
 
   // InputHandlerProxyClient overrides.
   void WillShutdown() override;
@@ -55,7 +57,7 @@ class WidgetInputHandlerManager
       const gfx::Vector2dF& latest_overscroll_delta,
       const gfx::Vector2dF& current_fling_velocity,
       const gfx::PointF& causal_event_viewport_point,
-      const cc::ScrollBoundaryBehavior& scroll_boundary_behavior) override;
+      const cc::OverscrollBehavior& overscroll_behavior) override;
   void DidStopFlinging() override;
   void DidAnimateForInput() override;
   void GenerateScrollBeginAndSendToMainThread(
@@ -74,9 +76,7 @@ class WidgetInputHandlerManager
 
   void ProcessTouchAction(cc::TouchAction touch_action);
 
-  using WidgetInputHandlerHost = scoped_refptr<
-      mojo::ThreadSafeInterfacePtr<mojom::WidgetInputHandlerHost>>;
-  const WidgetInputHandlerHost& GetWidgetInputHandlerHost();
+  mojom::WidgetInputHandlerHost* GetWidgetInputHandlerHost();
 
  protected:
   friend class base::RefCountedThreadSafe<WidgetInputHandlerManager>;
@@ -122,9 +122,16 @@ class WidgetInputHandlerManager
   // thread.
   std::unique_ptr<ui::InputHandlerProxy> input_handler_proxy_;
 
+  using WidgetInputHandlerHost = scoped_refptr<
+      mojo::ThreadSafeInterfacePtr<mojom::WidgetInputHandlerHost>>;
+
   // The WidgetInputHandlerHost is bound on the compositor task runner
   // but class can be called on the compositor and main thread.
   WidgetInputHandlerHost host_;
+
+  // Host that was passed as part of the FrameInputHandler associated
+  // channel.
+  WidgetInputHandlerHost associated_host_;
 
   // Any thread can access these variables.
   scoped_refptr<MainThreadEventQueue> input_event_queue_;

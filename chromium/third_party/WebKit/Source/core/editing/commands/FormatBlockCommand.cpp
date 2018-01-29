@@ -88,7 +88,7 @@ void FormatBlockCommand::FormatRange(const Position& start,
           ? start.AnchorNode()
           : SplitTreeToNode(start.AnchorNode(), node_to_split_to);
   Node* node_after_insertion_position = outer_block;
-  Range* range = Range::Create(GetDocument(), start, end_of_selection);
+  const EphemeralRange range(start, end_of_selection);
 
   GetDocument().UpdateStyleAndLayoutIgnorePendingStylesheets();
   if (IsElementForFormatBlock(ref_element->TagQName()) &&
@@ -96,7 +96,7 @@ void FormatBlockCommand::FormatRange(const Position& start,
           StartOfBlock(CreateVisiblePosition(start)).DeepEquivalent() &&
       (CreateVisiblePosition(end).DeepEquivalent() ==
            EndOfBlock(CreateVisiblePosition(end)).DeepEquivalent() ||
-       IsNodeVisiblyContainedWithin(*ref_element, *range)) &&
+       IsNodeVisiblyContainedWithin(*ref_element, range)) &&
       ref_element != root && !root->IsDescendantOf(ref_element)) {
     // Already in a block element that only contains the current paragraph
     if (ref_element->HasTagName(TagName()))
@@ -152,14 +152,15 @@ Element* FormatBlockCommand::ElementForFormatBlockCommand(
     common_ancestor = common_ancestor->parentNode();
 
   if (!common_ancestor)
-    return 0;
+    return nullptr;
 
   Element* element =
       RootEditableElement(*range.StartPosition().ComputeContainerNode());
   if (!element || common_ancestor->contains(element))
-    return 0;
+    return nullptr;
 
-  return common_ancestor->IsElementNode() ? ToElement(common_ancestor) : 0;
+  return common_ancestor->IsElementNode() ? ToElement(common_ancestor)
+                                          : nullptr;
 }
 
 bool IsElementForFormatBlock(const QualifiedName& tag_name) {

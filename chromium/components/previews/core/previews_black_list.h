@@ -18,6 +18,7 @@
 #include "base/optional.h"
 #include "base/threading/thread_checker.h"
 #include "base/time/time.h"
+#include "components/previews/core/previews_black_list_delegate.h"
 #include "components/previews/core/previews_experiments.h"
 #include "components/previews/core/previews_opt_out_store.h"
 
@@ -54,6 +55,12 @@ enum class PreviewsEligibilityReason {
   // The host is explicitly blacklisted by the server, so the user was not shown
   // a preview.
   HOST_BLACKLISTED_BY_SERVER = 9,
+  // The host is not whitelisted by the server for a preview decision that uses
+  // server optimization hints.
+  HOST_NOT_WHITELISTED_BY_SERVER = 10,
+  // The preview is allowed but without an expected check of server optimization
+  // hints because they are not enabled (features::kOptimizationHints).
+  ALLOWED_WITHOUT_OPTIMIZATION_HINTS = 11,
   LAST = 9,
 };
 
@@ -72,9 +79,12 @@ class PreviewsBlackList {
   // information, and can be null. When |opt_out_store| is null, the in-memory
   // map will be immediately loaded to empty. If |opt_out_store| is non-null,
   // it will be used to load the in-memory map asynchronously.
+  // |blacklist_delegate| is a single object listening for blacklist events, and
+  // it is guaranteed to overlive the life time of |this|.
   PreviewsBlackList(std::unique_ptr<PreviewsOptOutStore> opt_out_store,
-                    std::unique_ptr<base::Clock> clock);
-  ~PreviewsBlackList();
+                    std::unique_ptr<base::Clock> clock,
+                    PreviewsBlacklistDelegate* blacklist_delegate);
+  virtual ~PreviewsBlackList();
 
   // Asynchronously adds a new navigation to to the in-memory black list and
   // backing store. |opt_out| is whether the user opted out of the preview or
@@ -89,9 +99,10 @@ class PreviewsBlackList {
 
   // Synchronously determines if |host_name| should be allowed to show previews.
   // Returns the reason the blacklist disallowed the preview, or
-  // PreviewsEligibilityReason::ALLOWED if the preview is allowed.
-  PreviewsEligibilityReason IsLoadedAndAllowed(const GURL& url,
-                                               PreviewsType type) const;
+  // PreviewsEligibilityReason::ALLOWED if the preview is allowed. Virtualized
+  // in testing.
+  virtual PreviewsEligibilityReason IsLoadedAndAllowed(const GURL& url,
+                                                       PreviewsType type) const;
 
   // Asynchronously deletes all entries in the in-memory black list. Informs
   // the backing store to delete entries between |begin_time| and |end_time|,
@@ -155,6 +166,10 @@ class PreviewsBlackList {
   base::queue<base::Closure> pending_callbacks_;
 
   std::unique_ptr<base::Clock> clock_;
+
+  // The delegate listening to this blacklist. |blacklist_delegate_| lifetime is
+  // guaranteed to overlive |this|.
+  PreviewsBlacklistDelegate* blacklist_delegate_;
 
   base::ThreadChecker thread_checker_;
 

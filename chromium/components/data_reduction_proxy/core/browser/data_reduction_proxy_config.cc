@@ -71,10 +71,14 @@ enum NotAcceptingTransformReason {
 // This enum must remain synchronized with the enum of the same
 // name in metrics/histograms/histograms.xml.
 enum DataReductionProxyNetworkChangeEvent {
-  IP_CHANGED = 0,         // The client IP address changed.
-  DISABLED_ON_VPN = 1,    // [Deprecated] Proxy is disabled because a VPN is
-                          // running.
-  CHANGE_EVENT_COUNT = 2  // This must always be last.
+  // The client IP address changed.
+  IP_CHANGED = 0,
+  // [Deprecated] Proxy is disabled because a VPN is running.
+  DEPRECATED_DISABLED_ON_VPN = 1,
+  // There was a network change.
+  NETWORK_CHANGED = 2,
+  CHANGE_EVENT_COUNT = NETWORK_CHANGED + 1
+
 };
 
 // Key of the UMA DataReductionProxy.ProbeURL histogram.
@@ -97,6 +101,22 @@ void RecordSecureProxyCheckFetchResult(
       data_reduction_proxy::SECURE_PROXY_CHECK_FETCH_RESULT_COUNT);
 }
 
+enum class WarmupURLFetchAttemptEvent {
+  kFetchInitiated = 0,
+  kConnectionTypeNone = 1,
+  kProxyNotEnabledByUser = 2,
+  kWarmupURLFetchingDisabled = 3,
+  kCount
+};
+
+void RecordWarmupURLFetchAttemptEvent(
+    WarmupURLFetchAttemptEvent warmup_url_fetch_event) {
+  DCHECK_GT(WarmupURLFetchAttemptEvent::kCount, warmup_url_fetch_event);
+  UMA_HISTOGRAM_ENUMERATION("DataReductionProxy.WarmupURL.FetchAttemptEvent",
+                            warmup_url_fetch_event,
+                            WarmupURLFetchAttemptEvent::kCount);
+}
+
 }  // namespace
 
 namespace data_reduction_proxy {
@@ -107,8 +127,7 @@ DataReductionProxyConfig::DataReductionProxyConfig(
     std::unique_ptr<DataReductionProxyConfigValues> config_values,
     DataReductionProxyConfigurator* configurator,
     DataReductionProxyEventCreator* event_creator)
-    : secure_proxy_allowed_(true),
-      unreachable_(false),
+    : unreachable_(false),
       enabled_by_user_(false),
       config_values_(std::move(config_values)),
       io_task_runner_(io_task_runner),
@@ -116,15 +135,10 @@ DataReductionProxyConfig::DataReductionProxyConfig(
       configurator_(configurator),
       event_creator_(event_creator),
       connection_type_(net::NetworkChangeNotifier::GetConnectionType()),
-      lofi_off_(false),
-      is_captive_portal_(false),
       weak_factory_(this) {
   DCHECK(io_task_runner_);
   DCHECK(configurator);
   DCHECK(event_creator);
-
-  if (params::IsLoFiDisabledViaFlags())
-    SetLoFiModeOff();
   // Constructed on the UI thread, but should be checked on the IO thread.
   thread_checker_.DetachFromThread();
 }
@@ -156,13 +170,19 @@ bool DataReductionProxyConfig::ShouldAddDefaultProxyBypassRules() const {
   return true;
 }
 
+void DataReductionProxyConfig::OnNewClientConfigFetched() {
+  DCHECK(thread_checker_.CalledOnValidThread());
+  ReloadConfig();
+}
+
 void DataReductionProxyConfig::ReloadConfig() {
   DCHECK(thread_checker_.CalledOnValidThread());
   DCHECK(configurator_);
 
   if (enabled_by_user_ && !params::IsIncludedInHoldbackFieldTrial() &&
       !config_values_->proxies_for_http().empty()) {
-    configurator_->Enable(!secure_proxy_allowed_ || is_captive_portal_,
+    configurator_->Enable(!network_properties_manager_.IsSecureProxyAllowed(),
+                          !network_properties_manager_.IsInsecureProxyAllowed(),
                           config_values_->proxies_for_http());
   } else {
     configurator_->Disable();
@@ -231,7 +251,7 @@ bool DataReductionProxyConfig::IsBypassedByDataReductionProxyLocalRules(
     return true;
   if (result.proxy_server().is_direct())
     return true;
-  return !IsDataReductionProxy(result.proxy_server(), NULL);
+  return !IsDataReductionProxy(result.proxy_server(), nullptr);
 }
 
 bool DataReductionProxyConfig::AreDataReductionProxiesBypassed(
@@ -239,8 +259,8 @@ bool DataReductionProxyConfig::AreDataReductionProxiesBypassed(
     const net::ProxyConfig& data_reduction_proxy_config,
     base::TimeDelta* min_retry_delay) const {
   DCHECK(thread_checker_.CalledOnValidThread());
-  if (request.context() != NULL &&
-      request.context()->proxy_service() != NULL) {
+  if (request.context() != nullptr &&
+      request.context()->proxy_service() != nullptr) {
     return AreProxiesBypassed(
         request.context()->proxy_service()->proxy_retry_info(),
         data_reduction_proxy_config.proxy_rules(),
@@ -276,7 +296,7 @@ bool DataReductionProxyConfig::AreProxiesBypassed(
       continue;
 
     base::TimeDelta delay;
-    if (IsDataReductionProxy(proxy, NULL)) {
+    if (IsDataReductionProxy(proxy, nullptr)) {
       if (!IsProxyBypassed(retry_map, proxy, &delay))
         return false;
       if (delay < min_delay)
@@ -320,7 +340,7 @@ bool DataReductionProxyConfig::ContainsDataReductionProxy(
       proxy_rules.MapUrlSchemeToProxyList("http");
   if (http_proxy_list && !http_proxy_list->IsEmpty() &&
       // Sufficient to check only the first proxy.
-      IsDataReductionProxy(http_proxy_list->Get(), NULL)) {
+      IsDataReductionProxy(http_proxy_list->Get(), nullptr)) {
     return true;
   }
 
@@ -332,9 +352,8 @@ void DataReductionProxyConfig::SetProxyConfig(bool enabled, bool at_startup) {
   enabled_by_user_ = enabled;
   ReloadConfig();
 
-  if (enabled) {
+  if (enabled_by_user_) {
     HandleCaptivePortal();
-    FetchWarmupURL();
 
     // Check if the proxy has been restricted explicitly by the carrier.
     // It is safe to use base::Unretained here, since it gets executed
@@ -344,6 +363,7 @@ void DataReductionProxyConfig::SetProxyConfig(bool enabled, bool at_startup) {
         base::Bind(&DataReductionProxyConfig::HandleSecureProxyCheckResponse,
                    base::Unretained(this)));
   }
+  FetchWarmupURL();
 }
 
 void DataReductionProxyConfig::HandleCaptivePortal() {
@@ -352,9 +372,9 @@ void DataReductionProxyConfig::HandleCaptivePortal() {
   bool is_captive_portal = GetIsCaptivePortal();
   UMA_HISTOGRAM_BOOLEAN("DataReductionProxy.CaptivePortalDetected.Platform",
                         is_captive_portal);
-  if (is_captive_portal == is_captive_portal_)
+  if (is_captive_portal == network_properties_manager_.IsCaptivePortal())
     return;
-  is_captive_portal_ = is_captive_portal;
+  network_properties_manager_.SetIsCaptivePortal(is_captive_portal);
   ReloadConfig();
 }
 
@@ -369,9 +389,13 @@ bool DataReductionProxyConfig::GetIsCaptivePortal() const {
 
 void DataReductionProxyConfig::UpdateConfigForTesting(
     bool enabled,
-    bool secure_proxy_allowed) {
+    bool secure_proxies_allowed,
+    bool insecure_proxies_allowed) {
   enabled_by_user_ = enabled;
-  secure_proxy_allowed_ = secure_proxy_allowed;
+  network_properties_manager_.SetIsSecureProxyDisallowedByCarrier(
+      !secure_proxies_allowed);
+  network_properties_manager_.SetHasWarmupURLProbeFailed(
+      false, !insecure_proxies_allowed);
 }
 
 void DataReductionProxyConfig::HandleSecureProxyCheckResponse(
@@ -397,23 +421,30 @@ void DataReductionProxyConfig::HandleSecureProxyCheckResponse(
                                 std::abs(status.error()));
   }
 
-  bool secure_proxy_allowed_past = secure_proxy_allowed_;
-  secure_proxy_allowed_ = success_response;
+  bool secure_proxy_allowed_past =
+      !network_properties_manager_.IsSecureProxyDisallowedByCarrier();
+  network_properties_manager_.SetIsSecureProxyDisallowedByCarrier(
+      !success_response);
   if (!enabled_by_user_)
     return;
 
-  if (secure_proxy_allowed_ != secure_proxy_allowed_past)
+  if (!network_properties_manager_.IsSecureProxyDisallowedByCarrier() !=
+      secure_proxy_allowed_past)
     ReloadConfig();
 
   // Record the result.
-  if (secure_proxy_allowed_past && secure_proxy_allowed_) {
+  if (secure_proxy_allowed_past &&
+      !network_properties_manager_.IsSecureProxyDisallowedByCarrier()) {
     RecordSecureProxyCheckFetchResult(SUCCEEDED_PROXY_ALREADY_ENABLED);
-  } else if (secure_proxy_allowed_past && !secure_proxy_allowed_) {
+  } else if (secure_proxy_allowed_past &&
+             network_properties_manager_.IsSecureProxyDisallowedByCarrier()) {
     RecordSecureProxyCheckFetchResult(FAILED_PROXY_DISABLED);
-  } else if (!secure_proxy_allowed_past && secure_proxy_allowed_) {
+  } else if (!secure_proxy_allowed_past &&
+             !network_properties_manager_.IsSecureProxyDisallowedByCarrier()) {
     RecordSecureProxyCheckFetchResult(SUCCEEDED_PROXY_ENABLED);
   } else {
-    DCHECK(!secure_proxy_allowed_past && !secure_proxy_allowed_);
+    DCHECK(!secure_proxy_allowed_past &&
+           network_properties_manager_.IsSecureProxyDisallowedByCarrier());
     RecordSecureProxyCheckFetchResult(FAILED_PROXY_ALREADY_DISABLED);
   }
 }
@@ -423,9 +454,7 @@ void DataReductionProxyConfig::OnNetworkChanged(
   DCHECK(thread_checker_.CalledOnValidThread());
 
   connection_type_ = type;
-
-  if (connection_type_ == net::NetworkChangeNotifier::CONNECTION_NONE)
-    return;
+  RecordNetworkChangeEvent(NETWORK_CHANGED);
 
   FetchWarmupURL();
 }
@@ -447,29 +476,32 @@ void DataReductionProxyConfig::OnIPAddressChanged() {
 }
 
 void DataReductionProxyConfig::AddDefaultProxyBypassRules() {
-  // localhost
   DCHECK(configurator_);
-  configurator_->AddHostPatternToBypass("<local>");
-  // RFC6890 loopback addresses.
-  // TODO(tbansal): Remove this once crbug/446705 is fixed.
-  configurator_->AddHostPatternToBypass("127.0.0.0/8");
+  configurator_->SetBypassRules(
+      // localhost
+      "<local>,"
 
-  // RFC6890 current network (only valid as source address).
-  configurator_->AddHostPatternToBypass("0.0.0.0/8");
+      // RFC6890 loopback addresses.
+      // TODO(tbansal): Remove this once crbug/446705 is fixed.
+      "127.0.0.0/8,"
 
-  // RFC1918 private addresses.
-  configurator_->AddHostPatternToBypass("10.0.0.0/8");
-  configurator_->AddHostPatternToBypass("172.16.0.0/12");
-  configurator_->AddHostPatternToBypass("192.168.0.0/16");
+      // RFC6890 current network (only valid as source address).
+      "0.0.0.0/8,"
 
-  // RFC3513 unspecified address.
-  configurator_->AddHostPatternToBypass("::/128");
+      // RFC1918 private addresses.
+      "10.0.0.0/8,"
+      "172.16.0.0/12,"
+      "192.168.0.0/16,"
 
-  // RFC4193 private addresses.
-  configurator_->AddHostPatternToBypass("fc00::/7");
-  // IPV6 probe addresses.
-  configurator_->AddHostPatternToBypass("*-ds.metric.gstatic.com");
-  configurator_->AddHostPatternToBypass("*-v4.metric.gstatic.com");
+      // RFC3513 unspecified address.
+      "::/128,"
+
+      // RFC4193 private addresses.
+      "fc00::/7,"
+
+      // IPV6 probe addresses.
+      "*-ds.metric.gstatic.com,"
+      "*-v4.metric.gstatic.com");
 }
 
 void DataReductionProxyConfig::SecureProxyCheck(
@@ -487,18 +519,27 @@ void DataReductionProxyConfig::SecureProxyCheck(
 void DataReductionProxyConfig::FetchWarmupURL() {
   DCHECK(thread_checker_.CalledOnValidThread());
 
-  if (!enabled_by_user_ || !params::FetchWarmupURLEnabled())
+  if (!enabled_by_user_) {
+    RecordWarmupURLFetchAttemptEvent(
+        WarmupURLFetchAttemptEvent::kProxyNotEnabledByUser);
     return;
+  }
 
-  if (connection_type_ == net::NetworkChangeNotifier::CONNECTION_NONE)
+  if (!params::FetchWarmupURLEnabled()) {
+    RecordWarmupURLFetchAttemptEvent(
+        WarmupURLFetchAttemptEvent::kWarmupURLFetchingDisabled);
     return;
+  }
+
+  if (connection_type_ == net::NetworkChangeNotifier::CONNECTION_NONE) {
+    RecordWarmupURLFetchAttemptEvent(
+        WarmupURLFetchAttemptEvent::kConnectionTypeNone);
+    return;
+  }
+
+  RecordWarmupURLFetchAttemptEvent(WarmupURLFetchAttemptEvent::kFetchInitiated);
 
   warmup_url_fetcher_->FetchWarmupURL();
-}
-
-void DataReductionProxyConfig::SetLoFiModeOff() {
-  DCHECK(thread_checker_.CalledOnValidThread());
-  lofi_off_ = true;
 }
 
 bool DataReductionProxyConfig::ShouldEnableLoFi(
@@ -531,19 +572,12 @@ bool DataReductionProxyConfig::IsBlackListedOrDisabled(
     const previews::PreviewsDecider& previews_decider,
     previews::PreviewsType previews_type) const {
   // Make sure request is not locally blacklisted.
-  if (params::IsBlackListEnabledForServerPreviews()) {
-    // Pass in net::EFFECTIVE_CONNECTION_TYPE_4G as the threshold since we
-    // just want to check blacklisting here.
-    // TODO(crbug.com/720102): Consider new method to just check blacklist.
-    return !previews_decider.ShouldAllowPreviewAtECT(
-        request, previews_type, net::EFFECTIVE_CONNECTION_TYPE_4G,
-        std::vector<std::string>());
-  } else {
-    // If Lo-Fi has been turned off, its status can't change. This Lo-Fi bit
-    // will be removed when Lo-Fi and Lite Pages are moved over to using the
-    // PreviewsBlackList.
-    return lofi_off_;
-  }
+  // Pass in net::EFFECTIVE_CONNECTION_TYPE_4G as the threshold since we
+  // just want to check blacklisting here.
+  // TODO(crbug.com/720102): Consider new method to just check blacklist.
+  return !previews_decider.ShouldAllowPreviewAtECT(
+      request, previews_type, net::EFFECTIVE_CONNECTION_TYPE_4G,
+      std::vector<std::string>());
 }
 
 bool DataReductionProxyConfig::ShouldAcceptServerPreview(
@@ -559,8 +593,7 @@ bool DataReductionProxyConfig::ShouldAcceptServerPreview(
   // For the transition to server-driven previews decisions, we will
   // use existing Lo-Fi flags for disabling and cellular-only mode.
   // TODO(dougarnett): Refactor flag names as part of bug 725645.
-  if (params::IsLoFiDisabledViaFlags() ||
-      (!params::IsBlackListEnabledForServerPreviews() && lofi_off())) {
+  if (params::IsLoFiDisabledViaFlags()) {
     UMA_HISTOGRAM_ENUMERATION(
         "DataReductionProxy.Protocol.NotAcceptingTransform",
         NOT_ACCEPTING_TRANSFORM_DISABLED,
@@ -600,16 +633,35 @@ base::TimeTicks DataReductionProxyConfig::GetTicksNow() const {
   return base::TimeTicks::Now();
 }
 
+void DataReductionProxyConfig::OnInsecureProxyWarmupURLProbeStatusChange(
+    bool insecure_proxies_allowed) {
+  DCHECK(thread_checker_.CalledOnValidThread());
+  bool old_status = network_properties_manager_.IsInsecureProxyAllowed();
+  network_properties_manager_.SetHasWarmupURLProbeFailed(
+      false, !insecure_proxies_allowed);
+
+  if (old_status == network_properties_manager_.IsInsecureProxyAllowed())
+    return;
+  ReloadConfig();
+}
+
 net::ProxyConfig DataReductionProxyConfig::ProxyConfigIgnoringHoldback() const {
   if (!enabled_by_user_ || config_values_->proxies_for_http().empty())
     return net::ProxyConfig::CreateDirect();
-  return configurator_->CreateProxyConfig(!secure_proxy_allowed_,
-                                          config_values_->proxies_for_http());
+  return configurator_->CreateProxyConfig(
+      !network_properties_manager_.IsSecureProxyAllowed(),
+      !network_properties_manager_.IsInsecureProxyAllowed(),
+      config_values_->proxies_for_http());
 }
 
 bool DataReductionProxyConfig::secure_proxy_allowed() const {
   DCHECK(thread_checker_.CalledOnValidThread());
-  return secure_proxy_allowed_;
+  return network_properties_manager_.IsSecureProxyAllowed();
+}
+
+bool DataReductionProxyConfig::insecure_proxies_allowed() const {
+  DCHECK(thread_checker_.CalledOnValidThread());
+  return network_properties_manager_.IsInsecureProxyAllowed();
 }
 
 std::vector<DataReductionProxyServer>

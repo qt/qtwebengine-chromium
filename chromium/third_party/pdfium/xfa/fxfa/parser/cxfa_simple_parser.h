@@ -26,7 +26,7 @@ class CXFA_SimpleParser {
   ~CXFA_SimpleParser();
 
   int32_t StartParse(const RetainPtr<IFX_SeekableStream>& pStream,
-                     XFA_XDPPACKET ePacketID);
+                     XFA_PacketType ePacketID);
   int32_t DoParse();
   CFX_XMLNode* ParseXMLData(const ByteString& wsXML);
   void ConstructXFANode(CXFA_Node* pXFANode, CFX_XMLNode* pXMLNode);
@@ -38,25 +38,21 @@ class CXFA_SimpleParser {
 
  private:
   CXFA_Node* ParseAsXDPPacket(CFX_XMLNode* pXMLDocumentNode,
-                              XFA_XDPPACKET ePacketID);
-  CXFA_Node* ParseAsXDPPacket_XDP(CFX_XMLNode* pXMLDocumentNode,
-                                  XFA_XDPPACKET ePacketID);
-  CXFA_Node* ParseAsXDPPacket_Config(CFX_XMLNode* pXMLDocumentNode,
-                                     XFA_XDPPACKET ePacketID);
-  CXFA_Node* ParseAsXDPPacket_TemplateForm(CFX_XMLNode* pXMLDocumentNode,
-                                           XFA_XDPPACKET ePacketID);
-  CXFA_Node* ParseAsXDPPacket_Data(CFX_XMLNode* pXMLDocumentNode,
-                                   XFA_XDPPACKET ePacketID);
+                              XFA_PacketType ePacketID);
+  CXFA_Node* ParseAsXDPPacket_XDP(CFX_XMLNode* pXMLDocumentNode);
+  CXFA_Node* ParseAsXDPPacket_Config(CFX_XMLNode* pXMLDocumentNode);
+  CXFA_Node* ParseAsXDPPacket_Template(CFX_XMLNode* pXMLDocumentNode);
+  CXFA_Node* ParseAsXDPPacket_Form(CFX_XMLNode* pXMLDocumentNode);
+  CXFA_Node* ParseAsXDPPacket_Data(CFX_XMLNode* pXMLDocumentNode);
   CXFA_Node* ParseAsXDPPacket_LocaleConnectionSourceSet(
       CFX_XMLNode* pXMLDocumentNode,
-      XFA_XDPPACKET ePacketID);
-  CXFA_Node* ParseAsXDPPacket_Xdc(CFX_XMLNode* pXMLDocumentNode,
-                                  XFA_XDPPACKET ePacketID);
-  CXFA_Node* ParseAsXDPPacket_User(CFX_XMLNode* pXMLDocumentNode,
-                                   XFA_XDPPACKET ePacketID);
+      XFA_PacketType packet_type,
+      XFA_Element element);
+  CXFA_Node* ParseAsXDPPacket_Xdc(CFX_XMLNode* pXMLDocumentNode);
+  CXFA_Node* ParseAsXDPPacket_User(CFX_XMLNode* pXMLDocumentNode);
   CXFA_Node* NormalLoader(CXFA_Node* pXFANode,
                           CFX_XMLNode* pXMLDoc,
-                          XFA_XDPPACKET ePacketID,
+                          XFA_PacketType ePacketID,
                           bool bUseAttribute);
   CXFA_Node* DataLoader(CXFA_Node* pXFANode,
                         CFX_XMLNode* pXMLDoc,
@@ -64,16 +60,16 @@ class CXFA_SimpleParser {
   CXFA_Node* UserPacketLoader(CXFA_Node* pXFANode, CFX_XMLNode* pXMLDoc);
   void ParseContentNode(CXFA_Node* pXFANode,
                         CFX_XMLNode* pXMLNode,
-                        XFA_XDPPACKET ePacketID);
+                        XFA_PacketType ePacketID);
   void ParseDataValue(CXFA_Node* pXFANode,
                       CFX_XMLNode* pXMLNode,
-                      XFA_XDPPACKET ePacketID);
+                      XFA_PacketType ePacketID);
   void ParseDataGroup(CXFA_Node* pXFANode,
                       CFX_XMLNode* pXMLNode,
-                      XFA_XDPPACKET ePacketID);
+                      XFA_PacketType ePacketID);
   void ParseInstruction(CXFA_Node* pXFANode,
                         CFX_XMLInstruction* pXMLInstruction,
-                        XFA_XDPPACKET ePacketID);
+                        XFA_PacketType ePacketID);
 
   CFX_XMLParser* m_pXMLParser;
   std::unique_ptr<CFX_XMLDoc> m_pXMLDoc;
@@ -81,7 +77,8 @@ class CXFA_SimpleParser {
   RetainPtr<IFX_SeekableStream> m_pFileRead;
   CXFA_Document* m_pFactory;
   CXFA_Node* m_pRootNode;
-  XFA_XDPPACKET m_ePacketID;
+  XFA_PacketType m_ePacketID;
+  bool m_bParseStarted;
   bool m_bDocumentParser;
 };
 

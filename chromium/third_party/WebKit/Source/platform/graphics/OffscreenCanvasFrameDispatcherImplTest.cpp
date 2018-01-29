@@ -21,7 +21,7 @@ class MockOffscreenCanvasFrameDispatcherImpl
       : OffscreenCanvasFrameDispatcherImpl(nullptr, 0, 0, 0, 10, 10) {}
 
   MOCK_METHOD2(PostImageToPlaceholder,
-               void(RefPtr<StaticBitmapImage>, unsigned resource_id));
+               void(scoped_refptr<StaticBitmapImage>, unsigned resource_id));
 };
 
 class OffscreenCanvasFrameDispatcherImplTest : public ::testing::Test {
@@ -53,7 +53,7 @@ class OffscreenCanvasFrameDispatcherImplTest : public ::testing::Test {
   }
 
  private:
-  RefPtr<StaticBitmapImage> PrepareStaticBitmapImage();
+  scoped_refptr<StaticBitmapImage> PrepareStaticBitmapImage();
   std::unique_ptr<MockOffscreenCanvasFrameDispatcherImpl> dispatcher_;
 };
 
@@ -61,7 +61,7 @@ void OffscreenCanvasFrameDispatcherImplTest::DispatchOneFrame() {
   sk_sp<SkSurface> surface = SkSurface::MakeRasterN32Premul(10, 10);
   dispatcher_->DispatchFrame(
       StaticBitmapImage::Create(surface->makeImageSnapshot()), 0.0,
-      SkIRect::MakeEmpty(), false);
+      SkIRect::MakeEmpty());
 }
 
 TEST_F(OffscreenCanvasFrameDispatcherImplTest, PlaceholderRunsNormally) {

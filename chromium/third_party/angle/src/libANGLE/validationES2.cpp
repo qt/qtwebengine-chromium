@@ -306,27 +306,36 @@ bool IsValidCopyTextureDestinationFormatType(Context *context, GLint internalFor
     return true;
 }
 
-bool IsValidCopyTextureDestinationTarget(Context *context, GLenum textureType, GLenum target)
+bool IsValidCopyTextureDestinationTargetEnum(Context *context, GLenum target)
 {
     switch (target)
     {
         case GL_TEXTURE_2D:
-            return textureType == GL_TEXTURE_2D;
-
         case GL_TEXTURE_CUBE_MAP_POSITIVE_X:
         case GL_TEXTURE_CUBE_MAP_NEGATIVE_X:
         case GL_TEXTURE_CUBE_MAP_POSITIVE_Y:
         case GL_TEXTURE_CUBE_MAP_NEGATIVE_Y:
         case GL_TEXTURE_CUBE_MAP_POSITIVE_Z:
         case GL_TEXTURE_CUBE_MAP_NEGATIVE_Z:
-            return textureType == GL_TEXTURE_CUBE_MAP;
+            return true;
 
         case GL_TEXTURE_RECTANGLE_ANGLE:
-            return textureType == GL_TEXTURE_RECTANGLE_ANGLE &&
-                   context->getExtensions().textureRectangle;
+            return context->getExtensions().textureRectangle;
 
         default:
             return false;
+    }
+}
+
+bool IsValidCopyTextureDestinationTarget(Context *context, GLenum textureType, GLenum target)
+{
+    if (IsCubeMapTextureTarget(target))
+    {
+        return textureType == GL_TEXTURE_CUBE_MAP;
+    }
+    else
+    {
+        return textureType == target;
     }
 }
 
@@ -919,8 +928,12 @@ bool IsValidESSLShaderSourceString(const char *str, size_t len, bool lineContinu
                 break;
 
             case ParseState::IN_PREPROCESSOR_DIRECTIVE:
-                // No matter what the character is, just pass it
-                // through. Do not parse comments in this state.
+                // Line-continuation characters may not be permitted.
+                // Otherwise, just pass it through. Do not parse comments in this state.
+                if (!lineContinuationAllowed && c == '\\')
+                {
+                    return false;
+                }
                 pos++;
                 break;
 
@@ -1127,6 +1140,13 @@ bool ValidateES2TexImageParameters(Context *context,
             context->handleError(InvalidValue());
             return false;
         }
+
+        if (width > 0 && height > 0 && pixels == nullptr &&
+            context->getGLState().getTargetBuffer(gl::BufferBinding::PixelUnpack) == nullptr)
+        {
+            ANGLE_VALIDATION_ERR(context, InvalidValue(), PixelDataNull);
+            return false;
+        }
     }
     else
     {
@@ -1160,7 +1180,7 @@ bool ValidateES2TexImageParameters(Context *context,
                 }
                 break;
             case GL_COMPRESSED_RGBA_S3TC_DXT3_ANGLE:
-                if (!context->getExtensions().textureCompressionDXT1)
+                if (!context->getExtensions().textureCompressionDXT3)
                 {
                     ANGLE_VALIDATION_ERR(context, InvalidEnum(), InvalidInternalFormat);
                     return false;
@@ -1189,6 +1209,11 @@ bool ValidateES2TexImageParameters(Context *context,
                     ANGLE_VALIDATION_ERR(context, InvalidEnum(), InvalidInternalFormat);
                     return false;
                 }
+                if (isSubImage)
+                {
+                    ANGLE_VALIDATION_ERR(context, InvalidOperation(), InvalidInternalFormat);
+                    return false;
+                }
                 break;
             case GL_ETC1_RGB8_LOSSY_DECODE_ANGLE:
             case GL_COMPRESSED_RGB8_LOSSY_DECODE_ETC2_ANGLE:
@@ -1197,8 +1222,7 @@ bool ValidateES2TexImageParameters(Context *context,
             case GL_COMPRESSED_SRGB8_PUNCHTHROUGH_ALPHA1_LOSSY_DECODE_ETC2_ANGLE:
                 if (!context->getExtensions().lossyETCDecode)
                 {
-                    context->handleError(InvalidEnum()
-                                         << "ANGLE_lossy_etc_decode extension is not supported");
+                    ANGLE_VALIDATION_ERR(context, InvalidEnum(), InvalidInternalFormat);
                     return false;
                 }
                 break;
@@ -1281,8 +1305,14 @@ bool ValidateES2TexImageParameters(Context *context,
                 switch (type)
                 {
                     case GL_UNSIGNED_BYTE:
+                        break;
                     case GL_FLOAT:
                     case GL_HALF_FLOAT_OES:
+                        if (!context->getExtensions().textureFloat)
+                        {
+                            context->handleError(InvalidEnum());
+                            return false;
+                        }
                         break;
                     default:
                         ANGLE_VALIDATION_ERR(context, InvalidOperation(), MismatchedTypeAndFormat);
@@ -1317,6 +1347,11 @@ bool ValidateES2TexImageParameters(Context *context,
                 }
                 break;
             case GL_BGRA_EXT:
+                if (!context->getExtensions().textureFormatBGRA8888)
+                {
+                    context->handleError(InvalidEnum());
+                    return false;
+                }
                 switch (type)
                 {
                     case GL_UNSIGNED_BYTE:
@@ -2498,7 +2533,7 @@ bool ValidateBlitFramebufferANGLE(Context *context,
 
 bool ValidateClear(ValidationContext *context, GLbitfield mask)
 {
-    auto fbo = context->getGLState().getDrawFramebuffer();
+    Framebuffer *fbo = context->getGLState().getDrawFramebuffer();
     if (fbo->checkStatus(context) != GL_FRAMEBUFFER_COMPLETE)
     {
         context->handleError(InvalidFramebufferOperation());
@@ -2678,8 +2713,7 @@ bool ValidateCompressedTexImage2D(Context *context,
     }
 
     const InternalFormat &formatInfo = GetSizedInternalFormatInfo(internalformat);
-    auto blockSizeOrErr =
-        formatInfo.computeCompressedImageSize(GL_UNSIGNED_BYTE, gl::Extents(width, height, 1));
+    auto blockSizeOrErr = formatInfo.computeCompressedImageSize(gl::Extents(width, height, 1));
     if (blockSizeOrErr.isError())
     {
         context->handleError(blockSizeOrErr.getError());
@@ -2772,8 +2806,7 @@ bool ValidateCompressedTexSubImage2D(Context *context,
     }
 
     const InternalFormat &formatInfo = GetSizedInternalFormatInfo(format);
-    auto blockSizeOrErr =
-        formatInfo.computeCompressedImageSize(GL_UNSIGNED_BYTE, gl::Extents(width, height, 1));
+    auto blockSizeOrErr = formatInfo.computeCompressedImageSize(gl::Extents(width, height, 1));
     if (blockSizeOrErr.isError())
     {
         context->handleError(blockSizeOrErr.getError());
@@ -2789,12 +2822,15 @@ bool ValidateCompressedTexSubImage2D(Context *context,
     return true;
 }
 
-bool ValidateGetBufferPointervOES(Context *context, GLenum target, GLenum pname, void **params)
+bool ValidateGetBufferPointervOES(Context *context,
+                                  BufferBinding target,
+                                  GLenum pname,
+                                  void **params)
 {
     return ValidateGetBufferPointervBase(context, target, pname, nullptr, params);
 }
 
-bool ValidateMapBufferOES(Context *context, GLenum target, GLenum access)
+bool ValidateMapBufferOES(Context *context, BufferBinding target, GLenum access)
 {
     if (!context->getExtensions().mapBuffer)
     {
@@ -2802,7 +2838,7 @@ bool ValidateMapBufferOES(Context *context, GLenum target, GLenum access)
         return false;
     }
 
-    if (!ValidBufferTarget(context, target))
+    if (!ValidBufferType(context, target))
     {
         ANGLE_VALIDATION_ERR(context, InvalidEnum(), InvalidBufferTypes);
         return false;
@@ -2831,7 +2867,7 @@ bool ValidateMapBufferOES(Context *context, GLenum target, GLenum access)
     return ValidateMapBufferBase(context, target);
 }
 
-bool ValidateUnmapBufferOES(Context *context, GLenum target)
+bool ValidateUnmapBufferOES(Context *context, BufferBinding target)
 {
     if (!context->getExtensions().mapBuffer)
     {
@@ -2843,7 +2879,7 @@ bool ValidateUnmapBufferOES(Context *context, GLenum target)
 }
 
 bool ValidateMapBufferRangeEXT(Context *context,
-                               GLenum target,
+                               BufferBinding target,
                                GLintptr offset,
                                GLsizeiptr length,
                                GLbitfield access)
@@ -2857,7 +2893,7 @@ bool ValidateMapBufferRangeEXT(Context *context,
     return ValidateMapBufferRangeBase(context, target, offset, length, access);
 }
 
-bool ValidateMapBufferBase(Context *context, GLenum target)
+bool ValidateMapBufferBase(Context *context, BufferBinding target)
 {
     Buffer *buffer = context->getGLState().getTargetBuffer(target);
     ASSERT(buffer != nullptr);
@@ -2882,7 +2918,7 @@ bool ValidateMapBufferBase(Context *context, GLenum target)
 }
 
 bool ValidateFlushMappedBufferRangeEXT(Context *context,
-                                       GLenum target,
+                                       BufferBinding target,
                                        GLintptr offset,
                                        GLsizeiptr length)
 {
@@ -3856,6 +3892,12 @@ bool ValidateCopyTextureCHROMIUM(Context *context,
         return false;
     }
 
+    if (!IsValidCopyTextureDestinationTargetEnum(context, destTarget))
+    {
+        ANGLE_VALIDATION_ERR(context, InvalidEnum(), InvalidTextureTarget);
+        return false;
+    }
+
     const Texture *dest = context->getTexture(destId);
     if (dest == nullptr)
     {
@@ -3975,6 +4017,12 @@ bool ValidateCopySubTextureCHROMIUM(Context *context,
     if (!IsValidCopySubTextureSourceInternalFormat(sourceFormat.info->internalFormat))
     {
         ANGLE_VALIDATION_ERR(context, InvalidOperation(), InvalidInternalFormat);
+        return false;
+    }
+
+    if (!IsValidCopyTextureDestinationTargetEnum(context, destTarget))
+    {
+        ANGLE_VALIDATION_ERR(context, InvalidEnum(), InvalidTextureTarget);
         return false;
     }
 
@@ -4106,6 +4154,13 @@ bool ValidateCreateShader(Context *context, GLenum type)
             }
             break;
 
+        case GL_GEOMETRY_SHADER_EXT:
+            if (!context->getExtensions().geometryShader)
+            {
+                ANGLE_VALIDATION_ERR(context, InvalidEnum(), InvalidShaderType);
+                return false;
+            }
+            break;
         default:
             ANGLE_VALIDATION_ERR(context, InvalidEnum(), InvalidShaderType);
             return false;
@@ -4115,10 +4170,10 @@ bool ValidateCreateShader(Context *context, GLenum type)
 }
 
 bool ValidateBufferData(ValidationContext *context,
-                        GLenum target,
+                        BufferBinding target,
                         GLsizeiptr size,
                         const void *data,
-                        GLenum usage)
+                        BufferUsage usage)
 {
     if (size < 0)
     {
@@ -4128,17 +4183,17 @@ bool ValidateBufferData(ValidationContext *context,
 
     switch (usage)
     {
-        case GL_STREAM_DRAW:
-        case GL_STATIC_DRAW:
-        case GL_DYNAMIC_DRAW:
+        case BufferUsage::StreamDraw:
+        case BufferUsage::StaticDraw:
+        case BufferUsage::DynamicDraw:
             break;
 
-        case GL_STREAM_READ:
-        case GL_STREAM_COPY:
-        case GL_STATIC_READ:
-        case GL_STATIC_COPY:
-        case GL_DYNAMIC_READ:
-        case GL_DYNAMIC_COPY:
+        case BufferUsage::StreamRead:
+        case BufferUsage::StaticRead:
+        case BufferUsage::DynamicRead:
+        case BufferUsage::StreamCopy:
+        case BufferUsage::StaticCopy:
+        case BufferUsage::DynamicCopy:
             if (context->getClientMajorVersion() < 3)
             {
                 ANGLE_VALIDATION_ERR(context, InvalidEnum(), InvalidBufferUsage);
@@ -4151,7 +4206,7 @@ bool ValidateBufferData(ValidationContext *context,
             return false;
     }
 
-    if (!ValidBufferTarget(context, target))
+    if (!ValidBufferType(context, target))
     {
         ANGLE_VALIDATION_ERR(context, InvalidEnum(), InvalidBufferTypes);
         return false;
@@ -4169,7 +4224,7 @@ bool ValidateBufferData(ValidationContext *context,
 }
 
 bool ValidateBufferSubData(ValidationContext *context,
-                           GLenum target,
+                           BufferBinding target,
                            GLintptr offset,
                            GLsizeiptr size,
                            const void *data)
@@ -4186,7 +4241,7 @@ bool ValidateBufferSubData(ValidationContext *context,
         return false;
     }
 
-    if (!ValidBufferTarget(context, target))
+    if (!ValidBufferType(context, target))
     {
         ANGLE_VALIDATION_ERR(context, InvalidEnum(), InvalidBufferTypes);
         return false;
@@ -4224,7 +4279,7 @@ bool ValidateBufferSubData(ValidationContext *context,
     return true;
 }
 
-bool ValidateRequestExtensionANGLE(ValidationContext *context, const GLchar *name)
+bool ValidateRequestExtensionANGLE(Context *context, const GLchar *name)
 {
     if (!context->getExtensions().requestExtension)
     {
@@ -4232,9 +4287,7 @@ bool ValidateRequestExtensionANGLE(ValidationContext *context, const GLchar *nam
         return false;
     }
 
-    const ExtensionInfoMap &extensionInfos = GetExtensionInfoMap();
-    auto extension                         = extensionInfos.find(name);
-    if (extension == extensionInfos.end() || !extension->second.Requestable)
+    if (!context->isExtensionRequestable(name))
     {
         context->handleError(InvalidOperation() << "Extension " << name << " is not requestable.");
         return false;
@@ -4298,6 +4351,15 @@ bool ValidateAttachShader(ValidationContext *context, GLuint program, GLuint sha
             }
             break;
         }
+        case GL_GEOMETRY_SHADER_EXT:
+        {
+            if (programObject->getAttachedGeometryShader())
+            {
+                ANGLE_VALIDATION_ERR(context, InvalidOperation(), ShaderAttachmentHasShader);
+                return false;
+            }
+            break;
+        }
         default:
             UNREACHABLE();
             break;
@@ -4344,9 +4406,9 @@ bool ValidateBindAttribLocation(ValidationContext *context,
     return GetValidProgram(context, program) != nullptr;
 }
 
-bool ValidateBindBuffer(ValidationContext *context, GLenum target, GLuint buffer)
+bool ValidateBindBuffer(ValidationContext *context, BufferBinding target, GLuint buffer)
 {
-    if (!ValidBufferTarget(context, target))
+    if (!ValidBufferType(context, target))
     {
         ANGLE_VALIDATION_ERR(context, InvalidEnum(), InvalidBufferTypes);
         return false;
@@ -4364,7 +4426,7 @@ bool ValidateBindBuffer(ValidationContext *context, GLenum target, GLuint buffer
 
 bool ValidateBindFramebuffer(ValidationContext *context, GLenum target, GLuint framebuffer)
 {
-    if (!ValidFramebufferTarget(target))
+    if (!ValidFramebufferTarget(context, target))
     {
         ANGLE_VALIDATION_ERR(context, InvalidEnum(), InvalidFramebufferTarget);
         return false;
@@ -4657,7 +4719,8 @@ bool ValidateVertexAttribPointer(ValidationContext *context,
     // and the pointer argument is not NULL.
     bool nullBufferAllowed = context->getGLState().areClientArraysEnabled() &&
                              context->getGLState().getVertexArray()->id() == 0;
-    if (!nullBufferAllowed && context->getGLState().getArrayBufferId() == 0 && ptr != nullptr)
+    if (!nullBufferAllowed && context->getGLState().getTargetBuffer(BufferBinding::Array) == 0 &&
+        ptr != nullptr)
     {
         context
             ->handleError(InvalidOperation()
@@ -4748,7 +4811,7 @@ bool ValidateRenderbufferStorageMultisampleANGLE(ValidationContext *context,
 
 bool ValidateCheckFramebufferStatus(ValidationContext *context, GLenum target)
 {
-    if (!ValidFramebufferTarget(target))
+    if (!ValidFramebufferTarget(context, target))
     {
         ANGLE_VALIDATION_ERR(context, InvalidEnum(), InvalidFramebufferTarget);
         return false;
@@ -4795,13 +4858,13 @@ bool ValidateCreateProgram(ValidationContext *context)
     return true;
 }
 
-bool ValidateCullFace(ValidationContext *context, GLenum mode)
+bool ValidateCullFace(ValidationContext *context, CullFaceMode mode)
 {
     switch (mode)
     {
-        case GL_FRONT:
-        case GL_BACK:
-        case GL_FRONT_AND_BACK:
+        case CullFaceMode::Front:
+        case CullFaceMode::Back:
+        case CullFaceMode::FrontAndBack:
             break;
 
         default:
@@ -4918,6 +4981,11 @@ bool ValidateDetachShader(ValidationContext *context, GLuint program, GLuint sha
         case GL_COMPUTE_SHADER:
         {
             attachedShader = programObject->getAttachedComputeShader();
+            break;
+        }
+        case GL_GEOMETRY_SHADER_EXT:
+        {
+            attachedShader = programObject->getAttachedGeometryShader();
             break;
         }
         default:
@@ -5882,7 +5950,7 @@ bool ValidateFramebufferRenderbuffer(Context *context,
                                      GLenum renderbuffertarget,
                                      GLuint renderbuffer)
 {
-    if (!ValidFramebufferTarget(target))
+    if (!ValidFramebufferTarget(context, target))
     {
         ANGLE_VALIDATION_ERR(context, InvalidEnum(), InvalidFramebufferTarget);
         return false;
@@ -6124,7 +6192,7 @@ bool ValidateGenerateMipmap(Context *context, GLenum target)
 }
 
 bool ValidateGetBufferParameteriv(ValidationContext *context,
-                                  GLenum target,
+                                  BufferBinding target,
                                   GLenum pname,
                                   GLint *params)
 {

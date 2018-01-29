@@ -25,7 +25,6 @@
 #include "bindings/core/v8/ExceptionState.h"
 #include "core/css/StyleChangeReason.h"
 #include "core/dom/ShadowRoot.h"
-#include "core/dom/UserGestureIndicator.h"
 #include "core/dom/events/Event.h"
 #include "core/fileapi/File.h"
 #include "core/fileapi/FileList.h"
@@ -73,7 +72,7 @@ InputType* FileInputType::Create(HTMLInputElement& element) {
   return new FileInputType(element);
 }
 
-DEFINE_TRACE(FileInputType) {
+void FileInputType::Trace(blink::Visitor* visitor) {
   visitor->Trace(file_list_);
   KeyboardClickableInputTypeView::Trace(visitor);
   InputType::Trace(visitor);
@@ -147,7 +146,7 @@ void FileInputType::HandleDOMActivateEvent(Event* event) {
   if (GetElement().IsDisabledFormControl())
     return;
 
-  if (!UserGestureIndicator::ProcessingUserGesture())
+  if (!Frame::HasTransientUserActivation(GetElement().GetDocument().GetFrame()))
     return;
 
   if (ChromeClient* chrome_client = this->GetChromeClient()) {

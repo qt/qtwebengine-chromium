@@ -10,13 +10,13 @@
 #include "base/strings/string_util.h"
 #include "base/values.h"
 #include "content/common/frame_messages.h"
-#include "content/public/child/v8_value_converter.h"
 #include "content/public/common/bindings_policy.h"
 #include "content/public/common/url_constants.h"
 #include "content/public/renderer/chrome_object_extensions_utils.h"
 #include "content/public/renderer/render_frame.h"
 #include "content/public/renderer/render_thread.h"
 #include "content/public/renderer/render_view.h"
+#include "content/public/renderer/v8_value_converter.h"
 #include "content/renderer/web_ui_extension_data.h"
 #include "gin/arguments.h"
 #include "gin/function_template.h"
@@ -100,7 +100,7 @@ void WebUIExtension::Send(gin::Arguments* args) {
 
   if (base::EndsWith(message, "RequiringGesture",
                      base::CompareCase::SENSITIVE) &&
-      !blink::WebUserGestureIndicator::IsProcessingUserGesture()) {
+      !blink::WebUserGestureIndicator::IsProcessingUserGesture(frame)) {
     NOTREACHED();
     return;
   }
@@ -120,6 +120,13 @@ void WebUIExtension::Send(gin::Arguments* args) {
     content = base::ListValue::From(V8ValueConverter::Create()->FromV8Value(
         obj, frame->MainWorldScriptContext()));
     DCHECK(content);
+    // The conversion of |obj| could have triggered arbitrary JavaScript code,
+    // so check that the frame is still valid to avoid dereferencing a stale
+    // pointer.
+    if (frame != blink::WebLocalFrame::FrameForCurrentContext()) {
+      NOTREACHED();
+      return;
+    }
   }
 
   // Send the message up to the browser.

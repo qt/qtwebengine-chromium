@@ -25,9 +25,9 @@ class LayoutItem {
   explicit LayoutItem(LayoutObject* layout_object)
       : layout_object_(layout_object) {}
 
-  LayoutItem(std::nullptr_t) : layout_object_(0) {}
+  LayoutItem(std::nullptr_t) : layout_object_(nullptr) {}
 
-  LayoutItem() : layout_object_(0) {}
+  LayoutItem() : layout_object_(nullptr) {}
 
   // TODO(leviw): This should be "explicit operator bool", but
   // using this operator allows the API to be landed in pieces.
@@ -110,7 +110,7 @@ class LayoutItem {
     return layout_object_->MutableStyleRef();
   }
 
-  void SetStyle(RefPtr<ComputedStyle> style) {
+  void SetStyle(scoped_refptr<ComputedStyle> style) {
     layout_object_->SetStyle(std::move(style));
   }
 
@@ -216,7 +216,7 @@ class LayoutItem {
                                                           flags);
   }
 
-  Color ResolveColor(int color_property) const {
+  Color ResolveColor(CSSPropertyID color_property) const {
     return layout_object_->ResolveColor(color_property);
   }
 
@@ -224,7 +224,7 @@ class LayoutItem {
     layout_object_->InvalidatePaintRectangle(dirty_rect);
   }
 
-  RefPtr<ComputedStyle> GetUncachedPseudoStyle(
+  scoped_refptr<ComputedStyle> GetUncachedPseudoStyle(
       const PseudoStyleRequest& pseudo_style_request,
       const ComputedStyle* parent_style = nullptr) const {
     return layout_object_->GetUncachedPseudoStyle(pseudo_style_request,

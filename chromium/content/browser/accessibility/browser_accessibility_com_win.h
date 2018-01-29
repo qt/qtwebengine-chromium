@@ -413,7 +413,7 @@ class __declspec(uuid("562072fe-3390-43b1-9e2c-dd4118f5ac79"))
 
   // |offset| could either be a text character or a child index in case of
   // non-text objects.
-  AXPlatformPosition::AXPositionInstance CreatePositionForSelectionAt(
+  BrowserAccessibilityPosition::AXPositionInstance CreatePositionForSelectionAt(
       int offset) const;
 
   // Public accessors (these do not have COM accessible accessors)
@@ -469,6 +469,17 @@ class __declspec(uuid("562072fe-3390-43b1-9e2c-dd4118f5ac79"))
   // and return S_OK. If not found or empty, return S_FALSE.
   HRESULT GetStringAttributeAsBstr(ui::AXStringAttribute attribute,
                                    BSTR* value_bstr);
+
+  // Merges the given spelling attributes, i.e. document marker information,
+  // into the given text attributes starting at the given character offset. This
+  // is required for two reasons: 1. Document markers that are present on text
+  // leaves need to be propagated to their parent object for compatibility with
+  // Firefox. 2. Spelling markers need to overwrite any aria-invalid="false" in
+  // the text attributes.
+  static void MergeSpellingIntoTextAttributes(
+      const std::map<int, std::vector<base::string16>>& spelling_attributes,
+      int start_offset,
+      std::map<int, std::vector<base::string16>>* text_attributes);
 
   // Escapes characters in string attributes as required by the IA2 Spec.
   // It's okay for input to be the same as output.

@@ -137,7 +137,7 @@ bool CheckAttachmentSampleCompleteness(const Context *context,
                                        const FramebufferAttachment &attachment,
                                        bool colorAttachment,
                                        Optional<int> *samples,
-                                       Optional<GLboolean> *fixedSampleLocations)
+                                       Optional<bool> *fixedSampleLocations)
 {
     ASSERT(attachment.isAttached());
 
@@ -150,8 +150,8 @@ bool CheckAttachmentSampleCompleteness(const Context *context,
 
         // ES3.1 (section 9.4) requires that the value of TEXTURE_FIXED_SAMPLE_LOCATIONS should be
         // the same for all attached textures.
-        GLboolean fixedSampleloc = texture->getFixedSampleLocations(attachmentImageIndex.type,
-                                                                    attachmentImageIndex.mipIndex);
+        bool fixedSampleloc = texture->getFixedSampleLocations(attachmentImageIndex.type,
+                                                               attachmentImageIndex.mipIndex);
         if (fixedSampleLocations->valid() && fixedSampleloc != fixedSampleLocations->value())
         {
             return false;
@@ -433,7 +433,9 @@ bool FramebufferState::attachmentsHaveSameDimensions() const
             return false;
         }
 
-        return (attachment.getSize() != attachmentSize.value());
+        const auto &prevSize = attachmentSize.value();
+        const auto &curSize  = attachment.getSize();
+        return (curSize.width != prevSize.width || curSize.height != prevSize.height);
     };
 
     for (const auto &attachment : mColorAttachments)
@@ -948,7 +950,7 @@ GLenum Framebuffer::checkStatusImpl(const Context *context)
     bool hasAttachments = false;
     Optional<unsigned int> colorbufferSize;
     Optional<int> samples;
-    Optional<GLboolean> fixedSampleLocations;
+    Optional<bool> fixedSampleLocations;
     bool hasRenderbuffer = false;
 
     const FramebufferAttachment *firstAttachment = getFirstNonNullAttachment();
@@ -1366,7 +1368,7 @@ Error Framebuffer::readPixels(const gl::Context *context,
     ANGLE_TRY(ensureReadAttachmentInitialized(context, GL_COLOR_BUFFER_BIT));
     ANGLE_TRY(mImpl->readPixels(context, area, format, type, pixels));
 
-    Buffer *unpackBuffer = context->getGLState().getUnpackState().pixelBuffer.get();
+    Buffer *unpackBuffer = context->getGLState().getTargetBuffer(gl::BufferBinding::PixelUnpack);
     if (unpackBuffer)
     {
         unpackBuffer->onPixelUnpack();
@@ -1648,7 +1650,7 @@ void Framebuffer::setAttachmentImpl(const Context *context,
                              &mDirtyStencilAttachmentBinding, type, binding, textureIndex,
                              attachmentObj, numViews, baseViewIndex, multiviewLayout,
                              viewportOffsets);
-            return;
+            break;
         }
 
         case GL_DEPTH:
@@ -1690,6 +1692,8 @@ void Framebuffer::setAttachmentImpl(const Context *context,
         }
         break;
     }
+
+    mAttachedTextures.reset();
 }
 
 void Framebuffer::updateAttachment(const Context *context,
@@ -1848,7 +1852,7 @@ GLint Framebuffer::getDefaultSamples() const
     return mState.getDefaultSamples();
 }
 
-GLboolean Framebuffer::getDefaultFixedSampleLocations() const
+bool Framebuffer::getDefaultFixedSampleLocations() const
 {
     return mState.getDefaultFixedSampleLocations();
 }
@@ -1871,7 +1875,7 @@ void Framebuffer::setDefaultSamples(GLint defaultSamples)
     mDirtyBits.set(DIRTY_BIT_DEFAULT_SAMPLES);
 }
 
-void Framebuffer::setDefaultFixedSampleLocations(GLboolean defaultFixedSampleLocations)
+void Framebuffer::setDefaultFixedSampleLocations(bool defaultFixedSampleLocations)
 {
     mState.mDefaultFixedSampleLocations = defaultFixedSampleLocations;
     mDirtyBits.set(DIRTY_BIT_DEFAULT_FIXED_SAMPLE_LOCATIONS);
@@ -2142,6 +2146,37 @@ bool Framebuffer::partialBufferClearNeedsInit(const Context *context, GLenum buf
             UNREACHABLE();
             return false;
     }
+}
+
+bool Framebuffer::hasTextureAttachment(const Texture *texture) const
+{
+    if (!mAttachedTextures.valid())
+    {
+        std::set<const FramebufferAttachmentObject *> attachedTextures;
+
+        for (const auto &colorAttachment : mState.mColorAttachments)
+        {
+            if (colorAttachment.isAttached() && colorAttachment.type() == GL_TEXTURE)
+            {
+                attachedTextures.insert(colorAttachment.getResource());
+            }
+        }
+
+        if (mState.mDepthAttachment.isAttached() && mState.mDepthAttachment.type() == GL_TEXTURE)
+        {
+            attachedTextures.insert(mState.mDepthAttachment.getResource());
+        }
+
+        if (mState.mStencilAttachment.isAttached() &&
+            mState.mStencilAttachment.type() == GL_TEXTURE)
+        {
+            attachedTextures.insert(mState.mStencilAttachment.getResource());
+        }
+
+        mAttachedTextures = std::move(attachedTextures);
+    }
+
+    return (mAttachedTextures.value().count(texture) > 0);
 }
 
 }  // namespace gl

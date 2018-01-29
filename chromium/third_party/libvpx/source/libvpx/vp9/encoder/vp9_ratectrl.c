@@ -44,8 +44,6 @@
 #define MIN_BPB_FACTOR 0.005
 #define MAX_BPB_FACTOR 50
 
-#define FRAME_OVERHEAD_BITS 200
-
 #if CONFIG_VP9_HIGHBITDEPTH
 #define ASSIGN_MINQ_TABLE(bit_depth, name)                   \
   do {                                                       \
@@ -212,18 +210,23 @@ int vp9_estimate_bits_at_q(FRAME_TYPE frame_type, int q, int mbs,
 int vp9_rc_clamp_pframe_target_size(const VP9_COMP *const cpi, int target) {
   const RATE_CONTROL *rc = &cpi->rc;
   const VP9EncoderConfig *oxcf = &cpi->oxcf;
-  const int min_frame_target =
-      VPXMAX(rc->min_frame_bandwidth, rc->avg_frame_bandwidth >> 5);
-  if (target < min_frame_target) target = min_frame_target;
-  if (cpi->refresh_golden_frame && rc->is_src_frame_alt_ref) {
-    // If there is an active ARF at this location use the minimum
-    // bits on this frame even if it is a constructed arf.
-    // The active maximum quantizer insures that an appropriate
-    // number of bits will be spent if needed for constructed ARFs.
-    target = min_frame_target;
+
+  if (cpi->oxcf.pass != 2) {
+    const int min_frame_target =
+        VPXMAX(rc->min_frame_bandwidth, rc->avg_frame_bandwidth >> 5);
+    if (target < min_frame_target) target = min_frame_target;
+    if (cpi->refresh_golden_frame && rc->is_src_frame_alt_ref) {
+      // If there is an active ARF at this location use the minimum
+      // bits on this frame even if it is a constructed arf.
+      // The active maximum quantizer insures that an appropriate
+      // number of bits will be spent if needed for constructed ARFs.
+      target = min_frame_target;
+    }
   }
+
   // Clip the frame target to the maximum allowed value.
   if (target > rc->max_frame_bandwidth) target = rc->max_frame_bandwidth;
+
   if (oxcf->rc_max_inter_bitrate_pct) {
     const int max_rate =
         rc->avg_frame_bandwidth * oxcf->rc_max_inter_bitrate_pct / 100;
@@ -1004,6 +1007,7 @@ static int rc_pick_q_and_bounds_one_pass_vbr(const VP9_COMP *cpi,
       qdelta = vp9_compute_qdelta_by_rate(
           &cpi->rc, cm->frame_type, active_worst_quality, 1.75, cm->bit_depth);
     }
+    if (rc->high_source_sad && cpi->sf.use_altref_onepass) qdelta = 0;
     *top_index = active_worst_quality + qdelta;
     *top_index = (*top_index > *bottom_index) ? *top_index : *bottom_index;
   }
@@ -1969,9 +1973,11 @@ void vp9_set_target_rate(VP9_COMP *cpi) {
   else
     target_rate = vp9_rc_clamp_pframe_target_size(cpi, target_rate);
 
-  // Correction to rate target based on prior over or under shoot.
-  if (cpi->oxcf.rc_mode == VPX_VBR || cpi->oxcf.rc_mode == VPX_CQ)
-    vbr_rate_correction(cpi, &target_rate);
+  if (!cpi->oxcf.vbr_corpus_complexity) {
+    // Correction to rate target based on prior over or under shoot.
+    if (cpi->oxcf.rc_mode == VPX_VBR || cpi->oxcf.rc_mode == VPX_CQ)
+      vbr_rate_correction(cpi, &target_rate);
+  }
   vp9_rc_set_frame_target(cpi, target_rate);
 }
 
@@ -2118,7 +2124,7 @@ static void adjust_gf_boost_lag_one_pass_vbr(VP9_COMP *cpi,
   uint64_t avg_source_sad_lag = avg_sad_current;
   int high_source_sad_lagindex = -1;
   int steady_sad_lagindex = -1;
-  uint32_t sad_thresh1 = 60000;
+  uint32_t sad_thresh1 = 70000;
   uint32_t sad_thresh2 = 120000;
   int low_content = 0;
   int high_content = 0;
@@ -2275,11 +2281,14 @@ void vp9_scene_detection_onepass(VP9_COMP *cpi) {
     int start_frame = 0;
     int frames_to_buffer = 1;
     int frame = 0;
+    int scene_cut_force_key_frame = 0;
     uint64_t avg_sad_current = 0;
     uint32_t min_thresh = 4000;
     float thresh = 8.0f;
+    uint32_t thresh_key = 140000;
+    if (cpi->oxcf.speed <= 5) thresh_key = 240000;
     if (cpi->oxcf.rc_mode == VPX_VBR) {
-      min_thresh = 60000;
+      min_thresh = 65000;
       thresh = 2.1f;
     }
     if (cpi->oxcf.lag_in_frames > 0) {
@@ -2305,6 +2314,8 @@ void vp9_scene_detection_onepass(VP9_COMP *cpi) {
         rc->high_source_sad = 1;
       else
         rc->high_source_sad = 0;
+      if (rc->high_source_sad && avg_sad_current > thresh_key)
+        scene_cut_force_key_frame = 1;
       // Update recursive average for current frame.
       if (avg_sad_current > 0)
         rc->avg_source_sad[0] =
@@ -2365,6 +2376,8 @@ void vp9_scene_detection_onepass(VP9_COMP *cpi) {
             rc->high_source_sad = 1;
           else
             rc->high_source_sad = 0;
+          if (rc->high_source_sad && avg_sad > thresh_key)
+            scene_cut_force_key_frame = 1;
           if (avg_sad > 0 || cpi->oxcf.rc_mode == VPX_CBR)
             rc->avg_source_sad[0] = (3 * rc->avg_source_sad[0] + avg_sad) >> 2;
         } else {
@@ -2396,6 +2409,7 @@ void vp9_scene_detection_onepass(VP9_COMP *cpi) {
         cpi->ext_refresh_frame_flags_pending == 0) {
       int target;
       cpi->refresh_golden_frame = 1;
+      if (scene_cut_force_key_frame) cm->frame_type = KEY_FRAME;
       rc->source_alt_ref_pending = 0;
       if (cpi->sf.use_altref_onepass && cpi->oxcf.enable_auto_arf)
         rc->source_alt_ref_pending = 1;

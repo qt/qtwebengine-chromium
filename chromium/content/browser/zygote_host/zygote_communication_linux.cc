@@ -9,6 +9,7 @@
 
 #include "base/base_switches.h"
 #include "base/command_line.h"
+#include "base/i18n/unicodestring.h"
 #include "base/logging.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/metrics/sparse_histogram.h"
@@ -24,6 +25,8 @@
 #include "content/public/common/result_codes.h"
 #include "media/base/media_switches.h"
 #include "services/service_manager/embedder/switches.h"
+#include "services/service_manager/sandbox/switches.h"
+#include "third_party/icu/source/i18n/unicode/timezone.h"
 #include "ui/display/display_switches.h"
 #include "ui/gfx/switches.h"
 
@@ -102,6 +105,12 @@ pid_t ZygoteCommunication::ForkRequest(
   for (std::vector<std::string>::const_iterator i = argv.begin();
        i != argv.end(); ++i)
     pickle.WriteString(*i);
+  if (process_type == switches::kRendererProcess) {
+    std::unique_ptr<icu::TimeZone> timezone(icu::TimeZone::createDefault());
+    icu::UnicodeString timezone_id;
+    pickle.WriteString16(
+        base::i18n::UnicodeStringToString16(timezone->getID(timezone_id)));
+  }
 
   // Fork requests contain one file descriptor for the PID oracle, and one
   // more for each file descriptor mapping for the child process.
@@ -154,7 +163,7 @@ pid_t ZygoteCommunication::ForkRequest(
       base::Pickle pid_pickle;
       pid_pickle.WriteInt(kZygoteCommandForkRealPID);
       pid_pickle.WriteInt(real_pid);
-      if (!SendMessage(pid_pickle, NULL))
+      if (!SendMessage(pid_pickle, nullptr))
         return base::kNullProcessHandle;
     }
 
@@ -214,7 +223,7 @@ void ZygoteCommunication::EnsureProcessTerminated(pid_t process) {
 
   pickle.WriteInt(kZygoteCommandReap);
   pickle.WriteInt(process);
-  if (!SendMessage(pickle, NULL))
+  if (!SendMessage(pickle, nullptr))
     LOG(ERROR) << "Failed to send Reap message to zygote";
   ZygoteChildDied(process);
 }
@@ -251,10 +260,11 @@ void ZygoteCommunication::Init() {
   // to the zygote/renderers.
   // Should this list be obtained from browser_render_process_host.cc?
   static const char* const kForwardSwitches[] = {
+      service_manager::switches::kAllowSandboxDebugging,
       service_manager::switches::kDisableInProcessStackTraces,
-      switches::kAllowSandboxDebugging, switches::kAndroidFontsPath,
-      switches::kClearKeyCdmPathForTesting,
-      switches::kDisableSeccompFilterSandbox, switches::kEnableHeapProfiling,
+      service_manager::switches::kDisableSeccompFilterSandbox,
+      switches::kAndroidFontsPath, switches::kClearKeyCdmPathForTesting,
+      switches::kEnableHeapProfiling,
       switches::kEnableLogging,  // Support, e.g., --enable-logging=stderr.
       // Need to tell the zygote that it is headless so that we don't try to use
       // the wrong type of main delegate.
@@ -274,7 +284,7 @@ void ZygoteCommunication::Init() {
 
   base::Pickle pickle;
   pickle.WriteInt(kZygoteCommandGetSandboxStatus);
-  if (!SendMessage(pickle, NULL))
+  if (!SendMessage(pickle, nullptr))
     LOG(FATAL) << "Cannot communicate with zygote";
 
   init_ = true;
@@ -295,7 +305,7 @@ base::TerminationStatus ZygoteCommunication::GetTerminationStatus(
   ssize_t len;
   {
     base::AutoLock lock(control_lock_);
-    if (!SendMessage(pickle, NULL))
+    if (!SendMessage(pickle, nullptr))
       LOG(ERROR) << "Failed to send GetTerminationStatus message to zygote";
     len = ReadReply(buf, sizeof(buf));
   }

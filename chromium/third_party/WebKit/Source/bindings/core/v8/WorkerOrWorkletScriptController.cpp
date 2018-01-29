@@ -46,7 +46,7 @@
 #include "core/workers/WorkerGlobalScope.h"
 #include "core/workers/WorkerOrWorkletGlobalScope.h"
 #include "core/workers/WorkerThread.h"
-#include "platform/bindings/ConditionalFeatures.h"
+#include "platform/bindings/OriginTrialFeatures.h"
 #include "platform/bindings/V8DOMWrapper.h"
 #include "platform/bindings/V8ObjectConstructor.h"
 #include "platform/bindings/WrapperTypeInfo.h"
@@ -103,7 +103,7 @@ WorkerOrWorkletScriptController::WorkerOrWorkletScriptController(
       isolate_(isolate),
       execution_forbidden_(false),
       rejected_promises_(RejectedPromises::Create()),
-      execution_state_(0) {
+      execution_state_(nullptr) {
   DCHECK(isolate);
   world_ =
       DOMWrapperWorld::Create(isolate, DOMWrapperWorld::WorldType::kWorker);
@@ -145,7 +145,7 @@ bool WorkerOrWorkletScriptController::InitializeContextIfNeeded(
 
   // Create a new v8::Context with the worker/worklet as the global object
   // (aka the inner global).
-  ScriptWrappable* script_wrappable = global_scope_->GetScriptWrappable();
+  auto* script_wrappable = static_cast<ScriptWrappable*>(global_scope_);
   const WrapperTypeInfo* wrapper_type_info =
       script_wrappable->GetWrapperTypeInfo();
   v8::Local<v8::FunctionTemplate> global_interface_template =
@@ -238,7 +238,16 @@ bool WorkerOrWorkletScriptController::InitializeContextIfNeeded(
                                              human_readable_name);
   }
 
-  InstallConditionalFeaturesOnGlobal(wrapper_type_info, script_state_.get());
+  wrapper_type_info->InstallConditionalFeatures(
+      context, *world_, global_object, v8::Local<v8::Object>(),
+      v8::Local<v8::Function>(), global_interface_template);
+
+  if (!disable_eval_pending_.IsEmpty()) {
+    script_state_->GetContext()->AllowCodeGenerationFromStrings(false);
+    script_state_->GetContext()->SetErrorMessageForCodeGenerationFromStrings(
+        V8String(isolate_, disable_eval_pending_));
+    disable_eval_pending_ = String();
+  }
 
   return true;
 }
@@ -247,6 +256,7 @@ ScriptValue WorkerOrWorkletScriptController::Evaluate(
     const String& script,
     const String& file_name,
     const TextPosition& script_start_position,
+    ScriptSourceLocationType source_location_type,
     CachedMetadataHandler* cache_handler,
     V8CacheOptions v8_cache_options) {
   TRACE_EVENT1("devtools.timeline", "EvaluateScript", "data",
@@ -257,13 +267,6 @@ ScriptValue WorkerOrWorkletScriptController::Evaluate(
 
   ScriptState::Scope scope(script_state_.get());
 
-  if (!disable_eval_pending_.IsEmpty()) {
-    script_state_->GetContext()->AllowCodeGenerationFromStrings(false);
-    script_state_->GetContext()->SetErrorMessageForCodeGenerationFromStrings(
-        V8String(isolate_, disable_eval_pending_));
-    disable_eval_pending_ = String();
-  }
-
   v8::TryCatch block(isolate_);
 
   v8::Local<v8::Script> compiled_script;
@@ -272,10 +275,10 @@ ScriptValue WorkerOrWorkletScriptController::Evaluate(
   // - A work{er,let} script doesn't have a nonce, and
   // - a work{er,let} script is always "not parser inserted".
   ReferrerScriptInfo referrer_info;
-  if (V8ScriptRunner::CompileScript(script_state_.get(), script, file_name,
-                                    String(), script_start_position,
-                                    cache_handler, kSharableCrossOrigin,
-                                    v8_cache_options, referrer_info)
+  if (V8ScriptRunner::CompileScript(
+          script_state_.get(), script, file_name, String(),
+          script_start_position, source_location_type, cache_handler,
+          kSharableCrossOrigin, v8_cache_options, referrer_info)
           .ToLocal(&compiled_script))
     maybe_result = V8ScriptRunner::RunCompiledScript(isolate_, compiled_script,
                                                      global_scope_);
@@ -315,7 +318,8 @@ bool WorkerOrWorkletScriptController::Evaluate(
 
   ExecutionState state(this);
   Evaluate(source_code.Source(), source_code.Url().GetString(),
-           source_code.StartPosition(), cache_handler, v8_cache_options);
+           source_code.StartPosition(), source_code.SourceLocationType(),
+           cache_handler, v8_cache_options);
   if (IsExecutionForbidden())
     return false;
 
@@ -360,7 +364,8 @@ ScriptValue WorkerOrWorkletScriptController::EvaluateAndReturnValueForTest(
     const ScriptSourceCode& source_code) {
   ExecutionState state(this);
   return Evaluate(source_code.Source(), source_code.Url().GetString(),
-                  source_code.StartPosition(), nullptr, kV8CacheOptionsDefault);
+                  source_code.StartPosition(), source_code.SourceLocationType(),
+                  nullptr, kV8CacheOptionsDefault);
 }
 
 void WorkerOrWorkletScriptController::ForbidExecution() {
@@ -387,7 +392,7 @@ void WorkerOrWorkletScriptController::RethrowExceptionFromImportedScript(
       V8ThrowException::CreateError(isolate_, error_message));
 }
 
-DEFINE_TRACE(WorkerOrWorkletScriptController) {
+void WorkerOrWorkletScriptController::Trace(blink::Visitor* visitor) {
   visitor->Trace(global_scope_);
 }
 

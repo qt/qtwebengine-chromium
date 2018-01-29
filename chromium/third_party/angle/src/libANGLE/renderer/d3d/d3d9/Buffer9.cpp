@@ -22,11 +22,21 @@ Buffer9::~Buffer9()
     mSize = 0;
 }
 
+size_t Buffer9::getSize() const
+{
+    return mSize;
+}
+
+bool Buffer9::supportsDirectBinding() const
+{
+    return false;
+}
+
 gl::Error Buffer9::setData(const gl::Context *context,
-                           GLenum /*target*/,
+                           gl::BufferBinding /*target*/,
                            const void *data,
                            size_t size,
-                           GLenum usage)
+                           gl::BufferUsage usage)
 {
     if (size > mMemory.size())
     {
@@ -56,7 +66,7 @@ gl::Error Buffer9::getData(const gl::Context *context, const uint8_t **outData)
 }
 
 gl::Error Buffer9::setSubData(const gl::Context *context,
-                              GLenum /*target*/,
+                              gl::BufferBinding /*target*/,
                               const void *data,
                               size_t size,
                               size_t offset)

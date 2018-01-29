@@ -111,10 +111,7 @@ class TextureStorage11 : public TextureStorage
 
     // Some classes (e.g. TextureStorage11_2D) will override getMippedResource.
     virtual gl::Error getMippedResource(const gl::Context *context,
-                                        const TextureHelper11 **outResource)
-    {
-        return getResource(context, outResource);
-    }
+                                        const TextureHelper11 **outResource);
 
     virtual gl::Error getSwizzleTexture(const TextureHelper11 **outTexture) = 0;
     virtual gl::Error getSwizzleRenderTarget(int mipLevel,
@@ -546,7 +543,7 @@ class TextureStorage11_2DMultisample : public TextureStorage11
                                    GLsizei height,
                                    int levels,
                                    int samples,
-                                   GLboolean fixedSampleLocations);
+                                   bool fixedSampleLocations);
     ~TextureStorage11_2DMultisample() override;
 
     gl::Error onDestroy(const gl::Context *context) override;

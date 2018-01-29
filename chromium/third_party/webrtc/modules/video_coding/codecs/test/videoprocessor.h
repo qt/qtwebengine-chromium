@@ -21,6 +21,7 @@
 #include "modules/video_coding/codecs/h264/include/h264_globals.h"
 #include "modules/video_coding/codecs/test/packet_manipulator.h"
 #include "modules/video_coding/codecs/test/stats.h"
+#include "modules/video_coding/codecs/test/test_config.h"
 #include "modules/video_coding/include/video_codec_interface.h"
 #include "modules/video_coding/utility/ivf_file_writer.h"
 #include "modules/video_coding/utility/vp8_header_parser.h"
@@ -39,74 +40,6 @@ class VideoBitrateAllocator;
 
 namespace test {
 
-// Defines which frame types shall be excluded from packet loss and when.
-enum ExcludeFrameTypes {
-  // Will exclude the first keyframe in the video sequence from packet loss.
-  // Following keyframes will be targeted for packet loss.
-  kExcludeOnlyFirstKeyFrame,
-  // Exclude all keyframes from packet loss, no matter where in the video
-  // sequence they occur.
-  kExcludeAllKeyFrames
-};
-
-// Returns a string representation of the enum value.
-const char* ExcludeFrameTypesToStr(ExcludeFrameTypes e);
-
-// Test configuration for a test run.
-struct TestConfig {
-  // Plain name of YUV file to process without file extension.
-  std::string filename;
-
-  // File to process. This must be a video file in the YUV format.
-  std::string input_filename;
-
-  // File to write to during processing for the test. Will be a video file
-  // in the YUV format.
-  std::string output_filename;
-
-  // Configurations related to networking.
-  NetworkingConfig networking_config;
-
-  // Decides how the packet loss simulations shall exclude certain frames
-  // from packet loss.
-  ExcludeFrameTypes exclude_frame_types = kExcludeOnlyFirstKeyFrame;
-
-  // Force the encoder and decoder to use a single core for processing.
-  // Using a single core is necessary to get a deterministic behavior for the
-  // encoded frames - using multiple cores will produce different encoded frames
-  // since multiple cores are competing to consume the byte budget for each
-  // frame in parallel.
-  // If set to false, the maximum number of available cores will be used.
-  bool use_single_core = false;
-
-  // If > 0: forces the encoder to create a keyframe every Nth frame.
-  // Note that the encoder may create a keyframe in other locations in addition
-  // to this setting. Forcing key frames may also affect encoder planning
-  // optimizations in a negative way, since it will suddenly be forced to
-  // produce an expensive key frame.
-  int keyframe_interval = 0;
-
-  // The codec settings to use for the test (target bitrate, video size,
-  // framerate and so on). This struct should be filled in using the
-  // VideoCodingModule::Codec() method.
-  webrtc::VideoCodec codec_settings;
-
-  // If printing of information to stdout shall be performed during processing.
-  bool verbose = true;
-
-  // Should hardware accelerated codecs be used?
-  bool hw_encoder = false;
-  bool hw_decoder = false;
-
-  // Should the hardware codecs be wrapped in software fallbacks?
-  bool sw_fallback_encoder = false;
-  bool sw_fallback_decoder = false;
-
-  // RTP H264 packetization mode.
-  H264PacketizationMode packetization_mode =
-      H264PacketizationMode::NonInterleaved;
-};
-
 // Handles encoding/decoding of video using the VideoEncoder/VideoDecoder
 // interfaces. This is done in a sequential manner in order to be able to
 // measure times properly.
@@ -123,26 +56,18 @@ struct TestConfig {
 // Video Engine, where signaling would request a retransmit of the lost packets,
 // since they're so important.
 //
-// Note this class is not thread safe in any way and is meant for simple testing
-// purposes.
+// Note this class is not thread safe and is meant for simple testing purposes.
 class VideoProcessor {
  public:
   VideoProcessor(webrtc::VideoEncoder* encoder,
                  webrtc::VideoDecoder* decoder,
                  FrameReader* analysis_frame_reader,
-                 FrameWriter* analysis_frame_writer,
                  PacketManipulator* packet_manipulator,
                  const TestConfig& config,
                  Stats* stats,
                  IvfFileWriter* encoded_frame_writer,
                  FrameWriter* decoded_frame_writer);
   ~VideoProcessor();
-
-  // Sets up callbacks and initializes the encoder and decoder.
-  void Init();
-
-  // Tears down callbacks and releases the encoder and decoder.
-  void Release();
 
   // Reads a frame from the analysis frame reader and sends it to the encoder.
   // When the encode callback is received, the encoded frame is sent to the
@@ -257,7 +182,9 @@ class VideoProcessor {
   // Invoked by the callback adapter when a frame has completed decoding.
   void FrameDecoded(const webrtc::VideoFrame& image);
 
-  bool initialized_ RTC_GUARDED_BY(sequence_checker_);
+  void WriteDecodedFrameToFile(rtc::Buffer* buffer);
+  bool ExcludeFrame(const EncodedImage& encoded_image);
+
   TestConfig config_ RTC_GUARDED_BY(sequence_checker_);
 
   webrtc::VideoEncoder* const encoder_;
@@ -271,10 +198,16 @@ class VideoProcessor {
   // Fake network.
   PacketManipulator* const packet_manipulator_;
 
+  // Input frames. Used as reference at frame quality evaluation.
+  // Async codecs might queue frames. To handle that we keep input frame
+  // and release it after corresponding coded frame is decoded and quality
+  // measurement is done.
+  std::map<int, std::unique_ptr<VideoFrame>> input_frames_
+      RTC_GUARDED_BY(sequence_checker_);
+
   // These (mandatory) file manipulators are used for, e.g., objective PSNR and
   // SSIM calculations at the end of a test run.
   FrameReader* const analysis_frame_reader_;
-  FrameWriter* const analysis_frame_writer_;
 
   // These (optional) file writers are used to persistently store the encoded
   // and decoded bitstreams. The purpose is to give the experimenter an option

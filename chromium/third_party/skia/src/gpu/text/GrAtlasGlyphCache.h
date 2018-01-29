@@ -65,7 +65,7 @@ public:
     // happen.
     // TODO we can handle some of these cases if we really want to, but the long term solution is to
     // get the actual glyph image itself when we get the glyph metrics.
-    bool addGlyphToAtlas(GrDrawOp::Target*, GrGlyph*, SkGlyphCache*,
+    bool addGlyphToAtlas(GrDeferredUploadTarget*, GrGlyph*, SkGlyphCache*,
                          GrMaskFormat expectedMaskFormat);
 
     // testing
@@ -111,7 +111,7 @@ private:
  */
 class GrAtlasGlyphCache : public GrOnFlushCallbackObject {
 public:
-    GrAtlasGlyphCache(GrContext*, float maxTextureBytes);
+    GrAtlasGlyphCache(GrContext*, float maxTextureBytes, GrDrawOpAtlas::AllowMultitexturing);
     ~GrAtlasGlyphCache() override;
     // The user of the cache may hold a long-lived ref to the returned strike. However, actions by
     // another client of the cache may cause the strike to be purged while it is still reffed.
@@ -155,22 +155,22 @@ public:
     // For convenience, this function will also set the use token for the current glyph if required
     // NOTE: the bulk uploader is only valid if the subrun has a valid atlasGeneration
     void addGlyphToBulkAndSetUseToken(GrDrawOpAtlas::BulkUseTokenUpdater* updater, GrGlyph* glyph,
-                                      GrDrawOpUploadToken token) {
+                                      GrDeferredUploadToken token) {
         SkASSERT(glyph);
         updater->add(glyph->fID);
         this->getAtlas(glyph->fMaskFormat)->setLastUseToken(glyph->fID, token);
     }
 
     void setUseTokenBulk(const GrDrawOpAtlas::BulkUseTokenUpdater& updater,
-                         GrDrawOpUploadToken token,
+                         GrDeferredUploadToken token,
                          GrMaskFormat format) {
         this->getAtlas(format)->setLastUseTokenBulk(updater, token);
     }
 
     // add to texture atlas that matches this format
-    bool addToAtlas(GrAtlasTextStrike* strike, GrDrawOpAtlas::AtlasID* id, GrDrawOp::Target* target,
-                    GrMaskFormat format, int width, int height, const void* image,
-                    SkIPoint16* loc) {
+    bool addToAtlas(GrAtlasTextStrike* strike, GrDrawOpAtlas::AtlasID* id,
+                    GrDeferredUploadTarget* target, GrMaskFormat format, int width, int height,
+                    const void* image, SkIPoint16* loc) {
         fPreserveStrike = strike;
         return this->getAtlas(format)->addToAtlas(id, target, width, height, image, loc);
     }
@@ -187,7 +187,8 @@ public:
     void preFlush(GrOnFlushResourceProvider*, const uint32_t*, int,
                   SkTArray<sk_sp<GrRenderTargetContext>>*) override {}
 
-    void postFlush(GrDrawOpUploadToken startTokenForNextFlush) override {
+    void postFlush(GrDeferredUploadToken startTokenForNextFlush,
+                   const uint32_t* opListIDs, int numOpListIDs) override {
         for (int i = 0; i < kMaskFormatCount; ++i) {
             if (fAtlases[i]) {
                 fAtlases[i]->compact(startTokenForNextFlush);
@@ -256,6 +257,7 @@ private:
     using StrikeHash = SkTDynamicHash<GrAtlasTextStrike, SkDescriptor>;
     GrContext* fContext;
     StrikeHash fCache;
+    GrDrawOpAtlas::AllowMultitexturing fAllowMultitexturing;
     std::unique_ptr<GrDrawOpAtlas> fAtlases[kMaskFormatCount];
     GrAtlasTextStrike* fPreserveStrike;
     GrDrawOpAtlasConfig fAtlasConfigs[kMaskFormatCount];

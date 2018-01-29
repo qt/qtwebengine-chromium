@@ -26,6 +26,8 @@
 #include "components/autofill/core/browser/autofill_handler.h"
 #include "components/autofill/core/browser/autofill_metrics.h"
 #include "components/autofill/core/browser/card_unmask_delegate.h"
+#include "components/autofill/core/browser/field_filler.h"
+#include "components/autofill/core/browser/form_data_importer.h"
 #include "components/autofill/core/browser/form_structure.h"
 #include "components/autofill/core/browser/form_types.h"
 #include "components/autofill/core/browser/payments/full_card_request.h"
@@ -35,14 +37,6 @@
 
 #if defined(OS_ANDROID) || defined(OS_IOS)
 #include "components/autofill/core/browser/autofill_assistant.h"
-#endif
-
-// This define protects some debugging code (see DumpAutofillData). This
-// is here to make it easier to delete this code when the test is complete,
-// and to prevent adding the code on mobile where there is no desktop (the
-// debug dump file is written to the desktop) or command-line flags to enable.
-#if defined(OS_WIN) || defined(OS_MACOSX) || defined(OS_LINUX)
-#define ENABLE_FORM_DEBUG_DUMP
 #endif
 
 namespace gfx {
@@ -76,7 +70,7 @@ extern const int kCreditCardSigninPromoImpressionLimit;
 // forms. One per frame; owned by the AutofillDriver.
 class AutofillManager : public AutofillHandler,
                         public AutofillDownloadManager::Observer,
-                        public payments::PaymentsClientDelegate,
+                        public payments::PaymentsClientUnmaskDelegate,
                         public payments::FullCardRequest::ResultDelegate,
                         public payments::FullCardRequest::UIDelegate {
  public:
@@ -164,8 +158,6 @@ class AutofillManager : public AutofillHandler,
   // Only for testing.
   void SetTestDelegate(AutofillManagerTestDelegate* delegate);
 
-  void set_app_locale(std::string app_locale) { app_locale_ = app_locale; }
-
   // Will send an upload based on the |form_structure| data and the local
   // Autofill profile data. |observed_submission| is specified if the upload
   // follows an observed submission event.
@@ -198,10 +190,6 @@ class AutofillManager : public AutofillHandler,
   // client supports Autofill.
   virtual bool IsAutofillEnabled() const;
 
-  // Returns true if all the conditions for enabling the upload of credit card
-  // are satisfied.
-  virtual bool IsCreditCardUploadEnabled();
-
   // Returns true if the value of the AutofillCreditCardEnabled pref is true and
   // the client supports Autofill.
   virtual bool IsCreditCardAutofillEnabled();
@@ -215,7 +203,10 @@ class AutofillManager : public AutofillHandler,
   // Test code should prefer to use this constructor.
   AutofillManager(AutofillDriver* driver,
                   AutofillClient* client,
-                  PersonalDataManager* personal_data);
+                  PersonalDataManager* personal_data,
+                  const std::string app_locale = "en-US",
+                  AutofillDownloadManagerState enable_download_manager =
+                      DISABLE_AUTOFILL_DOWNLOAD_MANAGER);
 
   // Uploads the form data to the Autofill server. |observed_submission|
   // indicates that upload is the result of a submission event.
@@ -253,6 +244,9 @@ class AutofillManager : public AutofillHandler,
                                 const FormFieldData& field,
                                 const gfx::RectF& bounding_box,
                                 const base::TimeTicks timestamp) override;
+  void OnTextFieldDidScrollImpl(const FormData& form,
+                                const FormFieldData& field,
+                                const gfx::RectF& bounding_box) override {}
   void OnQueryFormFieldAutofillImpl(int query_id,
                                     const FormData& form,
                                     const FormFieldData& field,
@@ -269,11 +263,6 @@ class AutofillManager : public AutofillHandler,
     return form_interactions_ukm_logger_.get();
   }
 
-  // payments::PaymentsClientDelegate:
-  // Exposed for testing.
-  void OnDidUploadCard(AutofillClient::PaymentsRpcResult result,
-                       const std::string& server_id) override;
-
   // Exposed for testing.
   AutofillExternalDelegate* external_delegate() {
     return external_delegate_;
@@ -289,20 +278,20 @@ class AutofillManager : public AutofillHandler,
     payments_client_.reset(payments_client);
   }
 
+  // Exposed for testing.
+  void set_form_data_importer(FormDataImporter* form_data_importer) {
+    form_data_importer_.reset(form_data_importer);
+  }
+
  private:
   // AutofillDownloadManager::Observer:
   void OnLoadedServerPredictions(
       std::string response,
       const std::vector<std::string>& form_signatures) override;
 
-  // payments::PaymentsClientDelegate:
-  IdentityProvider* GetIdentityProvider() override;
+  // payments::PaymentsClientUnmaskDelegate:
   void OnDidGetRealPan(AutofillClient::PaymentsRpcResult result,
                        const std::string& real_pan) override;
-  void OnDidGetUploadDetails(
-      AutofillClient::PaymentsRpcResult result,
-      const base::string16& context_token,
-      std::unique_ptr<base::DictionaryValue> legal_message) override;
 
   // payments::FullCardRequest::ResultDelegate:
   void OnFullCardRequestSucceeded(
@@ -317,14 +306,6 @@ class AutofillManager : public AutofillHandler,
                         base::WeakPtr<CardUnmaskDelegate> delegate) override;
   void OnUnmaskVerificationResult(
       AutofillClient::PaymentsRpcResult result) override;
-
-  // Sets |user_did_accept_upload_prompt_| and calls UploadCard if the risk data
-  // is available.
-  void OnUserDidAcceptUpload();
-
-  // Saves risk data in |uploading_risk_data_| and calls UploadCard if the user
-  // has accepted the prompt.
-  void OnDidGetUploadRiskData(const std::string& risk_data);
 
   // Returns false if Autofill is disabled or if no Autofill data is available.
   bool RefreshDataModels();
@@ -434,25 +415,6 @@ class AutofillManager : public AutofillHandler,
   // Parses the form and adds it to |form_structures_|.
   bool ParseForm(const FormData& form, FormStructure** parsed_form_structure);
 
-  // Imports the form data, submitted by the user, into |personal_data_|.
-  void ImportFormData(const FormStructure& submitted_form);
-
-  // Examines |card| and the stored profiles and if a candidate set of profiles
-  // is found that matches the client-side validation rules, assigns the values
-  // to |upload_request.profiles| and returns 0. If no valid set can be found,
-  // returns the failure reasons. Appends any experiments that were triggered to
-  // |upload_request.active_experiments|. The return value is a bitmask of
-  // |AutofillMetrics::CardUploadDecisionMetric|.
-  int SetProfilesForCreditCardUpload(
-      const CreditCard& card,
-      payments::PaymentsClient::UploadRequestDetails* upload_request) const;
-
-  // Returns metric relevant to the CVC field based on values in
-  // |found_cvc_field_|, |found_value_in_cvc_field_| and
-  // |found_cvc_value_in_non_cvc_field_|.
-  AutofillMetrics::CardUploadDecisionMetric GetCVCCardUploadDecisionMetric()
-      const;
-
   // If |initial_interaction_timestamp_| is unset or is set to a later time than
   // |interaction_timestamp|, updates the cached timestamp.  The latter check is
   // needed because IPC messages can arrive out of order.
@@ -492,15 +454,14 @@ class AutofillManager : public AutofillHandler,
       size_t current_index,
       const ServerFieldTypeSet& upload_types);
 
-#ifdef ENABLE_FORM_DEBUG_DUMP
-  // Dumps the cached forms to a file on disk.
-  void DumpAutofillData(bool imported_cc) const;
-#endif
+  void FillFieldWithValue(AutofillField* autofill_field,
+                          const AutofillDataModel& data_model,
+                          FormFieldData* field_data,
+                          bool should_notify,
+                          const base::string16& cvc);
 
-  // Logs the card upload decisions in UKM and UMA.
-  // |upload_decision_metrics| is a bitmask of
-  // |AutofillMetrics::CardUploadDecisionMetric|.
-  void LogCardUploadDecisions(int upload_decision_metrics);
+  AutofillMetrics::CardNumberStatus GetCardNumberStatus(
+      CreditCard& credit_card);
 
   AutofillClient* const client_;
 
@@ -514,6 +475,13 @@ class AutofillManager : public AutofillHandler,
   // Weak reference.
   // May be NULL.  NULL indicates OTR.
   PersonalDataManager* personal_data_;
+
+  // Handles importing of address and credit card data from forms.
+  // Must be initialized (and thus listed) after payments_client_.
+  std::unique_ptr<FormDataImporter> form_data_importer_;
+
+  // Used to help fill data into fields.
+  FieldFiller field_filler_;
 
   base::circular_deque<std::string> autofilled_form_signatures_;
 
@@ -534,18 +502,19 @@ class AutofillManager : public AutofillHandler,
       credit_card_form_event_logger_;
 
   // Have we logged whether Autofill is enabled for this page load?
-  bool has_logged_autofill_enabled_;
+  bool has_logged_autofill_enabled_ = false;
   // Have we logged an address suggestions count metric for this page?
-  bool has_logged_address_suggestions_count_;
+  bool has_logged_address_suggestions_count_ = false;
   // Have we shown Autofill suggestions at least once?
-  bool did_show_suggestions_;
+  bool did_show_suggestions_ = false;
   // Has the user manually edited at least one form field among the autofillable
   // ones?
-  bool user_did_type_;
+  bool user_did_type_ = false;
   // Has the user autofilled a form on this page?
-  bool user_did_autofill_;
+  bool user_did_autofill_ = false;
   // Has the user edited a field that was previously autofilled?
-  bool user_did_edit_autofilled_field_;
+  bool user_did_edit_autofilled_field_ = false;
+
   // When the form finished loading.
   std::map<FormData, base::TimeTicks> forms_loaded_timestamps_;
   // When the user first interacted with a potentially fillable form on this
@@ -564,41 +533,14 @@ class AutofillManager : public AutofillHandler,
 
   // Collected information about the autofill form where unmasked card will be
   // filled.
-  int unmasking_query_id_;
+  int unmasking_query_id_ = -1;
   FormData unmasking_form_;
   FormFieldData unmasking_field_;
   CreditCard masked_card_;
 
-  // Collected information about a pending upload request.
-  payments::PaymentsClient::UploadRequestDetails upload_request_;
-  bool user_did_accept_upload_prompt_;
-
-  // |should_cvc_be_requested_| is |true| if we should request CVC from the user
-  // in the card upload dialog.
-  bool should_cvc_be_requested_;
-  // |found_cvc_field_| is |true| if there exists a field that is determined to
-  // be a CVC field via heuristics.
-  bool found_cvc_field_;
-  // |found_value_in_cvc_field_| is |true| if a field that is determined to
-  // be a CVC field via heuristics has non-empty |value|.
-  // |value| may or may not be a valid CVC.
-  bool found_value_in_cvc_field_;
-  // |found_cvc_value_in_non_cvc_field_| is |true| if a field that is not
-  // determined to be a CVC field via heuristics has a valid CVC |value|.
-  bool found_cvc_value_in_non_cvc_field_;
-
   // Ablation experiment turns off autofill, but logging still has to be kept
   // for metrics analysis.
-  bool enable_ablation_logging_;
-
-  GURL pending_upload_request_url_;
-
-#ifdef ENABLE_FORM_DEBUG_DUMP
-  // The last few autofilled forms (key/value pairs) submitted, for debugging.
-  // TODO(brettw) this should be removed. See DumpAutofillData.
-  std::vector<std::map<std::string, base::string16>>
-      recently_autofilled_forms_;
-#endif
+  bool enable_ablation_logging_ = false;
 
   // Suggestion backend ID to ID mapping. We keep two maps to convert back and
   // forth. These should be used only by BackendIDToInt and IntToBackendID.
@@ -608,10 +550,10 @@ class AutofillManager : public AutofillHandler,
 
   // Delegate to perform external processing (display, selection) on
   // our behalf.  Weak.
-  AutofillExternalDelegate* external_delegate_;
+  AutofillExternalDelegate* external_delegate_ = nullptr;
 
   // Delegate used in test to get notifications on certain events.
-  AutofillManagerTestDelegate* test_delegate_;
+  AutofillManagerTestDelegate* test_delegate_ = nullptr;
 
 #if defined(OS_ANDROID) || defined(OS_IOS)
   AutofillAssistant autofill_assistant_;

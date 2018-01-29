@@ -7,9 +7,6 @@
 
 #include <stddef.h>
 #include <stdint.h>
-#include <X11/extensions/shape.h>
-#include <X11/Xlib.h>
-#include <X11/Xutil.h>
 
 #include "base/cancelable_callback.h"
 #include "base/macros.h"
@@ -22,6 +19,7 @@
 #include "ui/gfx/geometry/insets.h"
 #include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/geometry/size.h"
+#include "ui/gfx/x/x11.h"
 #include "ui/views/views_export.h"
 #include "ui/views/widget/desktop_aura/desktop_window_tree_host.h"
 
@@ -246,11 +244,6 @@ class VIEWS_EXPORT DesktopWindowTreeHostX11
 
   // Dispatches a key event.
   void DispatchKeyEvent(ui::KeyEvent* event);
-
-  // Updates the location of |located_event| to be in |host|'s coordinate system
-  // so that it can be dispatched to |host|.
-  void ConvertEventToDifferentHost(ui::LocatedEvent* located_event,
-                                   DesktopWindowTreeHostX11* host);
 
   // Resets the window region for the current widget bounds if necessary.
   void ResetWindowRegion();

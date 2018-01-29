@@ -34,9 +34,7 @@ class FakeRecordingDeviceWorker {
       : mic_level_(initial_mic_level) {}
   int mic_level() const { return mic_level_; }
   void set_mic_level(const int level) { mic_level_ = level; }
-  void set_undo_mic_level(const int level) {
-    undo_mic_level_ = rtc::Optional<int>(level);
-  }
+  void set_undo_mic_level(const int level) { undo_mic_level_ = level; }
   virtual ~FakeRecordingDeviceWorker() = default;
   virtual void ModifyBufferInt16(AudioFrame* buffer) = 0;
   virtual void ModifyBufferFloat(ChannelBuffer<float>* buffer) = 0;
@@ -127,7 +125,7 @@ int FakeRecordingDevice::MicLevel() const {
 void FakeRecordingDevice::SetMicLevel(const int level) {
   RTC_CHECK(worker_);
   if (level != worker_->mic_level())
-    LOG(LS_INFO) << "Simulate mic level update: " << level;
+    RTC_LOG(LS_INFO) << "Simulate mic level update: " << level;
   worker_->set_mic_level(level);
 }
 

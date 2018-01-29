@@ -72,7 +72,7 @@ class CORE_EXPORT ImageResource final
   const ImageResourceContent* GetContent() const;
 
   void ReloadIfLoFiOrPlaceholderImage(ResourceFetcher*,
-                                      ReloadLoFiOrPlaceholderPolicy);
+                                      ReloadLoFiOrPlaceholderPolicy) override;
 
   void DidAddClient(ResourceClient*) override;
 
@@ -83,7 +83,7 @@ class CORE_EXPORT ImageResource final
   bool CanReuse(const FetchParameters&) const override;
   bool CanUseCacheValidator() const override;
 
-  RefPtr<const SharedBuffer> ResourceBuffer() const override;
+  scoped_refptr<const SharedBuffer> ResourceBuffer() const override;
   void NotifyStartLoad() override;
   void ResponseReceived(const ResourceResponse&,
                         std::unique_ptr<WebDataConsumerHandle>) override;
@@ -100,7 +100,7 @@ class CORE_EXPORT ImageResource final
 
   bool ShouldShowPlaceholder() const;
 
-  DECLARE_VIRTUAL_TRACE();
+  void Trace(blink::Visitor*) override;
 
  private:
   enum class MultipartParsingState : uint8_t {
@@ -126,7 +126,7 @@ class CORE_EXPORT ImageResource final
   bool HasClientsOrObservers() const override;
 
   void UpdateImageAndClearBuffer();
-  void UpdateImage(RefPtr<SharedBuffer>,
+  void UpdateImage(scoped_refptr<SharedBuffer>,
                    ImageResourceContent::UpdateImageOption,
                    bool all_data_received);
 

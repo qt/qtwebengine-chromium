@@ -5,9 +5,13 @@
 #ifndef CONTENT_BROWSER_SERVICE_WORKER_SERVICE_WORKER_URL_LOADER_JOB_H_
 #define CONTENT_BROWSER_SERVICE_WORKER_SERVICE_WORKER_URL_LOADER_JOB_H_
 
+#include <memory>
+#include <vector>
+
 #include "base/macros.h"
 #include "base/memory/weak_ptr.h"
 #include "content/browser/loader/url_loader_request_handler.h"
+#include "content/browser/service_worker/service_worker_fetch_dispatcher.h"
 #include "content/browser/service_worker/service_worker_metrics.h"
 #include "content/browser/service_worker/service_worker_response_type.h"
 #include "content/browser/service_worker/service_worker_url_job_wrapper.h"
@@ -29,19 +33,19 @@ class BlobStorageContext;
 
 namespace content {
 
-class ServiceWorkerFetchDispatcher;
 struct ServiceWorkerResponse;
 class ServiceWorkerVersion;
 
+// S13nServiceWorker:
 // ServiceWorkerURLLoaderJob works similar to ServiceWorkerURLRequestJob
-// but with mojom::URLLoader instead of URLRequest, and used only when
-// --enable-network-service and PlzNavigate is enabled.
+// but with mojom::URLLoader instead of URLRequest.
 // This also works as a URLLoaderClient for BlobURLLoader while reading
 // the blob content returned by SW.
 class CONTENT_EXPORT ServiceWorkerURLLoaderJob : public mojom::URLLoader,
                                                  public mojom::URLLoaderClient {
  public:
   using Delegate = ServiceWorkerURLJobWrapper::Delegate;
+  using ResponseType = ServiceWorkerResponseType;
 
   // Created by ServiceWorkerControlleeRequestHandler::MaybeCreateLoader
   // when starting to load a page for navigation.
@@ -94,15 +98,14 @@ class CONTENT_EXPORT ServiceWorkerURLLoaderJob : public mojom::URLLoader,
 
   // For FORWARD_TO_SERVICE_WORKER case.
   void StartRequest();
-  scoped_refptr<storage::BlobHandle> CreateRequestBodyBlob();
   void DidPrepareFetchEvent(scoped_refptr<ServiceWorkerVersion> version);
   void DidDispatchFetchEvent(
       ServiceWorkerStatusCode status,
-      ServiceWorkerFetchEventResult fetch_result,
+      ServiceWorkerFetchDispatcher::FetchEventResult fetch_result,
       const ServiceWorkerResponse& response,
       blink::mojom::ServiceWorkerStreamHandlePtr body_as_stream,
-      storage::mojom::BlobPtr body_as_blob,
-      const scoped_refptr<ServiceWorkerVersion>& version);
+      blink::mojom::BlobPtr body_as_blob,
+      scoped_refptr<ServiceWorkerVersion> version);
 
   // Used as the StartLoaderCallback passed to |loader_callback_| when the
   // service worker provided a response. Returns the response to |client|.
@@ -111,7 +114,7 @@ class CONTENT_EXPORT ServiceWorkerURLLoaderJob : public mojom::URLLoader,
   void StartResponse(const ServiceWorkerResponse& response,
                      scoped_refptr<ServiceWorkerVersion> version,
                      blink::mojom::ServiceWorkerStreamHandlePtr body_as_stream,
-                     storage::mojom::BlobPtr body_as_blob,
+                     blink::mojom::BlobPtr body_as_blob,
                      mojom::URLLoaderRequest request,
                      mojom::URLLoaderClientPtr client);
 
@@ -152,9 +155,9 @@ class CONTENT_EXPORT ServiceWorkerURLLoaderJob : public mojom::URLLoader,
   void OnTransferSizeUpdated(int32_t transfer_size_diff) override;
   void OnStartLoadingResponseBody(
       mojo::ScopedDataPipeConsumerHandle body) override;
-  void OnComplete(const ResourceRequestCompletionStatus& status) override;
+  void OnComplete(const network::URLLoaderCompletionStatus& status) override;
 
-  ServiceWorkerResponseType response_type_ = NOT_DETERMINED;
+  ResponseType response_type_ = ResponseType::NOT_DETERMINED;
   LoaderCallback loader_callback_;
 
   Delegate* delegate_;

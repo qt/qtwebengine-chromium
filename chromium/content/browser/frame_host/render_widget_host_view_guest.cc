@@ -13,10 +13,13 @@
 #include "base/message_loop/message_loop.h"
 #include "build/build_config.h"
 #include "components/viz/common/surfaces/surface_sequence.h"
+#include "components/viz/service/frame_sinks/frame_sink_manager_impl.h"
 #include "components/viz/service/surfaces/surface.h"
+#include "components/viz/service/surfaces/surface_hittest.h"
 #include "components/viz/service/surfaces/surface_manager.h"
 #include "content/browser/browser_plugin/browser_plugin_guest.h"
 #include "content/browser/compositor/surface_utils.h"
+#include "content/browser/mus_util.h"
 #include "content/browser/renderer_host/input/input_router.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
 #include "content/browser/renderer_host/render_widget_host_delegate.h"
@@ -31,6 +34,7 @@
 #include "gpu/ipc/common/gpu_messages.h"
 #include "skia/ext/platform_canvas.h"
 #include "ui/events/base_event_utils.h"
+#include "ui/gfx/geometry/dip_util.h"
 
 #if defined(OS_MACOSX)
 #import "content/browser/renderer_host/render_widget_host_view_mac_dictionary_helper.h"
@@ -38,6 +42,7 @@
 
 #if defined(USE_AURA)
 #include "content/browser/renderer_host/ui_events_helper.h"
+#include "ui/aura/env.h"
 #endif
 
 namespace content {
@@ -84,7 +89,7 @@ RenderWidgetHostViewGuest::RenderWidgetHostViewGuest(
       // |guest| is NULL during test.
       guest_(guest ? guest->AsWeakPtr() : base::WeakPtr<BrowserPluginGuest>()),
       platform_view_(platform_view),
-      should_forward_text_selection_(false) {
+      weak_ptr_factory_(this) {
   // In tests |guest_| and therefore |owner| can be null.
   auto* owner = GetOwnerRenderWidgetHostView();
   if (owner)
@@ -143,7 +148,6 @@ void RenderWidgetHostViewGuest::Hide() {
 }
 
 void RenderWidgetHostViewGuest::SetSize(const gfx::Size& size) {
-  size_ = size;
   host_->WasResized();
 }
 
@@ -223,12 +227,97 @@ gfx::Rect RenderWidgetHostViewGuest::GetViewBounds() const {
   gfx::Rect embedder_bounds;
   if (rwhv)
     embedder_bounds = rwhv->GetViewBounds();
-  return gfx::Rect(
-      guest_->GetScreenCoordinates(embedder_bounds.origin()), size_);
+  return gfx::Rect(guest_->GetScreenCoordinates(embedder_bounds.origin()),
+                   guest_->frame_rect().size());
 }
 
 gfx::Rect RenderWidgetHostViewGuest::GetBoundsInRootWindow() {
   return GetViewBounds();
+}
+
+namespace {
+
+RenderWidgetHostViewBase* GetRootView(RenderWidgetHostViewBase* rwhv) {
+  // If we're a pdf in a WebView, we could have nested guest views here.
+  while (rwhv && rwhv->IsRenderWidgetHostViewGuest()) {
+    rwhv = static_cast<RenderWidgetHostViewGuest*>(rwhv)
+               ->GetOwnerRenderWidgetHostView();
+  }
+  if (!rwhv)
+    return nullptr;
+
+  // We could be a guest inside an oopif frame, in which case we're not the
+  // root.
+  if (rwhv->IsRenderWidgetHostViewChildFrame()) {
+    rwhv = static_cast<RenderWidgetHostViewChildFrame*>(rwhv)
+               ->GetRootRenderWidgetHostView();
+  }
+  return rwhv;
+}
+
+}  // namespace
+
+gfx::PointF RenderWidgetHostViewGuest::TransformPointToRootCoordSpaceF(
+    const gfx::PointF& point) {
+  if (!guest_ || !last_received_local_surface_id_.is_valid())
+    return point;
+
+  RenderWidgetHostViewBase* root_rwhv = GetRootView(this);
+  if (!root_rwhv)
+    return point;
+
+  gfx::PointF transformed_point = point;
+  // TODO(wjmaclean): If we knew that TransformPointToLocalCoordSpace would
+  // guarantee not to change transformed_point on failure, then we could skip
+  // checking the function return value and directly return transformed_point.
+  if (!root_rwhv->TransformPointToLocalCoordSpace(
+          point,
+          viz::SurfaceId(frame_sink_id_, last_received_local_surface_id_),
+          &transformed_point)) {
+    return point;
+  }
+  return transformed_point;
+}
+
+bool RenderWidgetHostViewGuest::TransformPointToLocalCoordSpace(
+    const gfx::PointF& point,
+    const viz::SurfaceId& original_surface,
+    gfx::PointF* transformed_point) {
+  *transformed_point = point;
+  if (!guest_ || !last_received_local_surface_id_.is_valid())
+    return false;
+
+  auto local_surface_id =
+      viz::SurfaceId(frame_sink_id_, last_received_local_surface_id_);
+  if (original_surface == local_surface_id)
+    return true;
+
+  *transformed_point =
+      gfx::ConvertPointToPixel(current_surface_scale_factor(), point);
+  viz::SurfaceHittest hittest(nullptr,
+                              GetFrameSinkManager()->surface_manager());
+  if (!hittest.TransformPointToTargetSurface(original_surface, local_surface_id,
+                                             transformed_point)) {
+    return false;
+  }
+
+  *transformed_point = gfx::ConvertPointToDIP(current_surface_scale_factor(),
+                                              *transformed_point);
+  return true;
+}
+
+gfx::PointF RenderWidgetHostViewGuest::TransformRootPointToViewCoordSpace(
+    const gfx::PointF& point) {
+  RenderWidgetHostViewBase* root_rwhv = GetRootView(this);
+  if (!root_rwhv)
+    return point;
+
+  gfx::PointF transformed_point;
+  if (!root_rwhv->TransformPointToCoordSpaceForView(point, this,
+                                                    &transformed_point)) {
+    return point;
+  }
+  return transformed_point;
 }
 
 void RenderWidgetHostViewGuest::RenderProcessGone(
@@ -251,13 +340,12 @@ void RenderWidgetHostViewGuest::Destroy() {
 }
 
 gfx::Size RenderWidgetHostViewGuest::GetPhysicalBackingSize() const {
-  // We obtain the reference to native view from the owner RenderWidgetHostView.
-  // If the guest is embedded inside a cross-process frame, it is possible to
-  // reach here after the frame is detached in which case there will be no owner
-  // view.
-  if (!GetOwnerRenderWidgetHostView())
-    return gfx::Size();
-  return RenderWidgetHostViewBase::GetPhysicalBackingSize();
+  gfx::Size size;
+  if (guest_) {
+    size = gfx::ScaleToCeiledSize(guest_->frame_rect().size(),
+                                  guest_->screen_info().device_scale_factor);
+  }
+  return size;
 }
 
 base::string16 RenderWidgetHostViewGuest::GetSelectedText() {
@@ -271,7 +359,7 @@ void RenderWidgetHostViewGuest::SetNeedsBeginFrames(bool needs_begin_frames) {
 
 TouchSelectionControllerClientManager*
 RenderWidgetHostViewGuest::GetTouchSelectionControllerClientManager() {
-  RenderWidgetHostView* root_view = GetOwnerRenderWidgetHostView();
+  RenderWidgetHostView* root_view = GetRootView(this);
   if (!root_view)
     return nullptr;
 
@@ -294,17 +382,31 @@ void RenderWidgetHostViewGuest::SendSurfaceInfoToEmbedderImpl(
 
 void RenderWidgetHostViewGuest::SubmitCompositorFrame(
     const viz::LocalSurfaceId& local_surface_id,
-    viz::CompositorFrame frame) {
+    viz::CompositorFrame frame,
+    viz::mojom::HitTestRegionListPtr hit_test_region_list) {
   TRACE_EVENT0("content", "RenderWidgetHostViewGuest::OnSwapCompositorFrame");
 
   last_scroll_offset_ = frame.metadata.root_scroll_offset;
-  ProcessCompositorFrame(local_surface_id, std::move(frame));
+  ProcessCompositorFrame(local_surface_id, std::move(frame),
+                         std::move(hit_test_region_list));
 
   // If after detaching we are sent a frame, we should finish processing it, and
   // then we should clear the surface so that we are not holding resources we
   // no longer need.
   if (!guest_ || !guest_->attached())
     ClearCompositorSurfaceIfNecessary();
+}
+
+void RenderWidgetHostViewGuest::OnAttached() {
+  RegisterFrameSinkId();
+#if defined(USE_AURA)
+  if (IsUsingMus()) {
+    aura::Env::GetInstance()->ScheduleEmbed(
+        GetWindowTreeClientFromRenderer(),
+        base::BindOnce(&RenderWidgetHostViewGuest::OnGotEmbedToken,
+                       weak_ptr_factory_.GetWeakPtr()));
+  }
+#endif
 }
 
 bool RenderWidgetHostViewGuest::OnMessageReceived(const IPC::Message& msg) {
@@ -319,7 +421,8 @@ bool RenderWidgetHostViewGuest::OnMessageReceived(const IPC::Message& msg) {
 
 void RenderWidgetHostViewGuest::InitAsChild(
     gfx::NativeView parent_view) {
-  platform_view_->InitAsChild(parent_view);
+  // This should never get called.
+  NOTREACHED();
 }
 
 void RenderWidgetHostViewGuest::InitAsPopup(
@@ -462,7 +565,7 @@ bool RenderWidgetHostViewGuest::LockMouse() {
 }
 
 void RenderWidgetHostViewGuest::UnlockMouse() {
-  return platform_view_->UnlockMouse();
+  platform_view_->UnlockMouse();
 }
 
 viz::LocalSurfaceId RenderWidgetHostViewGuest::GetLocalSurfaceId() const {
@@ -488,7 +591,6 @@ void RenderWidgetHostViewGuest::ShowDefinitionForSelection() {
   if (!guest_)
     return;
 
-  gfx::Point origin;
   gfx::Rect guest_bounds = GetViewBounds();
   RenderWidgetHostView* rwhv = guest_->GetOwnerRenderWidgetHostView();
   gfx::Rect embedder_bounds;
@@ -613,6 +715,22 @@ InputEventAckState RenderWidgetHostViewGuest::FilterInputEvent(
   return INPUT_EVENT_ACK_STATE_NOT_CONSUMED;
 }
 
+void RenderWidgetHostViewGuest::GetScreenInfo(ScreenInfo* screen_info) {
+  DCHECK(screen_info);
+  if (!guest_) {
+    *screen_info = ScreenInfo();
+    return;
+  }
+  *screen_info = guest_->screen_info();
+}
+
+void RenderWidgetHostViewGuest::ResizeDueToAutoResize(
+    const gfx::Size& new_size,
+    uint64_t sequence_number) {
+  if (guest_)
+    guest_->ResizeDueToAutoResize(new_size, sequence_number);
+}
+
 bool RenderWidgetHostViewGuest::IsRenderWidgetHostViewGuest() {
   return true;
 }
@@ -714,5 +832,17 @@ void RenderWidgetHostViewGuest::OnHandleInputEvent(
 bool RenderWidgetHostViewGuest::HasEmbedderChanged() {
   return guest_ && guest_->has_attached_since_surface_set();
 }
+
+#if defined(USE_AURA)
+void RenderWidgetHostViewGuest::OnGotEmbedToken(
+    const base::UnguessableToken& token) {
+  if (!guest_)
+    return;
+
+  guest_->SendMessageToEmbedder(
+      base::MakeUnique<BrowserPluginMsg_SetMusEmbedToken>(
+          guest_->browser_plugin_instance_id(), token));
+}
+#endif
 
 }  // namespace content

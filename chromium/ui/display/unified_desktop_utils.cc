@@ -83,8 +83,14 @@ UnifiedDesktopLayoutMatrix BuildDisplayMatrix(const DisplayLayout& layout) {
     int64_t current_display_id = placement.display_id;
     base::stack<DisplayPlacement> unhandled_displays;
     while (displays_cells.count(current_display_id) == 0) {
-      unhandled_displays.emplace(placement);
-      current_display_id = placement.parent_display_id;
+      auto placement_iter = std::find_if(
+          layout.placement_list.begin(), layout.placement_list.end(),
+          [current_display_id](const DisplayPlacement& p) {
+            return p.display_id == current_display_id;
+          });
+      DCHECK(placement_iter != layout.placement_list.end());
+      unhandled_displays.emplace(*placement_iter);
+      current_display_id = placement_iter->parent_display_id;
     }
 
     // For each unhandled display, find its parent's cell, and use it to deduce
@@ -166,14 +172,23 @@ UnifiedDesktopLayoutMatrix BuildDisplayMatrix(const DisplayLayout& layout) {
   return matrix;
 }
 
-// Validates that the given |matrix| is neither empty nor have holes (empty
-// display IDs) in it.
+}  // namespace
+
 bool ValidateMatrix(const UnifiedDesktopLayoutMatrix& matrix) {
   if (matrix.empty())
     return false;
 
-  // No holes are allowed.
+  const size_t column_count = matrix[0].size();
+  if (column_count == 0)
+    return false;
+
   for (const auto& row : matrix) {
+    if (row.size() != column_count) {
+      LOG(ERROR) << "Wrong matrix dimensions. Unequal rows sizes.";
+      return false;
+    }
+
+    // No holes or repeated IDs are allowed.
     for (const auto& id : row) {
       if (id == display::kInvalidDisplayId) {
         LOG(ERROR) << "Unified Desktop layout matrix has an empty cell in it.";
@@ -184,8 +199,6 @@ bool ValidateMatrix(const UnifiedDesktopLayoutMatrix& matrix) {
 
   return true;
 }
-
-}  // namespace
 
 bool BuildUnifiedDesktopMatrix(const DisplayIdList& ids_list,
                                const DisplayLayout& layout,

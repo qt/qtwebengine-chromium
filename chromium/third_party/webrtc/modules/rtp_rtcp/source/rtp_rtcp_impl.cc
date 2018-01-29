@@ -200,10 +200,10 @@ void ModuleRtpRtcpImpl::Process() {
     // is increasing.
     int64_t rtcp_interval = RtcpReportInterval();
     if (rtcp_receiver_.RtcpRrTimeout(rtcp_interval)) {
-      LOG_F(LS_WARNING) << "Timeout: No RTCP RR received.";
+      RTC_LOG_F(LS_WARNING) << "Timeout: No RTCP RR received.";
     } else if (rtcp_receiver_.RtcpRrSequenceNumberTimeout(rtcp_interval)) {
-      LOG_F(LS_WARNING) <<
-          "Timeout: No increase in RTCP RR extended highest sequence number.";
+      RTC_LOG_F(LS_WARNING) << "Timeout: No increase in RTCP RR extended "
+                               "highest sequence number.";
     }
 
     if (remote_bitrate_ && rtcp_sender_.TMMBR()) {
@@ -267,7 +267,7 @@ void ModuleRtpRtcpImpl::SetRtxSendPayloadType(int payload_type,
 rtc::Optional<uint32_t> ModuleRtpRtcpImpl::FlexfecSsrc() const {
   if (rtp_sender_)
     return rtp_sender_->FlexfecSsrc();
-  return rtc::Optional<uint32_t>();
+  return rtc::nullopt;
 }
 
 void ModuleRtpRtcpImpl::IncomingRtcpPacket(const uint8_t* rtcp_packet,
@@ -385,7 +385,7 @@ int32_t ModuleRtpRtcpImpl::SetSendingStatus(const bool sending) {
   if (rtcp_sender_.Sending() != sending) {
     // Sends RTCP BYE when going from true to false
     if (rtcp_sender_.SetSendingStatus(GetFeedbackState(), sending) != 0) {
-      LOG(LS_WARNING) << "Failed to send RTCP BYE";
+      RTC_LOG(LS_WARNING) << "Failed to send RTCP BYE";
     }
     if (sending && rtp_sender_) {
       // Update Rtcp receiver config, to track Rtx config changes from
@@ -629,17 +629,13 @@ int32_t ModuleRtpRtcpImpl::RemoteRTCPStat(
 }
 
 // (REMB) Receiver Estimated Max Bitrate.
-bool ModuleRtpRtcpImpl::REMB() const {
-  return rtcp_sender_.REMB();
+void ModuleRtpRtcpImpl::SetRemb(uint32_t bitrate_bps,
+                                const std::vector<uint32_t>& ssrcs) {
+  rtcp_sender_.SetRemb(bitrate_bps, ssrcs);
 }
 
-void ModuleRtpRtcpImpl::SetREMBStatus(const bool enable) {
-  rtcp_sender_.SetREMBStatus(enable);
-}
-
-void ModuleRtpRtcpImpl::SetREMBData(const uint32_t bitrate,
-                                    const std::vector<uint32_t>& ssrcs) {
-  rtcp_sender_.SetREMBData(bitrate, ssrcs);
+void ModuleRtpRtcpImpl::UnsetRemb() {
+  rtcp_sender_.UnsetRemb();
 }
 
 int32_t ModuleRtpRtcpImpl::RegisterSendRtpHeaderExtension(

@@ -25,11 +25,13 @@ rtc_static_library("rtc_p2p") {
     "base/asyncstuntcpsocket.h",
     "base/basicpacketsocketfactory.cc",
     "base/basicpacketsocketfactory.h",
-    "base/candidate.h",
+    "base/candidatepairinterface.h",
     "base/common.h",
     "base/dtlstransport.cc",
     "base/dtlstransport.h",
+    "base/dtlstransportinternal.cc",
     "base/dtlstransportinternal.h",
+    "base/icetransportinternal.cc",
     "base/icetransportinternal.h",
     "base/jseptransport.cc",
     "base/jseptransport.h",
@@ -39,13 +41,16 @@ rtc_static_library("rtc_p2p") {
     "base/p2ptransportchannel.h",
     "base/packetlossestimator.cc",
     "base/packetlossestimator.h",
+    "base/packetsocketfactory.cc",
     "base/packetsocketfactory.h",
     "base/packettransportinterface.h",
+    "base/packettransportinternal.cc",
     "base/packettransportinternal.h",
     "base/port.cc",
     "base/port.h",
     "base/portallocator.cc",
     "base/portallocator.h",
+    "base/portinterface.cc",
     "base/portinterface.h",
     "base/pseudotcp.cc",
     "base/pseudotcp.h",
@@ -109,30 +114,6 @@ rtc_static_library("rtc_p2p") {
       "FEATURE_ENABLE_VOICEMAIL",
       "FEATURE_ENABLE_PSTN",
     ]
-
-    if (!build_with_chromium && is_clang) {
-      # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
-      suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
-    }
-  }
-
-  if (rtc_use_quic) {
-    deps = [
-      "//third_party/libquic",
-    ]
-    sources += [
-      "quic/quicconnectionhelper.cc",
-      "quic/quicconnectionhelper.h",
-      "quic/quicsession.cc",
-      "quic/quicsession.h",
-      "quic/quictransport.cc",
-      "quic/quictransport.h",
-      "quic/quictransportchannel.cc",
-      "quic/quictransportchannel.h",
-      "quic/reliablequicstream.cc",
-      "quic/reliablequicstream.h",
-    ]
-    public_deps += [ "//third_party/libquic" ]
   }
 }
 
@@ -147,12 +128,14 @@ if (rtc_include_tests) {
       "base/fakeportallocator.h",
       "base/mockicetransport.h",
       "base/testrelayserver.h",
+      "base/teststunserver.cc",
       "base/teststunserver.h",
       "base/testturncustomizer.h",
       "base/testturnserver.h",
     ]
     deps = [
       ":rtc_p2p",
+      "../api:libjingle_peerconnection_api",
       "../api:ortc_api",
       "../rtc_base:rtc_base",
       "../rtc_base:rtc_base_approved",
@@ -165,12 +148,6 @@ if (rtc_include_tests) {
   rtc_source_set("rtc_p2p_unittests") {
     testonly = true
 
-    # Skip restricting visibility on mobile platforms since the tests on those
-    # gets additional generated targets which would require many lines here to
-    # cover (which would be confusing to read and hard to maintain).
-    if (!is_android && !is_ios) {
-      visibility = [ "..:rtc_unittests" ]
-    }
     sources = [
       "base/asyncstuntcpsocket_unittest.cc",
       "base/dtlstransport_unittest.cc",
@@ -193,15 +170,6 @@ if (rtc_include_tests) {
       "base/udptransport_unittest.cc",
       "client/basicportallocator_unittest.cc",
     ]
-    if (rtc_use_quic) {
-      sources += [
-        "quic/quicconnectionhelper_unittest.cc",
-        "quic/quicsession_unittest.cc",
-        "quic/quictransport_unittest.cc",
-        "quic/quictransportchannel_unittest.cc",
-        "quic/reliablequicstream_unittest.cc",
-      ]
-    }
     deps = [
       ":p2p_test_utils",
       ":rtc_p2p",
@@ -225,13 +193,8 @@ if (rtc_include_tests) {
 rtc_static_library("libstunprober") {
   sources = [
     "stunprober/stunprober.cc",
+    "stunprober/stunprober.h",
   ]
-
-  if (!build_with_chromium && is_clang) {
-    # Suppress warnings from Chrome's Clang plugins.
-    # See http://code.google.com/p/webrtc/issues/detail?id=163 for details.
-    suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
-  }
 
   deps = [
     ":rtc_p2p",
@@ -244,12 +207,6 @@ if (rtc_include_tests) {
   rtc_source_set("libstunprober_unittests") {
     testonly = true
 
-    # Skip restricting visibility on mobile platforms since the tests on those
-    # gets additional generated targets which would require many lines here to
-    # cover (which would be confusing to read and hard to maintain).
-    if (!is_android && !is_ios) {
-      visibility = [ "..:rtc_unittests" ]
-    }
     sources = [
       "stunprober/stunprober_unittest.cc",
     ]
@@ -262,10 +219,6 @@ if (rtc_include_tests) {
       "//testing/gmock",
       "//testing/gtest",
     ]
-    if (!build_with_chromium && is_clang) {
-      # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
-      suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
-    }
     defines = [ "GTEST_RELATIVE_PATH" ]
   }
 }

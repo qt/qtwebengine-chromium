@@ -16,6 +16,7 @@
 #include "content/common/storage_partition_service.mojom.h"
 #include "content/renderer/dom_storage/local_storage_area.h"
 #include "content/renderer/dom_storage/local_storage_cached_areas.h"
+#include "content/renderer/render_thread_impl.h"
 #include "mojo/public/cpp/bindings/strong_associated_binding.h"
 #include "third_party/WebKit/public/platform/WebURL.h"
 #include "third_party/WebKit/public/web/WebStorageEventDispatcher.h"
@@ -67,11 +68,36 @@ void UnpackSource(const std::string& source,
 }
 
 LocalStorageCachedArea::LocalStorageCachedArea(
+    int64_t namespace_id,
     const url::Origin& origin,
     mojom::StoragePartitionService* storage_partition_service,
-    LocalStorageCachedAreas* cached_areas)
-    : origin_(origin), binding_(this),
-      cached_areas_(cached_areas), weak_factory_(this) {
+    LocalStorageCachedAreas* cached_areas,
+    blink::scheduler::RendererScheduler* renderer_scheduler)
+    : namespace_id_(namespace_id),
+      origin_(origin),
+      binding_(this),
+      cached_areas_(cached_areas),
+      renderer_scheduler_(renderer_scheduler),
+      weak_factory_(this) {
+  DCHECK_NE(namespace_id, kInvalidSessionStorageNamespaceId);
+  storage_partition_service->OpenSessionStorage(namespace_id, origin_,
+                                                mojo::MakeRequest(&leveldb_));
+  mojom::LevelDBObserverAssociatedPtrInfo ptr_info;
+  binding_.Bind(mojo::MakeRequest(&ptr_info));
+  leveldb_->AddObserver(std::move(ptr_info));
+}
+
+LocalStorageCachedArea::LocalStorageCachedArea(
+    const url::Origin& origin,
+    mojom::StoragePartitionService* storage_partition_service,
+    LocalStorageCachedAreas* cached_areas,
+    blink::scheduler::RendererScheduler* renderer_scheduler)
+    : namespace_id_(kLocalStorageNamespaceId),
+      origin_(origin),
+      binding_(this),
+      cached_areas_(cached_areas),
+      renderer_scheduler_(renderer_scheduler),
+      weak_factory_(this) {
   storage_partition_service->OpenLocalStorage(origin_,
                                               mojo::MakeRequest(&leveldb_));
   mojom::LevelDBObserverAssociatedPtrInfo ptr_info;
@@ -79,9 +105,7 @@ LocalStorageCachedArea::LocalStorageCachedArea(
   leveldb_->AddObserver(std::move(ptr_info));
 }
 
-LocalStorageCachedArea::~LocalStorageCachedArea() {
-  cached_areas_->CacheAreaClosed(this);
-}
+LocalStorageCachedArea::~LocalStorageCachedArea() {}
 
 unsigned LocalStorageCachedArea::GetLength() {
   EnsureLoaded();
@@ -124,10 +148,15 @@ bool LocalStorageCachedArea::SetItem(const base::string16& key,
   base::Optional<std::vector<uint8_t>> optional_old_value;
   if (!old_nullable_value.is_null())
     optional_old_value = String16ToUint8Vector(old_nullable_value.string());
+
+  blink::WebScopedVirtualTimePauser virtual_time_pauser =
+      renderer_scheduler_->CreateWebScopedVirtualTimePauser();
+  virtual_time_pauser.PauseVirtualTime(true);
   leveldb_->Put(String16ToUint8Vector(key), String16ToUint8Vector(value),
                 optional_old_value, PackSource(page_url, storage_area_id),
                 base::BindOnce(&LocalStorageCachedArea::OnSetItemComplete,
-                               weak_factory_.GetWeakPtr(), key));
+                               weak_factory_.GetWeakPtr(), key,
+                               std::move(virtual_time_pauser)));
   return true;
 }
 
@@ -149,10 +178,15 @@ void LocalStorageCachedArea::RemoveItem(const base::string16& key,
   base::Optional<std::vector<uint8_t>> optional_old_value;
   if (should_send_old_value_on_mutations_)
     optional_old_value = String16ToUint8Vector(old_value);
+
+  blink::WebScopedVirtualTimePauser virtual_time_pauser =
+      renderer_scheduler_->CreateWebScopedVirtualTimePauser();
+  virtual_time_pauser.PauseVirtualTime(true);
   leveldb_->Delete(String16ToUint8Vector(key), optional_old_value,
                    PackSource(page_url, storage_area_id),
                    base::BindOnce(&LocalStorageCachedArea::OnRemoveItemComplete,
-                                  weak_factory_.GetWeakPtr(), key));
+                                  weak_factory_.GetWeakPtr(), key,
+                                  std::move(virtual_time_pauser)));
 }
 
 void LocalStorageCachedArea::Clear(const GURL& page_url,
@@ -161,9 +195,14 @@ void LocalStorageCachedArea::Clear(const GURL& page_url,
   Reset();
   map_ = new DOMStorageMap(kPerStorageAreaQuota);
   ignore_all_mutations_ = true;
+
+  blink::WebScopedVirtualTimePauser virtual_time_pauser =
+      renderer_scheduler_->CreateWebScopedVirtualTimePauser();
+  virtual_time_pauser.PauseVirtualTime(true);
   leveldb_->DeleteAll(PackSource(page_url, storage_area_id),
                       base::BindOnce(&LocalStorageCachedArea::OnClearComplete,
-                                     weak_factory_.GetWeakPtr()));
+                                     weak_factory_.GetWeakPtr(),
+                                     std::move(virtual_time_pauser)));
 }
 
 void LocalStorageCachedArea::AreaCreated(LocalStorageArea* area) {
@@ -389,8 +428,10 @@ void LocalStorageCachedArea::EnsureLoaded() {
   }
 }
 
-void LocalStorageCachedArea::OnSetItemComplete(const base::string16& key,
-                                               bool success) {
+void LocalStorageCachedArea::OnSetItemComplete(
+    const base::string16& key,
+    blink::WebScopedVirtualTimePauser,
+    bool success) {
   if (!success) {
     Reset();
     return;
@@ -403,7 +444,9 @@ void LocalStorageCachedArea::OnSetItemComplete(const base::string16& key,
 }
 
 void LocalStorageCachedArea::OnRemoveItemComplete(
-    const base::string16& key, bool success) {
+    const base::string16& key,
+    blink::WebScopedVirtualTimePauser,
+    bool success) {
   DCHECK(success);
   auto found = ignore_key_mutations_.find(key);
   DCHECK(found != ignore_key_mutations_.end());
@@ -411,7 +454,8 @@ void LocalStorageCachedArea::OnRemoveItemComplete(
     ignore_key_mutations_.erase(found);
 }
 
-void LocalStorageCachedArea::OnClearComplete(bool success) {
+void LocalStorageCachedArea::OnClearComplete(blink::WebScopedVirtualTimePauser,
+                                             bool success) {
   DCHECK(success);
   DCHECK(ignore_all_mutations_);
   ignore_all_mutations_ = false;
@@ -427,7 +471,7 @@ void LocalStorageCachedArea::OnGetAllComplete(bool success) {
 }
 
 void LocalStorageCachedArea::Reset() {
-  map_ = NULL;
+  map_ = nullptr;
   ignore_key_mutations_.clear();
   ignore_all_mutations_ = false;
   weak_factory_.InvalidateWeakPtrs();

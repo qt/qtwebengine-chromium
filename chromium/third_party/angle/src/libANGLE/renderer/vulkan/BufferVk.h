@@ -15,6 +15,7 @@
 
 namespace rx
 {
+class RendererVk;
 
 class BufferVk : public BufferImpl, public ResourceVk
 {
@@ -24,12 +25,12 @@ class BufferVk : public BufferImpl, public ResourceVk
     void destroy(const gl::Context *context) override;
 
     gl::Error setData(const gl::Context *context,
-                      GLenum target,
+                      gl::BufferBinding target,
                       const void *data,
                       size_t size,
-                      GLenum usage) override;
+                      gl::BufferUsage usage) override;
     gl::Error setSubData(const gl::Context *context,
-                         GLenum target,
+                         gl::BufferBinding target,
                          const void *data,
                          size_t size,
                          size_t offset) override;
@@ -56,10 +57,12 @@ class BufferVk : public BufferImpl, public ResourceVk
     const vk::Buffer &getVkBuffer() const;
 
   private:
-    vk::Error setDataImpl(VkDevice device, const uint8_t *data, size_t size, size_t offset);
+    vk::Error setDataImpl(ContextVk *contextVk, const uint8_t *data, size_t size, size_t offset);
+    void release(RendererVk *renderer);
 
     vk::Buffer mBuffer;
-    size_t mRequiredSize;
+    vk::DeviceMemory mBufferMemory;
+    size_t mCurrentRequiredSize;
 };
 
 }  // namespace rx

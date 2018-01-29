@@ -41,6 +41,7 @@ class WebGraphicsContext3DProviderForTests
 
   // Not used by WebGL code.
   GrContext* GetGrContext() override { return nullptr; }
+  void InvalidateGrContext(uint32_t state) override {}
   bool BindToCurrentThread() override { return false; }
   const gpu::Capabilities& GetCapabilities() const override {
     return capabilities_;
@@ -48,10 +49,11 @@ class WebGraphicsContext3DProviderForTests
   const gpu::GpuFeatureInfo& GetGpuFeatureInfo() const override {
     return gpu_feature_info_;
   }
-  void SetLostContextCallback(const base::Closure&) {}
+  viz::GLHelper* GetGLHelper() override { return nullptr; }
+  void SetLostContextCallback(const base::Closure&) override {}
   void SetErrorMessageCallback(
-      const base::Callback<void(const char*, int32_t id)>&) {}
-  void SignalQuery(uint32_t, const base::Closure&) override {}
+      base::RepeatingCallback<void(const char*, int32_t id)>) {}
+  void SignalQuery(uint32_t, base::OnceClosure) override {}
 
  private:
   std::unique_ptr<gpu::gles2::GLES2Interface> gl_;
@@ -395,18 +397,19 @@ class GLES2InterfaceForTests : public gpu::gles2::GLES2InterfaceStub,
 
 class DrawingBufferForTests : public DrawingBuffer {
  public:
-  static RefPtr<DrawingBufferForTests> Create(
+  static scoped_refptr<DrawingBufferForTests> Create(
       std::unique_ptr<WebGraphicsContext3DProvider> context_provider,
+      bool using_gpu_compositing,
       DrawingBuffer::Client* client,
       const IntSize& size,
       PreserveDrawingBuffer preserve,
       UseMultisampling use_multisampling) {
     std::unique_ptr<Extensions3DUtil> extensions_util =
         Extensions3DUtil::Create(context_provider->ContextGL());
-    RefPtr<DrawingBufferForTests> drawing_buffer =
-        WTF::AdoptRef(new DrawingBufferForTests(std::move(context_provider),
-                                                std::move(extensions_util),
-                                                client, preserve));
+    scoped_refptr<DrawingBufferForTests> drawing_buffer =
+        base::AdoptRef(new DrawingBufferForTests(
+            std::move(context_provider), using_gpu_compositing,
+            std::move(extensions_util), client, preserve));
     if (!drawing_buffer->Initialize(
             size, use_multisampling != kDisableMultisampling)) {
       drawing_buffer->BeginDestruction();
@@ -417,23 +420,25 @@ class DrawingBufferForTests : public DrawingBuffer {
 
   DrawingBufferForTests(
       std::unique_ptr<WebGraphicsContext3DProvider> context_provider,
+      bool using_gpu_compositing,
       std::unique_ptr<Extensions3DUtil> extensions_util,
       DrawingBuffer::Client* client,
       PreserveDrawingBuffer preserve)
       : DrawingBuffer(
             std::move(context_provider),
+            using_gpu_compositing,
             std::move(extensions_util),
             client,
             false /* discardFramebufferSupported */,
             true /* wantAlphaChannel */,
-            false /* premultipliedAlpha */,
+            true /* premultipliedAlpha */,
             preserve,
             kWebGL1,
             false /* wantDepth */,
             false /* wantStencil */,
             DrawingBuffer::kAllowChromiumImage /* ChromiumImageUsage */,
             CanvasColorParams()),
-        live_(0) {}
+        live_(nullptr) {}
 
   ~DrawingBufferForTests() override {
     if (live_)

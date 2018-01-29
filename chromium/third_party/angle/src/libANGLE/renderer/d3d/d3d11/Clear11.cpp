@@ -306,8 +306,6 @@ gl::Error Clear11::ensureResourcesInitialized()
     mBlendStateKey.blendState.blendEquationAlpha    = GL_FUNC_ADD;
     mBlendStateKey.blendState.sampleAlphaToCoverage = false;
     mBlendStateKey.blendState.dither                = true;
-    mBlendStateKey.mrt                              = false;
-    memset(mBlendStateKey.rtvMasks, 0, sizeof(mBlendStateKey.rtvMasks));
 
     mResourcesInitialized = true;
     return gl::NoError();
@@ -424,7 +422,7 @@ gl::Error Clear11::clearFramebuffer(const gl::Context *context,
     }
     else
     {
-        const auto colorAttachment = fboData.getFirstColorAttachment();
+        const gl::FramebufferAttachment *colorAttachment = fboData.getFirstColorAttachment();
 
         if (!colorAttachment)
         {
@@ -596,25 +594,19 @@ gl::Error Clear11::clearFramebuffer(const gl::Context *context,
                 ASSERT(!scissorRects.empty());
                 deviceContext1->ClearView(framebufferRTV.get(), clearValues, scissorRects.data(),
                                           static_cast<UINT>(scissorRects.size()));
-                if (mRenderer->getWorkarounds().callClearTwiceOnSmallTarget)
+                if (mRenderer->getWorkarounds().callClearTwice)
                 {
-                    if (clearParams.scissor.width <= 16 || clearParams.scissor.height <= 16)
-                    {
-                        deviceContext1->ClearView(framebufferRTV.get(), clearValues,
-                                                  scissorRects.data(),
-                                                  static_cast<UINT>(scissorRects.size()));
-                    }
+                    deviceContext1->ClearView(framebufferRTV.get(), clearValues,
+                                              scissorRects.data(),
+                                              static_cast<UINT>(scissorRects.size()));
                 }
             }
             else
             {
                 deviceContext->ClearRenderTargetView(framebufferRTV.get(), clearValues);
-                if (mRenderer->getWorkarounds().callClearTwiceOnSmallTarget)
+                if (mRenderer->getWorkarounds().callClearTwice)
                 {
-                    if (framebufferSize.width <= 16 || framebufferSize.height <= 16)
-                    {
-                        deviceContext->ClearRenderTargetView(framebufferRTV.get(), clearValues);
-                    }
+                    deviceContext->ClearRenderTargetView(framebufferRTV.get(), clearValues);
                 }
             }
         }
@@ -697,7 +689,7 @@ gl::Error Clear11::clearFramebuffer(const gl::Context *context,
     mBlendStateKey.blendState.colorMaskGreen = clearParams.colorMaskGreen;
     mBlendStateKey.blendState.colorMaskBlue  = clearParams.colorMaskBlue;
     mBlendStateKey.blendState.colorMaskAlpha = clearParams.colorMaskAlpha;
-    mBlendStateKey.mrt                       = numRtvs > 1;
+    mBlendStateKey.rtvMax                    = numRtvs;
     memcpy(mBlendStateKey.rtvMasks, &rtvMasks[0], sizeof(mBlendStateKey.rtvMasks));
 
     // Get BlendState

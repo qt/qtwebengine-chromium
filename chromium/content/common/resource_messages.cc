@@ -4,6 +4,10 @@
 
 #include "content/common/resource_messages.h"
 
+#include "base/files/file.h"
+#include "base/files/platform_file.h"
+#include "ipc/ipc_mojo_param_traits.h"
+#include "ipc/ipc_platform_file.h"
 #include "net/base/load_timing_info.h"
 #include "net/http/http_response_headers.h"
 
@@ -12,7 +16,7 @@ namespace IPC {
 void ParamTraits<scoped_refptr<net::HttpResponseHeaders>>::Write(
     base::Pickle* m,
     const param_type& p) {
-  WriteParam(m, p.get() != NULL);
+  WriteParam(m, p.get() != nullptr);
   if (p.get()) {
     // Do not disclose Set-Cookie headers over IPC.
     p->Persist(m, net::HttpResponseHeaders::PERSIST_SANS_COOKIES);
@@ -53,8 +57,7 @@ bool ReadCert(const base::Pickle* m,
     return false;
   if (!has_object)
     return true;
-  *cert = net::X509Certificate::CreateFromPickle(
-      iter, net::X509Certificate::PICKLETYPE_CERTIFICATE_CHAIN_V3);
+  *cert = net::X509Certificate::CreateFromPickle(iter);
   return !!cert->get();
 }
 
@@ -80,8 +83,7 @@ void ParamTraits<net::SSLInfo>::Write(base::Pickle* m, const param_type& p) {
   WriteParam(m, p.public_key_hashes);
   WriteParam(m, p.pinning_failure_log);
   WriteParam(m, p.signed_certificate_timestamps);
-  WriteParam(m, p.ct_compliance_details_available);
-  WriteParam(m, p.ct_cert_policy_compliance);
+  WriteParam(m, p.ct_policy_compliance);
   WriteParam(m, p.ocsp_result.response_status);
   WriteParam(m, p.ocsp_result.revocation_status);
 }
@@ -110,8 +112,7 @@ bool ParamTraits<net::SSLInfo>::Read(const base::Pickle* m,
          ReadParam(m, iter, &r->public_key_hashes) &&
          ReadParam(m, iter, &r->pinning_failure_log) &&
          ReadParam(m, iter, &r->signed_certificate_timestamps) &&
-         ReadParam(m, iter, &r->ct_compliance_details_available) &&
-         ReadParam(m, iter, &r->ct_cert_policy_compliance) &&
+         ReadParam(m, iter, &r->ct_policy_compliance) &&
          ReadParam(m, iter, &r->ocsp_result.response_status) &&
          ReadParam(m, iter, &r->ocsp_result.revocation_status);
 }
@@ -154,6 +155,16 @@ void ParamTraits<storage::DataElement>::Write(base::Pickle* m,
       WriteParam(m, p.expected_modification_time());
       break;
     }
+    case storage::DataElement::TYPE_RAW_FILE: {
+      WriteParam(
+          m, IPC::GetPlatformFileForTransit(p.file().GetPlatformFile(),
+                                            false /* close_source_handle */));
+      WriteParam(m, p.path());
+      WriteParam(m, p.offset());
+      WriteParam(m, p.length());
+      WriteParam(m, p.expected_modification_time());
+      break;
+    }
     case storage::DataElement::TYPE_FILE_FILESYSTEM: {
       WriteParam(m, p.filesystem_url());
       WriteParam(m, p.offset());
@@ -169,6 +180,14 @@ void ParamTraits<storage::DataElement>::Write(base::Pickle* m,
     }
     case storage::DataElement::TYPE_DISK_CACHE_ENTRY: {
       NOTREACHED() << "Can't be sent by IPC.";
+      break;
+    }
+    case storage::DataElement::TYPE_DATA_PIPE: {
+      WriteParam(m,
+                 const_cast<network::mojom::DataPipeGetterPtr&>(p.data_pipe())
+                     .PassInterface()
+                     .PassHandle()
+                     .release());
       break;
     }
     case storage::DataElement::TYPE_UNKNOWN: {
@@ -216,6 +235,27 @@ bool ParamTraits<storage::DataElement>::Read(const base::Pickle* m,
                             expected_modification_time);
       return true;
     }
+    case storage::DataElement::TYPE_RAW_FILE: {
+      IPC::PlatformFileForTransit platform_file_for_transit;
+      if (!ReadParam(m, iter, &platform_file_for_transit))
+        return false;
+      base::File file = PlatformFileForTransitToFile(platform_file_for_transit);
+      base::FilePath file_path;
+      if (!ReadParam(m, iter, &file_path))
+        return false;
+      uint64_t offset;
+      if (!ReadParam(m, iter, &offset))
+        return false;
+      uint64_t length;
+      if (!ReadParam(m, iter, &length))
+        return false;
+      base::Time expected_modification_time;
+      if (!ReadParam(m, iter, &expected_modification_time))
+        return false;
+      r->SetToFileRange(std::move(file), file_path, offset, length,
+                        expected_modification_time);
+      return true;
+    }
     case storage::DataElement::TYPE_FILE_FILESYSTEM: {
       GURL file_system_url;
       uint64_t offset, length;
@@ -248,6 +288,16 @@ bool ParamTraits<storage::DataElement>::Read(const base::Pickle* m,
       NOTREACHED() << "Can't be sent by IPC.";
       return false;
     }
+    case storage::DataElement::TYPE_DATA_PIPE: {
+      network::mojom::DataPipeGetterPtr data_pipe_getter;
+      mojo::MessagePipeHandle message_pipe;
+      if (!ReadParam(m, iter, &message_pipe))
+        return false;
+      data_pipe_getter.Bind(network::mojom::DataPipeGetterPtrInfo(
+          mojo::ScopedMessagePipeHandle(message_pipe), 0u));
+      r->SetToDataPipe(std::move(data_pipe_getter));
+      return true;
+    }
     case storage::DataElement::TYPE_UNKNOWN: {
       NOTREACHED();
       return false;
@@ -264,7 +314,7 @@ void ParamTraits<storage::DataElement>::Log(const param_type& p,
 void ParamTraits<scoped_refptr<content::ResourceDevToolsInfo>>::Write(
     base::Pickle* m,
     const param_type& p) {
-  WriteParam(m, p.get() != NULL);
+  WriteParam(m, p.get() != nullptr);
   if (p.get()) {
     WriteParam(m, p->http_status_code);
     WriteParam(m, p->http_status_text);
@@ -401,7 +451,7 @@ void ParamTraits<net::LoadTimingInfo>::Log(const param_type& p,
 void ParamTraits<scoped_refptr<content::ResourceRequestBody>>::Write(
     base::Pickle* m,
     const param_type& p) {
-  WriteParam(m, p.get() != NULL);
+  WriteParam(m, p.get() != nullptr);
   if (p.get()) {
     WriteParam(m, *p->elements());
     WriteParam(m, p->identifier());
@@ -443,7 +493,7 @@ void ParamTraits<scoped_refptr<content::ResourceRequestBody>>::Log(
 void ParamTraits<scoped_refptr<net::ct::SignedCertificateTimestamp>>::Write(
     base::Pickle* m,
     const param_type& p) {
-  WriteParam(m, p.get() != NULL);
+  WriteParam(m, p.get() != nullptr);
   if (p.get())
     p->Persist(m);
 }

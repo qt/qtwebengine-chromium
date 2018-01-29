@@ -17,10 +17,10 @@
 #include "ui/gfx/animation/animation_delegate.h"
 #include "ui/gfx/animation/slide_animation.h"
 #include "ui/message_center/message_center.h"
-#include "ui/message_center/message_center_tray.h"
 #include "ui/message_center/notification.h"
 #include "ui/message_center/notification_list.h"
 #include "ui/message_center/public/cpp/message_center_constants.h"
+#include "ui/message_center/ui_controller.h"
 #include "ui/message_center/views/message_view.h"
 #include "ui/message_center/views/message_view_context_menu_controller.h"
 #include "ui/message_center/views/message_view_factory.h"
@@ -43,13 +43,13 @@ const int kMouseExitedDeferTimeoutMs = 200;
 
 // The margin between messages (and between the anchor unless
 // first_item_has_no_margin was specified).
-const int kToastMarginY = kMarginBetweenItems;
+const int kToastMarginY = kMarginBetweenPopups;
 
 }  // namespace.
 
 MessagePopupCollection::MessagePopupCollection(
     MessageCenter* message_center,
-    MessageCenterTray* tray,
+    UiController* tray,
     PopupAlignmentDelegate* alignment_delegate)
     : message_center_(message_center),
       tray_(tray),
@@ -58,7 +58,7 @@ MessagePopupCollection::MessagePopupCollection(
       latest_toast_entered_(NULL),
       user_is_closing_toasts_by_clicking_(false),
       target_top_edge_(0),
-      context_menu_controller_(new MessageViewContextMenuController(this)),
+      context_menu_controller_(new MessageViewContextMenuController()),
       weak_factory_(this) {
   DCHECK(message_center_);
   defer_timer_.reset(new base::OneShotTimer);
@@ -103,20 +103,18 @@ void MessagePopupCollection::RemoveNotification(
   }
 }
 
-std::unique_ptr<ui::MenuModel> MessagePopupCollection::CreateMenuModel(
-    const Notification& notification) {
-  return tray_->CreateNotificationMenuModel(notification);
-}
-
-bool MessagePopupCollection::HasClickedListener(
-    const std::string& notification_id) {
-  return message_center_->HasClickedListener(notification_id);
-}
-
 void MessagePopupCollection::ClickOnNotificationButton(
     const std::string& notification_id,
     int button_index) {
   message_center_->ClickOnNotificationButton(notification_id, button_index);
+}
+
+void MessagePopupCollection::ClickOnNotificationButtonWithReply(
+    const std::string& notification_id,
+    int button_index,
+    const base::string16& reply) {
+  message_center_->ClickOnNotificationButtonWithReply(notification_id,
+                                                      button_index, reply);
 }
 
 void MessagePopupCollection::ClickOnSettingsButton(
@@ -203,11 +201,10 @@ void MessagePopupCollection::UpdateWidgets() {
 #endif  // defined(OS_CHROMEOS)
     view->SetExpanded(true);
 
-    // TODO(yoshiki): Temporary disable context menu on custom notifications.
-    // See crbug.com/750307 for detail.
+    // TODO(yoshiki): Temporarily disable context menu on custom (arc)
+    // notifications. See crbug.com/750307 for detail.
     if (notification.type() != NOTIFICATION_TYPE_CUSTOM &&
-        notification.delegate() &&
-        notification.delegate()->ShouldDisplaySettingsButton()) {
+        notification.should_show_settings_button()) {
       view->set_context_menu_controller(context_menu_controller_.get());
     }
 
@@ -226,7 +223,7 @@ void MessagePopupCollection::UpdateWidgets() {
     // There will be no contents already since this is a new ToastContentsView.
     toast->SetContents(view, /*a11y_feedback_for_updates=*/false);
     toasts_.push_back(toast);
-    view->set_controller(toast);
+    view->set_delegate(toast);
 
     gfx::Size preferred_size = toast->GetPreferredSize();
     gfx::Point origin(

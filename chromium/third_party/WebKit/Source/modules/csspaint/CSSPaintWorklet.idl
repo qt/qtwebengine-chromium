@@ -6,7 +6,9 @@
 
 [
     ImplementedAs=CSSPaintWorklet,
-    RuntimeEnabled=CSSPaintAPI
+    RuntimeEnabled=CSSPaintAPI,
+    MeasureAs=PaintWorklet,
+    SecureContext
 ] partial interface CSS {
     [CallWith=ScriptState] static readonly attribute Worklet paintWorklet;
 };

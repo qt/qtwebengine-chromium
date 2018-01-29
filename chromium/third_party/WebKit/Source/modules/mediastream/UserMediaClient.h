@@ -33,10 +33,10 @@
 
 #include <memory>
 
+#include "base/memory/scoped_refptr.h"
 #include "modules/ModulesExport.h"
 #include "modules/mediastream/UserMediaClient.h"
 #include "platform/wtf/PtrUtil.h"
-#include "platform/wtf/RefPtr.h"
 
 namespace blink {
 
@@ -44,6 +44,7 @@ class ApplyConstraintsRequest;
 class LocalFrame;
 class MediaDevices;
 class MediaDevicesRequest;
+class MediaStreamComponent;
 class UserMediaRequest;
 class WebUserMediaClient;
 
@@ -58,6 +59,7 @@ class MODULES_EXPORT UserMediaClient {
   void RequestMediaDevices(MediaDevicesRequest*);
   void SetMediaDeviceChangeObserver(MediaDevices*);
   void ApplyConstraints(ApplyConstraintsRequest*);
+  void StopTrack(MediaStreamComponent*);
 
  private:
   explicit UserMediaClient(WebUserMediaClient*);

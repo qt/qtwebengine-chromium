@@ -4,12 +4,6 @@
 
 // Multiply-included file, hence no include guard.
 
-#undef CONTENT_COMMON_CHILD_PROCESS_MESSAGES_H_
-#include "content/common/child_process_messages.h"
-#ifndef CONTENT_COMMON_CHILD_PROCESS_MESSAGES_H_
-#error "Failed to include content/common/child_process_messages.h"
-#endif
-
 #include "build/build_config.h"
 #undef CONTENT_COMMON_ACCESSIBILITY_MESSAGES_H_
 #include "content/common/accessibility_messages.h"
@@ -31,11 +25,6 @@
 #include "content/common/cache_storage/cache_storage_messages.h"
 #ifndef CONTENT_COMMON_CACHE_STORAGE_CACHE_STORAGE_MESSAGES_H_
 #error "Failed to include content/common/cache_storage/cache_storage_messages.h"
-#endif
-#undef CONTENT_COMMON_CLIPBOARD_MESSAGES_H_
-#include "content/common/clipboard_messages.h"
-#ifndef CONTENT_COMMON_CLIPBOARD_MESSAGES_H_
-#error "Failed to include content/common/clipboard_messages.h"
 #endif
 #undef CONTENT_COMMON_DEVTOOLS_MESSAGES_H_
 #include "content/common/devtools_messages.h"
@@ -114,16 +103,6 @@
 #include "content/common/platform_notification_messages.h"
 #ifndef CONTENT_COMMON_PLATFORM_NOTIFICATION_MESSAGES_H_
 #error "Failed to include content/common/platform_notification_messages.h"
-#endif
-#undef CONTENT_COMMON_QUOTA_MESSAGES_H_
-#include "content/common/quota_messages.h"
-#ifndef CONTENT_COMMON_QUOTA_MESSAGES_H_
-#error "Failed to include content/common/quota_messages.h"
-#endif
-#undef CONTENT_COMMON_RENDER_PROCESS_MESSAGES_H_
-#include "content/common/render_process_messages.h"
-#ifndef CONTENT_COMMON_RENDER_PROCESS_MESSAGES_H_
-#error "Failed to include content/common/render_process_messages.h"
 #endif
 #undef CONTENT_COMMON_RESOURCE_MESSAGES_H_
 #include "content/common/resource_messages.h"

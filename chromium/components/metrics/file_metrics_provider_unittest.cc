@@ -23,10 +23,10 @@
 #include "base/time/time.h"
 #include "components/metrics/metrics_pref_names.h"
 #include "components/metrics/persistent_system_profile.h"
-#include "components/metrics/proto/system_profile.pb.h"
 #include "components/prefs/pref_registry_simple.h"
 #include "components/prefs/testing_pref_service.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "third_party/metrics_proto/system_profile.pb.h"
 
 namespace {
 const char kMetricsName[] = "TestMetrics";
@@ -42,7 +42,7 @@ class HistogramFlattenerDeltaRecorder : public base::HistogramFlattener {
   void RecordDelta(const base::HistogramBase& histogram,
                    const base::HistogramSamples& snapshot) override {
     // Only remember locally created histograms; they have exactly 2 chars.
-    if (histogram.histogram_name().length() == 2)
+    if (strlen(histogram.histogram_name()) == 2)
       recorded_delta_histogram_names_.push_back(histogram.histogram_name());
   }
 

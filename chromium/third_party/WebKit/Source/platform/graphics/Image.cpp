@@ -36,6 +36,7 @@
 #include "platform/graphics/BitmapImage.h"
 #include "platform/graphics/DeferredImageDecoder.h"
 #include "platform/graphics/GraphicsContext.h"
+#include "platform/graphics/ScopedInterpolationQuality.h"
 #include "platform/graphics/paint/PaintImage.h"
 #include "platform/graphics/paint/PaintRecorder.h"
 #include "platform/graphics/paint/PaintShader.h"
@@ -90,12 +91,12 @@ Image* Image::NullImage() {
   return null_image;
 }
 
-RefPtr<Image> Image::LoadPlatformResource(const char* name) {
+scoped_refptr<Image> Image::LoadPlatformResource(const char* name) {
   const WebData& resource = Platform::Current()->GetDataResource(name);
   if (resource.IsEmpty())
     return Image::NullImage();
 
-  RefPtr<Image> image = BitmapImage::Create();
+  scoped_refptr<Image> image = BitmapImage::Create();
   image->SetData(resource, true);
   return image;
 }
@@ -104,7 +105,7 @@ bool Image::SupportsType(const String& type) {
   return MIMETypeRegistry::IsSupportedImageResourceMIMEType(type);
 }
 
-Image::SizeAvailability Image::SetData(RefPtr<SharedBuffer> data,
+Image::SizeAvailability Image::SetData(scoped_refptr<SharedBuffer> data,
                                        bool all_data_received) {
   encoded_image_data_ = std::move(data);
   if (!encoded_image_data_.get())
@@ -242,12 +243,10 @@ void Image::DrawTiledBorder(GraphicsContext& ctxt,
 
   // TODO(cavalcantii): see crbug.com/662507.
   if ((h_rule == kRoundTile) || (v_rule == kRoundTile)) {
-    InterpolationQuality previous_interpolation_quality =
-        ctxt.ImageInterpolationQuality();
-    ctxt.SetImageInterpolationQuality(kInterpolationLow);
+    ScopedInterpolationQuality interpolation_quality_scope(ctxt,
+                                                           kInterpolationLow);
     DrawPattern(ctxt, src_rect, tile_scale_factor, pattern_phase, op, dst_rect,
                 FloatSize());
-    ctxt.SetImageInterpolationQuality(previous_interpolation_quality);
   } else {
     DrawPattern(ctxt, src_rect, tile_scale_factor, pattern_phase, op, dst_rect,
                 spacing);
@@ -365,8 +364,8 @@ void Image::DrawPattern(GraphicsContext& context,
     PlatformInstrumentation::DidDrawLazyPixelRef(image_id);
 }
 
-RefPtr<Image> Image::ImageForDefaultFrame() {
-  RefPtr<Image> image(this);
+scoped_refptr<Image> Image::ImageForDefaultFrame() {
+  scoped_refptr<Image> image(this);
 
   return image;
 }

@@ -6,22 +6,21 @@
 
 #include "core/css/parser/CSSTokenizer.h"
 #include "core/media_type_names.h"
-#include "platform/wtf/Vector.h"
 
 namespace blink {
 
-RefPtr<MediaQuerySet> MediaQueryParser::ParseMediaQuerySet(
+scoped_refptr<MediaQuerySet> MediaQueryParser::ParseMediaQuerySet(
     const String& query_string) {
   return ParseMediaQuerySet(
       CSSParserTokenRange(CSSTokenizer(query_string).TokenizeToEOF()));
 }
 
-RefPtr<MediaQuerySet> MediaQueryParser::ParseMediaQuerySet(
+scoped_refptr<MediaQuerySet> MediaQueryParser::ParseMediaQuerySet(
     CSSParserTokenRange range) {
   return MediaQueryParser(kMediaQuerySetParser).ParseImpl(range);
 }
 
-RefPtr<MediaQuerySet> MediaQueryParser::ParseMediaCondition(
+scoped_refptr<MediaQuerySet> MediaQueryParser::ParseMediaCondition(
     CSSParserTokenRange range) {
   return MediaQueryParser(kMediaConditionParser).ParseImpl(range);
 }
@@ -58,7 +57,7 @@ MediaQueryParser::MediaQueryParser(ParserType parser_type)
     state_ = &MediaQueryParser::ReadMediaNot;
 }
 
-MediaQueryParser::~MediaQueryParser() {}
+MediaQueryParser::~MediaQueryParser() = default;
 
 void MediaQueryParser::SetStateAndRestrict(
     State state,
@@ -228,7 +227,8 @@ void MediaQueryParser::ProcessToken(const CSSParserToken& token) {
 }
 
 // The state machine loop
-RefPtr<MediaQuerySet> MediaQueryParser::ParseImpl(CSSParserTokenRange range) {
+scoped_refptr<MediaQuerySet> MediaQueryParser::ParseImpl(
+    CSSParserTokenRange range) {
   while (!range.AtEnd())
     ProcessToken(range.Consume());
 

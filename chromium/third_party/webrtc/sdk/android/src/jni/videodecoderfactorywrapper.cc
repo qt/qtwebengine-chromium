@@ -10,10 +10,11 @@
 
 #include "sdk/android/src/jni/videodecoderfactorywrapper.h"
 
+#include "api/video_codecs/sdp_video_format.h"
 #include "api/video_codecs/video_decoder.h"
 #include "common_types.h"  // NOLINT(build/include)
 #include "rtc_base/logging.h"
-#include "sdk/android/src/jni/videodecoderwrapper.h"
+#include "sdk/android/src/jni/wrappednativecodec.h"
 
 namespace webrtc {
 namespace jni {
@@ -27,19 +28,20 @@ VideoDecoderFactoryWrapper::VideoDecoderFactoryWrapper(JNIEnv* jni,
                        "(Ljava/lang/String;)Lorg/webrtc/VideoDecoder;");
 }
 
-VideoDecoder* VideoDecoderFactoryWrapper::CreateVideoDecoder(
-    VideoCodecType type) {
+std::unique_ptr<VideoDecoder> VideoDecoderFactoryWrapper::CreateVideoDecoder(
+    const SdpVideoFormat& format) {
   JNIEnv* jni = AttachCurrentThreadIfNeeded();
   ScopedLocalRefFrame local_ref_frame(jni);
-  const char* type_payload = CodecTypeToPayloadString(type);
-  jstring name = jni->NewStringUTF(type_payload);
+  jstring name = NativeToJavaString(jni, format.name);
   jobject decoder =
       jni->CallObjectMethod(*decoder_factory_, create_decoder_method_, name);
-  return decoder != nullptr ? new VideoDecoderWrapper(jni, decoder) : nullptr;
+  return decoder != nullptr ? JavaToNativeVideoDecoder(jni, decoder) : nullptr;
 }
 
-void VideoDecoderFactoryWrapper::DestroyVideoDecoder(VideoDecoder* decoder) {
-  delete decoder;
+std::vector<SdpVideoFormat> VideoDecoderFactoryWrapper::GetSupportedFormats()
+    const {
+  // TODO(andersc): VideoDecoderFactory.java does not have this method.
+  return std::vector<SdpVideoFormat>();
 }
 
 }  // namespace jni

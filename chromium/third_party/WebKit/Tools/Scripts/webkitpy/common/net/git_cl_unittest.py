@@ -6,6 +6,7 @@ import unittest
 
 from webkitpy.common.host_mock import MockHost
 from webkitpy.common.net.buildbot import Build
+from webkitpy.common.net.git_cl import CLStatus
 from webkitpy.common.net.git_cl import GitCL
 from webkitpy.common.net.git_cl import TryJobStatus
 from webkitpy.common.system.executive_mock import MockExecutive
@@ -36,6 +37,63 @@ class GitCLTest(unittest.TestCase):
         git_cl = GitCL(host, auth_refresh_token_json='token.json')
         git_cl.run(['issue'])
         self.assertEqual(host.executive.calls, [['git', 'cl', 'issue']])
+
+    def test_trigger_try_jobs_with_frozenset(self):
+        # The trigger_try_jobs method may be called with an immutable set.
+        # It has special logic which assumes most builders to trigger are
+        # on the master tryserver.blink.
+        host = MockHost()
+        git_cl = GitCL(host, auth_refresh_token_json='token.json')
+        git_cl.trigger_try_jobs(frozenset(['builder-a', 'builder-b']))
+        self.assertEqual(host.executive.calls, [
+            [
+                'git', 'cl', 'try',
+                '-m', 'tryserver.blink',
+                '-b', 'builder-a', '-b', 'builder-b',
+                '--auth-refresh-token-json', 'token.json'
+            ],
+        ])
+
+    def test_trigger_try_jobs_with_list(self):
+        host = MockHost()
+        git_cl = GitCL(host, auth_refresh_token_json='token.json')
+        git_cl.trigger_try_jobs(['builder-a', 'android_blink_rel'])
+        self.assertEqual(host.executive.calls, [
+            [
+                'git', 'cl', 'try',
+                '-m', 'tryserver.chromium.android',
+                '-b', 'android_blink_rel',
+                '--auth-refresh-token-json', 'token.json'
+            ],
+            [
+                'git', 'cl', 'try',
+                '-m', 'tryserver.blink',
+                '-b', 'builder-a',
+                '--auth-refresh-token-json', 'token.json'
+            ],
+        ])
+
+    def test_trigger_try_jobs_with_android_blink_rel(self):
+        # The trigger_try_jobs method may be called with an immutable set.
+        # It has special logic which assumes most builders to trigger are
+        # on the master tryserver.blink.
+        host = MockHost()
+        git_cl = GitCL(host, auth_refresh_token_json='token.json')
+        git_cl.trigger_try_jobs(frozenset(['builder-a', 'android_blink_rel']))
+        self.assertEqual(host.executive.calls, [
+            [
+                'git', 'cl', 'try',
+                '-m', 'tryserver.chromium.android',
+                '-b', 'android_blink_rel',
+                '--auth-refresh-token-json', 'token.json'
+            ],
+            [
+                'git', 'cl', 'try',
+                '-m', 'tryserver.blink',
+                '-b', 'builder-a',
+                '--auth-refresh-token-json', 'token.json'
+            ],
+        ])
 
     def test_get_issue_number(self):
         host = MockHost()
@@ -88,8 +146,34 @@ class GitCLTest(unittest.TestCase):
             'Waiting for try jobs. 6600 seconds passed.\n'
             'Timed out waiting for try jobs.\n')
 
+    def test_wait_for_try_jobs_cl_closed(self):
+        host = MockHost()
+        host.executive = MockExecutive(output='closed')
+        git_cl = GitCL(host)
+        git_cl.fetch_raw_try_job_results = lambda: [
+            {
+                'builder_name': 'some-builder',
+                'status': 'STARTED',
+                'result': None,
+                'url': None,
+            },
+        ]
+        self.assertEqual(
+            git_cl.wait_for_try_jobs(),
+            CLStatus(
+                status='closed',
+                try_job_results={
+                    Build('some-builder', None): TryJobStatus('STARTED', None),
+                },
+            )
+        )
+        self.assertEqual(
+            host.stdout.getvalue(),
+            'Waiting for try jobs, timeout: 7200 seconds.\n')
+
     def test_wait_for_try_jobs_done(self):
         host = MockHost()
+        host.executive = MockExecutive(output='lgtm')
         git_cl = GitCL(host)
         git_cl.fetch_raw_try_job_results = lambda: [
             {
@@ -101,13 +185,16 @@ class GitCLTest(unittest.TestCase):
         ]
         self.assertEqual(
             git_cl.wait_for_try_jobs(),
-            {
-                Build('some-builder', 100): TryJobStatus('COMPLETED', 'FAILURE')
-            })
+            CLStatus(
+                status='lgtm',
+                try_job_results={
+                    Build('some-builder', 100): TryJobStatus('COMPLETED', 'FAILURE'),
+                }
+            )
+        )
         self.assertEqual(
             host.stdout.getvalue(),
-            'Waiting for try jobs, timeout: 7200 seconds.\n'
-            'All jobs finished.\n')
+            'Waiting for try jobs, timeout: 7200 seconds.\n')
 
     def test_wait_for_closed_status_timeout(self):
         host = MockHost()

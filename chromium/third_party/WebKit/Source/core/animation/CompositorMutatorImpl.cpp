@@ -54,15 +54,16 @@ CompositorMutatorImpl* CompositorMutatorImpl::Create() {
   return new CompositorMutatorImpl();
 }
 
-bool CompositorMutatorImpl::Mutate(double monotonic_time_now) {
+void CompositorMutatorImpl::Mutate(
+    std::unique_ptr<CompositorMutatorInputState> state) {
   TRACE_EVENT0("cc", "CompositorMutatorImpl::mutate");
-  bool need_to_reinvoke = false;
   for (CompositorAnimator* animator : animators_) {
-    if (animator->Mutate(monotonic_time_now))
-      need_to_reinvoke = true;
+    animator->Mutate(*state);
   }
+}
 
-  return need_to_reinvoke;
+bool CompositorMutatorImpl::HasAnimators() {
+  return !animators_.IsEmpty();
 }
 
 void CompositorMutatorImpl::RegisterCompositorAnimator(
@@ -71,7 +72,6 @@ void CompositorMutatorImpl::RegisterCompositorAnimator(
   TRACE_EVENT0("cc", "CompositorMutatorImpl::registerCompositorAnimator");
   DCHECK(!animators_.Contains(animator));
   animators_.insert(animator);
-  SetNeedsMutate();
 }
 
 void CompositorMutatorImpl::UnregisterCompositorAnimator(
@@ -80,10 +80,11 @@ void CompositorMutatorImpl::UnregisterCompositorAnimator(
   animators_.erase(animator);
 }
 
-void CompositorMutatorImpl::SetNeedsMutate() {
+void CompositorMutatorImpl::SetMutationUpdate(
+    std::unique_ptr<CompositorMutatorOutputState> state) {
   DCHECK(!IsMainThread());
-  TRACE_EVENT0("cc", "CompositorMutatorImpl::setNeedsMutate");
-  client_->SetNeedsMutate();
+  TRACE_EVENT0("compositor-worker", "CompositorMutatorImpl::SetMutationUpdate");
+  client_->SetMutationUpdate(std::move(state));
 }
 
 }  // namespace blink

@@ -50,7 +50,10 @@ SkPath SkSVGNode::asPath(const SkSVGRenderContext& ctx) const {
 bool SkSVGNode::onPrepareToRender(SkSVGRenderContext* ctx) const {
     ctx->applyPresentationAttributes(fPresentationAttributes,
                                      this->hasChildren() ? 0 : SkSVGRenderContext::kLeaf);
-    return true;
+
+    // visibility:hidden disables rendering
+    const auto visibility = ctx->presentationContext().fInherited.fVisibility.get()->type();
+    return visibility != SkSVGVisibility::Type::kHidden;
 }
 
 void SkSVGNode::setAttribute(SkSVGAttribute attr, const SkSVGValue& v) {
@@ -87,6 +90,14 @@ void SkSVGNode::setStroke(const SkSVGPaint& svgPaint) {
     fPresentationAttributes.fStroke.set(svgPaint);
 }
 
+void SkSVGNode::setStrokeDashArray(const SkSVGDashArray& dashArray) {
+    fPresentationAttributes.fStrokeDashArray.set(dashArray);
+}
+
+void SkSVGNode::setStrokeDashOffset(const SkSVGLength& dashOffset) {
+    fPresentationAttributes.fStrokeDashOffset.set(dashOffset);
+}
+
 void SkSVGNode::setStrokeOpacity(const SkSVGNumberType& opacity) {
     fPresentationAttributes.fStrokeOpacity.set(
         SkSVGNumberType(SkTPin<SkScalar>(opacity.value(), 0, 1)));
@@ -94,6 +105,10 @@ void SkSVGNode::setStrokeOpacity(const SkSVGNumberType& opacity) {
 
 void SkSVGNode::setStrokeWidth(const SkSVGLength& strokeWidth) {
     fPresentationAttributes.fStrokeWidth.set(strokeWidth);
+}
+
+void SkSVGNode::setVisibility(const SkSVGVisibility& visibility) {
+    fPresentationAttributes.fVisibility.set(visibility);
 }
 
 void SkSVGNode::onSetAttribute(SkSVGAttribute attr, const SkSVGValue& v) {
@@ -133,6 +148,16 @@ void SkSVGNode::onSetAttribute(SkSVGAttribute attr, const SkSVGValue& v) {
             this->setStroke(*paint);
         }
         break;
+    case SkSVGAttribute::kStrokeDashArray:
+        if (const SkSVGDashArrayValue* dashArray = v.as<SkSVGDashArrayValue>()) {
+            this->setStrokeDashArray(*dashArray);
+        }
+        break;
+    case SkSVGAttribute::kStrokeDashOffset:
+        if (const SkSVGLengthValue* dashOffset= v.as<SkSVGLengthValue>()) {
+            this->setStrokeDashOffset(*dashOffset);
+        }
+        break;
     case SkSVGAttribute::kStrokeOpacity:
         if (const SkSVGNumberValue* opacity = v.as<SkSVGNumberValue>()) {
             this->setStrokeOpacity(*opacity);
@@ -156,6 +181,11 @@ void SkSVGNode::onSetAttribute(SkSVGAttribute attr, const SkSVGValue& v) {
     case SkSVGAttribute::kStrokeWidth:
         if (const SkSVGLengthValue* strokeWidth = v.as<SkSVGLengthValue>()) {
             this->setStrokeWidth(*strokeWidth);
+        }
+        break;
+    case SkSVGAttribute::kVisibility:
+        if (const SkSVGVisibilityValue* visibility = v.as<SkSVGVisibilityValue>()) {
+            this->setVisibility(*visibility);
         }
         break;
     default:

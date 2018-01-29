@@ -35,18 +35,6 @@ EditingTestBase::EditingTestBase() {}
 
 EditingTestBase::~EditingTestBase() {}
 
-Document& EditingTestBase::GetDocument() const {
-  return dummy_page_holder_->GetDocument();
-}
-
-LocalFrame& EditingTestBase::GetFrame() const {
-  return GetDummyPageHolder().GetFrame();
-}
-
-FrameSelection& EditingTestBase::Selection() const {
-  return GetFrame().Selection();
-}
-
 void EditingTestBase::InsertStyleElement(const std::string& style_rules) {
   Element* const head = GetOrCreateElement(&GetDocument(), HTMLNames::headTag);
   DCHECK_EQ(head, GetOrCreateElement(&GetDocument(), HTMLNames::headTag));
@@ -83,13 +71,18 @@ std::string EditingTestBase::GetSelectionTextFromBody(
   return SelectionSample::GetSelectionText(*GetDocument().body(), selection);
 }
 
-void EditingTestBase::SetUp() {
-  dummy_page_holder_ = DummyPageHolder::Create(IntSize(800, 600));
+std::string EditingTestBase::GetSelectionTextInFlatTreeFromBody(
+    const SelectionInFlatTree& selection) const {
+  return SelectionSample::GetSelectionTextInFlatTree(*GetDocument().body(),
+                                                     selection);
 }
 
-void EditingTestBase::SetupPageWithClients(Page::PageClients* clients) {
-  DCHECK(!dummy_page_holder_) << "Page should be set up only once";
-  dummy_page_holder_ = DummyPageHolder::Create(IntSize(800, 600), clients);
+std::string EditingTestBase::GetCaretTextFromBody(
+    const Position& position) const {
+  DCHECK(position.IsValidFor(GetDocument()))
+      << "A valid position must be provided " << position;
+  return GetSelectionTextFromBody(
+      SelectionInDOMTree::Builder().Collapse(position).Build());
 }
 
 ShadowRoot* EditingTestBase::CreateShadowRootForElementWithIDAndSetInnerHTML(
@@ -105,21 +98,11 @@ ShadowRoot* EditingTestBase::CreateShadowRootForElementWithIDAndSetInnerHTML(
   return &shadow_root;
 }
 
-void EditingTestBase::SetBodyContent(const std::string& body_content) {
-  GetDocument().body()->SetInnerHTMLFromString(
-      String::FromUTF8(body_content.c_str()), ASSERT_NO_EXCEPTION);
-  UpdateAllLifecyclePhases();
-}
-
 ShadowRoot* EditingTestBase::SetShadowContent(const char* shadow_content,
                                               const char* host) {
   ShadowRoot* shadow_root = CreateShadowRootForElementWithIDAndSetInnerHTML(
       GetDocument(), host, shadow_content);
   return shadow_root;
-}
-
-void EditingTestBase::UpdateAllLifecyclePhases() {
-  GetDocument().View()->UpdateAllLifecyclePhases();
 }
 
 }  // namespace blink

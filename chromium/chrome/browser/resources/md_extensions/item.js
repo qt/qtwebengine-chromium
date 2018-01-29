@@ -44,20 +44,37 @@ cr.define('extensions', function() {
      */
     inspectItemView(id, view) {}
 
-    /** @param {string} id */
+    /**
+     * @param {string} url
+     */
+    openUrl(url) {}
+
+    /**
+     * @param {string} id
+     * @return {!Promise}
+     */
     reloadItem(id) {}
 
     /** @param {string} id */
     repairItem(id) {}
 
+    /** @param {!chrome.developerPrivate.ExtensionInfo} extension */
+    showItemOptionsPage(extension) {}
+
     /** @param {string} id */
-    showItemOptionsPage(id) {}
+    showInFolder(id) {}
+
+    /**
+     * @param {string} id
+     * @return {!Promise<string>}
+     */
+    getExtensionSize(id) {}
   }
 
   const Item = Polymer({
     is: 'extensions-item',
 
-    behaviors: [I18nBehavior],
+    behaviors: [I18nBehavior, extensions.ItemBehavior],
 
     properties: {
       // The item's delegate, or null.
@@ -104,9 +121,17 @@ cr.define('extensions', function() {
      * @return {boolean}
      * @private
      */
-    computeErrorsHidden_: function() {
-      return !this.data.manifestErrors.length &&
-          !this.data.runtimeErrors.length;
+    shouldShowErrorsButton_: function() {
+      // When the error console is disabled (happens when
+      // --disable-error-console command line flag is used or when in the
+      // Stable/Beta channel), |installWarnings| is populated.
+      if (this.data.installWarnings && this.data.installWarnings.length > 0)
+        return true;
+
+      // When error console is enabled |installedWarnings| is not populated.
+      // Instead |manifestErrors| and |runtimeErrors| are used.
+      return this.data.manifestErrors.length > 0 ||
+          this.data.runtimeErrors.length > 0;
     },
 
     /** @private */
@@ -122,6 +147,11 @@ cr.define('extensions', function() {
 
     /** @private */
     onErrorsTap_: function() {
+      if (this.data.installWarnings && this.data.installWarnings.length > 0) {
+        this.fire('show-install-warnings', this.data.installWarnings);
+        return;
+      }
+
       extensions.navigation.navigateTo(
           {page: Page.ERRORS, extensionId: this.data.id});
     },
@@ -148,7 +178,9 @@ cr.define('extensions', function() {
 
     /** @private */
     onReloadTap_: function() {
-      this.delegate.reloadItem(this.data.id);
+      this.delegate.reloadItem(this.data.id).catch(loadError => {
+        this.fire('load-error', loadError);
+      });
     },
 
     /** @private */
@@ -220,6 +252,9 @@ cr.define('extensions', function() {
           return 'communication:business';
         case SourceType.SIDELOADED:
           return 'input';
+        case SourceType.UNKNOWN:
+          // TODO(dpapad): Ask UX for a better icon for this case.
+          return 'input';
         case SourceType.UNPACKED:
           return 'extensions-icons:unpacked';
         case SourceType.WEBSTORE:
@@ -233,6 +268,9 @@ cr.define('extensions', function() {
      * @private
      */
     computeSourceIndicatorText_: function() {
+      if (this.data.locationText)
+        return this.data.locationText;
+
       const sourceType = extensions.getItemSource(this.data);
       return sourceType == SourceType.WEBSTORE ?
           '' :
@@ -251,18 +289,24 @@ cr.define('extensions', function() {
      * @return {string}
      * @private
      */
-    computeFirstInspectLabel_: function() {
+    computeFirstInspectTitle_: function() {
       // Note: theoretically, this wouldn't be called without any inspectable
       // views (because it's in a dom-if="!computeInspectViewsHidden_()").
       // However, due to the recycling behavior of iron list, it seems that
       // sometimes it can. Even when it is, the UI behaves properly, but we
       // need to handle the case gracefully.
-      if (this.data.views.length == 0)
-        return '';
-      let label = extensions.computeInspectableViewLabel(this.data.views[0]);
-      if (this.data.views.length > 1)
-        label += ',';
-      return label;
+      return this.data.views.length > 0 ?
+          extensions.computeInspectableViewLabel(this.data.views[0]) :
+          '';
+    },
+
+    /**
+     * @return {string}
+     * @private
+     */
+    computeFirstInspectLabel_: function() {
+      let label = this.computeFirstInspectTitle_();
+      return label && this.data.views.length > 1 ? label + ',' : label;
     },
 
     /**

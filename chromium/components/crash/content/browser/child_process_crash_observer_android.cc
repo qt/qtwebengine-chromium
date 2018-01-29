@@ -4,6 +4,8 @@
 
 #include "components/crash/content/browser/child_process_crash_observer_android.h"
 
+#include <utility>
+
 #include "base/bind.h"
 #include "base/files/file_util.h"
 #include "base/task_scheduler/post_task.h"
@@ -14,34 +16,26 @@ namespace breakpad {
 
 ChildProcessCrashObserver::ChildProcessCrashObserver(
     const base::FilePath crash_dump_dir,
-    int descriptor_id,
-    const base::Closure& increase_crash_cb)
-    : crash_dump_dir_(crash_dump_dir),
-      descriptor_id_(descriptor_id),
-      increase_crash_cb_(base::Bind(
-          [](base::Closure cb, bool run_cb) {
-            if (run_cb)
-              cb.Run();
-          },
-          increase_crash_cb)) {}
+    int descriptor_id)
+    : crash_dump_dir_(crash_dump_dir), descriptor_id_(descriptor_id) {}
 
 ChildProcessCrashObserver::~ChildProcessCrashObserver() {}
 
 void ChildProcessCrashObserver::OnChildStart(
-    int child_process_id,
+    int process_host_id,
     content::PosixFileDescriptorInfo* mappings) {
   if (!breakpad::IsCrashReporterEnabled())
     return;
 
   base::ScopedFD file(
       CrashDumpManager::GetInstance()->CreateMinidumpFileForChild(
-          child_process_id));
+          process_host_id));
   if (file.is_valid())
     mappings->Transfer(descriptor_id_, std::move(file));
 }
 
 void ChildProcessCrashObserver::OnChildExit(
-    int child_process_id,
+    int process_host_id,
     base::ProcessHandle pid,
     content::ProcessType process_type,
     base::TerminationStatus termination_status,
@@ -50,13 +44,12 @@ void ChildProcessCrashObserver::OnChildExit(
   // NOTIFICATION_RENDERER_PROCESS_TERMINATED and then with
   // NOTIFICATION_RENDERER_PROCESS_CLOSED.
 
-  base::PostTaskWithTraitsAndReplyWithResult(
+  base::PostTaskWithTraits(
       FROM_HERE, {base::MayBlock(), base::TaskPriority::BACKGROUND},
       base::Bind(&CrashDumpManager::ProcessMinidumpFileFromChild,
                  base::Unretained(CrashDumpManager::GetInstance()),
-                 crash_dump_dir_, child_process_id, process_type,
-                 termination_status, app_state),
-      increase_crash_cb_);
+                 crash_dump_dir_, process_host_id, process_type,
+                 termination_status, app_state));
 }
 
 }  // namespace breakpad

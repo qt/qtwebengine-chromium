@@ -9,6 +9,7 @@ source_set("sync_utils") {
   sources = [
     "sync_error_infobar_delegate.h",
     "sync_error_infobar_delegate.mm",
+    "sync_presenter.h",
     "sync_util.h",
     "sync_util.mm",
   ]
@@ -54,11 +55,12 @@ source_set("eg_tests") {
     "//ios/chrome/browser/ui/authentication:eg_test_support",
     "//ios/chrome/browser/ui/settings",
     "//ios/chrome/browser/ui/tools_menu",
+    "//ios/chrome/browser/ui/tools_menu/public",
     "//ios/chrome/test/app:test_support",
     "//ios/chrome/test/earl_grey:test_support",
     "//ios/public/provider/chrome/browser/signin:test_support",
     "//ios/testing:ios_test_support",
-    "//ios/third_party/earl_grey",
+    "//ios/third_party/earl_grey:earl_grey+link",
     "//ios/web/public/test/http_server",
     "//net",
     "//ui/base",

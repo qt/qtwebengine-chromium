@@ -30,6 +30,7 @@
 #include "components/update_client/test_configurator.h"
 #include "components/update_client/update_client.h"
 #include "components/update_client/update_client_errors.h"
+#include "services/service_manager/public/cpp/connector.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -68,25 +69,45 @@ base::FilePath test_file(const char* file) {
 class MockUpdateClient : public UpdateClient {
  public:
   MockUpdateClient() {}
+
+  void Install(const std::string& id,
+               CrxDataCallback crx_data_callback,
+               Callback callback) {
+    DoInstall(id, std::move(crx_data_callback));
+    std::move(callback).Run(update_client::Error::NONE);
+  }
+
+  void Update(const std::vector<std::string>& ids,
+              CrxDataCallback crx_data_callback,
+              Callback callback) {
+    DoUpdate(ids, std::move(crx_data_callback));
+    std::move(callback).Run(update_client::Error::NONE);
+  }
+
+  void SendUninstallPing(const std::string& id,
+                         const base::Version& version,
+                         int reason,
+                         Callback callback) {
+    DoSendUninstallPing(id, version, reason);
+    std::move(callback).Run(update_client::Error::NONE);
+  }
+
   MOCK_METHOD1(AddObserver, void(Observer* observer));
   MOCK_METHOD1(RemoveObserver, void(Observer* observer));
-  MOCK_METHOD3(Install,
+  MOCK_METHOD2(DoInstall,
                void(const std::string& id,
-                    const CrxDataCallback& crx_data_callback,
-                    const Callback& callback));
-  MOCK_METHOD3(Update,
+                    const CrxDataCallback& crx_data_callback));
+  MOCK_METHOD2(DoUpdate,
                void(const std::vector<std::string>& ids,
-                    const CrxDataCallback& crx_data_callback,
-                    const Callback& callback));
+                    const CrxDataCallback& crx_data_callback));
   MOCK_CONST_METHOD2(GetCrxUpdateState,
                      bool(const std::string& id, CrxUpdateItem* update_item));
   MOCK_CONST_METHOD1(IsUpdating, bool(const std::string& id));
   MOCK_METHOD0(Stop, void());
-  MOCK_METHOD4(SendUninstallPing,
+  MOCK_METHOD3(DoSendUninstallPing,
                void(const std::string& id,
                     const base::Version& version,
-                    int reason,
-                    const Callback& callback));
+                    int reason));
 
  private:
   ~MockUpdateClient() override {}
@@ -113,6 +134,8 @@ class FakeInstallerPolicy : public ComponentInstallerPolicy {
       const base::FilePath& install_dir) override {
     return update_client::CrxInstaller::Result(0);
   }
+
+  void OnCustomUninstall() override {}
 
   void ComponentReady(
       const base::Version& version,
@@ -154,7 +177,7 @@ class ComponentInstallerTest : public testing::Test {
     return component_updater_.get();
   }
   scoped_refptr<TestConfigurator> configurator() const { return config_; }
-  base::Closure quit_closure() const { return quit_closure_; }
+  base::OnceClosure quit_closure() { return runloop_.QuitClosure(); }
 
  protected:
   void RunThreads();
@@ -169,7 +192,6 @@ class ComponentInstallerTest : public testing::Test {
   const scoped_refptr<base::SingleThreadTaskRunner> main_thread_task_runner_ =
       base::ThreadTaskRunnerHandle::Get();
   base::RunLoop runloop_;
-  base::Closure quit_closure_ = runloop_.QuitClosure();
 
   scoped_refptr<TestConfigurator> config_ =
       base::MakeRefCounted<TestConfigurator>();
@@ -198,8 +220,8 @@ void ComponentInstallerTest::Unpack(const base::FilePath& crx_path) {
   auto component_unpacker = base::MakeRefCounted<ComponentUnpacker>(
       std::vector<uint8_t>(std::begin(kSha256Hash), std::end(kSha256Hash)),
       crx_path, nullptr, nullptr);
-  component_unpacker->Unpack(base::Bind(&ComponentInstallerTest::UnpackComplete,
-                                        base::Unretained(this)));
+  component_unpacker->Unpack(base::BindOnce(
+      &ComponentInstallerTest::UnpackComplete, base::Unretained(this)));
   RunThreads();
 }
 
@@ -210,7 +232,7 @@ void ComponentInstallerTest::UnpackComplete(
   EXPECT_EQ(update_client::UnpackerError::kNone, result_.error);
   EXPECT_EQ(0, result_.extended_error);
 
-  main_thread_task_runner_->PostTask(FROM_HERE, quit_closure_);
+  main_thread_task_runner_->PostTask(FROM_HERE, quit_closure());
 }
 
 }  // namespace
@@ -221,22 +243,20 @@ void ComponentInstallerTest::UnpackComplete(
 TEST_F(ComponentInstallerTest, RegisterComponent) {
   class LoopHandler {
    public:
-    LoopHandler(int max_cnt, const base::Closure& quit_closure)
-        : max_cnt_(max_cnt), quit_closure_(quit_closure) {}
+    LoopHandler(int max_cnt, base::OnceClosure quit_closure)
+        : max_cnt_(max_cnt), quit_closure_(std::move(quit_closure)) {}
 
     void OnUpdate(const std::vector<std::string>& ids,
-                  const UpdateClient::CrxDataCallback& crx_data_callback,
-                  const Callback& callback) {
-      callback.Run(update_client::Error::NONE);
+                  const UpdateClient::CrxDataCallback& crx_data_callback) {
       static int cnt = 0;
       ++cnt;
       if (cnt >= max_cnt_)
-        quit_closure_.Run();
+        std::move(quit_closure_).Run();
     }
 
    private:
     const int max_cnt_;
-    base::Closure quit_closure_;
+    base::OnceClosure quit_closure_;
   };
 
   base::ScopedPathOverride scoped_path_override(DIR_COMPONENT_USER);
@@ -245,7 +265,7 @@ TEST_F(ComponentInstallerTest, RegisterComponent) {
 
   // Quit after one update check has been fired.
   LoopHandler loop_handler(1, quit_closure());
-  EXPECT_CALL(update_client(), Update(_, _, _))
+  EXPECT_CALL(update_client(), DoUpdate(_, _))
       .WillRepeatedly(Invoke(&loop_handler, &LoopHandler::OnUpdate));
 
   EXPECT_CALL(update_client(), GetCrxUpdateState(id, _)).Times(1);
@@ -253,7 +273,7 @@ TEST_F(ComponentInstallerTest, RegisterComponent) {
 
   auto installer = base::MakeRefCounted<ComponentInstaller>(
       base::MakeUnique<FakeInstallerPolicy>());
-  installer->Register(component_updater(), base::Closure());
+  installer->Register(component_updater(), base::OnceClosure());
 
   RunThreads();
 
@@ -285,8 +305,7 @@ TEST_F(ComponentInstallerTest, UnpackPathInstallSuccess) {
 
   const auto unpack_path = result().unpack_path;
   EXPECT_TRUE(base::DirectoryExists(unpack_path));
-
-  auto manifest = update_client::ReadManifest(unpack_path);
+  EXPECT_EQ(update_client::jebg_public_key, result().public_key);
 
   base::ScopedPathOverride scoped_path_override(DIR_COMPONENT_USER);
   base::FilePath base_dir;
@@ -294,8 +313,8 @@ TEST_F(ComponentInstallerTest, UnpackPathInstallSuccess) {
   base_dir = base_dir.Append(relative_install_dir);
   EXPECT_TRUE(base::CreateDirectory(base_dir));
   installer->Install(
-      std::move(manifest), unpack_path,
-      base::Bind([](const update_client::CrxInstaller::Result& result) {
+      unpack_path, update_client::jebg_public_key,
+      base::BindOnce([](const update_client::CrxInstaller::Result& result) {
         EXPECT_EQ(0, result.error);
       }));
 
@@ -315,8 +334,6 @@ TEST_F(ComponentInstallerTest, UnpackPathInstallError) {
   const auto unpack_path = result().unpack_path;
   EXPECT_TRUE(base::DirectoryExists(unpack_path));
 
-  auto manifest = update_client::ReadManifest(unpack_path);
-
   // Test the precondition that DIR_COMPONENT_USER is not registered with
   // the path service.
   base::FilePath base_dir;
@@ -324,8 +341,8 @@ TEST_F(ComponentInstallerTest, UnpackPathInstallError) {
 
   // Calling |Install| fails since DIR_COMPONENT_USER does not exist.
   installer->Install(
-      std::move(manifest), unpack_path,
-      base::Bind([](const update_client::CrxInstaller::Result& result) {
+      unpack_path, update_client::jebg_public_key,
+      base::BindOnce([](const update_client::CrxInstaller::Result& result) {
         EXPECT_EQ(static_cast<int>(
                       update_client::InstallError::NO_DIR_COMPONENT_USER),
                   result.error);

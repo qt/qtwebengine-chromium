@@ -91,6 +91,7 @@ class RecyclableCompositorMac : public ui::CompositorObserver {
                             base::TimeTicks start_time) override {}
   void OnCompositingEnded(ui::Compositor* compositor) override {}
   void OnCompositingLockStateChanged(ui::Compositor* compositor) override {}
+  void OnCompositingChildResizing(ui::Compositor* compositor) override {}
   void OnCompositingShuttingDown(ui::Compositor* compositor) override {}
 
   std::unique_ptr<ui::AcceleratedWidgetMac> accelerated_widget_mac_;
@@ -185,7 +186,8 @@ BrowserCompositorMac::BrowserCompositorMac(
   root_layer_.reset(new ui::Layer(ui::LAYER_SOLID_COLOR));
   // TODO(fsamuel): Plumb surface synchronization settings.
   delegated_frame_host_.reset(new DelegatedFrameHost(
-      frame_sink_id, this, false /* enable_surface_synchronization */));
+      frame_sink_id, this, false /* enable_surface_synchronization */,
+      false /* enable_viz */));
 
   SetRenderWidgetHostIsHidden(render_widget_host_is_hidden);
   SetNSViewAttachedToWindow(ns_view_attached_to_window);
@@ -308,7 +310,7 @@ void BrowserCompositorMac::SubmitCompositorFrame(
                                                           pixel_size);
   }
   delegated_frame_host_->SubmitCompositorFrame(local_surface_id,
-                                               std::move(frame));
+                                               std::move(frame), nullptr);
 }
 
 void BrowserCompositorMac::OnDidNotProduceFrame(const viz::BeginFrameAck& ack) {
@@ -465,6 +467,10 @@ void BrowserCompositorMac::OnBeginFrame() {
 bool BrowserCompositorMac::IsAutoResizeEnabled() const {
   NOTREACHED();
   return false;
+}
+
+void BrowserCompositorMac::OnFrameTokenChanged(uint32_t frame_token) {
+  client_->OnFrameTokenChanged(frame_token);
 }
 
 ui::Compositor* BrowserCompositorMac::CompositorForTesting() const {

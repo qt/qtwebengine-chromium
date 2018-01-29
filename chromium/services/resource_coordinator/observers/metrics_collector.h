@@ -7,7 +7,6 @@
 
 #include "base/macros.h"
 #include "base/metrics/histogram_macros.h"
-#include "base/time/default_tick_clock.h"
 #include "base/time/time.h"
 #include "services/metrics/public/cpp/ukm_builders.h"
 #include "services/metrics/public/cpp/ukm_source_id.h"
@@ -28,6 +27,7 @@ extern const char
     kTabFromBackgroundedToFirstNonPersistentNotificationCreatedUMA[];
 extern const base::TimeDelta kMaxAudioSlientTimeout;
 extern const base::TimeDelta kMetricsReportDelayTimeout;
+extern const int kDefaultFrequencyUkmEQTReported;
 
 // A MetricsCollector observes changes happened inside CoordinationUnit Graph,
 // and reports UMA/UKM.
@@ -48,14 +48,15 @@ class MetricsCollector : public CoordinationUnitGraphObserver {
   void OnPagePropertyChanged(const PageCoordinationUnitImpl* page_cu,
                              const mojom::PropertyType property_type,
                              int64_t value) override;
+  void OnProcessPropertyChanged(const ProcessCoordinationUnitImpl* process_cu,
+                                const mojom::PropertyType property_type,
+                                int64_t value) override;
   void OnFrameEventReceived(const FrameCoordinationUnitImpl* frame_cu,
                             const mojom::Event event) override;
   void OnPageEventReceived(const PageCoordinationUnitImpl* page_cu,
                            const mojom::Event event) override;
 
  private:
-  friend class MetricsCollectorTest;
-
   struct MetricsReportRecord {
     MetricsReportRecord();
     MetricsReportRecord(const MetricsReportRecord& other);
@@ -89,37 +90,35 @@ class MetricsCollector : public CoordinationUnitGraphObserver {
         first_title_updated;
   };
 
-  // TODO(lpy): Move the FrameData to the FrameCoordinationUnitImpl
-  struct FrameData {
-    base::TimeTicks last_audible_time;
-  };
-
-  struct UkmCPUUsageCollectionState {
+  struct UkmCollectionState {
     size_t num_cpu_usage_measurements = 0u;
+    int num_unreported_eqt_measurements = 0u;
     ukm::SourceId ukm_source_id = ukm::kInvalidSourceId;
   };
 
   bool ShouldReportMetrics(const PageCoordinationUnitImpl* page_cu);
   bool IsCollectingCPUUsageForUkm(const CoordinationUnitID& page_cu_id);
+  bool IsCollectingExpectedQueueingTimeForUkm(
+      const CoordinationUnitID& page_cu_id);
   void RecordCPUUsageForUkm(const CoordinationUnitID& page_cu_id,
                             double cpu_usage,
                             size_t num_coresident_tabs);
+  void RecordExpectedQueueingTimeForUkm(const CoordinationUnitID& page_cu_id,
+                                        int64_t expected_queueing_time);
   void UpdateUkmSourceIdForPage(const CoordinationUnitID& page_cu_id,
                                 ukm::SourceId ukm_source_id);
   void UpdateWithFieldTrialParams();
   void ResetMetricsReportRecord(CoordinationUnitID cu_id);
 
-  // Note: |clock_| is always |&default_tick_clock_|, except during unit
-  // testing.
-  base::DefaultTickClock default_tick_clock_;
-  base::TickClock* const clock_;
-  std::map<CoordinationUnitID, FrameData> frame_data_map_;
   // The metrics_report_record_map_ is used to record whether a metric was
   // already reported to avoid reporting multiple metrics.
   std::map<CoordinationUnitID, MetricsReportRecord> metrics_report_record_map_;
-  std::map<CoordinationUnitID, UkmCPUUsageCollectionState>
-      ukm_cpu_usage_collection_state_map_;
+  std::map<CoordinationUnitID, UkmCollectionState> ukm_collection_state_map_;
   size_t max_ukm_cpu_usage_measurements_ = 0u;
+  // The number of reports to wait before reporting ExpectedQueueingTime. For
+  // example, if |frequency_ukm_eqt_reported_| is 2, then the first value is not
+  // reported, the second one is, the third one isn't, etc.
+  int frequency_ukm_eqt_reported_;
   DISALLOW_COPY_AND_ASSIGN(MetricsCollector);
 };
 

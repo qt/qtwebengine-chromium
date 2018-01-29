@@ -5,9 +5,9 @@
 #include "platform/loader/fetch/ClientHintsPreferences.h"
 
 #include "base/macros.h"
-#include "platform/http_names.h"
 #include "platform/loader/fetch/ResourceResponse.h"
 #include "platform/network/HTTPParsers.h"
+#include "platform/network/http_names.h"
 #include "platform/runtime_enabled_features.h"
 #include "platform/weborigin/KURL.h"
 #include "third_party/WebKit/common/client_hints/client_hints.h"
@@ -53,7 +53,7 @@ void ClientHintsPreferences::UpdateFrom(
 void ClientHintsPreferences::UpdateFromAcceptClientHintsHeader(
     const String& header_value,
     Context* context) {
-  if (!RuntimeEnabledFeatures::ClientHintsEnabled() || header_value.IsEmpty())
+  if (header_value.IsEmpty())
     return;
 
   WebEnabledClientHints new_enabled_types;
@@ -94,19 +94,13 @@ void ClientHintsPreferences::UpdatePersistentHintsFromHeaders(
   String accept_ch_lifetime_header_value =
       response.HttpHeaderField(HTTPNames::Accept_CH_Lifetime);
 
-  if (!RuntimeEnabledFeatures::ClientHintsEnabled() ||
-      !RuntimeEnabledFeatures::ClientHintsPersistentEnabled() ||
+  if (!RuntimeEnabledFeatures::ClientHintsPersistentEnabled() ||
       accept_ch_header_value.IsEmpty() ||
       accept_ch_lifetime_header_value.IsEmpty()) {
     return;
   }
 
   const KURL url = response.Url();
-
-  if (url.Protocol() != "https") {
-    // Only HTTPS domains are allowed to persist client hints.
-    return;
-  }
 
   bool conversion_ok = false;
   int64_t persist_duration_seconds =

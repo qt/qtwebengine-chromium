@@ -72,6 +72,12 @@ class ArcNotificationContentView::EventForwarder : public ui::EventHandler {
   ~EventForwarder() override = default;
 
  private:
+  // Some swipes are handled by Android alone. We don't want to capture swipe
+  // events if we started a swipe on the chrome side then moved into the Android
+  // swipe region. So, keep track of whether swipe has been 'captured' by
+  // Android.
+  bool swipe_captured_ = false;
+
   // ui::EventHandler
   void OnEvent(ui::Event* event) override {
     // Do not forward event targeted to the floating close button so that
@@ -116,7 +122,30 @@ class ArcNotificationContentView::EventForwarder : public ui::EventHandler {
         widget->OnScrollEvent(located_event->AsScrollEvent());
       } else if (located_event->IsGestureEvent() &&
                  event->type() != ui::ET_GESTURE_TAP) {
-        widget->OnGestureEvent(located_event->AsGestureEvent());
+        bool event_for_android_only = false;
+        if ((event->type() == ui::ET_GESTURE_SCROLL_BEGIN ||
+             event->type() == ui::ET_GESTURE_SCROLL_UPDATE ||
+             event->type() == ui::ET_GESTURE_SCROLL_END ||
+             event->type() == ui::ET_GESTURE_SWIPE) &&
+            owner_->surface_) {
+          gfx::RectF rect(owner_->item_->GetSwipeInputRect());
+          owner_->surface_->GetContentWindow()->transform().TransformRect(
+              &rect);
+          gfx::Point location = located_event->location();
+          views::View::ConvertPointFromWidget(owner_, &location);
+          bool contains = rect.Contains(gfx::PointF(location));
+
+          if (contains && event->type() == ui::ET_GESTURE_SCROLL_BEGIN)
+            swipe_captured_ = true;
+
+          event_for_android_only = contains && swipe_captured_;
+        }
+
+        if (event->type() == ui::ET_GESTURE_SCROLL_END)
+          swipe_captured_ = false;
+
+        if (!event_for_android_only)
+          widget->OnGestureEvent(located_event->AsGestureEvent());
       }
     }
 
@@ -184,25 +213,9 @@ class ArcNotificationContentView::SlideHelper
     return layer ? layer : owner_->GetWidget()->GetLayer();
   }
 
-  void OnSlideStart() {
-    if (!owner_->surface_)
-      return;
-    DCHECK(owner_->surface_->GetWindow());
-    surface_copy_ = ::wm::RecreateLayers(owner_->surface_->GetWindow());
-    // |surface_copy_| is at (0, 0) in owner_->layer().
-    surface_copy_->root()->SetBounds(gfx::Rect(surface_copy_->root()->size()));
-    owner_->layer()->Add(surface_copy_->root());
-    owner_->surface_->GetWindow()->layer()->SetOpacity(0.0f);
-  }
+  void OnSlideStart() { owner_->ShowCopiedSurface(); }
 
-  void OnSlideEnd() {
-    if (!owner_->surface_)
-      return;
-    DCHECK(owner_->surface_->GetWindow());
-    owner_->surface_->GetWindow()->layer()->SetOpacity(1.0f);
-    owner_->Layout();
-    surface_copy_.reset();
-  }
+  void OnSlideEnd() { owner_->HideCopiedSurface(); }
 
   // ui::LayerAnimationObserver
   void OnLayerAnimationEnded(ui::LayerAnimationSequence* seq) override {
@@ -215,7 +228,6 @@ class ArcNotificationContentView::SlideHelper
 
   ArcNotificationContentView* const owner_;
   bool sliding_ = false;
-  std::unique_ptr<ui::LayerTreeOwner> surface_copy_;
 
   DISALLOW_COPY_AND_ASSIGN(SlideHelper);
 };
@@ -255,6 +267,14 @@ class ArcNotificationContentView::ContentViewDelegate
   bool IsExpanded() const override { return owner_->IsExpanded(); }
 
   void SetExpanded(bool expanded) override { owner_->SetExpanded(expanded); }
+
+  void OnContainerAnimationStarted() override {
+    owner_->OnContainerAnimationStarted();
+  }
+
+  void OnContainerAnimationEnded() override {
+    owner_->OnContainerAnimationEnded();
+  }
 
  private:
   ArcNotificationContentView* const owner_;
@@ -315,7 +335,7 @@ const char* ArcNotificationContentView::GetClassName() const {
 
 std::unique_ptr<ArcNotificationContentViewDelegate>
 ArcNotificationContentView::CreateContentViewDelegate() {
-  return base::MakeUnique<ArcNotificationContentView::ContentViewDelegate>(
+  return std::make_unique<ArcNotificationContentView::ContentViewDelegate>(
       this);
 }
 
@@ -509,6 +529,34 @@ void ArcNotificationContentView::SetExpanded(bool expanded) {
   }
 }
 
+void ArcNotificationContentView::OnContainerAnimationStarted() {
+  ShowCopiedSurface();
+}
+
+void ArcNotificationContentView::OnContainerAnimationEnded() {
+  HideCopiedSurface();
+}
+
+void ArcNotificationContentView::ShowCopiedSurface() {
+  if (!surface_)
+    return;
+  DCHECK(surface_->GetWindow());
+  surface_copy_ = ::wm::RecreateLayers(surface_->GetWindow());
+  // |surface_copy_| is at (0, 0) in owner_->layer().
+  surface_copy_->root()->SetBounds(gfx::Rect(surface_copy_->root()->size()));
+  layer()->Add(surface_copy_->root());
+  surface_->GetWindow()->layer()->SetOpacity(0.0f);
+}
+
+void ArcNotificationContentView::HideCopiedSurface() {
+  if (!surface_)
+    return;
+  DCHECK(surface_->GetWindow());
+  surface_->GetWindow()->layer()->SetOpacity(1.0f);
+  Layout();
+  surface_copy_.reset();
+}
+
 void ArcNotificationContentView::ViewHierarchyChanged(
     const views::View::ViewHierarchyChangedDetails& details) {
   views::Widget* widget = GetWidget();
@@ -679,7 +727,8 @@ void ArcNotificationContentView::GetAccessibleNodeData(
 void ArcNotificationContentView::OnWindowBoundsChanged(
     aura::Window* window,
     const gfx::Rect& old_bounds,
-    const gfx::Rect& new_bounds) {
+    const gfx::Rect& new_bounds,
+    ui::PropertyChangeReason reason) {
   if (in_layout_)
     return;
 

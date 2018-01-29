@@ -15,13 +15,16 @@
 #include "base/lazy_instance.h"
 #include "base/macros.h"
 #include "base/memory/ptr_util.h"
+#include "base/message_loop/message_loop.h"
 #include "base/process/process_handle.h"
 #include "base/single_thread_task_runner.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/task_scheduler/post_task.h"
 #include "build/build_config.h"
+#include "content/browser/browser_main_loop.h"
 #include "content/browser/child_process_launcher.h"
 #include "content/browser/gpu/gpu_process_host.h"
+#include "content/browser/mus_util.h"
 #include "content/browser/service_manager/common_browser_interfaces.h"
 #include "content/browser/utility_process_host_impl.h"
 #include "content/browser/wake_lock/wake_lock_context_host.h"
@@ -62,6 +65,9 @@
 #include "services/shape_detection/public/interfaces/constants.mojom.h"
 #include "services/video_capture/public/cpp/constants.h"
 #include "services/video_capture/public/interfaces/constants.mojom.h"
+#include "services/viz/public/interfaces/constants.mojom.h"
+#include "ui/base/ui_base_switches_util.h"
+#include "ui/base/ui_features.h"
 
 #if defined(OS_ANDROID)
 #include "base/android/jni_android.h"
@@ -71,6 +77,18 @@
 
 #if defined(OS_WIN)
 #include "content/browser/renderer_host/dwrite_font_proxy_message_filter_win.h"
+#endif
+
+#if defined(USE_AURA)
+#include "ui/aura/env.h"
+#endif
+
+#if BUILDFLAG(ENABLE_MUS)
+#include "components/discardable_memory/service/discardable_shared_memory_manager.h"
+#include "content/public/browser/discardable_shared_memory_manager.h"
+#include "services/ui/common/image_cursors_set.h"
+#include "services/ui/public/interfaces/constants.mojom.h"
+#include "services/ui/service.h"
 #endif
 
 namespace content {
@@ -96,7 +114,7 @@ void StartServiceInUtilityProcess(
   UtilityProcessHostImpl* process_host =
       new UtilityProcessHostImpl(nullptr, nullptr);
 #if defined(OS_WIN)
-  if (sandbox_type == service_manager::SANDBOX_TYPE_PPAPI)
+  if (sandbox_type == service_manager::SANDBOX_TYPE_PDF_COMPOSITOR)
     process_host->AddFilter(new DWriteFontProxyMessageFilter());
 #endif
   process_host->SetName(process_name);
@@ -211,17 +229,56 @@ class NullServiceProcessLauncherFactory
 void GetGeolocationRequestContextFromContentClient(
     base::OnceCallback<void(scoped_refptr<net::URLRequestContextGetter>)>
         callback) {
-  // TODO(amoylan): Confirm whether either of the following can be replaced with
-  // DCHECKs owing to lifetime guarantees on ContentClient or
-  // ContentBrowserClient:
-  if (GetContentClient() && GetContentClient()->browser()) {
-    GetContentClient()->browser()->GetGeolocationRequestContext(
-        std::move(callback));
-  } else {
-    std::move(callback).Run(
-        scoped_refptr<net::URLRequestContextGetter>(nullptr));
-  }
+  GetContentClient()->browser()->GetGeolocationRequestContext(
+      std::move(callback));
 }
+
+bool ShouldEnableVizService() {
+#if defined(USE_AURA)
+  // aura::Env can be null in tests.
+  return aura::Env::GetInstanceDontCreate() &&
+         aura::Env::GetInstance()->mode() == aura::Env::Mode::MUS;
+#else
+  return false;
+#endif
+}
+
+#if BUILDFLAG(ENABLE_MUS)
+std::unique_ptr<service_manager::Service> CreateEmbeddedUIService(
+    const scoped_refptr<base::SingleThreadTaskRunner>& task_runner,
+    base::WeakPtr<ui::ImageCursorsSet> image_cursors_set_weak_ptr,
+    discardable_memory::DiscardableSharedMemoryManager* memory_manager) {
+  ui::Service::InProcessConfig config;
+  config.resource_runner = task_runner;
+  config.image_cursors_set_weak_ptr = image_cursors_set_weak_ptr;
+  config.memory_manager = memory_manager;
+  config.should_host_viz = switches::IsMusHostingViz();
+  return base::MakeUnique<ui::Service>(&config);
+}
+
+void RegisterUIServiceInProcessIfNecessary(
+    ServiceManagerConnection* connection) {
+  // Some tests don't create BrowserMainLoop.
+  if (!BrowserMainLoop::GetInstance())
+    return;
+  // Do not embed the UI service when running in mash.
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch("mash"))
+    return;
+  // Do not embed the UI service if not running with --mus.
+  if (!IsUsingMus())
+    return;
+
+  service_manager::EmbeddedServiceInfo info;
+  info.factory = base::Bind(
+      &CreateEmbeddedUIService, base::ThreadTaskRunnerHandle::Get(),
+      BrowserMainLoop::GetInstance()->image_cursors_set()->GetWeakPtr(),
+      GetDiscardableSharedMemoryManager());
+  info.use_own_thread = true;
+  info.message_loop_type = base::MessageLoop::TYPE_UI;
+  info.thread_priority = base::ThreadPriority::DISPLAY;
+  connection->AddEmbeddedService(ui::mojom::kServiceName, info);
+}
+#endif
 
 }  // namespace
 
@@ -259,8 +316,8 @@ class ServiceManagerContext::InProcessServiceManagerContext
       std::unique_ptr<BuiltinManifestProvider> manifest_provider,
       service_manager::mojom::ServicePtrInfo packaged_services_service_info) {
     manifest_provider_ = std::move(manifest_provider);
-    service_manager_ = base::MakeUnique<service_manager::ServiceManager>(
-        base::MakeUnique<NullServiceProcessLauncherFactory>(), nullptr,
+    service_manager_ = std::make_unique<service_manager::ServiceManager>(
+        std::make_unique<NullServiceProcessLauncherFactory>(), nullptr,
         manifest_provider_.get());
 
     service_manager::mojom::ServicePtr packaged_services_service;
@@ -269,6 +326,24 @@ class ServiceManagerContext::InProcessServiceManagerContext
         service_manager::Identity(mojom::kPackagedServicesServiceName,
                                   service_manager::mojom::kRootUserID),
         std::move(packaged_services_service), nullptr);
+    service_manager_->SetInstanceQuitCallback(
+        base::Bind(&OnInstanceQuitOnIOThread));
+  }
+
+  static void OnInstanceQuitOnIOThread(const service_manager::Identity& id) {
+    BrowserThread::GetTaskRunnerForThread(BrowserThread::UI)
+        ->PostTask(FROM_HERE, base::BindOnce(&OnInstanceQuit, id));
+  }
+
+  static void OnInstanceQuit(const service_manager::Identity& id) {
+    if (GetContentClient()->browser()->ShouldTerminateOnServiceQuit(id)) {
+      // Don't LOG(FATAL) because we don't want a browser crash report.
+      LOG(ERROR) << "Terminating because service '" << id.name()
+                 << "' quit unexpectedly.";
+      // Skip shutdown to reduce the risk that other code in the browser will
+      // respond to the service pipe closing.
+      exit(1);
+    }
   }
 
   void ShutDownOnIOThread() {
@@ -292,7 +367,7 @@ ServiceManagerContext::ServiceManagerContext() {
         service_manager::GetServiceRequestFromCommandLine(invitation.get());
   } else {
     std::unique_ptr<BuiltinManifestProvider> manifest_provider =
-        base::MakeUnique<BuiltinManifestProvider>();
+        std::make_unique<BuiltinManifestProvider>();
 
     static const struct ManifestInfo {
       const char* name;
@@ -357,17 +432,21 @@ ServiceManagerContext::ServiceManagerContext() {
   java_nfc_delegate.Reset(Java_ContentNfcDelegate_create(env));
   DCHECK(!java_nfc_delegate.is_null());
 
-  // See the comments on wake_lock_context_host.h and ContentNfcDelegate.java
-  // respectively for comments on those parameters.
-  device_info.factory =
-      base::Bind(&device::CreateDeviceService, device_blocking_task_runner,
-                 BrowserThread::GetTaskRunnerForThread(BrowserThread::IO),
-                 base::Bind(&WakeLockContextHost::GetNativeViewForContext),
-                 std::move(java_nfc_delegate));
+  // See the comments on wake_lock_context_host.h, content_browser_client.h and
+  // ContentNfcDelegate.java respectively for comments on those parameters.
+  device_info.factory = base::Bind(
+      &device::CreateDeviceService, device_blocking_task_runner,
+      BrowserThread::GetTaskRunnerForThread(BrowserThread::IO),
+      base::Bind(&WakeLockContextHost::GetNativeViewForContext),
+      base::Bind(&ContentBrowserClient::OverrideSystemLocationProvider,
+                 base::Unretained(GetContentClient()->browser())),
+      std::move(java_nfc_delegate));
 #else
-  device_info.factory =
-      base::Bind(&device::CreateDeviceService, device_blocking_task_runner,
-                 BrowserThread::GetTaskRunnerForThread(BrowserThread::IO));
+  device_info.factory = base::Bind(
+      &device::CreateDeviceService, device_blocking_task_runner,
+      BrowserThread::GetTaskRunnerForThread(BrowserThread::IO),
+      base::Bind(&ContentBrowserClient::OverrideSystemLocationProvider,
+                 base::Unretained(GetContentClient()->browser())));
 #endif
   device_info.task_runner = base::ThreadTaskRunnerHandle::Get();
   packaged_services_connection_->AddEmbeddedService(device::mojom::kServiceName,
@@ -396,6 +475,10 @@ ServiceManagerContext::ServiceManagerContext() {
     packaged_services_connection_->AddEmbeddedService(entry.first,
                                                       entry.second);
   }
+
+#if BUILDFLAG(ENABLE_MUS)
+  RegisterUIServiceInProcessIfNecessary(packaged_services_connection_.get());
+#endif
 
   // This is safe to assign directly from any thread, because
   // ServiceManagerContext must be constructed before anyone can call
@@ -430,6 +513,11 @@ ServiceManagerContext::ServiceManagerContext() {
   out_of_process_services[media::mojom::kCdmServiceName] =
       base::ASCIIToUTF16("Content Decryption Module Service");
 #endif
+
+  if (ShouldEnableVizService()) {
+    out_of_process_services[viz::mojom::kVizServiceName] =
+        base::ASCIIToUTF16("Visuals Service");
+  }
 
   for (const auto& service : out_of_process_services) {
     packaged_services_connection_->AddServiceRequestHandler(

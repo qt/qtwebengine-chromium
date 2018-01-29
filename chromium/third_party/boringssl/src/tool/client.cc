@@ -121,7 +121,8 @@ static const struct argument kArguments[] = {
         "verification is required.",
     },
     {
-        "-early-data", kOptionalArgument, "Allow early data",
+        "-early-data", kOptionalArgument, "Enable early data. The argument to "
+        "this flag is the early data to send.",
     },
     {
         "-tls13-variant", kOptionalArgument,
@@ -323,6 +324,10 @@ static bool GetTLS13Variant(tls13_variant_t *out, const std::string &in) {
     *out = tls13_default;
     return true;
   }
+  if (in == "draft21") {
+    *out = tls13_draft21;
+    return true;
+  }
   if (in == "experiment") {
     *out = tls13_experiment;
     return true;
@@ -333,6 +338,10 @@ static bool GetTLS13Variant(tls13_variant_t *out, const std::string &in) {
   }
   if (in == "experiment3") {
     *out = tls13_experiment3;
+    return true;
+  }
+  if (in == "draft22") {
+    *out = tls13_draft22;
     return true;
   }
   return false;

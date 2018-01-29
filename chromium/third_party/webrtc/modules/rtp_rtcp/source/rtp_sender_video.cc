@@ -105,7 +105,7 @@ void RTPSenderVideo::SendVideoPacket(std::unique_ptr<RtpPacketToSend> packet,
   uint32_t rtp_timestamp = packet->Timestamp();
   if (!rtp_sender_->SendToNetwork(std::move(packet), storage,
                                   RtpPacketSender::kLowPriority)) {
-    LOG(LS_WARNING) << "Failed to send video packet " << seq_num;
+    RTC_LOG(LS_WARNING) << "Failed to send video packet " << seq_num;
     return;
   }
   rtc::CritScope cs(&stats_crit_);
@@ -161,7 +161,7 @@ void RTPSenderVideo::SendVideoPacketAsRedMaybeWithUlpfec(
                          "Video::PacketRed", "timestamp", rtp_timestamp,
                          "seqnum", media_seq_num);
   } else {
-    LOG(LS_WARNING) << "Failed to send RED packet " << media_seq_num;
+    RTC_LOG(LS_WARNING) << "Failed to send RED packet " << media_seq_num;
   }
   for (const auto& fec_packet : fec_packets) {
     // TODO(danilchap): Make ulpfec_generator_ generate RtpPacketToSend to avoid
@@ -179,7 +179,8 @@ void RTPSenderVideo::SendVideoPacketAsRedMaybeWithUlpfec(
                            "Video::PacketUlpfec", "timestamp", rtp_timestamp,
                            "seqnum", fec_sequence_number);
     } else {
-      LOG(LS_WARNING) << "Failed to send ULPFEC packet " << fec_sequence_number;
+      RTC_LOG(LS_WARNING) << "Failed to send ULPFEC packet "
+                          << fec_sequence_number;
     }
   }
 }
@@ -210,7 +211,7 @@ void RTPSenderVideo::SendVideoPacketWithFlexfec(
                              "Video::PacketFlexfec", "timestamp", timestamp,
                              "seqnum", seq_num);
       } else {
-        LOG(LS_WARNING) << "Failed to send FlexFEC packet " << seq_num;
+        RTC_LOG(LS_WARNING) << "Failed to send FlexFEC packet " << seq_num;
       }
     }
   }
@@ -279,9 +280,9 @@ void RTPSenderVideo::SetFecParameters(const FecProtectionParams& delta_params,
 
 rtc::Optional<uint32_t> RTPSenderVideo::FlexfecSsrc() const {
   if (flexfec_sender_) {
-    return rtc::Optional<uint32_t>(flexfec_sender_->ssrc());
+    return flexfec_sender_->ssrc();
   }
-  return rtc::Optional<uint32_t>();
+  return rtc::nullopt;
 }
 
 bool RTPSenderVideo::SendVideo(RtpVideoCodecTypes video_type,
@@ -372,13 +373,8 @@ bool RTPSenderVideo::SendVideo(RtpVideoCodecTypes video_type,
   StorageType storage = GetStorageType(temporal_id, retransmission_settings,
                                        expected_retransmission_time_ms);
 
-  // TODO(changbin): we currently don't support to configure the codec to
-  // output multiple partitions for VP8. Should remove below check after the
-  // issue is fixed.
-  const RTPFragmentationHeader* frag =
-      (video_type == kRtpVideoVp8) ? nullptr : fragmentation;
   size_t num_packets =
-      packetizer->SetPayloadData(payload_data, payload_size, frag);
+      packetizer->SetPayloadData(payload_data, payload_size, fragmentation);
 
   if (num_packets == 0)
     return false;
@@ -424,11 +420,11 @@ bool RTPSenderVideo::SendVideo(RtpVideoCodecTypes video_type,
 
     if (first_frame) {
       if (i == 0) {
-        LOG(LS_INFO)
+        RTC_LOG(LS_INFO)
             << "Sent first RTP packet of the first video frame (pre-pacer)";
       }
       if (last) {
-        LOG(LS_INFO)
+        RTC_LOG(LS_INFO)
             << "Sent last RTP packet of the first video frame (pre-pacer)";
       }
     }

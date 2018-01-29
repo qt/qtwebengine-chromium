@@ -38,21 +38,21 @@ class PLATFORM_EXPORT ScrollPaintPropertyNode
   // This node is really a sentinel, and does not represent a real scroll.
   static ScrollPaintPropertyNode* Root();
 
-  static RefPtr<ScrollPaintPropertyNode> Create(
-      RefPtr<const ScrollPaintPropertyNode> parent,
+  static scoped_refptr<ScrollPaintPropertyNode> Create(
+      scoped_refptr<const ScrollPaintPropertyNode> parent,
       const IntRect& container_rect,
       const IntRect& contents_rect,
       bool user_scrollable_horizontal,
       bool user_scrollable_vertical,
       MainThreadScrollingReasons main_thread_scrolling_reasons,
       CompositorElementId compositor_element_id) {
-    return WTF::AdoptRef(new ScrollPaintPropertyNode(
+    return base::AdoptRef(new ScrollPaintPropertyNode(
         std::move(parent), container_rect, contents_rect,
         user_scrollable_horizontal, user_scrollable_vertical,
         main_thread_scrolling_reasons, compositor_element_id));
   }
 
-  bool Update(RefPtr<const ScrollPaintPropertyNode> parent,
+  bool Update(scoped_refptr<const ScrollPaintPropertyNode> parent,
               const IntRect& container_rect,
               const IntRect& contents_rect,
               bool user_scrollable_horizontal,
@@ -116,9 +116,9 @@ class PLATFORM_EXPORT ScrollPaintPropertyNode
 #if DCHECK_IS_ON()
   // The clone function is used by FindPropertiesNeedingUpdate.h for recording
   // a scroll node before it has been updated, to later detect changes.
-  RefPtr<ScrollPaintPropertyNode> Clone() const {
-    RefPtr<ScrollPaintPropertyNode> cloned =
-        WTF::AdoptRef(new ScrollPaintPropertyNode(
+  scoped_refptr<ScrollPaintPropertyNode> Clone() const {
+    scoped_refptr<ScrollPaintPropertyNode> cloned =
+        base::AdoptRef(new ScrollPaintPropertyNode(
             Parent(), container_rect_, contents_rect_,
             user_scrollable_horizontal_, user_scrollable_vertical_,
             main_thread_scrolling_reasons_, compositor_element_id_));
@@ -143,7 +143,7 @@ class PLATFORM_EXPORT ScrollPaintPropertyNode
 
  private:
   ScrollPaintPropertyNode(
-      RefPtr<const ScrollPaintPropertyNode> parent,
+      scoped_refptr<const ScrollPaintPropertyNode> parent,
       const IntRect& container_rect,
       const IntRect& contents_rect,
       bool user_scrollable_horizontal,

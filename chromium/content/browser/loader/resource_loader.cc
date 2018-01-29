@@ -8,7 +8,6 @@
 
 #include "base/callback_helpers.h"
 #include "base/command_line.h"
-#include "base/debug/dump_without_crashing.h"
 #include "base/location.h"
 #include "base/memory/ptr_util.h"
 #include "base/metrics/histogram_macros.h"
@@ -110,11 +109,11 @@ void PopulateResourceResponse(
         net::IsLegacySymantecCert(request->ssl_info().public_key_hashes);
     response->head.cert_validity_start =
         request->ssl_info().cert->valid_start();
+    response->head.cert_status = request->ssl_info().cert_status;
     if (info->ShouldReportRawHeaders()) {
       // Only pass these members when the network panel of the DevTools is open,
       // i.e. ShouldReportRawHeaders() is set. These data are used to populate
       // the requests in the security panel too.
-      response->head.cert_status = request->ssl_info().cert_status;
       response->head.ssl_connection_status =
           request->ssl_info().connection_status;
       response->head.ssl_key_exchange_group =
@@ -232,13 +231,9 @@ ResourceLoader::ResourceLoader(std::unique_ptr<net::URLRequest> request,
       times_cancelled_before_request_start_(0),
       started_request_(false),
       times_cancelled_after_request_start_(0),
-      request_context_(request_->context()),
       weak_ptr_factory_(this) {
   request_->set_delegate(this);
   handler_->SetDelegate(this);
-  // Added for http://crbug.com/754704; remove when that bug is resolved.
-  if (!GetRequestInfo())
-    base::debug::DumpWithoutCrashing();
 }
 
 ResourceLoader::~ResourceLoader() {
@@ -256,7 +251,7 @@ void ResourceLoader::StartRequest() {
                          TRACE_EVENT_FLAG_FLOW_OUT);
 
   ScopedDeferral scoped_deferral(this, DEFERRED_START);
-  handler_->OnWillStart(request_->url(), base::MakeUnique<Controller>(this));
+  handler_->OnWillStart(request_->url(), std::make_unique<Controller>(this));
 }
 
 void ResourceLoader::CancelRequest(bool from_renderer) {
@@ -316,17 +311,11 @@ ResourceRequestInfoImpl* ResourceLoader::GetRequestInfo() {
 }
 
 void ResourceLoader::ClearLoginDelegate() {
-  login_delegate_ = NULL;
+  login_delegate_ = nullptr;
 }
 
 void ResourceLoader::OutOfBandCancel(int error_code, bool tell_renderer) {
   CancelRequestInternal(error_code, !tell_renderer);
-}
-
-void ResourceLoader::AssertURLRequestPresent() const {
-  DCHECK(request_context_);
-  CHECK(request_);
-  request_context_->AssertURLRequestPresent(request_.get());
 }
 
 void ResourceLoader::OnReceivedRedirect(net::URLRequest* unused,
@@ -370,7 +359,7 @@ void ResourceLoader::OnReceivedRedirect(net::URLRequest* unused,
   // |defer| to false instead of calling back into the URLRequest.
   deferred_stage_ = DEFERRED_SYNC;
   handler_->OnRequestRedirected(redirect_info, response.get(),
-                                base::MakeUnique<Controller>(this));
+                                std::make_unique<Controller>(this));
   if (is_deferred()) {
     *defer = true;
     deferred_redirect_url_ = redirect_info.new_url;
@@ -429,14 +418,14 @@ void ResourceLoader::OnSSLCertificateError(net::URLRequest* request,
       info->GetWebContentsGetterForRequest(), ssl_info, fatal);
 }
 
-void ResourceLoader::OnResponseStarted(net::URLRequest* unused) {
+void ResourceLoader::OnResponseStarted(net::URLRequest* unused, int net_error) {
   TRACE_EVENT0(TRACE_DISABLED_BY_DEFAULT("loading"),
                "ResourceLoader::OnResponseStarted");
   DCHECK_EQ(request_.get(), unused);
 
   DVLOG(1) << "OnResponseStarted: " << request_->url().spec();
 
-  if (!request_->status().is_success()) {
+  if (net_error != net::OK) {
     ResponseCompleted();
     return;
   }
@@ -597,6 +586,8 @@ void ResourceLoader::StartRequestInternal() {
     request_->SetResponseHeadersCallback(base::Bind(
         &ResourceLoader::SetRawResponseHeaders, base::Unretained(this)));
   }
+  UMA_HISTOGRAM_TIMES("Net.ResourceLoader.TimeToURLRequestStart",
+                      base::TimeTicks::Now() - request_->creation_time());
   request_->Start();
 
   delegate_->DidStartRequest(this);
@@ -626,7 +617,7 @@ void ResourceLoader::CancelRequestInternal(int error, bool from_renderer) {
 
   if (login_delegate_.get()) {
     login_delegate_->OnRequestCancelled();
-    login_delegate_ = NULL;
+    login_delegate_ = nullptr;
   }
   ssl_client_auth_handler_.reset();
 
@@ -686,7 +677,7 @@ void ResourceLoader::CompleteResponseStarted() {
   // defers handling of the response.
   deferred_stage_ = DEFERRED_SYNC;
   handler_->OnResponseStarted(response.get(),
-                              base::MakeUnique<Controller>(this));
+                              std::make_unique<Controller>(this));
   if (is_deferred()) {
     deferred_stage_ = DEFERRED_READ;
   } else {
@@ -702,7 +693,7 @@ void ResourceLoader::PrepareToReadMore(bool handle_result_async) {
   deferred_stage_ = DEFERRED_SYNC;
 
   handler_->OnWillRead(&read_buffer_, &read_buffer_size_,
-                       base::MakeUnique<Controller>(this));
+                       std::make_unique<Controller>(this));
 
   if (is_deferred()) {
     deferred_stage_ = DEFERRED_ON_WILL_READ;
@@ -760,7 +751,7 @@ void ResourceLoader::CompleteRead(int bytes_read) {
 
   ScopedDeferral scoped_deferral(
       this, bytes_read > 0 ? DEFERRED_READ : DEFERRED_RESPONSE_COMPLETE);
-  handler_->OnReadCompleted(bytes_read, base::MakeUnique<Controller>(this));
+  handler_->OnReadCompleted(bytes_read, std::make_unique<Controller>(this));
 }
 
 void ResourceLoader::ResponseCompleted() {
@@ -772,7 +763,7 @@ void ResourceLoader::ResponseCompleted() {
 
   ScopedDeferral scoped_deferral(this, DEFERRED_FINISH);
   handler_->OnResponseCompleted(request_->status(),
-                                base::MakeUnique<Controller>(this));
+                                std::make_unique<Controller>(this));
 }
 
 void ResourceLoader::CallDidFinishLoading() {

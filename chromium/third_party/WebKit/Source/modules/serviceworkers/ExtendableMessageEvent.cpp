@@ -20,7 +20,7 @@ ExtendableMessageEvent* ExtendableMessageEvent::Create(
 }
 
 ExtendableMessageEvent* ExtendableMessageEvent::Create(
-    RefPtr<SerializedScriptValue> data,
+    scoped_refptr<SerializedScriptValue> data,
     const String& origin,
     MessagePortArray* ports,
     WaitUntilObserver* observer) {
@@ -28,7 +28,7 @@ ExtendableMessageEvent* ExtendableMessageEvent::Create(
 }
 
 ExtendableMessageEvent* ExtendableMessageEvent::Create(
-    RefPtr<SerializedScriptValue> data,
+    scoped_refptr<SerializedScriptValue> data,
     const String& origin,
     MessagePortArray* ports,
     ServiceWorkerClient* source,
@@ -40,7 +40,7 @@ ExtendableMessageEvent* ExtendableMessageEvent::Create(
 }
 
 ExtendableMessageEvent* ExtendableMessageEvent::Create(
-    RefPtr<SerializedScriptValue> data,
+    scoped_refptr<SerializedScriptValue> data,
     const String& origin,
     MessagePortArray* ports,
     ServiceWorker* source,
@@ -80,7 +80,7 @@ const AtomicString& ExtendableMessageEvent::InterfaceName() const {
   return EventNames::ExtendableMessageEvent;
 }
 
-DEFINE_TRACE(ExtendableMessageEvent) {
+void ExtendableMessageEvent::Trace(blink::Visitor* visitor) {
   visitor->Trace(source_as_client_);
   visitor->Trace(source_as_service_worker_);
   visitor->Trace(source_as_message_port_);
@@ -115,7 +115,7 @@ ExtendableMessageEvent::ExtendableMessageEvent(
 }
 
 ExtendableMessageEvent::ExtendableMessageEvent(
-    RefPtr<SerializedScriptValue> data,
+    scoped_refptr<SerializedScriptValue> data,
     const String& origin,
     MessagePortArray* ports,
     WaitUntilObserver* observer)

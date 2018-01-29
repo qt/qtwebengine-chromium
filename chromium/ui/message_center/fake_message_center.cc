@@ -31,23 +31,11 @@ size_t FakeMessageCenter::NotificationCount() const {
   return 0u;
 }
 
-size_t FakeMessageCenter::UnreadNotificationCount() const {
-  return 0u;
-}
-
 bool FakeMessageCenter::HasPopupNotifications() const {
   return false;
 }
 
 bool FakeMessageCenter::IsQuietMode() const {
-  return false;
-}
-
-bool FakeMessageCenter::IsLockedState() const {
-  return false;
-}
-
-bool FakeMessageCenter::HasClickedListener(const std::string& id) {
   return false;
 }
 
@@ -81,6 +69,9 @@ void FakeMessageCenter::RemoveNotification(const std::string& id,
                                            bool by_user) {
 }
 
+void FakeMessageCenter::RemoveNotificationsForNotifierId(
+    const NotifierId& notifier_id) {}
+
 void FakeMessageCenter::RemoveAllNotifications(bool by_user, RemoveType type) {}
 
 void FakeMessageCenter::SetNotificationIcon(const std::string& notification_id,
@@ -104,29 +95,21 @@ void FakeMessageCenter::ClickOnNotificationButton(const std::string& id,
                                                   int button_index) {
 }
 
+void FakeMessageCenter::ClickOnNotificationButtonWithReply(
+    const std::string& id,
+    int button_index,
+    const base::string16& reply) {}
+
 void FakeMessageCenter::ClickOnSettingsButton(const std::string& id) {}
 
 void FakeMessageCenter::MarkSinglePopupAsShown(const std::string& id,
                                                bool mark_notification_as_read) {
 }
 
-void FakeMessageCenter::DisplayedNotification(
-    const std::string& id,
-    const DisplaySource source) {
-}
+void FakeMessageCenter::DisplayedNotification(const std::string& id,
+                                              const DisplaySource source) {}
 
-void FakeMessageCenter::SetNotifierSettingsProvider(
-    NotifierSettingsProvider* provider) {
-}
-
-NotifierSettingsProvider* FakeMessageCenter::GetNotifierSettingsProvider() {
-  return NULL;
-}
-
-void FakeMessageCenter::SetQuietMode(bool in_quiet_mode) {
-}
-
-void FakeMessageCenter::SetLockedState(bool locked) {}
+void FakeMessageCenter::SetQuietMode(bool in_quiet_mode) {}
 
 void FakeMessageCenter::EnterQuietModeWithExpire(
     const base::TimeDelta& expires_in) {

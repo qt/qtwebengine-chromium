@@ -17,10 +17,11 @@
 #include "content/public/common/main_function_params.h"
 #include "content/public/common/sandbox_init.h"
 #include "content/utility/utility_thread_impl.h"
-#include "services/service_manager/sandbox/sandbox_type.h"
+#include "services/service_manager/sandbox/sandbox.h"
 
 #if defined(OS_LINUX)
-#include "content/common/sandbox_linux/sandbox_linux.h"
+#include "content/network/network_sandbox_hook_linux.h"
+#include "services/service_manager/sandbox/linux/sandbox_linux.h"
 #endif
 
 #if defined(OS_WIN)
@@ -49,8 +50,17 @@ int UtilityMain(const MainFunctionParams& parameters) {
   // Initializes the sandbox before any threads are created.
   // TODO(jorgelo): move this after GTK initialization when we enable a strict
   // Seccomp-BPF policy.
-  if (parameters.zygote_child)
-    LinuxSandbox::InitializeSandbox();
+  auto sandbox_type =
+      service_manager::SandboxTypeFromCommandLine(parameters.command_line);
+  if (parameters.zygote_child ||
+      sandbox_type == service_manager::SANDBOX_TYPE_NETWORK) {
+    service_manager::SandboxLinux::PreSandboxHook pre_sandbox_hook;
+    if (sandbox_type == service_manager::SANDBOX_TYPE_NETWORK)
+      pre_sandbox_hook = base::BindOnce(&NetworkPreSandboxHook);
+    service_manager::Sandbox::Initialize(
+        sandbox_type, std::move(pre_sandbox_hook),
+        service_manager::SandboxLinux::Options());
+  }
 #elif defined(OS_WIN)
   g_utility_target_services = parameters.sandbox_info->target_services;
 #endif

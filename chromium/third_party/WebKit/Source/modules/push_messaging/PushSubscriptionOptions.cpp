@@ -79,8 +79,9 @@ PushSubscriptionOptions::PushSubscriptionOptions(
           DOMArrayBuffer::Create(options.application_server_key.Latin1().data(),
                                  options.application_server_key.length())) {}
 
-DEFINE_TRACE(PushSubscriptionOptions) {
+void PushSubscriptionOptions::Trace(blink::Visitor* visitor) {
   visitor->Trace(application_server_key_);
+  ScriptWrappable::Trace(visitor);
 }
 
 }  // namespace blink

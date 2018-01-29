@@ -23,7 +23,7 @@ const int kBackgroundRenderingTimeoutMs = 250;
 
 VideoFrameCompositor::VideoFrameCompositor(
     const scoped_refptr<base::SingleThreadTaskRunner>& task_runner,
-    blink::WebContextProviderCallback media_context_provider_callback)
+    std::unique_ptr<blink::WebVideoFrameSubmitter> submitter)
     : task_runner_(task_runner),
       tick_clock_(new base::DefaultTickClock()),
       background_rendering_enabled_(true),
@@ -42,14 +42,21 @@ VideoFrameCompositor::VideoFrameCompositor(
       // Assume 60Hz before the first UpdateCurrentFrame() call.
       last_interval_(base::TimeDelta::FromSecondsD(1.0 / 60)),
       callback_(nullptr),
+      submitter_(std::move(submitter)),
       surface_layer_for_video_enabled_(
-          base::FeatureList::IsEnabled(media::kUseSurfaceLayerForVideo)) {
+          base::FeatureList::IsEnabled(media::kUseSurfaceLayerForVideo)),
+      weak_ptr_factory_(this) {
   background_rendering_timer_.SetTaskRunner(task_runner_);
-
-  if (surface_layer_for_video_enabled_) {
-    submitter_ = blink::WebVideoFrameSubmitter::Create(
-        this, media_context_provider_callback);
+  if (submitter_.get()) {
+    task_runner_->PostTask(
+        FROM_HERE, base::Bind(&VideoFrameCompositor::InitializeSubmitter,
+                              weak_ptr_factory_.GetWeakPtr()));
   }
+}
+
+void VideoFrameCompositor::InitializeSubmitter() {
+  DCHECK(task_runner_->BelongsToCurrentThread());
+  submitter_->Initialize(this);
 }
 
 VideoFrameCompositor::~VideoFrameCompositor() {
@@ -69,8 +76,7 @@ void VideoFrameCompositor::EnableSubmission(const viz::FrameSinkId& id) {
 
 bool VideoFrameCompositor::IsClientSinkAvailable() {
   DCHECK(task_runner_->BelongsToCurrentThread());
-  return !surface_layer_for_video_enabled_ ? client_ != nullptr
-      : submitter_.get() != nullptr;
+  return client_ || submitter_;
 }
 
 void VideoFrameCompositor::OnRendererStateUpdate(bool new_state) {
@@ -104,7 +110,7 @@ void VideoFrameCompositor::OnRendererStateUpdate(bool new_state) {
   if (!IsClientSinkAvailable())
     return;
 
-  if (surface_layer_for_video_enabled_) {
+  if (submitter_) {
     if (rendering_)
       submitter_->StartRendering();
     else
@@ -197,7 +203,7 @@ void VideoFrameCompositor::PaintSingleFrame(
   }
   if (ProcessNewFrame(frame, repaint_duplicate_frame) &&
       IsClientSinkAvailable()) {
-    if (!surface_layer_for_video_enabled_)
+    if (!submitter_)
       client_->DidReceiveFrame();
     else
       submitter_->DidReceiveFrame();
@@ -259,7 +265,7 @@ void VideoFrameCompositor::BackgroundRender() {
   last_background_render_ = now;
   bool new_frame = CallRender(now, now + last_interval_, true);
   if (new_frame && IsClientSinkAvailable()) {
-    if (!surface_layer_for_video_enabled_)
+    if (!submitter_)
       client_->DidReceiveFrame();
     else
       submitter_->DidReceiveFrame();

@@ -13,6 +13,7 @@
 #include <memory>
 #include <utility>
 
+#include "api/audio_codecs/builtin_audio_decoder_factory.h"
 #include "api/test/mock_audio_mixer.h"
 #include "call/audio_state.h"
 #include "call/call.h"
@@ -40,7 +41,6 @@ struct CallHelper {
     audio_state_config.voice_engine = &voice_engine_;
     audio_state_config.audio_mixer = webrtc::AudioMixerImpl::Create();
     audio_state_config.audio_processing = webrtc::AudioProcessing::Create();
-    EXPECT_CALL(voice_engine_, audio_device_module());
     EXPECT_CALL(voice_engine_, audio_transport());
     webrtc::Call::Config config(&event_log_);
     config.audio_state = webrtc::AudioState::Create(audio_state_config);
@@ -456,7 +456,8 @@ TEST(CallTest, RecreatingAudioStreamWithSameSsrcReusesRtpState) {
   audio_state_config.voice_engine = voice_engine.voe;
   audio_state_config.audio_mixer = mock_mixer;
   audio_state_config.audio_processing = AudioProcessing::Create();
-  voice_engine.base->Init(&mock_adm, audio_state_config.audio_processing.get());
+  voice_engine.base->Init(&mock_adm, audio_state_config.audio_processing.get(),
+                          CreateBuiltinAudioDecoderFactory());
   auto audio_state = AudioState::Create(audio_state_config);
 
   RtcEventLogNullImpl event_log;

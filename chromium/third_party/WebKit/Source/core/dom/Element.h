@@ -31,6 +31,7 @@
 #include "core/dom/ContainerNode.h"
 #include "core/dom/ElementData.h"
 #include "core/dom/WhitespaceAttacher.h"
+#include "core/html/FocusOptions.h"
 #include "core/html_names.h"
 #include "core/resize_observer/ResizeObserver.h"
 #include "platform/bindings/TraceWrapperMember.h"
@@ -55,10 +56,11 @@ class ElementRareData;
 class ElementShadow;
 class ExceptionState;
 class FloatQuad;
+class FocusOptions;
 class Image;
 class InputDeviceCapabilities;
 class Locale;
-class MutableStylePropertySet;
+class MutableCSSPropertyValueSet;
 class NamedNodeMap;
 class ElementIntersectionObserverData;
 class PseudoElement;
@@ -74,7 +76,7 @@ class ShadowRootInit;
 class SpaceSplitString;
 class StringOrTrustedHTML;
 class StringOrTrustedScriptURL;
-class StylePropertySet;
+class CSSPropertyValueSet;
 class StylePropertyMap;
 class V0CustomElementDefinition;
 
@@ -118,15 +120,18 @@ struct FocusParams {
   FocusParams() {}
   FocusParams(SelectionBehaviorOnFocus selection,
               WebFocusType focus_type,
-              InputDeviceCapabilities* capabilities)
+              InputDeviceCapabilities* capabilities,
+              FocusOptions focus_options = FocusOptions())
       : selection_behavior(selection),
         type(focus_type),
-        source_capabilities(capabilities) {}
+        source_capabilities(capabilities),
+        options(focus_options) {}
 
   SelectionBehaviorOnFocus selection_behavior =
       SelectionBehaviorOnFocus::kRestore;
   WebFocusType type = kWebFocusTypeNone;
   Member<InputDeviceCapabilities> source_capabilities = nullptr;
+  FocusOptions options = FocusOptions();
 };
 
 typedef HeapVector<TraceWrapperMember<Attr>> AttrNodeList;
@@ -310,7 +315,7 @@ class CORE_EXPORT Element : public ContainerNode {
   AttrNodeList* GetAttrNodeList();
 
   CSSStyleDeclaration* style();
-  StylePropertyMap* styleMap();
+  StylePropertyMap* attributeStyleMap();
 
   const QualifiedName& TagQName() const { return tag_name_; }
   String tagName() const { return nodeName(); }
@@ -349,12 +354,12 @@ class CORE_EXPORT Element : public ContainerNode {
 
   void SetBooleanAttribute(const QualifiedName&, bool);
 
-  virtual const StylePropertySet* AdditionalPresentationAttributeStyle() {
+  virtual const CSSPropertyValueSet* AdditionalPresentationAttributeStyle() {
     return nullptr;
   }
   void InvalidateStyleAttribute();
 
-  const StylePropertySet* InlineStyle() const {
+  const CSSPropertyValueSet* InlineStyle() const {
     return GetElementData() ? GetElementData()->inline_style_.Get() : nullptr;
   }
 
@@ -378,13 +383,14 @@ class CORE_EXPORT Element : public ContainerNode {
 
   void SynchronizeStyleAttributeInternal() const;
 
-  const StylePropertySet* PresentationAttributeStyle();
+  const CSSPropertyValueSet* PresentationAttributeStyle();
   virtual bool IsPresentationAttribute(const QualifiedName&) const {
     return false;
   }
-  virtual void CollectStyleForPresentationAttribute(const QualifiedName&,
-                                                    const AtomicString&,
-                                                    MutableStylePropertySet*) {}
+  virtual void CollectStyleForPresentationAttribute(
+      const QualifiedName&,
+      const AtomicString&,
+      MutableCSSPropertyValueSet*) {}
 
   // For exposing to DOM only.
   NamedNodeMap* attributesForBindings() const;
@@ -516,7 +522,7 @@ class CORE_EXPORT Element : public ContainerNode {
   }
 
   bool ShouldStoreNonLayoutObjectComputedStyle(const ComputedStyle&) const;
-  void StoreNonLayoutObjectComputedStyle(RefPtr<ComputedStyle>);
+  void StoreNonLayoutObjectComputedStyle(scoped_refptr<ComputedStyle>);
 
   // Methods for indicating the style is affected by dynamic updates (e.g.,
   // children changing, our position changing in our sibling list, etc.)
@@ -567,7 +573,11 @@ class CORE_EXPORT Element : public ContainerNode {
   virtual Image* ImageContents() { return nullptr; }
 
   virtual void focus(const FocusParams& = FocusParams());
-  virtual void UpdateFocusAppearance(SelectionBehaviorOnFocus);
+  void focus(FocusOptions);
+
+  void UpdateFocusAppearance(SelectionBehaviorOnFocus);
+  virtual void UpdateFocusAppearanceWithOptions(SelectionBehaviorOnFocus,
+                                                const FocusOptions&);
   virtual void blur();
 
   void setDistributeScroll(ScrollStateCallback*, String native_scroll_behavior);
@@ -685,7 +695,7 @@ class CORE_EXPORT Element : public ContainerNode {
 
   ComputedStyle* PseudoStyle(const PseudoStyleRequest&,
                              const ComputedStyle* parent_style = nullptr);
-  RefPtr<ComputedStyle> GetUncachedPseudoStyle(
+  scoped_refptr<ComputedStyle> GetUncachedPseudoStyle(
       const PseudoStyleRequest&,
       const ComputedStyle* parent_style = nullptr);
   bool CanGeneratePseudoElement(PseudoId) const;
@@ -765,7 +775,7 @@ class CORE_EXPORT Element : public ContainerNode {
   bool IsSpellCheckingEnabled() const;
 
   // FIXME: public for LayoutTreeBuilder, we shouldn't expose this though.
-  RefPtr<ComputedStyle> StyleForLayoutObject();
+  scoped_refptr<ComputedStyle> StyleForLayoutObject();
 
   bool HasID() const;
   bool HasClass() const;
@@ -780,7 +790,7 @@ class CORE_EXPORT Element : public ContainerNode {
 
   void SynchronizeAttribute(const AtomicString& local_name) const;
 
-  MutableStylePropertySet& EnsureMutableInlineStyle();
+  MutableCSSPropertyValueSet& EnsureMutableInlineStyle();
   void ClearMutableInlineStyleIfEmpty();
 
   void setTabIndex(int);
@@ -801,9 +811,9 @@ class CORE_EXPORT Element : public ContainerNode {
       const char element[],
       const AttributeModificationParams&);
 
-  DECLARE_VIRTUAL_TRACE();
+  virtual void Trace(blink::Visitor*);
 
-  DECLARE_VIRTUAL_TRACE_WRAPPERS();
+  virtual void TraceWrappers(const ScriptWrappableVisitor*) const;
 
   SpellcheckAttributeState GetSpellcheckAttributeState() const;
 
@@ -822,18 +832,18 @@ class CORE_EXPORT Element : public ContainerNode {
   const ElementData* GetElementData() const { return element_data_.Get(); }
   UniqueElementData& EnsureUniqueElementData();
 
-  void AddPropertyToPresentationAttributeStyle(MutableStylePropertySet*,
+  void AddPropertyToPresentationAttributeStyle(MutableCSSPropertyValueSet*,
                                                CSSPropertyID,
                                                CSSValueID identifier);
-  void AddPropertyToPresentationAttributeStyle(MutableStylePropertySet*,
+  void AddPropertyToPresentationAttributeStyle(MutableCSSPropertyValueSet*,
                                                CSSPropertyID,
                                                double value,
                                                CSSPrimitiveValue::UnitType);
-  void AddPropertyToPresentationAttributeStyle(MutableStylePropertySet*,
+  void AddPropertyToPresentationAttributeStyle(MutableCSSPropertyValueSet*,
                                                CSSPropertyID,
                                                const String& value);
   // TODO(sashab): Make this take a const CSSValue&.
-  void AddPropertyToPresentationAttributeStyle(MutableStylePropertySet*,
+  void AddPropertyToPresentationAttributeStyle(MutableCSSPropertyValueSet*,
                                                CSSPropertyID,
                                                const CSSValue*);
 
@@ -843,7 +853,7 @@ class CORE_EXPORT Element : public ContainerNode {
 
   virtual void WillRecalcStyle(StyleRecalcChange);
   virtual void DidRecalcStyle();
-  virtual RefPtr<ComputedStyle> CustomStyleForLayoutObject();
+  virtual scoped_refptr<ComputedStyle> CustomStyleForLayoutObject();
 
   virtual NamedItemType GetNamedItemType() const {
     return NamedItemType::kNone;
@@ -869,7 +879,7 @@ class CORE_EXPORT Element : public ContainerNode {
 
   static bool AttributeValueIsJavaScriptURL(const Attribute&);
 
-  RefPtr<ComputedStyle> OriginalStyleForLayoutObject();
+  scoped_refptr<ComputedStyle> OriginalStyleForLayoutObject();
 
   Node* InsertAdjacent(const String& where, Node* new_child, ExceptionState&);
 
@@ -909,7 +919,7 @@ class CORE_EXPORT Element : public ContainerNode {
   // these changes can be directly propagated to this element (the child).
   // If these conditions are met, propagates the changes to the current style
   // and returns the new style. Otherwise, returns null.
-  RefPtr<ComputedStyle> PropagateInheritedProperties(StyleRecalcChange);
+  scoped_refptr<ComputedStyle> PropagateInheritedProperties(StyleRecalcChange);
 
   StyleRecalcChange RecalcOwnStyle(StyleRecalcChange);
   void RebuildPseudoElementLayoutTree(PseudoId, WhitespaceAttacher&);
@@ -1187,7 +1197,7 @@ inline void Element::InvalidateStyleAttribute() {
   GetElementData()->style_attribute_is_dirty_ = true;
 }
 
-inline const StylePropertySet* Element::PresentationAttributeStyle() {
+inline const CSSPropertyValueSet* Element::PresentationAttributeStyle() {
   if (!GetElementData())
     return nullptr;
   if (GetElementData()->presentation_attribute_style_is_dirty_)

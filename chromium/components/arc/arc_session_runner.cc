@@ -5,6 +5,8 @@
 #include "components/arc/arc_session_runner.h"
 
 #include "base/logging.h"
+#include "base/metrics/histogram_macros.h"
+#include "base/optional.h"
 #include "base/task_runner.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "components/arc/arc_util.h"
@@ -24,6 +26,45 @@ chromeos::SessionManagerClient* GetSessionManagerClient() {
       !chromeos::DBusThreadManager::Get()->GetSessionManagerClient())
     return nullptr;
   return chromeos::DBusThreadManager::Get()->GetSessionManagerClient();
+}
+
+void RecordInstanceCrashUma(ArcContainerLifetimeEvent sample) {
+  UMA_HISTOGRAM_ENUMERATION("Arc.ContainerLifetimeEvent", sample,
+                            ArcContainerLifetimeEvent::COUNT);
+}
+
+void RecordInstanceRestartAfterCrashUma(size_t restart_after_crash_count) {
+  UMA_HISTOGRAM_COUNTS_100("Arc.ContainerRestartAfterCrashCount",
+                           restart_after_crash_count);
+}
+
+// Gets an ArcContainerLifetimeEvent value to record. Returns nullopt when no
+// UMA recording is needed.
+base::Optional<ArcContainerLifetimeEvent> GetArcContainerLifetimeEvent(
+    size_t restart_after_crash_count,
+    ArcStopReason stop_reason,
+    bool was_running) {
+  // Record UMA only when this is the first non-early crash. This has to be
+  // done before checking other conditions. Otherwise, an early crash after
+  // container restart might be recorded. Each CONTAINER_STARTED event can
+  // be paired up to one non-START event.
+  if (restart_after_crash_count)
+    return base::nullopt;
+
+  switch (stop_reason) {
+    case ArcStopReason::SHUTDOWN:
+    case ArcStopReason::LOW_DISK_SPACE:
+      // We don't record these events.
+      return base::nullopt;
+    case ArcStopReason::GENERIC_BOOT_FAILURE:
+      return ArcContainerLifetimeEvent::CONTAINER_FAILED_TO_START;
+    case ArcStopReason::CRASH:
+      return was_running ? ArcContainerLifetimeEvent::CONTAINER_CRASHED
+                         : ArcContainerLifetimeEvent::CONTAINER_CRASHED_EARLY;
+  }
+
+  NOTREACHED();
+  return base::nullopt;
 }
 
 // Returns true if restart is needed for given conditions.
@@ -60,15 +101,17 @@ bool IsRestartNeeded(base::Optional<ArcInstanceMode> target_mode,
   return false;
 }
 
-std::ostream& operator<<(std::ostream& os,
-                         base::Optional<ArcInstanceMode> mode) {
-  return mode.has_value() ? (os << mode.value()) : (os << "(nullopt)");
-}
-
 // Returns true if the request to start/upgrade ARC instance is allowed
 // operation.
 bool IsRequestAllowed(const base::Optional<ArcInstanceMode>& current_mode,
                       ArcInstanceMode request_mode) {
+  if (request_mode == ArcInstanceMode::MINI_INSTANCE &&
+      ShouldArcOnlyStartAfterLogin()) {
+    // Skip starting ARC for now. We'll have another chance to start the full
+    // instance after the user logs in.
+    return false;
+  }
+
   if (!current_mode.has_value()) {
     // This is a request to start a new ARC instance (either mini instance
     // or full instance).
@@ -87,10 +130,28 @@ bool IsRequestAllowed(const base::Optional<ArcInstanceMode>& current_mode,
   return false;
 }
 
+// Returns true if OnSessionStopped() should be called to notify observers.
+bool ShouldNotifyOnSessionStopped(
+    const base::Optional<ArcInstanceMode>& target_mode) {
+  DCHECK(target_mode.has_value());
+
+  switch (target_mode.value()) {
+    case ArcInstanceMode::MINI_INSTANCE:
+      return false;
+    case ArcInstanceMode::FULL_INSTANCE:
+      return true;
+  }
+
+  NOTREACHED() << "Unexpeceted |target_mode|: "
+               << static_cast<int>(target_mode.value());
+  return false;
+}
+
 }  // namespace
 
 ArcSessionRunner::ArcSessionRunner(const ArcSessionFactory& factory)
     : restart_delay_(kDefaultRestartDelay),
+      restart_after_crash_count_(0),
       factory_(factory),
       weak_ptr_factory_(this) {
   chromeos::SessionManagerClient* client = GetSessionManagerClient();
@@ -205,18 +266,15 @@ void ArcSessionRunner::StartArcSession() {
   if (!arc_session_) {
     arc_session_ = factory_.Run();
     arc_session_->AddObserver(this);
+    // Record the UMA only when |restart_after_crash_count_| is zero to avoid
+    // recording an auto-restart-then-crash loop. Such a crash loop is recorded
+    // separately with RecordInstanceRestartAfterCrashUma().
+    if (!restart_after_crash_count_)
+      RecordInstanceCrashUma(ArcContainerLifetimeEvent::CONTAINER_STARTING);
   } else {
-    DCHECK(arc_session_->IsForLoginScreen());
+    DCHECK_EQ(ArcInstanceMode::MINI_INSTANCE, arc_session_->GetTargetMode());
   }
-
-  switch (target_mode_.value()) {
-    case ArcInstanceMode::MINI_INSTANCE:
-      arc_session_->StartForLoginScreen();
-      break;
-    case ArcInstanceMode::FULL_INSTANCE:
-      arc_session_->Start();
-      break;
-  }
+  arc_session_->Start(target_mode_.value());
 }
 
 void ArcSessionRunner::RestartArcSession() {
@@ -237,13 +295,29 @@ void ArcSessionRunner::OnSessionStopped(ArcStopReason stop_reason,
 
   // The observers should be agnostic to the existence of the limited-purpose
   // instance.
-  const bool notify_observers = !arc_session_->IsForLoginScreen();
+  const bool notify_observers =
+      ShouldNotifyOnSessionStopped(arc_session_->GetTargetMode());
 
   arc_session_->RemoveObserver(this);
   arc_session_.reset();
 
+  const base::Optional<ArcContainerLifetimeEvent> uma_to_record =
+      GetArcContainerLifetimeEvent(restart_after_crash_count_, stop_reason,
+                                   was_running);
+  if (uma_to_record.has_value())
+    RecordInstanceCrashUma(uma_to_record.value());
+
   const bool restarting =
       IsRestartNeeded(target_mode_, stop_reason, was_running);
+
+  if (restarting && stop_reason == ArcStopReason::CRASH) {
+    ++restart_after_crash_count_;
+  } else {
+    // The session ended. Record the restart count.
+    RecordInstanceRestartAfterCrashUma(restart_after_crash_count_);
+    restart_after_crash_count_ = 0;
+  }
+
   if (restarting) {
     // There was a previous invocation and it crashed for some reason. Try
     // starting ARC instance later again.
@@ -262,17 +336,12 @@ void ArcSessionRunner::OnSessionStopped(ArcStopReason stop_reason,
 }
 
 void ArcSessionRunner::EmitLoginPromptVisibleCalled() {
-  if (ShouldArcOnlyStartAfterLogin()) {
-    // Skip starting ARC for now. We'll have another chance to start the full
-    // instance after the user logs in.
-    return;
-  }
-
   // Since 'login-prompt-visible' Upstart signal starts all Upstart jobs the
-  // container may depend on such as cras, EmitLoginPromptVisibleCalled() is the
-  // safe place to start the container for login screen.
+  // instance may depend on such as cras, EmitLoginPromptVisibleCalled() is the
+  // safe place to start a mini instance.
   DCHECK(!arc_session_);
-  RequestStart(ArcInstanceMode::MINI_INSTANCE);
+  if (IsArcAvailable())
+    RequestStart(ArcInstanceMode::MINI_INSTANCE);
 }
 
 }  // namespace arc

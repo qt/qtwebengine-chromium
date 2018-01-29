@@ -49,7 +49,7 @@ class FunctionsGLGLX : public FunctionsGL
     ~FunctionsGLGLX() override {}
 
   private:
-    void *loadProcAddress(const std::string &function) override
+    void *loadProcAddress(const std::string &function) const override
     {
         return reinterpret_cast<void*>(mGetProc(function.c_str()));
     }
@@ -292,7 +292,7 @@ egl::Error DisplayGLX::initialize(egl::Display *display)
     }
 
     mFunctionsGL = new FunctionsGLGLX(mGLX.getProc);
-    mFunctionsGL->initialize();
+    mFunctionsGL->initialize(eglAttributes);
 
     // TODO(cwallez, angleproject:1303) Disable the OpenGL ES backend on Linux NVIDIA and Intel as
     // it has problems on our automated testing. An OpenGL ES backend might not trigger this test if

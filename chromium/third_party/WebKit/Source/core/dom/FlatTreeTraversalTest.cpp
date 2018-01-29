@@ -88,6 +88,8 @@ void FlatTreeTraversalTest::AttachOpenShadowRoot(
   GetDocument().body()->UpdateDistribution();
 }
 
+namespace {
+
 void TestCommonAncestor(Node* expected_result,
                         const Node& node_a,
                         const Node& node_b) {
@@ -100,6 +102,8 @@ void TestCommonAncestor(Node* expected_result,
       << "commonAncestor(" << node_b.textContent() << ","
       << node_a.textContent() << ")";
 }
+
+}  // namespace
 
 // Test case for
 //  - childAt
@@ -324,6 +328,23 @@ TEST_F(FlatTreeTraversalTest, nextSkippingChildren) {
   // Node in shadow tree to main tree
   EXPECT_EQ(*m2, FlatTreeTraversal::NextSkippingChildren(*s12));
   EXPECT_EQ(*m1, FlatTreeTraversal::PreviousSkippingChildren(*m2));
+}
+
+TEST_F(FlatTreeTraversalTest, InclusiveAncestorsOf) {
+  SetupDocumentTree("<div><div><div id=sample></div></div></div>");
+  Element* const sample = GetDocument().getElementById("sample");
+
+  HeapVector<Member<Node>> expected_nodes;
+  for (Node* parent = sample; parent;
+       parent = FlatTreeTraversal::Parent(*parent)) {
+    expected_nodes.push_back(parent);
+  }
+
+  HeapVector<Member<Node>> actual_nodes;
+  for (Node& ancestor : FlatTreeTraversal::InclusiveAncestorsOf(*sample))
+    actual_nodes.push_back(&ancestor);
+
+  EXPECT_EQ(expected_nodes, actual_nodes);
 }
 
 // Test case for

@@ -23,6 +23,8 @@
 #ifndef StyleResolverState_h
 #define StyleResolverState_h
 
+#include <memory>
+#include "base/macros.h"
 #include "core/CSSPropertyNames.h"
 #include "core/CoreExport.h"
 #include "core/animation/css/CSSAnimationUpdate.h"
@@ -35,7 +37,6 @@
 #include "core/dom/Document.h"
 #include "core/dom/Element.h"
 #include "core/style/CachedUAStyle.h"
-#include <memory>
 
 namespace blink {
 
@@ -44,7 +45,6 @@ class FontDescription;
 
 class CORE_EXPORT StyleResolverState {
   STACK_ALLOCATED();
-  WTF_MAKE_NONCOPYABLE(StyleResolverState);
 
  public:
   StyleResolverState(Document&,
@@ -80,10 +80,10 @@ class CORE_EXPORT StyleResolverState {
     return element_context_;
   }
 
-  void SetStyle(RefPtr<ComputedStyle>);
+  void SetStyle(scoped_refptr<ComputedStyle>);
   const ComputedStyle* Style() const { return style_.get(); }
   ComputedStyle* Style() { return style_.get(); }
-  RefPtr<ComputedStyle> TakeStyle();
+  scoped_refptr<ComputedStyle> TakeStyle();
 
   ComputedStyle& MutableStyleRef() const { return *style_; }
   const ComputedStyle& StyleRef() const { return MutableStyleRef(); }
@@ -128,10 +128,10 @@ class CORE_EXPORT StyleResolverState {
     return animation_pending_custom_properties_;
   }
 
-  void SetParentStyle(RefPtr<const ComputedStyle>);
+  void SetParentStyle(scoped_refptr<const ComputedStyle>);
   const ComputedStyle* ParentStyle() const { return parent_style_.get(); }
 
-  void SetLayoutParentStyle(RefPtr<const ComputedStyle>);
+  void SetLayoutParentStyle(scoped_refptr<const ComputedStyle>);
   const ComputedStyle* LayoutParentStyle() const {
     return layout_parent_style_.get();
   }
@@ -191,9 +191,6 @@ class CORE_EXPORT StyleResolverState {
   void SetHasDirAutoAttribute(bool value) { has_dir_auto_attribute_ = value; }
   bool HasDirAutoAttribute() const { return has_dir_auto_attribute_; }
 
-  void SetCustomPropertySetForApplyAtRule(const String&, StylePropertySet*);
-  StylePropertySet* CustomPropertySetForApplyAtRule(const String&);
-
   HeapHashMap<CSSPropertyID, Member<const CSSValue>>&
   ParsedPropertiesForPendingSubstitutionCache(
       const CSSPendingSubstitutionValue&) const;
@@ -203,17 +200,17 @@ class CORE_EXPORT StyleResolverState {
   Member<Document> document_;
 
   // style_ is the primary output for each element's style resolve.
-  RefPtr<ComputedStyle> style_;
+  scoped_refptr<ComputedStyle> style_;
 
   CSSToLengthConversionData css_to_length_conversion_data_;
 
   // parent_style_ is not always just ElementResolveContext::ParentStyle(),
   // so we keep it separate.
-  RefPtr<const ComputedStyle> parent_style_;
+  scoped_refptr<const ComputedStyle> parent_style_;
   // This will almost-always be the same that parent_style_, except in the
   // presence of display: contents. This is the style against which we have to
   // do adjustment.
-  RefPtr<const ComputedStyle> layout_parent_style_;
+  scoped_refptr<const ComputedStyle> layout_parent_style_;
 
   CSSAnimationUpdate animation_update_;
   bool is_animation_interpolation_map_ready_;
@@ -230,13 +227,11 @@ class CORE_EXPORT StyleResolverState {
 
   ElementStyleResources element_style_resources_;
 
-  HeapHashMap<String, Member<StylePropertySet>>
-      custom_property_sets_for_apply_at_rule_;
-
   mutable HeapHashMap<
       Member<const CSSPendingSubstitutionValue>,
       Member<HeapHashMap<CSSPropertyID, Member<const CSSValue>>>>
       parsed_properties_for_pending_substitution_cache_;
+  DISALLOW_COPY_AND_ASSIGN(StyleResolverState);
 };
 
 }  // namespace blink

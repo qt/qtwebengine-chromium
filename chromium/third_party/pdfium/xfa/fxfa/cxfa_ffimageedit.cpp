@@ -61,25 +61,27 @@ void CXFA_FFImageEdit::RenderWidget(CXFA_Graphics* pGS,
   mtRotate.Concat(matrix);
 
   CXFA_FFWidget::RenderWidget(pGS, mtRotate, dwStatus);
-  CXFA_Border borderUI = m_pDataAcc->GetUIBorder();
-  DrawBorder(pGS, borderUI, m_rtUI, mtRotate);
+  DrawBorder(pGS, m_pDataAcc->GetUIBorderData(), m_rtUI, mtRotate);
   RenderCaption(pGS, &mtRotate);
   RetainPtr<CFX_DIBitmap> pDIBitmap = m_pDataAcc->GetImageEditImage();
   if (!pDIBitmap)
     return;
 
   CFX_RectF rtImage = m_pNormalWidget->GetWidgetRect();
-  int32_t iHorzAlign = XFA_ATTRIBUTEENUM_Left;
-  int32_t iVertAlign = XFA_ATTRIBUTEENUM_Top;
-  if (CXFA_Para para = m_pDataAcc->GetPara()) {
-    iHorzAlign = para.GetHorizontalAlign();
-    iVertAlign = para.GetVerticalAlign();
+  XFA_AttributeEnum iHorzAlign = XFA_AttributeEnum::Left;
+  XFA_AttributeEnum iVertAlign = XFA_AttributeEnum::Top;
+  CXFA_ParaData paraData = m_pDataAcc->GetParaData();
+  if (paraData.HasValidNode()) {
+    iHorzAlign = paraData.GetHorizontalAlign();
+    iVertAlign = paraData.GetVerticalAlign();
   }
 
-  int32_t iAspect = XFA_ATTRIBUTEENUM_Fit;
-  if (CXFA_Value value = m_pDataAcc->GetFormValue()) {
-    if (CXFA_Image imageObj = value.GetImage())
-      iAspect = imageObj.GetAspect();
+  XFA_AttributeEnum iAspect = XFA_AttributeEnum::Fit;
+  CXFA_ValueData valueData = m_pDataAcc->GetFormValueData();
+  if (valueData.HasValidNode()) {
+    CXFA_ImageData imageData = valueData.GetImageData();
+    if (imageData.HasValidNode())
+      iAspect = imageData.GetAspect();
   }
 
   int32_t iImageXDpi = 0;
@@ -91,7 +93,7 @@ void CXFA_FFImageEdit::RenderWidget(CXFA_Graphics* pGS,
 
 bool CXFA_FFImageEdit::OnLButtonDown(uint32_t dwFlags,
                                      const CFX_PointF& point) {
-  if (m_pDataAcc->GetAccess() != XFA_ATTRIBUTEENUM_Open)
+  if (!m_pDataAcc->IsOpenAccess())
     return false;
   if (!PtInActiveRect(point))
     return false;

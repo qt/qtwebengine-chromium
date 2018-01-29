@@ -26,6 +26,7 @@
 #include "platform/graphics/DeferredImageDecoder.h"
 
 #include <memory>
+#include "base/memory/scoped_refptr.h"
 #include "platform/CrossThreadFunctional.h"
 #include "platform/SharedBuffer.h"
 #include "platform/WebTaskRunner.h"
@@ -37,7 +38,6 @@
 #include "platform/graphics/paint/PaintRecorder.h"
 #include "platform/graphics/test/MockImageDecoder.h"
 #include "platform/wtf/PtrUtil.h"
-#include "platform/wtf/RefPtr.h"
 #include "public/platform/Platform.h"
 #include "public/platform/WebThread.h"
 #include "public/platform/WebTraceLocation.h"
@@ -101,7 +101,7 @@ class DeferredImageDecoderTest : public ::testing::Test,
 
   void TearDown() override { ImageDecodingStore::Instance().Clear(); }
 
-  void DecoderBeingDestroyed() override { actual_decoder_ = 0; }
+  void DecoderBeingDestroyed() override { actual_decoder_ = nullptr; }
 
   void DecodeRequested() override { ++decode_request_count_; }
 
@@ -151,7 +151,7 @@ class DeferredImageDecoderTest : public ::testing::Test,
   SkBitmap bitmap_;
   std::unique_ptr<cc::PaintCanvas> canvas_;
   int decode_request_count_;
-  RefPtr<SharedBuffer> data_;
+  scoped_refptr<SharedBuffer> data_;
   size_t frame_count_;
   int repetition_count_;
   ImageFrame::Status status_;
@@ -178,7 +178,7 @@ TEST_F(DeferredImageDecoderTest, drawIntoPaintRecord) {
 }
 
 TEST_F(DeferredImageDecoderTest, drawIntoPaintRecordProgressive) {
-  RefPtr<SharedBuffer> partial_data =
+  scoped_refptr<SharedBuffer> partial_data =
       SharedBuffer::Create(data_->Data(), data_->size() - 10);
 
   // Received only half the file.
@@ -366,11 +366,11 @@ TEST_F(DeferredImageDecoderTest, frameOpacity) {
 }
 
 TEST_F(DeferredImageDecoderTest, data) {
-  RefPtr<SharedBuffer> original_buffer =
+  scoped_refptr<SharedBuffer> original_buffer =
       SharedBuffer::Create(data_->Data(), data_->size());
   EXPECT_EQ(original_buffer->size(), data_->size());
   lazy_decoder_->SetData(original_buffer, false);
-  RefPtr<SharedBuffer> new_buffer = lazy_decoder_->Data();
+  scoped_refptr<SharedBuffer> new_buffer = lazy_decoder_->Data();
   EXPECT_EQ(original_buffer->size(), new_buffer->size());
   const Vector<char> original_data = original_buffer->Copy();
   const Vector<char> new_data = new_buffer->Copy();

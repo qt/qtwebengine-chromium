@@ -93,9 +93,9 @@ const SkColor kNotificationDefaultAccentColor = gfx::kChromeIconGrey;
 // Not used when --enabled-new-style-notification is set.
 const size_t kNotificationMaximumItems = 5;
 
-// Timing. Web Notifications always use high-priority timings. Given the absence
-// of a notification center on non-Chrome OS platforms, this improves users'
-// ability to interact with the toasts.
+// Timing. Web Notifications always use high-priority timings except on
+// Chrome OS. Given the absence of a notification center on non-Chrome OS
+// platforms, this improves users' ability to interact with the toasts.
 const int kAutocloseDefaultDelaySeconds = 8;
 const int kAutocloseHighPriorityDelaySeconds = 25;
 
@@ -127,9 +127,17 @@ const int kContextMessageLineLimit = 1;
 
 // Around notifications ////////////////////////////////////////////////////////
 
-// DIP dimensions (H = horizontal, V = vertical).
-const int kMarginBetweenItems = 10;  // H & V space around & between
-                                     // notifications.
+#if defined(OS_CHROMEOS)
+// Horizontal & vertical thickness of the border around the notifications in the
+// notification list.
+constexpr int kNotificationBorderThickness = 1;
+// Horizontal & vertical space around & between notifications in the
+// notification list.
+constexpr int kMarginBetweenItemsInList = 8;
+#endif
+
+// Horizontal & vertical space around & between popup notifications.
+constexpr int kMarginBetweenPopups = 10;
 
 // Shadow in the tray.
 const SkColor kShadowColor = SkColorSetARGB(0.3 * 255, 0, 0, 0);

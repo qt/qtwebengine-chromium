@@ -32,13 +32,12 @@
 #ifndef WebPluginContainerImpl_h
 #define WebPluginContainerImpl_h
 
+#include "base/memory/scoped_refptr.h"
 #include "core/CoreExport.h"
 #include "core/dom/ContextLifecycleObserver.h"
 #include "core/plugins/PluginView.h"
 #include "platform/heap/Handle.h"
 #include "platform/wtf/Compiler.h"
-#include "platform/wtf/RefPtr.h"
-#include "platform/wtf/Vector.h"
 #include "platform/wtf/text/WTFString.h"
 #include "public/platform/WebCoalescedInputEvent.h"
 #include "public/platform/WebTouchEvent.h"
@@ -164,7 +163,7 @@ class CORE_EXPORT WebPluginContainerImpl final
   int PrintBegin(const WebPrintParams&) const;
   // Prints the page specified by pageNumber (0-based index) into the supplied
   // canvas.
-  void PrintPage(int page_number, GraphicsContext&, const IntRect& paint_rect);
+  void PrintPage(int page_number, GraphicsContext&);
   // Ends the print operation.
   void PrintEnd();
 
@@ -185,7 +184,7 @@ class CORE_EXPORT WebPluginContainerImpl final
     return const_cast<WebPluginContainerImpl*>(this);
   }
 
-  DECLARE_VIRTUAL_TRACE();
+  virtual void Trace(blink::Visitor*);
   // USING_PRE_FINALIZER does not allow for virtual dispatch from the finalizer
   // method. Here we call Dispose() which does the correct virtual dispatch.
   void PreFinalize() { Dispose(); }

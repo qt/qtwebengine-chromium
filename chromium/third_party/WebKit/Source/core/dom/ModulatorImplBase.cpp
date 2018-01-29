@@ -9,11 +9,11 @@
 #include "core/dom/ModuleMap.h"
 #include "core/dom/ModuleScript.h"
 #include "core/dom/ScriptModuleResolverImpl.h"
-#include "core/dom/TaskRunnerHelper.h"
 #include "core/loader/modulescript/ModuleScriptFetchRequest.h"
 #include "core/loader/modulescript/ModuleScriptLoaderRegistry.h"
 #include "core/loader/modulescript/ModuleTreeLinkerRegistry.h"
 #include "platform/WebTaskRunner.h"
+#include "public/platform/TaskType.h"
 
 namespace blink {
 
@@ -21,10 +21,10 @@ ExecutionContext* ModulatorImplBase::GetExecutionContext() const {
   return ExecutionContext::From(script_state_.get());
 }
 
-ModulatorImplBase::ModulatorImplBase(RefPtr<ScriptState> script_state)
+ModulatorImplBase::ModulatorImplBase(scoped_refptr<ScriptState> script_state)
     : script_state_(std::move(script_state)),
-      task_runner_(
-          TaskRunnerHelper::Get(TaskType::kNetworking, script_state_.get())),
+      task_runner_(ExecutionContext::From(script_state_.get())
+                       ->GetTaskRunner(TaskType::kNetworking)),
       map_(ModuleMap::Create(this)),
       loader_registry_(ModuleScriptLoaderRegistry::Create()),
       tree_linker_registry_(ModuleTreeLinkerRegistry::Create()),
@@ -42,7 +42,7 @@ ReferrerPolicy ModulatorImplBase::GetReferrerPolicy() {
   return GetExecutionContext()->GetReferrerPolicy();
 }
 
-SecurityOrigin* ModulatorImplBase::GetSecurityOrigin() {
+SecurityOrigin* ModulatorImplBase::GetSecurityOriginForFetch() {
   return GetExecutionContext()->GetSecurityOrigin();
 }
 
@@ -57,10 +57,6 @@ void ModulatorImplBase::FetchTree(const ModuleScriptFetchRequest& request,
   // Note: "Fetch a module script graph" algorithm doesn't have "referrer" as
   // its argument.
   DCHECK(request.GetReferrer().IsNull());
-
-  // We ensure module-related code is not executed without the flag.
-  // https://crbug.com/715376
-  CHECK(RuntimeEnabledFeatures::ModuleScriptsEnabled());
 
   tree_linker_registry_->Fetch(request, this, client);
 
@@ -80,10 +76,6 @@ void ModulatorImplBase::FetchDescendantsForInlineScript(
 void ModulatorImplBase::FetchSingle(const ModuleScriptFetchRequest& request,
                                     ModuleGraphLevel level,
                                     SingleModuleClient* client) {
-  // We ensure module-related code is not executed without the flag.
-  // https://crbug.com/715376
-  CHECK(RuntimeEnabledFeatures::ModuleScriptsEnabled());
-
   map_->FetchSingleModuleScript(request, level, client);
 }
 
@@ -91,10 +83,6 @@ void ModulatorImplBase::FetchNewSingleModule(
     const ModuleScriptFetchRequest& request,
     ModuleGraphLevel level,
     ModuleScriptLoaderClient* client) {
-  // We ensure module-related code is not executed without the flag.
-  // https://crbug.com/715376
-  CHECK(RuntimeEnabledFeatures::ModuleScriptsEnabled());
-
   loader_registry_->Fetch(request, level, this, client);
 }
 
@@ -115,13 +103,25 @@ void ModulatorImplBase::ResolveDynamically(
                                                referrer_info, resolver);
 }
 
+// https://html.spec.whatwg.org/#hostgetimportmetaproperties
+ModuleImportMeta ModulatorImplBase::HostGetImportMetaProperties(
+    ScriptModule record) const {
+  // 1. Let module script be moduleRecord.[[HostDefined]]. [spec text]
+  ModuleScript* module_script = script_module_resolver_->GetHostDefined(record);
+  DCHECK(module_script);
+
+  // 2. Let urlString be module script's base URL, serialized. [spec text]
+  String url_string = module_script->BaseURL().GetString();
+
+  // 3. Return <<Record { [[Key]]: "url", [[Value]]: urlString }>>. [spec text]
+  return ModuleImportMeta(url_string);
+}
+
 ScriptModule ModulatorImplBase::CompileModule(
     const String& provided_source,
     const String& url_str,
+    const ScriptFetchOptions& options,
     AccessControlStatus access_control_status,
-    WebURLRequest::FetchCredentialsMode credentials_mode,
-    const String& nonce,
-    ParserDisposition parser_state,
     const TextPosition& position,
     ExceptionState& exception_state) {
   // Implements Steps 3-5 of
@@ -140,8 +140,8 @@ ScriptModule ModulatorImplBase::CompileModule(
   // Step 5. Let result be ParseModule(script source, realm, script).
   ScriptState::Scope scope(script_state_.get());
   return ScriptModule::Compile(script_state_->GetIsolate(), script_source,
-                               url_str, access_control_status, credentials_mode,
-                               nonce, parser_state, position, exception_state);
+                               url_str, options, access_control_status,
+                               position, exception_state);
 }
 
 ScriptValue ModulatorImplBase::InstantiateModule(ScriptModule script_module) {
@@ -195,10 +195,6 @@ ScriptValue ModulatorImplBase::ExecuteModule(
     CaptureEvalErrorFlag capture_error) {
   // https://html.spec.whatwg.org/#run-a-module-script
 
-  // We ensure module-related code is not executed without the flag.
-  // https://crbug.com/715376
-  CHECK(RuntimeEnabledFeatures::ModuleScriptsEnabled());
-
   // Step 1. "If rethrow errors is not given, let it be false." [spec text]
 
   // Step 2. "Let settings be the settings object of s." [spec text]
@@ -229,7 +225,7 @@ ScriptValue ModulatorImplBase::ExecuteModule(
     CHECK(!record.IsNull());
 
     // Step 7.2 "Let evaluationStatus be record.ModuleEvaluate()." [spec text]
-    error = record.Evaluate(script_state_.get(), capture_error);
+    error = record.Evaluate(script_state_.get());
   }
 
   // Step 8. "If evaluationStatus is an abrupt completion, then:" [spec text]
@@ -251,7 +247,7 @@ ScriptValue ModulatorImplBase::ExecuteModule(
   return ScriptValue();
 }
 
-DEFINE_TRACE(ModulatorImplBase) {
+void ModulatorImplBase::Trace(blink::Visitor* visitor) {
   Modulator::Trace(visitor);
   visitor->Trace(map_);
   visitor->Trace(loader_registry_);
@@ -260,7 +256,8 @@ DEFINE_TRACE(ModulatorImplBase) {
   visitor->Trace(dynamic_module_resolver_);
 }
 
-DEFINE_TRACE_WRAPPERS(ModulatorImplBase) {
+void ModulatorImplBase::TraceWrappers(
+    const ScriptWrappableVisitor* visitor) const {
   visitor->TraceWrappers(map_);
   visitor->TraceWrappers(tree_linker_registry_);
 }

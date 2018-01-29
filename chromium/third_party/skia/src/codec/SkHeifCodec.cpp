@@ -11,7 +11,6 @@
 #include "SkCodec.h"
 #include "SkCodecPriv.h"
 #include "SkColorData.h"
-#include "SkColorSpace_Base.h"
 #include "SkEndian.h"
 #include "SkStream.h"
 #include "SkHeifCodec.h"
@@ -34,7 +33,7 @@ bool SkHeifCodec::IsHeif(const void* buffer, size_t bytesRead) {
         return false;
     }
 
-    off64_t offset = 8;
+    int64_t offset = 8;
     if (chunkSize == 1) {
         // This indicates that the next 8 bytes represent the chunk size,
         // and chunk data comes after that.
@@ -56,7 +55,7 @@ bool SkHeifCodec::IsHeif(const void* buffer, size_t bytesRead) {
     if (chunkSize > bytesRead) {
         chunkSize = bytesRead;
     }
-    off64_t chunkDataSize = chunkSize - offset;
+    int64_t chunkDataSize = chunkSize - offset;
     // It should at least have major brand (4-byte) and minor version (4-bytes).
     // The rest of the chunk (if any) is a list of (4-byte) compatible brands.
     if (chunkDataSize < 8) {
@@ -72,21 +71,22 @@ bool SkHeifCodec::IsHeif(const void* buffer, size_t bytesRead) {
         }
         auto* brandPtr = SkTAddOffset<const uint32_t>(buffer, offset + 4 * i);
         uint32_t brand = SkEndian_SwapBE32(*brandPtr);
-        if (brand == FOURCC('m', 'i', 'f', '1') || brand == FOURCC('h', 'e', 'i', 'c')) {
+        if (brand == FOURCC('m', 'i', 'f', '1') || brand == FOURCC('h', 'e', 'i', 'c')
+         || brand == FOURCC('m', 's', 'f', '1') || brand == FOURCC('h', 'e', 'v', 'c')) {
             return true;
         }
     }
     return false;
 }
 
-static SkCodec::Origin get_orientation(const HeifFrameInfo& frameInfo) {
+static SkEncodedOrigin get_orientation(const HeifFrameInfo& frameInfo) {
     switch (frameInfo.mRotationAngle) {
-        case 0:   return SkCodec::kTopLeft_Origin;
-        case 90:  return SkCodec::kRightTop_Origin;
-        case 180: return SkCodec::kBottomRight_Origin;
-        case 270: return SkCodec::kLeftBottom_Origin;
+        case 0:   return kTopLeft_SkEncodedOrigin;
+        case 90:  return kRightTop_SkEncodedOrigin;
+        case 180: return kBottomRight_SkEncodedOrigin;
+        case 270: return kLeftBottom_SkEncodedOrigin;
     }
-    return SkCodec::kDefault_Origin;
+    return kDefault_SkEncodedOrigin;
 }
 
 struct SkHeifStreamWrapper : public HeifStream {
@@ -136,15 +136,14 @@ std::unique_ptr<SkCodec> SkHeifCodec::MakeFromStream(
     SkEncodedInfo info = SkEncodedInfo::Make(
             SkEncodedInfo::kYUV_Color, SkEncodedInfo::kOpaque_Alpha, 8);
 
-    Origin orientation = get_orientation(frameInfo);
+    SkEncodedOrigin orientation = get_orientation(frameInfo);
 
     sk_sp<SkColorSpace> colorSpace = nullptr;
     if ((frameInfo.mIccSize > 0) && (frameInfo.mIccData != nullptr)) {
-        SkColorSpace_Base::ICCTypeFlag iccType = SkColorSpace_Base::kRGB_ICCTypeFlag;
-        colorSpace = SkColorSpace_Base::MakeICC(
-                frameInfo.mIccData.get(), frameInfo.mIccSize, iccType);
+        colorSpace = SkColorSpace::MakeICC(frameInfo.mIccData.get(),
+                                           frameInfo.mIccSize);
     }
-    if (!colorSpace) {
+    if (!colorSpace || colorSpace->type() != SkColorSpace::kRGB_Type) {
         colorSpace = SkColorSpace::MakeSRGB();
     }
 
@@ -154,7 +153,7 @@ std::unique_ptr<SkCodec> SkHeifCodec::MakeFromStream(
 }
 
 SkHeifCodec::SkHeifCodec(int width, int height, const SkEncodedInfo& info,
-        HeifDecoder* heifDecoder, sk_sp<SkColorSpace> colorSpace, Origin origin)
+        HeifDecoder* heifDecoder, sk_sp<SkColorSpace> colorSpace, SkEncodedOrigin origin)
     : INHERITED(width, height, info, SkColorSpaceXform::kRGBA_8888_ColorFormat,
             nullptr, std::move(colorSpace), origin)
     , fHeifDecoder(heifDecoder)

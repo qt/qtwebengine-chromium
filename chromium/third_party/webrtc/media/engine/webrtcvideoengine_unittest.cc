@@ -11,8 +11,11 @@
 #include <algorithm>
 #include <map>
 #include <memory>
+#include <utility>
 #include <vector>
 
+#include "api/test/mock_video_decoder_factory.h"
+#include "api/test/mock_video_encoder_factory.h"
 #include "api/video_codecs/sdp_video_format.h"
 #include "api/video_codecs/video_decoder_factory.h"
 #include "api/video_codecs/video_encoder.h"
@@ -27,6 +30,7 @@
 #include "media/engine/constants.h"
 #include "media/engine/fakewebrtccall.h"
 #include "media/engine/fakewebrtcvideoengine.h"
+#include "media/engine/internalencoderfactory.h"
 #include "media/engine/simulcast.h"
 #include "media/engine/webrtcvideoengine.h"
 #include "media/engine/webrtcvoiceengine.h"
@@ -177,9 +181,13 @@ class WebRtcVideoEngineTest : public ::testing::Test {
   }
 
  protected:
+  // Find the index of the codec in the engine with the given name. The codec
+  // must be present.
+  int GetEngineCodecIndex(const std::string& name) const;
+
   // Find the codec in the engine with the given name. The codec must be
   // present.
-  cricket::VideoCodec GetEngineCodec(const std::string& name);
+  cricket::VideoCodec GetEngineCodec(const std::string& name) const;
 
   VideoMediaChannel* SetUpForExternalEncoderFactory();
 
@@ -561,9 +569,10 @@ TEST_F(WebRtcVideoEngineTest, PropagatesInputFrameTimestamp) {
   EXPECT_TRUE(channel->RemoveSendStream(kSsrc));
 }
 
-cricket::VideoCodec WebRtcVideoEngineTest::GetEngineCodec(
-    const std::string& name) {
-  for (const cricket::VideoCodec& engine_codec : engine_.codecs()) {
+int WebRtcVideoEngineTest::GetEngineCodecIndex(const std::string& name) const {
+  const std::vector<cricket::VideoCodec> codecs = engine_.codecs();
+  for (size_t i = 0; i < codecs.size(); ++i) {
+    const cricket::VideoCodec engine_codec = codecs[i];
     if (!CodecNamesEq(name, engine_codec.name))
       continue;
     // The tests only use H264 Constrained Baseline. Make sure we don't return
@@ -576,11 +585,16 @@ cricket::VideoCodec WebRtcVideoEngineTest::GetEngineCodec(
         continue;
       }
     }
-    return engine_codec;
+    return i;
   }
   // This point should never be reached.
   ADD_FAILURE() << "Unrecognized codec name: " << name;
-  return cricket::VideoCodec();
+  return -1;
+}
+
+cricket::VideoCodec WebRtcVideoEngineTest::GetEngineCodec(
+    const std::string& name) const {
+  return engine_.codecs()[GetEngineCodecIndex(name)];
 }
 
 VideoMediaChannel* WebRtcVideoEngineTest::SetUpForExternalEncoderFactory() {
@@ -792,35 +806,39 @@ TEST_F(WebRtcVideoEngineTest,
             std::find_if(codecs_after.begin(), codecs_after.end(), is_flexfec));
 }
 
-// Test that external codecs are added to the end of the supported codec list.
+// Test that external codecs are added after internal SW codecs.
 TEST_F(WebRtcVideoEngineTest, ReportSupportedExternalCodecs) {
-  encoder_factory_->AddSupportedVideoCodecType("FakeExternalCodec");
+  const char* kFakeExternalCodecName = "FakeExternalCodec";
+  encoder_factory_->AddSupportedVideoCodecType(kFakeExternalCodecName);
 
-  std::vector<cricket::VideoCodec> codecs(engine_.codecs());
-  ASSERT_GE(codecs.size(), 2u);
-  cricket::VideoCodec internal_codec = codecs.front();
-  cricket::VideoCodec external_codec = codecs.back();
-
-  // The external codec will appear last in the vector.
-  EXPECT_EQ("VP8", internal_codec.name);
-  EXPECT_EQ("FakeExternalCodec", external_codec.name);
+  // The external codec should appear after the internal codec in the vector.
+  const int vp8_index = GetEngineCodecIndex("VP8");
+  const int fake_external_codec_index =
+      GetEngineCodecIndex(kFakeExternalCodecName);
+  EXPECT_LT(vp8_index, fake_external_codec_index);
 }
 
 // Test that an external codec that was added after the engine was initialized
 // does show up in the codec list after it was added.
 TEST_F(WebRtcVideoEngineTest, ReportSupportedExternalCodecsWithAddedCodec) {
-  // Set up external encoder factory with first codec, and initialize engine.
-  encoder_factory_->AddSupportedVideoCodecType("FakeExternalCodec1");
+  const char* kFakeExternalCodecName1 = "FakeExternalCodec1";
+  const char* kFakeExternalCodecName2 = "FakeExternalCodec2";
 
-  // The first external codec will appear last in the vector.
+  // Set up external encoder factory with first codec, and initialize engine.
+  encoder_factory_->AddSupportedVideoCodecType(kFakeExternalCodecName1);
+
   std::vector<cricket::VideoCodec> codecs_before(engine_.codecs());
-  EXPECT_EQ("FakeExternalCodec1", codecs_before.back().name);
 
   // Add second codec.
-  encoder_factory_->AddSupportedVideoCodecType("FakeExternalCodec2");
+  encoder_factory_->AddSupportedVideoCodecType(kFakeExternalCodecName2);
   std::vector<cricket::VideoCodec> codecs_after(engine_.codecs());
   EXPECT_EQ(codecs_before.size() + 1, codecs_after.size());
-  EXPECT_EQ("FakeExternalCodec2", codecs_after.back().name);
+
+  // Check that both fake codecs are present and that the second fake codec
+  // appears after the first fake codec.
+  const int fake_codec_index1 = GetEngineCodecIndex(kFakeExternalCodecName1);
+  const int fake_codec_index2 = GetEngineCodecIndex(kFakeExternalCodecName2);
+  EXPECT_LT(fake_codec_index1, fake_codec_index2);
 }
 
 TEST_F(WebRtcVideoEngineTest, RegisterExternalDecodersIfSupported) {
@@ -863,44 +881,6 @@ TEST_F(WebRtcVideoEngineTest, RegisterExternalH264DecoderIfSupported) {
   ASSERT_EQ(1u, decoder_factory_->decoders().size());
 }
 
-class MockVideoEncoderFactory : public webrtc::VideoEncoderFactory {
- public:
-  MOCK_CONST_METHOD0(GetSupportedFormats,
-                     std::vector<webrtc::SdpVideoFormat>());
-  MOCK_CONST_METHOD1(QueryVideoEncoder,
-                     CodecInfo(const webrtc::SdpVideoFormat&));
-
-  // We need to proxy to a return type that is copyable.
-  std::unique_ptr<webrtc::VideoEncoder> CreateVideoEncoder(
-      const webrtc::SdpVideoFormat& format) {
-    return std::unique_ptr<webrtc::VideoEncoder>(
-        CreateVideoEncoderProxy(format));
-  }
-  MOCK_METHOD1(CreateVideoEncoderProxy,
-               webrtc::VideoEncoder*(const webrtc::SdpVideoFormat&));
-
-  MOCK_METHOD0(Die, void());
-  ~MockVideoEncoderFactory() { Die(); }
-};
-
-class MockVideoDecoderFactory : public webrtc::VideoDecoderFactory {
- public:
-  MOCK_CONST_METHOD0(GetSupportedFormats,
-                     std::vector<webrtc::SdpVideoFormat>());
-
-  // We need to proxy to a return type that is copyable.
-  std::unique_ptr<webrtc::VideoDecoder> CreateVideoDecoder(
-      const webrtc::SdpVideoFormat& format) {
-    return std::unique_ptr<webrtc::VideoDecoder>(
-        CreateVideoDecoderProxy(format));
-  }
-  MOCK_METHOD1(CreateVideoDecoderProxy,
-               webrtc::VideoDecoder*(const webrtc::SdpVideoFormat&));
-
-  MOCK_METHOD0(Die, void());
-  ~MockVideoDecoderFactory() { Die(); }
-};
-
 TEST(WebRtcVideoEngineNewVideoCodecFactoryTest, NullFactories) {
   std::unique_ptr<webrtc::VideoEncoderFactory> encoder_factory;
   std::unique_ptr<webrtc::VideoDecoderFactory> decoder_factory;
@@ -911,8 +891,10 @@ TEST(WebRtcVideoEngineNewVideoCodecFactoryTest, NullFactories) {
 
 TEST(WebRtcVideoEngineNewVideoCodecFactoryTest, EmptyFactories) {
   // |engine| take ownership of the factories.
-  MockVideoEncoderFactory* encoder_factory = new MockVideoEncoderFactory();
-  MockVideoDecoderFactory* decoder_factory = new MockVideoDecoderFactory();
+  webrtc::MockVideoEncoderFactory* encoder_factory =
+      new webrtc::MockVideoEncoderFactory();
+  webrtc::MockVideoDecoderFactory* decoder_factory =
+      new webrtc::MockVideoDecoderFactory();
   WebRtcVideoEngine engine(
       (std::unique_ptr<webrtc::VideoEncoderFactory>(encoder_factory)),
       (std::unique_ptr<webrtc::VideoDecoderFactory>(decoder_factory)));
@@ -928,8 +910,10 @@ TEST(WebRtcVideoEngineNewVideoCodecFactoryTest, EmptyFactories) {
 // new factories.
 TEST(WebRtcVideoEngineNewVideoCodecFactoryTest, Vp8) {
   // |engine| take ownership of the factories.
-  MockVideoEncoderFactory* encoder_factory = new MockVideoEncoderFactory();
-  MockVideoDecoderFactory* decoder_factory = new MockVideoDecoderFactory();
+  webrtc::MockVideoEncoderFactory* encoder_factory =
+      new webrtc::MockVideoEncoderFactory();
+  webrtc::MockVideoDecoderFactory* decoder_factory =
+      new webrtc::MockVideoDecoderFactory();
   WebRtcVideoEngine engine(
       (std::unique_ptr<webrtc::VideoEncoderFactory>(encoder_factory)),
       (std::unique_ptr<webrtc::VideoDecoderFactory>(decoder_factory)));
@@ -940,10 +924,28 @@ TEST(WebRtcVideoEngineNewVideoCodecFactoryTest, Vp8) {
 
   // Verify the codecs from the engine.
   const std::vector<VideoCodec> engine_codecs = engine.codecs();
-  // Verify an RTX codec has been added correctly.
-  EXPECT_EQ(2u, engine_codecs.size());
+  // Verify default codecs has been added correctly.
+  EXPECT_EQ(5u, engine_codecs.size());
   EXPECT_EQ("VP8", engine_codecs.at(0).name);
+
+  // RTX codec for VP8.
   EXPECT_EQ("rtx", engine_codecs.at(1).name);
+  int vp8_associated_payload;
+  EXPECT_TRUE(engine_codecs.at(1).GetParam(kCodecParamAssociatedPayloadType,
+                                           &vp8_associated_payload));
+  EXPECT_EQ(vp8_associated_payload, engine_codecs.at(0).id);
+
+  EXPECT_EQ(kRedCodecName, engine_codecs.at(2).name);
+
+  // RTX codec for RED.
+  EXPECT_EQ("rtx", engine_codecs.at(3).name);
+  int red_associated_payload;
+  EXPECT_TRUE(engine_codecs.at(3).GetParam(kCodecParamAssociatedPayloadType,
+                                           &red_associated_payload));
+  EXPECT_EQ(red_associated_payload, engine_codecs.at(2).id);
+
+  EXPECT_EQ(kUlpfecCodecName, engine_codecs.at(4).name);
+
   int associated_payload_type;
   EXPECT_TRUE(engine_codecs.at(1).GetParam(
       cricket::kCodecParamAssociatedPayloadType, &associated_payload_type));
@@ -998,6 +1000,44 @@ TEST(WebRtcVideoEngineNewVideoCodecFactoryTest, Vp8) {
   EXPECT_CALL(*encoder_factory, Die());
   EXPECT_CALL(*decoder_factory, Die());
   EXPECT_TRUE(send_channel->RemoveSendStream(send_ssrc));
+  EXPECT_TRUE(recv_channel->RemoveRecvStream(recv_ssrc));
+}
+
+// Test behavior when decoder factory fails to create a decoder (returns null).
+TEST(WebRtcVideoEngineNewVideoCodecFactoryTest, NullDecoder) {
+  // |engine| take ownership of the factories.
+  webrtc::MockVideoEncoderFactory* encoder_factory =
+      new testing::StrictMock<webrtc::MockVideoEncoderFactory>();
+  webrtc::MockVideoDecoderFactory* decoder_factory =
+      new testing::StrictMock<webrtc::MockVideoDecoderFactory>();
+  WebRtcVideoEngine engine(
+      (std::unique_ptr<webrtc::VideoEncoderFactory>(encoder_factory)),
+      (std::unique_ptr<webrtc::VideoDecoderFactory>(decoder_factory)));
+  const webrtc::SdpVideoFormat vp8_format("VP8");
+  const std::vector<webrtc::SdpVideoFormat> supported_formats = {vp8_format};
+  EXPECT_CALL(*encoder_factory, GetSupportedFormats())
+      .WillRepeatedly(testing::Return(supported_formats));
+
+  // Decoder creation fails.
+  EXPECT_CALL(*decoder_factory, CreateVideoDecoderProxy(testing::_))
+      .WillOnce(testing::Return(nullptr));
+
+  // Create a call.
+  webrtc::RtcEventLogNullImpl event_log;
+  std::unique_ptr<webrtc::Call> call(
+      webrtc::Call::Create(webrtc::Call::Config(&event_log)));
+
+  // Create recv channel.
+  const int recv_ssrc = 321;
+  std::unique_ptr<VideoMediaChannel> recv_channel(
+      engine.CreateChannel(call.get(), GetMediaConfig(), VideoOptions()));
+  cricket::VideoRecvParameters recv_parameters;
+  recv_parameters.codecs.push_back(engine.codecs().front());
+  EXPECT_TRUE(recv_channel->SetRecvParameters(recv_parameters));
+  EXPECT_TRUE(recv_channel->AddRecvStream(
+      cricket::StreamParams::CreateLegacy(recv_ssrc)));
+
+  // Remove streams previously added to free the encoder and decoder instance.
   EXPECT_TRUE(recv_channel->RemoveRecvStream(recv_ssrc));
 }
 
@@ -1334,7 +1374,7 @@ class WebRtcVideoChannelTest : public WebRtcVideoEngineTest {
       cricket::FakeVideoCapturer* capturer,
       bool enabled) {
     cricket::VideoOptions options;
-    options.video_noise_reduction = rtc::Optional<bool>(enabled);
+    options.video_noise_reduction = enabled;
     EXPECT_TRUE(channel_->SetVideoSend(ssrc, true, &options, capturer));
     // Options only take effect on the next frame.
     EXPECT_TRUE(capturer->CaptureFrame());
@@ -1380,13 +1420,12 @@ class WebRtcVideoChannelTest : public WebRtcVideoEngineTest {
     webrtc::RtpParameters parameters =
         channel_->GetRtpSendParameters(last_ssrc_);
     EXPECT_EQ(1UL, parameters.encodings.size());
-    parameters.encodings[0].max_bitrate_bps = rtc::Optional<int>(stream_max);
+    parameters.encodings[0].max_bitrate_bps = stream_max;
     EXPECT_TRUE(channel_->SetRtpSendParameters(last_ssrc_, parameters));
     // Read back the parameteres and verify they have the correct value
     parameters = channel_->GetRtpSendParameters(last_ssrc_);
     EXPECT_EQ(1UL, parameters.encodings.size());
-    EXPECT_EQ(rtc::Optional<int>(stream_max),
-              parameters.encodings[0].max_bitrate_bps);
+    EXPECT_EQ(stream_max, parameters.encodings[0].max_bitrate_bps);
     // Verify that the new value propagated down to the encoder
     EXPECT_EQ(expected_encoder_bitrate, GetMaxEncoderBitrate());
   }
@@ -1836,8 +1875,7 @@ TEST_F(WebRtcVideoChannelTest, UsesCorrectSettingsForScreencast) {
 
   cricket::FakeVideoCapturer capturer;
   VideoOptions min_bitrate_options;
-  min_bitrate_options.screencast_min_bitrate_kbps =
-      rtc::Optional<int>(kScreenshareMinBitrateKbps);
+  min_bitrate_options.screencast_min_bitrate_kbps = kScreenshareMinBitrateKbps;
   EXPECT_TRUE(channel_->SetVideoSend(last_ssrc_, true, &min_bitrate_options,
                                      &capturer));
   cricket::VideoFormat capture_format_hd =
@@ -1868,7 +1906,7 @@ TEST_F(WebRtcVideoChannelTest, UsesCorrectSettingsForScreencast) {
   EXPECT_TRUE(channel_->SetVideoSend(last_ssrc_, true, nullptr, nullptr));
   EXPECT_EQ(1, send_stream->GetNumberOfSwappedFrames());
   VideoOptions screencast_options;
-  screencast_options.is_screencast = rtc::Optional<bool>(true);
+  screencast_options.is_screencast = true;
   EXPECT_TRUE(
       channel_->SetVideoSend(last_ssrc_, true, &screencast_options, &capturer));
   EXPECT_TRUE(capturer.CaptureFrame());
@@ -1900,7 +1938,7 @@ TEST_F(WebRtcVideoChannelTest,
 
   AddSendStream();
   VideoOptions options;
-  options.is_screencast = rtc::Optional<bool>(true);
+  options.is_screencast = true;
   cricket::FakeVideoCapturer capturer;
   EXPECT_TRUE(channel_->SetVideoSend(last_ssrc_, true, &options, &capturer));
   cricket::VideoFormat capture_format_hd =
@@ -2017,7 +2055,7 @@ TEST_F(WebRtcVideoChannelTest, VerifyVp8SpecificSettings) {
 
   // In screen-share mode, denoising is forced off and simulcast disabled.
   VideoOptions options;
-  options.is_screencast = rtc::Optional<bool>(true);
+  options.is_screencast = true;
   EXPECT_TRUE(channel_->SetVideoSend(last_ssrc_, true, &options, &capturer));
 
   stream = SetDenoisingOption(last_ssrc_, &capturer, false);
@@ -2064,7 +2102,7 @@ TEST_F(WebRtcVideoChannelTest, SetIdenticalOptionsDoesntReconfigureEncoder) {
   EXPECT_EQ(1, send_stream->num_encoder_reconfigurations());
 
   // Change |options| and expect 2 reconfigurations.
-  options.video_noise_reduction = rtc::Optional<bool>(true);
+  options.video_noise_reduction = true;
   EXPECT_TRUE(channel_->SetVideoSend(last_ssrc_, true, &options, &capturer));
   EXPECT_EQ(2, send_stream->num_encoder_reconfigurations());
 
@@ -2123,7 +2161,7 @@ TEST_F(Vp9SettingsTest, VerifyVp9SpecificSettings) {
 
   // In screen-share mode, denoising is forced off.
   VideoOptions options;
-  options.is_screencast = rtc::Optional<bool>(true);
+  options.is_screencast = true;
   EXPECT_TRUE(channel_->SetVideoSend(last_ssrc_, true, &options, &capturer));
 
   stream = SetDenoisingOption(last_ssrc_, &capturer, false);
@@ -2206,6 +2244,20 @@ TEST_F(Vp9SettingsTestWith2SL3TLFlag, VerifySettings) {
   const int kNumSpatialLayers = 2;
   const int kNumTemporalLayers = 3;
   VerifySettings(kNumSpatialLayers, kNumTemporalLayers);
+}
+
+TEST_F(WebRtcVideoChannelTest, VerifyMinBitrate) {
+  std::vector<webrtc::VideoStream> streams = AddSendStream()->GetVideoStreams();
+  ASSERT_EQ(1u, streams.size());
+  EXPECT_EQ(cricket::kMinVideoBitrateBps, streams[0].min_bitrate_bps);
+}
+
+TEST_F(WebRtcVideoChannelTest, VerifyMinBitrateWithForcedFallbackFieldTrial) {
+  webrtc::test::ScopedFieldTrials override_field_trials_(
+      "WebRTC-VP8-Forced-Fallback-Encoder-v2/Enabled-1,2,34567/");
+  std::vector<webrtc::VideoStream> streams = AddSendStream()->GetVideoStreams();
+  ASSERT_EQ(1u, streams.size());
+  EXPECT_EQ(34567, streams[0].min_bitrate_bps);
 }
 
 TEST_F(WebRtcVideoChannelTest,
@@ -2297,7 +2349,7 @@ TEST_F(WebRtcVideoChannelTest, AdaptsOnOveruseAndChangeResolution) {
   // of the current stream, so we don't take too large steps.
   wants.max_pixel_count = current_pixel_count * 4;
   // Default step down is 3/5 pixel count, so go up by 5/3.
-  wants.target_pixel_count = rtc::Optional<int>((current_pixel_count * 5) / 3);
+  wants.target_pixel_count = (current_pixel_count * 5 / 3);
   send_stream->InjectVideoSinkWants(wants);
   EXPECT_TRUE(capturer.CaptureCustomFrame(1284, 724, cricket::FOURCC_I420));
   EXPECT_EQ(5, send_stream->GetNumberOfSwappedFrames());
@@ -2308,7 +2360,7 @@ TEST_F(WebRtcVideoChannelTest, AdaptsOnOveruseAndChangeResolution) {
   current_pixel_count =
       send_stream->GetLastWidth() * send_stream->GetLastHeight();
   wants.max_pixel_count = current_pixel_count * 4;
-  wants.target_pixel_count = rtc::Optional<int>((current_pixel_count * 5) / 3);
+  wants.target_pixel_count = (current_pixel_count * 5 / 3);
   send_stream->InjectVideoSinkWants(wants);
   EXPECT_TRUE(capturer.CaptureCustomFrame(1284, 724, cricket::FOURCC_I420));
   EXPECT_EQ(6, send_stream->GetNumberOfSwappedFrames());
@@ -2337,7 +2389,7 @@ TEST_F(WebRtcVideoChannelTest, PreviousAdaptationDoesNotApplyToScreenshare) {
             capturer.Start(capturer.GetSupportedFormats()->front()));
   ASSERT_TRUE(channel_->SetSend(true));
   cricket::VideoOptions camera_options;
-  camera_options.is_screencast = rtc::Optional<bool>(false);
+  camera_options.is_screencast = false;
   channel_->SetVideoSend(last_ssrc_, true /* enable */, &camera_options,
                          &capturer);
 
@@ -2364,7 +2416,7 @@ TEST_F(WebRtcVideoChannelTest, PreviousAdaptationDoesNotApplyToScreenshare) {
   ASSERT_EQ(cricket::CS_RUNNING,
             screen_share.Start(screen_share.GetSupportedFormats()->front()));
   cricket::VideoOptions screenshare_options;
-  screenshare_options.is_screencast = rtc::Optional<bool>(true);
+  screenshare_options.is_screencast = true;
   channel_->SetVideoSend(last_ssrc_, true /* enable */, &screenshare_options,
                          &screen_share);
   EXPECT_TRUE(screen_share.CaptureCustomFrame(1284, 724, cricket::FOURCC_I420));
@@ -2447,7 +2499,7 @@ void WebRtcVideoChannelTest::TestCpuAdaptation(bool enable_overuse,
 
   cricket::FakeVideoCapturer capturer;
   VideoOptions options;
-  options.is_screencast = rtc::Optional<bool>(is_screenshare);
+  options.is_screencast = is_screenshare;
   EXPECT_TRUE(channel_->SetVideoSend(last_ssrc_, true, &options, &capturer));
   cricket::VideoFormat capture_format = capturer.GetSupportedFormats()->front();
   capture_format.interval = rtc::kNumNanosecsPerSec / kDefaultFps;
@@ -3654,7 +3706,7 @@ TEST_F(WebRtcVideoChannelTest, GetStatsReportsFramesEncoded) {
 TEST_F(WebRtcVideoChannelTest, GetStatsReportsQpSum) {
   FakeVideoSendStream* stream = AddSendStream();
   webrtc::VideoSendStream::Stats stats;
-  stats.qp_sum = rtc::Optional<uint64_t>(13);
+  stats.qp_sum = 13;
   stream->SetStats(stats);
 
   cricket::VideoMediaInfo info;
@@ -3794,7 +3846,7 @@ TEST_F(WebRtcVideoChannelTest, GetStatsTranslatesDecodeStatsCorrectly) {
   stats.frame_counts.delta_frames = 12;
   stats.frames_rendered = 13;
   stats.frames_decoded = 14;
-  stats.qp_sum = rtc::Optional<uint64_t>(15);
+  stats.qp_sum = 15;
   stream->SetStats(stats);
 
   cricket::VideoMediaInfo info;
@@ -4303,7 +4355,7 @@ TEST_F(WebRtcVideoChannelTest,
 TEST_F(WebRtcVideoChannelTest, CannotSetSsrcInRtpSendParameters) {
   AddSendStream();
   webrtc::RtpParameters parameters = channel_->GetRtpSendParameters(last_ssrc_);
-  parameters.encodings[0].ssrc = rtc::Optional<uint32_t>(0xdeadbeef);
+  parameters.encodings[0].ssrc = 0xdeadbeef;
   EXPECT_FALSE(channel_->SetRtpSendParameters(last_ssrc_, parameters));
 }
 
@@ -4395,8 +4447,7 @@ TEST_F(WebRtcVideoChannelTest, GetRtpSendParametersSsrc) {
   webrtc::RtpParameters rtp_parameters =
       channel_->GetRtpSendParameters(last_ssrc_);
   ASSERT_EQ(1u, rtp_parameters.encodings.size());
-  EXPECT_EQ(rtc::Optional<uint32_t>(last_ssrc_),
-            rtp_parameters.encodings[0].ssrc);
+  EXPECT_EQ(last_ssrc_, rtp_parameters.encodings[0].ssrc);
 }
 
 // Test that if we set/get parameters multiple times, we get the same results.
@@ -4478,8 +4529,7 @@ TEST_F(WebRtcVideoChannelTest, GetRtpReceiveParametersSsrc) {
   webrtc::RtpParameters rtp_parameters =
       channel_->GetRtpReceiveParameters(last_ssrc_);
   ASSERT_EQ(1u, rtp_parameters.encodings.size());
-  EXPECT_EQ(rtc::Optional<uint32_t>(last_ssrc_),
-            rtp_parameters.encodings[0].ssrc);
+  EXPECT_EQ(last_ssrc_, rtp_parameters.encodings[0].ssrc);
 }
 
 // Test that if we set/get parameters multiple times, we get the same results.
@@ -4638,7 +4688,7 @@ class WebRtcVideoChannelSimulcastTest : public testing::Test {
     cricket::FakeVideoCapturer capturer;
     VideoOptions options;
     if (screenshare)
-      options.is_screencast = rtc::Optional<bool>(screenshare);
+      options.is_screencast = screenshare;
     EXPECT_TRUE(
         channel_->SetVideoSend(ssrcs.front(), true, &options, &capturer));
     // Fetch the latest stream since SetVideoSend() may recreate it if the
@@ -4671,7 +4721,7 @@ class WebRtcVideoChannelSimulcastTest : public testing::Test {
       stream.width = capture_width;
       stream.height = capture_height;
       stream.max_framerate = kDefaultVideoMaxFramerate;
-      stream.min_bitrate_bps = cricket::kMinVideoBitrateKbps * 1000;
+      stream.min_bitrate_bps = cricket::kMinVideoBitrateBps;
       int max_bitrate_kbps;
       if (capture_width * capture_height <= 320 * 240) {
         max_bitrate_kbps = 600;

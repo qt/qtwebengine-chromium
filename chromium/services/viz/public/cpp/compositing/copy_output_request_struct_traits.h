@@ -7,7 +7,6 @@
 
 #include "components/viz/common/frame_sinks/copy_output_request.h"
 #include "mojo/common/common_custom_types_struct_traits.h"
-#include "services/viz/public/cpp/compositing/texture_mailbox_struct_traits.h"
 #include "services/viz/public/interfaces/compositing/copy_output_request.mojom.h"
 #include "ui/gfx/geometry/mojo/geometry_struct_traits.h"
 
@@ -41,9 +40,14 @@ struct StructTraits<viz::mojom::CopyOutputRequestDataView,
     return request->area_;
   }
 
-  static const base::Optional<viz::TextureMailbox>& texture_mailbox(
+  static const base::Optional<gpu::Mailbox>& mailbox(
       const std::unique_ptr<viz::CopyOutputRequest>& request) {
-    return request->texture_mailbox_;
+    return request->mailbox_;
+  }
+
+  static const base::Optional<gpu::SyncToken>& sync_token(
+      const std::unique_ptr<viz::CopyOutputRequest>& request) {
+    return request->sync_token_;
   }
 
   static viz::mojom::CopyOutputResultSenderPtr result_sender(

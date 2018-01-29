@@ -53,6 +53,7 @@ class OutOfProcessInstance : public pp::Instance,
   void HandleMessage(const pp::Var& message) override;
   bool HandleInputEvent(const pp::InputEvent& event) override;
   void DidChangeView(const pp::View& view) override;
+  void DidChangeFocus(bool has_focus) override;
 
   // pp::Find_Private implementation.
   bool StartFind(const std::string& text, bool case_sensitive) override;
@@ -107,6 +108,8 @@ class OutOfProcessInstance : public pp::Instance,
   void UpdateTickMarks(const std::vector<pp::Rect>& tickmarks) override;
   void NotifyNumberOfFindResultsChanged(int total, bool final_result) override;
   void NotifySelectedFindResultChanged(int current_find_index) override;
+  void NotifyPageBecameVisible(
+      const PDFEngine::PageFeatures* page_features) override;
   void GetDocumentPassword(
       pp::CompletionCallbackWithOutput<pp::Var> callback) override;
   void Alert(const std::string& message) override;
@@ -123,16 +126,15 @@ class OutOfProcessInstance : public pp::Instance,
   void SubmitForm(const std::string& url,
                   const void* data,
                   int length) override;
-  std::string ShowFileSelectionDialog() override;
   pp::URLLoader CreateURLLoader() override;
-  void ScheduleCallback(int id, int delay_in_ms) override;
-  void ScheduleTouchTimerCallback(int id, int delay_in_ms) override;
-  void SearchString(const base::char16* string,
-                    const base::char16* term,
-                    bool case_sensitive,
-                    std::vector<SearchStringResult>* results) override;
+  void ScheduleCallback(int id, base::TimeDelta delay) override;
+  void ScheduleTouchTimerCallback(int id, base::TimeDelta delay) override;
+  std::vector<SearchStringResult> SearchString(const base::char16* string,
+                                               const base::char16* term,
+                                               bool case_sensitive) override;
   void DocumentPaintOccurred() override;
-  void DocumentLoadComplete(int page_count) override;
+  void DocumentLoadComplete(
+      const PDFEngine::DocumentFeatures& document_features) override;
   void DocumentLoadFailed() override;
   void FontSubstituted() override;
   pp::Instance* GetPluginInstance() override;
@@ -144,6 +146,7 @@ class OutOfProcessInstance : public pp::Instance,
   void CancelBrowserDownload() override;
   void IsSelectingChanged(bool is_selecting) override;
   void SelectionChanged(const pp::Rect& left, const pp::Rect& right) override;
+  void IsEditModeChanged(bool is_edit_mode) override;
 
   // PreviewModeClient::Client implementation.
   void PreviewDocumentLoadComplete() override;
@@ -408,6 +411,12 @@ class OutOfProcessInstance : public pp::Instance,
   // The blank space above the first page of the document reserved for the
   // toolbar.
   int top_toolbar_height_in_viewport_coords_;
+
+  // Whether each page had its features processed.
+  std::vector<bool> page_is_processed_;
+
+  // Annotation types that were already counted for this document.
+  std::set<int> annotation_types_counted_;
 
   // The current state of accessibility: either off, enabled but waiting
   // for the document to load, or fully loaded.

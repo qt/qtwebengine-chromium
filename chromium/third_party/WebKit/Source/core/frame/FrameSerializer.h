@@ -52,7 +52,7 @@ class FontResource;
 class ImageResourceContent;
 class LocalFrame;
 class SharedBuffer;
-class StylePropertySet;
+class CSSPropertyValueSet;
 
 struct SerializedResource;
 
@@ -146,12 +146,12 @@ class CORE_EXPORT FrameSerializer final {
 
   void AddToResources(const String& mime_type,
                       ResourceHasCacheControlNoStoreHeader,
-                      RefPtr<const SharedBuffer>,
+                      scoped_refptr<const SharedBuffer>,
                       const KURL&);
   void AddImageToResources(ImageResourceContent*, const KURL&);
   void AddFontToResources(FontResource*);
 
-  void RetrieveResourcesForProperties(const StylePropertySet*, Document&);
+  void RetrieveResourcesForProperties(const CSSPropertyValueSet*, Document&);
   void RetrieveResourcesForCSSValue(const CSSValue&, Document&);
 
   Deque<SerializedResource>* resources_;

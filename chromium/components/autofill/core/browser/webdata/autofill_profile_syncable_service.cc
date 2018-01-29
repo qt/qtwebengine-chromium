@@ -6,6 +6,7 @@
 
 #include <stddef.h>
 
+#include <memory>
 #include <utility>
 
 #include "base/guid.h"
@@ -85,9 +86,7 @@ AutofillProfileSyncableService::FromWebDataService(
 }
 
 AutofillProfileSyncableService::AutofillProfileSyncableService()
-    : webdata_backend_(NULL),
-      scoped_observer_(this) {
-}
+    : webdata_backend_(nullptr), scoped_observer_(this) {}
 
 syncer::SyncMergeResult
 AutofillProfileSyncableService::MergeDataAndStartSyncing(
@@ -528,7 +527,7 @@ AutofillProfileSyncableService::CreateOrUpdateProfile(
 
   // New profile synced.
   std::unique_ptr<AutofillProfile> new_profile =
-      base::MakeUnique<AutofillProfile>(autofill_specifics.guid(),
+      std::make_unique<AutofillProfile>(autofill_specifics.guid(),
                                         autofill_specifics.origin());
   AutofillProfile* new_profile_ptr = new_profile.get();
   OverwriteProfileWithServerData(autofill_specifics, new_profile_ptr);
@@ -557,8 +556,9 @@ AutofillProfileSyncableService::CreateOrUpdateProfile(
                << ". Profile to be deleted " << local_profile->guid();
       profile_map->erase(it);
       break;
-    } else if (!local_profile->IsVerified() && !new_profile->IsVerified() &&
-               comparator.AreMergeable(*local_profile, *new_profile)) {
+    }
+    if (!local_profile->IsVerified() && !new_profile->IsVerified() &&
+        comparator.AreMergeable(*local_profile, *new_profile)) {
       // Add it to candidates for merge - if there is no profile with this guid
       // we will merge them.
       bundle->candidates_to_merge.insert(
@@ -597,7 +597,7 @@ void AutofillProfileSyncableService::ActOnChange(
       DCHECK(profiles_map_.find(change.data_model()->guid()) ==
              profiles_map_.end());
       profiles_.push_back(
-          base::MakeUnique<AutofillProfile>(*(change.data_model())));
+          std::make_unique<AutofillProfile>(*(change.data_model())));
       profiles_map_[change.data_model()->guid()] = profiles_.back().get();
       break;
     case AutofillProfileChange::UPDATE: {

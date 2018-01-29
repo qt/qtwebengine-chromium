@@ -69,11 +69,25 @@
 
     --cr-title-text: {
         color: rgb(90, 90, 90);
-        font-size: 107.6923%;  /* Go to 14px from 13px */
+        font-size: 107.6923%;  /* Go to 14px from 13px. */
+        font-weight: 500;
+    };
+
+    --cr-section-text: {
+        color: var(--paper-grey-700);
+        font-size: 100%;  /* Likely to be 13px. */
         font-weight: 500;
     };
 
     --cr-toggle-color: var(--google-blue-500);
+
+    --cr-tooltip: {
+      font-size: 92.31%;  /* Effectively 12px if the host default is 13px. */
+      font-weight: 500;
+      max-width: 330px;
+      min-width: 200px;
+      padding: 10px 8px;
+    }
 
     --cr-selectable-focus: {
       background-color: var(--cr-focused-item-color);

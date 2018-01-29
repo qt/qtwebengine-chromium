@@ -5,7 +5,6 @@
 #include "platform/scheduler/base/work_queue.h"
 
 #include "platform/scheduler/base/work_queue_sets.h"
-#include "platform/wtf/debug/CrashLogging.h"
 
 namespace blink {
 namespace scheduler {
@@ -14,12 +13,7 @@ namespace internal {
 WorkQueue::WorkQueue(TaskQueueImpl* task_queue,
                      const char* name,
                      QueueType queue_type)
-    : work_queue_sets_(nullptr),
-      task_queue_(task_queue),
-      work_queue_set_index_(0),
-      name_(name),
-      fence_(0),
-      queue_type_(queue_type) {}
+    : task_queue_(task_queue), name_(name), queue_type_(queue_type) {}
 
 void WorkQueue::AsValueInto(base::TimeTicks now,
                             base::trace_event::TracedValue* state) const {
@@ -73,10 +67,6 @@ void WorkQueue::Push(TaskQueueImpl::Task task) {
   DCHECK(task.enqueue_order_set());
 #endif
 
-  // Temporary check for crbug.com/752914.
-  // TODO(skyostil): Remove this.
-  CHECK(task.task);
-
   // Amoritized O(1).
   work_queue_.push_back(std::move(task));
 
@@ -86,12 +76,6 @@ void WorkQueue::Push(TaskQueueImpl::Task task) {
   // If we hit the fence, pretend to WorkQueueSets that we're empty.
   if (work_queue_sets_ && !BlockedByFence())
     work_queue_sets_->OnTaskPushedToEmptyQueue(this);
-}
-
-void WorkQueue::PopTaskForTest() {
-  if (work_queue_.empty())
-    return;
-  work_queue_.pop_front();
 }
 
 void WorkQueue::ReloadEmptyImmediateQueue() {
@@ -110,24 +94,9 @@ TaskQueueImpl::Task WorkQueue::TakeTaskFromWorkQueue() {
   DCHECK(work_queue_sets_);
   DCHECK(!work_queue_.empty());
 
-  static const char kBlinkSchedulerTaskFunctionNameKey[] =
-      "blink_scheduler_task_function_name";
-  static const char kBlinkSchedulerTaskFileNameKey[] =
-      "blink_scheduler_task_file_name";
-
   // Skip over canceled tasks, except for the last one since we always return
   // something.
   while (work_queue_.size() > 1u) {
-    if (!work_queue_.front().task) {
-      base::debug::SetCrashKeyValue(
-          kBlinkSchedulerTaskFunctionNameKey,
-          work_queue_.front().posted_from.function_name());
-      base::debug::SetCrashKeyValue(
-          kBlinkSchedulerTaskFileNameKey,
-          work_queue_.front().posted_from.file_name());
-    }
-    CHECK(work_queue_.front().task);
-
     if (work_queue_.front().task.IsCancelled()) {
       work_queue_.pop_front();
     } else {
@@ -137,7 +106,7 @@ TaskQueueImpl::Task WorkQueue::TakeTaskFromWorkQueue() {
 
   TaskQueueImpl::Task pending_task = work_queue_.TakeFirst();
   // NB immediate tasks have a different pipeline to delayed ones.
-  if (queue_type_ == QueueType::IMMEDIATE && work_queue_.empty()) {
+  if (queue_type_ == QueueType::kImmediate && work_queue_.empty()) {
     // Short-circuit the queue reload so that OnPopQueue does the right thing.
     work_queue_ = task_queue_->TakeImmediateIncomingQueue();
   }
@@ -194,6 +163,12 @@ bool WorkQueue::ShouldRunBefore(const WorkQueue* other_queue) const {
   DCHECK(have_task);
   DCHECK(have_other_task);
   return enqueue_order < other_enqueue_order;
+}
+
+void WorkQueue::PopTaskForTesting() {
+  if (work_queue_.empty())
+    return;
+  work_queue_.pop_front();
 }
 
 }  // namespace internal

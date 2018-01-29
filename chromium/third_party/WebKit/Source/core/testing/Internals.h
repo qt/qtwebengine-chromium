@@ -82,8 +82,7 @@ template <typename NodeType>
 class StaticNodeTypeList;
 using StaticNodeList = StaticNodeTypeList<Node>;
 
-class Internals final : public GarbageCollected<Internals>,
-                        public ScriptWrappable {
+class Internals final : public ScriptWrappable {
   DEFINE_WRAPPERTYPEINFO();
 
  public:
@@ -165,6 +164,8 @@ class Internals final : public GarbageCollected<Internals>,
                             ExceptionState&) const;
   void clearHitTestCache(Document*, ExceptionState&) const;
 
+  Element* innerEditorElement(Element* container, ExceptionState&) const;
+
   String visiblePlaceholder(Element*);
   bool isValidationMessageVisible(Element*);
   void selectColorInColorChooser(Element*, const String& color_value);
@@ -190,6 +191,14 @@ class Internals final : public GarbageCollected<Internals>,
                                   const String& marker_type,
                                   unsigned index,
                                   ExceptionState&);
+  unsigned markerBackgroundColorForNode(Node*,
+                                        const String& marker_type,
+                                        unsigned index,
+                                        ExceptionState&);
+  unsigned markerUnderlineColorForNode(Node*,
+                                       const String& marker_type,
+                                       unsigned index,
+                                       ExceptionState&);
   void addTextMatchMarker(const Range*,
                           const String& match_status,
                           ExceptionState&);
@@ -226,6 +235,7 @@ class Internals final : public GarbageCollected<Internals>,
   bool elementShouldAutoComplete(Element* input_element, ExceptionState&);
   String suggestedValue(Element*, ExceptionState&);
   void setSuggestedValue(Element*, const String&, ExceptionState&);
+  void setAutofilledValue(Element*, const String&, ExceptionState&);
   void setEditingValue(Element* input_element, const String&, ExceptionState&);
   void setAutofilled(Element*, bool enabled, ExceptionState&);
 
@@ -278,7 +288,7 @@ class Internals final : public GarbageCollected<Internals>,
 
   unsigned mediaKeysCount();
   unsigned mediaKeySessionCount();
-  unsigned suspendableObjectCount(Document*);
+  unsigned pausableObjectCount(Document*);
   unsigned wheelEventHandlerCount(Document*) const;
   unsigned scrollEventHandlerCount(Document*) const;
   unsigned touchStartOrMoveEventHandlerCount(Document*) const;
@@ -422,8 +432,8 @@ class Internals final : public GarbageCollected<Internals>,
   DOMRectList* draggableRegions(Document*, ExceptionState&);
   DOMRectList* nonDraggableRegions(Document*, ExceptionState&);
 
-  DOMArrayBuffer* serializeObject(RefPtr<SerializedScriptValue>) const;
-  RefPtr<SerializedScriptValue> deserializeBuffer(DOMArrayBuffer*) const;
+  DOMArrayBuffer* serializeObject(scoped_refptr<SerializedScriptValue>) const;
+  scoped_refptr<SerializedScriptValue> deserializeBuffer(DOMArrayBuffer*) const;
 
   DOMArrayBuffer* serializeWithInlineWasm(ScriptValue) const;
   ScriptValue deserializeBufferContainingWasm(ScriptState*,
@@ -482,7 +492,7 @@ class Internals final : public GarbageCollected<Internals>,
   ScriptPromise promiseCheckOverload(ScriptState*, Document*);
   ScriptPromise promiseCheckOverload(ScriptState*, Location*, long, long);
 
-  DECLARE_TRACE();
+  void Trace(blink::Visitor*);
 
   void setValueForUser(HTMLInputElement*, const String&);
 
@@ -501,6 +511,8 @@ class Internals final : public GarbageCollected<Internals>,
                                      unsigned long transport_rtt_msec,
                                      double downlink_throughput_mbps,
                                      ExceptionState&);
+  void setSaveDataEnabled(bool);
+
   void clearNetworkConnectionInfoOverride();
 
   unsigned countHitRegions(CanvasRenderingContext*);

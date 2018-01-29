@@ -739,6 +739,9 @@ static const GLES2Util::EnumToString enum_to_string_table[] = {
         0x40000000, "GL_MULTISAMPLE_BUFFER_BIT6_QCOM",
     },
     {
+        0x6000, "GL_SCANOUT_CHROMIUM",
+    },
+    {
         0x6003, "GL_GET_ERROR_QUERY_CHROMIUM",
     },
     {
@@ -4426,6 +4429,14 @@ std::string GLES2Util::GetStringCapability(uint32_t value) {
                                            arraysize(string_table), value);
 }
 
+std::string GLES2Util::GetStringClientBufferUsage(uint32_t value) {
+  static const EnumToString string_table[] = {
+      {GL_SCANOUT_CHROMIUM, "GL_SCANOUT_CHROMIUM"},
+  };
+  return GLES2Util::GetQualifiedEnumString(string_table,
+                                           arraysize(string_table), value);
+}
+
 std::string GLES2Util::GetStringCmpFunction(uint32_t value) {
   static const EnumToString string_table[] = {
       {GL_NEVER, "GL_NEVER"},     {GL_LESS, "GL_LESS"},
@@ -5799,6 +5810,15 @@ std::string GLES2Util::GetStringVertexAttribute(uint32_t value) {
 std::string GLES2Util::GetStringVertexPointer(uint32_t value) {
   static const EnumToString string_table[] = {
       {GL_VERTEX_ATTRIB_ARRAY_POINTER, "GL_VERTEX_ATTRIB_ARRAY_POINTER"},
+  };
+  return GLES2Util::GetQualifiedEnumString(string_table,
+                                           arraysize(string_table), value);
+}
+
+std::string GLES2Util::GetStringWindowRectanglesMode(uint32_t value) {
+  static const EnumToString string_table[] = {
+      {GL_INCLUSIVE_EXT, "GL_INCLUSIVE_EXT"},
+      {GL_EXCLUSIVE_EXT, "GL_EXCLUSIVE_EXT"},
   };
   return GLES2Util::GetQualifiedEnumString(string_table,
                                            arraysize(string_table), value);

@@ -17,6 +17,7 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/trace_event/memory_dump_manager.h"
 #include "base/trace_event/process_memory_dump.h"
+#include "build/build_config.h"
 #include "third_party/leveldatabase/env_chromium.h"
 #include "third_party/leveldatabase/leveldb_chrome.h"
 #include "third_party/leveldatabase/src/include/leveldb/db.h"
@@ -360,33 +361,23 @@ bool SessionStorageDatabase::ReadNamespacesAndOrigins(
 
 void SessionStorageDatabase::OnMemoryDump(
     base::trace_event::ProcessMemoryDump* pmd) {
-  std::string db_memory_usage;
-  {
-    base::AutoLock lock(db_lock_);
-    if (!db_)
-      return;
-
-    bool res =
-        db_->GetProperty("leveldb.approximate-memory-usage", &db_memory_usage);
-    DCHECK(res);
-  }
-
-  uint64_t size;
-  bool res = base::StringToUint64(db_memory_usage, &size);
-  DCHECK(res);
+  base::AutoLock lock(db_lock_);
+  if (!db_)
+    return;
+  // All leveldb databases are already dumped by leveldb_env::DBTracker. Add
+  // an edge to the existing dump.
+  auto* tracker_dump =
+      leveldb_env::DBTracker::GetOrCreateAllocatorDump(pmd, db_.get());
+  if (!tracker_dump)
+    return;
 
   auto* mad = pmd->CreateAllocatorDump(
       base::StringPrintf("site_storage/session_storage_0x%" PRIXPTR,
                          reinterpret_cast<uintptr_t>(this)));
+  pmd->AddOwnershipEdge(mad->guid(), tracker_dump->guid());
   mad->AddScalar(base::trace_event::MemoryAllocatorDump::kNameSize,
-                 base::trace_event::MemoryAllocatorDump::kUnitsBytes, size);
-
-  // All leveldb databases are already dumped by leveldb_env::DBTracker. Add
-  // an edge to avoid double counting.
-  auto* tracker_dump =
-      leveldb_env::DBTracker::GetOrCreateAllocatorDump(pmd, db_.get());
-  if (tracker_dump)
-    pmd->AddOwnershipEdge(mad->guid(), tracker_dump->guid());
+                 base::trace_event::MemoryAllocatorDump::kUnitsBytes,
+                 tracker_dump->GetSizeInternal());
 }
 
 bool SessionStorageDatabase::LazyOpen(bool create_if_needed) {
@@ -468,11 +459,19 @@ leveldb::Status SessionStorageDatabase::TryToOpen(
   // memory allocation in RAM from a log file recovery.
   options.write_buffer_size = 64 * 1024;
   options.block_cache = leveldb_chrome::GetSharedWebBlockCache();
-  return leveldb_env::OpenDB(options, file_path_.AsUTF8Unsafe(), db);
+
+  std::string db_name = file_path_.AsUTF8Unsafe();
+#if defined(OS_ANDROID)
+  // On Android there is no support for session storage restoring, and since
+  // the restoring code is responsible for database cleanup, we must manually
+  // delete the old database here before we open it.
+  leveldb::DestroyDB(db_name, options);
+#endif
+  return leveldb_env::OpenDB(options, db_name, db);
 }
 
 bool SessionStorageDatabase::IsOpen() const {
-  return db_.get() != NULL;
+  return db_.get() != nullptr;
 }
 
 bool SessionStorageDatabase::CallerErrorCheck(bool ok) const {

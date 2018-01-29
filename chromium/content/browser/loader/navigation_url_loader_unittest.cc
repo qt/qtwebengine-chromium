@@ -44,6 +44,7 @@
 #include "net/url_request/url_request_test_job.h"
 #include "net/url_request/url_request_test_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "third_party/WebKit/common/page/page_visibility_state.mojom.h"
 #include "url/origin.h"
 
 namespace content {
@@ -106,7 +107,7 @@ class RequestBlockingResourceDispatcherHostDelegate
 
 std::unique_ptr<ResourceHandler> CreateDownloadResourceHandler(
     net::URLRequest* request) {
-  return base::MakeUnique<TestResourceHandler>();
+  return std::make_unique<TestResourceHandler>();
 }
 
 }  // namespace
@@ -117,7 +118,8 @@ class NavigationURLLoaderTest : public testing::Test {
       : thread_bundle_(TestBrowserThreadBundle::IO_MAINLOOP),
         browser_context_(new TestBrowserContext),
         host_(base::Bind(&CreateDownloadResourceHandler),
-              base::ThreadTaskRunnerHandle::Get()) {
+              base::ThreadTaskRunnerHandle::Get(),
+              /* enable_resource_scheduler */ true) {
     host_.SetLoaderDelegate(&loader_delegate_);
     BrowserContext::EnsureResourceContextInitialized(browser_context_.get());
     base::RunLoop().RunUntilIdle();
@@ -127,10 +129,10 @@ class NavigationURLLoaderTest : public testing::Test {
     job_factory_.SetProtocolHandler(
         "test", net::URLRequestTestJob::CreateProtocolHandler());
     job_factory_.SetProtocolHandler(
-        "blob", base::MakeUnique<StreamProtocolHandler>(
+        "blob", std::make_unique<StreamProtocolHandler>(
                     StreamContext::GetFor(browser_context_.get())->registry()));
     job_factory_.SetProtocolHandler(
-        "download", base::MakeUnique<DownloadProtocolHandler>());
+        "download", std::make_unique<DownloadProtocolHandler>());
     request_context->set_job_factory(&job_factory_);
 
     // NavigationURLLoader is only used for browser-side navigations.
@@ -149,11 +151,10 @@ class NavigationURLLoaderTest : public testing::Test {
       NavigationURLLoaderDelegate* delegate,
       bool allow_download) {
     BeginNavigationParams begin_params(
-        std::string(), net::LOAD_NORMAL, false, false,
-        REQUEST_CONTEXT_TYPE_LOCATION,
+        std::string(), net::LOAD_NORMAL, false, REQUEST_CONTEXT_TYPE_LOCATION,
         blink::WebMixedContentContextType::kBlockable,
         false,  // is_form_submission
-        url::Origin(url));
+        url::Origin::Create(url));
     CommonNavigationParams common_params;
     common_params.url = url;
     common_params.allow_download = allow_download;
@@ -161,7 +162,7 @@ class NavigationURLLoaderTest : public testing::Test {
     std::unique_ptr<NavigationRequestInfo> request_info(
         new NavigationRequestInfo(common_params, begin_params, url, true, false,
                                   false, -1, false, false,
-                                  blink::kWebPageVisibilityStateVisible));
+                                  blink::mojom::PageVisibilityState::kVisible));
     return NavigationURLLoader::Create(
         browser_context_->GetResourceContext(),
         BrowserContext::GetDefaultStoragePartition(browser_context_.get()),
@@ -223,7 +224,7 @@ TEST_F(NavigationURLLoaderTest, RequestFailedNoCertError) {
   // Wait for the request to fail as expected.
   delegate.WaitForRequestFailed();
   EXPECT_EQ(net::ERR_UNKNOWN_URL_SCHEME, delegate.net_error());
-  EXPECT_FALSE(delegate.ssl_info().has_value());
+  EXPECT_FALSE(delegate.ssl_info().is_valid());
   EXPECT_EQ(1, delegate.on_request_handled_counter());
 }
 
@@ -243,8 +244,8 @@ TEST_F(NavigationURLLoaderTest, RequestFailedCertError) {
   // Wait for the request to fail as expected.
   delegate.WaitForRequestFailed();
   ASSERT_EQ(net::ERR_ABORTED, delegate.net_error());
-  net::SSLInfo ssl_info = delegate.ssl_info().value();
-  EXPECT_TRUE(net::MapCertStatusToNetError(ssl_info.is_valid()));
+  net::SSLInfo ssl_info = delegate.ssl_info();
+  EXPECT_TRUE(ssl_info.is_valid());
   EXPECT_TRUE(https_server.GetCertificate()->Equals(ssl_info.cert.get()));
   EXPECT_EQ(net::ERR_CERT_COMMON_NAME_INVALID,
             net::MapCertStatusToNetError(ssl_info.cert_status));
@@ -276,8 +277,8 @@ TEST_F(NavigationURLLoaderTest, RequestFailedCertErrorFatal) {
   // Wait for the request to fail as expected.
   delegate.WaitForRequestFailed();
   ASSERT_EQ(net::ERR_ABORTED, delegate.net_error());
-  net::SSLInfo ssl_info = delegate.ssl_info().value();
-  EXPECT_TRUE(net::MapCertStatusToNetError(ssl_info.is_valid()));
+  net::SSLInfo ssl_info = delegate.ssl_info();
+  EXPECT_TRUE(ssl_info.is_valid());
   EXPECT_TRUE(https_server.GetCertificate()->Equals(ssl_info.cert.get()));
   EXPECT_EQ(net::ERR_CERT_COMMON_NAME_INVALID,
             net::MapCertStatusToNetError(ssl_info.cert_status));
@@ -393,7 +394,9 @@ TEST_F(NavigationURLLoaderTest, RequestBlocked) {
   // Wait for the request to fail as expected.
   delegate.WaitForRequestFailed();
   EXPECT_EQ(net::ERR_ABORTED, delegate.net_error());
-  EXPECT_EQ(1, delegate.on_request_handled_counter());
+
+  // Failing before start means OnRequestStarted is never called.
+  EXPECT_EQ(0, delegate.on_request_handled_counter());
 
   host_.SetDelegate(nullptr);
 }

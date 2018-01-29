@@ -25,10 +25,10 @@ ContextMenuParams ContextMenuParamsBuilder::Build(
   params.src_url = data.src_url;
   params.has_image_contents = data.has_image_contents;
   params.page_url = data.page_url;
-  params.keyword_url = data.keyword_url;
   params.frame_url = data.frame_url;
   params.media_flags = data.media_flags;
   params.selection_text = data.selected_text.Utf16();
+  params.selection_start_offset = data.selection_start_offset;
   params.title_text = data.title_text.Utf16();
   params.misspelled_word = data.misspelled_word.Utf16();
   params.spellcheck_enabled = data.is_spell_checking_enabled;
@@ -54,11 +54,6 @@ ContextMenuParams ContextMenuParamsBuilder::Build(
   params.custom_context.is_pepper_menu = false;
   for (size_t i = 0; i < data.custom_items.size(); ++i)
     params.custom_items.push_back(MenuItemBuilder::Build(data.custom_items[i]));
-
-  if (!data.frame_history_item.IsNull()) {
-    params.frame_page_state =
-        SingleHistoryItemToPageState(data.frame_history_item);
-  }
 
   params.link_text = data.link_text.Utf16();
   params.source_type = static_cast<ui::MenuSourceType>(data.source_type);

@@ -9,6 +9,7 @@
 
 #include "SkBitmap.h"
 #include "SkColorSpaceXformer.h"
+#include "SkImageFilterPriv.h"
 #include "SkReadBuffer.h"
 #include "SkSpecialImage.h"
 #include "SkWriteBuffer.h"
@@ -16,10 +17,12 @@
 
 #if SK_SUPPORT_GPU
 #include "GrAlphaThresholdFragmentProcessor.h"
+#include "GrColorSpaceXform.h"
 #include "GrContext.h"
 #include "GrFixedClip.h"
 #include "GrRenderTargetContext.h"
 #include "GrTextureProxy.h"
+#include "effects/GrSimpleTextureEffect.h"
 #endif
 
 class SK_API SkAlphaThresholdFilterImpl : public SkImageFilter {
@@ -170,18 +173,25 @@ sk_sp<SkSpecialImage> SkAlphaThresholdFilterImpl::onFilterImage(SkSpecialImage* 
         }
 
         const OutputProperties& outProps = ctx.outputProperties();
-        sk_sp<GrColorSpaceXform> colorSpaceXform = GrColorSpaceXform::Make(input->getColorSpace(),
-                                                                           outProps.colorSpace());
-
-        auto fp = GrAlphaThresholdFragmentProcessor::Make(std::move(inputProxy),
-                                                          std::move(colorSpaceXform),
-                                                          std::move(maskProxy),
-                                                          fInnerThreshold,
-                                                          fOuterThreshold,
-                                                          bounds);
-        if (!fp) {
+        GrPixelConfig inputConfig = inputProxy->config();
+        auto textureFP = GrSimpleTextureEffect::Make(std::move(inputProxy), SkMatrix::I());
+        textureFP = GrColorSpaceXformEffect::Make(std::move(textureFP), input->getColorSpace(),
+                                                  inputConfig, outProps.colorSpace());
+        if (!textureFP) {
             return nullptr;
         }
+
+        auto thresholdFP = GrAlphaThresholdFragmentProcessor::Make(std::move(maskProxy),
+                                                                   fInnerThreshold,
+                                                                   fOuterThreshold,
+                                                                   bounds);
+        if (!thresholdFP) {
+            return nullptr;
+        }
+
+        std::unique_ptr<GrFragmentProcessor> fpSeries[] = { std::move(textureFP),
+                                                            std::move(thresholdFP) };
+        auto fp = GrFragmentProcessor::RunInSeries(fpSeries, 2);
 
         return DrawWithFP(context, std::move(fp), bounds, outProps);
     }

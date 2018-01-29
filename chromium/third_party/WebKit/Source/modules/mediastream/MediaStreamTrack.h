@@ -27,11 +27,11 @@
 #define MediaStreamTrack_h
 
 #include <memory>
+#include "bindings/core/v8/ActiveScriptWrappable.h"
 #include "bindings/core/v8/ScriptPromise.h"
 #include "core/dom/ContextLifecycleObserver.h"
 #include "modules/EventTargetModules.h"
 #include "modules/ModulesExport.h"
-#include "platform/bindings/ActiveScriptWrappable.h"
 #include "platform/mediastream/MediaStreamDescriptor.h"
 #include "platform/mediastream/MediaStreamSource.h"
 #include "platform/wtf/Forward.h"
@@ -39,7 +39,6 @@
 namespace blink {
 
 class AudioSourceProvider;
-class ExceptionState;
 class ImageCapture;
 class MediaTrackCapabilities;
 class MediaTrackConstraints;
@@ -74,7 +73,7 @@ class MODULES_EXPORT MediaStreamTrack
 
   String readyState() const;
 
-  void stopTrack(ExceptionState&);
+  void stopTrack(ExecutionContext*);
   virtual MediaStreamTrack* clone(ScriptState*);
 
   // This function is called when constrains have been successfully applied.
@@ -108,7 +107,7 @@ class MODULES_EXPORT MediaStreamTrack
 
   std::unique_ptr<AudioSourceProvider> CreateWebAudioSource();
 
-  DECLARE_VIRTUAL_TRACE();
+  virtual void Trace(blink::Visitor*);
 
  private:
   friend class CanvasCaptureMediaStreamTrack;

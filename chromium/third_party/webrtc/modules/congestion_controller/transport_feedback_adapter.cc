@@ -16,7 +16,7 @@
 #include "modules/rtp_rtcp/source/rtcp_packet/transport_feedback.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/logging.h"
-#include "rtc_base/mod_ops.h"
+#include "rtc_base/numerics/mod_ops.h"
 #include "system_wrappers/include/field_trial.h"
 
 namespace webrtc {
@@ -127,7 +127,7 @@ std::vector<PacketFeedback> TransportFeedbackAdapter::GetPacketFeedbackVector(
 
   std::vector<PacketFeedback> packet_feedback_vector;
   if (feedback.GetPacketStatusCount() == 0) {
-    LOG(LS_INFO) << "Empty transport feedback packet received.";
+    RTC_LOG(LS_INFO) << "Empty transport feedback packet received.";
     return packet_feedback_vector;
   }
   packet_feedback_vector.reserve(feedback.GetPacketStatusCount());
@@ -174,9 +174,9 @@ std::vector<PacketFeedback> TransportFeedbackAdapter::GetPacketFeedbackVector(
     }
 
     if (failed_lookups > 0) {
-      LOG(LS_WARNING) << "Failed to lookup send time for " << failed_lookups
-                      << " packet" << (failed_lookups > 1 ? "s" : "")
-                      << ". Send time history too small?";
+      RTC_LOG(LS_WARNING) << "Failed to lookup send time for " << failed_lookups
+                          << " packet" << (failed_lookups > 1 ? "s" : "")
+                          << ". Send time history too small?";
     }
     if (feedback_rtt > -1) {
       feedback_rtts_.push_back(feedback_rtt);

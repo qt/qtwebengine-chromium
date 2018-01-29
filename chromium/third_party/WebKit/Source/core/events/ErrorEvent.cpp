@@ -97,11 +97,11 @@ ScriptValue ErrorEvent::error(ScriptState* script_state) const {
   return ScriptValue(script_state, error_.NewLocal(script_state->GetIsolate()));
 }
 
-DEFINE_TRACE(ErrorEvent) {
+void ErrorEvent::Trace(blink::Visitor* visitor) {
   Event::Trace(visitor);
 }
 
-DEFINE_TRACE_WRAPPERS(ErrorEvent) {
+void ErrorEvent::TraceWrappers(const ScriptWrappableVisitor* visitor) const {
   visitor->TraceWrappers(error_);
   Event::TraceWrappers(visitor);
 }

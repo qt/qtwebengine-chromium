@@ -67,8 +67,10 @@ class AppWindowContents {
   // Called when the native window changes.
   virtual void NativeWindowChanged(NativeAppWindow* native_app_window) = 0;
 
-  // Called when the native window closes.
-  virtual void NativeWindowClosed() = 0;
+  // Called when the native window closes. |send_oncloded| is flag to indicate
+  // whether the OnClosed event should be sent. It is true except when the
+  // native window is closed before AppWindowCreateFunction responds.
+  virtual void NativeWindowClosed(bool send_onclosed) = 0;
 
   // Called when the renderer notifies the browser that the window is ready.
   virtual void OnWindowReady() = 0;
@@ -89,9 +91,11 @@ class AppWindow : public content::WebContentsDelegate,
                   public ExtensionFunctionDispatcher::Delegate,
                   public ExtensionRegistryObserver {
  public:
+  // Enum values should not be changed since they are used by UMA.
   enum WindowType {
-    WINDOW_TYPE_DEFAULT = 1 << 0,   // Default app window.
-    WINDOW_TYPE_PANEL = 1 << 1,     // OS controlled panel window (Ash only).
+    WINDOW_TYPE_DEFAULT = 0,  // Default app window.
+    WINDOW_TYPE_PANEL = 1,    // OS controlled panel window (Ash only).
+    WINDOW_TYPE_COUNT = 2,
   };
 
   enum Frame {
@@ -256,9 +260,14 @@ class AppWindow : public content::WebContentsDelegate,
   // is on startup and from within UpdateWindowTitle().
   base::string16 GetTitle() const;
 
-  // |callback| will then be called when the first navigation in the window is
-  // ready to commit.
-  void SetOnFirstCommitCallback(const base::Closure& callback);
+  // |callback| will be called when the first navigation in the window is
+  // ready to commit or when the window goes away before that. |ready_to_commit|
+  // argument of the |callback| is set to true for the former case and false for
+  // the later.
+  using FirstCommitOrWindowClosedCallback =
+      base::OnceCallback<void(bool ready_to_commit)>;
+  void SetOnFirstCommitOrWindowClosedCallback(
+      FirstCommitOrWindowClosedCallback callback);
 
   // Called when the first navigation in the window is ready to commit.
   void OnReadyToCommitFirstNavigation();
@@ -357,10 +366,6 @@ class AppWindow : public content::WebContentsDelegate,
   // the renderer.
   void GetSerializedState(base::DictionaryValue* properties) const;
 
-  // Notifies the window's contents that the render view is ready and it can
-  // unblock resource requests.
-  void NotifyRenderViewReady();
-
   // Whether the app window wants to be alpha enabled.
   bool requested_alpha_enabled() const { return requested_alpha_enabled_; }
 
@@ -442,6 +447,8 @@ class AppWindow : public content::WebContentsDelegate,
   bool TakeFocus(content::WebContents* source, bool reverse) override;
 
   // content::WebContentsObserver implementation.
+  bool OnMessageReceived(const IPC::Message& message,
+                         content::RenderFrameHost* render_frame_host) override;
   void RenderViewCreated(content::RenderViewHost* render_view_host) override;
 
   // ExtensionFunctionDispatcher::Delegate implementation.
@@ -457,6 +464,9 @@ class AppWindow : public content::WebContentsDelegate,
   void SetWebContentsBlocked(content::WebContents* web_contents,
                              bool blocked) override;
   bool IsWebContentsVisible(content::WebContents* web_contents) override;
+
+  // IPC handler for ExtensionHostMsg_AppWindowReady.
+  void OnAppWindowReady();
 
   void ToggleFullscreenModeForTab(content::WebContents* source,
                                   bool enter_fullscreen);
@@ -562,8 +572,9 @@ class AppWindow : public content::WebContentsDelegate,
   // Whether |show_in_shelf| was set in the CreateParams.
   bool show_in_shelf_;
 
-  // PlzNavigate: this is called when the first navigation is ready to commit.
-  base::Closure on_first_commit_callback_;
+  // PlzNavigate: this is called when the first navigation is ready to commit or
+  // when the window is closed.
+  FirstCommitOrWindowClosedCallback on_first_commit_or_window_closed_callback_;
 
   base::WeakPtrFactory<AppWindow> image_loader_ptr_factory_;
 

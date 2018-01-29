@@ -16,8 +16,8 @@
 #include "fpdfsdk/fpdfxfa/cpdfxfa_page.h"
 #include "fpdfsdk/fpdfxfa/cxfa_fwladaptertimermgr.h"
 #include "fpdfsdk/fsdk_define.h"
-#include "fpdfsdk/javascript/cjs_runtime.h"
-#include "fpdfsdk/javascript/ijs_runtime.h"
+#include "fxjs/cjs_runtime.h"
+#include "fxjs/ijs_runtime.h"
 #include "public/fpdf_formfill.h"
 #include "third_party/base/ptr_util.h"
 #include "third_party/base/stl_util.h"
@@ -36,7 +36,7 @@ extern int GetLastError();
 #endif
 
 CPDFXFA_Context::CPDFXFA_Context(std::unique_ptr<CPDF_Document> pPDFDoc)
-    : m_iDocType(XFA_DocType::PDF),
+    : m_FormType(FormType::kNone),
       m_pPDFDoc(std::move(pPDFDoc)),
       m_pFormFillEnv(nullptr),
       m_pXFADocView(nullptr),
@@ -101,12 +101,6 @@ bool CPDFXFA_Context::LoadXFADoc() {
     return false;
   }
 
-  CXFA_FFDocHandler* pDocHandler = pApp->GetDocHandler();
-  if (!pDocHandler) {
-    SetLastError(FPDF_ERR_XFALOAD);
-    return false;
-  }
-
   m_pXFADoc->StartLoad();
   int iStatus = m_pXFADoc->DoLoad();
   if (iStatus != XFA_PARSESTATUS_Done) {
@@ -117,10 +111,10 @@ bool CPDFXFA_Context::LoadXFADoc() {
   m_pXFADoc->StopLoad();
   m_pXFADoc->GetXFADoc()->InitScriptContext(GetJSERuntime());
 
-  if (m_pXFADoc->GetDocType() == XFA_DocType::Dynamic)
-    m_iDocType = XFA_DocType::Dynamic;
+  if (m_pXFADoc->GetFormType() == FormType::kXFAFull)
+    m_FormType = FormType::kXFAFull;
   else
-    m_iDocType = XFA_DocType::Static;
+    m_FormType = FormType::kXFAForeground;
 
   m_pXFADocView = m_pXFADoc->CreateDocView();
   if (m_pXFADocView->StartLayout() < 0) {
@@ -140,17 +134,17 @@ int CPDFXFA_Context::GetPageCount() const {
   if (!m_pPDFDoc && !m_pXFADoc)
     return 0;
 
-  switch (m_iDocType) {
-    case XFA_DocType::PDF:
-    case XFA_DocType::Static:
+  switch (m_FormType) {
+    case FormType::kNone:
+    case FormType::kAcroForm:
+    case FormType::kXFAForeground:
       if (m_pPDFDoc)
         return m_pPDFDoc->GetPageCount();
-    case XFA_DocType::Dynamic:
+    case FormType::kXFAFull:
       if (m_pXFADoc)
         return m_pXFADocView->CountPageViews();
-    default:
-      return 0;
   }
+  return 0;
 }
 
 RetainPtr<CPDFXFA_Page> CPDFXFA_Context::GetXFAPage(int page_index) {
@@ -183,7 +177,7 @@ RetainPtr<CPDFXFA_Page> CPDFXFA_Context::GetXFAPage(
   if (!m_pXFADoc)
     return nullptr;
 
-  if (m_iDocType != XFA_DocType::Dynamic)
+  if (m_FormType != FormType::kXFAFull)
     return nullptr;
 
   for (auto& pTempPage : m_XFAPageList) {

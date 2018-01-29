@@ -61,6 +61,20 @@ class CPDF_Parser::TrailerData {
 
   CPDF_Dictionary* GetMainTrailer() const { return main_trailer_.get(); }
 
+  std::unique_ptr<CPDF_Dictionary> GetCombinedTrailer() const {
+    std::unique_ptr<CPDF_Dictionary> result =
+        ToDictionary(main_trailer_->Clone());
+
+    // Info is optional.
+    uint32_t info_obj_num = GetInfoObjNum();
+    if (info_obj_num > 0)
+      result->SetNewFor<CPDF_Reference>("Info", nullptr, GetInfoObjNum());
+
+    // Root is required.
+    result->SetNewFor<CPDF_Reference>("Root", nullptr, GetRootObjNum());
+    return result;
+  }
+
   void SetMainTrailer(std::unique_ptr<CPDF_Dictionary> trailer) {
     ASSERT(trailer);
     main_trailer_ = std::move(trailer);
@@ -75,12 +89,19 @@ class CPDF_Parser::TrailerData {
   void Clear() {
     main_trailer_.reset();
     last_info_obj_num_ = 0;
+    last_root_obj_num_ = 0;
   }
 
   uint32_t GetInfoObjNum() const {
     const CPDF_Reference* pRef = ToReference(
         GetMainTrailer() ? GetMainTrailer()->GetObjectFor("Info") : nullptr);
     return pRef ? pRef->GetRefObjNum() : last_info_obj_num_;
+  }
+
+  uint32_t GetRootObjNum() const {
+    const CPDF_Reference* pRef = ToReference(
+        GetMainTrailer() ? GetMainTrailer()->GetObjectFor("Root") : nullptr);
+    return pRef ? pRef->GetRefObjNum() : last_root_obj_num_;
   }
 
  private:
@@ -90,10 +111,15 @@ class CPDF_Parser::TrailerData {
     const auto* pRef = ToReference(dict->GetObjectFor("Info"));
     if (pRef)
       last_info_obj_num_ = pRef->GetRefObjNum();
+
+    const auto* pRoot = ToReference(dict->GetObjectFor("Root"));
+    if (pRoot)
+      last_root_obj_num_ = pRoot->GetRefObjNum();
   }
 
   std::unique_ptr<CPDF_Dictionary> main_trailer_;
   uint32_t last_info_obj_num_ = 0;
+  uint32_t last_root_obj_num_ = 0;
 };
 
 CPDF_Parser::CPDF_Parser()
@@ -214,21 +240,14 @@ CPDF_Parser::Error CPDF_Parser::StartParseInternal(CPDF_Document* pDocument) {
   ASSERT(!m_bHasParsed);
   m_bHasParsed = true;
   m_bXRefStream = false;
-  m_LastXRefOffset = 0;
 
-  m_pSyntax->SetPos(m_pSyntax->m_FileLen - m_pSyntax->m_HeaderOffset - 9);
   m_pDocument = pDocument;
 
   bool bXRefRebuilt = false;
-  if (m_pSyntax->BackwardsSearchToWord("startxref", 4096)) {
-    m_pSyntax->GetKeyword();
 
-    bool bNumber;
-    ByteString xrefpos_str = m_pSyntax->GetNextWord(&bNumber);
-    if (!bNumber)
-      return FORMAT_ERROR;
+  m_LastXRefOffset = ParseStartXRef();
 
-    m_LastXRefOffset = (FX_FILESIZE)FXSYS_atoi64(xrefpos_str.c_str());
+  if (m_LastXRefOffset > 0) {
     if (!LoadAllCrossRefV4(m_LastXRefOffset) &&
         !LoadAllCrossRefV5(m_LastXRefOffset)) {
       if (!RebuildCrossRef())
@@ -280,6 +299,29 @@ CPDF_Parser::Error CPDF_Parser::StartParseInternal(CPDF_Document* pDocument) {
       m_MetadataObjnum = pMetadata->GetRefObjNum();
   }
   return SUCCESS;
+}
+
+FX_FILESIZE CPDF_Parser::ParseStartXRef() {
+  static constexpr char kStartXRefKeyword[] = "startxref";
+  m_pSyntax->SetPos(m_pSyntax->m_FileLen - m_pSyntax->m_HeaderOffset -
+                    strlen(kStartXRefKeyword));
+  if (!m_pSyntax->BackwardsSearchToWord(kStartXRefKeyword, 4096))
+    return 0;
+
+  // Skip "startxref" keyword.
+  m_pSyntax->GetKeyword();
+
+  // Read XRef offset.
+  bool bNumber;
+  const ByteString xrefpos_str = m_pSyntax->GetNextWord(&bNumber);
+  if (!bNumber || xrefpos_str.IsEmpty())
+    return 0;
+
+  const FX_SAFE_FILESIZE result = FXSYS_atoi64(xrefpos_str.c_str());
+  if (!result.IsValid() || result.ValueOrDie() >= GetFileAccess()->GetSize())
+    return 0;
+
+  return result.ValueOrDie();
 }
 
 CPDF_Parser::Error CPDF_Parser::SetEncryptHandler() {
@@ -1129,18 +1171,20 @@ const CPDF_Array* CPDF_Parser::GetIDArray() const {
   return GetTrailer() ? GetTrailer()->GetArrayFor("ID") : nullptr;
 }
 
-uint32_t CPDF_Parser::GetRootObjNum() {
-  CPDF_Reference* pRef =
-      ToReference(GetTrailer() ? GetTrailer()->GetObjectFor("Root") : nullptr);
-  return pRef ? pRef->GetRefObjNum() : 0;
-}
-
 CPDF_Dictionary* CPDF_Parser::GetTrailer() const {
   return m_TrailerData->GetMainTrailer();
 }
 
+std::unique_ptr<CPDF_Dictionary> CPDF_Parser::GetCombinedTrailer() const {
+  return m_TrailerData->GetCombinedTrailer();
+}
+
 uint32_t CPDF_Parser::GetInfoObjNum() {
   return m_TrailerData->GetInfoObjNum();
+}
+
+uint32_t CPDF_Parser::GetRootObjNum() {
+  return m_TrailerData->GetRootObjNum();
 }
 
 std::unique_ptr<CPDF_Object> CPDF_Parser::ParseIndirectObject(
@@ -1280,34 +1324,8 @@ uint32_t CPDF_Parser::GetPermissions() const {
   return dwPermission;
 }
 
-bool CPDF_Parser::ParseLinearizedHeader() {
-  m_pSyntax->SetPos(m_pSyntax->m_HeaderOffset + 9);
-
-  FX_FILESIZE SavedPos = m_pSyntax->GetPos();
-  bool bIsNumber;
-  ByteString word = m_pSyntax->GetNextWord(&bIsNumber);
-  if (!bIsNumber)
-    return false;
-
-  word = m_pSyntax->GetNextWord(&bIsNumber);
-  if (!bIsNumber)
-    return false;
-
-  if (m_pSyntax->GetKeyword() != "obj") {
-    m_pSyntax->SetPos(SavedPos);
-    return false;
-  }
-
-  m_pLinearized =
-      CPDF_LinearizedHeader::CreateForObject(m_pSyntax->GetObjectBody(nullptr));
-  if (!m_pLinearized)
-    return false;
-
-  // Move parser onto first page xref table start.
-  m_pSyntax->GetNextWord(nullptr);
-
-  m_LastXRefOffset = m_pSyntax->GetPos();
-  return true;
+std::unique_ptr<CPDF_LinearizedHeader> CPDF_Parser::ParseLinearizedHeader() {
+  return CPDF_LinearizedHeader::Parse(m_pSyntax.get());
 }
 
 CPDF_Parser::Error CPDF_Parser::StartLinearizedParse(
@@ -1320,12 +1338,14 @@ CPDF_Parser::Error CPDF_Parser::StartLinearizedParse(
   if (!InitSyntaxParser(pFileAccess))
     return FORMAT_ERROR;
 
-  if (!ParseLinearizedHeader())
+  m_pLinearized = ParseLinearizedHeader();
+  if (!m_pLinearized)
     return StartParseInternal(std::move(pDocument));
 
   m_bHasParsed = true;
   m_pDocument = pDocument;
 
+  m_LastXRefOffset = m_pLinearized->GetLastXRefOffset();
   FX_FILESIZE dwFirstXRefOffset = m_LastXRefOffset;
   bool bXRefRebuilt = false;
   bool bLoadV4 = LoadCrossRefV4(dwFirstXRefOffset, false);

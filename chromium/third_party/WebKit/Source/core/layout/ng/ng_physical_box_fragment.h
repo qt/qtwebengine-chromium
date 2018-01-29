@@ -6,7 +6,6 @@
 #define NGPhysicalBoxFragment_h
 
 #include "core/CoreExport.h"
-#include "core/layout/ng/geometry/ng_physical_offset_rect.h"
 #include "core/layout/ng/inline/ng_baseline.h"
 #include "core/layout/ng/ng_physical_container_fragment.h"
 
@@ -19,27 +18,32 @@ class CORE_EXPORT NGPhysicalBoxFragment final
   NGPhysicalBoxFragment(LayoutObject* layout_object,
                         const ComputedStyle& style,
                         NGPhysicalSize size,
+                        Vector<scoped_refptr<NGPhysicalFragment>>& children,
                         const NGPhysicalOffsetRect& contents_visual_rect,
-                        Vector<RefPtr<NGPhysicalFragment>>& children,
                         Vector<NGBaseline>& baselines,
+                        NGBoxType box_type,
                         unsigned,  // NGBorderEdges::Physical
-                        RefPtr<NGBreakToken> break_token = nullptr);
+                        scoped_refptr<NGBreakToken> break_token = nullptr);
 
   const NGBaseline* Baseline(const NGBaselineRequest&) const;
 
+  bool HasSelfPaintingLayer() const;
+
+  // True if overflow != 'visible', except for certain boxes that do not allow
+  // overflow clip; i.e., AllowOverflowClip() returns false.
+  bool HasOverflowClip() const;
+  bool ShouldClipOverflow() const;
+
   // Visual rect of this box in the local coordinate. Does not include children
   // even if they overflow this box.
-  const NGPhysicalOffsetRect LocalVisualRect() const;
+  NGPhysicalOffsetRect SelfVisualRect() const;
 
-  // Visual rect of children in the local coordinate.
-  const NGPhysicalOffsetRect& ContentsVisualRect() const {
-    return contents_visual_rect_;
-  }
+  // VisualRect of itself including contents, in the local coordinate.
+  NGPhysicalOffsetRect VisualRectWithContents() const;
 
-  RefPtr<NGPhysicalFragment> CloneWithoutOffset() const;
+  scoped_refptr<NGPhysicalFragment> CloneWithoutOffset() const;
 
  private:
-  NGPhysicalOffsetRect contents_visual_rect_;
   Vector<NGBaseline> baselines_;
 };
 

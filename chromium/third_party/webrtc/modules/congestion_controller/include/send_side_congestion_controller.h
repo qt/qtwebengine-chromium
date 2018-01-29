@@ -20,7 +20,6 @@
 #include "modules/include/module.h"
 #include "modules/include/module_common_types.h"
 #include "modules/pacing/paced_sender.h"
-#include "modules/pacing/packet_router.h"
 #include "rtc_base/constructormagic.h"
 #include "rtc_base/criticalsection.h"
 #include "rtc_base/networkroute.h"
@@ -58,13 +57,6 @@ class SendSideCongestionController : public CallStatsObserver,
    protected:
     virtual ~Observer() {}
   };
-  // TODO(holmer): Delete after fixing upstream projects.
-  RTC_DEPRECATED SendSideCongestionController(const Clock* clock,
-                                              Observer* observer,
-                                              RtcEventLog* event_log,
-                                              PacketRouter* packet_router);
-  // TODO(nisse): Consider deleting the |observer| argument to constructors
-  // once CongestionController is deleted.
   SendSideCongestionController(const Clock* clock,
                                Observer* observer,
                                RtcEventLog* event_log,
@@ -75,6 +67,11 @@ class SendSideCongestionController : public CallStatsObserver,
   void DeRegisterPacketFeedbackObserver(PacketFeedbackObserver* observer);
 
   // Currently, there can be at most one observer.
+  // TODO(nisse): The RegisterNetworkObserver method is needed because we first
+  // construct this object (as part of RtpTransportControllerSend), then pass a
+  // reference to Call, which then registers itself as the observer. We should
+  // try to break this circular chain of references, and make the observer a
+  // construction time constant.
   void RegisterNetworkObserver(Observer* observer);
   void DeRegisterNetworkObserver(Observer* observer);
 
@@ -89,7 +86,12 @@ class SendSideCongestionController : public CallStatsObserver,
   virtual void SignalNetworkState(NetworkState state);
   virtual void SetTransportOverhead(size_t transport_overhead_bytes_per_packet);
 
-  virtual BitrateController* GetBitrateController() const;
+  // Deprecated: Use GetBandwidthObserver instead.
+  RTC_DEPRECATED virtual BitrateController* GetBitrateController() const;
+
+  virtual RtcpBandwidthObserver* GetBandwidthObserver() const;
+
+  virtual bool AvailableBandwidth(uint32_t* bandwidth) const;
   virtual int64_t GetPacerQueuingDelayMs() const;
   virtual int64_t GetFirstPacketTimeMs() const;
 
@@ -128,8 +130,7 @@ class SendSideCongestionController : public CallStatsObserver,
   rtc::CriticalSection observer_lock_;
   Observer* observer_ RTC_GUARDED_BY(observer_lock_);
   RtcEventLog* const event_log_;
-  std::unique_ptr<PacedSender> owned_pacer_;
-  PacedSender* pacer_;
+  PacedSender* const pacer_;
   const std::unique_ptr<BitrateController> bitrate_controller_;
   std::unique_ptr<AcknowledgedBitrateEstimator> acknowledged_bitrate_estimator_;
   const std::unique_ptr<ProbeController> probe_controller_;

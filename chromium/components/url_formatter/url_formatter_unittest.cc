@@ -132,22 +132,24 @@ const IDNTestCase idn_cases[] = {
     {"xn---123-kbjl2j0bl2k.in", L"\x0939\x093f\x0928\x094d\x0926\x0940-123.in",
      true},
 
-    // 5 Aspirational scripts
+    // What used to be 5 Aspirational scripts in the earlier versions of UAX 31.
+    // UAX 31 does not define aspirational scripts any more.
+    // See http://www.unicode.org/reports/tr31/#Aspirational_Use_Scripts .
     // Unifieid Canadian Syllabary
-    {"xn--dfe0tte.ca", L"\x1456\x14c2\x14ef.ca", true},
+    {"xn--dfe0tte.ca", L"\x1456\x14c2\x14ef.ca", false},
     // Tifinagh
     {"xn--4ljxa2bb4a6bxb.ma", L"\x2d5c\x2d49\x2d3c\x2d49\x2d4f\x2d30\x2d56.ma",
-     true},
+     false},
     // Tifinagh with a disallowed character(U+2D6F)
     {"xn--hmjzaby5d5f.ma", L"\x2d5c\x2d49\x2d3c\x2d6f\x2d49\x2d4f.ma", false},
     // Yi
-    {"xn--4o7a6e1x64c.cn", L"\xa188\xa320\xa071\xa0b7.cn", true},
+    {"xn--4o7a6e1x64c.cn", L"\xa188\xa320\xa071\xa0b7.cn", false},
     // Mongolian - 'ordu' (place, camp)
-    {"xn--56ec8bp.cn", L"\x1823\x1837\x1833\x1824.cn", true},
+    {"xn--56ec8bp.cn", L"\x1823\x1837\x1833\x1824.cn", false},
     // Mongolian with a disallowed character
     {"xn--95e5de3ds.cn", L"\x1823\x1837\x1804\x1833\x1824.cn", false},
     // Miao/Pollad
-    {"xn--2u0fpf0a.cn", L"\U00016f04\U00016f62\U00016f59.cn", true},
+    {"xn--2u0fpf0a.cn", L"\U00016f04\U00016f62\U00016f59.cn", false},
 
     // Script mixing tests
     // The following script combinations are allowed.
@@ -267,6 +269,10 @@ const IDNTestCase idn_cases[] = {
     {"xn--jack-qwc.com", L"j\x0307" L"ack.com", false},
     // l followed by U+0307
     {"xn--lace-qwc.com", L"l\x0307" L"ace.com", false},
+
+    // Do not allow a combining mark after dotless i/j.
+    {"xn--pxel-lza29y.com", L"p\x0131\x0300xel.com", false},
+    {"xn--ack-gpb42h.com", L"\x0237\x0301" L"ack.com", false},
 
     // Mixed script confusable
     // google with Armenian Small Letter Oh(U+0585)
@@ -401,6 +407,19 @@ const IDNTestCase idn_cases[] = {
      L"\x0456\x0455\x04cf\x043a\x0440\x0445"
      L"123.com",
      false},
+
+    // wmhtb.com
+    {"xn--l1acpvx.com", L"\x0448\x043c\x043d\x0442\x044c.com", false},
+    // щмнть.com
+    {"xn--l1acpzs.com", L"\x0449\x043c\x043d\x0442\x044c.com", false},
+    // шмнтв.com
+    {"xn--b1atdu1a.com", L"\x0448\x043c\x043d\x0442\x0432.com", false},
+    // ഠട345.com
+    {"xn--345-jtke.com", L"\x0d20\x0d1f" L"345.com", false},
+
+    // At one point the skeleton of 'w' was 'vv', ensure that
+    // that it's treated as 'w'.
+    {"xn--wder-qqa.com", L"w\x00f3" L"der.com", false},
 
     // Mixed digits: the first two will also fail mixed script test
     // Latin + ASCII digit + Deva digit
@@ -614,7 +633,7 @@ const IDNTestCase idn_cases[] = {
      L"a\x144a"
      L"b.com",
      false},
-    {"xn--xcec9s.com", L"\x1401\x144a\x1402.com", true},
+    {"xn--xcec9s.com", L"\x1401\x144a\x1402.com", false},
 
     // Custom dangerous patterns
     // Two Katakana-Hiragana combining mark in a row

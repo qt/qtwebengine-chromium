@@ -82,17 +82,18 @@ PannerHandler::PannerHandler(AudioNode& node,
   Initialize();
 }
 
-RefPtr<PannerHandler> PannerHandler::Create(AudioNode& node,
-                                            float sample_rate,
-                                            AudioParamHandler& position_x,
-                                            AudioParamHandler& position_y,
-                                            AudioParamHandler& position_z,
-                                            AudioParamHandler& orientation_x,
-                                            AudioParamHandler& orientation_y,
-                                            AudioParamHandler& orientation_z) {
-  return WTF::AdoptRef(new PannerHandler(node, sample_rate, position_x,
-                                         position_y, position_z, orientation_x,
-                                         orientation_y, orientation_z));
+scoped_refptr<PannerHandler> PannerHandler::Create(
+    AudioNode& node,
+    float sample_rate,
+    AudioParamHandler& position_x,
+    AudioParamHandler& position_y,
+    AudioParamHandler& position_z,
+    AudioParamHandler& orientation_x,
+    AudioParamHandler& orientation_y,
+    AudioParamHandler& orientation_z) {
+  return base::AdoptRef(new PannerHandler(node, sample_rate, position_x,
+                                          position_y, position_z, orientation_x,
+                                          orientation_y, orientation_z));
 }
 
 PannerHandler::~PannerHandler() {
@@ -646,15 +647,30 @@ void PannerHandler::UpdateDirtyState() {
 
 PannerNode::PannerNode(BaseAudioContext& context)
     : AudioNode(context),
-      position_x_(AudioParam::Create(context, kParamTypePannerPositionX, 0.0)),
-      position_y_(AudioParam::Create(context, kParamTypePannerPositionY, 0.0)),
-      position_z_(AudioParam::Create(context, kParamTypePannerPositionZ, 0.0)),
-      orientation_x_(
-          AudioParam::Create(context, kParamTypePannerOrientationX, 1.0)),
-      orientation_y_(
-          AudioParam::Create(context, kParamTypePannerOrientationY, 0.0)),
-      orientation_z_(
-          AudioParam::Create(context, kParamTypePannerOrientationZ, 0.0)) {
+      position_x_(AudioParam::Create(context,
+                                     kParamTypePannerPositionX,
+                                     "Panner.positionX",
+                                     0.0)),
+      position_y_(AudioParam::Create(context,
+                                     kParamTypePannerPositionY,
+                                     "Panner.positionY",
+                                     0.0)),
+      position_z_(AudioParam::Create(context,
+                                     kParamTypePannerPositionZ,
+                                     "Panner.positionZ",
+                                     0.0)),
+      orientation_x_(AudioParam::Create(context,
+                                        kParamTypePannerOrientationX,
+                                        "Panner.orientationX",
+                                        1.0)),
+      orientation_y_(AudioParam::Create(context,
+                                        kParamTypePannerOrientationY,
+                                        "Panner.orientationY",
+                                        0.0)),
+      orientation_z_(AudioParam::Create(context,
+                                        kParamTypePannerOrientationZ,
+                                        "Panner.orientationZ",
+                                        0.0)) {
   SetHandler(PannerHandler::Create(
       *this, context.sampleRate(), position_x_->Handler(),
       position_y_->Handler(), position_z_->Handler(), orientation_x_->Handler(),
@@ -796,7 +812,7 @@ void PannerNode::setConeOuterGain(double gain) {
   GetPannerHandler().SetConeOuterGain(gain);
 }
 
-DEFINE_TRACE(PannerNode) {
+void PannerNode::Trace(blink::Visitor* visitor) {
   visitor->Trace(position_x_);
   visitor->Trace(position_y_);
   visitor->Trace(position_z_);

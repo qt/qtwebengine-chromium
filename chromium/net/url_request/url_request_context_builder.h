@@ -56,9 +56,12 @@ class HttpUserAgentSettings;
 class HttpServerProperties;
 class NetworkQualityEstimator;
 class ProxyConfigService;
-struct ReportingPolicy;
 class URLRequestContext;
 class URLRequestInterceptor;
+
+#if BUILDFLAG(ENABLE_REPORTING)
+struct ReportingPolicy;
+#endif  // BUILDFLAG(ENABLE_REPORTING)
 
 // A URLRequestContextBuilder creates a single URLRequestContext. It provides
 // methods to manage various URLRequestContext components which should be called
@@ -278,17 +281,6 @@ class NET_EXPORT URLRequestContextBuilder {
     transport_security_persister_path_ = transport_security_persister_path;
   }
 
-  // Sets whether the TransportSecurityPersister only reads persisted
-  // information, or also writes it. By default, it both reads and writes.
-  //
-  // TODO(mmenke): Consider removing this in favor of the above method. See:
-  // https://crbug.com/743251.
-  void set_transport_security_persister_readonly(
-      bool transport_security_persister_readonly) {
-    transport_security_persister_readonly_ =
-        transport_security_persister_readonly;
-  }
-
   void SetSpdyAndQuicEnabled(bool spdy_enabled,
                              bool quic_enabled);
 
@@ -302,17 +294,13 @@ class NET_EXPORT URLRequestContextBuilder {
 
   void SetCertVerifier(std::unique_ptr<CertVerifier> cert_verifier);
 
-  // Makes the created URLRequestContext use a shared CertVerifier object.
-  // Should not be used it SetCertVerifier() is used. The consumer must ensure
-  // the CertVerifier outlives the URLRequestContext returned by the builder.
-  //
-  // TODO(mmenke): Figure out if consumers can use SetCertVerifier instead. See:
-  // https://crbug.com/743251.
-  void set_shared_cert_verifier(CertVerifier* shared_cert_verifier);
-
 #if BUILDFLAG(ENABLE_REPORTING)
   void set_reporting_policy(
       std::unique_ptr<net::ReportingPolicy> reporting_policy);
+
+  void set_network_error_logging_enabled(bool network_error_logging_enabled) {
+    network_error_logging_enabled_ = network_error_logging_enabled;
+  }
 #endif  // BUILDFLAG(ENABLE_REPORTING)
 
   void SetInterceptors(std::vector<std::unique_ptr<URLRequestInterceptor>>
@@ -350,11 +338,6 @@ class NET_EXPORT URLRequestContextBuilder {
   void SetCreateHttpTransactionFactoryCallback(
       CreateHttpTransactionFactoryCallback
           create_http_network_transaction_factory);
-
-  // Returns the previous value passed to set_net_log(), or nullptr if it hasn't
-  // been called yet.
-  // TODO(mmenke): Remove this method.
-  net::NetLog* net_log() const { return net_log_; }
 
   // Creates a mostly self-contained URLRequestContext. May only be called once
   // per URLRequestContextBuilder. After this is called, the Builder can be
@@ -399,7 +382,6 @@ class NET_EXPORT URLRequestContextBuilder {
   HttpNetworkSession::Params http_network_session_params_;
   CreateHttpTransactionFactoryCallback create_http_network_transaction_factory_;
   base::FilePath transport_security_persister_path_;
-  bool transport_security_persister_readonly_;
   NetLog* net_log_;
   std::unique_ptr<HostResolver> host_resolver_;
   net::HostResolver* shared_host_resolver_;
@@ -416,11 +398,11 @@ class NET_EXPORT URLRequestContextBuilder {
   std::unique_ptr<HttpAuthHandlerFactory> http_auth_handler_factory_;
   HttpAuthHandlerFactory* shared_http_auth_handler_factory_;
   std::unique_ptr<CertVerifier> cert_verifier_;
-  CertVerifier* shared_cert_verifier_;
   std::unique_ptr<CTVerifier> ct_verifier_;
   std::unique_ptr<CTPolicyEnforcer> ct_policy_enforcer_;
 #if BUILDFLAG(ENABLE_REPORTING)
   std::unique_ptr<net::ReportingPolicy> reporting_policy_;
+  bool network_error_logging_enabled_;
 #endif  // BUILDFLAG(ENABLE_REPORTING)
   std::vector<std::unique_ptr<URLRequestInterceptor>> url_request_interceptors_;
   CreateInterceptingJobFactory create_intercepting_job_factory_;

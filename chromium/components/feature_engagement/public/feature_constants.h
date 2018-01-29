@@ -28,10 +28,11 @@ extern const base::Feature kIPHDownloadPageFeature;
 extern const base::Feature kIPHDownloadPageScreenshotFeature;
 extern const base::Feature kIPHChromeHomeExpandFeature;
 extern const base::Feature kIPHChromeHomeMenuHeaderFeature;
+extern const base::Feature kIPHChromeHomePullToRefreshFeature;
 extern const base::Feature kIPHMediaDownloadFeature;
-extern const base::Feature kIPHContextualSearchFeature;
-extern const base::Feature kIPHContextualSearchTapFeature;
-extern const base::Feature kIPHContextualSearchPanelFeature;
+extern const base::Feature kIPHContextualSearchWebSearchFeature;
+extern const base::Feature kIPHContextualSearchPromoteTapFeature;
+extern const base::Feature kIPHContextualSearchPromotePanelOpenFeature;
 extern const base::Feature kIPHContextualSearchOptInFeature;
 #endif  // defined(OS_ANDROID)
 

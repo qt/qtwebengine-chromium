@@ -116,7 +116,7 @@ void LayoutTableSection::StyleDidChange(StyleDifference diff,
   if (!old_style)
     return;
 
-  LayoutTable* table = this->Table();
+  LayoutTable* table = Table();
   if (!table)
     return;
 
@@ -1092,15 +1092,17 @@ void LayoutTableSection::DistributeRemainingExtraLogicalHeight(
   if (extra_logical_height <= 0 || !row_pos_[total_rows])
     return;
 
-  // FIXME: row_pos_[total_rows] - row_pos_[0] is the total rows' size.
-  int total_row_size = row_pos_[total_rows];
   int total_logical_height_added = 0;
   int previous_row_position = row_pos_[0];
+  float total_row_size = row_pos_[total_rows] - previous_row_position;
   for (unsigned r = 0; r < total_rows; r++) {
     // weight with the original height
-    total_logical_height_added += extra_logical_height *
-                                  (row_pos_[r + 1] - previous_row_position) /
-                                  total_row_size;
+    float height_to_add = extra_logical_height *
+                          (row_pos_[r + 1] - previous_row_position) /
+                          total_row_size;
+    total_logical_height_added =
+        std::min<int>(total_logical_height_added + std::ceil(height_to_add),
+                      extra_logical_height);
     previous_row_position = row_pos_[r + 1];
     row_pos_[r + 1] += total_logical_height_added;
   }
@@ -1412,12 +1414,13 @@ void LayoutTableSection::ComputeOverflowFromDescendants() {
   }
 
 #if DCHECK_IS_ON()
-  DCHECK_EQ(has_overflowing_cell, this->HasOverflowingCell());
+  DCHECK_EQ(has_overflowing_cell, HasOverflowingCell());
 #endif
 }
 
-bool LayoutTableSection::RecalcChildOverflowAfterStyleChange() {
-  DCHECK(ChildNeedsOverflowRecalcAfterStyleChange());
+bool LayoutTableSection::RecalcOverflowAfterStyleChange() {
+  if (!ChildNeedsOverflowRecalcAfterStyleChange())
+    return false;
   ClearChildNeedsOverflowRecalcAfterStyleChange();
   unsigned total_rows = grid_.size();
   bool children_overflow_changed = false;
@@ -1431,7 +1434,7 @@ bool LayoutTableSection::RecalcChildOverflowAfterStyleChange() {
     unsigned n_cols = NumCols(r);
     for (unsigned c = 0; c < n_cols; c++) {
       auto* cell = OriginatingCellAt(r, c);
-      if (!cell || !cell->NeedsOverflowRecalcAfterStyleChange())
+      if (!cell)
         continue;
       row_children_overflow_changed |= cell->RecalcOverflowAfterStyleChange();
     }
@@ -1829,7 +1832,7 @@ bool LayoutTableSection::NodeAtPoint(
 
 LayoutTableSection* LayoutTableSection::CreateAnonymousWithParent(
     const LayoutObject* parent) {
-  RefPtr<ComputedStyle> new_style =
+  scoped_refptr<ComputedStyle> new_style =
       ComputedStyle::CreateAnonymousStyleWithDisplay(parent->StyleRef(),
                                                      EDisplay::kTableRowGroup);
   LayoutTableSection* new_section = new LayoutTableSection(nullptr);

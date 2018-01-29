@@ -8,7 +8,7 @@
 #include "core/dom/Node.h"
 #include "core/frame/LocalFrame.h"
 #include "platform/wtf/Assertions.h"
-#include "platform/wtf/CurrentTime.h"
+#include "platform/wtf/Time.h"
 #include "public/web/WebConsoleMessage.h"
 
 namespace blink {
@@ -110,7 +110,7 @@ void ConsoleMessage::SetNodes(LocalFrame* frame, Vector<DOMNodeId> nodes) {
   nodes_ = std::move(nodes);
 }
 
-DEFINE_TRACE(ConsoleMessage) {
+void ConsoleMessage::Trace(blink::Visitor* visitor) {
   visitor->Trace(frame_);
 }
 

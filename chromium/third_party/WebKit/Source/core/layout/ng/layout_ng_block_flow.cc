@@ -4,28 +4,24 @@
 
 #include "core/layout/ng/layout_ng_block_flow.h"
 
-#include "core/layout/HitTestLocation.h"
 #include "core/layout/LayoutAnalyzer.h"
+#include "core/layout/ng/inline/ng_inline_fragment_iterator.h"
 #include "core/layout/ng/inline/ng_inline_node_data.h"
-#include "core/layout/ng/ng_constraint_space.h"
 #include "core/layout/ng/ng_fragment_builder.h"
-#include "core/layout/ng/ng_layout_result.h"
 #include "core/layout/ng/ng_length_utils.h"
 #include "core/layout/ng/ng_out_of_flow_layout_part.h"
-#include "core/page/scrolling/RootScrollerUtil.h"
 #include "core/paint/PaintLayer.h"
-#include "core/paint/ng/ng_block_flow_painter.h"
-#include "platform/runtime_enabled_features.h"
 
 namespace blink {
 
 LayoutNGBlockFlow::LayoutNGBlockFlow(Element* element)
-    : LayoutBlockFlow(element) {}
+    : LayoutNGMixin<LayoutBlockFlow>(element) {}
 
 LayoutNGBlockFlow::~LayoutNGBlockFlow() {}
 
 bool LayoutNGBlockFlow::IsOfType(LayoutObjectType type) const {
-  return type == kLayoutObjectNGBlockFlow || LayoutBlockFlow::IsOfType(type);
+  return type == kLayoutObjectNGBlockFlow ||
+         LayoutNGMixin<LayoutBlockFlow>::IsOfType(type);
 }
 
 void LayoutNGBlockFlow::UpdateBlockLayout(bool relayout_children) {
@@ -36,10 +32,11 @@ void LayoutNGBlockFlow::UpdateBlockLayout(bool relayout_children) {
     return;
   }
 
-  RefPtr<NGConstraintSpace> constraint_space =
+  scoped_refptr<NGConstraintSpace> constraint_space =
       NGConstraintSpace::CreateFromLayoutObject(*this);
 
-  RefPtr<NGLayoutResult> result = NGBlockNode(this).Layout(*constraint_space);
+  scoped_refptr<NGLayoutResult> result =
+      NGBlockNode(this).Layout(*constraint_space);
 
   // We need to update our margins as these are calculated once and stored in
   // LayoutBox::margin_box_outsets_. Typically this happens within
@@ -58,6 +55,16 @@ void LayoutNGBlockFlow::UpdateBlockLayout(bool relayout_children) {
 
   // This object has already been positioned in legacy layout by our containing
   // block. Copy the position and place the fragment.
+  //
+  // TODO(kojii): This object is not positioned yet when the containing legacy
+  // layout is not normal flow; e.g., table or flexbox. They lay out children to
+  // determine the overall layout, then move children. In flexbox case,
+  // LayoutLineItems() lays out children, which calls this function. Then later,
+  // ApplyLineItemPosition() changes Location() of the children. See also
+  // NGPhysicalFragment::IsPlacedByLayoutNG(). crbug.com/788590
+  //
+  // TODO(crbug.com/781241): LogicalLeft() is not calculated by the
+  // containing block until after our layout.
   const LayoutBlock* containing_block = ContainingBlock();
   NGPhysicalOffset physical_offset;
   if (containing_block) {
@@ -65,24 +72,21 @@ void LayoutNGBlockFlow::UpdateBlockLayout(bool relayout_children) {
                                          containing_block->Size().Height());
     NGLogicalOffset logical_offset(LogicalLeft(), LogicalTop());
     physical_offset = logical_offset.ConvertToPhysical(
-        constraint_space->WritingMode(), constraint_space->Direction(),
+        constraint_space->GetWritingMode(), constraint_space->Direction(),
         containing_block_size, fragment->Size());
   }
   fragment->SetOffset(physical_offset);
-
-  paint_fragment_ = WTF::MakeUnique<NGPaintFragment>(std::move(fragment));
 }
 
 void LayoutNGBlockFlow::UpdateOutOfFlowBlockLayout() {
   LayoutBlock* container = ContainingBlock();
   const ComputedStyle* container_style = container->Style();
   const ComputedStyle* parent_style = Parent()->Style();
-  RefPtr<NGConstraintSpace> constraint_space =
+  scoped_refptr<NGConstraintSpace> constraint_space =
       NGConstraintSpace::CreateFromLayoutObject(*this);
   NGFragmentBuilder container_builder(
-      container, RefPtr<const ComputedStyle>(container_style),
-      FromPlatformWritingMode(container_style->GetWritingMode()),
-      container_style->Direction());
+      container, scoped_refptr<const ComputedStyle>(container_style),
+      container_style->GetWritingMode(), container_style->Direction());
 
   // Compute ContainingBlock logical size.
   // OverrideContainingBlockLogicalWidth/Height are used by grid layout.
@@ -108,8 +112,8 @@ void LayoutNGBlockFlow::UpdateOutOfFlowBlockLayout() {
     containing_block_logical_height = container->LogicalHeight();
   }
 
-  container_builder.SetSize(NGLogicalSize(containing_block_logical_width,
-                                          containing_block_logical_height));
+  container_builder.SetInlineSize(containing_block_logical_width);
+  container_builder.SetBlockSize(containing_block_logical_height);
 
   // Determine static position.
 
@@ -141,6 +145,16 @@ void LayoutNGBlockFlow::UpdateOutOfFlowBlockLayout() {
     }
     if (!logical_top.IsAuto())
       static_block = ValueForLength(logical_top, container->LogicalHeight());
+
+    // Legacy static position is relative to padding box.
+    // Convert to border box.
+    NGBoxStrut border_strut =
+        ComputeBorders(*constraint_space, *container_style);
+    if (parent_style->IsLeftToRightDirection())
+      static_inline += border_strut.inline_start;
+    else
+      static_inline -= border_strut.inline_end;
+    static_block += border_strut.block_start;
   }
   if (!parent_style->IsLeftToRightDirection())
     static_inline = containing_block_logical_width - static_inline;
@@ -154,9 +168,9 @@ void LayoutNGBlockFlow::UpdateOutOfFlowBlockLayout() {
       container_style->IsHorizontalWritingMode()
           ? NGPhysicalOffset(static_inline, static_block)
           : NGPhysicalOffset(static_block, static_inline);
-  NGStaticPosition static_position = NGStaticPosition::Create(
-      FromPlatformWritingMode(parent_style->GetWritingMode()),
-      parent_style->Direction(), static_location);
+  NGStaticPosition static_position =
+      NGStaticPosition::Create(parent_style->GetWritingMode(),
+                               parent_style->Direction(), static_location);
 
   container_builder.AddOutOfFlowLegacyCandidate(NGBlockNode(this),
                                                 static_position);
@@ -169,21 +183,22 @@ void LayoutNGBlockFlow::UpdateOutOfFlowBlockLayout() {
   DCHECK(css_container->IsBox());
   NGOutOfFlowLayoutPart(NGBlockNode(ToLayoutBox(css_container)),
                         *constraint_space, *container_style, &container_builder)
-      .Run();
-  RefPtr<NGLayoutResult> result = container_builder.ToBoxFragment();
-  // These are the OOF descendants of the current OOF block.
+      .Run(/* update_legacy */ false);
+  scoped_refptr<NGLayoutResult> result = container_builder.ToBoxFragment();
+  // These are the unpositioned OOF descendants of the current OOF block.
   for (NGOutOfFlowPositionedDescendant descendant :
        result->OutOfFlowPositionedDescendants())
     descendant.node.UseOldOutOfFlowPositioning();
 
-  RefPtr<NGPhysicalBoxFragment> fragment =
+  scoped_refptr<NGPhysicalBoxFragment> fragment =
       ToNGPhysicalBoxFragment(result->PhysicalFragment().get());
   DCHECK_GT(fragment->Children().size(), 0u);
   // Copy sizes of all child fragments to Legacy.
   // There could be multiple fragments, when this node has descendants whose
   // container is this node's container.
   // Example: fixed descendant of fixed element.
-  for (RefPtr<NGPhysicalFragment> child_fragment : fragment->Children()) {
+  for (scoped_refptr<NGPhysicalFragment> child_fragment :
+       fragment->Children()) {
     DCHECK(child_fragment->GetLayoutObject()->IsBox());
     LayoutBox* child_legacy_box =
         ToLayoutBox(child_fragment->GetLayoutObject());
@@ -196,150 +211,27 @@ void LayoutNGBlockFlow::UpdateOutOfFlowBlockLayout() {
     }
     child_legacy_box->SetY(child_offset.top);
   }
-  RefPtr<NGPhysicalFragment> child_fragment = fragment->Children()[0];
+  scoped_refptr<NGPhysicalFragment> child_fragment = fragment->Children()[0];
   DCHECK_EQ(fragment->Children()[0]->GetLayoutObject(), this);
-  paint_fragment_ = WTF::MakeUnique<NGPaintFragment>(child_fragment.get());
 }
 
-void LayoutNGBlockFlow::UpdateMargins(
-    const NGConstraintSpace& constraint_space) {
-  SetMargin(ComputePhysicalMargins(constraint_space, StyleRef()));
-}
-
-NGInlineNodeData* LayoutNGBlockFlow::GetNGInlineNodeData() const {
-  DCHECK(ng_inline_node_data_);
-  return ng_inline_node_data_.get();
-}
-
-void LayoutNGBlockFlow::ResetNGInlineNodeData() {
-  ng_inline_node_data_ = WTF::MakeUnique<NGInlineNodeData>();
-}
-
-void LayoutNGBlockFlow::WillCollectInlines() {}
-
-// The current fragment from the last layout cycle for this box.
-// When pre-NG layout calls functions of this block flow, fragment and/or
-// LayoutResult are required to compute the result.
-// TODO(kojii): Use the cached result for now, we may need to reconsider as the
-// cache evolves.
-const NGPhysicalBoxFragment* LayoutNGBlockFlow::CurrentFragment() const {
-  if (cached_result_)
-    return ToNGPhysicalBoxFragment(cached_result_->PhysicalFragment().get());
-  return nullptr;
-}
-
-void LayoutNGBlockFlow::AddOverflowFromChildren() {
-  // |ComputeOverflow()| calls this, which is called from
-  // |CopyFragmentDataToLayoutBox()| and |RecalcOverflowAfterStyleChange()|.
-  // Add overflow from the last layout cycle.
-  if (ChildrenInline()) {
-    if (const NGPhysicalBoxFragment* physical_fragment = CurrentFragment()) {
-      // TODO(kojii): If |RecalcOverflowAfterStyleChange()|, we need to
-      // re-compute glyph bounding box. How to detect it and how to re-compute
-      // is TBD.
-      AddContentsVisualOverflow(
-          physical_fragment->ContentsVisualRect().ToLayoutRect());
-      // TODO(kojii): The above code computes visual overflow only, we fallback
-      // to LayoutBlock for AddLayoutOverflow() for now. It doesn't compute
-      // correctly without RootInlineBox though.
-    }
+bool LayoutNGBlockFlow::LocalVisualRectFor(const LayoutObject* layout_object,
+                                           NGPhysicalOffsetRect* visual_rect) {
+  DCHECK(layout_object &&
+         (layout_object->IsText() || layout_object->IsLayoutInline()));
+  DCHECK(visual_rect);
+  const NGPhysicalBoxFragment* box_fragment =
+      layout_object->EnclosingBlockFlowFragment();
+  // TODO(kojii): CurrentFragment isn't always available after layout clean.
+  // Investigate why.
+  if (!box_fragment)
+    return false;
+  NGInlineFragmentIterator children(*box_fragment, layout_object);
+  for (const auto& child : children) {
+    NGPhysicalOffsetRect child_visual_rect = child.fragment->SelfVisualRect();
+    visual_rect->Unite(child_visual_rect + child.offset_to_container_box);
   }
-  LayoutBlockFlow::AddOverflowFromChildren();
-}
-
-// Retrieve NGBaseline from the current fragment.
-const NGBaseline* LayoutNGBlockFlow::FragmentBaseline(
-    NGBaselineAlgorithmType type) const {
-  if (const NGPhysicalFragment* physical_fragment = CurrentFragment()) {
-    FontBaseline baseline_type =
-        IsHorizontalWritingMode() ? kAlphabeticBaseline : kIdeographicBaseline;
-    return ToNGPhysicalBoxFragment(physical_fragment)
-        ->Baseline({type, baseline_type});
-  }
-  return nullptr;
-}
-
-LayoutUnit LayoutNGBlockFlow::FirstLineBoxBaseline() const {
-  if (ChildrenInline()) {
-    if (const NGBaseline* baseline =
-            FragmentBaseline(NGBaselineAlgorithmType::kFirstLine)) {
-      return baseline->offset;
-    }
-  }
-  return LayoutBlockFlow::FirstLineBoxBaseline();
-}
-
-LayoutUnit LayoutNGBlockFlow::InlineBlockBaseline(
-    LineDirectionMode line_direction) const {
-  if (ChildrenInline()) {
-    if (const NGBaseline* baseline =
-            FragmentBaseline(NGBaselineAlgorithmType::kAtomicInline)) {
-      return baseline->offset;
-    }
-  }
-  return LayoutBlockFlow::InlineBlockBaseline(line_direction);
-}
-
-RefPtr<NGLayoutResult> LayoutNGBlockFlow::CachedLayoutResult(
-    const NGConstraintSpace& constraint_space,
-    NGBreakToken* break_token) const {
-  if (!RuntimeEnabledFeatures::LayoutNGFragmentCachingEnabled())
-    return nullptr;
-  if (!cached_result_ || break_token || NeedsLayout())
-    return nullptr;
-  if (constraint_space != *cached_constraint_space_)
-    return nullptr;
-  return cached_result_->CloneWithoutOffset();
-}
-
-void LayoutNGBlockFlow::SetCachedLayoutResult(
-    const NGConstraintSpace& constraint_space,
-    NGBreakToken* break_token,
-    RefPtr<NGLayoutResult> layout_result) {
-  if (break_token || constraint_space.UnpositionedFloats().size() ||
-      layout_result->UnpositionedFloats().size() ||
-      layout_result->Status() != NGLayoutResult::kSuccess) {
-    // We can't cache these yet
-    return;
-  }
-
-  cached_constraint_space_ = &constraint_space;
-  cached_result_ = layout_result;
-}
-
-void LayoutNGBlockFlow::PaintObject(const PaintInfo& paint_info,
-                                    const LayoutPoint& paint_offset) const {
-  // TODO(eae): This logic should go in Paint instead and it should drive the
-  // full paint logic for LayoutNGBlockFlow.
-  if (RuntimeEnabledFeatures::LayoutNGPaintFragmentsEnabled())
-    NGBlockFlowPainter(*this).PaintContents(paint_info, paint_offset);
-  else
-    LayoutBlockFlow::PaintObject(paint_info, paint_offset);
-}
-
-bool LayoutNGBlockFlow::NodeAtPoint(
-    HitTestResult& result,
-    const HitTestLocation& location_in_container,
-    const LayoutPoint& accumulated_offset,
-    HitTestAction action) {
-  if (!RuntimeEnabledFeatures::LayoutNGPaintFragmentsEnabled()) {
-    return LayoutBlockFlow::NodeAtPoint(result, location_in_container,
-                                        accumulated_offset, action);
-  }
-
-  LayoutPoint adjusted_location = accumulated_offset + Location();
-  if (!RootScrollerUtil::IsEffective(*this)) {
-    // Check if we need to do anything at all.
-    // If we have clipping, then we can't have any spillout.
-    LayoutRect overflow_box =
-        HasOverflowClip() ? BorderBoxRect() : VisualOverflowRect();
-    overflow_box.MoveBy(adjusted_location);
-    if (!location_in_container.Intersects(overflow_box))
-      return false;
-  }
-
-  return NGBlockFlowPainter(*this).NodeAtPoint(result, location_in_container,
-                                               accumulated_offset, action);
+  return true;
 }
 
 }  // namespace blink

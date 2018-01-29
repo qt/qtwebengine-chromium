@@ -29,10 +29,10 @@
 #ifndef SecurityOriginHash_h
 #define SecurityOriginHash_h
 
+#include "base/memory/scoped_refptr.h"
 #include "platform/weborigin/KURL.h"
 #include "platform/weborigin/SecurityOrigin.h"
 #include "platform/wtf/Allocator.h"
-#include "platform/wtf/RefPtr.h"
 
 namespace blink {
 
@@ -48,7 +48,7 @@ struct SecurityOriginHash {
             : 0};
     return StringHasher::HashMemory<sizeof(hash_codes)>(hash_codes);
   }
-  static unsigned GetHash(const RefPtr<SecurityOrigin>& origin) {
+  static unsigned GetHash(const scoped_refptr<SecurityOrigin>& origin) {
     return GetHash(origin.get());
   }
 
@@ -70,14 +70,14 @@ struct SecurityOriginHash {
 
     return true;
   }
-  static bool Equal(SecurityOrigin* a, const RefPtr<SecurityOrigin>& b) {
+  static bool Equal(SecurityOrigin* a, const scoped_refptr<SecurityOrigin>& b) {
     return Equal(a, b.get());
   }
-  static bool Equal(const RefPtr<SecurityOrigin>& a, SecurityOrigin* b) {
+  static bool Equal(const scoped_refptr<SecurityOrigin>& a, SecurityOrigin* b) {
     return Equal(a.get(), b);
   }
-  static bool Equal(const RefPtr<SecurityOrigin>& a,
-                    const RefPtr<SecurityOrigin>& b) {
+  static bool Equal(const scoped_refptr<SecurityOrigin>& a,
+                    const scoped_refptr<SecurityOrigin>& b) {
     return Equal(a.get(), b.get());
   }
 
@@ -89,7 +89,7 @@ struct SecurityOriginHash {
 namespace WTF {
 
 template <>
-struct DefaultHash<RefPtr<blink::SecurityOrigin>> {
+struct DefaultHash<scoped_refptr<blink::SecurityOrigin>> {
   typedef blink::SecurityOriginHash Hash;
 };
 

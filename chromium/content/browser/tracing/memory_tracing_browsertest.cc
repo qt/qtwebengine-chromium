@@ -76,10 +76,9 @@ class MemoryTracingTest : public ContentBrowserTest {
       const MemoryDumpLevelOfDetail& level_of_detail,
       const base::Closure& closure) {
     uint32_t request_index = next_request_index_++;
-    memory_instrumentation::MemoryInstrumentation::
-        RequestGlobalDumpAndAppendToTraceCallback callback = base::Bind(
-            &MemoryTracingTest::OnGlobalMemoryDumpDone, base::Unretained(this),
-            base::ThreadTaskRunnerHandle::Get(), closure, request_index);
+    auto callback = base::Bind(
+        &MemoryTracingTest::OnGlobalMemoryDumpDone, base::Unretained(this),
+        base::ThreadTaskRunnerHandle::Get(), closure, request_index);
     if (from_renderer_thread) {
       PostTaskToInProcessRendererAndWait(base::Bind(
           &memory_instrumentation::MemoryInstrumentation::
@@ -202,10 +201,17 @@ IN_PROC_BROWSER_TEST_F(SingleProcessMemoryTracingTest,
   DisableTracing();
 }
 
+// https://crbug.com/788788
+#if defined(OS_ANDROID) && defined(ADDRESS_SANITIZER)
+#define MAYBE_RendererInitiatedSingleDump DISABLED_RendererInitiatedSingleDump
+#else
+#define MAYBE_RendererInitiatedSingleDump RendererInitiatedSingleDump
+#endif  // defined(OS_ANDROID) && defined(ADDRESS_SANITIZER)
+
 // Checks that a memory dump initiated from a renderer thread ends up in a
 // single dump even in single process mode.
 IN_PROC_BROWSER_TEST_F(SingleProcessMemoryTracingTest,
-                       RendererInitiatedSingleDump) {
+                       MAYBE_RendererInitiatedSingleDump) {
   Navigate(shell());
 
   EXPECT_CALL(*mock_dump_provider_, OnMemoryDump(_,_)).WillOnce(Return(true));
@@ -218,7 +224,14 @@ IN_PROC_BROWSER_TEST_F(SingleProcessMemoryTracingTest,
   DisableTracing();
 }
 
-IN_PROC_BROWSER_TEST_F(SingleProcessMemoryTracingTest, ManyInterleavedDumps) {
+// https://crbug.com/788788
+#if defined(OS_ANDROID) && defined(ADDRESS_SANITIZER)
+#define MAYBE_ManyInterleavedDumps DISABLED_ManyInterleavedDumps
+#else
+#define MAYBE_ManyInterleavedDumps ManyInterleavedDumps
+#endif  // defined(OS_ANDROID) && defined(ADDRESS_SANITIZER)
+IN_PROC_BROWSER_TEST_F(SingleProcessMemoryTracingTest,
+                       MAYBE_ManyInterleavedDumps) {
   Navigate(shell());
 
   EXPECT_CALL(*mock_dump_provider_, OnMemoryDump(_,_))

@@ -30,7 +30,6 @@
 #include "content/public/browser/resource_throttle.h"
 #include "content/public/browser/stream_info.h"
 #include "content/public/common/previews_state.h"
-#include "content/public/common/resource_request_completion_status.h"
 #include "content/public/common/resource_response.h"
 #include "content/public/common/resource_type.h"
 #include "content/public/common/url_loader.mojom.h"
@@ -55,6 +54,7 @@
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_status.h"
 #include "net/url_request/url_request_test_util.h"
+#include "services/network/public/cpp/url_loader_completion_status.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/base/page_transition_types.h"
 
@@ -180,10 +180,11 @@ class TestResourceDispatcherHostDelegate final
     ADD_FAILURE() << "RequestComplete should not be called.";
   }
 
-  PreviewsState GetPreviewsState(const net::URLRequest& url_request,
-                                 content::ResourceContext* resource_context,
-                                 PreviewsState previews_to_allow) override {
-    ADD_FAILURE() << "GetPreviewsState should not be called.";
+  PreviewsState DeterminePreviewsState(
+      net::URLRequest* url_request,
+      content::ResourceContext* resource_context,
+      PreviewsState previews_to_allow) override {
+    ADD_FAILURE() << "DeterminePreviewsState should not be called.";
     return PREVIEWS_UNSPECIFIED;
   }
 
@@ -267,7 +268,7 @@ class MojoAsyncResourceHandlerWithStubOperations
       UploadProgressTracker::UploadProgressReportCallback callback) override {
     DCHECK(!upload_progress_tracker_);
 
-    auto upload_progress_tracker = base::MakeUnique<FakeUploadProgressTracker>(
+    auto upload_progress_tracker = std::make_unique<FakeUploadProgressTracker>(
         from_here, std::move(callback), request(), task_runner_);
     upload_progress_tracker_ = upload_progress_tracker.get();
     return std::move(upload_progress_tracker);
@@ -345,12 +346,12 @@ class MojoAsyncResourceHandlerTestBase {
         true,                                    // is_main_frame
         false,                                   // allow_download
         true,                                    // is_async
-        PREVIEWS_OFF                             // previews_state
-        );
+        PREVIEWS_OFF,                            // previews_state
+        nullptr);                                // navigation_ui_data
 
     ResourceRequest request;
     base::WeakPtr<mojo::StrongBinding<mojom::URLLoaderFactory>> weak_binding =
-        mojo::MakeStrongBinding(base::MakeUnique<TestURLLoaderFactory>(),
+        mojo::MakeStrongBinding(std::make_unique<TestURLLoaderFactory>(),
                                 mojo::MakeRequest(&url_loader_factory_));
 
     url_loader_factory_->CreateLoaderAndStart(
@@ -455,7 +456,7 @@ class MojoAsyncResourceHandlerUploadTest
  protected:
   MojoAsyncResourceHandlerUploadTest()
       : MojoAsyncResourceHandlerTestBase(
-            base::MakeUnique<DummyUploadDataStream>()) {}
+            std::make_unique<DummyUploadDataStream>()) {}
 };
 
 TEST_F(MojoAsyncResourceHandlerTest, InFlightRequests) {

@@ -8,13 +8,44 @@
 #ifndef GrContextOptions_DEFINED
 #define GrContextOptions_DEFINED
 
+#include "SkData.h"
 #include "SkTypes.h"
 #include "GrTypes.h"
 #include "../private/GrTypesPriv.h"
 
+#include <vector>
+
 class SkExecutor;
 
 struct GrContextOptions {
+    enum class Enable {
+        /** Forces an option to be disabled. */
+        kNo,
+        /** Forces an option to be enabled. */
+        kYes,
+        /**
+         * Uses Skia's default behavior, which may use runtime properties (e.g. driver version).
+         */
+        kDefault
+    };
+
+    /**
+     * Abstract class which stores Skia data in a cache that persists between sessions. Currently,
+     * Skia stores compiled shader binaries (only when glProgramBinary / glGetProgramBinary are
+     * supported) when provided a persistent cache, but this may extend to other data in the future.
+     */
+    class PersistentCache {
+    public:
+        virtual ~PersistentCache() {}
+
+        /**
+         * Returns the data for the key if it exists in the cache, otherwise returns null.
+         */
+        virtual sk_sp<SkData> load(const SkData& key) = 0;
+
+        virtual void store(const SkData& key, const SkData& data) = 0;
+    };
+
     GrContextOptions() {}
 
     // Suppress prints for the GrContext.
@@ -83,10 +114,40 @@ struct GrContextOptions {
     float fGlyphCacheTextureMaximumBytes = 2048 * 1024 * 4;
 
     /**
+     * Below this threshold size in device space distance field fonts won't be used. Distance field
+     * fonts don't support hinting which is more important at smaller sizes. A negative value means
+     * use the default threshold.
+     */
+    float fMinDistanceFieldFontSize = -1.f;
+
+    /**
+     * Above this threshold size in device space glyphs are drawn as individual paths. A negative
+     * value means use the default threshold.
+     */
+    float fGlyphsAsPathsFontSize = -1.f;
+
+    /**
+     * Can the glyph atlas use multiple textures. If allowed, the each texture's size is bound by
+     * fGlypheCacheTextureMaximumBytes.
+     */
+    Enable fAllowMultipleGlyphCacheTextures = Enable::kDefault;
+
+    /**
      * Bugs on certain drivers cause stencil buffers to leak. This flag causes Skia to avoid
      * allocating stencil buffers and use alternate rasterization paths, avoiding the leak.
      */
     bool fAvoidStencilBuffers = false;
+
+    /**
+     * Enables driver workaround to use draws instead of glClear. This only applies to
+     * kOpenGL_GrBackend.
+     */
+    Enable fUseDrawInsteadOfGLClear = Enable::kDefault;
+
+    /**
+     * Cache in which to store compiled shader binaries between runs.
+     */
+    PersistentCache* fPersistentCache = nullptr;
 
 #if GR_TEST_UTILS
     /**

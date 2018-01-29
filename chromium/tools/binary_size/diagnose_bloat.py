@@ -263,15 +263,19 @@ class _BuildHelper(object):
     if os.path.exists(os.path.join(os.path.dirname(_SRC_ROOT), 'src-internal')):
       self.extra_gn_args_str = ' is_chrome_branded=true'
     else:
-      self.extra_gn_args_str = (' exclude_unwind_tables=true '
-          'ffmpeg_branding="Chrome" proprietary_codecs=true')
+      self.extra_gn_args_str = (
+          ' ffmpeg_branding="Chrome" proprietary_codecs=true')
     if self.IsLinux():
       self.extra_gn_args_str += (
           ' is_cfi=false generate_linker_map=true')
     self.target = self.target if self.IsAndroid() else 'chrome'
 
   def _GenGnCmd(self):
-    gn_args = 'is_official_build=true symbol_level=1'
+    gn_args = 'is_official_build=true'
+    gn_args += ' symbol_level=1'
+    # Variables often become unused when experimenting with macros to reduce
+    # size, so don't fail on warnings.
+    gn_args += ' treat_warnings_as_errors=false'
     gn_args += ' use_goma=%s' % str(self.use_goma).lower()
     gn_args += ' target_os="%s"' % self.target_os
     if self.IsAndroid():

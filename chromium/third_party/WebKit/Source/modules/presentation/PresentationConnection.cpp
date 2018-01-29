@@ -8,7 +8,6 @@
 #include "bindings/core/v8/ScriptPromiseResolver.h"
 #include "core/dom/Document.h"
 #include "core/dom/ExceptionCode.h"
-#include "core/dom/TaskRunnerHelper.h"
 #include "core/dom/events/Event.h"
 #include "core/events/MessageEvent.h"
 #include "core/fileapi/FileReaderLoader.h"
@@ -27,6 +26,7 @@
 #include "modules/presentation/PresentationRequest.h"
 #include "platform/wtf/Assertions.h"
 #include "platform/wtf/text/AtomicString.h"
+#include "public/platform/TaskType.h"
 
 namespace blink {
 
@@ -106,22 +106,22 @@ class PresentationConnection::Message final
   Message(DOMArrayBuffer* array_buffer)
       : type(kMessageTypeArrayBuffer), array_buffer(array_buffer) {}
 
-  Message(RefPtr<BlobDataHandle> blob_data_handle)
+  Message(scoped_refptr<BlobDataHandle> blob_data_handle)
       : type(kMessageTypeBlob), blob_data_handle(std::move(blob_data_handle)) {}
 
-  DEFINE_INLINE_TRACE() { visitor->Trace(array_buffer); }
+  void Trace(blink::Visitor* visitor) { visitor->Trace(array_buffer); }
 
   MessageType type;
   String text;
   Member<DOMArrayBuffer> array_buffer;
-  RefPtr<BlobDataHandle> blob_data_handle;
+  scoped_refptr<BlobDataHandle> blob_data_handle;
 };
 
 class PresentationConnection::BlobLoader final
     : public GarbageCollectedFinalized<PresentationConnection::BlobLoader>,
       public FileReaderLoaderClient {
  public:
-  BlobLoader(RefPtr<BlobDataHandle> blob_data_handle,
+  BlobLoader(scoped_refptr<BlobDataHandle> blob_data_handle,
              PresentationConnection* presentation_connection)
       : presentation_connection_(presentation_connection),
         loader_(FileReaderLoader::Create(FileReaderLoader::kReadAsArrayBuffer,
@@ -144,7 +144,9 @@ class PresentationConnection::BlobLoader final
 
   void Cancel() { loader_->Cancel(); }
 
-  DEFINE_INLINE_TRACE() { visitor->Trace(presentation_connection_); }
+  void Trace(blink::Visitor* visitor) {
+    visitor->Trace(presentation_connection_);
+  }
 
  private:
   Member<PresentationConnection> presentation_connection_;
@@ -255,7 +257,8 @@ ControllerPresentationConnection* ControllerPresentationConnection::Take(
   // Fire onconnectionavailable event asynchronously.
   auto* event = PresentationConnectionAvailableEvent::Create(
       EventTypeNames::connectionavailable, connection);
-  TaskRunnerHelper::Get(TaskType::kPresentation, request->GetExecutionContext())
+  request->GetExecutionContext()
+      ->GetTaskRunner(TaskType::kPresentation)
       ->PostTask(BLINK_FROM_HERE,
                  WTF::Bind(&PresentationConnection::DispatchEventAsync,
                            WrapPersistent(request), WrapPersistent(event)));
@@ -272,7 +275,7 @@ ControllerPresentationConnection::ControllerPresentationConnection(
 
 ControllerPresentationConnection::~ControllerPresentationConnection() = default;
 
-DEFINE_TRACE(ControllerPresentationConnection) {
+void ControllerPresentationConnection::Trace(blink::Visitor* visitor) {
   visitor->Trace(controller_);
   PresentationConnection::Trace(visitor);
 }
@@ -376,7 +379,7 @@ void ReceiverPresentationConnection::DoTerminate() {
   receiver_->Terminate();
 }
 
-DEFINE_TRACE(ReceiverPresentationConnection) {
+void ReceiverPresentationConnection::Trace(blink::Visitor* visitor) {
   visitor->Trace(receiver_);
   PresentationConnection::Trace(visitor);
 }
@@ -416,7 +419,7 @@ void PresentationConnection::ContextDestroyed(ExecutionContext*) {
   connection_binding_.Close();
 }
 
-DEFINE_TRACE(PresentationConnection) {
+void PresentationConnection::Trace(blink::Visitor* visitor) {
   visitor->Trace(blob_loader_);
   visitor->Trace(messages_);
   EventTargetWithInlineData::Trace(visitor);
@@ -638,7 +641,8 @@ void PresentationConnection::DidFailLoadingBlob(
 }
 
 void PresentationConnection::DispatchStateChangeEvent(Event* event) {
-  TaskRunnerHelper::Get(TaskType::kPresentation, GetExecutionContext())
+  GetExecutionContext()
+      ->GetTaskRunner(TaskType::kPresentation)
       ->PostTask(BLINK_FROM_HERE,
                  WTF::Bind(&PresentationConnection::DispatchEventAsync,
                            WrapPersistent(this), WrapPersistent(event)));

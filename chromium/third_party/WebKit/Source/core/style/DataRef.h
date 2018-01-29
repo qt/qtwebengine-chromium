@@ -24,8 +24,8 @@
 #ifndef DataRef_h
 #define DataRef_h
 
+#include "base/memory/scoped_refptr.h"
 #include "platform/wtf/Allocator.h"
-#include "platform/wtf/RefPtr.h"
 
 namespace blink {
 
@@ -65,7 +65,7 @@ class DataRef {
   void operator=(std::nullptr_t) { data_ = nullptr; }
 
  private:
-  RefPtr<T> data_;
+  scoped_refptr<T> data_;
 };
 
 }  // namespace blink

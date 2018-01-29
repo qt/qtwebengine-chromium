@@ -113,6 +113,58 @@ const char *getBasicString(TBasicType t)
     }
 }
 
+// TType implementation.
+TType::TType()
+    : type(EbtVoid),
+      precision(EbpUndefined),
+      qualifier(EvqGlobal),
+      invariant(false),
+      memoryQualifier(TMemoryQualifier::Create()),
+      layoutQualifier(TLayoutQualifier::Create()),
+      primarySize(0),
+      secondarySize(0),
+      mArraySizes(nullptr),
+      mInterfaceBlock(nullptr),
+      mStructure(nullptr),
+      mIsStructSpecifier(false),
+      mMangledName(nullptr)
+{
+}
+
+TType::TType(TBasicType t, unsigned char ps, unsigned char ss)
+    : type(t),
+      precision(EbpUndefined),
+      qualifier(EvqGlobal),
+      invariant(false),
+      memoryQualifier(TMemoryQualifier::Create()),
+      layoutQualifier(TLayoutQualifier::Create()),
+      primarySize(ps),
+      secondarySize(ss),
+      mArraySizes(nullptr),
+      mInterfaceBlock(nullptr),
+      mStructure(nullptr),
+      mIsStructSpecifier(false),
+      mMangledName(nullptr)
+{
+}
+
+TType::TType(TBasicType t, TPrecision p, TQualifier q, unsigned char ps, unsigned char ss)
+    : type(t),
+      precision(p),
+      qualifier(q),
+      invariant(false),
+      memoryQualifier(TMemoryQualifier::Create()),
+      layoutQualifier(TLayoutQualifier::Create()),
+      primarySize(ps),
+      secondarySize(ss),
+      mArraySizes(nullptr),
+      mInterfaceBlock(nullptr),
+      mStructure(nullptr),
+      mIsStructSpecifier(false),
+      mMangledName(nullptr)
+{
+}
+
 TType::TType(const TPublicType &p)
     : type(p.getBasicType()),
       precision(p.precision),
@@ -122,22 +174,94 @@ TType::TType(const TPublicType &p)
       layoutQualifier(p.layoutQualifier),
       primarySize(p.getPrimarySize()),
       secondarySize(p.getSecondarySize()),
-      interfaceBlock(0),
-      structure(0)
+      mArraySizes(nullptr),
+      mInterfaceBlock(nullptr),
+      mStructure(nullptr),
+      mIsStructSpecifier(false),
+      mMangledName(nullptr)
 {
     ASSERT(primarySize <= 4);
     ASSERT(secondarySize <= 4);
-    if (p.array)
+    if (p.isArray())
     {
-        makeArray(p.arraySize);
+        mArraySizes = new TVector<unsigned int>(*p.arraySizes);
     }
     if (p.getUserDef())
-        structure = p.getUserDef();
+    {
+        mStructure         = p.getUserDef();
+        mIsStructSpecifier = p.isStructSpecifier();
+    }
 }
 
-bool TStructure::equals(const TStructure &other) const
+TType::TType(TStructure *userDef)
+    : type(EbtStruct),
+      precision(EbpUndefined),
+      qualifier(EvqTemporary),
+      invariant(false),
+      memoryQualifier(TMemoryQualifier::Create()),
+      layoutQualifier(TLayoutQualifier::Create()),
+      primarySize(1),
+      secondarySize(1),
+      mArraySizes(nullptr),
+      mInterfaceBlock(nullptr),
+      mStructure(userDef),
+      mIsStructSpecifier(false),
+      mMangledName(nullptr)
 {
-    return (uniqueId() == other.uniqueId());
+}
+
+TType::TType(TInterfaceBlock *interfaceBlockIn,
+             TQualifier qualifierIn,
+             TLayoutQualifier layoutQualifierIn)
+    : type(EbtInterfaceBlock),
+      precision(EbpUndefined),
+      qualifier(qualifierIn),
+      invariant(false),
+      memoryQualifier(TMemoryQualifier::Create()),
+      layoutQualifier(layoutQualifierIn),
+      primarySize(1),
+      secondarySize(1),
+      mArraySizes(nullptr),
+      mInterfaceBlock(interfaceBlockIn),
+      mStructure(0),
+      mIsStructSpecifier(false),
+      mMangledName(nullptr)
+{
+}
+
+TType::TType(const TType &t)
+    : type(t.type),
+      precision(t.precision),
+      qualifier(t.qualifier),
+      invariant(t.invariant),
+      memoryQualifier(t.memoryQualifier),
+      layoutQualifier(t.layoutQualifier),
+      primarySize(t.primarySize),
+      secondarySize(t.secondarySize),
+      mArraySizes(t.mArraySizes ? new TVector<unsigned int>(*t.mArraySizes) : nullptr),
+      mInterfaceBlock(t.mInterfaceBlock),
+      mStructure(t.mStructure),
+      mIsStructSpecifier(t.mIsStructSpecifier),
+      mMangledName(t.mMangledName)
+{
+}
+
+TType &TType::operator=(const TType &t)
+{
+    type               = t.type;
+    precision          = t.precision;
+    qualifier          = t.qualifier;
+    invariant          = t.invariant;
+    memoryQualifier    = t.memoryQualifier;
+    layoutQualifier    = t.layoutQualifier;
+    primarySize        = t.primarySize;
+    secondarySize      = t.secondarySize;
+    mArraySizes        = t.mArraySizes ? new TVector<unsigned int>(*t.mArraySizes) : nullptr;
+    mInterfaceBlock    = t.mInterfaceBlock;
+    mStructure         = t.mStructure;
+    mIsStructSpecifier = t.mIsStructSpecifier;
+    mMangledName       = t.mMangledName;
+    return *this;
 }
 
 bool TType::canBeConstructed() const
@@ -281,10 +405,13 @@ TString TType::getCompleteString() const
         stream << getQualifierString() << " ";
     if (precision != EbpUndefined)
         stream << getPrecisionString() << " ";
-    for (auto arraySizeIter = mArraySizes.rbegin(); arraySizeIter != mArraySizes.rend();
-         ++arraySizeIter)
+    if (mArraySizes)
     {
-        stream << "array[" << (*arraySizeIter) << "] of ";
+        for (auto arraySizeIter = mArraySizes->rbegin(); arraySizeIter != mArraySizes->rend();
+             ++arraySizeIter)
+        {
+            stream << "array[" << (*arraySizeIter) << "] of ";
+        }
     }
     if (isMatrix())
         stream << getCols() << "X" << getRows() << " matrix of ";
@@ -298,7 +425,7 @@ TString TType::getCompleteString() const
 //
 // Recursively generate mangled names.
 //
-TString TType::buildMangledName() const
+const char *TType::buildMangledName() const
 {
     TString mangledName;
     if (isMatrix())
@@ -306,134 +433,26 @@ TString TType::buildMangledName() const
     else if (isVector())
         mangledName += 'v';
 
-    switch (type)
+    const char *basicMangledName = GetBasicMangledName(type);
+    if (basicMangledName != nullptr)
     {
-        case EbtFloat:
-            mangledName += 'f';
-            break;
-        case EbtInt:
-            mangledName += 'i';
-            break;
-        case EbtUInt:
-            mangledName += 'u';
-            break;
-        case EbtBool:
-            mangledName += 'b';
-            break;
-        case EbtYuvCscStandardEXT:
-            mangledName += "ycs";
-            break;
-        case EbtSampler2D:
-            mangledName += "s2";
-            break;
-        case EbtSampler3D:
-            mangledName += "s3";
-            break;
-        case EbtSamplerCube:
-            mangledName += "sC";
-            break;
-        case EbtSampler2DArray:
-            mangledName += "s2a";
-            break;
-        case EbtSamplerExternalOES:
-            mangledName += "sext";
-            break;
-        case EbtSamplerExternal2DY2YEXT:
-            mangledName += "sext2y2y";
-            break;
-        case EbtSampler2DRect:
-            mangledName += "s2r";
-            break;
-        case EbtSampler2DMS:
-            mangledName += "s2ms";
-            break;
-        case EbtISampler2D:
-            mangledName += "is2";
-            break;
-        case EbtISampler3D:
-            mangledName += "is3";
-            break;
-        case EbtISamplerCube:
-            mangledName += "isC";
-            break;
-        case EbtISampler2DArray:
-            mangledName += "is2a";
-            break;
-        case EbtISampler2DMS:
-            mangledName += "is2ms";
-            break;
-        case EbtUSampler2D:
-            mangledName += "us2";
-            break;
-        case EbtUSampler3D:
-            mangledName += "us3";
-            break;
-        case EbtUSamplerCube:
-            mangledName += "usC";
-            break;
-        case EbtUSampler2DArray:
-            mangledName += "us2a";
-            break;
-        case EbtUSampler2DMS:
-            mangledName += "us2ms";
-            break;
-        case EbtSampler2DShadow:
-            mangledName += "s2s";
-            break;
-        case EbtSamplerCubeShadow:
-            mangledName += "sCs";
-            break;
-        case EbtSampler2DArrayShadow:
-            mangledName += "s2as";
-            break;
-        case EbtImage2D:
-            mangledName += "im2";
-            break;
-        case EbtIImage2D:
-            mangledName += "iim2";
-            break;
-        case EbtUImage2D:
-            mangledName += "uim2";
-            break;
-        case EbtImage3D:
-            mangledName += "im3";
-            break;
-        case EbtIImage3D:
-            mangledName += "iim3";
-            break;
-        case EbtUImage3D:
-            mangledName += "uim3";
-            break;
-        case EbtImage2DArray:
-            mangledName += "im2a";
-            break;
-        case EbtIImage2DArray:
-            mangledName += "iim2a";
-            break;
-        case EbtUImage2DArray:
-            mangledName += "uim2a";
-            break;
-        case EbtImageCube:
-            mangledName += "imc";
-            break;
-        case EbtIImageCube:
-            mangledName += "iimc";
-            break;
-        case EbtUImageCube:
-            mangledName += "uimc";
-            break;
-        case EbtAtomicCounter:
-            mangledName += "ac";
-            break;
-        case EbtStruct:
-            mangledName += structure->mangledName();
-            break;
-        case EbtInterfaceBlock:
-            mangledName += interfaceBlock->mangledName();
-            break;
-        default:
-            // EbtVoid, EbtAddress and non types
-            break;
+        mangledName += basicMangledName;
+    }
+    else
+    {
+        ASSERT(type == EbtStruct || type == EbtInterfaceBlock);
+        switch (type)
+        {
+            case EbtStruct:
+                mangledName += mStructure->mangledName();
+                break;
+            case EbtInterfaceBlock:
+                mangledName += mInterfaceBlock->mangledName();
+                break;
+            default:
+                UNREACHABLE();
+                break;
+        }
     }
 
     if (isMatrix())
@@ -447,15 +466,25 @@ TString TType::buildMangledName() const
         mangledName += static_cast<char>('0' + getNominalSize());
     }
 
-    for (unsigned int arraySize : mArraySizes)
+    if (mArraySizes)
     {
-        char buf[20];
-        snprintf(buf, sizeof(buf), "%d", arraySize);
-        mangledName += '[';
-        mangledName += buf;
-        mangledName += ']';
+        for (unsigned int arraySize : *mArraySizes)
+        {
+            char buf[20];
+            snprintf(buf, sizeof(buf), "%d", arraySize);
+            mangledName += '[';
+            mangledName += buf;
+            mangledName += ']';
+        }
     }
-    return mangledName;
+
+    mangledName += ';';
+
+    // Copy string contents into a pool-allocated buffer, so we never need to call delete.
+    size_t requiredSize = mangledName.size() + 1;
+    char *buffer = reinterpret_cast<char *>(GetGlobalPoolAllocator()->allocate(requiredSize));
+    memcpy(buffer, mangledName.c_str(), requiredSize);
+    return buffer;
 }
 
 size_t TType::getObjectSize() const
@@ -463,19 +492,22 @@ size_t TType::getObjectSize() const
     size_t totalSize;
 
     if (getBasicType() == EbtStruct)
-        totalSize = structure->objectSize();
+        totalSize = mStructure->objectSize();
     else
         totalSize = primarySize * secondarySize;
 
     if (totalSize == 0)
         return 0;
 
-    for (size_t arraySize : mArraySizes)
+    if (mArraySizes)
     {
-        if (arraySize > INT_MAX / totalSize)
-            totalSize = INT_MAX;
-        else
-            totalSize *= arraySize;
+        for (size_t arraySize : *mArraySizes)
+        {
+            if (arraySize > INT_MAX / totalSize)
+                totalSize = INT_MAX;
+            else
+                totalSize *= arraySize;
+        }
     }
 
     return totalSize;
@@ -487,7 +519,7 @@ int TType::getLocationCount() const
 
     if (getBasicType() == EbtStruct)
     {
-        count = structure->getLocationCount();
+        count = mStructure->getLocationCount();
     }
 
     if (count == 0)
@@ -495,15 +527,18 @@ int TType::getLocationCount() const
         return 0;
     }
 
-    for (unsigned int arraySize : mArraySizes)
+    if (mArraySizes)
     {
-        if (arraySize > static_cast<unsigned int>(std::numeric_limits<int>::max() / count))
+        for (unsigned int arraySize : *mArraySizes)
         {
-            count = std::numeric_limits<int>::max();
-        }
-        else
-        {
-            count *= static_cast<int>(arraySize);
+            if (arraySize > static_cast<unsigned int>(std::numeric_limits<int>::max() / count))
+            {
+                count = std::numeric_limits<int>::max();
+            }
+            else
+            {
+                count *= static_cast<int>(arraySize);
+            }
         }
     }
 
@@ -512,8 +547,12 @@ int TType::getLocationCount() const
 
 unsigned int TType::getArraySizeProduct() const
 {
+    if (!mArraySizes)
+        return 1u;
+
     unsigned int product = 1u;
-    for (unsigned int arraySize : mArraySizes)
+
+    for (unsigned int arraySize : *mArraySizes)
     {
         product *= arraySize;
     }
@@ -522,7 +561,10 @@ unsigned int TType::getArraySizeProduct() const
 
 bool TType::isUnsizedArray() const
 {
-    for (unsigned int arraySize : mArraySizes)
+    if (!mArraySizes)
+        return false;
+
+    for (unsigned int arraySize : *mArraySizes)
     {
         if (arraySize == 0u)
         {
@@ -535,7 +577,7 @@ bool TType::isUnsizedArray() const
 bool TType::sameNonArrayType(const TType &right) const
 {
     return (type == right.type && primarySize == right.primarySize &&
-            secondarySize == right.secondarySize && structure == right.structure);
+            secondarySize == right.secondarySize && mStructure == right.mStructure);
 }
 
 bool TType::isElementTypeOf(const TType &arrayType) const
@@ -544,45 +586,169 @@ bool TType::isElementTypeOf(const TType &arrayType) const
     {
         return false;
     }
-    if (arrayType.mArraySizes.size() != mArraySizes.size() + 1u)
+    if (arrayType.getNumArraySizes() != getNumArraySizes() + 1u)
     {
         return false;
     }
-    for (size_t i = 0; i < mArraySizes.size(); ++i)
+    if (isArray())
     {
-        if (mArraySizes[i] != arrayType.mArraySizes[i])
+        for (size_t i = 0; i < mArraySizes->size(); ++i)
         {
-            return false;
+            if ((*mArraySizes)[i] != (*arrayType.mArraySizes)[i])
+            {
+                return false;
+            }
         }
     }
     return true;
 }
 
-void TType::sizeUnsizedArrays(const TVector<unsigned int> &arraySizes)
+void TType::sizeUnsizedArrays(const TVector<unsigned int> *newArraySizes)
 {
-    for (size_t i = 0u; i < mArraySizes.size(); ++i)
+    size_t newArraySizesSize = newArraySizes ? newArraySizes->size() : 0;
+    for (size_t i = 0u; i < getNumArraySizes(); ++i)
     {
-        if (mArraySizes[i] == 0)
+        if ((*mArraySizes)[i] == 0)
         {
-            if (i < arraySizes.size())
+            if (i < newArraySizesSize)
             {
-                mArraySizes[i] = arraySizes[i];
+                ASSERT(newArraySizes != nullptr);
+                (*mArraySizes)[i] = (*newArraySizes)[i];
             }
             else
             {
-                mArraySizes[i] = 1u;
+                (*mArraySizes)[i] = 1u;
             }
         }
     }
     invalidateMangledName();
 }
 
+void TType::sizeOutermostUnsizedArray(unsigned int arraySize)
+{
+    ASSERT(isArray());
+    ASSERT(mArraySizes->back() == 0u);
+    mArraySizes->back() = arraySize;
+}
+
+void TType::setBasicType(TBasicType t)
+{
+    if (type != t)
+    {
+        type = t;
+        invalidateMangledName();
+    }
+}
+
+void TType::setPrimarySize(unsigned char ps)
+{
+    if (primarySize != ps)
+    {
+        ASSERT(ps <= 4);
+        primarySize = ps;
+        invalidateMangledName();
+    }
+}
+
+void TType::setSecondarySize(unsigned char ss)
+{
+    if (secondarySize != ss)
+    {
+        ASSERT(ss <= 4);
+        secondarySize = ss;
+        invalidateMangledName();
+    }
+}
+
+void TType::makeArray(unsigned int s)
+{
+    if (!mArraySizes)
+        mArraySizes = new TVector<unsigned int>();
+
+    mArraySizes->push_back(s);
+    invalidateMangledName();
+}
+
+void TType::makeArrays(const TVector<unsigned int> &sizes)
+{
+    if (!mArraySizes)
+        mArraySizes = new TVector<unsigned int>();
+
+    mArraySizes->insert(mArraySizes->end(), sizes.begin(), sizes.end());
+    invalidateMangledName();
+}
+
+void TType::setArraySize(size_t arrayDimension, unsigned int s)
+{
+    ASSERT(mArraySizes != nullptr);
+    ASSERT(arrayDimension < mArraySizes->size());
+    if (mArraySizes->at(arrayDimension) != s)
+    {
+        (*mArraySizes)[arrayDimension] = s;
+        invalidateMangledName();
+    }
+}
+
+void TType::toArrayElementType()
+{
+    ASSERT(mArraySizes != nullptr);
+    if (mArraySizes->size() > 0)
+    {
+        mArraySizes->pop_back();
+        invalidateMangledName();
+    }
+}
+
+void TType::setInterfaceBlock(TInterfaceBlock *interfaceBlockIn)
+{
+    if (mInterfaceBlock != interfaceBlockIn)
+    {
+        mInterfaceBlock = interfaceBlockIn;
+        invalidateMangledName();
+    }
+}
+
+void TType::setStruct(TStructure *s)
+{
+    if (mStructure != s)
+    {
+        mStructure = s;
+        invalidateMangledName();
+    }
+}
+
+const char *TType::getMangledName() const
+{
+    if (mMangledName == nullptr)
+    {
+        mMangledName = buildMangledName();
+    }
+
+    return mMangledName;
+}
+
+void TType::realize()
+{
+    getMangledName();
+}
+
+void TType::invalidateMangledName()
+{
+    mMangledName = nullptr;
+}
+
+// TStructure implementation.
 TStructure::TStructure(TSymbolTable *symbolTable, const TString *name, TFieldList *fields)
     : TFieldListCollection(name, fields),
       mDeepestNesting(0),
       mUniqueId(symbolTable->nextUniqueId()),
       mAtGlobalScope(false)
 {
+}
+
+bool TStructure::equals(const TStructure &other) const
+{
+    return (uniqueId() == other.uniqueId());
 }
 
 bool TStructure::containsArrays() const
@@ -621,7 +787,8 @@ bool TStructure::containsSamplers() const
 void TType::createSamplerSymbols(const TString &namePrefix,
                                  const TString &apiNamePrefix,
                                  TVector<TIntermSymbol *> *outputSymbols,
-                                 TMap<TIntermSymbol *, TString> *outputSymbolsToAPINames) const
+                                 TMap<TIntermSymbol *, TString> *outputSymbolsToAPINames,
+                                 TSymbolTable *symbolTable) const
 {
     if (isStructureContainingSamplers())
     {
@@ -636,18 +803,20 @@ void TType::createSamplerSymbols(const TString &namePrefix,
                 TStringStream elementApiName;
                 elementApiName << apiNamePrefix << "[" << arrayIndex << "]";
                 elementType.createSamplerSymbols(elementName.str(), elementApiName.str(),
-                                                 outputSymbols, outputSymbolsToAPINames);
+                                                 outputSymbols, outputSymbolsToAPINames,
+                                                 symbolTable);
             }
         }
         else
         {
-            structure->createSamplerSymbols(namePrefix, apiNamePrefix, outputSymbols,
-                                            outputSymbolsToAPINames);
+            mStructure->createSamplerSymbols(namePrefix, apiNamePrefix, outputSymbols,
+                                             outputSymbolsToAPINames, symbolTable);
         }
         return;
     }
+
     ASSERT(IsSampler(type));
-    TIntermSymbol *symbol = new TIntermSymbol(0, namePrefix, *this);
+    TIntermSymbol *symbol = new TIntermSymbol(symbolTable->nextUniqueId(), namePrefix, *this);
     outputSymbols->push_back(symbol);
     if (outputSymbolsToAPINames)
     {
@@ -658,7 +827,8 @@ void TType::createSamplerSymbols(const TString &namePrefix,
 void TStructure::createSamplerSymbols(const TString &namePrefix,
                                       const TString &apiNamePrefix,
                                       TVector<TIntermSymbol *> *outputSymbols,
-                                      TMap<TIntermSymbol *, TString> *outputSymbolsToAPINames) const
+                                      TMap<TIntermSymbol *, TString> *outputSymbolsToAPINames,
+                                      TSymbolTable *symbolTable) const
 {
     ASSERT(containsSamplers());
     for (auto &field : *mFields)
@@ -669,7 +839,7 @@ void TStructure::createSamplerSymbols(const TString &namePrefix,
             TString fieldName    = namePrefix + "_" + field->name();
             TString fieldApiName = apiNamePrefix + "." + field->name();
             fieldType->createSamplerSymbols(fieldName, fieldApiName, outputSymbols,
-                                            outputSymbolsToAPINames);
+                                            outputSymbolsToAPINames, symbolTable);
         }
     }
 }
@@ -724,6 +894,71 @@ int TStructure::calculateDeepestNesting() const
     for (size_t i = 0; i < mFields->size(); ++i)
         maxNesting = std::max(maxNesting, (*mFields)[i]->type()->getDeepestStructNesting());
     return 1 + maxNesting;
+}
+
+// TPublicType implementation.
+void TPublicType::initialize(const TTypeSpecifierNonArray &typeSpecifier, TQualifier q)
+{
+    typeSpecifierNonArray = typeSpecifier;
+    layoutQualifier       = TLayoutQualifier::Create();
+    memoryQualifier       = TMemoryQualifier::Create();
+    qualifier             = q;
+    invariant             = false;
+    precision             = EbpUndefined;
+    arraySizes            = nullptr;
+}
+
+void TPublicType::initializeBasicType(TBasicType basicType)
+{
+    typeSpecifierNonArray.type          = basicType;
+    typeSpecifierNonArray.primarySize   = 1;
+    typeSpecifierNonArray.secondarySize = 1;
+    layoutQualifier                     = TLayoutQualifier::Create();
+    memoryQualifier                     = TMemoryQualifier::Create();
+    qualifier                           = EvqTemporary;
+    invariant                           = false;
+    precision                           = EbpUndefined;
+    arraySizes                          = nullptr;
+}
+
+bool TPublicType::isStructureContainingArrays() const
+{
+    if (!typeSpecifierNonArray.userDef)
+    {
+        return false;
+    }
+
+    return typeSpecifierNonArray.userDef->containsArrays();
+}
+
+bool TPublicType::isStructureContainingType(TBasicType t) const
+{
+    if (!typeSpecifierNonArray.userDef)
+    {
+        return false;
+    }
+
+    return typeSpecifierNonArray.userDef->containsType(t);
+}
+
+void TPublicType::setArraySizes(TVector<unsigned int> *sizes)
+{
+    arraySizes = sizes;
+}
+
+bool TPublicType::isArray() const
+{
+    return arraySizes && !arraySizes->empty();
+}
+
+void TPublicType::clearArrayness()
+{
+    arraySizes = nullptr;
+}
+
+bool TPublicType::isAggregate() const
+{
+    return isArray() || typeSpecifierNonArray.isMatrix() || typeSpecifierNonArray.isVector();
 }
 
 }  // namespace sh

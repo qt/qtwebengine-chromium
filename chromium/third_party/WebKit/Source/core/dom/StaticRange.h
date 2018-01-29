@@ -16,8 +16,7 @@ namespace blink {
 class Document;
 class ExceptionState;
 
-class CORE_EXPORT StaticRange final : public GarbageCollected<StaticRange>,
-                                      public ScriptWrappable {
+class CORE_EXPORT StaticRange final : public ScriptWrappable {
   DEFINE_WRAPPERTYPEINFO();
 
  public:
@@ -62,7 +61,7 @@ class CORE_EXPORT StaticRange final : public GarbageCollected<StaticRange>,
 
   Range* toRange(ExceptionState& = ASSERT_NO_EXCEPTION) const;
 
-  DECLARE_TRACE();
+  void Trace(blink::Visitor*);
 
  private:
   explicit StaticRange(Document&);

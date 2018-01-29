@@ -38,6 +38,8 @@ enum class SkSVGAttribute {
     kStopColor,
     kStopOpacity,
     kStroke,
+    kStrokeDashArray,
+    kStrokeDashOffset,
     kStrokeOpacity,
     kStrokeLineCap,
     kStrokeLineJoin,
@@ -45,6 +47,7 @@ enum class SkSVGAttribute {
     kStrokeWidth,
     kTransform,
     kViewBox,
+    kVisibility,
     kWidth,
     kX,
     kX1, // <line>: first endpoint x
@@ -67,11 +70,15 @@ struct SkSVGPresentationAttributes {
     SkTLazy<SkSVGFillRule>   fClipRule;
 
     SkTLazy<SkSVGPaint>      fStroke;
+    SkTLazy<SkSVGDashArray>  fStrokeDashArray;
+    SkTLazy<SkSVGLength>     fStrokeDashOffset;
     SkTLazy<SkSVGLineCap>    fStrokeLineCap;
     SkTLazy<SkSVGLineJoin>   fStrokeLineJoin;
     SkTLazy<SkSVGNumberType> fStrokeMiterLimit;
     SkTLazy<SkSVGNumberType> fStrokeOpacity;
     SkTLazy<SkSVGLength>     fStrokeWidth;
+
+    SkTLazy<SkSVGVisibility> fVisibility;
 
     // uninherited
     SkTLazy<SkSVGNumberType> fOpacity;

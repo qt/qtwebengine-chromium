@@ -50,10 +50,11 @@ MediaStreamAudioSourceHandler::MediaStreamAudioSourceHandler(
   Initialize();
 }
 
-RefPtr<MediaStreamAudioSourceHandler> MediaStreamAudioSourceHandler::Create(
+scoped_refptr<MediaStreamAudioSourceHandler>
+MediaStreamAudioSourceHandler::Create(
     AudioNode& node,
     std::unique_ptr<AudioSourceProvider> audio_source_provider) {
-  return WTF::AdoptRef(new MediaStreamAudioSourceHandler(
+  return base::AdoptRef(new MediaStreamAudioSourceHandler(
       node, std::move(audio_source_provider)));
 }
 
@@ -175,7 +176,7 @@ MediaStreamAudioSourceNode* MediaStreamAudioSourceNode::Create(
   return Create(*context, *options.mediaStream(), exception_state);
 }
 
-DEFINE_TRACE(MediaStreamAudioSourceNode) {
+void MediaStreamAudioSourceNode::Trace(blink::Visitor* visitor) {
   visitor->Trace(audio_track_);
   visitor->Trace(media_stream_);
   AudioSourceProviderClient::Trace(visitor);

@@ -55,7 +55,8 @@ ServiceWorkerDevToolsAgentHost::ServiceWorkerDevToolsAgentHost(
     WorkerId worker_id,
     const ServiceWorkerIdentifier& service_worker,
     bool is_installed_version)
-    : WorkerDevToolsAgentHost(worker_id),
+    : WorkerDevToolsAgentHost(service_worker.devtools_worker_token(),
+                              worker_id),
       service_worker_(new ServiceWorkerIdentifier(service_worker)),
       version_installed_time_(is_installed_version ? base::Time::Now()
                                                    : base::Time()) {
@@ -136,9 +137,9 @@ void ServiceWorkerDevToolsAgentHost::NavigationPreloadResponseReceived(
 
 void ServiceWorkerDevToolsAgentHost::NavigationPreloadCompleted(
     const std::string& request_id,
-    const ResourceRequestCompletionStatus& completion_status) {
+    const network::URLLoaderCompletionStatus& status) {
   for (auto* network : protocol::NetworkHandler::ForAgentHost(this))
-    network->NavigationPreloadCompleted(request_id, completion_status);
+    network->NavigationPreloadCompleted(request_id, status);
 }
 
 int64_t ServiceWorkerDevToolsAgentHost::service_worker_version_id() const {

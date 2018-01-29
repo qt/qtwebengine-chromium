@@ -12,6 +12,7 @@
 #include "base/memory/ptr_util.h"
 #include "base/trace_event/trace_event.h"
 #include "base/trace_event/trace_event_argument.h"
+#include "components/exo/client_controlled_shell_surface.h"
 #include "components/exo/data_device.h"
 #include "components/exo/file_helper.h"
 #include "components/exo/notification_surface.h"
@@ -20,6 +21,7 @@
 #include "components/exo/shell_surface.h"
 #include "components/exo/sub_surface.h"
 #include "components/exo/surface.h"
+#include "components/exo/xdg_shell_surface.h"
 #include "ui/views/widget/widget.h"
 #include "ui/wm/core/coordinate_conversion.h"
 
@@ -138,50 +140,32 @@ std::unique_ptr<Buffer> Display::CreateLinuxDMABufBuffer(
 std::unique_ptr<ShellSurface> Display::CreateShellSurface(Surface* surface) {
   TRACE_EVENT1("exo", "Display::CreateShellSurface", "surface",
                surface->AsTracedValue());
-
   if (surface->HasSurfaceDelegate()) {
     DLOG(ERROR) << "Surface has already been assigned a role";
     return nullptr;
   }
 
   return std::make_unique<ShellSurface>(
-      surface, nullptr, ShellSurface::BoundsMode::SHELL, gfx::Point(),
-      true /* activatable */, false /* can_minimize */,
+      surface, gfx::Point(), true /* activatable */, false /* can_minimize */,
       ash::kShellWindowId_DefaultContainer);
 }
 
-std::unique_ptr<ShellSurface> Display::CreatePopupShellSurface(
-    Surface* surface,
-    ShellSurface* parent,
-    const gfx::Point& position) {
-  TRACE_EVENT2("exo", "Display::CreatePopupShellSurface", "surface",
-               surface->AsTracedValue(), "parent", parent->AsTracedValue());
-
-  if (surface->window()->Contains(parent->GetWidget()->GetNativeWindow())) {
-    DLOG(ERROR) << "Parent is contained within surface's hierarchy";
-    return nullptr;
-  }
-
+std::unique_ptr<XdgShellSurface> Display::CreateXdgShellSurface(
+    Surface* surface) {
+  TRACE_EVENT1("exo", "Display::CreateXdgShellSurface", "surface",
+               surface->AsTracedValue());
   if (surface->HasSurfaceDelegate()) {
     DLOG(ERROR) << "Surface has already been assigned a role";
     return nullptr;
   }
 
-  // |position| is relative to the parent's main surface origin, and |origin| is
-  // in screen coordinates.
-  gfx::Point origin = position;
-  wm::ConvertPointToScreen(
-      ShellSurface::GetMainSurface(parent->GetWidget()->GetNativeWindow())
-          ->window(),
-      &origin);
-
-  return std::make_unique<ShellSurface>(
-      surface, parent, ShellSurface::BoundsMode::FIXED, origin,
-      false /* activatable */, false /* can_minimize */,
+  return std::make_unique<XdgShellSurface>(
+      surface, gfx::Point(), true /* activatable */, false /* can_minimize */,
       ash::kShellWindowId_DefaultContainer);
 }
 
-std::unique_ptr<ShellSurface> Display::CreateRemoteShellSurface(
+std::unique_ptr<ClientControlledShellSurface>
+Display::CreateClientControlledShellSurface(
     Surface* surface,
     int container,
     double default_device_scale_factor) {
@@ -196,9 +180,9 @@ std::unique_ptr<ShellSurface> Display::CreateRemoteShellSurface(
   // Remote shell surfaces in system modal container cannot be minimized.
   bool can_minimize = container != ash::kShellWindowId_SystemModalContainer;
 
-  std::unique_ptr<ShellSurface> shell_surface(std::make_unique<ShellSurface>(
-      surface, nullptr, ShellSurface::BoundsMode::CLIENT, gfx::Point(),
-      true /* activatable */, can_minimize, container));
+  std::unique_ptr<ClientControlledShellSurface> shell_surface(
+      std::make_unique<ClientControlledShellSurface>(surface, can_minimize,
+                                                     container));
   DCHECK_GE(default_device_scale_factor, 1.0);
   shell_surface->SetScale(default_device_scale_factor);
   return shell_surface;
@@ -240,7 +224,7 @@ std::unique_ptr<NotificationSurface> Display::CreateNotificationSurface(
 
 std::unique_ptr<DataDevice> Display::CreateDataDevice(
     DataDeviceDelegate* delegate) {
-  return std::make_unique<DataDevice>(delegate, file_helper_.get());
+  return std::make_unique<DataDevice>(delegate, &seat_, file_helper_.get());
 }
 
 }  // namespace exo

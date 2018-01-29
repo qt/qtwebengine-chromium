@@ -25,7 +25,7 @@
 
 #include "core/layout/LayoutTreeAsText.h"
 
-#include "core/css/StylePropertySet.h"
+#include "core/css/CSSPropertyValueSet.h"
 #include "core/dom/Document.h"
 #include "core/dom/PseudoElement.h"
 #include "core/editing/FrameSelection.h"
@@ -47,7 +47,6 @@
 #include "core/layout/api/LayoutViewItem.h"
 #include "core/layout/line/InlineTextBox.h"
 #include "core/layout/ng/layout_ng_list_item.h"
-#include "core/layout/svg/LayoutSVGGradientStop.h"
 #include "core/layout/svg/LayoutSVGImage.h"
 #include "core/layout/svg/LayoutSVGInline.h"
 #include "core/layout/svg/LayoutSVGInlineText.h"
@@ -452,10 +451,6 @@ void Write(TextStream& ts,
     Write(ts, ToLayoutSVGShape(o), indent);
     return;
   }
-  if (o.IsSVGGradientStop()) {
-    WriteSVGGradientStop(ts, ToLayoutSVGGradientStop(o), indent);
-    return;
-  }
   if (o.IsSVGResourceContainer()) {
     WriteSVGResourceContainer(ts, o, indent);
     return;
@@ -827,12 +822,13 @@ String ExternalRepresentation(LocalFrame* frame,
   LayoutObject* layout_object = frame->ContentLayoutObject();
   if (!layout_object || !layout_object->IsBox())
     return String();
+  LayoutBox* layout_box = ToLayoutBox(layout_object);
 
   PrintContext print_context(frame);
   bool is_text_printing_mode = !!(behavior & kLayoutAsTextPrintingMode);
   if (is_text_printing_mode) {
-    FloatSize size(ToLayoutBox(layout_object)->Size());
-    print_context.BeginPrintMode(size.Width(), size.Height());
+    print_context.BeginPrintMode(layout_box->ClientWidth(),
+                                 layout_box->ClientHeight());
   }
 
   String representation = ExternalRepresentation(ToLayoutBox(layout_object),

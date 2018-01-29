@@ -128,6 +128,7 @@ class CONTENT_EXPORT RenderWidgetHostViewAndroid
   bool DoBrowserControlsShrinkBlinkSize() const override;
   float GetTopControlsHeight() const override;
   float GetBottomControlsHeight() const override;
+  int GetMouseWheelMinimumGranularity() const override;
   void UpdateCursor(const WebCursor& cursor) override;
   void SetIsLoading(bool is_loading) override;
   void FocusedNodeChanged(bool is_editable_node,
@@ -155,8 +156,10 @@ class CONTENT_EXPORT RenderWidgetHostViewAndroid
   void DidCreateNewRendererCompositorFrameSink(
       viz::mojom::CompositorFrameSinkClient* renderer_compositor_frame_sink)
       override;
-  void SubmitCompositorFrame(const viz::LocalSurfaceId& local_surface_id,
-                             viz::CompositorFrame frame) override;
+  void SubmitCompositorFrame(
+      const viz::LocalSurfaceId& local_surface_id,
+      viz::CompositorFrame frame,
+      viz::mojom::HitTestRegionListPtr hit_test_region_list) override;
   void OnDidNotProduceFrame(const viz::BeginFrameAck& ack) override;
   void ClearCompositorFrame() override;
   void SetIsInVR(bool is_in_vr) override;
@@ -171,8 +174,8 @@ class CONTENT_EXPORT RenderWidgetHostViewAndroid
   void SetNeedsBeginFrames(bool needs_begin_frames) override;
   viz::FrameSinkId GetFrameSinkId() override;
   viz::FrameSinkId FrameSinkIdAtPoint(viz::SurfaceHittestDelegate* delegate,
-                                      const gfx::Point& point,
-                                      gfx::Point* transformed_point) override;
+                                      const gfx::PointF& point,
+                                      gfx::PointF* transformed_point) override;
   void ProcessMouseEvent(const blink::WebMouseEvent& event,
                          const ui::LatencyInfo& latency) override;
   void ProcessMouseWheelEvent(const blink::WebMouseWheelEvent& event,
@@ -181,13 +184,13 @@ class CONTENT_EXPORT RenderWidgetHostViewAndroid
                          const ui::LatencyInfo& latency) override;
   void ProcessGestureEvent(const blink::WebGestureEvent& event,
                            const ui::LatencyInfo& latency) override;
-  bool TransformPointToLocalCoordSpace(const gfx::Point& point,
+  bool TransformPointToLocalCoordSpace(const gfx::PointF& point,
                                        const viz::SurfaceId& original_surface,
-                                       gfx::Point* transformed_point) override;
+                                       gfx::PointF* transformed_point) override;
   bool TransformPointToCoordSpaceForView(
-      const gfx::Point& point,
+      const gfx::PointF& point,
       RenderWidgetHostViewBase* target_view,
-      gfx::Point* transformed_point) override;
+      gfx::PointF* transformed_point) override;
   TouchSelectionControllerClientManager*
   GetTouchSelectionControllerClientManager() override;
 
@@ -195,6 +198,7 @@ class CONTENT_EXPORT RenderWidgetHostViewAndroid
   bool OnTouchEvent(const ui::MotionEventAndroid& m) override;
   bool OnMouseEvent(const ui::MotionEventAndroid& m) override;
   bool OnMouseWheelEvent(const ui::MotionEventAndroid& event) override;
+  bool OnGestureEvent(const ui::GestureEventAndroid& event) override;
   void OnPhysicalBackingSizeChanged() override;
 
   // ui::ViewAndroidObserver implementation:
@@ -238,6 +242,7 @@ class CONTENT_EXPORT RenderWidgetHostViewAndroid
   void DidReceiveCompositorFrameAck() override;
   void ReclaimResources(
       const std::vector<viz::ReturnedResource>& resources) override;
+  void OnFrameTokenChanged(uint32_t frame_token) override;
 
   // viz::BeginFrameObserver implementation.
   void OnBeginFrame(const viz::BeginFrameArgs& args) override;
@@ -378,9 +383,9 @@ class CONTENT_EXPORT RenderWidgetHostViewAndroid
 
   void CreateOverscrollControllerIfPossible();
 
-  void UpdateLeftClickCount(int action_button,
-                            float mousedown_x,
-                            float mouse_down_y);
+  void UpdateMouseState(int action_button,
+                        float mousedown_x,
+                        float mouse_down_y);
 
   WebContentsAccessibilityAndroid* GetWebContentsAccessibilityAndroid() const;
 
@@ -472,6 +477,9 @@ class CONTENT_EXPORT RenderWidgetHostViewAndroid
 
   float prev_top_shown_pix_;
   float prev_bottom_shown_pix_;
+  float page_scale_;
+  float min_page_scale_;
+  float max_page_scale_;
 
   base::TimeTicks prev_mousedown_timestamp_;
   gfx::Point prev_mousedown_point_;

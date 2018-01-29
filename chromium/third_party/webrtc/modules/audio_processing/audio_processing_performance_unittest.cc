@@ -19,9 +19,9 @@
 #include "modules/audio_processing/test/test_utils.h"
 #include "modules/include/module_common_types.h"
 #include "rtc_base/atomicops.h"
+#include "rtc_base/numerics/safe_conversions.h"
 #include "rtc_base/platform_thread.h"
 #include "rtc_base/random.h"
-#include "rtc_base/safe_conversions.h"
 #include "system_wrappers/include/clock.h"
 #include "system_wrappers/include/event_wrapper.h"
 #include "test/gtest.h"
@@ -260,31 +260,18 @@ class TimedThreadApiProcessor {
   void print_processor_statistics(const std::string& processor_name) const {
     const std::string modifier = "_api_call_duration";
 
-    // Lambda function for creating a test printout string.
-    auto create_mean_and_std_string = [](int64_t average,
-                                         int64_t standard_dev) {
-      std::string s = std::to_string(average);
-      s += ", ";
-      s += std::to_string(standard_dev);
-      return s;
-    };
-
     const std::string sample_rate_name =
         "_" + std::to_string(simulation_config_->sample_rate_hz) + "Hz";
 
     webrtc::test::PrintResultMeanAndError(
         "apm_timing", sample_rate_name, processor_name,
-        create_mean_and_std_string(GetDurationAverage(),
-                                   GetDurationStandardDeviation()),
+        GetDurationAverage(), GetDurationStandardDeviation(),
         "us", false);
 
     if (kPrintAllDurations) {
-      std::string value_string = "";
-      for (int64_t duration : api_call_durations_) {
-        value_string += std::to_string(duration) + ",";
-      }
       webrtc::test::PrintResultList("apm_call_durations", sample_rate_name,
-                                    processor_name, value_string, "us", false);
+                                    processor_name, api_call_durations_, "us",
+                                    false);
     }
   }
 
@@ -442,7 +429,7 @@ class TimedThreadApiProcessor {
   AudioFrameData frame_data_;
   webrtc::Clock* clock_;
   const size_t num_durations_to_store_;
-  std::vector<int64_t> api_call_durations_;
+  std::vector<double> api_call_durations_;
   const float input_level_;
   bool first_process_call_ = true;
   const ProcessorType processor_type_;

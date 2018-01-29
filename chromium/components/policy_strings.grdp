@@ -143,8 +143,8 @@
   <message name="IDS_POLICY_VALUE_FORMAT_ERROR" desc="The text displayed in the status column when a policy value doesn't match the expected format.">
     Value doesn't match format.
   </message>
-  <message name="IDS_POLICY_DEFAULT_SEARCH_DISABLED" desc="The text displayed in the status column when a policy value has been ignored because default search has been disabled.">
-    Ignored because default search is disabled by policy.
+  <message name="IDS_POLICY_DEFAULT_SEARCH_DISABLED" desc="The text displayed in the status column when a policy value has been ignored because default search has not been enabled.">
+    Ignored because default search is not enabled by policy.
   </message>
   <message name="IDS_POLICY_NOT_SPECIFIED_ERROR" desc="The text displayed in the status column when a policy value should have been specified but wasn't.">
     Must be specified.
@@ -251,6 +251,9 @@
   </message>
   <message name="IDS_POLICY_TOOL_CORRUPTED_FILE" desc="A message that is shown to the user when the session file is corrupted.">
     The file seems to be corrupted. Click the 'Reset' button to reset the session.
+  </message>
+  <message name="IDS_POLICY_TOOL_DELETE_FAILED" desc="A message that is shown to the user when deleting the session fails because the session name that is sent from Javascript is invalid.">
+    The session with this name is not valid for deletion.
   </message>
   <!-- chrome://policy -->
   <message name="IDS_POLICY_TITLE" desc="Page title and the title of the section that lists policies.">

@@ -49,8 +49,7 @@ class StringOrTrustedURL;
 // remote frames.
 //
 // HTML standard: https://whatwg.org/C/browsers.html#the-location-interface
-class CORE_EXPORT Location final : public GarbageCollected<Location>,
-                                   public ScriptWrappable {
+class CORE_EXPORT Location final : public ScriptWrappable {
   DEFINE_WRAPPERTYPEINFO();
 
  public:
@@ -123,7 +122,7 @@ class CORE_EXPORT Location final : public GarbageCollected<Location>,
 
   String toString() const;
 
-  DECLARE_VIRTUAL_TRACE();
+  virtual void Trace(blink::Visitor*);
 
  private:
   explicit Location(DOMWindow*);

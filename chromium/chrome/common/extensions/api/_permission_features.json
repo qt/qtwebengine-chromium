@@ -366,14 +366,6 @@
     "channel": "stable",
     "extension_types": ["extension", "legacy_packaged_app"]
   },
-  "hotwordPrivate": {
-    "channel": "stable",
-    "extension_types": ["extension", "platform_app"],
-    "whitelist": [
-      "62CCAAD339E6451BBF97C4BBDF758E934A05AD0B",  // hotword component
-      "B6356EFF4047BC5F868C7D91868B6F5C01951A8A"   // hotword_audio_verification
-    ]
-  },
   "identity": {
     "channel": "stable",
     "extension_types": ["extension", "platform_app"]
@@ -423,6 +415,21 @@
     "platforms": ["chromeos"],
     "whitelist": [
       "A948368FC53BE437A55FEB414106E207925482F5"  // File Manager
+    ]
+  },
+  "lockWindowFullscreenPrivate": {
+    "channel": "stable",
+    "component_extensions_auto_granted": false,
+    "extension_types": ["extension"],
+    "platforms": ["chromeos"],
+    "whitelist": [
+      "6A4A0389E8D47118E96E6221B0B7221CA3715801",  // Apitest extension
+      "EC8EA268128FECE14CEC68B90686D87755D87083",  // Assessment Assistant
+      "AA1C88257F51F7A9AFB947720AACE8CA7E9CF85C",  // Assessment Assistant (dev)
+      "A4577D8C2AF4CF26F40CBCA83FFA4251D6F6C8F8",  // Share to Classroom
+      "EFCF5358672FEE04789FD2EC3638A67ADEDB6C8C",  // Share to Classroom (test)
+      "A8208CCC87F8261AFAEB6B85D5E8D47372DDEA6B"   // Share to Classroom
+                                                   // (staging)
     ]
   },
   "webcamPrivate": {
@@ -805,7 +812,7 @@
   },
   "webrtcLoggingPrivate": {
     "channel": "stable",
-    "extension_types": ["extension"],
+    "extension_types": ["extension", "platform_app"],
     "whitelist": [
       // Hangouts test extension
       "80B9DC58E5210749F052F5B4DB239C50CF72AEB6",
@@ -814,7 +821,27 @@
       // Media Router dev extension
       "63ED55E43214C211F82122ED56407FF1A807F2A3",
       // Media Router release extension
-      "226CF815E39A363090A1E547D53063472B8279FA"
+      "226CF815E39A363090A1E547D53063472B8279FA",
+      // Extension used for API test.
+      "ADFA45434ABA2F1A4647E673F53FF37F8F6047A3",
+      "4F25792AF1AA7483936DE29C07806F203C7170A0",  // http://crbug.com/777967
+      "BD8781D757D830FC2E85470A1B6E8A718B7EE0D9",  // http://crbug.com/777967
+      "4AC2B6C63C6480D150DFDA13E4A5956EB1D0DDBB",  // http://crbug.com/777967
+      "81986D4F846CEDDDB962643FA501D1780DD441BB"   // http://crbug.com/777967
+    ]
+  },
+  "webrtcLoggingPrivate.audioDebug": {
+    "channel": "stable",
+    "extension_types": ["platform_app"],
+    "component_extensions_auto_granted": false,
+    "whitelist": [
+      // Extension used for API test.
+      "ADFA45434ABA2F1A4647E673F53FF37F8F6047A3",
+      // These apps are for internal Google use only.
+      "4F25792AF1AA7483936DE29C07806F203C7170A0",  // http://crbug.com/777967
+      "BD8781D757D830FC2E85470A1B6E8A718B7EE0D9",  // http://crbug.com/777967
+      "4AC2B6C63C6480D150DFDA13E4A5956EB1D0DDBB",  // http://crbug.com/777967
+      "81986D4F846CEDDDB962643FA501D1780DD441BB"   // http://crbug.com/777967
     ]
   },
   "webstorePrivate": {

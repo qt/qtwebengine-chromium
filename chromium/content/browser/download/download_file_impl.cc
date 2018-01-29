@@ -18,19 +18,15 @@
 #include "content/browser/download/download_create_info.h"
 #include "content/browser/download/download_destination_observer.h"
 #include "content/browser/download/download_interrupt_reasons_impl.h"
-#include "content/browser/download/download_net_log_parameters.h"
 #include "content/browser/download/download_stats.h"
 #include "content/browser/download/download_utils.h"
 #include "content/browser/download/parallel_download_utils.h"
 #include "content/public/browser/browser_thread.h"
+#include "content/public/common/content_features.h"
 #include "crypto/secure_hash.h"
 #include "crypto/sha2.h"
 #include "mojo/public/c/system/types.h"
 #include "net/base/io_buffer.h"
-#include "net/log/net_log.h"
-#include "net/log/net_log_event_type.h"
-#include "net/log/net_log_source.h"
-#include "net/log/net_log_source_type.h"
 
 namespace content {
 
@@ -78,12 +74,12 @@ DownloadFileImpl::SourceStream::~SourceStream() = default;
 void DownloadFileImpl::SourceStream::Initialize() {
   if (stream_handle_.is_null())
     return;
-  binding_ = base::MakeUnique<mojo::Binding<mojom::DownloadStreamClient>>(
+  binding_ = std::make_unique<mojo::Binding<mojom::DownloadStreamClient>>(
       this, std::move(stream_handle_->client_request));
   binding_->set_connection_error_handler(base::Bind(
       &DownloadFileImpl::SourceStream::OnStreamCompleted,
       base::Unretained(this), mojom::NetworkRequestStatus::USER_CANCELED));
-  handle_watcher_ = base::MakeUnique<mojo::SimpleWatcher>(
+  handle_watcher_ = std::make_unique<mojo::SimpleWatcher>(
       FROM_HERE, mojo::SimpleWatcher::ArmingPolicy::AUTOMATIC);
 }
 
@@ -200,25 +196,22 @@ DownloadFileImpl::DownloadFileImpl(
     std::unique_ptr<DownloadSaveInfo> save_info,
     const base::FilePath& default_download_directory,
     std::unique_ptr<DownloadManager::InputStream> stream,
-    const net::NetLogWithSource& download_item_net_log,
+    uint32_t download_id,
     base::WeakPtr<DownloadDestinationObserver> observer)
     : DownloadFileImpl(std::move(save_info),
                        default_download_directory,
-                       download_item_net_log,
+                       download_id,
                        observer) {
-  source_streams_[save_info_->offset] = base::MakeUnique<SourceStream>(
+  source_streams_[save_info_->offset] = std::make_unique<SourceStream>(
       save_info_->offset, save_info_->length, std::move(stream));
 }
 
 DownloadFileImpl::DownloadFileImpl(
     std::unique_ptr<DownloadSaveInfo> save_info,
     const base::FilePath& default_download_directory,
-    const net::NetLogWithSource& download_item_net_log,
+    uint32_t download_id,
     base::WeakPtr<DownloadDestinationObserver> observer)
-    : net_log_(
-          net::NetLogWithSource::Make(download_item_net_log.net_log(),
-                                      net::NetLogSourceType::DOWNLOAD_FILE)),
-      file_(net_log_),
+    : file_(download_id),
       save_info_(std::move(save_info)),
       default_download_directory_(default_download_directory),
       potential_file_length_(kUnknownContentLength),
@@ -227,14 +220,14 @@ DownloadFileImpl::DownloadFileImpl(
       record_stream_bandwidth_(false),
       bytes_seen_with_parallel_streams_(0),
       bytes_seen_without_parallel_streams_(0),
+      is_paused_(false),
+      download_id_(download_id),
       observer_(observer),
       weak_factory_(this) {
-  download_item_net_log.AddEvent(
-      net::NetLogEventType::DOWNLOAD_FILE_CREATED,
-      net_log_.source().ToEventParametersCallback());
-  net_log_.BeginEvent(
-      net::NetLogEventType::DOWNLOAD_FILE_ACTIVE,
-      download_item_net_log.source().ToEventParametersCallback());
+  TRACE_EVENT_INSTANT0("download", "DownloadFileCreated",
+                       TRACE_EVENT_SCOPE_THREAD);
+  TRACE_EVENT_NESTABLE_ASYNC_BEGIN0("download", "DownloadFileActive",
+                                    download_id);
 
   DETACH_FROM_SEQUENCE(sequence_checker_);
 }
@@ -242,7 +235,8 @@ DownloadFileImpl::DownloadFileImpl(
 DownloadFileImpl::~DownloadFileImpl() {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 
-  net_log_.EndEvent(net::NetLogEventType::DOWNLOAD_FILE_ACTIVE);
+  TRACE_EVENT_NESTABLE_ASYNC_END0("download", "DownloadFileActive",
+                                  download_id_);
 }
 
 void DownloadFileImpl::Initialize(
@@ -296,7 +290,7 @@ void DownloadFileImpl::AddInputStream(
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 
   source_streams_[offset] =
-      base::MakeUnique<SourceStream>(offset, length, std::move(stream));
+      std::make_unique<SourceStream>(offset, length, std::move(stream));
   OnSourceStreamAdded(source_streams_[offset].get());
 }
 
@@ -398,6 +392,22 @@ base::TimeDelta DownloadFileImpl::GetRetryDelayForFailedRename(
 
 bool DownloadFileImpl::ShouldRetryFailedRename(DownloadInterruptReason reason) {
   return reason == DOWNLOAD_INTERRUPT_REASON_FILE_TRANSIENT_ERROR;
+}
+
+DownloadInterruptReason DownloadFileImpl::HandleStreamCompletionStatus(
+    SourceStream* source_stream) {
+  DownloadInterruptReason reason = source_stream->GetCompletionStatus();
+  if (source_stream->length() == DownloadSaveInfo::kLengthFullContent &&
+      !received_slices_.empty() &&
+      (source_stream->offset() == received_slices_.back().offset +
+                                      received_slices_.back().received_bytes) &&
+      reason ==
+          DownloadInterruptReason::DOWNLOAD_INTERRUPT_REASON_SERVER_NO_RANGE) {
+    // We are probably reaching the end of the stream, don't treat this
+    // as an error.
+    return DOWNLOAD_INTERRUPT_REASON_NONE;
+  }
+  return reason;
 }
 
 void DownloadFileImpl::RenameWithRetryInternal(
@@ -504,15 +514,34 @@ bool DownloadFileImpl::InProgress() const {
   return file_.in_progress();
 }
 
-void DownloadFileImpl::WasPaused() {
+void DownloadFileImpl::Pause() {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  is_paused_ = true;
   record_stream_bandwidth_ = false;
 }
 
-// TODO(qinmin): This only works with byte stream now, need to handle callback
-// from data pipe.
+void DownloadFileImpl::Resume() {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  DCHECK(is_paused_);
+  is_paused_ = false;
+
+  if (!base::FeatureList::IsEnabled(features::kNetworkService))
+    return;
+
+  for (auto& stream : source_streams_) {
+    SourceStream* source_stream = stream.second.get();
+    if (!source_stream->is_finished()) {
+      StreamActive(source_stream, MOJO_RESULT_OK);
+    }
+  }
+}
+
 void DownloadFileImpl::StreamActive(SourceStream* source_stream,
                                     MojoResult result) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  if (base::FeatureList::IsEnabled(features::kNetworkService) && is_paused_)
+    return;
+
   base::TimeTicks start(base::TimeTicks::Now());
   base::TimeTicks now;
   scoped_refptr<net::IOBuffer> incoming_data;
@@ -595,25 +624,14 @@ void DownloadFileImpl::StreamActive(SourceStream* source_stream,
   else
     NotifyObserver(source_stream, reason, state, should_terminate);
 
-  if (net_log_.IsCapturing()) {
-    net_log_.AddEvent(net::NetLogEventType::DOWNLOAD_STREAM_DRAINED,
-                      base::Bind(&FileStreamDrainedNetLogCallback,
-                                 total_incoming_data_size, num_buffers));
-  }
+  TRACE_EVENT_INSTANT2("download", "DownloadStreamDrained",
+                       TRACE_EVENT_SCOPE_THREAD, "stream_size",
+                       total_incoming_data_size, "num_buffers", num_buffers);
 }
 
 void DownloadFileImpl::OnStreamCompleted(SourceStream* source_stream) {
-  DownloadInterruptReason reason = source_stream->GetCompletionStatus();
-  if (source_stream->length() == DownloadSaveInfo::kLengthFullContent &&
-      !received_slices_.empty() &&
-      (source_stream->offset() == received_slices_.back().offset +
-                                      received_slices_.back().received_bytes) &&
-      reason ==
-          DownloadInterruptReason::DOWNLOAD_INTERRUPT_REASON_SERVER_NO_RANGE) {
-    // We are probably reaching the end of the stream, don't treat this
-    // as an error.
-    reason = DOWNLOAD_INTERRUPT_REASON_NONE;
-  }
+  DownloadInterruptReason reason = HandleStreamCompletionStatus(source_stream);
+
   SendUpdate();
 
   NotifyObserver(source_stream, reason, SourceStream::COMPLETE, false);

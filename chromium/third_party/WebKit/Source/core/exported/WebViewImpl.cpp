@@ -32,6 +32,7 @@
 
 #include <memory>
 
+#include "base/memory/scoped_refptr.h"
 #include "build/build_config.h"
 #include "core/CSSValueKeywords.h"
 #include "core/CoreInitializer.h"
@@ -74,10 +75,10 @@
 #include "core/frame/VisualViewport.h"
 #include "core/frame/WebLocalFrameImpl.h"
 #include "core/fullscreen/Fullscreen.h"
-#include "core/html/HTMLMediaElement.h"
 #include "core/html/HTMLPlugInElement.h"
 #include "core/html/PluginDocument.h"
 #include "core/html/forms/HTMLTextAreaElement.h"
+#include "core/html/media/HTMLMediaElement.h"
 #include "core/html_names.h"
 #include "core/input/ContextMenuAllowedScope.h"
 #include "core/input/EventHandler.h"
@@ -90,6 +91,7 @@
 #include "core/loader/FrameLoadRequest.h"
 #include "core/loader/FrameLoader.h"
 #include "core/loader/FrameLoaderStateMachine.h"
+#include "core/loader/InteractiveDetector.h"
 #include "core/loader/PrerendererClient.h"
 #include "core/page/ChromeClientImpl.h"
 #include "core/page/ContextMenuController.h"
@@ -97,6 +99,7 @@
 #include "core/page/FocusController.h"
 #include "core/page/FrameTree.h"
 #include "core/page/Page.h"
+#include "core/page/PageLifecycleState.h"
 #include "core/page/PageOverlay.h"
 #include "core/page/PagePopupClient.h"
 #include "core/page/PointerLockController.h"
@@ -135,9 +138,8 @@
 #include "platform/scroll/ScrollbarTheme.h"
 #include "platform/weborigin/SchemeRegistry.h"
 #include "platform/wtf/AutoReset.h"
-#include "platform/wtf/CurrentTime.h"
 #include "platform/wtf/PtrUtil.h"
-#include "platform/wtf/RefPtr.h"
+#include "platform/wtf/Time.h"
 #include "public/platform/Platform.h"
 #include "public/platform/WebCompositeAndReadbackAsyncCallback.h"
 #include "public/platform/WebCompositorSupport.h"
@@ -168,6 +170,7 @@
 #include "public/web/WebSelection.h"
 #include "public/web/WebViewClient.h"
 #include "public/web/WebWindowFeatures.h"
+#include "third_party/WebKit/common/page/page_visibility_state.mojom-blink.h"
 
 #if defined(WTF_USE_DEFAULT_RENDER_THEME)
 #include "core/layout/LayoutThemeDefault.h"
@@ -190,6 +193,10 @@ static const float doubleTapZoomAlreadyLegibleRatio = 1.2f;
 
 static const double multipleTargetsZoomAnimationDurationInSeconds = 0.25;
 static const double findInPageAnimationDurationInSeconds = 0;
+
+// Constants for snapping to minimum zoom.
+static const double maximumZoomForSnapToMinimum = 1.05;
+static const double snapToMiminimumZoomAnimationDurationInSeconds = 0.2;
 
 // Constants for viewport anchoring on resize.
 static const float viewportAnchorCoordX = 0.5f;
@@ -222,19 +229,19 @@ const WebInputEvent* WebViewImpl::CurrentInputEvent() {
 // Used to defer all page activity in cases where the embedder wishes to run
 // a nested event loop. Using a stack enables nesting of message loop
 // invocations.
-static Vector<std::unique_ptr<ScopedPageSuspender>>& PageSuspenderStack() {
-  DEFINE_STATIC_LOCAL(Vector<std::unique_ptr<ScopedPageSuspender>>,
-                      suspender_stack, ());
-  return suspender_stack;
+static Vector<std::unique_ptr<ScopedPagePauser>>& PagePauserStack() {
+  DEFINE_STATIC_LOCAL(Vector<std::unique_ptr<ScopedPagePauser>>, pauser_stack,
+                      ());
+  return pauser_stack;
 }
 
 void WebView::WillEnterModalLoop() {
-  PageSuspenderStack().push_back(WTF::MakeUnique<ScopedPageSuspender>());
+  PagePauserStack().push_back(std::make_unique<ScopedPagePauser>());
 }
 
 void WebView::DidExitModalLoop() {
-  DCHECK(PageSuspenderStack().size());
-  PageSuspenderStack().pop_back();
+  DCHECK(PagePauserStack().size());
+  PagePauserStack().pop_back();
 }
 
 // static
@@ -281,8 +288,8 @@ class ColorOverlay final : public PageOverlay::Delegate {
             graphics_context, page_overlay, DisplayItem::kPageOverlay))
       return;
     FloatRect rect(0, 0, size.width, size.height);
-    DrawingRecorder drawing_recorder(graphics_context, page_overlay,
-                                     DisplayItem::kPageOverlay, rect);
+    DrawingRecorder recorder(graphics_context, page_overlay,
+                             DisplayItem::kPageOverlay);
     graphics_context.FillRect(rect, color_);
   }
 
@@ -294,14 +301,14 @@ class ColorOverlay final : public PageOverlay::Delegate {
 // WebView ----------------------------------------------------------------
 
 WebView* WebView::Create(WebViewClient* client,
-                         WebPageVisibilityState visibility_state) {
+                         mojom::PageVisibilityState visibility_state) {
   return WebViewImpl::Create(client, visibility_state);
 }
 
 WebViewImpl* WebViewImpl::Create(WebViewClient* client,
-                                 WebPageVisibilityState visibility_state) {
+                                 mojom::PageVisibilityState visibility_state) {
   // Pass the WebViewImpl's self-reference to the caller.
-  auto web_view = WTF::AdoptRef(new WebViewImpl(client, visibility_state));
+  auto web_view = base::AdoptRef(new WebViewImpl(client, visibility_state));
   web_view->AddRef();
   return web_view.get();
 }
@@ -329,12 +336,11 @@ void WebViewImpl::SetPrerendererClient(
 }
 
 WebViewImpl::WebViewImpl(WebViewClient* client,
-                         WebPageVisibilityState visibility_state)
+                         mojom::PageVisibilityState visibility_state)
     : client_(client),
       chrome_client_(ChromeClientImpl::Create(this)),
       context_menu_client_(*this),
       editor_client_(*this),
-      spell_checker_client_impl_(this),
       should_auto_resize_(false),
       zoom_level_(0),
       minimum_zoom_level_(ZoomFactorToZoomLevel(kMinTextSizeMultiplier)),
@@ -373,13 +379,11 @@ WebViewImpl::WebViewImpl(WebViewClient* client,
                      ->CurrentThread()
                      ->Scheduler()
                      ->CreateWebViewScheduler(this, this)),
-      last_frame_time_monotonic_(0),
       override_compositor_visibility_(false) {
   Page::PageClients page_clients;
   page_clients.chrome_client = chrome_client_.Get();
   page_clients.context_menu_client = &context_menu_client_;
   page_clients.editor_client = &editor_client_;
-  page_clients.spell_checker_client = &spell_checker_client_impl_;
 
   page_ = Page::CreateOrdinary(page_clients);
   CoreInitializer::GetInstance().ProvideModulesToPage(*page_, client_);
@@ -441,7 +445,7 @@ void WebViewImpl::HandleMouseDown(LocalFrame& main_frame,
   // If there is a popup open, close it as the user is clicking on the page
   // (outside of the popup). We also save it so we can prevent a click on an
   // element from immediately reopening the same popup.
-  RefPtr<WebPagePopupImpl> page_popup;
+  scoped_refptr<WebPagePopupImpl> page_popup;
   if (event.button == WebMouseEvent::Button::kLeft) {
     page_popup = page_popup_;
     HidePopups();
@@ -451,7 +455,7 @@ void WebViewImpl::HandleMouseDown(LocalFrame& main_frame,
   // Take capture on a mouse down on a plugin so we can send it mouse events.
   // If the hit node is a plugin but a scrollbar is over it don't start mouse
   // capture because it will interfere with the scrollbar receiving events.
-  IntPoint point(event.PositionInWidget().x, event.PositionInWidget().y);
+  LayoutPoint point(event.PositionInWidget());
   if (event.button == WebMouseEvent::Button::kLeft &&
       page_->MainFrame()->IsLocalFrame()) {
     point =
@@ -514,8 +518,7 @@ void WebViewImpl::MouseContextMenu(const WebMouseEvent& event) {
   WebMouseEvent transformed_event =
       TransformWebMouseEvent(MainFrameImpl()->GetFrameView(), event);
   transformed_event.menu_source_type = kMenuSourceMouse;
-  IntPoint position_in_root_frame =
-      FlooredIntPoint(transformed_event.PositionInRootFrame());
+  LayoutPoint position_in_root_frame(transformed_event.PositionInRootFrame());
 
   // Find the right target frame. See issue 1186900.
   HitTestResult result = HitTestResultForRootFramePos(position_in_root_frame);
@@ -900,6 +903,9 @@ bool WebViewImpl::StartPageScaleAnimation(const IntPoint& target_position,
 
 void WebViewImpl::EnableFakePageScaleAnimationForTesting(bool enable) {
   enable_fake_page_scale_animation_for_testing_ = enable;
+  fake_page_scale_animation_target_position_ = IntPoint();
+  fake_page_scale_animation_use_anchor_ = false;
+  fake_page_scale_animation_page_scale_factor_ = 0;
 }
 
 void WebViewImpl::SetShowFPSCounter(bool show) {
@@ -948,6 +954,15 @@ void WebViewImpl::RequestBeginMainFrameNotExpected(bool new_state) {
   if (layer_tree_view_) {
     layer_tree_view_->RequestBeginMainFrameNotExpected(new_state);
   }
+}
+
+void WebViewImpl::SetPageStopped(bool stopped) {
+  if (!GetPage())
+    return;
+  GetPage()->SetLifecycleState(
+      stopped ? PageLifecycleState::kStopped
+              // TODO(fmeawad): if not stopped, fall back to visibility state.
+              : PageLifecycleState::kUnknown);
 }
 
 WebInputEventResult WebViewImpl::HandleKeyEvent(const WebKeyboardEvent& event) {
@@ -1098,8 +1113,8 @@ WebRect WebViewImpl::ComputeBlockBound(const WebPoint& point_in_root_frame,
     return WebRect();
 
   // Use the point-based hit test to find the node.
-  IntPoint point = MainFrameImpl()->GetFrameView()->RootFrameToContents(
-      IntPoint(point_in_root_frame.x, point_in_root_frame.y));
+  LayoutPoint point = MainFrameImpl()->GetFrameView()->RootFrameToContents(
+      LayoutPoint(point_in_root_frame));
   HitTestRequest::HitTestRequestType hit_type =
       HitTestRequest::kReadOnly | HitTestRequest::kActive |
       (ignore_clipping ? HitTestRequest::kIgnoreClipping : 0);
@@ -1454,12 +1469,6 @@ bool WebViewImpl::ZoomToMultipleTargetsRect(const WebRect& rect_in_root_frame) {
   return true;
 }
 
-bool WebViewImpl::HasTouchEventHandlersAt(const WebPoint& point) {
-  // FIXME: Implement this. Note that the point must be divided by
-  // pageScaleFactor.
-  return true;
-}
-
 #if !defined(OS_MACOSX)
 // Mac has no way to open a context menu based on a keyboard event.
 WebInputEventResult WebViewImpl::SendContextMenuEvent() {
@@ -1526,8 +1535,8 @@ PagePopup* WebViewImpl::OpenPagePopup(PagePopupClient* client) {
     HidePopups();
   DCHECK(!page_popup_);
 
-  WebWidget* popup_widget = client_->CreatePopupMenu(kWebPopupTypePage);
-  // createPopupMenu returns nullptr if this renderer process is about to die.
+  WebWidget* popup_widget = client_->CreatePopup(kWebPopupTypePage);
+  // CreatePopup returns nullptr if this renderer process is about to die.
   if (!popup_widget)
     return nullptr;
   page_popup_ = ToWebPagePopupImpl(popup_widget);
@@ -1704,10 +1713,10 @@ void WebViewImpl::DidUpdateBrowserControls() {
   }
 }
 
-void WebViewImpl::SetScrollBoundaryBehavior(
-    const WebScrollBoundaryBehavior& scroll_boundary_behavior) {
+void WebViewImpl::SetOverscrollBehavior(
+    const WebOverscrollBehavior& overscroll_behavior) {
   if (layer_tree_view_)
-    layer_tree_view_->SetScrollBoundaryBehavior(scroll_boundary_behavior);
+    layer_tree_view_->SetOverscrollBehavior(overscroll_behavior);
 }
 
 BrowserControls& WebViewImpl::GetBrowserControls() {
@@ -1838,8 +1847,6 @@ void WebViewImpl::BeginFrame(double last_frame_time_monotonic) {
 
   if (WebFrameWidgetBase* widget = MainFrameImpl()->FrameWidget())
     widget->UpdateGestureAnimation(last_frame_time_monotonic);
-
-  last_frame_time_monotonic_ = last_frame_time_monotonic;
 
   DocumentLifecycle::AllowThrottlingScope throttling_scope(
       MainFrameImpl()->GetFrame()->GetDocument()->Lifecycle());
@@ -2013,10 +2020,21 @@ WebInputEventResult WebViewImpl::HandleInputEvent(
     return WebInputEventResult::kHandledSystem;
   }
 
+  Document& main_frame_document = *MainFrameImpl()->GetFrame()->GetDocument();
+
   if (input_event.GetType() != WebInputEvent::kMouseMove) {
-    FirstMeaningfulPaintDetector::From(
-        *MainFrameImpl()->GetFrame()->GetDocument())
-        .NotifyInputEvent();
+    FirstMeaningfulPaintDetector::From(main_frame_document).NotifyInputEvent();
+  }
+
+  if (input_event.GetType() != WebInputEvent::kMouseMove &&
+      input_event.GetType() != WebInputEvent::kMouseEnter &&
+      input_event.GetType() != WebInputEvent::kMouseLeave) {
+    InteractiveDetector* interactive_detector(
+        InteractiveDetector::From(main_frame_document));
+    if (interactive_detector) {
+      interactive_detector->OnInvalidatingInputEvent(
+          input_event.TimeStampSeconds());
+    }
   }
 
   if (mouse_capture_node_ &&
@@ -2042,7 +2060,7 @@ WebInputEventResult WebViewImpl::HandleInputEvent(
         break;
       case WebInputEvent::kMouseDown:
         event_type = EventTypeNames::mousedown;
-        gesture_indicator = LocalFrame::CreateUserGesture(
+        gesture_indicator = Frame::NotifyUserActivation(
             node->GetDocument().GetFrame(), UserGestureToken::kNewGesture);
         mouse_capture_gesture_token_ = gesture_indicator->CurrentToken();
         break;
@@ -2090,6 +2108,21 @@ WebInputEventResult WebViewImpl::HandleInputEvent(
             pinch_event.data.pinch_update.scale,
             FloatPoint(pinch_event.x, pinch_event.y)))
       return WebInputEventResult::kHandledSystem;
+  }
+
+  // If the page is close to minimum scale at pinch end, snap to minimum.
+  if (input_event.GetType() == WebInputEvent::kGesturePinchEnd) {
+    const WebGestureEvent& pinch_event =
+        static_cast<const WebGestureEvent&>(input_event);
+    float min_scale = MinimumPageScaleFactor();
+    if (pinch_event.source_device == kWebGestureDeviceTouchpad &&
+        PageScaleFactor() <= min_scale * maximumZoomForSnapToMinimum) {
+      IntPoint target_position =
+          MainFrameImpl()->GetFrameView()->ViewportToContents(
+              IntPoint(pinch_event.x, pinch_event.y));
+      StartPageScaleAnimation(target_position, true, min_scale,
+                              snapToMiminimumZoomAnimationDurationInSeconds);
+    }
   }
 
   return WebInputEventResult::kNotHandled;
@@ -2164,118 +2197,30 @@ void WebViewImpl::SetFocus(bool enable) {
   }
 }
 
-// TODO(ekaramad):This method is almost duplicated in WebFrameWidgetImpl as
-// well. This code needs to be refactored  (http://crbug.com/629721).
-WebRange WebViewImpl::CompositionRange() {
-  LocalFrame* focused = FocusedLocalFrameAvailableForIme();
-  if (!focused)
-    return WebRange();
-
-  const EphemeralRange range =
-      focused->GetInputMethodController().CompositionEphemeralRange();
-  if (range.IsNull())
-    return WebRange();
-
-  Element* editable =
-      focused->Selection().RootEditableElementOrDocumentElement();
-  DCHECK(editable);
-
-  // TODO(editing-dev): The use of updateStyleAndLayoutIgnorePendingStylesheets
-  // needs to be audited.  See http://crbug.com/590369 for more details.
-  editable->GetDocument().UpdateStyleAndLayoutIgnorePendingStylesheets();
-
-  return PlainTextRange::Create(*editable, range);
-}
-
-// TODO(ekaramad):This method is almost duplicated in WebFrameWidgetImpl as
-// well. This code needs to be refactored  (http://crbug.com/629721).
-bool WebViewImpl::SelectionBounds(WebRect& anchor, WebRect& focus) const {
+bool WebViewImpl::SelectionBounds(WebRect& anchor_web,
+                                  WebRect& focus_web) const {
   const Frame* frame = FocusedCoreFrame();
   if (!frame || !frame->IsLocalFrame())
     return false;
-
   const LocalFrame* local_frame = ToLocalFrame(frame);
   if (!local_frame)
     return false;
-  FrameSelection& selection = local_frame->Selection();
-  if (!selection.IsAvailable() || selection.GetSelectionInDOMTree().IsNone())
+
+  LocalFrameView* frame_view = local_frame->View();
+  if (!frame_view)
     return false;
 
-  // TODO(editing-dev): The use of updateStyleAndLayoutIgnorePendingStylesheets
-  // needs to be audited.  See http://crbug.com/590369 for more details.
-  local_frame->GetDocument()->UpdateStyleAndLayoutIgnorePendingStylesheets();
-  if (selection.ComputeVisibleSelectionInDOMTree().IsNone()) {
-    // plugins/mouse-capture-inside-shadow.html reaches here.
+  IntRect anchor;
+  IntRect focus;
+  if (!local_frame->Selection().ComputeAbsoluteBounds(anchor, focus))
     return false;
-  }
 
-  DocumentLifecycle::DisallowTransitionScope disallow_transition(
-      local_frame->GetDocument()->Lifecycle());
-
-  if (selection.ComputeVisibleSelectionInDOMTree().IsCaret()) {
-    anchor = focus = selection.AbsoluteCaretBounds();
-  } else {
-    const EphemeralRange selected_range =
-        selection.ComputeVisibleSelectionInDOMTree()
-            .ToNormalizedEphemeralRange();
-    if (selected_range.IsNull())
-      return false;
-    anchor = local_frame->GetEditor().FirstRectForRange(
-        EphemeralRange(selected_range.StartPosition()));
-    focus = local_frame->GetEditor().FirstRectForRange(
-        EphemeralRange(selected_range.EndPosition()));
-  }
-
-  anchor = local_frame->View()->ContentsToViewport(anchor);
-  focus = local_frame->View()->ContentsToViewport(focus);
-
-  if (!selection.ComputeVisibleSelectionInDOMTree().IsBaseFirst())
-    std::swap(anchor, focus);
+  VisualViewport& visual_viewport = GetPage()->GetVisualViewport();
+  anchor_web = visual_viewport.RootFrameToViewport(
+      frame_view->AbsoluteToRootFrame(anchor));
+  focus_web = visual_viewport.RootFrameToViewport(
+      frame_view->AbsoluteToRootFrame(focus));
   return true;
-}
-
-// TODO(ekaramad):This method is almost duplicated in WebFrameWidgetImpl as
-// well. This code needs to be refactored  (http://crbug.com/629721).
-bool WebViewImpl::SelectionTextDirection(WebTextDirection& start,
-                                         WebTextDirection& end) const {
-  const LocalFrame* frame = FocusedLocalFrameInWidget();
-  if (!frame)
-    return false;
-
-  const FrameSelection& selection = frame->Selection();
-  if (!selection.IsAvailable()) {
-    // plugins/mouse-capture-inside-shadow.html reaches here.
-    return false;
-  }
-
-  // TODO(editing-dev): The use of updateStyleAndLayoutIgnorePendingStylesheets
-  // needs to be audited.  See http://crbug.com/590369 for more details.
-  frame->GetDocument()->UpdateStyleAndLayoutIgnorePendingStylesheets();
-
-  if (selection.ComputeVisibleSelectionInDOMTree()
-          .ToNormalizedEphemeralRange()
-          .IsNull())
-    return false;
-  start = ToWebTextDirection(PrimaryDirectionOf(
-      *selection.ComputeVisibleSelectionInDOMTree().Start().AnchorNode()));
-  end = ToWebTextDirection(PrimaryDirectionOf(
-      *selection.ComputeVisibleSelectionInDOMTree().End().AnchorNode()));
-  return true;
-}
-
-// TODO(ekaramad):This method is almost duplicated in WebFrameWidgetImpl as
-// well. This code needs to be refactored  (http://crbug.com/629721).
-bool WebViewImpl::IsSelectionAnchorFirst() const {
-  const LocalFrame* frame = FocusedLocalFrameInWidget();
-  if (!frame)
-    return false;
-
-  FrameSelection& selection = frame->Selection();
-  if (!selection.IsAvailable()) {
-    // plugins/mouse-capture-inside-shadow.html reaches here.
-    return false;
-  }
-  return selection.ComputeVisibleSelectionInDOMTreeDeprecated().IsBaseFirst();
 }
 
 WebColor WebViewImpl::BackgroundColor() const {
@@ -2295,40 +2240,6 @@ WebColor WebViewImpl::BackgroundColor() const {
 
 WebPagePopupImpl* WebViewImpl::GetPagePopup() const {
   return page_popup_.get();
-}
-
-// TODO(ekaramad):This method is almost duplicated in WebFrameWidgetImpl as
-// well. This code needs to be refactored  (http://crbug.com/629721).
-void WebViewImpl::SetTextDirection(WebTextDirection direction) {
-  // The Editor::setBaseWritingDirection() function checks if we can change
-  // the text direction of the selected node and updates its DOM "dir"
-  // attribute and its CSS "direction" property.
-  // So, we just call the function as Safari does.
-  const LocalFrame* focused = FocusedLocalFrameInWidget();
-  if (!focused)
-    return;
-
-  Editor& editor = focused->GetEditor();
-  if (!editor.CanEdit())
-    return;
-
-  switch (direction) {
-    case kWebTextDirectionDefault:
-      editor.SetBaseWritingDirection(NaturalWritingDirection);
-      break;
-
-    case kWebTextDirectionLeftToRight:
-      editor.SetBaseWritingDirection(LeftToRightWritingDirection);
-      break;
-
-    case kWebTextDirectionRightToLeft:
-      editor.SetBaseWritingDirection(RightToLeftWritingDirection);
-      break;
-
-    default:
-      NOTIMPLEMENTED();
-      break;
-  }
 }
 
 bool WebViewImpl::IsAcceleratedCompositingActive() const {
@@ -2375,7 +2286,11 @@ void WebViewImpl::DidLosePointerLock() {
 // TODO(ekaramad):This method is almost duplicated in WebFrameWidgetImpl as
 // well. This code needs to be refactored  (http://crbug.com/629721).
 bool WebViewImpl::GetCompositionCharacterBounds(WebVector<WebRect>& bounds) {
-  WebRange range = CompositionRange();
+  WebInputMethodController* controller = GetActiveWebInputMethodController();
+  if (!controller)
+    return false;
+
+  WebRange range = controller->CompositionRange();
   if (range.IsEmpty())
     return false;
 
@@ -2520,17 +2435,30 @@ static bool IsElementEditable(const Element* element) {
                                 "textbox");
 }
 
-bool WebViewImpl::ScrollFocusedEditableElementIntoRect(
-    const WebRect& rect_in_viewport) {
-  LocalFrame* frame =
-      GetPage()->MainFrame() && GetPage()->MainFrame()->IsLocalFrame()
-          ? GetPage()->DeprecatedLocalMainFrame()
-          : nullptr;
-  Element* element = FocusedElement();
-  if (!frame || !frame->View() || !element)
+bool WebViewImpl::ScrollFocusedEditableElementIntoView() {
+  Frame* frame = GetPage()->MainFrame();
+  if (!frame)
     return false;
 
-  if (!IsElementEditable(element))
+  Element* element = FocusedElement();
+  if (!element || !IsElementEditable(element))
+    return false;
+
+  if (frame->IsRemoteFrame()) {
+    // The rest of the logic here is not implemented for OOPIFs. For now instead
+    // of implementing the logic below (which involves finding the scale and
+    // scrolling point), editable elements inside OOPIFs are scrolled into view
+    // instead. However, a common logic should be implemented for both OOPIFs
+    // and in-process frames to assure a consistent behavior across all frame
+    // types (https://crbug.com/784982).
+    LayoutObject* layout_object = element->GetLayoutObject();
+    if (!layout_object)
+      return false;
+    layout_object->ScrollRectToVisible(element->BoundingBox());
+    return true;
+  }
+
+  if (!frame->View())
     return false;
 
   element->GetDocument().UpdateStyleAndLayoutIgnorePendingStylesheets();
@@ -2540,9 +2468,10 @@ bool WebViewImpl::ScrollFocusedEditableElementIntoRect(
       !GetPage()->GetVisualViewport().ShouldDisableDesktopWorkarounds();
 
   if (zoom_in_to_legible_scale) {
-    // When deciding whether to zoom in on a focused text box, we should decide
-    // not to zoom in if the user won't be able to zoom out. e.g if the textbox
-    // is within a touch-action: none container the user can't zoom back out.
+    // When deciding whether to zoom in on a focused text box, we should
+    // decide not to zoom in if the user won't be able to zoom out. e.g if the
+    // textbox is within a touch-action: none container the user can't zoom
+    // back out.
     TouchAction action = TouchActionUtil::ComputeEffectiveTouchAction(*element);
     if (!(action & TouchAction::kTouchActionPinchZoom))
       zoom_in_to_legible_scale = false;
@@ -2574,18 +2503,20 @@ void WebViewImpl::ComputeScaleAndScrollForFocusedNode(
     IntPoint& new_scroll,
     bool& need_animation) {
   VisualViewport& visual_viewport = GetPage()->GetVisualViewport();
+  LocalFrameView* main_frame_view = MainFrameImpl()->GetFrameView();
 
   WebRect caret_in_viewport, unused_end;
   SelectionBounds(caret_in_viewport, unused_end);
 
   // 'caretInDocument' is rect encompassing the blinking cursor relative to the
   // root document.
-  IntRect caret_in_document = MainFrameImpl()->GetFrameView()->FrameToContents(
+  IntRect caret_in_document = main_frame_view->RootFrameToDocument(
       visual_viewport.ViewportToRootFrame(caret_in_viewport));
+
+  LocalFrameView* textbox_view = focused_node->GetDocument().View();
   IntRect textbox_rect_in_document =
-      MainFrameImpl()->GetFrameView()->FrameToContents(
-          focused_node->GetDocument().View()->ContentsToRootFrame(
-              PixelSnappedIntRect(focused_node->Node::BoundingBox())));
+      main_frame_view->RootFrameToDocument(textbox_view->AbsoluteToRootFrame(
+          PixelSnappedIntRect(focused_node->Node::BoundingBox())));
 
   if (!zoom_in_to_legible_scale) {
     new_scale = PageScaleFactor();
@@ -3132,7 +3063,9 @@ void WebViewImpl::ResetScrollAndScaleState() {
 
 void WebViewImpl::PerformMediaPlayerAction(const WebMediaPlayerAction& action,
                                            const WebPoint& location) {
-  HitTestResult result = HitTestResultForViewportPos(location);
+  HitTestResult result = HitTestResultForRootFramePos(
+      page_->GetVisualViewport().ViewportToRootFrame(location));
+
   Node* node = result.InnerNode();
   if (!IsHTMLVideoElement(*node) && !IsHTMLAudioElement(*node))
     return;
@@ -3163,7 +3096,7 @@ void WebViewImpl::PerformMediaPlayerAction(const WebMediaPlayerAction& action,
 void WebViewImpl::PerformPluginAction(const WebPluginAction& action,
                                       const WebPoint& location) {
   // FIXME: Location is probably in viewport coordinates
-  HitTestResult result = HitTestResultForRootFramePos(location);
+  HitTestResult result = HitTestResultForRootFramePos(LayoutPoint(location));
   Node* node = result.InnerNode();
   if (!IsHTMLObjectElement(*node) && !IsHTMLEmbedElement(*node))
     return;
@@ -3201,8 +3134,8 @@ HitTestResult WebViewImpl::CoreHitTestResultAt(
   DocumentLifecycle::AllowThrottlingScope throttling_scope(
       MainFrameImpl()->GetFrame()->GetDocument()->Lifecycle());
   LocalFrameView* view = MainFrameImpl()->GetFrameView();
-  IntPoint point_in_root_frame =
-      view->ContentsToFrame(view->ViewportToContents(point_in_viewport));
+  LayoutPoint point_in_root_frame = view->ContentsToFrame(
+      view->ViewportToContents(LayoutPoint(point_in_viewport)));
   return HitTestResultForRootFramePos(point_in_root_frame);
 }
 
@@ -3518,7 +3451,7 @@ void WebViewImpl::SetPageOverlayColor(WebColor color) {
     return;
 
   page_color_overlay_ = PageOverlay::Create(
-      MainFrameImpl(), WTF::MakeUnique<ColorOverlay>(color));
+      MainFrameImpl(), std::make_unique<ColorOverlay>(color));
 
   // Run compositing update before calling updatePageOverlays.
   MainFrameImpl()
@@ -3544,18 +3477,11 @@ Element* WebViewImpl::FocusedElement() const {
   return document->FocusedElement();
 }
 
-HitTestResult WebViewImpl::HitTestResultForViewportPos(
-    const IntPoint& pos_in_viewport) {
-  IntPoint root_frame_point(
-      page_->GetVisualViewport().ViewportToRootFrame(pos_in_viewport));
-  return HitTestResultForRootFramePos(root_frame_point);
-}
-
 HitTestResult WebViewImpl::HitTestResultForRootFramePos(
-    const IntPoint& pos_in_root_frame) {
+    const LayoutPoint& pos_in_root_frame) {
   if (!page_->MainFrame()->IsLocalFrame())
     return HitTestResult();
-  IntPoint doc_point(
+  LayoutPoint doc_point(
       page_->DeprecatedLocalMainFrame()->View()->RootFrameToContents(
           pos_in_root_frame));
   HitTestResult result =
@@ -3762,7 +3688,7 @@ void WebViewImpl::InitializeLayerTreeView() {
   if (client_) {
     layer_tree_view_ = client_->InitializeLayerTreeView();
     if (layer_tree_view_ && layer_tree_view_->CompositorAnimationHost()) {
-      animation_host_ = WTF::MakeUnique<CompositorAnimationHost>(
+      animation_host_ = std::make_unique<CompositorAnimationHost>(
           layer_tree_view_->CompositorAnimationHost());
     }
   }
@@ -3877,19 +3803,14 @@ WebViewScheduler* WebViewImpl::Scheduler() const {
   return scheduler_.get();
 }
 
-void WebViewImpl::SetVisibilityState(WebPageVisibilityState visibility_state,
-                                     bool is_initial_state) {
-  DCHECK(visibility_state == kWebPageVisibilityStateVisible ||
-         visibility_state == kWebPageVisibilityStateHidden ||
-         visibility_state == kWebPageVisibilityStatePrerender);
-
+void WebViewImpl::SetVisibilityState(
+    mojom::PageVisibilityState visibility_state,
+    bool is_initial_state) {
   if (GetPage()) {
-    page_->SetVisibilityState(
-        static_cast<PageVisibilityState>(static_cast<int>(visibility_state)),
-        is_initial_state);
+    page_->SetVisibilityState(visibility_state, is_initial_state);
   }
 
-  bool visible = visibility_state == kWebPageVisibilityStateVisible;
+  bool visible = visibility_state == mojom::PageVisibilityState::kVisible;
   if (layer_tree_view_ && !override_compositor_visibility_)
     layer_tree_view_->SetVisible(visible);
   scheduler_->SetPageVisible(visible);

@@ -20,7 +20,7 @@ MockBackgroundFetchDelegate::TestResponse::~TestResponse() = default;
 
 MockBackgroundFetchDelegate::TestResponseBuilder::TestResponseBuilder(
     int response_code)
-    : response_(base::MakeUnique<TestResponse>()) {
+    : response_(std::make_unique<TestResponse>()) {
   response_->succeeded_ = (response_code >= 200 && response_code < 300);
   response_->headers = base::MakeRefCounted<net::HttpResponseHeaders>(
       "HTTP/1.1 " + std::to_string(response_code));
@@ -55,7 +55,16 @@ MockBackgroundFetchDelegate::MockBackgroundFetchDelegate() {}
 
 MockBackgroundFetchDelegate::~MockBackgroundFetchDelegate() {}
 
+void MockBackgroundFetchDelegate::CreateDownloadJob(
+    const std::string& job_unique_id,
+    const std::string& title,
+    const url::Origin& origin,
+    int completed_parts,
+    int total_parts,
+    const std::vector<std::string>& current_guids) {}
+
 void MockBackgroundFetchDelegate::DownloadUrl(
+    const std::string& job_unique_id,
     const std::string& guid,
     const std::string& method,
     const GURL& url,
@@ -64,6 +73,8 @@ void MockBackgroundFetchDelegate::DownloadUrl(
   // TODO(delphick): Currently we just disallow re-using GUIDs but later when we
   // use the DownloadService, we should signal StartResult::UNEXPECTED_GUID.
   DCHECK(seen_guids_.find(guid) == seen_guids_.end());
+
+  download_guid_to_job_id_map_[guid] = job_unique_id;
 
   auto url_iter = url_responses_.find(url);
   if (url_iter == url_responses_.end()) {
@@ -79,23 +90,25 @@ void MockBackgroundFetchDelegate::DownloadUrl(
       std::make_unique<BackgroundFetchResponse>(std::vector<GURL>({url}),
                                                 test_response->headers);
 
-  base::ThreadTaskRunnerHandle::Get()->PostTask(
-      FROM_HERE,
+  PostAbortCheckingTask(
+      job_unique_id,
       base::BindOnce(&BackgroundFetchDelegate::Client::OnDownloadStarted,
-                     client(), guid, std::move(response)));
+                     client(), job_unique_id, guid, std::move(response)));
 
   if (test_response->data.size()) {
     // Report progress at 50% complete.
-    base::ThreadTaskRunnerHandle::Get()->PostTask(
-        FROM_HERE,
+    PostAbortCheckingTask(
+        job_unique_id,
         base::BindOnce(&BackgroundFetchDelegate::Client::OnDownloadUpdated,
-                       client(), guid, test_response->data.size() / 2));
+                       client(), job_unique_id, guid,
+                       test_response->data.size() / 2));
 
     // Report progress at 100% complete.
-    base::ThreadTaskRunnerHandle::Get()->PostTask(
-        FROM_HERE,
+    PostAbortCheckingTask(
+        job_unique_id,
         base::BindOnce(&BackgroundFetchDelegate::Client::OnDownloadUpdated,
-                       client(), guid, test_response->data.size()));
+                       client(), job_unique_id, guid,
+                       test_response->data.size()));
   }
 
   if (test_response->succeeded_) {
@@ -112,22 +125,28 @@ void MockBackgroundFetchDelegate::DownloadUrl(
              base::WriteFile(response_path, test_response->data.c_str(),
                              test_response->data.size()));
 
-    base::ThreadTaskRunnerHandle::Get()->PostTask(
-        FROM_HERE,
+    PostAbortCheckingTask(
+        job_unique_id,
         base::BindOnce(
             &BackgroundFetchDelegate::Client::OnDownloadComplete, client(),
-            guid,
+            job_unique_id, guid,
             std::make_unique<BackgroundFetchResult>(
                 base::Time::Now(), response_path, test_response->data.size())));
   } else {
-    base::ThreadTaskRunnerHandle::Get()->PostTask(
-        FROM_HERE,
-        base::BindOnce(
-            &BackgroundFetchDelegate::Client::OnDownloadComplete, client(),
-            guid, std::make_unique<BackgroundFetchResult>(base::Time::Now())));
+    PostAbortCheckingTask(
+        job_unique_id,
+        base::BindOnce(&BackgroundFetchDelegate::Client::OnDownloadComplete,
+                       client(), job_unique_id, guid,
+                       std::make_unique<BackgroundFetchResult>(
+                           base::Time::Now(),
+                           BackgroundFetchResult::FailureReason::UNKNOWN)));
   }
 
   seen_guids_.insert(guid);
+}
+
+void MockBackgroundFetchDelegate::Abort(const std::string& job_unique_id) {
+  aborted_jobs_.insert(job_unique_id);
 }
 
 void MockBackgroundFetchDelegate::RegisterResponse(
@@ -135,6 +154,23 @@ void MockBackgroundFetchDelegate::RegisterResponse(
     std::unique_ptr<TestResponse> response) {
   DCHECK_EQ(0u, url_responses_.count(url));
   url_responses_[url] = std::move(response);
+}
+
+void MockBackgroundFetchDelegate::PostAbortCheckingTask(
+    const std::string& job_unique_id,
+    base::OnceCallback<void()> callback) {
+  base::ThreadTaskRunnerHandle::Get()->PostTask(
+      FROM_HERE,
+      base::BindOnce(&MockBackgroundFetchDelegate::RunAbortCheckingTask,
+                     base::Unretained(this), job_unique_id,
+                     std::move(callback)));
+}
+
+void MockBackgroundFetchDelegate::RunAbortCheckingTask(
+    const std::string& job_unique_id,
+    base::OnceCallback<void()> callback) {
+  if (!aborted_jobs_.count(job_unique_id))
+    std::move(callback).Run();
 }
 
 }  // namespace content

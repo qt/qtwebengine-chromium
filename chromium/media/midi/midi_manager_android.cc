@@ -25,39 +25,21 @@ namespace midi {
 
 namespace {
 
-// MidiManagerAndroid should be enabled only when the feature is enabled via
-// chrome://flags on M+, or enabled by server configurations under specified
-// Android versions, M+ or N+.
-bool IsMidiManagerAndroidEnabled() {
-  // The feature is not enabled by chrome://flags or field trials.
-  if (!base::FeatureList::IsEnabled(features::kMidiManagerAndroid))
-    return false;
-
+bool HasSystemFeatureMidi() {
+  // MIDI API was added at Android M.
   auto sdk_version = base::android::BuildInfo::GetInstance()->sdk_int();
   if (sdk_version < base::android::SDK_VERSION_MARSHMALLOW)
     return false;
 
-  bool has_midi = Java_MidiManagerAndroid_hasSystemFeatureMidi(
+  // Check if the MIDI service actually runs on the system.
+  return Java_MidiManagerAndroid_hasSystemFeatureMidi(
       base::android::AttachCurrentThread());
-
-  // If the feature is enabled, check the RequredAndroidVersion param. If the
-  // param is provided and the value is "NOUGAT", use MidiManagerAndroid on N
-  // and later versions. This string comparison should not match when users
-  // enable the feature via chrome://flags.
-  if (base::GetFieldTrialParamValueByFeature(features::kMidiManagerAndroid,
-                                             "RequiredAndroidVersion") ==
-      "NOUGAT") {
-    return has_midi && sdk_version >= base::android::SDK_VERSION_NOUGAT;
-  }
-
-  // Otherwise, allow to use MidiManagerAndroid on M and later versions.
-  return has_midi && sdk_version >= base::android::SDK_VERSION_MARSHMALLOW;
 }
 
 }  // namespace
 
 MidiManager* MidiManager::Create(MidiService* service) {
-  if (IsMidiManagerAndroidEnabled())
+  if (HasSystemFeatureMidi())
     return new MidiManagerAndroid(service);
 
   return new MidiManagerUsb(service,
@@ -73,7 +55,9 @@ MidiManagerAndroid::~MidiManagerAndroid() {
   base::AutoLock lock(lock_);
   DCHECK(devices_.empty());
   DCHECK(all_input_ports_.empty());
+  DCHECK(input_port_to_index_.empty());
   DCHECK(all_output_ports_.empty());
+  DCHECK(output_port_to_index_.empty());
   DCHECK(raw_manager_.is_null());
 }
 
@@ -97,7 +81,9 @@ void MidiManagerAndroid::Finalize() {
   // is enabled by default.
   base::AutoLock lock(lock_);
   devices_.clear();
+  all_input_ports_.clear();
   input_port_to_index_.clear();
+  all_output_ports_.clear();
   output_port_to_index_.clear();
   raw_manager_.Reset();
 }

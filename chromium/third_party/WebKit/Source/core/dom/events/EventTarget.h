@@ -33,6 +33,8 @@
 #define EventTarget_h
 
 #include <memory>
+
+#include "base/macros.h"
 #include "core/CoreExport.h"
 #include "core/dom/events/AddEventListenerOptionsResolved.h"
 #include "core/dom/events/EventDispatchResult.h"
@@ -55,6 +57,7 @@ class ExceptionState;
 class LocalDOMWindow;
 class MessagePort;
 class Node;
+class ScriptState;
 class ServiceWorker;
 
 struct FiringEventIterator {
@@ -72,17 +75,16 @@ using FiringEventIteratorVector = Vector<FiringEventIterator, 1>;
 
 class CORE_EXPORT EventTargetData final
     : public GarbageCollectedFinalized<EventTargetData> {
-  WTF_MAKE_NONCOPYABLE(EventTargetData);
-
  public:
   EventTargetData();
   ~EventTargetData();
 
-  DECLARE_TRACE();
-  DECLARE_TRACE_WRAPPERS();
+  void Trace(blink::Visitor*);
+  void TraceWrappers(const ScriptWrappableVisitor*) const;
 
   EventListenerMap event_listener_map;
   std::unique_ptr<FiringEventIteratorVector> firing_event_iterators;
+  DISALLOW_COPY_AND_ASSIGN(EventTargetData);
 };
 
 DEFINE_TRAIT_FOR_TRACE_WRAPPERS(EventTargetData);
@@ -107,15 +109,14 @@ DEFINE_TRAIT_FOR_TRACE_WRAPPERS(EventTargetData);
 //   file.
 // - Override EventTarget::interfaceName() and getExecutionContext(). The former
 //   will typically return EventTargetNames::YourClassName. The latter will
-//   return SuspendableObject::executionContext (if you are an
-//   SuspendableObject)
+//   return PausableObject::executionContext (if you are an
+//   PausableObject)
 //   or the document you're in.
 // - Your trace() method will need to call EventTargetWithInlineData::trace
 //   depending on the base class of your class.
 // - EventTargets do not support EAGERLY_FINALIZE. You need to use
 //   a pre-finalizer instead.
-class CORE_EXPORT EventTarget : public GarbageCollectedFinalized<EventTarget>,
-                                public ScriptWrappable {
+class CORE_EXPORT EventTarget : public ScriptWrappable {
   DEFINE_WRAPPERTYPEINFO();
 
  public:
@@ -130,6 +131,8 @@ class CORE_EXPORT EventTarget : public GarbageCollectedFinalized<EventTarget>,
   virtual LocalDOMWindow* ToLocalDOMWindow();
   virtual MessagePort* ToMessagePort();
   virtual ServiceWorker* ToServiceWorker();
+
+  static EventTarget* Create(ScriptState*);
 
   bool addEventListener(const AtomicString& event_type,
                         EventListener*,
@@ -174,9 +177,6 @@ class CORE_EXPORT EventTarget : public GarbageCollectedFinalized<EventTarget>,
   DispatchEventResult FireEventListeners(Event*);
 
   static DispatchEventResult GetDispatchEventResult(const Event&);
-
-  DEFINE_INLINE_VIRTUAL_TRACE() {}
-  DEFINE_INLINE_VIRTUAL_TRACE_WRAPPERS() {}
 
   virtual bool KeepEventInNode(Event*) { return false; }
 
@@ -227,12 +227,12 @@ class CORE_EXPORT EventTargetWithInlineData : public EventTarget {
  public:
   ~EventTargetWithInlineData() override {}
 
-  DEFINE_INLINE_VIRTUAL_TRACE() {
+  virtual void Trace(blink::Visitor* visitor) {
     visitor->Trace(event_target_data_);
     EventTarget::Trace(visitor);
   }
 
-  DEFINE_INLINE_VIRTUAL_TRACE_WRAPPERS() {
+  virtual void TraceWrappers(const ScriptWrappableVisitor* visitor) const {
     visitor->TraceWrappers(event_target_data_);
     EventTarget::TraceWrappers(visitor);
   }

@@ -39,16 +39,8 @@
 #include "content/app/strings/grit/content_strings.h"
 #include "content/child/child_thread_impl.h"
 #include "content/child/content_child_helpers.h"
-#include "content/child/feature_policy/feature_policy_platform.h"
-#include "content/child/notifications/notification_dispatcher.h"
-#include "content/child/notifications/notification_manager.h"
-#include "content/child/push_messaging/push_provider.h"
-#include "content/child/thread_safe_sender.h"
-#include "content/child/web_data_consumer_handle_impl.h"
-#include "content/child/web_url_loader_impl.h"
-#include "content/child/web_url_request_util.h"
-#include "content/child/worker_thread_registry.h"
 #include "content/public/common/content_client.h"
+#include "content/public/common/content_features.h"
 #include "content/public/common/service_manager_connection.h"
 #include "content/public/common/service_names.mojom.h"
 #include "net/base/net_errors.h"
@@ -71,7 +63,6 @@ using blink::WebString;
 using blink::WebThemeEngine;
 using blink::WebURL;
 using blink::WebURLError;
-using blink::WebURLLoader;
 
 namespace content {
 
@@ -187,8 +178,6 @@ static int ToMessageID(WebLocalizedString::Name name) {
       return IDS_FORM_INPUT_ALT;
     case WebLocalizedString::kMissingPluginText:
       return IDS_PLUGIN_INITIALIZATION_ERROR;
-    case WebLocalizedString::kMediaRemotingDisableText:
-      return IDS_MEDIA_REMOTING_DISABLE_TEXT;
     case WebLocalizedString::kMediaRemotingCastText:
       return IDS_MEDIA_REMOTING_CAST_TEXT;
     case WebLocalizedString::kMediaRemotingCastToUnknownDeviceText:
@@ -205,6 +194,8 @@ static int ToMessageID(WebLocalizedString::Name name) {
       return IDS_FORM_OTHER_WEEK_LABEL;
     case WebLocalizedString::kOverflowMenuCaptions:
       return IDS_MEDIA_OVERFLOW_MENU_CLOSED_CAPTIONS;
+    case WebLocalizedString::kOverflowMenuCaptionsSubmenuTitle:
+      return IDS_MEDIA_OVERFLOW_MENU_CLOSED_CAPTIONS_SUBMENU_TITLE;
     case WebLocalizedString::kOverflowMenuCast:
       return IDS_MEDIA_OVERFLOW_MENU_CAST;
     case WebLocalizedString::kOverflowMenuEnterFullscreen:
@@ -320,24 +311,14 @@ static int ToMessageID(WebLocalizedString::Name name) {
 BlinkPlatformImpl::BlinkPlatformImpl()
     : BlinkPlatformImpl(base::ThreadTaskRunnerHandle::IsSet()
                             ? base::ThreadTaskRunnerHandle::Get()
-                            : nullptr) {
-}
+                            : nullptr,
+                        nullptr) {}
 
 BlinkPlatformImpl::BlinkPlatformImpl(
-    scoped_refptr<base::SingleThreadTaskRunner> main_thread_task_runner)
-    : main_thread_task_runner_(main_thread_task_runner),
-      compositor_thread_(nullptr) {
-  InternalInit();
-}
-
-void BlinkPlatformImpl::InternalInit() {
-  // ChildThread may not exist in some tests.
-  if (ChildThreadImpl::current()) {
-    thread_safe_sender_ = ChildThreadImpl::current()->thread_safe_sender();
-    notification_dispatcher_ =
-        ChildThreadImpl::current()->notification_dispatcher();
-  }
-}
+    scoped_refptr<base::SingleThreadTaskRunner> main_thread_task_runner,
+    scoped_refptr<base::SingleThreadTaskRunner> io_thread_task_runner)
+    : main_thread_task_runner_(std::move(main_thread_task_runner)),
+      io_thread_task_runner_(std::move(io_thread_task_runner)) {}
 
 void BlinkPlatformImpl::WaitUntilWebThreadTLSUpdate(
     blink::scheduler::WebThreadBase* thread) {
@@ -359,12 +340,6 @@ void BlinkPlatformImpl::UpdateWebThreadTLS(blink::WebThread* thread,
 }
 
 BlinkPlatformImpl::~BlinkPlatformImpl() {
-}
-
-std::unique_ptr<blink::WebDataConsumerHandle>
-BlinkPlatformImpl::CreateDataConsumerHandle(
-    mojo::ScopedDataPipeConsumerHandle handle) {
-  return base::MakeUnique<WebDataConsumerHandleImpl>(std::move(handle));
 }
 
 WebString BlinkPlatformImpl::UserAgent() {
@@ -395,13 +370,6 @@ std::unique_ptr<blink::WebThread> BlinkPlatformImpl::CreateWebAudioThread() {
   thread->Init();
   WaitUntilWebThreadTLSUpdate(thread.get());
   return std::move(thread);
-}
-
-void BlinkPlatformImpl::SetCompositorThread(
-    blink::scheduler::WebThreadBase* compositor_thread) {
-  compositor_thread_ = compositor_thread;
-  if (compositor_thread_)
-    WaitUntilWebThreadTLSUpdate(compositor_thread_);
 }
 
 blink::WebThread* BlinkPlatformImpl::CurrentThread() {
@@ -605,7 +573,8 @@ WebString BlinkPlatformImpl::QueryLocalizedString(WebLocalizedString::Name name,
   if (message_id < 0)
     return WebString();
   return WebString::FromUTF16(base::ReplaceStringPlaceholders(
-      GetContentClient()->GetLocalizedString(message_id), value.Utf16(), NULL));
+      GetContentClient()->GetLocalizedString(message_id), value.Utf16(),
+      nullptr));
 }
 
 WebString BlinkPlatformImpl::QueryLocalizedString(WebLocalizedString::Name name,
@@ -619,11 +588,11 @@ WebString BlinkPlatformImpl::QueryLocalizedString(WebLocalizedString::Name name,
   values.push_back(value1.Utf16());
   values.push_back(value2.Utf16());
   return WebString::FromUTF16(base::ReplaceStringPlaceholders(
-      GetContentClient()->GetLocalizedString(message_id), values, NULL));
+      GetContentClient()->GetLocalizedString(message_id), values, nullptr));
 }
 
-blink::WebThread* BlinkPlatformImpl::CompositorThread() const {
-  return compositor_thread_;
+bool BlinkPlatformImpl::IsRendererSideResourceSchedulerEnabled() const {
+  return base::FeatureList::IsEnabled(features::kRendererSideResourceScheduler);
 }
 
 std::unique_ptr<blink::WebGestureCurve>
@@ -637,14 +606,6 @@ BlinkPlatformImpl::CreateFlingAnimationCurve(
       IsMainThread());
 }
 
-void BlinkPlatformImpl::DidStartWorkerThread() {
-  WorkerThreadRegistry::Instance()->DidStartCurrentWorkerThread();
-}
-
-void BlinkPlatformImpl::WillStopWorkerThread() {
-  WorkerThreadRegistry::Instance()->WillStopCurrentWorkerThread();
-}
-
 bool BlinkPlatformImpl::AllowScriptExtensionForServiceWorker(
     const blink::WebURL& scriptUrl) {
   return GetContentClient()->AllowScriptExtensionForServiceWorker(scriptUrl);
@@ -656,19 +617,6 @@ blink::WebCrypto* BlinkPlatformImpl::Crypto() {
 
 const char* BlinkPlatformImpl::GetBrowserServiceName() const {
   return mojom::kBrowserServiceName;
-}
-
-blink::WebNotificationManager* BlinkPlatformImpl::GetNotificationManager() {
-  if (!thread_safe_sender_.get() || !notification_dispatcher_.get())
-    return nullptr;
-
-  return NotificationManager::ThreadSpecificInstance(
-      thread_safe_sender_.get(),
-      notification_dispatcher_.get());
-}
-
-blink::WebPushProvider* BlinkPlatformImpl::PushProvider() {
-  return PushProvider::ThreadSpecificInstance(main_thread_task_runner_);
 }
 
 blink::WebMediaCapabilitiesClient*
@@ -788,24 +736,9 @@ bool BlinkPlatformImpl::IsDomKeyForModifier(int dom_key) {
       static_cast<ui::DomKey>(dom_key));
 }
 
-std::unique_ptr<blink::WebFeaturePolicy> BlinkPlatformImpl::CreateFeaturePolicy(
-    const blink::WebFeaturePolicy* parent_policy,
-    const blink::WebParsedFeaturePolicy& container_policy,
-    const blink::WebParsedFeaturePolicy& policy_header,
-    const blink::WebSecurityOrigin& origin) {
-  std::unique_ptr<FeaturePolicy> policy = FeaturePolicy::CreateFromParentPolicy(
-      static_cast<const FeaturePolicy*>(parent_policy),
-      FeaturePolicyHeaderFromWeb(container_policy), url::Origin(origin));
-  policy->SetHeaderPolicy(FeaturePolicyHeaderFromWeb(policy_header));
-  return std::move(policy);
-}
-
-std::unique_ptr<blink::WebFeaturePolicy>
-BlinkPlatformImpl::DuplicateFeaturePolicyWithOrigin(
-    const blink::WebFeaturePolicy& policy,
-    const blink::WebSecurityOrigin& new_origin) {
-  return FeaturePolicy::CreateFromPolicyWithOrigin(
-      static_cast<const FeaturePolicy&>(policy), url::Origin(new_origin));
+scoped_refptr<base::SingleThreadTaskRunner> BlinkPlatformImpl::GetIOTaskRunner()
+    const {
+  return io_thread_task_runner_;
 }
 
 }  // namespace content

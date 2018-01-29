@@ -64,8 +64,6 @@ public:
 
     void bindTexelBuffer(int unitIdx, GrPixelConfig, GrGLBuffer*);
 
-    void bindImageStorage(int unitIdx, GrIOType, GrGLTexture *);
-
     void generateMipmaps(const GrSamplerState& params, bool allowSRGBInputs, GrGLTexture* texture,
                          GrSurfaceOrigin textureOrigin);
 
@@ -135,6 +133,8 @@ public:
     // Thus this is the implementation of the clear call for the corresponding passthrough function
     // on GrGLGpuRTCommandBuffer.
     void clear(const GrFixedClip&, GrColor, GrRenderTarget*, GrSurfaceOrigin);
+    void clearColorAsDraw(const GrFixedClip&, GrGLfloat r, GrGLfloat g, GrGLfloat b, GrGLfloat a,
+                          GrRenderTarget*, GrSurfaceOrigin);
 
     // The GrGLGpuRTCommandBuffer does not buffer up draws before submitting them to the gpu.
     // Thus this is the implementation of the clearStencil call for the corresponding passthrough
@@ -165,7 +165,8 @@ public:
 
     GrBackendObject createTestingOnlyBackendTexture(void* pixels, int w, int h,
                                                     GrPixelConfig config,
-                                                    bool isRenderTarget = false) override;
+                                                    bool isRenderTarget,
+                                                    GrMipMapped mipMapped) override;
     bool isTestingOnlyBackendTexture(GrBackendObject) const override;
     void deleteTestingOnlyBackendTexture(GrBackendObject, bool abandonTexture) override;
 
@@ -225,7 +226,7 @@ private:
     bool createTextureImpl(const GrSurfaceDesc& desc, GrGLTextureInfo* info,
                            bool renderTarget, GrGLTexture::TexParams* initialTexParams,
                            const GrMipLevel texels[], int mipLevelCount,
-                           bool* wasFullMipMapDataProvided);
+                           GrMipMapsStatus* mipMapsStatus);
 
     bool onIsACopyNeededForTextureParams(GrTextureProxy*, const GrSamplerState&,
                                          GrTextureProducer::CopyParams*,
@@ -393,7 +394,7 @@ private:
                        GrSurfaceOrigin texOrigin, GrGLenum target, UploadType uploadType, int left,
                        int top, int width, int height, GrPixelConfig dataConfig,
                        const GrMipLevel texels[], int mipLevelCount,
-                       bool* wasFullMipMapDataProvided = nullptr);
+                       GrMipMapsStatus* mipMapsStatus = nullptr);
 
     bool createRenderTargetObjects(const GrSurfaceDesc&, const GrGLTextureInfo& texInfo,
                                    GrGLRenderTarget::IDDesc*);
@@ -419,6 +420,7 @@ private:
     bool createCopyProgram(GrTexture* srcTexture);
     bool createMipmapProgram(int progIdx);
     bool createStencilClipClearProgram();
+    bool createClearColorProgram();
 
     // GL program-related state
     ProgramCache*               fProgramCache;
@@ -588,12 +590,6 @@ private:
     TriState                                fHWSRGBFramebuffer;
     SkTArray<GrGpuResource::UniqueID, true> fHWBoundTextureUniqueIDs;
 
-    struct Image {
-        GrGpuResource::UniqueID fTextureUniqueID;
-        GrIOType                fIOType;
-    };
-    SkTArray<Image, true>                   fHWBoundImageStorages;
-
     struct BufferTexture {
         BufferTexture() : fTextureID(0), fKnownBound(false),
                           fAttachedBufferUniqueID(SK_InvalidUniqueID),
@@ -616,23 +612,30 @@ private:
 
     /** IDs for copy surface program. (4 sampler types) */
     struct {
-        GrGLuint    fProgram;
-        GrGLint     fTextureUniform;
-        GrGLint     fTexCoordXformUniform;
-        GrGLint     fPosXformUniform;
+        GrGLuint    fProgram = 0;
+        GrGLint     fTextureUniform = 0;
+        GrGLint     fTexCoordXformUniform = 0;
+        GrGLint     fPosXformUniform = 0;
     }                                       fCopyPrograms[4];
     sk_sp<GrGLBuffer>                       fCopyProgramArrayBuffer;
 
     /** IDs for texture mipmap program. (4 filter configurations) */
     struct {
-        GrGLuint    fProgram;
-        GrGLint     fTextureUniform;
-        GrGLint     fTexCoordXformUniform;
+        GrGLuint    fProgram = 0;
+        GrGLint     fTextureUniform = 0;
+        GrGLint     fTexCoordXformUniform = 0;
     }                                       fMipmapPrograms[4];
     sk_sp<GrGLBuffer>                       fMipmapProgramArrayBuffer;
 
-    GrGLuint                                fStencilClipClearProgram;
+    GrGLuint                                fStencilClipClearProgram = 0;
     sk_sp<GrGLBuffer>                       fStencilClipClearArrayBuffer;
+
+    /** IDs for clear render target color program. */
+    struct {
+        GrGLuint    fProgram = 0;
+        GrGLint     fColorUniform = 0;
+    }                                       fClearColorProgram;
+    sk_sp<GrGLBuffer>                       fClearProgramArrayBuffer;
 
     static int TextureToCopyProgramIdx(GrTexture* texture);
 

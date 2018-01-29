@@ -66,9 +66,22 @@ ui::EventDispatchDetails InputMethodChromeOS::DispatchKeyEvent(
   DCHECK(event->IsKeyEvent());
   DCHECK(!(event->flags() & ui::EF_IS_SYNTHESIZED));
 
-  // The Caps Lock toggling has been removed from here, because now it is
-  // handled in accelerator controller.
-  // (see https://bugs.chromium.org/p/chromium/issues/detail?id=700705).
+  // For OS_CHROMEOS build of Chrome running on Linux, the IME keyboard cannot
+  // track the Caps Lock state by itself, so need to call SetCapsLockEnabled()
+  // method to reflect the Caps Lock state by the key event.
+  chromeos::input_method::InputMethodManager* manager =
+      chromeos::input_method::InputMethodManager::Get();
+  if (manager) {
+    chromeos::input_method::ImeKeyboard* keyboard = manager->GetImeKeyboard();
+    if (keyboard && event->type() == ET_KEY_PRESSED &&
+        event->key_code() != ui::VKEY_CAPITAL &&
+        keyboard->CapsLockIsEnabled() != event->IsCapsLockOn()) {
+      // Synchronize the keyboard state with event's state if they do not
+      // match. Do not synchronize for Caps Lock key because it is already
+      // handled in event rewriter.
+      keyboard->SetCapsLockEnabled(event->IsCapsLockOn());
+    }
+  }
 
   // If |context_| is not usable, then we can only dispatch the key event as is.
   // We only dispatch the key event to input method when the |context_| is an
@@ -81,14 +94,14 @@ ui::EventDispatchDetails InputMethodChromeOS::DispatchKeyEvent(
         // Treating as PostIME event if character composer handles key event and
         // generates some IME event,
         return ProcessKeyEventPostIME(
-            event, base::MakeUnique<AckCallback>(std::move(ack_callback)),
+            event, std::make_unique<AckCallback>(std::move(ack_callback)),
             false, true);
       }
       return ProcessUnfilteredKeyPressEvent(
-          event, base::MakeUnique<AckCallback>(std::move(ack_callback)));
+          event, std::make_unique<AckCallback>(std::move(ack_callback)));
     }
     return DispatchKeyEventPostIME(
-        event, base::MakeUnique<AckCallback>(std::move(ack_callback)));
+        event, std::make_unique<AckCallback>(std::move(ack_callback)));
   }
 
   handling_key_event_ = true;
@@ -136,7 +149,7 @@ ui::EventDispatchDetails InputMethodChromeOS::ProcessKeyEventDone(
   ui::EventDispatchDetails details;
   if (event->type() == ET_KEY_PRESSED || event->type() == ET_KEY_RELEASED) {
     details = ProcessKeyEventPostIME(
-        event, base::MakeUnique<AckCallback>(std::move(ack_callback)), false,
+        event, std::make_unique<AckCallback>(std::move(ack_callback)), false,
         is_handled);
   }
   handling_key_event_ = false;
@@ -369,7 +382,7 @@ ui::EventDispatchDetails InputMethodChromeOS::ProcessKeyEventPostIME(
 ui::EventDispatchDetails InputMethodChromeOS::ProcessFilteredKeyPressEvent(
     ui::KeyEvent* event,
     std::unique_ptr<AckCallback> ack_callback) {
-  auto callback = base::MakeUnique<AckCallback>(base::Bind(
+  auto callback = std::make_unique<AckCallback>(base::Bind(
       &InputMethodChromeOS::PostProcessFilteredKeyPressEvent,
       weak_ptr_factory_.GetWeakPtr(), base::Owned(new ui::KeyEvent(*event)),
       GetTextInputClient(), Passed(&ack_callback)));
@@ -414,7 +427,7 @@ ui::EventDispatchDetails InputMethodChromeOS::ProcessUnfilteredKeyPressEvent(
     std::unique_ptr<AckCallback> ack_callback) {
   return DispatchKeyEventPostIME(
       event,
-      base::MakeUnique<AckCallback>(base::Bind(
+      std::make_unique<AckCallback>(base::Bind(
           &InputMethodChromeOS::PostProcessUnfilteredKeyPressEvent,
           weak_ptr_factory_.GetWeakPtr(), base::Owned(new ui::KeyEvent(*event)),
           GetTextInputClient(), Passed(&ack_callback))));

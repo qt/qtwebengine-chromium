@@ -1406,8 +1406,8 @@ void SkCanvas::onClipRect(const SkRect& rect, SkClipOp op, ClipEdgeStyle edgeSty
     FOR_EACH_TOP_DEVICE(device->clipRect(rect, op, isAA));
 
     AutoValidateClip avc(this);
-    fMCRec->fRasterClip.op(rect, fMCRec->fMatrix, this->getTopLayerBounds(), (SkRegion::Op)op,
-                           isAA);
+    fMCRec->fRasterClip.opRect(rect, fMCRec->fMatrix, this->getTopLayerBounds(), (SkRegion::Op)op,
+                               isAA);
     fDeviceClipBounds = qr_clip_bounds(fMCRec->fRasterClip.getBounds());
 }
 
@@ -1421,7 +1421,7 @@ void SkCanvas::androidFramework_setDeviceClipRestriction(const SkIRect& rect) {
         this->checkForDeferredSave();
         FOR_EACH_TOP_DEVICE(device->androidFramework_setDeviceClipRestriction(&fClipRestrictionRect));
         AutoValidateClip avc(this);
-        fMCRec->fRasterClip.op(fClipRestrictionRect, SkRegion::kIntersect_Op);
+        fMCRec->fRasterClip.opIRect(fClipRestrictionRect, SkRegion::kIntersect_Op);
         fDeviceClipBounds = qr_clip_bounds(fMCRec->fRasterClip.getBounds());
     }
 }
@@ -1443,8 +1443,8 @@ void SkCanvas::onClipRRect(const SkRRect& rrect, SkClipOp op, ClipEdgeStyle edge
 
     FOR_EACH_TOP_DEVICE(device->clipRRect(rrect, op, isAA));
 
-    fMCRec->fRasterClip.op(rrect, fMCRec->fMatrix, this->getTopLayerBounds(), (SkRegion::Op)op,
-                           isAA);
+    fMCRec->fRasterClip.opRRect(rrect, fMCRec->fMatrix, this->getTopLayerBounds(), (SkRegion::Op)op,
+                                isAA);
     fDeviceClipBounds = qr_clip_bounds(fMCRec->fRasterClip.getBounds());
 }
 
@@ -1482,8 +1482,8 @@ void SkCanvas::onClipPath(const SkPath& path, SkClipOp op, ClipEdgeStyle edgeSty
 
     const SkPath* rasterClipPath = &path;
     const SkMatrix* matrix = &fMCRec->fMatrix;
-    fMCRec->fRasterClip.op(*rasterClipPath, *matrix, this->getTopLayerBounds(), (SkRegion::Op)op,
-                           isAA);
+    fMCRec->fRasterClip.opPath(*rasterClipPath, *matrix, this->getTopLayerBounds(),
+                               (SkRegion::Op)op, isAA);
     fDeviceClipBounds = qr_clip_bounds(fMCRec->fRasterClip.getBounds());
 }
 
@@ -1497,7 +1497,7 @@ void SkCanvas::onClipRegion(const SkRegion& rgn, SkClipOp op) {
 
     AutoValidateClip avc(this);
 
-    fMCRec->fRasterClip.op(rgn, (SkRegion::Op)op);
+    fMCRec->fRasterClip.opRegion(rgn, (SkRegion::Op)op);
     fDeviceClipBounds = qr_clip_bounds(fMCRec->fRasterClip.getBounds());
 }
 
@@ -1634,8 +1634,8 @@ bool SkCanvas::quickReject(const SkPath& path) const {
     return path.isEmpty() || this->quickReject(path.getBounds());
 }
 
-SkRect SkCanvas::onGetLocalClipBounds() const {
-    SkIRect ibounds = this->onGetDeviceClipBounds();
+SkRect SkCanvas::getLocalClipBounds() const {
+    SkIRect ibounds = this->getDeviceClipBounds();
     if (ibounds.isEmpty()) {
         return SkRect::MakeEmpty();
     }
@@ -1657,7 +1657,7 @@ SkRect SkCanvas::onGetLocalClipBounds() const {
     return bounds;
 }
 
-SkIRect SkCanvas::onGetDeviceClipBounds() const {
+SkIRect SkCanvas::getDeviceClipBounds() const {
     return fMCRec->fRasterClip.getBounds();
 }
 
@@ -2892,7 +2892,7 @@ static bool supported_for_raster_canvas(const SkImageInfo& info) {
 }
 
 std::unique_ptr<SkCanvas> SkCanvas::MakeRasterDirect(const SkImageInfo& info, void* pixels,
-                                                     size_t rowBytes) {
+                                                     size_t rowBytes, const SkSurfaceProps* props) {
     if (!supported_for_raster_canvas(info)) {
         return nullptr;
     }
@@ -2901,7 +2901,10 @@ std::unique_ptr<SkCanvas> SkCanvas::MakeRasterDirect(const SkImageInfo& info, vo
     if (!bitmap.installPixels(info, pixels, rowBytes)) {
         return nullptr;
     }
-    return skstd::make_unique<SkCanvas>(bitmap);
+
+    return props ?
+        skstd::make_unique<SkCanvas>(bitmap, *props) :
+        skstd::make_unique<SkCanvas>(bitmap);
 }
 
 ///////////////////////////////////////////////////////////////////////////////

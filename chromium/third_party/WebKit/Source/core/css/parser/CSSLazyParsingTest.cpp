@@ -33,7 +33,8 @@ class CSSLazyParsingTest : public ::testing::Test {
 };
 
 TEST_F(CSSLazyParsingTest, Simple) {
-  CSSParserContext* context = CSSParserContext::Create(kHTMLStandardMode);
+  CSSParserContext* context = CSSParserContext::Create(
+      kHTMLStandardMode, SecureContextMode::kInsecureContext);
   StyleSheetContents* style_sheet = StyleSheetContents::Create(context);
 
   String sheet_text = "body { background-color: red; }";
@@ -47,22 +48,17 @@ TEST_F(CSSLazyParsingTest, Simple) {
 
 // Avoid parsing rules with ::before or ::after to avoid causing
 // collectFeatures() when we trigger parsing for attr();
-TEST_F(CSSLazyParsingTest, LazyParseBeforeAfter) {
-  CSSParserContext* context = CSSParserContext::Create(kHTMLStandardMode);
+TEST_F(CSSLazyParsingTest, DontLazyParseBeforeAfter) {
+  CSSParserContext* context = CSSParserContext::Create(
+      kHTMLStandardMode, SecureContextMode::kInsecureContext);
   StyleSheetContents* style_sheet = StyleSheetContents::Create(context);
 
   String sheet_text =
-      "p::before { content: 'foo' } p .class::after { content: attr(pass) } ";
+      "p::before { content: 'foo' } p .class::after { content: 'bar' } ";
   CSSParser::ParseSheet(context, style_sheet, sheet_text,
                         true /* lazy parse */);
 
-  EXPECT_FALSE(HasParsedProperties(RuleAt(style_sheet, 0)));
-  EXPECT_FALSE(HasParsedProperties(RuleAt(style_sheet, 1)));
-
-  RuleAt(style_sheet, 0)->Properties();
   EXPECT_TRUE(HasParsedProperties(RuleAt(style_sheet, 0)));
-
-  RuleAt(style_sheet, 1)->Properties();
   EXPECT_TRUE(HasParsedProperties(RuleAt(style_sheet, 1)));
 }
 
@@ -71,7 +67,8 @@ TEST_F(CSSLazyParsingTest, LazyParseBeforeAfter) {
 // dangerous API because callers will expect the set of matching rules to be
 // identical if the stylesheet is not mutated.
 TEST_F(CSSLazyParsingTest, ShouldConsiderForMatchingRulesDoesntChange1) {
-  CSSParserContext* context = CSSParserContext::Create(kHTMLStandardMode);
+  CSSParserContext* context = CSSParserContext::Create(
+      kHTMLStandardMode, SecureContextMode::kInsecureContext);
   StyleSheetContents* style_sheet = StyleSheetContents::Create(context);
 
   String sheet_text = "p::first-letter { ,badness, } ";
@@ -92,6 +89,23 @@ TEST_F(CSSLazyParsingTest, ShouldConsiderForMatchingRulesDoesntChange1) {
       rule->ShouldConsiderForMatchingRules(false /* includeEmptyRules */));
 }
 
+// Test the same thing as above, with a property that does not get lazy parsed,
+// to ensure that we perform the optimization where possible.
+TEST_F(CSSLazyParsingTest, ShouldConsiderForMatchingRulesSimple) {
+  CSSParserContext* context = CSSParserContext::Create(
+      kHTMLStandardMode, SecureContextMode::kInsecureContext);
+  StyleSheetContents* style_sheet = StyleSheetContents::Create(context);
+
+  String sheet_text = "p::before { ,badness, } ";
+  CSSParser::ParseSheet(context, style_sheet, sheet_text,
+                        true /* lazy parse */);
+
+  StyleRule* rule = RuleAt(style_sheet, 0);
+  EXPECT_TRUE(HasParsedProperties(rule));
+  EXPECT_FALSE(
+      rule->ShouldConsiderForMatchingRules(false /* includeEmptyRules */));
+}
+
 // Regression test for crbug.com/660290 where we change the underlying owning
 // document from the StyleSheetContents without changing the UseCounter. This
 // test ensures that the new UseCounter is used when doing new parsing work.
@@ -99,8 +113,8 @@ TEST_F(CSSLazyParsingTest, ChangeDocuments) {
   std::unique_ptr<DummyPageHolder> dummy_holder =
       DummyPageHolder::Create(IntSize(500, 500));
   CSSParserContext* context = CSSParserContext::Create(
-      kHTMLStandardMode, CSSParserContext::kDynamicProfile,
-      &dummy_holder->GetDocument());
+      kHTMLStandardMode, SecureContextMode::kInsecureContext,
+      CSSParserContext::kDynamicProfile, &dummy_holder->GetDocument());
   cached_contents_ = StyleSheetContents::Create(context);
   {
     CSSStyleSheet* sheet =
@@ -153,7 +167,8 @@ TEST_F(CSSLazyParsingTest, ChangeDocuments) {
 }
 
 TEST_F(CSSLazyParsingTest, SimpleRuleUsagePercent) {
-  CSSParserContext* context = CSSParserContext::Create(kHTMLStandardMode);
+  CSSParserContext* context = CSSParserContext::Create(
+      kHTMLStandardMode, SecureContextMode::kInsecureContext);
   StyleSheetContents* style_sheet = StyleSheetContents::Create(context);
 
   std::string usage_metric = "Style.LazyUsage.Percent";

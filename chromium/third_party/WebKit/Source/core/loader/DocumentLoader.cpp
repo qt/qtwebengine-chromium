@@ -50,6 +50,8 @@
 #include "core/inspector/MainThreadDebugger.h"
 #include "core/loader/FrameFetchContext.h"
 #include "core/loader/FrameLoader.h"
+#include "core/loader/IdlenessDetector.h"
+#include "core/loader/InteractiveDetector.h"
 #include "core/loader/LinkLoader.h"
 #include "core/loader/NetworkHintsInterface.h"
 #include "core/loader/ProgressTracker.h"
@@ -67,7 +69,6 @@
 #include "core/timing/Performance.h"
 #include "platform/WebFrameScheduler.h"
 #include "platform/feature_policy/FeaturePolicy.h"
-#include "platform/http_names.h"
 #include "platform/loader/fetch/FetchParameters.h"
 #include "platform/loader/fetch/FetchUtils.h"
 #include "platform/loader/fetch/MemoryCache.h"
@@ -80,6 +81,7 @@
 #include "platform/network/ContentSecurityPolicyResponseHeaders.h"
 #include "platform/network/HTTPParsers.h"
 #include "platform/network/NetworkUtils.h"
+#include "platform/network/http_names.h"
 #include "platform/network/mime/MIMETypeRegistry.h"
 #include "platform/plugins/PluginData.h"
 #include "platform/weborigin/SchemeRegistry.h"
@@ -93,14 +95,18 @@
 
 namespace blink {
 
+// The MHTML mime type should be same as the one we check in the browser
+// process's ChromeResourceDispatcherHostDelegate.
 static bool IsArchiveMIMEType(const String& mime_type) {
   return DeprecatedEqualIgnoringCase("multipart/related", mime_type);
 }
 
-DocumentLoader::DocumentLoader(LocalFrame* frame,
-                               const ResourceRequest& req,
-                               const SubstituteData& substitute_data,
-                               ClientRedirectPolicy client_redirect_policy)
+DocumentLoader::DocumentLoader(
+    LocalFrame* frame,
+    const ResourceRequest& req,
+    const SubstituteData& substitute_data,
+    ClientRedirectPolicy client_redirect_policy,
+    const base::UnguessableToken& devtools_navigation_token)
     : frame_(frame),
       fetcher_(FrameFetchContext::CreateFetcherFromDocumentLoader(this)),
       original_request_(req),
@@ -118,7 +124,8 @@ DocumentLoader::DocumentLoader(LocalFrame* frame,
       was_blocked_after_csp_(false),
       state_(kNotStarted),
       in_data_received_(false),
-      data_buffer_(SharedBuffer::Create()) {
+      data_buffer_(SharedBuffer::Create()),
+      devtools_navigation_token_(devtools_navigation_token) {
   DCHECK(frame_);
 
   // The document URL needs to be added to the head of the list as that is
@@ -150,7 +157,7 @@ DocumentLoader::~DocumentLoader() {
   DCHECK_EQ(state_, kSentDidFinishLoad);
 }
 
-DEFINE_TRACE(DocumentLoader) {
+void DocumentLoader::Trace(blink::Visitor* visitor) {
   visitor->Trace(frame_);
   visitor->Trace(fetcher_);
   visitor->Trace(main_resource_);
@@ -287,7 +294,7 @@ static HistoryCommitType LoadTypeToCommitType(FrameLoadType type) {
 void DocumentLoader::UpdateForSameDocumentNavigation(
     const KURL& new_url,
     SameDocumentNavigationSource same_document_navigation_source,
-    RefPtr<SerializedScriptValue> data,
+    scoped_refptr<SerializedScriptValue> data,
     HistoryScrollRestorationType scroll_restoration_type,
     FrameLoadType type,
     Document* initiating_document) {
@@ -410,7 +417,6 @@ void DocumentLoader::LoadFailed(const ResourceError& error) {
     // Fall-through
     case kProvisional:
       state_ = kSentDidFinishLoad;
-      frame_->FrameScheduler()->DidFailProvisionalLoad();
       GetLocalFrameClient().DispatchDidFailProvisionalLoad(error,
                                                            history_commit_type);
       if (frame_)
@@ -445,7 +451,7 @@ void DocumentLoader::FinishedLoading(double finish_time) {
     // If this is an empty document, it will not have actually been created yet.
     // Force a commit so that the Document actually gets created.
     if (state_ == kProvisional)
-      CommitData(0, 0);
+      CommitData(nullptr, 0);
   }
 
   if (!frame_)
@@ -471,7 +477,7 @@ bool DocumentLoader::RedirectReceived(
   // If the redirecting url is not allowed to display content from the target
   // origin, then block the redirect.
   const KURL& request_url = request_.Url();
-  RefPtr<SecurityOrigin> redirecting_origin =
+  scoped_refptr<SecurityOrigin> redirecting_origin =
       SecurityOrigin::Create(redirect_response.Url());
   if (!redirecting_origin->CanDisplay(request_url)) {
     frame_->Console().AddMessage(ConsoleMessage::Create(
@@ -807,7 +813,7 @@ bool DocumentLoader::MaybeCreateArchive() {
   if (!frame_)
     return false;
 
-  RefPtr<SharedBuffer> data(main_resource->Data());
+  scoped_refptr<SharedBuffer> data(main_resource->Data());
   data->ForEachSegment(
       [this](const char* segment, size_t segment_size, size_t segment_offset) {
         CommitData(segment, segment_size);
@@ -941,6 +947,7 @@ void DocumentLoader::WillCommitNavigation() {
   if (GetFrameLoader().StateMachine()->CreatingInitialEmptyDocument())
     return;
   probe::willCommitLoad(frame_, this);
+  frame_->GetIdlenessDetector()->WillCommitLoad();
 }
 
 void DocumentLoader::DidCommitNavigation() {
@@ -978,6 +985,12 @@ void DocumentLoader::DidCommitNavigation() {
   // Links with media values need more information (like viewport information).
   // This happens after the first chunk is parsed in HTMLDocumentParser.
   DispatchLinkHeaderPreloads(nullptr, LinkLoader::kOnlyLoadNonMedia);
+
+  Document* document = frame_->GetDocument();
+  InteractiveDetector* interactive_detector =
+      InteractiveDetector::From(*document);
+  if (interactive_detector)
+    interactive_detector->SetNavigationStartTime(GetTiming().NavigationStart());
 
   TRACE_EVENT1("devtools.timeline", "CommitLoad", "data",
                InspectorCommitLoadEvent::Data(frame_));
@@ -1066,7 +1079,7 @@ void DocumentLoader::InstallNewDocument(
   if (!should_reuse_default_view)
     frame_->SetDOMWindow(LocalDOMWindow::Create(*frame_));
 
-  bool user_gesture_bit_set = frame_->HasReceivedUserGesture() ||
+  bool user_gesture_bit_set = frame_->HasBeenActivated() ||
                               frame_->HasReceivedUserGestureBeforeNavigation();
 
   if (reason == InstallNewDocumentReason::kNavigation)
@@ -1090,7 +1103,7 @@ void DocumentLoader::InstallNewDocument(
     // Clear the user gesture bit that is not persisted.
     // TODO(crbug.com/736415): Clear this bit unconditionally for all frames.
     if (frame_->IsMainFrame())
-      frame_->ClearDocumentHasReceivedUserGesture();
+      frame_->ClearActivation();
   }
 
   if (ShouldClearWindowName(*frame_, previous_security_origin, *document)) {
@@ -1113,7 +1126,7 @@ void DocumentLoader::InstallNewDocument(
 
   if (document->GetSettings()
           ->GetForceTouchEventFeatureDetectionForInspector()) {
-    OriginTrialContext::From(document)->AddFeature(
+    OriginTrialContext::FromOrCreate(document)->AddFeature(
         "ForceTouchEventFeatureDetectionForInspector");
   }
   OriginTrialContext::AddTokensFromHeader(
@@ -1124,11 +1137,7 @@ void DocumentLoader::InstallNewDocument(
   // FeaturePolicy is reset in the browser process on commit, so this needs to
   // be initialized and replicated to the browser process after commit messages
   // are sent in didCommitNavigation().
-  // Feature-Policy header is currently disabled while the details of the policy
-  // syntax are being worked out. Unless the Feature Policy experimental
-  // features flag is enabled, then ignore any header received.
-  // TODO(iclelland): Re-enable once the syntax is finalized. (crbug.com/737643)
-  document->SetFeaturePolicy(
+  document->ApplyFeaturePolicyFromHeader(
       RuntimeEnabledFeatures::FeaturePolicyEnabled()
           ? response_.HttpHeaderField(HTTPNames::Feature_Policy)
           : g_empty_string);

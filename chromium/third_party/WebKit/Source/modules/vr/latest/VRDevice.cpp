@@ -6,14 +6,19 @@
 
 #include "bindings/core/v8/ScriptPromiseResolver.h"
 #include "core/dom/DOMException.h"
-#include "core/dom/UserGestureIndicator.h"
+#include "core/frame/Frame.h"
+#include "core/frame/LocalFrame.h"
 #include "modules/EventTargetModules.h"
 #include "modules/vr/latest/VR.h"
+#include "modules/vr/latest/VRFrameProvider.h"
 #include "modules/vr/latest/VRSession.h"
 
 namespace blink {
 
 namespace {
+
+const char kActiveExclusiveSession[] =
+    "VRDevice already has an active, exclusive session";
 
 const char kExclusiveNotSupported[] =
     "VRDevice does not support the creation of exclusive sessions.";
@@ -99,7 +104,14 @@ ScriptPromise VRDevice::requestSession(
   // Check if the current page state prevents the requested session from being
   // created.
   if (options.exclusive()) {
-    if (!UserGestureIndicator::ProcessingUserGesture()) {
+    if (frameProvider()->exclusive_session()) {
+      return ScriptPromise::RejectWithDOMException(
+          script_state,
+          DOMException::Create(kInvalidStateError, kActiveExclusiveSession));
+    }
+
+    Document* doc = ToDocumentOrNull(ExecutionContext::From(script_state));
+    if (!Frame::HasTransientUserActivation(doc ? doc->GetFrame() : nullptr)) {
       return ScriptPromise::RejectWithDOMException(
           script_state,
           DOMException::Create(kInvalidStateError, kRequestNotInUserGesture));
@@ -111,9 +123,11 @@ ScriptPromise VRDevice::requestSession(
 
   VRSession* session = new VRSession(this, options.exclusive());
 
-  // TODO: A follow up CL will establish a VRPresentationProvider connection
-  // before resolving the promise.
-  resolver->Resolve(session);
+  if (options.exclusive()) {
+    frameProvider()->BeginExclusiveSession(session, resolver);
+  } else {
+    resolver->Resolve(session);
+  }
 
   return promise;
 }
@@ -129,6 +143,13 @@ void VRDevice::OnActivate(device::mojom::blink::VRDisplayEventReason,
                           OnActivateCallback on_handled) {}
 void VRDevice::OnDeactivate(device::mojom::blink::VRDisplayEventReason) {}
 
+VRFrameProvider* VRDevice::frameProvider() {
+  if (!frame_provider_)
+    frame_provider_ = new VRFrameProvider(this);
+
+  return frame_provider_;
+}
+
 void VRDevice::Dispose() {
   display_client_binding_.Close();
 }
@@ -141,8 +162,9 @@ void VRDevice::SetVRDisplayInfo(
   supports_exclusive_ = (display_info_->capabilities->canPresent);
 }
 
-DEFINE_TRACE(VRDevice) {
+void VRDevice::Trace(blink::Visitor* visitor) {
   visitor->Trace(vr_);
+  visitor->Trace(frame_provider_);
   EventTargetWithInlineData::Trace(visitor);
 }
 

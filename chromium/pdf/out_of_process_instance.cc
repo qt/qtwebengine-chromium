@@ -10,9 +10,9 @@
 #include <algorithm>  // for min/max()
 #include <cmath>      // for log() and pow()
 #include <list>
+#include <memory>
 
 #include "base/logging.h"
-#include "base/memory/ptr_util.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
@@ -145,6 +145,10 @@ const char kJSNamedDestinationPageNumber[] = "pageNumber";
 const char kJSSetIsSelectingType[] = "setIsSelecting";
 const char kJSIsSelecting[] = "isSelecting";
 
+// Notify when the document was changed and edit mode is toggled.
+const char kJSSetIsEditModeType[] = "setIsEditMode";
+const char kJSIsEditMode[] = "isEditMode";
+
 // Notify when a form field is focused (Plugin -> Page)
 const char kJSFieldFocusType[] = "formFocusChange";
 const char kJSFieldFocus[] = "focused";
@@ -171,6 +175,10 @@ enum PDFFeatures {
   HAS_BOOKMARKS = 2,
   FEATURES_COUNT
 };
+
+// Used for UMA. Do not delete entries, and keep in sync with histograms.xml
+// and pdfium/public/fpdf_annot.h.
+const int kAnnotationTypesCount = 28;
 
 PP_Var GetLinkAtPosition(PP_Instance instance, PP_Point point) {
   pp::Var var;
@@ -404,7 +412,7 @@ bool OutOfProcessInstance::Init(uint32_t argc,
   // Allow the plugin to handle find requests.
   SetPluginToHandleFindRequests();
 
-  text_input_ = base::MakeUnique<pp::TextInput_Dev>(this);
+  text_input_ = std::make_unique<pp::TextInput_Dev>(this);
 
   const char* stream_url = nullptr;
   const char* original_url = nullptr;
@@ -580,6 +588,7 @@ void OutOfProcessInstance::HandleMessage(const pp::Var& message) {
   } else if (type == kJSPrintType) {
     Print();
   } else if (type == kJSSaveType) {
+    engine_->KillFormFocus();
     pp::PDF::SaveAs(this);
   } else if (type == kJSRotateClockwiseType) {
     RotateClockwise();
@@ -771,6 +780,11 @@ void OutOfProcessInstance::DidChangeView(const pp::View& view) {
     engine_->ScrolledToXPosition(scroll_offset_float.x() * device_scale_);
     engine_->ScrolledToYPosition(scroll_offset_float.y() * device_scale_);
   }
+}
+
+void OutOfProcessInstance::DidChangeFocus(bool has_focus) {
+  if (!has_focus)
+    engine_->KillFormFocus();
 }
 
 void OutOfProcessInstance::GetPrintPresetOptionsFromDocument(
@@ -1096,7 +1110,7 @@ void OutOfProcessInstance::DidOpen(int32_t result) {
 
 void OutOfProcessInstance::DidOpenPreview(int32_t result) {
   if (result == PP_OK) {
-    preview_client_ = base::MakeUnique<PreviewModeClient>(this);
+    preview_client_ = std::make_unique<PreviewModeClient>(this);
     preview_engine_ = PDFEngine::Create(preview_client_.get());
     preview_engine_->HandleDocumentLoad(embed_preview_loader_);
   } else {
@@ -1164,8 +1178,11 @@ void OutOfProcessInstance::DocumentSizeUpdated(const pp::Size& size) {
   dimensions.Set(kJSDocumentWidth, pp::Var(document_size_.width()));
   dimensions.Set(kJSDocumentHeight, pp::Var(document_size_.height()));
   pp::VarArray page_dimensions_array;
-  int num_pages = engine_->GetNumberOfPages();
-  for (int i = 0; i < num_pages; ++i) {
+  size_t num_pages = engine_->GetNumberOfPages();
+  if (page_is_processed_.size() < num_pages)
+    page_is_processed_.resize(num_pages);
+
+  for (size_t i = 0; i < num_pages; ++i) {
     pp::Rect page_rect = engine_->GetPageRect(i);
     pp::VarDictionary page_dimensions;
     page_dimensions.Set(kJSPageX, pp::Var(page_rect.x()));
@@ -1187,8 +1204,10 @@ void OutOfProcessInstance::Invalidate(const pp::Rect& rect) {
 }
 
 void OutOfProcessInstance::Scroll(const pp::Point& point) {
-  if (!image_data_.is_null())
+  if (!image_data_.is_null()) {
     paint_manager_.ScrollRect(available_area_, point);
+    pp::PDF::DidScroll(GetPluginInstance());
+  }
 }
 
 void OutOfProcessInstance::ScrollToX(int x_in_screen_coords) {
@@ -1286,6 +1305,30 @@ void OutOfProcessInstance::NotifySelectedFindResultChanged(
   SelectedFindResultChanged(current_find_index);
 }
 
+void OutOfProcessInstance::NotifyPageBecameVisible(
+    const PDFEngine::PageFeatures* page_features) {
+  if (!page_features || !page_features->IsInitialized() ||
+      page_features->index >= static_cast<int>(page_is_processed_.size()) ||
+      page_is_processed_[page_features->index]) {
+    return;
+  }
+
+  for (const int annotation_type : page_features->annotation_types) {
+    DCHECK_GE(annotation_type, 0);
+    DCHECK_LT(annotation_type, kAnnotationTypesCount);
+    if (annotation_type < 0 || annotation_type >= kAnnotationTypesCount)
+      continue;
+
+    if (annotation_types_counted_.find(annotation_type) ==
+        annotation_types_counted_.end()) {
+      HistogramEnumeration("PDF.AnnotationType", annotation_type,
+                           kAnnotationTypesCount);
+      annotation_types_counted_.insert(annotation_type);
+    }
+  }
+  page_is_processed_[page_features->index] = true;
+}
+
 void OutOfProcessInstance::GetDocumentPassword(
     pp::CompletionCallbackWithOutput<pp::Var> callback) {
   if (password_callback_) {
@@ -1294,7 +1337,7 @@ void OutOfProcessInstance::GetDocumentPassword(
   }
 
   password_callback_ =
-      base::MakeUnique<pp::CompletionCallbackWithOutput<pp::Var>>(callback);
+      std::make_unique<pp::CompletionCallbackWithOutput<pp::Var>>(callback);
   pp::VarDictionary message;
   message.Set(pp::Var(kType), pp::Var(kJSGetPasswordType));
   PostMessage(message);
@@ -1377,13 +1420,6 @@ void OutOfProcessInstance::FormDidOpen(int32_t result) {
   }
 }
 
-std::string OutOfProcessInstance::ShowFileSelectionDialog() {
-  // Seems like very low priority to implement, since the pdf has no way to get
-  // the file data anyways.  Javascript doesn't let you do this synchronously.
-  NOTREACHED();
-  return std::string();
-}
-
 pp::URLLoader OutOfProcessInstance::CreateURLLoader() {
   if (full_) {
     if (!did_call_start_loading_) {
@@ -1401,42 +1437,47 @@ pp::URLLoader OutOfProcessInstance::CreateURLLoader() {
   return CreateURLLoaderInternal();
 }
 
-void OutOfProcessInstance::ScheduleTouchTimerCallback(int id, int delay_in_ms) {
-  pp::CompletionCallback callback = callback_factory_.NewCallback(
-      &OutOfProcessInstance::OnClientTouchTimerFired);
-  pp::Module::Get()->core()->CallOnMainThread(delay_in_ms, callback, id);
-}
-
-void OutOfProcessInstance::ScheduleCallback(int id, int delay_in_ms) {
+void OutOfProcessInstance::ScheduleCallback(int id, base::TimeDelta delay) {
   pp::CompletionCallback callback =
       callback_factory_.NewCallback(&OutOfProcessInstance::OnClientTimerFired);
-  pp::Module::Get()->core()->CallOnMainThread(delay_in_ms, callback, id);
+  pp::Module::Get()->core()->CallOnMainThread(delay.InMilliseconds(), callback,
+                                              id);
 }
 
-void OutOfProcessInstance::SearchString(
-    const base::char16* string,
-    const base::char16* term,
-    bool case_sensitive,
-    std::vector<SearchStringResult>* results) {
+void OutOfProcessInstance::ScheduleTouchTimerCallback(int id,
+                                                      base::TimeDelta delay) {
+  pp::CompletionCallback callback = callback_factory_.NewCallback(
+      &OutOfProcessInstance::OnClientTouchTimerFired);
+  pp::Module::Get()->core()->CallOnMainThread(delay.InMilliseconds(), callback,
+                                              id);
+}
+
+std::vector<PDFEngine::Client::SearchStringResult>
+OutOfProcessInstance::SearchString(const base::char16* string,
+                                   const base::char16* term,
+                                   bool case_sensitive) {
   PP_PrivateFindResult* pp_results;
-  int count = 0;
+  uint32_t count = 0;
   pp::PDF::SearchString(this, reinterpret_cast<const unsigned short*>(string),
                         reinterpret_cast<const unsigned short*>(term),
                         case_sensitive, &pp_results, &count);
 
-  results->resize(count);
-  for (int i = 0; i < count; ++i) {
-    (*results)[i].start_index = pp_results[i].start_index;
-    (*results)[i].length = pp_results[i].length;
+  std::vector<SearchStringResult> results(count);
+  for (uint32_t i = 0; i < count; ++i) {
+    results[i].start_index = pp_results[i].start_index;
+    results[i].length = pp_results[i].length;
   }
 
   pp::Memory_Dev memory;
   memory.MemFree(pp_results);
+
+  return results;
 }
 
 void OutOfProcessInstance::DocumentPaintOccurred() {}
 
-void OutOfProcessInstance::DocumentLoadComplete(int page_count) {
+void OutOfProcessInstance::DocumentLoadComplete(
+    const PDFEngine::DocumentFeatures& document_features) {
   // Clear focus state for OSK.
   FormTextFieldFocusChange(false);
 
@@ -1501,7 +1542,16 @@ void OutOfProcessInstance::DocumentLoadComplete(int page_count) {
   }
 
   pp::PDF::SetContentRestriction(this, content_restrictions);
-  HistogramCustomCounts("PDF.PageCount", page_count, 1, 1000000, 50);
+  HistogramCustomCounts("PDF.PageCount", document_features.page_count, 1,
+                        1000000, 50);
+  HistogramEnumeration("PDF.HasAttachment",
+                       document_features.has_attachments ? 1 : 0, 2);
+  HistogramEnumeration("PDF.IsLinearized",
+                       document_features.is_linearized ? 1 : 0, 2);
+  HistogramEnumeration("PDF.IsTagged", document_features.is_tagged ? 1 : 0, 2);
+  HistogramEnumeration("PDF.FormType",
+                       static_cast<int32_t>(document_features.form_type),
+                       static_cast<int32_t>(PDFEngine::FormType::kCount));
 }
 
 void OutOfProcessInstance::RotateClockwise() {
@@ -1733,6 +1783,13 @@ void OutOfProcessInstance::IsSelectingChanged(bool is_selecting) {
     PrintPreviewHistogramEnumeration(SELECT_TEXT);
 }
 
+void OutOfProcessInstance::IsEditModeChanged(bool is_edit_mode) {
+  pp::VarDictionary message;
+  message.Set(kType, kJSSetIsEditModeType);
+  message.Set(kJSIsEditMode, pp::Var(is_edit_mode));
+  PostMessage(message);
+}
+
 void OutOfProcessInstance::ProcessPreviewPageInfo(const std::string& url,
                                                   int dest_page_index) {
   DCHECK(IsPrintPreview());
@@ -1819,7 +1876,6 @@ void OutOfProcessInstance::HistogramEnumeration(const std::string& name,
                                                 int32_t boundary_value) {
   if (IsPrintPreview())
     return;
-
   uma_.HistogramEnumeration(name, sample, boundary_value);
 }
 

@@ -47,8 +47,9 @@ namespace blink {
 
 Location::Location(DOMWindow* dom_window) : dom_window_(dom_window) {}
 
-DEFINE_TRACE(Location) {
+void Location::Trace(blink::Visitor* visitor) {
   visitor->Trace(dom_window_);
+  ScriptWrappable::Trace(visitor);
 }
 
 inline const KURL& Location::Url() const {

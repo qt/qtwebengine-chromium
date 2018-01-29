@@ -14,7 +14,9 @@
 #include "SkColorSpaceXform.h"
 #include "SkEncodedImageFormat.h"
 #include "SkEncodedInfo.h"
+#include "SkEncodedOrigin.h"
 #include "SkImageInfo.h"
+#include "SkPixmap.h"
 #include "SkSize.h"
 #include "SkStream.h"
 #include "SkTypes.h"
@@ -169,24 +171,11 @@ public:
 
     const SkEncodedInfo& getEncodedInfo() const { return fEncodedInfo; }
 
-    enum Origin {
-        kTopLeft_Origin     = 1, // Default
-        kTopRight_Origin    = 2, // Reflected across y-axis
-        kBottomRight_Origin = 3, // Rotated 180
-        kBottomLeft_Origin  = 4, // Reflected across x-axis
-        kLeftTop_Origin     = 5, // Reflected across x-axis, Rotated 90 CCW
-        kRightTop_Origin    = 6, // Rotated 90 CW
-        kRightBottom_Origin = 7, // Reflected across x-axis, Rotated 90 CW
-        kLeftBottom_Origin  = 8, // Rotated 90 CCW
-        kDefault_Origin     = kTopLeft_Origin,
-        kLast_Origin        = kLeftBottom_Origin,
-    };
-
     /**
      *  Returns the image orientation stored in the EXIF data.
      *  If there is no EXIF data, or if we cannot read the EXIF data, returns kTopLeft.
      */
-    Origin getOrigin() const { return fOrigin; }
+    SkEncodedOrigin getOrigin() const { return fOrigin; }
 
     /**
      *  Return a size that approximately supports the desired scale factor.
@@ -353,6 +342,10 @@ public:
      */
     Result getPixels(const SkImageInfo& info, void* pixels, size_t rowBytes) {
         return this->getPixels(info, pixels, rowBytes, nullptr);
+    }
+
+    Result getPixels(const SkPixmap& pm, const Options* opts = nullptr) {
+        return this->getPixels(pm.info(), pm.writable_addr(), pm.rowBytes(), opts);
     }
 
     /**
@@ -677,7 +670,7 @@ protected:
             XformFormat srcFormat,
             std::unique_ptr<SkStream>,
             sk_sp<SkColorSpace>,
-            Origin = kTopLeft_Origin);
+            SkEncodedOrigin = kTopLeft_SkEncodedOrigin);
 
     /**
      *  Allows the subclass to set the recommended SkImageInfo
@@ -686,7 +679,7 @@ protected:
             const SkImageInfo&,
             XformFormat srcFormat,
             std::unique_ptr<SkStream>,
-            Origin = kTopLeft_Origin);
+            SkEncodedOrigin = kTopLeft_SkEncodedOrigin);
 
     virtual SkISize onGetScaledDimensions(float /*desiredScale*/) const {
         // By default, scaling is not supported.
@@ -836,7 +829,7 @@ private:
     const XformFormat                  fSrcXformFormat;
     std::unique_ptr<SkStream>          fStream;
     bool                               fNeedsRewind;
-    const Origin                       fOrigin;
+    const SkEncodedOrigin              fOrigin;
 
     SkImageInfo                        fDstInfo;
     Options                            fOptions;

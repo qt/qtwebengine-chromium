@@ -25,7 +25,7 @@ class FakePdfPrinterHandler;
 bool GetOpenFileNameImpl(OPENFILENAME* ofn);
 bool GetSaveFileNameImpl(FakePdfPrinterHandler* handler, OPENFILENAME* ofn);
 
-void EmptyPrintCallback(bool success, const base::Value& error) {}
+void EmptyPrintCallback(const base::Value& error) {}
 
 class FakePdfPrinterHandler : public PdfPrinterHandler {
  public:
@@ -65,6 +65,7 @@ class FakePdfPrinterHandler : public PdfPrinterHandler {
   // Simplified version of select file to avoid checking preferences and sticky
   // settings in the test
   void SelectFile(const base::FilePath& default_filename,
+                  content::WebContents* /* initiator */,
                   bool prompt_user) override {
     ui::SelectFileDialog::FileTypeInfo file_type_info;
     file_type_info.extensions.resize(1);
@@ -113,10 +114,10 @@ bool GetSaveFileNameImpl(FakePdfPrinterHandler* handler, OPENFILENAME* ofn) {
 
 }  // namespace
 
-class PdfPrinterHandlerTest : public BrowserWithTestWindowTest {
+class PdfPrinterHandlerWinTest : public BrowserWithTestWindowTest {
  public:
-  PdfPrinterHandlerTest() {}
-  ~PdfPrinterHandlerTest() override {}
+  PdfPrinterHandlerWinTest() {}
+  ~PdfPrinterHandlerWinTest() override {}
 
   void SetUp() override {
     BrowserWithTestWindowTest::SetUp();
@@ -134,16 +135,16 @@ class PdfPrinterHandlerTest : public BrowserWithTestWindowTest {
   std::unique_ptr<FakePdfPrinterHandler> pdf_printer_;
 
  private:
-  DISALLOW_COPY_AND_ASSIGN(PdfPrinterHandlerTest);
+  DISALLOW_COPY_AND_ASSIGN(PdfPrinterHandlerWinTest);
 };
 
-TEST_F(PdfPrinterHandlerTest, TestSaveAsPdf) {
+TEST_F(PdfPrinterHandlerWinTest, TestSaveAsPdf) {
   pdf_printer_->StartPrintToPdf(L"111111111111111111111.html");
   EXPECT_TRUE(pdf_printer_->init_called());
   EXPECT_TRUE(pdf_printer_->save_failed());
 }
 
-TEST_F(PdfPrinterHandlerTest, TestSaveAsPdfLongFileName) {
+TEST_F(PdfPrinterHandlerWinTest, TestSaveAsPdfLongFileName) {
   pdf_printer_->StartPrintToPdf(
       L"11111111111111111111111111111111111111111111111111111111111111111111111"
       L"11111111111111111111111111111111111111111111111111111111111111111111111"

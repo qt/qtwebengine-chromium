@@ -14,6 +14,7 @@
 #include "build/build_config.h"
 #include "public/platform/WebCommon.h"
 #include "public/platform/WebInputEventResult.h"
+#include "public/platform/WebScopedVirtualTimePauser.h"
 #include "public/platform/scheduler/child/child_scheduler.h"
 #include "public/platform/scheduler/child/single_thread_idle_task_runner.h"
 #include "public/platform/scheduler/renderer/render_widget_scheduling_state.h"
@@ -178,16 +179,6 @@ class BLINK_PLATFORM_EXPORT RendererScheduler : public ChildScheduler {
   // Must be called from the main thread.
   virtual bool IsHighPriorityWorkAnticipated() = 0;
 
-  // Pauses the timer queues by inserting a fence that blocks any tasks posted
-  // after this point from running. Orthogonal to PauseTimerQueue. Care must
-  // be taken when using this API to avoid fighting with the TaskQueueThrottler.
-  virtual void VirtualTimePaused() = 0;
-
-  // Removes the fence added by VirtualTimePaused allowing timers to execute
-  // normally. Care must be taken when using this API to avoid fighting with the
-  // TaskQueueThrottler.
-  virtual void VirtualTimeResumed() = 0;
-
   // Sets whether to allow suspension of tasks after the backgrounded signal is
   // received via SetRendererBackgrounded(true). Defaults to disabled.
   virtual void SetStoppingWhenBackgroundedEnabled(bool enabled) = 0;
@@ -213,6 +204,14 @@ class BLINK_PLATFORM_EXPORT RendererScheduler : public ChildScheduler {
   // Sets the kind of renderer process. Should be called on the main thread
   // once.
   virtual void SetRendererProcessType(RendererProcessType type) = 0;
+
+  // Returns a WebScopedVirtualTimePauser which can be used to vote for pausing
+  // virtual time. Virtual time will be paused if any WebScopedVirtualTimePauser
+  // votes to pause it, and only unpaused only if all
+  // WebScopedVirtualTimePausers are either destroyed or vote to unpause.  Note
+  // the WebScopedVirtualTimePauser returned by this method is initially
+  // unpaused.
+  virtual WebScopedVirtualTimePauser CreateWebScopedVirtualTimePauser() = 0;
 
  protected:
   RendererScheduler();

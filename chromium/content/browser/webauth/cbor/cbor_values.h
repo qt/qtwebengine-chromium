@@ -7,11 +7,12 @@
 
 #include <stdint.h>
 #include <string>
+#include <tuple>
 #include <vector>
 
 #include "base/containers/flat_map.h"
 #include "base/macros.h"
-#include "base/strings/string_piece_forward.h"
+#include "base/strings/string_piece.h"
 #include "content/common/content_export.h"
 
 namespace content {
@@ -23,9 +24,40 @@ namespace content {
 //  * Indefinite-length encodings.
 class CONTENT_EXPORT CBORValue {
  public:
+  struct CTAPLess {
+    // Comparison predicate to order keys in a dictionary as required by the
+    // Client-to-Authenticator Protocol (CTAP) spec 2.0.
+    //
+    // The sort order defined in CTAP is:
+    //   • If the major types are different, the one with the lower value in
+    //     numerical order sorts earlier. (Moot in this code because all keys
+    //     are strings.)
+    //   • If two keys have different lengths, the shorter one sorts earlier.
+    //   • If two keys have the same length, the one with the lower value in
+    //     (byte-wise) lexical order sorts earlier.
+    //
+    // See section 6 of https://fidoalliance.org/specs/fido-v2.0-rd-20170927/
+    // fido-client-to-authenticator-protocol-v2.0-rd-20170927.html.
+    //
+    // The sort order defined in
+    // https://tools.ietf.org/html/rfc7049#section-3.9 is similar to the CTAP
+    // order implemented here, but it sorts purely by serialised key and
+    // doesn't specify that major types are compared first. Thus the shortest
+    // key sorts first by the RFC rules (irrespective of the major type), but
+    // may not by CTAP rules.
+    bool operator()(const base::StringPiece& a,
+                    const base::StringPiece& b) const {
+      const size_t a_size = a.size();
+      const size_t b_size = b.size();
+      return std::tie(a_size, a) < std::tie(b_size, b);
+    }
+
+    using is_transparent = void;
+  };
+
   using BinaryValue = std::vector<uint8_t>;
   using ArrayValue = std::vector<CBORValue>;
-  using MapValue = base::flat_map<std::string, CBORValue>;
+  using MapValue = base::flat_map<std::string, CBORValue, CTAPLess>;
 
   enum class Type {
     NONE,

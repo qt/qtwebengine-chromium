@@ -12,6 +12,7 @@
 #include "base/single_thread_task_runner.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "build/build_config.h"
+#include "device/geolocation/geolocation_context.h"
 #include "device/sensors/device_sensor_host.h"
 #include "mojo/public/cpp/system/message_pipe.h"
 #include "services/device/fingerprint/fingerprint.h"
@@ -29,10 +30,14 @@
 #include "jni/InterfaceRegistrar_jni.h"
 #include "services/device/screen_orientation/screen_orientation_listener_android.h"
 #else
-#include "device/hid/hid_manager_impl.h"  // nogncheck
 #include "services/device/battery/battery_monitor_impl.h"
 #include "services/device/battery/battery_status_service.h"
+#include "services/device/hid/hid_manager_impl.h"
 #include "services/device/vibration/vibration_manager_impl.h"
+#endif
+
+#if defined(OS_LINUX) && defined(USE_UDEV)
+#include "services/device/hid/input_service_linux.h"
 #endif
 
 namespace device {
@@ -42,16 +47,22 @@ std::unique_ptr<service_manager::Service> CreateDeviceService(
     scoped_refptr<base::SingleThreadTaskRunner> file_task_runner,
     scoped_refptr<base::SingleThreadTaskRunner> io_task_runner,
     const WakeLockContextCallback& wake_lock_context_callback,
+    const CustomLocationProviderCallback& custom_location_provider_callback,
     const base::android::JavaRef<jobject>& java_nfc_delegate) {
-  return base::MakeUnique<DeviceService>(
+  GeolocationProviderImpl::SetCustomLocationProviderCallback(
+      custom_location_provider_callback);
+  return std::make_unique<DeviceService>(
       std::move(file_task_runner), std::move(io_task_runner),
       wake_lock_context_callback, java_nfc_delegate);
 }
 #else
 std::unique_ptr<service_manager::Service> CreateDeviceService(
     scoped_refptr<base::SingleThreadTaskRunner> file_task_runner,
-    scoped_refptr<base::SingleThreadTaskRunner> io_task_runner) {
-  return base::MakeUnique<DeviceService>(std::move(file_task_runner),
+    scoped_refptr<base::SingleThreadTaskRunner> io_task_runner,
+    const CustomLocationProviderCallback& custom_location_provider_callback) {
+  GeolocationProviderImpl::SetCustomLocationProviderCallback(
+      custom_location_provider_callback);
+  return std::make_unique<DeviceService>(std::move(file_task_runner),
                                          std::move(io_task_runner));
 }
 #endif
@@ -85,6 +96,8 @@ DeviceService::~DeviceService() {
 void DeviceService::OnStart() {
   registry_.AddInterface<mojom::Fingerprint>(base::Bind(
       &DeviceService::BindFingerprintRequest, base::Unretained(this)));
+  registry_.AddInterface<mojom::GeolocationContext>(base::Bind(
+      &DeviceService::BindGeolocationContextRequest, base::Unretained(this)));
   registry_.AddInterface<mojom::OrientationSensor>(base::Bind(
       &DeviceService::BindOrientationSensorRequest, base::Unretained(this)));
   registry_.AddInterface<mojom::OrientationAbsoluteSensor>(
@@ -125,6 +138,11 @@ void DeviceService::OnStart() {
   registry_.AddInterface<mojom::VibrationManager>(base::Bind(
       &DeviceService::BindVibrationManagerRequest, base::Unretained(this)));
 #endif
+
+#if defined(OS_LINUX) && defined(USE_UDEV)
+  registry_.AddInterface<mojom::InputDeviceManager>(base::Bind(
+      &DeviceService::BindInputDeviceManagerRequest, base::Unretained(this)));
+#endif
 }
 
 void DeviceService::OnBindInterface(
@@ -142,7 +160,7 @@ void DeviceService::BindBatteryMonitorRequest(
 
 void DeviceService::BindHidManagerRequest(mojom::HidManagerRequest request) {
   if (!hid_manager_)
-    hid_manager_ = base::MakeUnique<HidManagerImpl>();
+    hid_manager_ = std::make_unique<HidManagerImpl>();
   hid_manager_->AddBinding(std::move(request));
 }
 
@@ -157,8 +175,22 @@ void DeviceService::BindVibrationManagerRequest(
 }
 #endif
 
+#if defined(OS_LINUX) && defined(USE_UDEV)
+void DeviceService::BindInputDeviceManagerRequest(
+    mojom::InputDeviceManagerRequest request) {
+  file_task_runner_->PostTask(
+      FROM_HERE,
+      base::BindOnce(&InputServiceLinux::BindRequest, std::move(request)));
+}
+#endif
+
 void DeviceService::BindFingerprintRequest(mojom::FingerprintRequest request) {
   Fingerprint::Create(std::move(request));
+}
+
+void DeviceService::BindGeolocationContextRequest(
+    mojom::GeolocationContextRequest request) {
+  GeolocationContext::Create(std::move(request));
 }
 
 void DeviceService::BindOrientationSensorRequest(
@@ -199,7 +231,7 @@ void DeviceService::BindPowerMonitorRequest(
     mojom::PowerMonitorRequest request) {
   if (!power_monitor_message_broadcaster_) {
     power_monitor_message_broadcaster_ =
-        base::MakeUnique<PowerMonitorMessageBroadcaster>();
+        std::make_unique<PowerMonitorMessageBroadcaster>();
   }
   power_monitor_message_broadcaster_->Bind(std::move(request));
 }

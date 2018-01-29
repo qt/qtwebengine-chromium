@@ -66,7 +66,7 @@
 #include "core/page/FocusController.h"
 #include "core/page/Page.h"
 #include "core/page/PrintContext.h"
-#include "core/page/ScopedPageSuspender.h"
+#include "core/page/ScopedPagePauser.h"
 #include "core/paint/PaintLayer.h"
 #include "core/paint/PaintLayerPainter.h"
 #include "core/timing/DOMWindowPerformance.h"
@@ -98,6 +98,7 @@
 #include "public/platform/WebThread.h"
 #include "public/platform/WebURLLoaderMockFactory.h"
 #include "public/web/WebAutofillClient.h"
+#include "public/web/WebConsoleMessage.h"
 #include "public/web/WebDateTimeChooserCompletion.h"
 #include "public/web/WebDeviceEmulationParams.h"
 #include "public/web/WebDocument.h"
@@ -116,6 +117,7 @@
 #include "public/web/WebWidget.h"
 #include "public/web/WebWidgetClient.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "third_party/WebKit/common/page/page_visibility_state.mojom-blink.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "third_party/skia/include/core/SkCanvas.h"
 
@@ -216,7 +218,7 @@ class DateTimeChooserWebViewClient
     return chooser_completion_;
   }
 
-  void ClearChooserCompletion() { chooser_completion_ = 0; }
+  void ClearChooserCompletion() { chooser_completion_ = nullptr; }
 
   // WebViewClient methods
   bool OpenDateTimeChooser(
@@ -466,7 +468,7 @@ TEST_P(WebViewTest, SetBaseBackgroundColorBeforeMainFrame) {
   const WebColor kBlue = 0xFF0000FF;
   FrameTestHelpers::TestWebViewClient web_view_client;
   WebViewImpl* web_view = static_cast<WebViewImpl*>(
-      WebView::Create(&web_view_client, kWebPageVisibilityStateVisible));
+      WebView::Create(&web_view_client, mojom::PageVisibilityState::kVisible));
   EXPECT_NE(kBlue, web_view->BackgroundColor());
   // webView does not have a frame yet, but we should still be able to set the
   // background color.
@@ -499,7 +501,7 @@ TEST_P(WebViewTest, SetBaseBackgroundColorAndBlendWithExistingContent) {
   SkCanvas canvas(bitmap);
   canvas.clear(kAlphaRed);
 
-  PaintRecordBuilder builder(FloatRect(0, 0, kWidth, kHeight));
+  PaintRecordBuilder builder;
 
   // Paint the root of the main frame in the way that CompositedLayerMapping
   // would.
@@ -1641,12 +1643,12 @@ TEST_P(WebViewTest, IsSelectionAnchorFirst) {
 
   web_view->SetInitialFocus(false);
   frame->SetEditableSelectionOffsets(4, 10);
-  EXPECT_TRUE(web_view->IsSelectionAnchorFirst());
+  EXPECT_TRUE(frame->IsSelectionAnchorFirst());
   WebRect anchor;
   WebRect focus;
   web_view->SelectionBounds(anchor, focus);
   frame->SelectRange(WebPoint(focus.x, focus.y), WebPoint(anchor.x, anchor.y));
-  EXPECT_FALSE(web_view->IsSelectionAnchorFirst());
+  EXPECT_FALSE(frame->IsSelectionAnchorFirst());
 }
 
 TEST_P(
@@ -2236,15 +2238,15 @@ TEST_P(WebViewTest, BackForwardRestoreScroll) {
   // Go back, then forward, then back again.
   main_frame_local->Loader().Load(
       FrameLoadRequest(nullptr, item1->GenerateResourceRequest(
-                                    WebCachePolicy::kUseProtocolCachePolicy)),
+                                    mojom::FetchCacheMode::kDefault)),
       kFrameLoadTypeBackForward, item1.Get(), kHistorySameDocumentLoad);
   main_frame_local->Loader().Load(
       FrameLoadRequest(nullptr, item2->GenerateResourceRequest(
-                                    WebCachePolicy::kUseProtocolCachePolicy)),
+                                    mojom::FetchCacheMode::kDefault)),
       kFrameLoadTypeBackForward, item2.Get(), kHistorySameDocumentLoad);
   main_frame_local->Loader().Load(
       FrameLoadRequest(nullptr, item1->GenerateResourceRequest(
-                                    WebCachePolicy::kUseProtocolCachePolicy)),
+                                    mojom::FetchCacheMode::kDefault)),
       kFrameLoadTypeBackForward, item1.Get(), kHistorySameDocumentLoad);
 
   // Click a different anchor
@@ -2258,11 +2260,11 @@ TEST_P(WebViewTest, BackForwardRestoreScroll) {
   // forward navigation.
   main_frame_local->Loader().Load(
       FrameLoadRequest(nullptr, item1->GenerateResourceRequest(
-                                    WebCachePolicy::kUseProtocolCachePolicy)),
+                                    mojom::FetchCacheMode::kDefault)),
       kFrameLoadTypeBackForward, item1.Get(), kHistorySameDocumentLoad);
   main_frame_local->Loader().Load(
       FrameLoadRequest(nullptr, item3->GenerateResourceRequest(
-                                    WebCachePolicy::kUseProtocolCachePolicy)),
+                                    mojom::FetchCacheMode::kDefault)),
       kFrameLoadTypeBackForward, item3.Get(), kHistorySameDocumentLoad);
   EXPECT_EQ(0, web_view_impl->MainFrameImpl()->GetScrollOffset().width);
   EXPECT_GT(web_view_impl->MainFrameImpl()->GetScrollOffset().height, 2000);
@@ -2285,7 +2287,7 @@ TEST_P(WebViewTest, FullscreenResetScrollAndScaleFullscreenStyles) {
   LocalFrame* frame = web_view_impl->MainFrameImpl()->GetFrame();
   Element* element = frame->GetDocument()->getElementById("fullscreenElement");
   std::unique_ptr<UserGestureIndicator> gesture =
-      LocalFrame::CreateUserGesture(frame);
+      Frame::NotifyUserActivation(frame);
   Fullscreen::RequestFullscreen(*element);
   web_view_impl->DidEnterFullscreen();
   web_view_impl->UpdateAllLifecyclePhases();
@@ -2325,7 +2327,7 @@ TEST_P(WebViewTest, FullscreenResetScrollAndScaleExitAndReenter) {
   LocalFrame* frame = web_view_impl->MainFrameImpl()->GetFrame();
   Element* element = frame->GetDocument()->getElementById("fullscreenElement");
   std::unique_ptr<UserGestureIndicator> gesture =
-      LocalFrame::CreateUserGesture(frame);
+      Frame::NotifyUserActivation(frame);
   Fullscreen::RequestFullscreen(*element);
   web_view_impl->DidEnterFullscreen();
   web_view_impl->UpdateAllLifecyclePhases();
@@ -2381,7 +2383,7 @@ TEST_P(WebViewTest, EnterFullscreenResetScrollAndScaleState) {
   LocalFrame* frame = web_view_impl->MainFrameImpl()->GetFrame();
   Element* element = frame->GetDocument()->body();
   std::unique_ptr<UserGestureIndicator> gesture =
-      LocalFrame::CreateUserGesture(frame);
+      Frame::NotifyUserActivation(frame);
   Fullscreen::RequestFullscreen(*element);
   web_view_impl->DidEnterFullscreen();
 
@@ -2440,8 +2442,8 @@ static void DragAndDropURL(WebViewImpl* web_view, const std::string& url) {
   item.string_data = WebString::FromUTF8(url);
   drag_data.AddItem(item);
 
-  const WebPoint client_point(0, 0);
-  const WebPoint screen_point(0, 0);
+  const WebFloatPoint client_point(0, 0);
+  const WebFloatPoint screen_point(0, 0);
   WebFrameWidgetBase* widget = web_view->MainFrameImpl()->FrameWidget();
   widget->DragTargetDragEnter(drag_data, client_point, screen_point,
                               kWebDragOperationCopy, 0);
@@ -2558,7 +2560,7 @@ TEST_P(WebViewTest, ClientTapHandlingNullWebViewClient) {
   // Note: this test doesn't use WebViewHelper since WebViewHelper creates an
   // internal WebViewClient on demand if the supplied WebViewClient is null.
   WebViewImpl* web_view = static_cast<WebViewImpl*>(
-      WebView::Create(nullptr, kWebPageVisibilityStateVisible));
+      WebView::Create(nullptr, mojom::PageVisibilityState::kVisible));
   FrameTestHelpers::TestWebFrameClient web_frame_client;
   FrameTestHelpers::TestWebWidgetClient web_widget_client;
   WebLocalFrame* local_frame = WebLocalFrame::CreateMainFrame(
@@ -3233,7 +3235,7 @@ TEST_P(WebViewTest, LosingFocusDoesNotTriggerAutofillTextChange) {
   web_view->SetFocus(false);
   EXPECT_EQ(0, client.TextChanges());
 
-  frame->SetAutofillClient(0);
+  frame->SetAutofillClient(nullptr);
 }
 
 static void VerifySelectionAndComposition(WebViewImpl* web_view,
@@ -3293,7 +3295,7 @@ TEST_P(WebViewTest, CompositionNotCancelledByBackspace) {
     web_view->AdvanceFocus(false);
   }
 
-  frame->SetAutofillClient(0);
+  frame->SetAutofillClient(nullptr);
 }
 
 TEST_P(WebViewTest, FinishComposingTextDoesntTriggerAutofillTextChange) {
@@ -3334,7 +3336,7 @@ TEST_P(WebViewTest, FinishComposingTextDoesntTriggerAutofillTextChange) {
 
   EXPECT_TRUE(form->IsAutofilled());
 
-  frame->SetAutofillClient(0);
+  frame->SetAutofillClient(nullptr);
 }
 
 TEST_P(WebViewTest,
@@ -3364,7 +3366,7 @@ TEST_P(WebViewTest,
   EXPECT_EQ(WebString::FromUTF8("none"),
             document.GetElementById("inputEvent").FirstChild().NodeValue());
 
-  frame->SetAutofillClient(0);
+  frame->SetAutofillClient(nullptr);
 }
 
 class ViewCreatingWebViewClient : public FrameTestHelpers::TestWebViewClient {
@@ -3426,7 +3428,8 @@ TEST_P(WebViewTest, FocusExistingFrameOnNavigate) {
 
   // Make a request that will open a new window
   WebURLRequest web_url_request;
-  FrameLoadRequest request(0, web_url_request.ToResourceRequest(), "_blank");
+  FrameLoadRequest request(nullptr, web_url_request.ToResourceRequest(),
+                           "_blank");
   ToLocalFrame(web_view_impl->GetPage()->MainFrame())->Loader().Load(request);
   ASSERT_TRUE(client.CreatedWebView());
   EXPECT_FALSE(client.DidFocusCalled());
@@ -3435,7 +3438,7 @@ TEST_P(WebViewTest, FocusExistingFrameOnNavigate) {
   // The original window should be focused.
   WebURLRequest web_url_request_with_target_start;
   FrameLoadRequest request_with_target_start(
-      0, web_url_request_with_target_start.ToResourceRequest(), "_start");
+      nullptr, web_url_request_with_target_start.ToResourceRequest(), "_start");
   ToLocalFrame(static_cast<WebViewImpl*>(client.CreatedWebView())
                    ->GetPage()
                    ->MainFrame())
@@ -3701,7 +3704,7 @@ class CreateChildCounterFrameClient
                                   const WebString& name,
                                   const WebString& fallback_name,
                                   WebSandboxFlags,
-                                  const WebParsedFeaturePolicy&,
+                                  const ParsedFeaturePolicy&,
                                   const WebFrameOwnerProperties&) override;
 
   int Count() const { return count_; }
@@ -3716,7 +3719,7 @@ WebLocalFrame* CreateChildCounterFrameClient::CreateChildFrame(
     const WebString& name,
     const WebString& fallback_name,
     WebSandboxFlags sandbox_flags,
-    const WebParsedFeaturePolicy& container_policy,
+    const ParsedFeaturePolicy& container_policy,
     const WebFrameOwnerProperties& frame_owner_properties) {
   ++count_;
   return TestWebFrameClient::CreateChildFrame(
@@ -4044,7 +4047,7 @@ TEST_P(WebViewTest, FirstUserGestureObservedKeyEvent) {
   web_view->HandleInputEvent(WebCoalescedInputEvent(key_event));
 
   EXPECT_EQ(2, client.GetUserGestureNotificationsCount());
-  frame->SetAutofillClient(0);
+  frame->SetAutofillClient(nullptr);
 }
 
 TEST_P(WebViewTest, FirstUserGestureObservedMouseEvent) {
@@ -4069,7 +4072,7 @@ TEST_P(WebViewTest, FirstUserGestureObservedMouseEvent) {
   web_view->HandleInputEvent(WebCoalescedInputEvent(mouse_event));
 
   EXPECT_EQ(1, client.GetUserGestureNotificationsCount());
-  frame->SetAutofillClient(0);
+  frame->SetAutofillClient(nullptr);
 }
 
 TEST_P(WebViewTest, CompositionIsUserGesture) {
@@ -4089,10 +4092,14 @@ TEST_P(WebViewTest, CompositionIsUserGesture) {
   EXPECT_FALSE(UserGestureIndicator::ProcessingUserGesture());
   EXPECT_TRUE(frame->HasMarkedText());
 
-  frame->SetAutofillClient(0);
+  frame->SetAutofillClient(nullptr);
 }
 
-TEST_P(WebViewTest, CompareSelectAllToContentAsText) {
+// Currently, SelectionAsText() is built upon TextIterator, but
+// WebFrameContentDumper is built upon TextDumperForTests. Their results can
+// be different, making the test fail.
+// TODO(crbug.com/781434): Build a selection serializer upon TextDumperForTests.
+TEST_P(WebViewTest, DISABLED_CompareSelectAllToContentAsText) {
   RegisterMockedHttpURLLoad("longpress_selection.html");
   WebViewImpl* web_view = web_view_helper_.InitializeAndLoad(
       base_url_ + "longpress_selection.html");
@@ -4180,6 +4187,62 @@ TEST_P(WebViewTest, PreferredSizeDirtyLayout) {
   size = web_view->ContentsPreferredMinimumSize();
   EXPECT_EQ(0, size.width);
   EXPECT_EQ(0, size.height);
+}
+
+TEST_P(WebViewTest, PreferredSizeWithGrid) {
+  WebViewImpl* web_view = web_view_helper_.Initialize();
+  WebURL base_url = URLTestHelpers::ToKURL("http://example.com/");
+  FrameTestHelpers::LoadHTMLString(web_view->MainFrameImpl(),
+                                   R"HTML(<!DOCTYPE html>
+    <style>
+      html { writing-mode: vertical-rl; }
+      body { margin: 0px; }
+    </style>
+    <div style="width: 100px;">
+      <div style="display: grid; width: 100%;">
+        <div style="writing-mode: horizontal-tb; height: 100px;"></div>
+      </div>
+    </div>
+                                   )HTML",
+                                   base_url);
+
+  WebSize size = web_view->ContentsPreferredMinimumSize();
+  EXPECT_EQ(100, size.width);
+  EXPECT_EQ(100, size.height);
+}
+
+TEST_P(WebViewTest, PreferredSizeWithGridMinWidth) {
+  WebViewImpl* web_view = web_view_helper_.Initialize();
+  WebURL base_url = URLTestHelpers::ToKURL("http://example.com/");
+  FrameTestHelpers::LoadHTMLString(web_view->MainFrameImpl(),
+                                   R"HTML(<!DOCTYPE html>
+    <body style="margin: 0px;">
+      <div style="display: inline-grid; min-width: 200px;">
+        <div>item</div>
+      </div>
+    </body>
+                                   )HTML",
+                                   base_url);
+
+  WebSize size = web_view->ContentsPreferredMinimumSize();
+  EXPECT_EQ(200, size.width);
+}
+
+TEST_P(WebViewTest, PreferredSizeWithGridMinWidthFlexibleTracks) {
+  WebViewImpl* web_view = web_view_helper_.Initialize();
+  WebURL base_url = URLTestHelpers::ToKURL("http://example.com/");
+  FrameTestHelpers::LoadHTMLString(web_view->MainFrameImpl(),
+                                   R"HTML(<!DOCTYPE html>
+    <body style="margin: 0px;">
+      <div style="display: inline-grid; min-width: 200px; grid-template-columns: 1fr;">
+        <div>item</div>
+      </div>
+    </body>
+                                   )HTML",
+                                   base_url);
+
+  WebSize size = web_view->ContentsPreferredMinimumSize();
+  EXPECT_EQ(200, size.width);
 }
 
 class UnhandledTapWebViewClient : public FrameTestHelpers::TestWebViewClient {
@@ -4493,19 +4556,19 @@ TEST_P(WebViewTest, PasswordFieldEditingIsUserGesture) {
           empty_ime_text_spans, WebRange(), 0));
   EXPECT_EQ(1, client.TextChangesFromUserGesture());
   EXPECT_FALSE(UserGestureIndicator::ProcessingUserGesture());
-  frame->SetAutofillClient(0);
+  frame->SetAutofillClient(nullptr);
 }
 
-// Verify that a WebView created with a ScopedPageSuspender already on the
+// Verify that a WebView created with a ScopedPagePauser already on the
 // stack defers its loads.
-TEST_P(WebViewTest, CreatedDuringPageSuspension) {
+TEST_P(WebViewTest, CreatedDuringPagePause) {
   {
     WebViewImpl* web_view = web_view_helper_.Initialize();
     EXPECT_FALSE(web_view->GetPage()->Paused());
   }
 
   {
-    ScopedPageSuspender suspender;
+    ScopedPagePauser pauser;
     WebViewImpl* web_view = web_view_helper_.Initialize();
     EXPECT_TRUE(web_view->GetPage()->Paused());
   }
@@ -4558,16 +4621,16 @@ TEST_P(WebViewTest, SubframeBeforeUnloadUseCounter) {
 
 // Verify that page loads are deferred until all ScopedPageLoadDeferrers are
 // destroyed.
-TEST_P(WebViewTest, NestedPageSuspensions) {
+TEST_P(WebViewTest, NestedPagePauses) {
   WebViewImpl* web_view = web_view_helper_.Initialize();
   EXPECT_FALSE(web_view->GetPage()->Paused());
 
   {
-    ScopedPageSuspender suspender;
+    ScopedPagePauser pauser;
     EXPECT_TRUE(web_view->GetPage()->Paused());
 
     {
-      ScopedPageSuspender suspender2;
+      ScopedPagePauser pauser2;
       EXPECT_TRUE(web_view->GetPage()->Paused());
     }
 
@@ -4577,7 +4640,7 @@ TEST_P(WebViewTest, NestedPageSuspensions) {
   EXPECT_FALSE(web_view->GetPage()->Paused());
 }
 
-TEST_P(WebViewTest, ClosingPageIsSuspended) {
+TEST_P(WebViewTest, ClosingPageIsPaused) {
   WebViewImpl* web_view = web_view_helper_.Initialize();
   Page* page = web_view_helper_.WebView()->GetPage();
   EXPECT_FALSE(page->Paused());
@@ -4595,7 +4658,7 @@ TEST_P(WebViewTest, ClosingPageIsSuspended) {
   EXPECT_TRUE(main_frame->GetPage());
 
   {
-    ScopedPageSuspender suspender;
+    ScopedPagePauser pauser;
     EXPECT_TRUE(page->Paused());
   }
 }
@@ -4929,6 +4992,70 @@ TEST_P(WebViewTest, SetZoomLevelWhilePluginFocused) {
   // Even though the plugin is focused, the entire frame's zoom factor should
   // still be updated.
   EXPECT_FLOAT_EQ(5.0f / 6.0f, main_frame->PageZoomFactor());
+  web_view_helper_.Reset();  // Remove dependency on locally scoped client.
+}
+
+// Tests that a layout update that detaches a plugin doesn't crash if the
+// plugin tries to execute script while being destroyed.
+TEST_P(WebViewTest, DetachPluginInLayout) {
+  class ScriptInDestroyPlugin : public FakeWebPlugin {
+   public:
+    ScriptInDestroyPlugin(WebLocalFrame* frame, const WebPluginParams& params)
+        : FakeWebPlugin(params), frame_(frame) {}
+
+    // WebPlugin overrides:
+    void Destroy() override {
+      frame_->ExecuteScript(WebScriptSource("console.log('done')"));
+      // Deletes this.
+      FakeWebPlugin::Destroy();
+    }
+
+   private:
+    WebLocalFrame* frame_;  // Unowned
+  };
+
+  class PluginCreatingWebFrameClient
+      : public FrameTestHelpers::TestWebFrameClient {
+   public:
+    // WebFrameClient overrides:
+    WebPlugin* CreatePlugin(const WebPluginParams& params) override {
+      return new ScriptInDestroyPlugin(Frame(), params);
+    }
+
+    void DidAddMessageToConsole(const WebConsoleMessage& message,
+                                const WebString& source_name,
+                                unsigned source_line,
+                                const WebString& stack_trace) {
+      message_ = message.text;
+    }
+
+    const String& Message() const { return message_; }
+
+   private:
+    String message_;
+  };
+
+  PluginCreatingWebFrameClient frame_client;
+  WebViewImpl* web_view = web_view_helper_.Initialize(&frame_client);
+  WebURL base_url = URLTestHelpers::ToKURL("https://example.com/");
+  FrameTestHelpers::LoadHTMLString(
+      web_view->MainFrameImpl(),
+      "<!DOCTYPE html><html><body>"
+      "<object type='application/x-webkit-test-plugin'></object>"
+      "</body></html>",
+      base_url);
+  // Verify the plugin is loaded.
+  LocalFrame* main_frame = web_view->MainFrameImpl()->GetFrame();
+  HTMLObjectElement* plugin_element =
+      ToHTMLObjectElement(main_frame->GetDocument()->body()->firstChild());
+  EXPECT_TRUE(plugin_element->OwnedPlugin());
+
+  plugin_element->style()->setCSSText(main_frame->GetDocument(),
+                                      "display: none", ASSERT_NO_EXCEPTION);
+  EXPECT_TRUE(plugin_element->OwnedPlugin());
+  web_view->UpdateAllLifecyclePhases();
+  EXPECT_FALSE(plugin_element->OwnedPlugin());
+  EXPECT_EQ("done", frame_client.Message());
   web_view_helper_.Reset();  // Remove dependency on locally scoped client.
 }
 

@@ -810,7 +810,7 @@ TEST_F(PictureLayerImplTest, PinchGestureTilings) {
   EXPECT_NE(LOW_RESOLUTION, low_res_tiling->resolution());
 
   // Stop a pinch gesture.
-  host_impl()->PinchGestureEnd();
+  host_impl()->PinchGestureEnd(gfx::Point(), true);
 
   // Ensure UpdateTiles won't remove any tilings.
   active_layer()->MarkAllTilingsUsed();
@@ -940,7 +940,7 @@ TEST_F(PictureLayerImplTest, CleanUpTilings) {
       1.f * low_res_factor,
       active_layer()->tilings()->tiling_at(1)->contents_scale_key());
 
-  host_impl()->PinchGestureEnd();
+  host_impl()->PinchGestureEnd(gfx::Point(), true);
 
   // Create a 1.2 scale tiling. Now we have 1.0 and 1.2 tilings. Ideal = 1.2.
   scale = 1.2f;
@@ -1540,7 +1540,6 @@ TEST_F(PictureLayerImplTest, DisallowTileDrawQuads) {
 TEST_F(PictureLayerImplTest, ResourcelessPartialRecording) {
   std::unique_ptr<viz::RenderPass> render_pass = viz::RenderPass::Create();
 
-  gfx::Size tile_size(400, 400);
   gfx::Size layer_bounds(700, 650);
   gfx::Rect layer_rect(layer_bounds);
   SetInitialDeviceScaleFactor(2.f);
@@ -1817,7 +1816,6 @@ TEST_F(NoLowResPictureLayerImplTest, MarkRequiredOffscreenTiles) {
       viewport,
       pending_layer()->viewport_rect_for_tile_priority_in_content_space());
 
-  base::TimeTicks time_ticks;
   host_impl()->AdvanceToNextFrame(base::TimeDelta::FromMilliseconds(1));
   pending_layer()->UpdateTiles();
 
@@ -2898,6 +2896,63 @@ TEST_F(PictureLayerImplTest, HighResTilingDuringAnimation) {
   EXPECT_BOTH_EQ(HighResTiling()->contents_scale_key(), 11.f);
 }
 
+TEST_F(PictureLayerImplTest, HighResTilingDuringAnimationAspectRatio) {
+  gfx::Size viewport_size(2000, 1000);
+  host_impl()->SetViewportSize(viewport_size);
+
+  gfx::Size layer_bounds(100, 100);
+  SetupDefaultTrees(layer_bounds);
+
+  float contents_scale = 1.f;
+  float device_scale = 1.f;
+  float page_scale = 1.f;
+  float maximum_animation_scale = 1.f;
+  float starting_animation_scale = 0.f;
+  bool animating_transform = false;
+
+  EXPECT_BOTH_EQ(HighResTiling()->contents_scale_key(), 1.f);
+
+  // Allow rastering at maximum scale if the animation size is smaller than
+  // the square of the maximum viewporrt dimension.
+  animating_transform = true;
+  contents_scale = 2.f;
+  maximum_animation_scale = 15.f;
+
+  SetContentsScaleOnBothLayers(contents_scale, device_scale, page_scale,
+                               maximum_animation_scale,
+                               starting_animation_scale, animating_transform);
+  EXPECT_BOTH_EQ(HighResTiling()->contents_scale_key(), 15.f);
+}
+
+TEST_F(PictureLayerImplTest, HighResTilingDuringAnimationAspectRatioTooLarge) {
+  gfx::Size viewport_size(2000, 1000);
+  host_impl()->SetViewportSize(viewport_size);
+
+  gfx::Size layer_bounds(100, 100);
+  SetupDefaultTrees(layer_bounds);
+
+  float contents_scale = 1.f;
+  float device_scale = 1.f;
+  float page_scale = 1.f;
+  float maximum_animation_scale = 1.f;
+  float starting_animation_scale = 0.f;
+  bool animating_transform = false;
+
+  EXPECT_BOTH_EQ(HighResTiling()->contents_scale_key(), 1.f);
+
+  // The maximum animation scale exceeds the squared size of the maximum
+  // viewport dimension, so raster scale should fall back to 1.
+  animating_transform = true;
+  contents_scale = 2.f;
+  maximum_animation_scale = 21.f;
+
+  SetContentsScaleOnBothLayers(contents_scale, device_scale, page_scale,
+                               maximum_animation_scale,
+                               starting_animation_scale, animating_transform);
+  EXPECT_BOTH_EQ(HighResTiling()->contents_scale_key(),
+                 page_scale * device_scale);
+}
+
 TEST_F(PictureLayerImplTest, TilingSetRasterQueue) {
   host_impl()->AdvanceToNextFrame(base::TimeDelta::FromMilliseconds(1));
 
@@ -3655,7 +3710,7 @@ TEST_F(NoLowResPictureLayerImplTest, CleanUpTilings) {
   active_layer()->CleanUpTilingsOnActiveLayer(used_tilings);
   ASSERT_EQ(1u, active_layer()->tilings()->num_tilings());
 
-  host_impl()->PinchGestureEnd();
+  host_impl()->PinchGestureEnd(gfx::Point(), true);
 
   // Create a 1.2 scale tiling. Now we have 1.0 and 1.2 tilings. Ideal = 1.2.
   scale /= 4.f;
@@ -4485,7 +4540,8 @@ void GetClientDataAndUpdateInvalidation(RecordingSource* recording_source,
   recording_source->UpdateAndExpandInvalidation(&invalidation, layer_bounds,
                                                 new_recorded_viewport);
   recording_source->UpdateDisplayItemList(display_list,
-                                          painter_reported_memory_usage);
+                                          painter_reported_memory_usage,
+                                          1.f /** recording_scale_factor */);
 }
 
 void PictureLayerImplTest::TestQuadsForSolidColor(bool test_for_solid,
@@ -4578,7 +4634,6 @@ TEST_F(PictureLayerImplTest, DrawTransparentQuads) {
 TEST_F(PictureLayerImplTest, NonSolidToSolidNoTilings) {
   host_impl()->AdvanceToNextFrame(base::TimeDelta::FromMilliseconds(1));
 
-  gfx::Size tile_size(100, 100);
   gfx::Size layer_bounds(200, 200);
   gfx::Rect layer_rect(layer_bounds);
 

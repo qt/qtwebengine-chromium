@@ -207,13 +207,13 @@ void CreateTabSocketMojoServiceForContents(
 
 struct HeadlessWebContentsImpl::PendingFrame {
  public:
-  PendingFrame() {}
-  ~PendingFrame() {}
+  PendingFrame() = default;
+  ~PendingFrame() = default;
 
   bool MaybeRunCallback() {
     if (wait_for_copy_result || !display_did_finish_frame)
       return false;
-    callback.Run(has_damage, std::move(bitmap));
+    callback.Run(has_damage, main_frame_content_updated, std::move(bitmap));
     return true;
   }
 
@@ -221,6 +221,7 @@ struct HeadlessWebContentsImpl::PendingFrame {
   bool wait_for_copy_result = false;
   bool display_did_finish_frame = false;
   bool has_damage = false;
+  bool main_frame_content_updated = false;
   std::unique_ptr<SkBitmap> bitmap;
   FrameFinishedCallback callback;
 
@@ -321,6 +322,7 @@ HeadlessWebContentsImpl::HeadlessWebContentsImpl(
       weak_ptr_factory_(this) {
 #if BUILDFLAG(ENABLE_BASIC_PRINTING) && !defined(CHROME_MULTIPLE_DLL_CHILD)
   HeadlessPrintManager::CreateForWebContents(web_contents);
+// TODO(weili): Add support for printing OOPIFs.
 #endif
   web_contents->GetMutableRendererPrefs()->accept_languages =
       browser_context->options()->accept_language();
@@ -595,6 +597,14 @@ void HeadlessWebContentsImpl::DidReceiveCompositorFrame() {
     for (int session_id : begin_frame_events_enabled_sessions_)
       agent_host_->SendProtocolMessageToClient(session_id, json_result);
   }
+
+  // Set main_frame_content_updated on pending frames that the display hasn't
+  // completed yet. Pending frames that it did complete won't incorporate this
+  // CompositorFrame. In practice, this should only be a single PendingFrame.
+  for (const std::unique_ptr<PendingFrame>& pending_frame : pending_frames_) {
+    if (!pending_frame->display_did_finish_frame)
+      pending_frame->main_frame_content_updated = true;
+  }
 }
 
 void HeadlessWebContentsImpl::PendingFrameReadbackComplete(
@@ -699,7 +709,7 @@ HeadlessWebContents* HeadlessWebContents::Builder::Build() {
   return browser_context_->CreateWebContents(this);
 }
 
-HeadlessWebContents::Builder::MojoService::MojoService() {}
+HeadlessWebContents::Builder::MojoService::MojoService() = default;
 
 HeadlessWebContents::Builder::MojoService::MojoService(
     const MojoService& other) = default;
@@ -709,6 +719,6 @@ HeadlessWebContents::Builder::MojoService::MojoService(
     const ServiceFactoryCallback& service_factory)
     : service_name(service_name), service_factory(service_factory) {}
 
-HeadlessWebContents::Builder::MojoService::~MojoService() {}
+HeadlessWebContents::Builder::MojoService::~MojoService() = default;
 
 }  // namespace headless

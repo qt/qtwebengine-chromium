@@ -25,10 +25,10 @@
 #ifndef RegisteredEventListener_h
 #define RegisteredEventListener_h
 
+#include "base/memory/scoped_refptr.h"
 #include "core/dom/events/AddEventListenerOptionsResolved.h"
 #include "core/dom/events/EventListener.h"
 #include "platform/bindings/TraceWrapperMember.h"
-#include "platform/wtf/RefPtr.h"
 
 namespace blink {
 
@@ -55,8 +55,10 @@ class RegisteredEventListener {
             options.PassiveForcedForDocumentTarget()),
         passive_specified_(options.PassiveSpecified()) {}
 
-  DEFINE_INLINE_TRACE() { visitor->Trace(callback_); }
-  DEFINE_INLINE_TRACE_WRAPPERS() { visitor->TraceWrappers(callback_); }
+  void Trace(blink::Visitor* visitor) { visitor->Trace(callback_); }
+  void TraceWrappers(const ScriptWrappableVisitor* visitor) const {
+    visitor->TraceWrappers(callback_);
+  }
 
   AddEventListenerOptionsResolved Options() const {
     AddEventListenerOptionsResolved result;

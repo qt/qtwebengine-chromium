@@ -18,6 +18,10 @@ static void {{method.name}}{{method.overload_index}}Method{{world_suffix}}(const
   ExceptionState exceptionState(info.GetIsolate(), ExceptionState::kExecutionContext, "{{interface_name}}", "{{method.name}}");
   {%- endset %}
 
+  {% if method.is_ce_reactions %}
+  CEReactionsScope ceReactionsScope;
+  {% endif %}
+
   {% set function_call = func_call_with_prep_of_args(method, world_suffix) %}
 
   {% if 'exceptionState' in function_call or
@@ -147,48 +151,46 @@ if (UNLIKELY(numArgsPassed <= {{argument.index}})) {
 {% if argument.is_callback_interface %}
 {# FIXME: remove EventListener/NodeFilter special case. crbug.com/630986 #}
 {% if argument.idl_type == 'EventListener' %}
-{% if method.name == 'removeEventListener' or method.name == 'removeListener' %}
 if (!IsUndefinedOrNull(info[{{argument.index}}]) && !info[{{argument.index}}]->IsObject()) {
-  {{throw_argument_error(method, argument, "The callback provided as parameter %(index)d is not a function.")}}
+  {{throw_argument_error(method, argument, "The callback provided as parameter %(index)d is not an object.")}}
   return;
 }
+{% if method.name == 'removeEventListener' or method.name == 'removeListener' %}
 {{argument.name}} = V8EventListenerHelper::GetEventListener(ScriptState::Current(info.GetIsolate()), info[{{argument.index}}], false, kListenerFindOnly);
 {% else %}{# method.name == 'AddEventListener' #}
-if (!IsUndefinedOrNull(info[{{argument.index}}]) && !info[{{argument.index}}]->IsObject()) {
-  {{throw_argument_error(method, argument, "The callback provided as parameter %(index)d is not a function.")}}
-  return;
-}
 {{argument.name}} = V8EventListenerHelper::GetEventListener(ScriptState::Current(info.GetIsolate()), info[{{argument.index}}], false, kListenerFindOrCreate);
 {% endif %}{# method.name #}
 {% elif argument.idl_type == 'NodeFilter' %}
 {{argument.name}} = V8NodeFilterCondition::CreateOrNull(info[{{argument.index}}], ScriptState::Current(info.GetIsolate()));
 {% else %}{# argument.idl_type == 'EventListener'/'NodeFilter' #}
-{# Callback functions must be functions:
-   http://www.w3.org/TR/WebIDL/#es-callback-function #}
+if (info[{{argument.index}}]->IsFunction()) {
+  {{argument.name}} = V8{{argument.idl_type}}::Create(info[{{argument.index}}].As<v8::Object>());
 {% if argument.is_optional %}
-if (!IsUndefinedOrNull(info[{{argument.index}}])) {
-  if (!info[{{argument.index}}]->IsFunction()) {
-    {{throw_argument_error(method, argument, "The callback provided as parameter %(index)d is not a function.")}}
-    return;
-  }
-  {{argument.name}} = V8{{argument.idl_type}}::Create(v8::Local<v8::Function>::Cast(info[{{argument.index}}]), ScriptState::Current(info.GetIsolate()));
-} else {
+} else if (info[{{argument.index}}]->IsNullOrUndefined()) {
   {{argument.name}} = nullptr;
-}
-{% else %}{# argument.is_optional #}
-if (info.Length() <= {{argument.index}} || !{% if argument.is_nullable %}(info[{{argument.index}}]->IsFunction() || info[{{argument.index}}]->IsNull()){% else %}info[{{argument.index}}]->IsFunction(){% endif %}) {
+{% elif argument.is_nullable %}
+} else if ({{argument.index}} < info.Length() && info[{{argument.index}}]->IsNullOrUndefined()) {
+  {{argument.name}} = nullptr;
+{% endif %}
+} else {
   {{throw_argument_error(method, argument, "The callback provided as parameter %(index)d is not a function.")}}
   return;
 }
-{{argument.name}} = {% if argument.is_nullable %}info[{{argument.index}}]->IsNull() ? nullptr : {% endif %}V8{{argument.idl_type}}::Create(v8::Local<v8::Function>::Cast(info[{{argument.index}}]), ScriptState::Current(info.GetIsolate()));
-{% endif %}{# argument.is_optional #}
 {% endif %}{# argument.idl_type == 'EventListener'/'NodeFilter' #}
 {% elif argument.is_callback_function %}
-if ({% if argument.is_nullable %}!IsUndefinedOrNull(info[{{argument.index}}]) && {% endif %}!(info[{{argument.index}}]->IsObject() && v8::Local<v8::Object>::Cast(info[{{argument.index}}])->IsCallable())) {
+if (info[{{argument.index}}]->IsFunction()) {
+  {{v8_value_to_local_cpp_value(argument)}}
+{% if argument.is_optional %}
+} else if (info[{{argument.index}}]->IsNullOrUndefined()) {
+  {{argument.name}} = nullptr;
+{% elif argument.is_nullable %}
+} else if ({{argument.index}} < info.Length() && info[{{argument.index}}]->IsNullOrUndefined()) {
+  {{argument.name}} = nullptr;
+{% endif %}
+} else {
   {{throw_argument_error(method, argument, "The callback provided as parameter %(index)d is not a function.")}}
   return;
 }
-{{v8_value_to_local_cpp_value(argument)}}
 {% elif argument.is_variadic_wrapper_type %}
 for (int i = {{argument.index}}; i < info.Length(); ++i) {
   if (!V8{{argument.idl_type}}::hasInstance(info[i], info.GetIsolate())) {
@@ -201,19 +203,19 @@ for (int i = {{argument.index}}; i < info.Length(); ++i) {
 {% if not argument.use_permissive_dictionary_conversion %}
 {# Dictionaries must have type Undefined, Null or Object:
    http://heycam.github.io/webidl/#es-dictionary #}
-if (!IsUndefinedOrNull(info[{{argument.index}}]) && !info[{{argument.index}}]->IsObject()) {
+if (!info[{{argument.index}}]->IsNullOrUndefined() && !info[{{argument.index}}]->IsObject()) {
   {{throw_argument_error(method, argument, "parameter %(index)d ('%(name)s') is not an object.")}}
   return;
 }
 {% endif %}{# not argument.use_permissive_dictionary_conversion #}
 {{v8_value_to_local_cpp_value(argument)}}
 {% elif argument.is_explicit_nullable %}
-if (!IsUndefinedOrNull(info[{{argument.index}}])) {
+if (!info[{{argument.index}}]->IsNullOrUndefined()) {
   {{v8_value_to_local_cpp_value(argument) | indent(2)}}
 }
-{% else %}{# argument.is_nullable #}
+{% else %}{# argument is something else #}
 {{v8_value_to_local_cpp_value(argument)}}
-{% endif %}{# argument.is_nullable #}
+{% endif %}{# end of the dispatch by the argument type #}
 {# Type checking, possibly throw a TypeError, per:
    http://www.w3.org/TR/WebIDL/#es-type-mapping #}
 {% if argument.has_type_checking_interface and not argument.is_variadic_wrapper_type %}
@@ -460,7 +462,7 @@ static void postMessageImpl(const char* interfaceName, {{cpp_class}}* instance, 
     }
   }
 
-  RefPtr<SerializedScriptValue> message;
+  scoped_refptr<SerializedScriptValue> message;
   if (instance->CanTransferArrayBuffersAndImageBitmaps()) {
     // This instance supports sending array buffers by move semantics.
     SerializedScriptValue::SerializeOptions options;
@@ -532,9 +534,6 @@ void {{v8_class_or_partial}}::{{method.name}}MethodCallback{{world_suffix}}(cons
     Vector<v8::Local<v8::Value>> loggerArgs = ToImplArguments<Vector<v8::Local<v8::Value>>>(info, 0, exceptionState);
     contextData->ActivityLogger()->LogMethod("{{interface_name}}.{{method.name}}", info.Length(), loggerArgs.data());
   }
-  {% endif %}
-  {% if method.is_ce_reactions %}
-  CEReactionsScope ceReactionsScope;
   {% endif %}
   {% if method.is_custom %}
   {{v8_class}}::{{method.name}}MethodCustom(info);
@@ -671,8 +670,8 @@ for (const auto& methodConfig : {{method.name}}MethodConfiguration)
 
 
 {######################################}
-{% macro install_conditionally_enabled_methods(secure_context_test_result) %}
-{% for method in conditionally_enabled_methods %}
+{% macro install_conditional_methods(secure_context_test_result) %}
+{% for method in conditional_methods %}
 {% filter secure_context(method.overloads.secure_context_test_all
                          if method.overloads else
                          method.secure_context_test,

@@ -57,6 +57,10 @@ constexpr double kAudioSampleDurationSeconds = 0.01;
 constexpr int64_t kMaxRetransmissionWindowMs = 1000;
 constexpr int64_t kMinRetransmissionWindowMs = 30;
 
+// Video Sync.
+constexpr int kVoiceEngineMinMinPlayoutDelayMs = 0;
+constexpr int kVoiceEngineMaxMinPlayoutDelayMs = 10000;
+
 }  // namespace
 
 const int kTelephoneEventAttenuationdB = 10;
@@ -65,7 +69,8 @@ class RtcEventLogProxy final : public webrtc::RtcEventLog {
  public:
   RtcEventLogProxy() : event_log_(nullptr) {}
 
-  bool StartLogging(std::unique_ptr<RtcEventLogOutput> output) override {
+  bool StartLogging(std::unique_ptr<RtcEventLogOutput> output,
+                    int64_t output_period_ms) override {
     RTC_NOTREACHED();
     return false;
   }
@@ -215,6 +220,10 @@ class RtpPacketSenderProxy : public RtpPacketSender {
     }
   }
 
+  void SetAccountForAudioPackets(bool account_for_audio) override {
+    RTC_NOTREACHED();
+  }
+
  private:
   rtc::ThreadChecker thread_checker_;
   rtc::CriticalSection crit_;
@@ -337,8 +346,8 @@ int32_t Channel::SendData(FrameType frameType,
           // received from the capture device as
           // undefined for voice for now.
           -1, payloadData, payloadSize, fragmentation, nullptr, nullptr)) {
-    LOG(LS_ERROR) <<
-        "Channel::SendData() failed to send data to RTP/RTCP module";
+    RTC_LOG(LS_ERROR)
+        << "Channel::SendData() failed to send data to RTP/RTCP module";
     return -1;
   }
 
@@ -351,8 +360,9 @@ bool Channel::SendRtp(const uint8_t* data,
   rtc::CritScope cs(&_callbackCritSect);
 
   if (_transportPtr == NULL) {
-    LOG(LS_ERROR) << "Channel::SendPacket() failed to send RTP packet due to"
-                  << " invalid transport object";
+    RTC_LOG(LS_ERROR)
+        << "Channel::SendPacket() failed to send RTP packet due to"
+        << " invalid transport object";
     return false;
   }
 
@@ -360,7 +370,7 @@ bool Channel::SendRtp(const uint8_t* data,
   size_t bufferLength = len;
 
   if (!_transportPtr->SendRtp(bufferToSendPtr, bufferLength, options)) {
-    LOG(LS_ERROR) << "Channel::SendPacket() RTP transmission failed";
+    RTC_LOG(LS_ERROR) << "Channel::SendPacket() RTP transmission failed";
     return false;
   }
   return true;
@@ -369,8 +379,8 @@ bool Channel::SendRtp(const uint8_t* data,
 bool Channel::SendRtcp(const uint8_t* data, size_t len) {
   rtc::CritScope cs(&_callbackCritSect);
   if (_transportPtr == NULL) {
-    LOG(LS_ERROR) << "Channel::SendRtcp() failed to send RTCP packet due to"
-                  << " invalid transport object";
+    RTC_LOG(LS_ERROR) << "Channel::SendRtcp() failed to send RTCP packet due to"
+                      << " invalid transport object";
     return false;
   }
 
@@ -379,7 +389,7 @@ bool Channel::SendRtcp(const uint8_t* data, size_t len) {
 
   int n = _transportPtr->SendRtcp(bufferToSendPtr, bufferLength);
   if (n < 0) {
-    LOG(LS_ERROR) << "Channel::SendRtcp() transmission failed";
+    RTC_LOG(LS_ERROR) << "Channel::SendRtcp() transmission failed";
     return false;
   }
   return true;
@@ -398,8 +408,9 @@ int32_t Channel::OnInitializeDecoder(int payload_type,
                                      const SdpAudioFormat& audio_format,
                                      uint32_t rate) {
   if (!audio_coding_->RegisterReceiveCodec(payload_type, audio_format)) {
-    LOG(LS_WARNING) << "Channel::OnInitializeDecoder() invalid codec (pt="
-                    << payload_type << ", " << audio_format << ") received -1";
+    RTC_LOG(LS_WARNING) << "Channel::OnInitializeDecoder() invalid codec (pt="
+                        << payload_type << ", " << audio_format
+                        << ") received -1";
     return -1;
   }
 
@@ -418,8 +429,8 @@ int32_t Channel::OnReceivedPayloadData(const uint8_t* payloadData,
   // Push the incoming payload (parsed and ready for decoding) into the ACM
   if (audio_coding_->IncomingPacket(payloadData, payloadSize, *rtpHeader) !=
       0) {
-    LOG(LS_ERROR) <<
-        "Channel::OnReceivedPayloadData() unable to push data to the ACM";
+    RTC_LOG(LS_ERROR)
+        << "Channel::OnReceivedPayloadData() unable to push data to the ACM";
     return -1;
   }
 
@@ -440,7 +451,7 @@ bool Channel::OnRecoveredPacket(const uint8_t* rtp_packet,
                                 size_t rtp_packet_length) {
   RTPHeader header;
   if (!rtp_header_parser_->Parse(rtp_packet, rtp_packet_length, &header)) {
-    LOG(LS_WARNING) << "IncomingPacket invalid RTP header";
+    RTC_LOG(LS_WARNING) << "IncomingPacket invalid RTP header";
     return false;
   }
   header.payload_type_frequency =
@@ -463,7 +474,7 @@ AudioMixer::Source::AudioFrameInfo Channel::GetAudioFrameWithInfo(
   bool muted;
   if (audio_coding_->PlayoutData10Ms(audio_frame->sample_rate_hz_, audio_frame,
                                      &muted) == -1) {
-    LOG(LS_ERROR) << "Channel::GetAudioFrame() PlayoutData10Ms() failed!";
+    RTC_LOG(LS_ERROR) << "Channel::GetAudioFrame() PlayoutData10Ms() failed!";
     // In all likelihood, the audio in this frame is garbage. We return an
     // error so that the audio mixer module doesn't add it to the mix. As
     // a result, it won't be played out and the actions skipped here are
@@ -544,6 +555,19 @@ AudioMixer::Source::AudioFrameInfo Channel::GetAudioFrameWithInfo(
     }
   }
 
+  {
+    RTC_HISTOGRAM_COUNTS_1000("WebRTC.Audio.TargetJitterBufferDelayMs",
+                              audio_coding_->TargetDelayMs());
+    const int jitter_buffer_delay = audio_coding_->FilteredCurrentDelayMs();
+    rtc::CritScope lock(&video_sync_lock_);
+    RTC_HISTOGRAM_COUNTS_1000("WebRTC.Audio.ReceiverDelayEstimateMs",
+                              jitter_buffer_delay + playout_delay_ms_);
+    RTC_HISTOGRAM_COUNTS_1000("WebRTC.Audio.ReceiverJitterBufferDelayMs",
+                              jitter_buffer_delay);
+    RTC_HISTOGRAM_COUNTS_1000("WebRTC.Audio.ReceiverDeviceDelayMs",
+                              playout_delay_ms_);
+  }
+
   return muted ? AudioMixer::Source::AudioFrameInfo::kMuted
                : AudioMixer::Source::AudioFrameInfo::kNormal;
 }
@@ -560,7 +584,7 @@ int32_t Channel::CreateChannel(Channel*& channel,
                                const VoEBase::ChannelConfig& config) {
   channel = new Channel(channelId, instanceId, config);
   if (channel == NULL) {
-    LOG(LS_ERROR) << "unable to allocate memory for new channel";
+    RTC_LOG(LS_ERROR) << "unable to allocate memory for new channel";
     return -1;
   }
   return 0;
@@ -654,7 +678,8 @@ int32_t Channel::Init() {
   // --- Initial sanity
 
   if (_moduleProcessThreadPtr == NULL) {
-    LOG(LS_ERROR) << "Channel::Init() must call SetEngineInformation() first";
+    RTC_LOG(LS_ERROR)
+        << "Channel::Init() must call SetEngineInformation() first";
     return -1;
   }
 
@@ -665,7 +690,7 @@ int32_t Channel::Init() {
   // --- ACM initialization
 
   if (audio_coding_->InitializeReceiver() == -1) {
-    LOG(LS_ERROR) << "Channel::Init() unable to initialize the ACM - 1";
+    RTC_LOG(LS_ERROR) << "Channel::Init() unable to initialize the ACM - 1";
     return -1;
   }
 
@@ -681,7 +706,7 @@ int32_t Channel::Init() {
   _rtpRtcpModule->SetRTCPStatus(RtcpMode::kCompound);
   // --- Register all permanent callbacks
   if (audio_coding_->RegisterTransportCallback(this) == -1) {
-    LOG(LS_ERROR) << "Channel::Init() callbacks not registered";
+    RTC_LOG(LS_ERROR) << "Channel::Init() callbacks not registered";
     return -1;
   }
 
@@ -701,8 +726,9 @@ void Channel::Terminate() {
   // 2. De-register modules in process thread
   // 3. Destroy modules
   if (audio_coding_->RegisterTransportCallback(NULL) == -1) {
-    LOG(LS_WARNING) << "Terminate() failed to de-register transport callback"
-                    << " (Audio coding module)";
+    RTC_LOG(LS_WARNING)
+        << "Terminate() failed to de-register transport callback"
+        << " (Audio coding module)";
   }
 
   // De-register modules in process thread
@@ -771,7 +797,7 @@ int32_t Channel::StartSend() {
   }
   _rtpRtcpModule->SetSendingMediaStatus(true);
   if (_rtpRtcpModule->SetSendingStatus(true) != 0) {
-    LOG(LS_ERROR) << "StartSend() RTP/RTCP failed to start sending";
+    RTC_LOG(LS_ERROR) << "StartSend() RTP/RTCP failed to start sending";
     _rtpRtcpModule->SetSendingMediaStatus(false);
     rtc::CritScope cs(&_callbackCritSect);
     channel_state_.SetSending(false);
@@ -816,7 +842,7 @@ void Channel::StopSend() {
   // Reset sending SSRC and sequence number and triggers direct transmission
   // of RTCP BYE
   if (_rtpRtcpModule->SetSendingStatus(false) == -1) {
-    LOG(LS_ERROR) << "StartSend() RTP/RTCP failed to stop sending";
+    RTC_LOG(LS_ERROR) << "StartSend() RTP/RTCP failed to stop sending";
   }
   _rtpRtcpModule->SetSendingMediaStatus(false);
 }
@@ -844,23 +870,19 @@ bool Channel::SetEncoder(int payload_type,
   rtp_codec.channels = encoder->NumChannels();
   rtp_codec.rate = 0;
 
-  // For audio encoding we need, instead, the actual sample rate of the codec.
-  // The rest of the information should be the same.
-  CodecInst send_codec = rtp_codec;
-  send_codec.plfreq = encoder->SampleRateHz();
-  cached_send_codec_.emplace(send_codec);
+  cached_encoder_props_.emplace(
+      EncoderProps{encoder->SampleRateHz(), encoder->NumChannels()});
 
   if (_rtpRtcpModule->RegisterSendPayload(rtp_codec) != 0) {
     _rtpRtcpModule->DeRegisterSendPayload(payload_type);
     if (_rtpRtcpModule->RegisterSendPayload(rtp_codec) != 0) {
-      LOG(LS_ERROR)
+      RTC_LOG(LS_ERROR)
           << "SetEncoder() failed to register codec to RTP/RTCP module";
       return false;
     }
   }
 
   audio_coding_->SetEncoder(std::move(encoder));
-  codec_manager_.UnsetCodecInst();
   return true;
 }
 
@@ -869,50 +891,18 @@ void Channel::ModifyEncoder(
   audio_coding_->ModifyEncoder(modifier);
 }
 
-int32_t Channel::GetSendCodec(CodecInst& codec) {
-  if (cached_send_codec_) {
-    codec = *cached_send_codec_;
-    return 0;
-  } else {
-    const CodecInst* send_codec = codec_manager_.GetCodecInst();
-    if (send_codec) {
-      codec = *send_codec;
-      return 0;
-    }
-  }
-  return -1;
+rtc::Optional<Channel::EncoderProps> Channel::GetEncoderProps() const {
+  return cached_encoder_props_;
 }
 
 int32_t Channel::GetRecCodec(CodecInst& codec) {
   return (audio_coding_->ReceiveCodec(&codec));
 }
 
-int32_t Channel::SetSendCodec(const CodecInst& codec) {
-  if (!codec_manager_.RegisterEncoder(codec) ||
-      !codec_manager_.MakeEncoder(&rent_a_codec_, audio_coding_.get())) {
-    LOG(LS_ERROR) << "SetSendCodec() failed to register codec to ACM";
-    return -1;
-  }
-
-  if (_rtpRtcpModule->RegisterSendPayload(codec) != 0) {
-    _rtpRtcpModule->DeRegisterSendPayload(codec.pltype);
-    if (_rtpRtcpModule->RegisterSendPayload(codec) != 0) {
-      LOG(LS_ERROR)
-          << "SetSendCodec() failed to register codec to RTP/RTCP module";
-      return -1;
-    }
-  }
-
-  cached_send_codec_.reset();
-
-  return 0;
-}
-
 void Channel::SetBitRate(int bitrate_bps, int64_t probing_interval_ms) {
   audio_coding_->ModifyEncoder([&](std::unique_ptr<AudioEncoder>* encoder) {
     if (*encoder) {
-      (*encoder)->OnReceivedUplinkBandwidth(
-          bitrate_bps, rtc::Optional<int64_t>(probing_interval_ms));
+      (*encoder)->OnReceivedUplinkBandwidth(bitrate_bps, probing_interval_ms);
     }
   });
   retransmission_rate_limiter_->SetMaxRate(bitrate_bps);
@@ -1125,7 +1115,7 @@ int Channel::SendTelephoneEventOutband(int event, int duration_ms) {
   }
   if (_rtpRtcpModule->SendTelephoneEventOutband(
       event, duration_ms, kTelephoneEventAttenuationdB) != 0) {
-    LOG(LS_ERROR) << "SendTelephoneEventOutband() failed to send event";
+    RTC_LOG(LS_ERROR) << "SendTelephoneEventOutband() failed to send event";
     return -1;
   }
   return 0;
@@ -1142,8 +1132,9 @@ int Channel::SetSendTelephoneEventPayloadType(int payload_type,
   if (_rtpRtcpModule->RegisterSendPayload(codec) != 0) {
     _rtpRtcpModule->DeRegisterSendPayload(codec.pltype);
     if (_rtpRtcpModule->RegisterSendPayload(codec) != 0) {
-      LOG(LS_ERROR) << "SetSendTelephoneEventPayloadType() failed to register "
-                       "send payload type";
+      RTC_LOG(LS_ERROR)
+          << "SetSendTelephoneEventPayloadType() failed to register "
+             "send payload type";
       return -1;
     }
   }
@@ -1152,7 +1143,7 @@ int Channel::SetSendTelephoneEventPayloadType(int payload_type,
 
 int Channel::SetLocalSSRC(unsigned int ssrc) {
   if (channel_state_.Get().sending) {
-    LOG(LS_ERROR) << "SetLocalSSRC() already sending";
+    RTC_LOG(LS_ERROR) << "SetLocalSSRC() already sending";
     return -1;
   }
   _rtpRtcpModule->SetSSRC(ssrc);
@@ -1249,7 +1240,7 @@ void Channel::SetRTCPStatus(bool enable) {
 
 int Channel::SetRTCP_CNAME(const char cName[256]) {
   if (_rtpRtcpModule->SetCNAME(cName) != 0) {
-    LOG(LS_ERROR) << "SetRTCP_CNAME() failed to set RTCP CNAME";
+    RTC_LOG(LS_ERROR) << "SetRTCP_CNAME() failed to set RTCP CNAME";
     return -1;
   }
   return 0;
@@ -1258,7 +1249,7 @@ int Channel::SetRTCP_CNAME(const char cName[256]) {
 int Channel::GetRemoteRTCPReportBlocks(
     std::vector<ReportBlock>* report_blocks) {
   if (report_blocks == NULL) {
-    LOG(LS_ERROR) << "GetRemoteRTCPReportBlock()s invalid report_blocks.";
+    RTC_LOG(LS_ERROR) << "GetRemoteRTCPReportBlock()s invalid report_blocks.";
     return -1;
   }
 
@@ -1323,8 +1314,9 @@ int Channel::GetRTPStatistics(CallStatistics& stats) {
   }
 
   if (_rtpRtcpModule->DataCountersRTP(&bytesSent, &packetsSent) != 0) {
-    LOG(LS_WARNING) << "GetRTPStatistics() failed to retrieve RTP datacounters"
-                    << " => output will not be complete";
+    RTC_LOG(LS_WARNING)
+        << "GetRTPStatistics() failed to retrieve RTP datacounters"
+        << " => output will not be complete";
   }
 
   stats.bytesSent = bytesSent;
@@ -1383,19 +1375,12 @@ void Channel::ProcessAndEncodeAudio(const int16_t* audio_data,
   if (!encoder_queue_is_active_) {
     return;
   }
-  CodecInst codec;
-  const int result = GetSendCodec(codec);
   std::unique_ptr<AudioFrame> audio_frame(new AudioFrame());
-  // TODO(ossu): Investigate how this could happen. b/62909493
-  if (result == 0) {
-    audio_frame->sample_rate_hz_ = std::min(codec.plfreq, sample_rate);
-    audio_frame->num_channels_ = std::min(number_of_channels, codec.channels);
-  } else {
-    audio_frame->sample_rate_hz_ = sample_rate;
-    audio_frame->num_channels_ = number_of_channels;
-    LOG(LS_WARNING) << "Unable to get send codec for channel " << ChannelId();
-    RTC_NOTREACHED();
-  }
+  const auto props = GetEncoderProps();
+  RTC_CHECK(props);
+  audio_frame->sample_rate_hz_ = std::min(props->sample_rate_hz, sample_rate);
+  audio_frame->num_channels_ =
+      std::min(props->num_channels, number_of_channels);
   RemixAndResample(audio_data, number_of_frames, number_of_channels,
                    sample_rate, &input_resampler_, audio_frame.get());
   encoder_queue_->PostTask(std::unique_ptr<rtc::QueuedTask>(
@@ -1437,7 +1422,7 @@ void Channel::ProcessAndEncodeAudioOnTaskQueue(AudioFrame* audio_input) {
   // is done and payload is ready for packetization and transmission.
   // Otherwise, it will return without invoking the callback.
   if (audio_coding_->Add10MsData(*audio_input) < 0) {
-    LOG(LS_ERROR) << "ACM::Add10MsData() failed for channel " << _channelId;
+    RTC_LOG(LS_ERROR) << "ACM::Add10MsData() failed for channel " << _channelId;
     return;
   }
 
@@ -1513,11 +1498,12 @@ uint32_t Channel::GetDelayEstimate() const {
 int Channel::SetMinimumPlayoutDelay(int delayMs) {
   if ((delayMs < kVoiceEngineMinMinPlayoutDelayMs) ||
       (delayMs > kVoiceEngineMaxMinPlayoutDelayMs)) {
-    LOG(LS_ERROR) << "SetMinimumPlayoutDelay() invalid min delay";
+    RTC_LOG(LS_ERROR) << "SetMinimumPlayoutDelay() invalid min delay";
     return -1;
   }
   if (audio_coding_->SetMinimumPlayoutDelay(delayMs) != 0) {
-    LOG(LS_ERROR) << "SetMinimumPlayoutDelay() failed to set min playout delay";
+    RTC_LOG(LS_ERROR)
+        << "SetMinimumPlayoutDelay() failed to set min playout delay";
     return -1;
   }
   return 0;
@@ -1530,7 +1516,7 @@ int Channel::GetPlayoutTimestamp(unsigned int& timestamp) {
     playout_timestamp_rtp = playout_timestamp_rtp_;
   }
   if (playout_timestamp_rtp == 0) {
-    LOG(LS_ERROR) << "GetPlayoutTimestamp() failed to retrieve timestamp";
+    RTC_LOG(LS_ERROR) << "GetPlayoutTimestamp() failed to retrieve timestamp";
     return -1;
   }
   timestamp = playout_timestamp_rtp;
@@ -1555,8 +1541,8 @@ void Channel::UpdatePlayoutTimestamp(bool rtcp) {
 
   uint16_t delay_ms = 0;
   if (_audioDeviceModulePtr->PlayoutDelay(&delay_ms) == -1) {
-    LOG(LS_WARNING) << "Channel::UpdatePlayoutTimestamp() failed to read"
-                    << " playout delay from the ADM";
+    RTC_LOG(LS_WARNING) << "Channel::UpdatePlayoutTimestamp() failed to read"
+                        << " playout delay from the ADM";
     return;
   }
 
@@ -1581,15 +1567,15 @@ void Channel::RegisterReceiveCodecsToRTPModule() {
   for (int idx = 0; idx < nSupportedCodecs; idx++) {
     CodecInst codec;
     if (audio_coding_->Codec(idx, &codec) == -1) {
-      LOG(LS_WARNING) << "Unable to register codec #" << idx
-                      << " for RTP/RTCP receiver.";
+      RTC_LOG(LS_WARNING) << "Unable to register codec #" << idx
+                          << " for RTP/RTCP receiver.";
       continue;
     }
     const SdpAudioFormat format = CodecInstToSdp(codec);
     if (!decoder_factory_->IsSupportedDecoder(format) ||
         rtp_receiver_->RegisterReceivePayload(codec.pltype, format) == -1) {
-      LOG(LS_WARNING) << "Unable to register " << format
-                      << " for RTP/RTCP receiver.";
+      RTC_LOG(LS_WARNING) << "Unable to register " << format
+                          << " for RTP/RTCP receiver.";
     }
   }
 }

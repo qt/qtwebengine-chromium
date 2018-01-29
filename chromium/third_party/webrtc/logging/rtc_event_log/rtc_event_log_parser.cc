@@ -132,7 +132,7 @@ void GetHeaderExtensions(
 bool ParsedRtcEventLog::ParseFile(const std::string& filename) {
   std::ifstream file(filename, std::ios_base::in | std::ios_base::binary);
   if (!file.good() || !file.is_open()) {
-    LOG(LS_WARNING) << "Could not open file for reading.";
+    RTC_LOG(LS_WARNING) << "Could not open file for reading.";
     return false;
   }
 
@@ -174,34 +174,36 @@ bool ParsedRtcEventLog::ParseStream(std::istream& stream) {
     const uint64_t kExpectedTag = (1 << 3) | 2;
     std::tie(tag, success) = ParseVarInt(stream);
     if (!success) {
-      LOG(LS_WARNING) << "Missing field tag from beginning of protobuf event.";
+      RTC_LOG(LS_WARNING)
+          << "Missing field tag from beginning of protobuf event.";
       return false;
     } else if (tag != kExpectedTag) {
-      LOG(LS_WARNING) << "Unexpected field tag at beginning of protobuf event.";
+      RTC_LOG(LS_WARNING)
+          << "Unexpected field tag at beginning of protobuf event.";
       return false;
     }
 
     // Read the length field.
     std::tie(message_length, success) = ParseVarInt(stream);
     if (!success) {
-      LOG(LS_WARNING) << "Missing message length after protobuf field tag.";
+      RTC_LOG(LS_WARNING) << "Missing message length after protobuf field tag.";
       return false;
     } else if (message_length > kMaxEventSize) {
-      LOG(LS_WARNING) << "Protobuf message length is too large.";
+      RTC_LOG(LS_WARNING) << "Protobuf message length is too large.";
       return false;
     }
 
     // Read the next protobuf event to a temporary char buffer.
     stream.read(tmp_buffer.data(), message_length);
     if (stream.gcount() != static_cast<int>(message_length)) {
-      LOG(LS_WARNING) << "Failed to read protobuf message from file.";
+      RTC_LOG(LS_WARNING) << "Failed to read protobuf message from file.";
       return false;
     }
 
     // Parse the protobuf event from the buffer.
     rtclog::Event event;
     if (!event.ParseFromArray(tmp_buffer.data(), message_length)) {
-      LOG(LS_WARNING) << "Failed to parse protobuf message.";
+      RTC_LOG(LS_WARNING) << "Failed to parse protobuf message.";
       return false;
     }
 
@@ -410,7 +412,7 @@ rtclog::StreamConfig ParsedRtcEventLog::GetVideoReceiveConfig(
       rtx_payload_type = rtx_it->second.rtx_payload_type();
       if (config.rtx_ssrc != 0 &&
           config.rtx_ssrc != rtx_it->second.rtx_ssrc()) {
-        LOG(LS_WARNING)
+        RTC_LOG(LS_WARNING)
             << "RtcEventLog protobuf contained different SSRCs for "
                "different received RTX payload types. Will only use "
                "rtx_ssrc = "
@@ -441,8 +443,9 @@ std::vector<rtclog::StreamConfig> ParsedRtcEventLog::GetVideoSendConfig(
   const rtclog::VideoSendConfig& sender_config = event.video_sender_config();
   if (sender_config.rtx_ssrcs_size() > 0 &&
       sender_config.ssrcs_size() != sender_config.rtx_ssrcs_size()) {
-    LOG(WARNING) << "VideoSendConfig is configured for RTX but the number of "
-                    "SSRCs doesn't match the number of RTX SSRCs.";
+    RTC_LOG(WARNING)
+        << "VideoSendConfig is configured for RTX but the number of "
+           "SSRCs doesn't match the number of RTX SSRCs.";
   }
   configs.resize(sender_config.ssrcs_size());
   for (int i = 0; i < sender_config.ssrcs_size(); i++) {
@@ -582,18 +585,18 @@ void ParsedRtcEventLog::GetAudioNetworkAdaptation(
   const rtclog::AudioNetworkAdaptation& ana_event =
       event.audio_network_adaptation();
   if (ana_event.has_bitrate_bps())
-    config->bitrate_bps = rtc::Optional<int>(ana_event.bitrate_bps());
+    config->bitrate_bps = ana_event.bitrate_bps();
   if (ana_event.has_enable_fec())
-    config->enable_fec = rtc::Optional<bool>(ana_event.enable_fec());
+    config->enable_fec = ana_event.enable_fec();
   if (ana_event.has_enable_dtx())
-    config->enable_dtx = rtc::Optional<bool>(ana_event.enable_dtx());
+    config->enable_dtx = ana_event.enable_dtx();
   if (ana_event.has_frame_length_ms())
-    config->frame_length_ms = rtc::Optional<int>(ana_event.frame_length_ms());
+    config->frame_length_ms = ana_event.frame_length_ms();
   if (ana_event.has_num_channels())
-    config->num_channels = rtc::Optional<size_t>(ana_event.num_channels());
+    config->num_channels = ana_event.num_channels();
   if (ana_event.has_uplink_packet_loss_fraction())
     config->uplink_packet_loss_fraction =
-        rtc::Optional<float>(ana_event.uplink_packet_loss_fraction());
+        ana_event.uplink_packet_loss_fraction();
 }
 
 ParsedRtcEventLog::BweProbeClusterCreatedEvent
@@ -633,18 +636,15 @@ ParsedRtcEventLog::BweProbeResultEvent ParsedRtcEventLog::GetBweProbeResult(
   RTC_CHECK(pr_event.has_result());
   if (pr_event.result() == rtclog::BweProbeResult::SUCCESS) {
     RTC_CHECK(pr_event.has_bitrate_bps());
-    res.bitrate_bps = rtc::Optional<uint64_t>(pr_event.bitrate_bps());
+    res.bitrate_bps = pr_event.bitrate_bps();
   } else if (pr_event.result() ==
              rtclog::BweProbeResult::INVALID_SEND_RECEIVE_INTERVAL) {
-    res.failure_reason = rtc::Optional<ProbeFailureReason>(
-        ProbeFailureReason::kInvalidSendReceiveInterval);
+    res.failure_reason = ProbeFailureReason::kInvalidSendReceiveInterval;
   } else if (pr_event.result() ==
              rtclog::BweProbeResult::INVALID_SEND_RECEIVE_RATIO) {
-    res.failure_reason = rtc::Optional<ProbeFailureReason>(
-        ProbeFailureReason::kInvalidSendReceiveRatio);
+    res.failure_reason = ProbeFailureReason::kInvalidSendReceiveRatio;
   } else if (pr_event.result() == rtclog::BweProbeResult::TIMEOUT) {
-    res.failure_reason =
-        rtc::Optional<ProbeFailureReason>(ProbeFailureReason::kTimeout);
+    res.failure_reason = ProbeFailureReason::kTimeout;
   } else {
     RTC_NOTREACHED();
   }

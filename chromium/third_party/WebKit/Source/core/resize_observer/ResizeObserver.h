@@ -21,9 +21,7 @@ class V8ResizeObserverCallback;
 
 // ResizeObserver represents ResizeObserver javascript api:
 // https://github.com/WICG/ResizeObserver/
-class CORE_EXPORT ResizeObserver final
-    : public GarbageCollectedFinalized<ResizeObserver>,
-      public ScriptWrappable {
+class CORE_EXPORT ResizeObserver final : public ScriptWrappable {
   DEFINE_WRAPPERTYPEINFO();
 
  public:
@@ -33,7 +31,7 @@ class CORE_EXPORT ResizeObserver final
     virtual ~Delegate() = default;
     virtual void OnResize(
         const HeapVector<Member<ResizeObserverEntry>>& entries) = 0;
-    DEFINE_INLINE_VIRTUAL_TRACE() {}
+    virtual void Trace(blink::Visitor* visitor) {}
   };
 
   static ResizeObserver* Create(Document&, V8ResizeObserverCallback*);
@@ -53,8 +51,8 @@ class CORE_EXPORT ResizeObserver final
   void ClearObservations();
   void ElementSizeChanged();
   bool HasElementSizeChanged() { return element_size_changed_; }
-  DECLARE_TRACE();
-  DECLARE_TRACE_WRAPPERS();
+  void Trace(blink::Visitor*);
+  void TraceWrappers(const ScriptWrappableVisitor*) const;
 
  private:
   ResizeObserver(V8ResizeObserverCallback*, Document&);

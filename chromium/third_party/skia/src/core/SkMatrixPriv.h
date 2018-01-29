@@ -10,9 +10,35 @@
 
 #include "SkMatrix.h"
 #include "SkNx.h"
+#include "SkPointPriv.h"
 
 class SkMatrixPriv {
 public:
+    enum {
+        // writeTo/readFromMemory will never return a value larger than this
+        kMaxFlattenSize = 9 * sizeof(SkScalar) + sizeof(uint32_t),
+    };
+
+    static size_t WriteToMemory(const SkMatrix& matrix, void* buffer) {
+        return matrix.writeToMemory(buffer);
+    }
+
+    static size_t ReadFromMemory(SkMatrix* matrix, const void* buffer, size_t length) {
+        return matrix->readFromMemory(buffer, length);
+    }
+
+    typedef SkMatrix::MapXYProc MapXYProc;
+    typedef SkMatrix::MapPtsProc MapPtsProc;
+
+
+    static MapPtsProc GetMapPtsProc(const SkMatrix& matrix) {
+        return SkMatrix::GetMapPtsProc(matrix.getType());
+    }
+
+    static MapXYProc GetMapXYProc(const SkMatrix& matrix) {
+        return SkMatrix::GetMapXYProc(matrix.getType());
+    }
+
     /**
      *  Attempt to map the rect through the inverse of the matrix. If it is not invertible,
      *  then this returns false and dst is unchanged.
@@ -66,7 +92,7 @@ public:
         }
     }
 
-    static void SetMappedRectFan(const SkMatrix& mx, const SkRect& rect, SkPoint quad[4]) {
+    static void SetMappedRectTriStrip(const SkMatrix& mx, const SkRect& rect, SkPoint quad[4]) {
         SkMatrix::TypeMask tm = mx.getType();
         SkScalar l = rect.fLeft;
         SkScalar t = rect.fTop;
@@ -88,12 +114,9 @@ public:
                 r = sx * r + tx;
                 b = sy * b + ty;
             }
-            quad[0].set(l, t);
-            quad[1].set(l, b);
-            quad[2].set(r, b);
-            quad[3].set(r, t);
+           SkPointPriv::SetRectTriStrip(quad, l, t, r, b, sizeof(SkPoint));
         } else {
-            quad[0].setRectFan(l, t, r, b);
+            SkPointPriv::SetRectTriStrip(quad, l, t, r, b, sizeof(SkPoint));
             mx.mapPoints(quad, quad, 4);
         }
     }

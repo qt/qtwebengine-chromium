@@ -26,8 +26,8 @@
 #ifndef RadioNodeList_h
 #define RadioNodeList_h
 
+#include "base/memory/scoped_refptr.h"
 #include "core/dom/LiveNodeList.h"
-#include "platform/wtf/RefPtr.h"
 #include "platform/wtf/text/AtomicString.h"
 
 namespace blink {
@@ -43,7 +43,7 @@ class RadioNodeList final : public LiveNodeList {
     return new RadioNodeList(owner_node, name, type);
   }
 
-  virtual ~RadioNodeList();
+  ~RadioNodeList() override;
 
   String value() const;
   void setValue(const String&);

@@ -40,7 +40,9 @@ int HeadlessNetworkDelegate::OnBeforeURLRequest(
     net::URLRequest* request,
     const net::CompletionCallback& callback,
     GURL* new_url) {
-  if (headless_browser_context_->ShouldRemoveHeaders()) {
+  base::AutoLock lock(lock_);
+  if (headless_browser_context_ &&
+      headless_browser_context_->ShouldRemoveHeaders()) {
     request->RemoveRequestHeaderByName(
         kDevToolsEmulateNetworkConditionsClientId);
   }
@@ -112,7 +114,7 @@ bool HeadlessNetworkDelegate::OnCanGetCookies(
 }
 
 bool HeadlessNetworkDelegate::OnCanSetCookie(const net::URLRequest& request,
-                                             const std::string& cookie_line,
+                                             const net::CanonicalCookie& cookie,
                                              net::CookieOptions* options) {
   return true;
 }

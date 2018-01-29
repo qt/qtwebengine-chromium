@@ -7,10 +7,10 @@
 #include "xfa/fxfa/parser/cxfa_nodehelper.h"
 
 #include "core/fxcrt/fx_extension.h"
+#include "fxjs/cfxjse_engine.h"
 #include "xfa/fxfa/parser/cxfa_document.h"
 #include "xfa/fxfa/parser/cxfa_localemgr.h"
 #include "xfa/fxfa/parser/cxfa_node.h"
-#include "xfa/fxfa/parser/cxfa_scriptcontext.h"
 #include "xfa/fxfa/parser/xfa_resolvenode_rs.h"
 #include "xfa/fxfa/parser/xfa_utils.h"
 
@@ -45,9 +45,8 @@ int32_t CXFA_NodeHelper::CountSiblings(CXFA_Node* pNode,
   CXFA_Node* parent = ResolveNodes_GetParent(pNode, XFA_LOGIC_NoTransparent);
   if (!parent)
     return 0;
-  const XFA_PROPERTY* pProperty = XFA_GetPropertyOfElement(
-      parent->GetElementType(), pNode->GetElementType(), XFA_XDPPACKET_UNKNOWN);
-  if (!pProperty && eLogicType == XFA_LOGIC_Transparent) {
+  if (!parent->HasProperty(pNode->GetElementType()) &&
+      eLogicType == XFA_LOGIC_Transparent) {
     parent = ResolveNodes_GetParent(pNode, XFA_LOGIC_Transparent);
     if (!parent)
       return 0;
@@ -69,7 +68,8 @@ int32_t CXFA_NodeHelper::NodeAcc_TraverseAnySiblings(
     return 0;
 
   int32_t nCount = 0;
-  for (CXFA_Node* child : parent->GetNodeList(XFA_NODEFILTER_Properties)) {
+  for (CXFA_Node* child :
+       parent->GetNodeList(XFA_NODEFILTER_Properties, XFA_Element::Unknown)) {
     if (bIsClassName) {
       if (child->GetClassHashCode() == dNameHash) {
         pSiblings->push_back(child);
@@ -87,7 +87,8 @@ int32_t CXFA_NodeHelper::NodeAcc_TraverseAnySiblings(
     nCount +=
         NodeAcc_TraverseAnySiblings(child, dNameHash, pSiblings, bIsClassName);
   }
-  for (CXFA_Node* child : parent->GetNodeList(XFA_NODEFILTER_Children)) {
+  for (CXFA_Node* child :
+       parent->GetNodeList(XFA_NODEFILTER_Children, XFA_Element::Unknown)) {
     if (bIsClassName) {
       if (child->GetClassHashCode() == dNameHash) {
         pSiblings->push_back(child);
@@ -120,7 +121,8 @@ int32_t CXFA_NodeHelper::NodeAcc_TraverseSiblings(
 
   int32_t nCount = 0;
   if (bIsFindProperty) {
-    for (CXFA_Node* child : parent->GetNodeList(XFA_NODEFILTER_Properties)) {
+    for (CXFA_Node* child :
+         parent->GetNodeList(XFA_NODEFILTER_Properties, XFA_Element::Unknown)) {
       if (bIsClassName) {
         if (child->GetClassHashCode() == dNameHash) {
           pSiblings->push_back(child);
@@ -145,7 +147,8 @@ int32_t CXFA_NodeHelper::NodeAcc_TraverseSiblings(
     if (nCount > 0)
       return nCount;
   }
-  for (CXFA_Node* child : parent->GetNodeList(XFA_NODEFILTER_Children)) {
+  for (CXFA_Node* child :
+       parent->GetNodeList(XFA_NODEFILTER_Children, XFA_Element::Unknown)) {
     if (child->GetElementType() == XFA_Element::Variables)
       continue;
 
@@ -252,14 +255,15 @@ void CXFA_NodeHelper::GetNameExpression(CXFA_Node* refNode,
   if (refNode->IsUnnamed() ||
       (bIsProperty && refNode->GetElementType() != XFA_Element::PageSet)) {
     ws = refNode->GetClassName();
-    wsName.Format(L"#%s[%d]", ws.c_str(),
-                  GetIndex(refNode, eLogicType, bIsProperty, true));
+    wsName =
+        WideString::Format(L"#%s[%d]", ws.c_str(),
+                           GetIndex(refNode, eLogicType, bIsProperty, true));
     return;
   }
-  ws = refNode->GetCData(XFA_ATTRIBUTE_Name);
+  ws = refNode->JSNode()->GetCData(XFA_Attribute::Name);
   ws.Replace(L".", L"\\.");
-  wsName.Format(L"%s[%d]", ws.c_str(),
-                GetIndex(refNode, eLogicType, bIsProperty, false));
+  wsName = WideString::Format(
+      L"%s[%d]", ws.c_str(), GetIndex(refNode, eLogicType, bIsProperty, false));
 }
 
 bool CXFA_NodeHelper::NodeIsTransparent(CXFA_Node* refNode) {
@@ -313,11 +317,10 @@ bool CXFA_NodeHelper::CreateNode_ForCondition(WideString& wsCondition) {
   return false;
 }
 
-bool CXFA_NodeHelper::ResolveNodes_CreateNode(
-    WideString wsName,
-    WideString wsCondition,
-    bool bLastNode,
-    CXFA_ScriptContext* pScriptContext) {
+bool CXFA_NodeHelper::ResolveNodes_CreateNode(WideString wsName,
+                                              WideString wsCondition,
+                                              bool bLastNode,
+                                              CFXJSE_Engine* pScriptContext) {
   if (!m_pCreateParent) {
     return false;
   }
@@ -336,14 +339,14 @@ bool CXFA_NodeHelper::ResolveNodes_CreateNode(
     CreateNode_ForCondition(wsCondition);
   }
   if (bIsClassName) {
-    XFA_Element eType = XFA_GetElementTypeForName(wsName.AsStringView());
+    XFA_Element eType = CXFA_Node::NameToElement(wsName);
     if (eType == XFA_Element::Unknown)
       return false;
 
     for (int32_t iIndex = 0; iIndex < m_iCreateCount; iIndex++) {
       CXFA_Node* pNewNode = m_pCreateParent->CreateSamePacketNode(eType);
       if (pNewNode) {
-        m_pCreateParent->InsertChild(pNewNode);
+        m_pCreateParent->InsertChild(pNewNode, nullptr);
         if (iIndex == m_iCreateCount - 1) {
           m_pCreateParent = pNewNode;
         }
@@ -358,9 +361,10 @@ bool CXFA_NodeHelper::ResolveNodes_CreateNode(
     for (int32_t iIndex = 0; iIndex < m_iCreateCount; iIndex++) {
       CXFA_Node* pNewNode = m_pCreateParent->CreateSamePacketNode(eClassType);
       if (pNewNode) {
-        pNewNode->SetAttribute(XFA_ATTRIBUTE_Name, wsName.AsStringView());
+        pNewNode->JSNode()->SetAttribute(XFA_Attribute::Name,
+                                         wsName.AsStringView(), false);
         pNewNode->CreateXMLMappingNode();
-        m_pCreateParent->InsertChild(pNewNode);
+        m_pCreateParent->InsertChild(pNewNode, nullptr);
         if (iIndex == m_iCreateCount - 1) {
           m_pCreateParent = pNewNode;
         }
@@ -391,8 +395,5 @@ void CXFA_NodeHelper::SetCreateNodeType(CXFA_Node* refNode) {
 
 bool CXFA_NodeHelper::NodeIsProperty(CXFA_Node* refNode) {
   CXFA_Node* parent = ResolveNodes_GetParent(refNode, XFA_LOGIC_NoTransparent);
-  return parent && refNode &&
-         XFA_GetPropertyOfElement(parent->GetElementType(),
-                                  refNode->GetElementType(),
-                                  XFA_XDPPACKET_UNKNOWN);
+  return parent && refNode && parent->HasProperty(refNode->GetElementType());
 }

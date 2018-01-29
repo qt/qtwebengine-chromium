@@ -25,16 +25,13 @@ class VoEBaseImpl : public VoEBase,
                     public AudioTransport {
  public:
   int Init(
-      AudioDeviceModule* external_adm,
+      AudioDeviceModule* audio_device,
       AudioProcessing* audio_processing,
       const rtc::scoped_refptr<AudioDecoderFactory>& decoder_factory) override;
-  AudioDeviceModule* audio_device_module() override {
-    return shared_->audio_device();
-  }
   voe::TransmitMixer* transmit_mixer() override {
     return shared_->transmit_mixer();
   }
-  int Terminate() override;
+  void Terminate() override;
 
   int CreateChannel() override;
   int CreateChannel(const ChannelConfig& config) override;
@@ -44,6 +41,9 @@ class VoEBaseImpl : public VoEBase,
   int StartSend(int channel) override;
   int StopPlayout(int channel) override;
   int StopSend(int channel) override;
+
+  int SetPlayout(bool enabled) override;
+  int SetRecording(bool enabled) override;
 
   AudioTransport* audio_transport() override { return this; }
 
@@ -89,7 +89,7 @@ class VoEBaseImpl : public VoEBase,
   int32_t StopPlayout();
   int32_t StartSend();
   int32_t StopSend();
-  int32_t TerminateInternal();
+  void TerminateInternal();
 
   void GetPlayoutData(int sample_rate, size_t number_of_channels,
                       size_t number_of_frames, bool feed_data_to_apm,
@@ -103,6 +103,8 @@ class VoEBaseImpl : public VoEBase,
 
   AudioFrame audioFrame_;
   voe::SharedData* shared_;
+  bool playout_enabled_ = true;
+  bool recording_enabled_ = true;
 };
 
 }  // namespace webrtc

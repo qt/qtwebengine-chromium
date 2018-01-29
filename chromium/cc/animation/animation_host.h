@@ -100,8 +100,10 @@ class CC_ANIMATION_EXPORT AnimationHost : public MutatorHost,
   bool NeedsTickAnimations() const override;
 
   bool ActivateAnimations() override;
-  bool TickAnimations(base::TimeTicks monotonic_time) override;
-  void TickScrollAnimations(base::TimeTicks monotonic_time) override;
+  bool TickAnimations(base::TimeTicks monotonic_time,
+                      const ScrollTree& scroll_tree) override;
+  void TickScrollAnimations(base::TimeTicks monotonic_time,
+                            const ScrollTree& scroll_tree) override;
   bool UpdateAnimationState(bool start_ready_animations,
                             MutatorEvents* events) override;
 
@@ -175,7 +177,14 @@ class CC_ANIMATION_EXPORT AnimationHost : public MutatorHost,
   const ElementToAnimationsMap& element_animations_for_testing() const;
 
   // LayerTreeMutatorClient.
-  void SetNeedsMutate() override;
+  void SetMutationUpdate(
+      std::unique_ptr<MutatorOutputState> output_state) override;
+
+  size_t CompositedAnimationsCount() const override;
+  size_t MainThreadAnimationsCount() const override;
+  size_t MainThreadCompositableAnimationsCount() const override;
+  void SetAnimationCounts(size_t total_animations_count,
+                          size_t main_thread_compositable_animations_count);
 
  private:
   explicit AnimationHost(ThreadInstance thread_instance);
@@ -188,6 +197,11 @@ class CC_ANIMATION_EXPORT AnimationHost : public MutatorHost,
 
   bool NeedsTickAnimationPlayers() const;
   bool NeedsTickMutator() const;
+
+  // Return the animator state representing all ticking worklet animations.
+  std::unique_ptr<MutatorInputState> CollectAnimatorsState(
+      base::TimeTicks timeline_time,
+      const ScrollTree& scroll_tree);
 
   ElementToAnimationsMap element_to_animations_map_;
   PlayersList ticking_players_;
@@ -206,9 +220,11 @@ class CC_ANIMATION_EXPORT AnimationHost : public MutatorHost,
 
   bool supports_scroll_animations_;
   bool needs_push_properties_;
-  bool mutator_needs_mutate_;
 
   std::unique_ptr<LayerTreeMutator> mutator_;
+
+  size_t main_thread_animations_count_ = 0;
+  size_t main_thread_compositable_animations_count_ = 0;
 
   DISALLOW_COPY_AND_ASSIGN(AnimationHost);
 };

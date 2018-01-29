@@ -104,25 +104,27 @@ std::unique_ptr<FlexfecSender> MaybeCreateFlexfecSender(
   RTC_DCHECK_GE(config.rtp.flexfec.payload_type, 0);
   RTC_DCHECK_LE(config.rtp.flexfec.payload_type, 127);
   if (config.rtp.flexfec.ssrc == 0) {
-    LOG(LS_WARNING) << "FlexFEC is enabled, but no FlexFEC SSRC given. "
-                       "Therefore disabling FlexFEC.";
+    RTC_LOG(LS_WARNING) << "FlexFEC is enabled, but no FlexFEC SSRC given. "
+                           "Therefore disabling FlexFEC.";
     return nullptr;
   }
   if (config.rtp.flexfec.protected_media_ssrcs.empty()) {
-    LOG(LS_WARNING) << "FlexFEC is enabled, but no protected media SSRC given. "
-                       "Therefore disabling FlexFEC.";
+    RTC_LOG(LS_WARNING)
+        << "FlexFEC is enabled, but no protected media SSRC given. "
+           "Therefore disabling FlexFEC.";
     return nullptr;
   }
 
   if (config.rtp.ssrcs.size() > 1) {
-    LOG(LS_WARNING) << "Both FlexFEC and simulcast are enabled. This "
-                       "combination is however not supported by our current "
-                       "FlexFEC implementation. Therefore disabling FlexFEC.";
+    RTC_LOG(LS_WARNING)
+        << "Both FlexFEC and simulcast are enabled. This "
+           "combination is however not supported by our current "
+           "FlexFEC implementation. Therefore disabling FlexFEC.";
     return nullptr;
   }
 
   if (config.rtp.flexfec.protected_media_ssrcs.size() > 1) {
-    LOG(LS_WARNING)
+    RTC_LOG(LS_WARNING)
         << "The supplied FlexfecConfig contained multiple protected "
            "media streams, but our implementation currently only "
            "supports protecting a single media stream. "
@@ -149,6 +151,38 @@ bool TransportSeqNumExtensionConfigured(const VideoSendStream::Config& config) {
              extensions.begin(), extensions.end(), [](const RtpExtension& ext) {
                return ext.uri == RtpExtension::kTransportSequenceNumberUri;
              }) != extensions.end();
+}
+
+const char kForcedFallbackFieldTrial[] =
+    "WebRTC-VP8-Forced-Fallback-Encoder-v2";
+
+rtc::Optional<int> GetFallbackMinBpsFromFieldTrial() {
+  if (!webrtc::field_trial::IsEnabled(kForcedFallbackFieldTrial))
+    return rtc::Optional<int>();
+
+  std::string group =
+      webrtc::field_trial::FindFullName(kForcedFallbackFieldTrial);
+  if (group.empty())
+    return rtc::Optional<int>();
+
+  int min_pixels;
+  int max_pixels;
+  int min_bps;
+  if (sscanf(group.c_str(), "Enabled-%d,%d,%d", &min_pixels, &max_pixels,
+             &min_bps) != 3) {
+    return rtc::Optional<int>();
+  }
+
+  if (min_bps <= 0)
+    return rtc::Optional<int>();
+
+  return rtc::Optional<int>(min_bps);
+}
+
+int GetEncoderMinBitrateBps() {
+  const int kDefaultEncoderMinBitrateBps = 30000;
+  return GetFallbackMinBpsFromFieldTrial().value_or(
+      kDefaultEncoderMinBitrateBps);
 }
 
 bool PayloadTypeSupportsSkippingFecPackets(const std::string& payload_name) {
@@ -322,7 +356,7 @@ class VideoSendStreamImpl : public webrtc::BitrateAllocatorObserver,
   EncoderRtcpFeedback encoder_feedback_;
   ProtectionBitrateCalculator protection_bitrate_calculator_;
 
-  const std::unique_ptr<RtcpBandwidthObserver> bandwidth_observer_;
+  RtcpBandwidthObserver* const bandwidth_observer_;
   // RtpRtcp modules, declared here as they use other members on construction.
   const std::vector<RtpRtcp*> rtp_rtcp_modules_;
   PayloadRouter payload_router_;
@@ -552,7 +586,6 @@ VideoSendStream::VideoSendStream(
     // Only signal target bitrate for screenshare streams, for now.
     video_stream_encoder_->SetBitrateObserver(send_stream_.get());
   }
-  video_stream_encoder_->RegisterProcessThread(module_process_thread);
 
   ReconfigureVideoEncoder(std::move(encoder_config));
 }
@@ -564,7 +597,7 @@ VideoSendStream::~VideoSendStream() {
 
 void VideoSendStream::Start() {
   RTC_DCHECK_RUN_ON(&thread_checker_);
-  LOG(LS_INFO) << "VideoSendStream::Start";
+  RTC_LOG(LS_INFO) << "VideoSendStream::Start";
   VideoSendStreamImpl* send_stream = send_stream_.get();
   worker_queue_->PostTask([this, send_stream] {
     send_stream->Start();
@@ -579,7 +612,7 @@ void VideoSendStream::Start() {
 
 void VideoSendStream::Stop() {
   RTC_DCHECK_RUN_ON(&thread_checker_);
-  LOG(LS_INFO) << "VideoSendStream::Stop";
+  RTC_LOG(LS_INFO) << "VideoSendStream::Stop";
   VideoSendStreamImpl* send_stream = send_stream_.get();
   worker_queue_->PostTask([send_stream] { send_stream->Stop(); });
 }
@@ -620,7 +653,6 @@ void VideoSendStream::StopPermanentlyAndGetRtpStates(
     VideoSendStream::RtpPayloadStateMap* payload_state_map) {
   RTC_DCHECK_RUN_ON(&thread_checker_);
   video_stream_encoder_->Stop();
-  video_stream_encoder_->DeRegisterProcessThread();
   send_stream_->DeRegisterProcessThread();
   worker_queue_->PostTask(
       std::unique_ptr<rtc::QueuedTask>(new DestructAndGetRtpStateTask(
@@ -684,13 +716,11 @@ VideoSendStreamImpl::VideoSendStreamImpl(
                         config_->rtp.ssrcs,
                         video_stream_encoder),
       protection_bitrate_calculator_(Clock::GetRealTimeClock(), this),
-      bandwidth_observer_(transport->send_side_cc()
-                              ->GetBitrateController()
-                              ->CreateRtcpBandwidthObserver()),
+      bandwidth_observer_(transport->send_side_cc()->GetBandwidthObserver()),
       rtp_rtcp_modules_(CreateRtpRtcpModules(
           config_->send_transport,
           &encoder_feedback_,
-          bandwidth_observer_.get(),
+          bandwidth_observer_,
           transport,
           call_stats_->rtcp_rtt_stats(),
           flexfec_sender_.get(),
@@ -709,7 +739,7 @@ VideoSendStreamImpl::VideoSendStreamImpl(
       overhead_bytes_per_packet_(0),
       transport_overhead_bytes_per_packet_(0) {
   RTC_DCHECK_RUN_ON(worker_queue_);
-  LOG(LS_INFO) << "VideoSendStreamInternal: " << config_->ToString();
+  RTC_LOG(LS_INFO) << "VideoSendStreamInternal: " << config_->ToString();
   weak_ptr_ = weak_ptr_factory_.GetWeakPtr();
   module_process_thread_checker_.DetachFromThread();
 
@@ -824,7 +854,7 @@ VideoSendStreamImpl::~VideoSendStreamImpl() {
   RTC_DCHECK_RUN_ON(worker_queue_);
   RTC_DCHECK(!payload_router_.IsActive())
       << "VideoSendStreamImpl::Stop not called";
-  LOG(LS_INFO) << "~VideoSendStreamInternal: " << config_->ToString();
+  RTC_LOG(LS_INFO) << "~VideoSendStreamInternal: " << config_->ToString();
 
   for (RtpRtcp* rtp_rtcp : rtp_rtcp_modules_) {
     transport_->packet_router()->RemoveSendRtpModule(rtp_rtcp);
@@ -842,7 +872,7 @@ bool VideoSendStreamImpl::DeliverRtcp(const uint8_t* packet, size_t length) {
 
 void VideoSendStreamImpl::Start() {
   RTC_DCHECK_RUN_ON(worker_queue_);
-  LOG(LS_INFO) << "VideoSendStream::Start";
+  RTC_LOG(LS_INFO) << "VideoSendStream::Start";
   if (payload_router_.IsActive())
     return;
   TRACE_EVENT_INSTANT0("webrtc", "VideoSendStream::Start");
@@ -850,7 +880,8 @@ void VideoSendStreamImpl::Start() {
 
   bitrate_allocator_->AddObserver(
       this, encoder_min_bitrate_bps_, encoder_max_bitrate_bps_,
-      max_padding_bitrate_, !config_->suspend_below_min_bitrate);
+      max_padding_bitrate_, !config_->suspend_below_min_bitrate,
+      config_->track_id);
 
   // Start monitoring encoder activity.
   {
@@ -867,7 +898,7 @@ void VideoSendStreamImpl::Start() {
 
 void VideoSendStreamImpl::Stop() {
   RTC_DCHECK_RUN_ON(worker_queue_);
-  LOG(LS_INFO) << "VideoSendStream::Stop";
+  RTC_LOG(LS_INFO) << "VideoSendStream::Stop";
   if (!payload_router_.IsActive())
     return;
   TRACE_EVENT_INSTANT0("webrtc", "VideoSendStream::Stop");
@@ -888,7 +919,7 @@ void VideoSendStreamImpl::SignalEncoderTimedOut() {
   // is supposed to, deregister as BitrateAllocatorObserver. This can happen
   // if a camera stops producing frames.
   if (encoder_target_rate_bps_ > 0) {
-    LOG(LS_INFO) << "SignalEncoderTimedOut, Encoder timed out.";
+    RTC_LOG(LS_INFO) << "SignalEncoderTimedOut, Encoder timed out.";
     bitrate_allocator_->RemoveObserver(this);
   }
 }
@@ -900,10 +931,11 @@ void VideoSendStreamImpl::OnBitrateAllocationUpdated(
 
 void VideoSendStreamImpl::SignalEncoderActive() {
   RTC_DCHECK_RUN_ON(worker_queue_);
-  LOG(LS_INFO) << "SignalEncoderActive, Encoder is active.";
+  RTC_LOG(LS_INFO) << "SignalEncoderActive, Encoder is active.";
   bitrate_allocator_->AddObserver(
       this, encoder_min_bitrate_bps_, encoder_max_bitrate_bps_,
-      max_padding_bitrate_, !config_->suspend_below_min_bitrate);
+      max_padding_bitrate_, !config_->suspend_below_min_bitrate,
+      config_->track_id);
 }
 
 void VideoSendStreamImpl::OnEncoderConfigurationChanged(
@@ -920,9 +952,8 @@ void VideoSendStreamImpl::OnEncoderConfigurationChanged(
   RTC_DCHECK_GE(config_->rtp.ssrcs.size(), streams.size());
   RTC_DCHECK_RUN_ON(worker_queue_);
 
-  const int kEncoderMinBitrateBps = 30000;
   encoder_min_bitrate_bps_ =
-      std::max(streams[0].min_bitrate_bps, kEncoderMinBitrateBps);
+      std::max(streams[0].min_bitrate_bps, GetEncoderMinBitrateBps());
   encoder_max_bitrate_bps_ = 0;
   for (const auto& stream : streams)
     encoder_max_bitrate_bps_ += stream.max_bitrate_bps;
@@ -945,7 +976,8 @@ void VideoSendStreamImpl::OnEncoderConfigurationChanged(
     // limits.
     bitrate_allocator_->AddObserver(
         this, encoder_min_bitrate_bps_, encoder_max_bitrate_bps_,
-        max_padding_bitrate_, !config_->suspend_below_min_bitrate);
+        max_padding_bitrate_, !config_->suspend_below_min_bitrate,
+        config_->track_id);
   }
 }
 
@@ -1010,7 +1042,7 @@ void VideoSendStreamImpl::ConfigureProtection() {
   auto DisableUlpfec = [&]() { ulpfec_payload_type = -1; };
 
   if (webrtc::field_trial::IsEnabled("WebRTC-DisableUlpFecExperiment")) {
-    LOG(LS_INFO) << "Experiment to disable sending ULPFEC is enabled.";
+    RTC_LOG(LS_INFO) << "Experiment to disable sending ULPFEC is enabled.";
     DisableUlpfec();
   }
 
@@ -1020,11 +1052,11 @@ void VideoSendStreamImpl::ConfigureProtection() {
     // we know that it has a receiver without the RED/RTX workaround.
     // See http://crbug.com/webrtc/6650 for more information.
     if (IsRedEnabled()) {
-      LOG(LS_INFO) << "Both FlexFEC and RED are configured. Disabling RED.";
+      RTC_LOG(LS_INFO) << "Both FlexFEC and RED are configured. Disabling RED.";
       DisableRed();
     }
     if (IsUlpfecEnabled()) {
-      LOG(LS_INFO)
+      RTC_LOG(LS_INFO)
           << "Both FlexFEC and ULPFEC are configured. Disabling ULPFEC.";
       DisableUlpfec();
     }
@@ -1037,7 +1069,7 @@ void VideoSendStreamImpl::ConfigureProtection() {
   if (nack_enabled && IsUlpfecEnabled() &&
       !PayloadTypeSupportsSkippingFecPackets(
           config_->encoder_settings.payload_name)) {
-    LOG(LS_WARNING)
+    RTC_LOG(LS_WARNING)
         << "Transmitting payload type without picture ID using "
            "NACK+ULPFEC is a waste of bandwidth since ULPFEC packets "
            "also have to be retransmitted. Disabling ULPFEC.";
@@ -1060,7 +1092,7 @@ void VideoSendStreamImpl::ConfigureProtection() {
     RTC_DCHECK_GE(ulpfec_payload_type, 0);
     RTC_DCHECK_LE(ulpfec_payload_type, 127);
     if (!IsRedEnabled()) {
-      LOG(LS_WARNING)
+      RTC_LOG(LS_WARNING)
           << "ULPFEC is enabled but RED is disabled. Disabling ULPFEC.";
       DisableUlpfec();
     }
@@ -1268,7 +1300,7 @@ void VideoSendStreamImpl::OnOverheadChanged(size_t overhead_bytes_per_packet) {
 void VideoSendStreamImpl::SetTransportOverhead(
     size_t transport_overhead_bytes_per_packet) {
   if (transport_overhead_bytes_per_packet >= static_cast<int>(kPathMTU)) {
-    LOG(LS_ERROR) << "Transport overhead exceeds size of ethernet frame";
+    RTC_LOG(LS_ERROR) << "Transport overhead exceeds size of ethernet frame";
     return;
   }
 

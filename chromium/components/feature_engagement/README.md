@@ -219,6 +219,20 @@ interpretation of the states:
 *   `NOT_READY`: `Tracker` not fully initialized yet, so it is unable to
     inspect the state.
 
+#### Inspecting whether IPH would have been triggered for a feature
+
+Another way to check the internal state of the `Tracker` is to invoke
+`feature_engagement::Tracker::WouldTriggerHelpUI` which is basically the same as
+invoking `feature_engagement::Tracker::ShouldTriggerHelpUI`, but being allowed
+to ignore the state. It is still required to invoke
+`feature_engagement::Tracker::ShouldTriggerHelpUI` if in-product help should be
+shown.
+
+> **WARNING: It is not guaranteed that invoking `ShouldTriggerHelpUI(...)`
+> after this would yield the same result.** The state might change
+> in-between the calls because time has passed, other events might have been
+> triggered, and other state might have changed.
+
 ### Configuring UMA
 
 To enable UMA tracking, you need to make the following changes to the metrics
@@ -431,11 +445,19 @@ all described below:
 *   `window`
     *   Search for this occurrences of the event within this window.
     *   The value must be given as a number of days.
+    *   For value N, the following holds:
+        *   `0` Nothing should be counted.
+        *   `1` |current_day| should be counted.
+        *   `2+` |current_day| plus |N-1| more days should be counted.
     *   Value client side data type: uint32_t
 *   `storage`
     *   Store client side data related to events for this event minimum this
         long.
     *   The value must be given as a number of days.
+    *   For value N, the following holds:
+        *   `0` Nothing should be stored.
+        *   `1` |current_day| should be stored.
+        *   `2+` |current_day| plus |N-1| more days should be stored.
     *   The value should not exceed 10 years (3650 days).
     *   Value client side data type: uint32_t
     *   Whenever a particular event is used by multiple features, the maximum

@@ -24,6 +24,7 @@
 
 namespace net {
 class IOBuffer;
+class UploadElementReader;
 }  // namespace net
 
 namespace content {
@@ -55,6 +56,9 @@ class HEADLESS_EXPORT Request {
 
   // Returns the size of the POST data, if any, from the net::URLRequest.
   virtual uint64_t GetPostDataSize() const = 0;
+
+  // Returns true if the fetch was issues by the browser.
+  virtual bool IsBrowserSideFetch() const = 0;
 
   enum class ResourceType {
     MAIN_FRAME = 0,
@@ -159,6 +163,7 @@ class HEADLESS_EXPORT GenericURLRequestJob
   uint64_t GetPostDataSize() const override;
   ResourceType GetResourceType() const override;
   bool IsAsync() const override;
+  bool IsBrowserSideFetch() const override;
 
  private:
   void PrepareCookies(const GURL& rewritten_url,
@@ -167,6 +172,9 @@ class HEADLESS_EXPORT GenericURLRequestJob
   void OnCookiesAvailable(const GURL& rewritten_url,
                           const std::string& method,
                           const net::CookieList& cookie_list);
+
+  const std::vector<std::unique_ptr<net::UploadElementReader>>*
+  GetInitializedReaders() const;
 
   std::unique_ptr<URLFetcher> url_fetcher_;
   net::HttpRequestHeaders extra_request_headers_;

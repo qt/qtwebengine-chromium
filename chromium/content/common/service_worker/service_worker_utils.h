@@ -44,7 +44,7 @@ class ServiceWorkerUtils {
                                           const GURL& script_url,
                                           std::string* error_message);
 
-  static bool IsScriptStreamingEnabled();
+  CONTENT_EXPORT static bool IsScriptStreamingEnabled();
 
   // Returns true if all members of |urls| have the same origin, and
   // OriginCanAccessServiceWorkers is true for this origin.
@@ -64,6 +64,9 @@ class ServiceWorkerUtils {
 
   static std::string ErrorTypeToString(
       blink::mojom::ServiceWorkerErrorType error);
+
+  static std::string ClientTypeToString(
+      blink::mojom::ServiceWorkerClientType type);
 };
 
 class CONTENT_EXPORT LongestScopeMatcher {

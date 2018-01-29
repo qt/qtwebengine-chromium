@@ -27,9 +27,10 @@ void PDFiumRange::SetCharCount(int char_count) {
   cached_screen_rects_zoom_ = 0;
 }
 
-std::vector<pp::Rect> PDFiumRange::GetScreenRects(const pp::Point& offset,
-                                                  double zoom,
-                                                  int rotation) {
+const std::vector<pp::Rect>& PDFiumRange::GetScreenRects(
+    const pp::Point& offset,
+    double zoom,
+    int rotation) {
   if (offset == cached_screen_rects_offset_ &&
       zoom == cached_screen_rects_zoom_) {
     return cached_screen_rects_;
@@ -48,10 +49,16 @@ std::vector<pp::Rect> PDFiumRange::GetScreenRects(const pp::Point& offset,
 
   int count = FPDFText_CountRects(page_->GetTextPage(), char_index, char_count);
   for (int i = 0; i < count; ++i) {
-    double left, top, right, bottom;
+    double left;
+    double top;
+    double right;
+    double bottom;
     FPDFText_GetRect(page_->GetTextPage(), i, &left, &top, &right, &bottom);
-    cached_screen_rects_.push_back(
-        page_->PageToScreen(offset, zoom, left, top, right, bottom, rotation));
+    pp::Rect rect =
+        page_->PageToScreen(offset, zoom, left, top, right, bottom, rotation);
+    if (rect.IsEmpty())
+      continue;
+    cached_screen_rects_.push_back(rect);
   }
 
   return cached_screen_rects_;
@@ -67,13 +74,11 @@ base::string16 PDFiumRange::GetText() const {
   }
 
   if (count > 0) {
-    // Adding +1 to count to account for the string terminator that is included.
-    PDFiumAPIStringBufferAdapter<base::string16> api_string_adapter(
-        &rv, count + 1, false);
+    PDFiumAPIStringBufferAdapter<base::string16> api_string_adapter(&rv, count,
+                                                                    false);
     unsigned short* data =
         reinterpret_cast<unsigned short*>(api_string_adapter.GetData());
-    int written =
-        FPDFText_GetText(page_->GetTextPage(), index, count + 1, data);
+    int written = FPDFText_GetText(page_->GetTextPage(), index, count, data);
     api_string_adapter.Close(written);
   }
 

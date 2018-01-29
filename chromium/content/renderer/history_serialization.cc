@@ -8,10 +8,10 @@
 #include <algorithm>
 
 #include "base/strings/nullable_string16.h"
-#include "content/child/web_url_request_util.h"
 #include "content/common/page_state_serialization.h"
 #include "content/public/common/page_state.h"
 #include "content/renderer/history_entry.h"
+#include "content/renderer/loader/web_url_request_util.h"
 #include "third_party/WebKit/public/platform/WebData.h"
 #include "third_party/WebKit/public/platform/WebFloatPoint.h"
 #include "third_party/WebKit/public/platform/WebHTTPBody.h"
@@ -65,6 +65,12 @@ void GenerateFrameStateFromItem(const WebHistoryItem& item,
     state->http_body.request_body = GetRequestBodyForWebHTTPBody(http_body);
     state->http_body.contains_passwords = http_body.ContainsPasswordData();
   }
+
+  blink::ScrollAnchorData anchor = item.GetScrollAnchorData();
+  state->scroll_anchor_selector =
+      WebString::ToOptionalString16(anchor.selector_);
+  state->scroll_anchor_offset = anchor.offset_;
+  state->scroll_anchor_simhash = anchor.simhash_;
 }
 
 void RecursivelyGenerateHistoryItem(const ExplodedFrameState& state,
@@ -107,6 +113,10 @@ void RecursivelyGenerateHistoryItem(const ExplodedFrameState& state,
     item.SetHTTPBody(
         GetWebHTTPBodyForRequestBody(state.http_body.request_body));
   }
+
+  item.SetScrollAnchorData({WebString::FromUTF16(state.scroll_anchor_selector),
+                            state.scroll_anchor_offset,
+                            state.scroll_anchor_simhash});
   node->set_item(item);
 
   for (size_t i = 0; i < state.children.size(); ++i)

@@ -9,6 +9,7 @@ from webkitpy.common.net.buildbot import Build
 from webkitpy.common.net.git_cl import TryJobStatus
 from webkitpy.common.net.git_cl_mock import MockGitCL
 from webkitpy.common.net.layout_test_results import LayoutTestResults
+from webkitpy.common.path_finder import PathFinder
 from webkitpy.layout_tests.try_flag import TryFlag
 
 
@@ -18,7 +19,54 @@ class TryFlagTest(unittest.TestCase):
         self.linux_build = Build('linux_chromium_rel_ng', 100)
         self.mac_build = Build('mac_chromium_rel_ng', 101)
         self.win_build = Build('win7_chromium_rel_ng', 102)
+        self.mock_try_results = {
+            self.linux_build: TryJobStatus('COMPLETED', 'SUCCESS'),
+            self.win_build: TryJobStatus('COMPLETED', 'SUCCESS'),
+            self.mac_build: TryJobStatus('COMPLETED', 'SUCCESS')
+        }
         super(TryFlagTest, self).__init__(*args, **kwargs)
+
+    def _run_trigger_test(self, regenerate):
+        host = MockHost()
+        git = host.git()
+        git_cl = MockGitCL(host)
+        finder = PathFinder(host.filesystem)
+
+        flag_file = finder.path_from_layout_tests(
+            'additional-driver-flag.setting')
+        flag_expectations_file = finder.path_from_layout_tests(
+            'FlagExpectations', 'foo')
+
+        cmd = ['trigger', '--flag=--foo']
+        if regenerate:
+            cmd.append('--regenerate')
+        TryFlag(cmd, host, git_cl).run()
+
+        expected_added_paths = {flag_file}
+        expected_commits = [['Flag try job: force --foo for run-webkit-tests.']]
+
+        if regenerate:
+            expected_added_paths.add(flag_expectations_file)
+            expected_commits.append(
+                ['Flag try job: clear expectations for --foo.'])
+
+        self.assertEqual(git.added_paths, expected_added_paths)
+        self.assertEqual(git.local_commits(), expected_commits)
+
+        self.assertEqual(git_cl.calls, [
+            ['git', 'cl', 'upload', '--bypass-hooks', '-f',
+             '-m', 'Flag try job for --foo.'],
+            ['git', 'cl', 'try', '-m', 'tryserver.chromium.linux',
+             '-b', 'linux_chromium_rel_ng'],
+            ['git', 'cl', 'try', '-m', 'tryserver.chromium.mac',
+             '-b', 'mac_chromium_rel_ng'],
+            ['git', 'cl', 'try', '-m', 'tryserver.chromium.win',
+             '-b', 'win7_chromium_rel_ng']
+        ])
+
+    def test_trigger(self):
+        self._run_trigger_test(regenerate=False)
+        self._run_trigger_test(regenerate=True)
 
     def _setup_mock_results(self, buildbot):
         buildbot.set_results(self.linux_build, LayoutTestResults({
@@ -72,13 +120,18 @@ class TryFlagTest(unittest.TestCase):
 
     def test_update(self):
         host = MockHost()
-        try_jobs = {
-            self.linux_build: TryJobStatus('COMPLETED', 'SUCCESS'),
-            self.win_build: TryJobStatus('COMPLETED', 'SUCCESS'),
-            self.mac_build: TryJobStatus('COMPLETED', 'SUCCESS')
-        }
+        filesystem = host.filesystem
+        finder = PathFinder(filesystem)
+
+        flag_expectations_file = finder.path_from_layout_tests(
+            'FlagExpectations', 'foo')
+        filesystem.write_text_file(
+            flag_expectations_file,
+            'something/pass-unexpectedly-mac.html [ Fail ]')
+
         self._setup_mock_results(host.buildbot)
-        TryFlag(['update'], host, MockGitCL(host, try_jobs)).run()
+        cmd = ['update', '--flag=--foo']
+        TryFlag(cmd, host, MockGitCL(host, self.mock_try_results)).run()
 
         def results_url(build):
             return '%s/%s/%s/layout-test-results/results.html' % (
@@ -103,8 +156,24 @@ class TryFlagTest(unittest.TestCase):
             ''
         ]))
 
+    def test_update_irrelevant_unexpected_pass(self):
+        host = MockHost()
+        filesystem = host.filesystem
+        finder = PathFinder(filesystem)
+        flag_expectations_file = finder.path_from_layout_tests(
+            'FlagExpectations', 'foo')
+        self._setup_mock_results(host.buildbot)
+        cmd = ['update', '--flag=--foo']
+
+        # Unexpected passes that don't have flag-specific failure expectations
+        # should not be reported.
+        filesystem.write_text_file(flag_expectations_file, '')
+        TryFlag(cmd, host, MockGitCL(host, self.mock_try_results)).run()
+        self.assertTrue('### 0 unexpected passes' in host.stdout.getvalue())
+
     def test_invalid_action(self):
         host = MockHost()
-        TryFlag(['invalid'], host, MockGitCL(host)).run()
+        cmd = ['invalid', '--flag=--foo']
+        TryFlag(cmd, host, MockGitCL(host)).run()
         self.assertEqual(host.stderr.getvalue(),
                          'specify "trigger" or "update"\n')

@@ -1553,9 +1553,8 @@ void vp8_change_config(VP8_COMP *cpi, VP8_CONFIG *oxcf) {
 
   setup_features(cpi);
 
-  {
+  if (!cpi->use_roi_static_threshold) {
     int i;
-
     for (i = 0; i < MAX_MB_SEGMENTS; ++i) {
       cpi->segment_encode_breakout[i] = cpi->oxcf.encode_breakout;
     }
@@ -1814,6 +1813,8 @@ struct VP8_COMP *vp8_create_compressor(VP8_CONFIG *oxcf) {
   cpi->gold_is_alt = 0;
 
   cpi->active_map_enabled = 0;
+
+  cpi->use_roi_static_threshold = 0;
 
 #if 0
     /* Experimental code for lagged and one pass */
@@ -2924,8 +2925,7 @@ static void update_reference_frames(VP8_COMP *cpi) {
 
     cpi->current_ref_frames[GOLDEN_FRAME] = cm->current_video_frame;
     cpi->current_ref_frames[ALTREF_FRAME] = cm->current_video_frame;
-  } else /* For non key frames */
-  {
+  } else {
     if (cm->refresh_alt_ref_frame) {
       assert(!cm->copy_buffer_to_arf);
 
@@ -2946,8 +2946,7 @@ static void update_reference_frames(VP8_COMP *cpi) {
           cpi->current_ref_frames[ALTREF_FRAME] =
               cpi->current_ref_frames[LAST_FRAME];
         }
-      } else /* if (cm->copy_buffer_to_arf == 2) */
-      {
+      } else {
         if (cm->alt_fb_idx != cm->gld_fb_idx) {
           yv12_fb[cm->gld_fb_idx].flags |= VP8_ALTR_FRAME;
           yv12_fb[cm->alt_fb_idx].flags &= ~VP8_ALTR_FRAME;
@@ -2979,8 +2978,7 @@ static void update_reference_frames(VP8_COMP *cpi) {
           cpi->current_ref_frames[GOLDEN_FRAME] =
               cpi->current_ref_frames[LAST_FRAME];
         }
-      } else /* if (cm->copy_buffer_to_gf == 2) */
-      {
+      } else {
         if (cm->alt_fb_idx != cm->gld_fb_idx) {
           yv12_fb[cm->alt_fb_idx].flags |= VP8_GOLD_FRAME;
           yv12_fb[cm->gld_fb_idx].flags &= ~VP8_GOLD_FRAME;
@@ -3011,8 +3009,7 @@ static void update_reference_frames(VP8_COMP *cpi) {
       int i;
       for (i = LAST_FRAME; i < MAX_REF_FRAMES; ++i)
         vp8_yv12_copy_frame(cpi->Source, &cpi->denoiser.yv12_running_avg[i]);
-    } else /* For non key frames */
-    {
+    } else {
       vp8_yv12_extend_frame_borders(
           &cpi->denoiser.yv12_running_avg[INTRA_FRAME]);
 
@@ -5354,9 +5351,6 @@ int vp8_set_roimap(VP8_COMP *cpi, unsigned char *map, unsigned int rows,
   const int range = 63;
   int i;
 
-  // This method is currently incompatible with the cyclic refresh method
-  if (cpi->cyclic_refresh_mode_enabled) return -1;
-
   // Check number of rows and columns match
   if (cpi->common.mb_rows != (int)rows || cpi->common.mb_cols != (int)cols) {
     return -1;
@@ -5375,7 +5369,11 @@ int vp8_set_roimap(VP8_COMP *cpi, unsigned char *map, unsigned int rows,
     return -1;
   }
 
-  if (!map) {
+  // Also disable segmentation if no deltas are specified.
+  if (!map || (delta_q[0] == 0 && delta_q[1] == 0 && delta_q[2] == 0 &&
+               delta_q[3] == 0 && delta_lf[0] == 0 && delta_lf[1] == 0 &&
+               delta_lf[2] == 0 && delta_lf[3] == 0 && threshold[0] == 0 &&
+               threshold[1] == 0 && threshold[2] == 0 && threshold[3] == 0)) {
     disable_segmentation(cpi);
     return 0;
   }
@@ -5411,6 +5409,11 @@ int vp8_set_roimap(VP8_COMP *cpi, unsigned char *map, unsigned int rows,
 
   /* Initialise the feature data structure */
   set_segment_data(cpi, &feature_data[0][0], SEGMENT_DELTADATA);
+
+  if (threshold[0] != 0 || threshold[1] != 0 || threshold[2] != 0 ||
+      threshold[3] != 0)
+    cpi->use_roi_static_threshold = 1;
+  cpi->cyclic_refresh_mode_enabled = 0;
 
   return 0;
 }

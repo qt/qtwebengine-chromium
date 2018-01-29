@@ -32,6 +32,17 @@ static_library("component_updater") {
   ]
 }
 
+static_library("crl_set_remover") {
+  sources = [
+    "crl_set_remover.cc",
+    "crl_set_remover.h",
+  ]
+
+  deps = [
+    "//base",
+  ]
+}
+
 static_library("test_support") {
   testonly = true
   sources = [
@@ -60,6 +71,7 @@ source_set("unit_tests") {
     "//base",
     "//base/test:test_support",
     "//components/update_client:test_support",
+    "//services/service_manager/public/cpp",
     "//testing/gmock",
     "//testing/gtest",
   ]

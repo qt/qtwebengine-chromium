@@ -108,6 +108,14 @@ policy.Page.prototype.initialize = function() {
     this.enableEditing();
     chrome.send('resetSession');
   };
+
+  $('delete-session-button').onclick = () => {
+    var sessionName = $('session-list').value;
+    if (sessionName) {
+      chrome.send('deleteSession', [sessionName]);
+    }
+  };
+
   // Notify the browser that the page has loaded, causing it to send the
   // list of all known policies and the values from the default session.
   chrome.send('initialized');
@@ -253,18 +261,6 @@ policy.PolicyTable.prototype.getDictionary = function() {
     result[policy.name] = {value: policy.value};
   }
   return result;
-};
-
-// Add error showing function.
-
-/**
- * Shows an error message to the user.
- * @param {String} message_name Identifier for the error message.
- */
-policy.showErrorMessage = function(message_name) {
-  // TODO(urusant): improve error showing.
-  alert(loadTimeData.getString(message_name));
-  console.log(loadTimeData.getString(message_name));
 };
 
 // Call the main inttialization function when the page finishes loading.

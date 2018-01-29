@@ -70,6 +70,34 @@ bool URLsEqualUpToHttpHttpsSubstitution(const GURL& a, const GURL& b) {
   return false;
 }
 
+// Checks if the observed form looks like the submitted one to handle "Invalid
+// password entered" case so we don't offer a password save when we shouldn't.
+bool IsPasswordFormReappeared(const autofill::PasswordForm& observed_form,
+                              const autofill::PasswordForm& submitted_form) {
+  if (observed_form.action.is_valid() &&
+      URLsEqualUpToHttpHttpsSubstitution(submitted_form.action,
+                                         observed_form.action)) {
+    return true;
+  }
+
+  // Match the form if username and password fields are same.
+  if (base::EqualsCaseInsensitiveASCII(observed_form.username_element,
+                                       submitted_form.username_element) &&
+      base::EqualsCaseInsensitiveASCII(observed_form.password_element,
+                                       submitted_form.password_element)) {
+    return true;
+  }
+
+  // Match the form if the observed username field has the same value as in
+  // the submitted form.
+  if (!submitted_form.username_value.empty() &&
+      observed_form.username_value == submitted_form.username_value) {
+    return true;
+  }
+
+  return false;
+}
+
 // Helper UMA reporting function for differences in URLs during form submission.
 void RecordWhetherTargetDomainDiffers(const GURL& src, const GURL& target) {
   bool target_domain_differs =
@@ -318,8 +346,10 @@ void PasswordManager::SaveGenerationFieldDetectedByClassifier(
 void PasswordManager::ProvisionallySavePassword(
     const PasswordForm& form,
     const password_manager::PasswordManagerDriver* driver) {
-  bool is_saving_and_filling_enabled =
-      client_->IsSavingAndFillingEnabledForCurrentPage();
+  // If the form was declined by some heuristics, don't show automatic bubble
+  // for it, only fallback saving should be available.
+  if (form.only_for_fallback_saving)
+    return;
 
   std::unique_ptr<BrowserSavePasswordProgressLogger> logger;
   if (password_manager_util::IsLoggingActive(client_)) {
@@ -330,7 +360,7 @@ void PasswordManager::ProvisionallySavePassword(
                             form);
   }
 
-  if (!is_saving_and_filling_enabled) {
+  if (!client_->IsSavingAndFillingEnabledForCurrentPage()) {
     client_->GetMetricsRecorder().RecordProvisionalSaveFailure(
         PasswordManagerMetricsRecorder::SAVING_DISABLED, main_frame_url_,
         form.origin, logger.get());
@@ -441,6 +471,7 @@ void PasswordManager::RemoveObserver(LoginModelObserver* observer) {
 }
 
 void PasswordManager::DidNavigateMainFrame() {
+  entry_to_check_ = NavigationEntryToCheck::LAST_COMMITTED;
   pending_login_managers_.clear();
 }
 
@@ -517,6 +548,20 @@ void PasswordManager::CreatePendingLoginManagers(
     logger.reset(
         new BrowserSavePasswordProgressLogger(client_->GetLogManager()));
     logger->LogMessage(Logger::STRING_CREATE_LOGIN_MANAGERS_METHOD);
+  }
+
+  const PasswordForm::Scheme effective_form_scheme =
+      forms.empty() ? PasswordForm::SCHEME_HTML : forms.front().scheme;
+  switch (effective_form_scheme) {
+    case PasswordForm::SCHEME_HTML:
+    case PasswordForm::SCHEME_OTHER:
+    case PasswordForm::SCHEME_USERNAME_ONLY:
+      entry_to_check_ = NavigationEntryToCheck::LAST_COMMITTED;
+      break;
+    case PasswordForm::SCHEME_BASIC:
+    case PasswordForm::SCHEME_DIGEST:
+      entry_to_check_ = NavigationEntryToCheck::VISIBLE;
+      break;
   }
 
   // Record whether or not this top-level URL has at least one password field.
@@ -702,10 +747,9 @@ void PasswordManager::OnPasswordFormsRendered(
         // HTTP<->HTTPS substitution for now. If it becomes more complex, it may
         // make sense to consider modifying and using
         // PasswordFormManager::DoesManage for it.
-        if (all_visible_forms_[i].action.is_valid() &&
-            URLsEqualUpToHttpHttpsSubstitution(
-                provisional_save_manager_->pending_credentials().action,
-                all_visible_forms_[i].action)) {
+        if (IsPasswordFormReappeared(
+                all_visible_forms_[i],
+                provisional_save_manager_->pending_credentials())) {
           if (provisional_save_manager_
                   ->is_possible_change_password_form_without_username() &&
               AreAllFieldsEmpty(all_visible_forms_[i]))
@@ -775,50 +819,48 @@ void PasswordManager::OnLoginSuccessful() {
     }
   }
 
-  if (base::FeatureList::IsEnabled(features::kDropSyncCredential)) {
-    DCHECK(provisional_save_manager_->submitted_form());
-    if (!client_->GetStoreResultFilter()->ShouldSave(
-            *provisional_save_manager_->submitted_form())) {
+  DCHECK(provisional_save_manager_->submitted_form());
+  if (!client_->GetStoreResultFilter()->ShouldSave(
+          *provisional_save_manager_->submitted_form())) {
 #if defined(OS_WIN) || (defined(OS_MACOSX) && !defined(OS_IOS)) || \
     (defined(OS_LINUX) && !defined(OS_CHROMEOS))
-      // When |username_value| is empty, it's not clear whether the submitted
-      // credentials are really sync credentials. Don't save sync password hash
-      // in that case.
-      if (!provisional_save_manager_->submitted_form()
-               ->username_value.empty()) {
-        password_manager::PasswordStore* store = client_->GetPasswordStore();
-        // May be null in tests.
-        if (store) {
-          bool is_sync_password_change =
-              !provisional_save_manager_->submitted_form()
-                   ->new_password_element.empty();
-          metrics_util::LogSyncPasswordHashChange(
-              is_sync_password_change ? metrics_util::SyncPasswordHashChange::
-                                            CHANGED_IN_CONTENT_AREA
-                                      : metrics_util::SyncPasswordHashChange::
-                                            SAVED_IN_CONTENT_AREA);
-          store->SaveSyncPasswordHash(
-              is_sync_password_change
-                  ? provisional_save_manager_->submitted_form()
+    // When |username_value| is empty, it's not clear whether the submitted
+    // credentials are really sync credentials. Don't save sync password hash
+    // in that case.
+    if (!provisional_save_manager_->submitted_form()->username_value.empty()) {
+      password_manager::PasswordStore* store = client_->GetPasswordStore();
+      // May be null in tests.
+      if (store) {
+        bool is_sync_password_change =
+            !provisional_save_manager_->submitted_form()
+                 ->new_password_element.empty();
+        metrics_util::LogSyncPasswordHashChange(
+            is_sync_password_change
+                ? metrics_util::SyncPasswordHashChange::CHANGED_IN_CONTENT_AREA
+                : metrics_util::SyncPasswordHashChange::SAVED_IN_CONTENT_AREA);
+        store->SaveSyncPasswordHash(
+            is_sync_password_change
+                ? provisional_save_manager_->submitted_form()
                       ->new_password_value
-                  : provisional_save_manager_->submitted_form()
-                      ->password_value);
-        }
+                : provisional_save_manager_->submitted_form()->password_value);
       }
-#endif
-      provisional_save_manager_->WipeStoreCopyIfOutdated();
-      client_->GetMetricsRecorder().RecordProvisionalSaveFailure(
-          PasswordManagerMetricsRecorder::SYNC_CREDENTIAL, main_frame_url_,
-          provisional_save_manager_->observed_form().origin, logger.get());
-      provisional_save_manager_.reset();
-      return;
     }
+#endif
+    provisional_save_manager_->WipeStoreCopyIfOutdated();
+    client_->GetMetricsRecorder().RecordProvisionalSaveFailure(
+        PasswordManagerMetricsRecorder::SYNC_CREDENTIAL, main_frame_url_,
+        provisional_save_manager_->observed_form().origin, logger.get());
+    provisional_save_manager_.reset();
+    return;
   }
 
   provisional_save_manager_->LogSubmitPassed();
 
   RecordWhetherTargetDomainDiffers(main_frame_url_, client_->GetMainFrameURL());
 
+  // If the form is eligible only for saving fallback, it shouldn't go here.
+  DCHECK(!provisional_save_manager_->pending_credentials()
+              .only_for_fallback_saving);
   if (ShouldPromptUserToSavePassword()) {
     bool empty_password =
         provisional_save_manager_->pending_credentials().username_value.empty();

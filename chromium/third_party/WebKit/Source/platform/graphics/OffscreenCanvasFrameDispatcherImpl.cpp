@@ -12,6 +12,7 @@
 #include "platform/Histogram.h"
 #include "platform/WebTaskRunner.h"
 #include "platform/graphics/OffscreenCanvasPlaceholder.h"
+#include "platform/graphics/gpu/SharedGpuContext.h"
 #include "platform/scheduler/child/web_scheduler.h"
 #include "public/platform/InterfaceProvider.h"
 #include "public/platform/Platform.h"
@@ -52,12 +53,8 @@ OffscreenCanvasFrameDispatcherImpl::OffscreenCanvasFrameDispatcherImpl(
 
     scoped_refptr<base::SingleThreadTaskRunner> task_runner;
     auto scheduler = blink::Platform::Current()->CurrentThread()->Scheduler();
-    if (scheduler) {
-      WebTaskRunner* web_task_runner = scheduler->CompositorTaskRunner();
-      if (web_task_runner) {
-        task_runner = web_task_runner->ToSingleThreadTaskRunner();
-      }
-    }
+    if (scheduler)
+      task_runner = scheduler->CompositorTaskRunner();
     viz::mojom::blink::CompositorFrameSinkClientPtr client;
     binding_.Bind(mojo::MakeRequest(&client), task_runner);
     provider->CreateCompositorFrameSink(frame_sink_id_, std::move(client),
@@ -73,9 +70,9 @@ OffscreenCanvasFrameDispatcherImpl::~OffscreenCanvasFrameDispatcherImpl() {
 namespace {
 
 void UpdatePlaceholderImage(WeakPtr<OffscreenCanvasFrameDispatcher> dispatcher,
-                            RefPtr<WebTaskRunner> task_runner,
+                            scoped_refptr<WebTaskRunner> task_runner,
                             int placeholder_canvas_id,
-                            RefPtr<blink::StaticBitmapImage> image,
+                            scoped_refptr<blink::StaticBitmapImage> image,
                             unsigned resource_id) {
   DCHECK(IsMainThread());
   OffscreenCanvasPlaceholder* placeholder_canvas =
@@ -90,8 +87,12 @@ void UpdatePlaceholderImage(WeakPtr<OffscreenCanvasFrameDispatcher> dispatcher,
 }  // namespace
 
 void OffscreenCanvasFrameDispatcherImpl::PostImageToPlaceholderIfNotBlocked(
-    RefPtr<StaticBitmapImage> image,
+    scoped_refptr<StaticBitmapImage> image,
     unsigned resource_id) {
+  if (placeholder_canvas_id_ == kInvalidPlaceholderCanvasId) {
+    offscreen_canvas_resource_provider_->ReclaimResource(resource_id);
+    return;
+  }
   // Determines whether the main thread may be blocked. If unblocked, post the
   // image. Otherwise, save the image and do not post it.
   if (num_unreclaimed_frames_posted_ < kMaxUnreclaimedPlaceholderFrames) {
@@ -114,9 +115,9 @@ void OffscreenCanvasFrameDispatcherImpl::PostImageToPlaceholderIfNotBlocked(
 }
 
 void OffscreenCanvasFrameDispatcherImpl::PostImageToPlaceholder(
-    RefPtr<StaticBitmapImage> image,
+    scoped_refptr<StaticBitmapImage> image,
     unsigned resource_id) {
-  RefPtr<WebTaskRunner> dispatcher_task_runner =
+  scoped_refptr<WebTaskRunner> dispatcher_task_runner =
       Platform::Current()->CurrentThread()->GetWebTaskRunner();
 
   Platform::Current()
@@ -131,12 +132,9 @@ void OffscreenCanvasFrameDispatcherImpl::PostImageToPlaceholder(
 }
 
 void OffscreenCanvasFrameDispatcherImpl::DispatchFrame(
-    RefPtr<StaticBitmapImage> image,
+    scoped_refptr<StaticBitmapImage> image,
     double commit_start_time,
-    const SkIRect& damage_rect,
-    bool is_web_gl_software_rendering /* This flag is true when WebGL's commit
-                                         is called on SwiftShader. */
-    ) {
+    const SkIRect& damage_rect) {
   if (!image || !VerifyImageSize(image->Size()))
     return;
 
@@ -185,29 +183,31 @@ void OffscreenCanvasFrameDispatcherImpl::DispatchFrame(
       EnumerationHistogram, commit_type_histogram,
       ("OffscreenCanvas.CommitType", kOffscreenCanvasCommitTypeCount));
   if (image->IsTextureBacked()) {
-    if (Platform::Current()->IsGPUCompositingEnabled() &&
-        !is_web_gl_software_rendering) {
+    // While |image| is texture backed, it could be generated with "software
+    // rendering" aka swiftshader. If the compositor is not also using
+    // swiftshader, then we could not give a swiftshader based texture
+    // to the compositor. However in that case, IsGpuCompositingEnabled() will
+    // also be false, so we will avoid doing so.
+    if (SharedGpuContext::IsGpuCompositingEnabled()) {
       // Case 1: both canvas and compositor are gpu accelerated.
       commit_type = kCommitGPUCanvasGPUCompositing;
       offscreen_canvas_resource_provider_
           ->SetTransferableResourceToStaticBitmapImage(resource, image);
       yflipped = true;
     } else {
-      // Case 2: canvas is accelerated but --disable-gpu-compositing is
-      // specified, or WebGL's commit is called with SwiftShader. The latter
-      // case is indicated by
-      // WebGraphicsContext3DProvider::isSoftwareRendering.
+      // Case 2: canvas is accelerated but gpu compositing is disabled.
       commit_type = kCommitGPUCanvasSoftwareCompositing;
       offscreen_canvas_resource_provider_
           ->SetTransferableResourceToSharedBitmap(resource, image);
     }
   } else {
-    if (Platform::Current()->IsGPUCompositingEnabled() &&
-        !is_web_gl_software_rendering) {
-      // Case 3: canvas is not gpu-accelerated, but compositor is
+    if (SharedGpuContext::IsGpuCompositingEnabled()) {
+      // Case 3: canvas is not gpu-accelerated, but compositor is.
       commit_type = kCommitSoftwareCanvasGPUCompositing;
       offscreen_canvas_resource_provider_
-          ->SetTransferableResourceToSharedGPUContext(resource, image);
+          ->SetTransferableResourceToStaticBitmapImage(
+              resource, image->MakeAccelerated(
+                            SharedGpuContext::ContextProviderWrapper()));
     } else {
       // Case 4: both canvas and compositor are not gpu accelerated.
       commit_type = kCommitSoftwareCanvasSoftwareCompositing;
@@ -350,6 +350,19 @@ void OffscreenCanvasFrameDispatcherImpl::DidReceiveCompositorFrameAck(
   ReclaimResources(resources);
   pending_compositor_frames_--;
   DCHECK_GE(pending_compositor_frames_, 0);
+}
+
+void OffscreenCanvasFrameDispatcherImpl::DidPresentCompositorFrame(
+    uint32_t presentation_token,
+    ::mojo::common::mojom::blink::TimeTicksPtr time,
+    WTF::TimeDelta refresh,
+    uint32_t flags) {
+  NOTIMPLEMENTED();
+}
+
+void OffscreenCanvasFrameDispatcherImpl::DidDiscardCompositorFrame(
+    uint32_t presentation_token) {
+  NOTIMPLEMENTED();
 }
 
 void OffscreenCanvasFrameDispatcherImpl::SetNeedsBeginFrame(

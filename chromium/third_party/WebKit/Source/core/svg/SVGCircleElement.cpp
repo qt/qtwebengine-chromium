@@ -45,7 +45,7 @@ inline SVGCircleElement::SVGCircleElement(Document& document)
   AddToPropertyMap(r_);
 }
 
-DEFINE_TRACE(SVGCircleElement) {
+void SVGCircleElement::Trace(blink::Visitor* visitor) {
   visitor->Trace(cx_);
   visitor->Trace(cy_);
   visitor->Trace(r_);
@@ -81,7 +81,7 @@ Path SVGCircleElement::AsPath() const {
 void SVGCircleElement::CollectStyleForPresentationAttribute(
     const QualifiedName& name,
     const AtomicString& value,
-    MutableStylePropertySet* style) {
+    MutableCSSPropertyValueSet* style) {
   SVGAnimatedPropertyBase* property = PropertyFromAttribute(name);
   if (property == cx_) {
     AddPropertyToPresentationAttributeStyle(style, property->CssPropertyId(),

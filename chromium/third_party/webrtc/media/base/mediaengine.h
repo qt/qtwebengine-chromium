@@ -16,6 +16,8 @@
 #endif
 
 #include <string>
+#include <tuple>
+#include <utility>
 #include <vector>
 
 #include "api/audio_codecs/audio_decoder_factory.h"
@@ -170,7 +172,7 @@ class CompositeMediaEngine : public MediaEngineInterface {
   std::pair<VOICE, VIDEO> engines_;
 };
 
-enum DataChannelType { DCT_NONE = 0, DCT_RTP = 1, DCT_SCTP = 2, DCT_QUIC = 3 };
+enum DataChannelType { DCT_NONE = 0, DCT_RTP = 1, DCT_SCTP = 2 };
 
 class DataEngineInterface {
  public:

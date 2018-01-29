@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include "core/layout/LayoutBox.h"
+#include "core/layout/LayoutTableCell.h"
 #include "core/layout/ng/ng_constraint_space.h"
 #include "core/layout/ng/ng_constraint_space_builder.h"
 #include "core/style/ComputedStyle.h"
@@ -47,6 +48,9 @@ LayoutUnit ResolveInlineLength(const NGConstraintSpace& constraint_space,
   DCHECK_GE(constraint_space.AvailableSize().inline_size, LayoutUnit());
   DCHECK_GE(constraint_space.PercentageResolutionSize().inline_size,
             LayoutUnit());
+  // TODO(layout-dev) enable this DCHECK
+  // DCHECK_EQ(constraint_space.WritingMode(),
+  //          style.GetWritingMode());
 
   if (constraint_space.IsAnonymous())
     return constraint_space.AvailableSize().inline_size;
@@ -127,6 +131,9 @@ LayoutUnit ResolveBlockLength(const NGConstraintSpace& constraint_space,
                               LengthResolveType type) {
   DCHECK(!length.IsMaxSizeNone());
   DCHECK_NE(type, LengthResolveType::kMarginBorderPaddingSize);
+  // TODO(layout-dev) enable this DCHECK
+  // DCHECK_EQ(constraint_space.WritingMode(),
+  //          style.GetWritingMode());
 
   if (constraint_space.IsAnonymous())
     return content_size;
@@ -193,11 +200,12 @@ MinMaxSize ComputeMinAndMaxContentContribution(
     const WTF::Optional<MinMaxSize>& min_and_max) {
   // Synthesize a zero-sized constraint space for passing to
   // ResolveInlineLength.
-  NGWritingMode writing_mode = FromPlatformWritingMode(style.GetWritingMode());
+  WritingMode writing_mode = style.GetWritingMode();
   NGConstraintSpaceBuilder builder(
       writing_mode,
       /* icb_size */ {NGSizeIndefinite, NGSizeIndefinite});
-  RefPtr<NGConstraintSpace> space = builder.ToConstraintSpace(writing_mode);
+  scoped_refptr<NGConstraintSpace> space =
+      builder.ToConstraintSpace(writing_mode);
 
   MinMaxSize computed_sizes;
   Length inline_size = style.LogicalWidth();
@@ -269,6 +277,10 @@ LayoutUnit ComputeBlockSizeForFragment(
   if (constraint_space.IsFixedSizeBlock())
     return constraint_space.AvailableSize().block_size;
 
+  if (style.Display() == EDisplay::kTableCell) {
+    // All handled by the table layout code or not applicable
+    return content_size;
+  }
   LayoutUnit extent =
       ResolveBlockLength(constraint_space, style, style.LogicalHeight(),
                          content_size, LengthResolveType::kContentSize);
@@ -447,13 +459,13 @@ NGBoxStrut ComputeMarginsFor(const NGConstraintSpace& constraint_space,
                              const ComputedStyle& style,
                              const NGConstraintSpace& compute_for) {
   return ComputePhysicalMargins(constraint_space, style)
-      .ConvertToLogical(compute_for.WritingMode(), compute_for.Direction());
+      .ConvertToLogical(compute_for.GetWritingMode(), compute_for.Direction());
 }
 
 NGBoxStrut ComputeMarginsForContainer(const NGConstraintSpace& constraint_space,
                                       const ComputedStyle& style) {
   return ComputePhysicalMargins(constraint_space, style)
-      .ConvertToLogical(constraint_space.WritingMode(),
+      .ConvertToLogical(constraint_space.GetWritingMode(),
                         constraint_space.Direction());
 }
 
@@ -461,14 +473,13 @@ NGBoxStrut ComputeMarginsForVisualContainer(
     const NGConstraintSpace& constraint_space,
     const ComputedStyle& style) {
   return ComputePhysicalMargins(constraint_space, style)
-      .ConvertToLogical(constraint_space.WritingMode(), TextDirection::kLtr);
+      .ConvertToLogical(constraint_space.GetWritingMode(), TextDirection::kLtr);
 }
 
 NGBoxStrut ComputeMarginsForSelf(const NGConstraintSpace& constraint_space,
                                  const ComputedStyle& style) {
   return ComputePhysicalMargins(constraint_space, style)
-      .ConvertToLogical(FromPlatformWritingMode(style.GetWritingMode()),
-                        style.Direction());
+      .ConvertToLogical(style.GetWritingMode(), style.Direction());
 }
 
 NGBoxStrut ComputeBorders(const NGConstraintSpace& constraint_space,
@@ -514,22 +525,30 @@ NGBoxStrut ComputePadding(const NGConstraintSpace& constraint_space,
 }
 
 void ApplyAutoMargins(const ComputedStyle& style,
+                      const ComputedStyle& containing_block_style,
                       LayoutUnit available_inline_size,
                       LayoutUnit inline_size,
                       NGBoxStrut* margins) {
   DCHECK(margins) << "Margins cannot be NULL here";
   const LayoutUnit used_space = inline_size + margins->InlineSum();
   const LayoutUnit available_space = available_inline_size - used_space;
-  if (available_space < LayoutUnit())
-    return;
-  if (style.MarginStart().IsAuto() && style.MarginEnd().IsAuto()) {
-    margins->inline_start = available_space / 2;
-    margins->inline_end = available_space - margins->inline_start;
-  } else if (style.MarginStart().IsAuto()) {
-    margins->inline_start = available_space;
-  } else if (style.MarginEnd().IsAuto()) {
-    margins->inline_end = available_space;
+  if (available_space > LayoutUnit()) {
+    if ((style.MarginStart().IsAuto() && style.MarginEnd().IsAuto()) ||
+        (!style.MarginStart().IsAuto() && !style.MarginEnd().IsAuto() &&
+         containing_block_style.GetTextAlign() == ETextAlign::kWebkitCenter)) {
+      margins->inline_start += available_space / 2;
+    } else if (style.MarginStart().IsAuto() ||
+               (containing_block_style.IsLeftToRightDirection() &&
+                containing_block_style.GetTextAlign() ==
+                    ETextAlign::kWebkitRight) ||
+               (!containing_block_style.IsLeftToRightDirection() &&
+                containing_block_style.GetTextAlign() ==
+                    ETextAlign::kWebkitLeft)) {
+      margins->inline_start += available_space;
+    }
   }
+  margins->inline_end =
+      available_inline_size - inline_size - margins->inline_start;
 }
 
 LayoutUnit ConstrainByMinMax(LayoutUnit length,
@@ -551,8 +570,22 @@ NGBoxStrut CalculateBorderScrollbarPadding(
   // cause trouble.
   if (constraint_space.IsAnonymous())
     return NGBoxStrut();
-  return ComputeBorders(constraint_space, style) +
-         ComputePadding(constraint_space, style) + node.GetScrollbarSizes();
+  NGBoxStrut border_intrinsic_padding;
+  if (node.GetLayoutObject()->IsTableCell()) {
+    // Use values calculated by the table layout code
+    const LayoutTableCell* cell = ToLayoutTableCell(node.GetLayoutObject());
+    // TODO(karlo): intrinsic padding can sometimes be negative; that
+    // seems insane, but works in the old code; in NG it trips
+    // DCHECKs.
+    border_intrinsic_padding = NGBoxStrut(
+        cell->BorderStart(), cell->BorderEnd(),
+        cell->BorderBefore() + LayoutUnit(cell->IntrinsicPaddingBefore()),
+        cell->BorderAfter() + LayoutUnit(cell->IntrinsicPaddingAfter()));
+  } else {
+    border_intrinsic_padding = ComputeBorders(constraint_space, style);
+  }
+  return border_intrinsic_padding + ComputePadding(constraint_space, style) +
+         node.GetScrollbarSizes();
 }
 
 NGLogicalSize CalculateContentBoxSize(

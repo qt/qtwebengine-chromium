@@ -48,9 +48,9 @@
 #include "core/inspector/MainThreadDebugger.h"
 #include "core/loader/FrameLoader.h"
 #include "platform/Histogram.h"
-#include "platform/ScriptForbiddenScope.h"
-#include "platform/bindings/ConditionalFeatures.h"
 #include "platform/bindings/DOMWrapperWorld.h"
+#include "platform/bindings/OriginTrialFeatures.h"
+#include "platform/bindings/ScriptForbiddenScope.h"
 #include "platform/bindings/V8DOMActivityLogger.h"
 #include "platform/bindings/V8DOMWrapper.h"
 #include "platform/bindings/V8PrivateProperty.h"
@@ -145,10 +145,8 @@ void LocalWindowProxy::Initialize() {
   }
 
   SetupWindowPrototypeChain();
-  V8ContextSnapshot::InstallRuntimeEnabledFeatures(context,
-                                                   GetFrame()->GetDocument());
 
-  SecurityOrigin* origin = 0;
+  SecurityOrigin* origin = nullptr;
   if (world_->IsMainWorld()) {
     // ActivityLogger for main world is updated within updateDocumentInternal().
     UpdateDocumentInternal();
@@ -157,7 +155,7 @@ void LocalWindowProxy::Initialize() {
     ContentSecurityPolicy* csp =
         GetFrame()->GetDocument()->GetContentSecurityPolicy();
     context->AllowCodeGenerationFromStrings(csp->AllowEval(
-        0, SecurityViolationReportingPolicy::kSuppressReporting,
+        nullptr, SecurityViolationReportingPolicy::kSuppressReporting,
         ContentSecurityPolicy::kWillNotThrowException, g_empty_string));
     context->SetErrorMessageForCodeGenerationFromStrings(
         V8String(GetIsolate(), csp->EvalDisabledErrorMessage()));
@@ -173,26 +171,21 @@ void LocalWindowProxy::Initialize() {
     MainThreadDebugger::Instance()->ContextCreated(script_state_.get(),
                                                    GetFrame(), origin);
     GetFrame()->Client()->DidCreateScriptContext(context, world_->GetWorldId());
+  }
 
-    InstallConditionalFeaturesOnGlobal(&V8Window::wrapperTypeInfo,
-                                       script_state_.get());
+  InstallConditionalFeatures();
 
-    if (world_->IsMainWorld()) {
-      // For the main world, install any remaining conditional bindings (i.e.
-      // for origin trials, which do not apply to extensions). Some conditional
-      // bindings cannot be enabled until the execution context is available
-      // (e.g. parsing the document, inspecting HTTP headers).
-      InstallConditionalFeatures(&V8Window::wrapperTypeInfo,
-                                 script_state_.get(), v8::Local<v8::Object>(),
-                                 v8::Local<v8::Function>());
-      GetFrame()->Loader().DispatchDidClearWindowObjectInMainWorld();
-    }
+  if (World().IsMainWorld()) {
+    GetFrame()->Loader().DispatchDidClearWindowObjectInMainWorld();
   }
 }
 
 void LocalWindowProxy::CreateContext() {
   TRACE_EVENT1("v8", "LocalWindowProxy::CreateContext", "IsMainFrame",
                GetFrame()->IsMainFrame());
+
+  // TODO(yukishiino): Remove this CHECK once crbug.com/713699 gets fixed.
+  CHECK(IsMainThread());
 
   Vector<const char*> extension_names;
   // Dynamically tell v8 about our extensions now.
@@ -229,7 +222,7 @@ void LocalWindowProxy::CreateContext() {
     // in some cases, e.g. loading XML files.
     if (context.IsEmpty()) {
       v8::Local<v8::ObjectTemplate> global_template =
-          V8Window::domTemplate(isolate, *world_)->InstanceTemplate();
+          V8Window::domTemplate(isolate, World())->InstanceTemplate();
       CHECK(!global_template.IsEmpty());
       context = v8::Context::New(isolate, &extension_configuration,
                                  global_template, global_proxy);
@@ -248,6 +241,42 @@ void LocalWindowProxy::CreateContext() {
          lifecycle_ == Lifecycle::kGlobalObjectIsDetached);
   lifecycle_ = Lifecycle::kContextIsInitialized;
   DCHECK(script_state_->ContextIsValid());
+}
+
+void LocalWindowProxy::InstallConditionalFeatures() {
+  TRACE_EVENT1("v8", "InstallConditionalFeatures", "IsMainFrame",
+               GetFrame()->IsMainFrame());
+
+  v8::Local<v8::Context> context = script_state_->GetContext();
+
+  // If the context was created from snapshot, all conditionally
+  // enabled features are installed in
+  // V8ContextSnapshot::InstallConditionalFeatures().
+  if (V8ContextSnapshot::InstallConditionalFeatures(
+          context, GetFrame()->GetDocument())) {
+    return;
+  }
+
+  v8::Local<v8::Object> global_proxy = context->Global();
+  const WrapperTypeInfo* wrapper_type_info =
+      GetFrame()->DomWindow()->GetWrapperTypeInfo();
+
+  v8::Local<v8::Object> unused_prototype_object;
+  v8::Local<v8::Function> unused_interface_object;
+  wrapper_type_info->InstallConditionalFeatures(
+      context, World(), global_proxy, unused_prototype_object,
+      unused_interface_object,
+      wrapper_type_info->domTemplate(GetIsolate(), World()));
+
+  if (World().IsMainWorld()) {
+    // For the main world, install any remaining conditional bindings (i.e.
+    // for origin trials, which do not apply to extensions). Some conditional
+    // bindings cannot be enabled until the execution context is available
+    // (e.g. parsing the document, inspecting HTTP headers).
+    InstallOriginTrialFeatures(wrapper_type_info, script_state_.get(),
+                               v8::Local<v8::Object>(),
+                               v8::Local<v8::Function>());
+  }
 }
 
 void LocalWindowProxy::SetupWindowPrototypeChain() {
@@ -525,7 +554,7 @@ void LocalWindowProxy::UpdateSecurityOrigin(SecurityOrigin* origin) {
 
 LocalWindowProxy::LocalWindowProxy(v8::Isolate* isolate,
                                    LocalFrame& frame,
-                                   RefPtr<DOMWrapperWorld> world)
+                                   scoped_refptr<DOMWrapperWorld> world)
     : WindowProxy(isolate, frame, std::move(world)) {}
 
 }  // namespace blink

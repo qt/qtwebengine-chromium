@@ -21,6 +21,7 @@ class NotificationControlButtonsView;
 
 namespace ui {
 struct AXActionData;
+class LayerTreeOwner;
 }
 
 namespace views {
@@ -72,6 +73,11 @@ class ArcNotificationContentView
   void UpdateAccessibleName();
   void SetExpanded(bool expanded);
   bool IsExpanded() const;
+  void OnContainerAnimationStarted();
+  void OnContainerAnimationEnded();
+
+  void ShowCopiedSurface();
+  void HideCopiedSurface();
 
   // views::NativeViewHost
   void ViewHierarchyChanged(
@@ -89,7 +95,8 @@ class ArcNotificationContentView
   // aura::WindowObserver
   void OnWindowBoundsChanged(aura::Window* window,
                              const gfx::Rect& old_bounds,
-                             const gfx::Rect& new_bounds) override;
+                             const gfx::Rect& new_bounds,
+                             ui::PropertyChangeReason reason) override;
   void OnWindowDestroying(aura::Window* window) override;
 
   // ArcNotificationItem::Observer
@@ -138,6 +145,8 @@ class ArcNotificationContentView
   bool in_layout_ = false;
 
   base::string16 accessible_name_;
+
+  std::unique_ptr<ui::LayerTreeOwner> surface_copy_;
 
   DISALLOW_COPY_AND_ASSIGN(ArcNotificationContentView);
 };

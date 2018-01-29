@@ -38,14 +38,16 @@ class MojoChannelFactory : public ChannelFactory {
   MojoChannelFactory(
       mojo::ScopedMessagePipeHandle handle,
       Channel::Mode mode,
-      const scoped_refptr<base::SingleThreadTaskRunner>& ipc_task_runner)
+      const scoped_refptr<base::SingleThreadTaskRunner>& ipc_task_runner,
+      const scoped_refptr<base::SingleThreadTaskRunner>& proxy_task_runner)
       : handle_(std::move(handle)),
         mode_(mode),
-        ipc_task_runner_(ipc_task_runner) {}
+        ipc_task_runner_(ipc_task_runner),
+        proxy_task_runner_(proxy_task_runner) {}
 
   std::unique_ptr<Channel> BuildChannel(Listener* listener) override {
-    return ChannelMojo::Create(
-        std::move(handle_), mode_, listener, ipc_task_runner_);
+    return ChannelMojo::Create(std::move(handle_), mode_, listener,
+                               ipc_task_runner_, proxy_task_runner_);
   }
 
   scoped_refptr<base::SingleThreadTaskRunner> GetIPCTaskRunner() override {
@@ -56,6 +58,7 @@ class MojoChannelFactory : public ChannelFactory {
   mojo::ScopedMessagePipeHandle handle_;
   const Channel::Mode mode_;
   scoped_refptr<base::SingleThreadTaskRunner> ipc_task_runner_;
+  scoped_refptr<base::SingleThreadTaskRunner> proxy_task_runner_;
 
   DISALLOW_COPY_AND_ASSIGN(MojoChannelFactory);
 };
@@ -81,37 +84,45 @@ std::unique_ptr<ChannelMojo> ChannelMojo::Create(
     mojo::ScopedMessagePipeHandle handle,
     Mode mode,
     Listener* listener,
-    const scoped_refptr<base::SingleThreadTaskRunner>& ipc_task_runner) {
-  return base::WrapUnique(
-      new ChannelMojo(std::move(handle), mode, listener, ipc_task_runner));
+    const scoped_refptr<base::SingleThreadTaskRunner>& ipc_task_runner,
+    const scoped_refptr<base::SingleThreadTaskRunner>& proxy_task_runner) {
+  return base::WrapUnique(new ChannelMojo(std::move(handle), mode, listener,
+                                          ipc_task_runner, proxy_task_runner));
 }
 
 // static
 std::unique_ptr<ChannelFactory> ChannelMojo::CreateServerFactory(
     mojo::ScopedMessagePipeHandle handle,
-    const scoped_refptr<base::SingleThreadTaskRunner>& ipc_task_runner) {
+    const scoped_refptr<base::SingleThreadTaskRunner>& ipc_task_runner,
+    const scoped_refptr<base::SingleThreadTaskRunner>& proxy_task_runner) {
   return std::make_unique<MojoChannelFactory>(
-      std::move(handle), Channel::MODE_SERVER, ipc_task_runner);
+      std::move(handle), Channel::MODE_SERVER, ipc_task_runner,
+      proxy_task_runner);
 }
 
 // static
 std::unique_ptr<ChannelFactory> ChannelMojo::CreateClientFactory(
     mojo::ScopedMessagePipeHandle handle,
-    const scoped_refptr<base::SingleThreadTaskRunner>& ipc_task_runner) {
+    const scoped_refptr<base::SingleThreadTaskRunner>& ipc_task_runner,
+    const scoped_refptr<base::SingleThreadTaskRunner>& proxy_task_runner) {
   return std::make_unique<MojoChannelFactory>(
-      std::move(handle), Channel::MODE_CLIENT, ipc_task_runner);
+      std::move(handle), Channel::MODE_CLIENT, ipc_task_runner,
+      proxy_task_runner);
 }
 
 ChannelMojo::ChannelMojo(
     mojo::ScopedMessagePipeHandle handle,
     Mode mode,
     Listener* listener,
-    const scoped_refptr<base::SingleThreadTaskRunner>& ipc_task_runner)
+    const scoped_refptr<base::SingleThreadTaskRunner>& ipc_task_runner,
+    const scoped_refptr<base::SingleThreadTaskRunner>& proxy_task_runner)
     : task_runner_(ipc_task_runner),
       pipe_(handle.get()),
       listener_(listener),
       weak_factory_(this) {
-  bootstrap_ = MojoBootstrap::Create(std::move(handle), mode, ipc_task_runner);
+  weak_ptr_ = weak_factory_.GetWeakPtr();
+  bootstrap_ = MojoBootstrap::Create(std::move(handle), mode, ipc_task_runner,
+                                     proxy_task_runner);
 }
 
 void ChannelMojo::ForwardMessageFromThreadSafePtr(mojo::Message message) {
@@ -183,9 +194,8 @@ void ChannelMojo::OnPipeError() {
   if (task_runner_->RunsTasksInCurrentSequence()) {
     listener_->OnChannelError();
   } else {
-    task_runner_->PostTask(
-        FROM_HERE,
-        base::Bind(&ChannelMojo::OnPipeError, weak_factory_.GetWeakPtr()));
+    task_runner_->PostTask(FROM_HERE,
+                           base::Bind(&ChannelMojo::OnPipeError, weak_ptr_));
   }
 }
 
@@ -230,10 +240,9 @@ std::unique_ptr<mojo::ThreadSafeForwarder<mojom::Channel>>
 ChannelMojo::CreateThreadSafeChannel() {
   return std::make_unique<mojo::ThreadSafeForwarder<mojom::Channel>>(
       task_runner_,
-      base::Bind(&ChannelMojo::ForwardMessageFromThreadSafePtr,
-                 weak_factory_.GetWeakPtr()),
+      base::Bind(&ChannelMojo::ForwardMessageFromThreadSafePtr, weak_ptr_),
       base::Bind(&ChannelMojo::ForwardMessageWithResponderFromThreadSafePtr,
-                 weak_factory_.GetWeakPtr()),
+                 weak_ptr_),
       *bootstrap_->GetAssociatedGroup());
 }
 
@@ -325,7 +334,7 @@ void ChannelMojo::GetGenericRemoteAssociatedInterface(
     // Attach the associated interface to a disconnected pipe, so that the
     // associated interface pointer can be used to make calls (which are
     // dropped).
-    mojo::GetIsolatedInterface(std::move(handle));
+    mojo::AssociateWithDisconnectedPipe(std::move(handle));
   }
 }
 

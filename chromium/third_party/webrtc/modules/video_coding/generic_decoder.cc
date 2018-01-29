@@ -58,8 +58,8 @@ int32_t VCMDecodedFrameCallback::Decoded(VideoFrame& decodedImage,
                                          int64_t decode_time_ms) {
   Decoded(decodedImage,
           decode_time_ms >= 0 ? rtc::Optional<int32_t>(decode_time_ms)
-                              : rtc::Optional<int32_t>(),
-          rtc::Optional<uint8_t>());
+                              : rtc::nullopt,
+          rtc::nullopt);
   return WEBRTC_VIDEO_CODEC_OK;
 }
 
@@ -78,15 +78,14 @@ void VCMDecodedFrameCallback::Decoded(VideoFrame& decodedImage,
   }
 
   if (frameInfo == NULL) {
-    LOG(LS_WARNING) << "Too many frames backed up in the decoder, dropping "
-                       "this one.";
+    RTC_LOG(LS_WARNING) << "Too many frames backed up in the decoder, dropping "
+                           "this one.";
     return;
   }
 
   const int64_t now_ms = _clock->TimeInMilliseconds();
   if (!decode_time_ms) {
-    decode_time_ms =
-        rtc::Optional<int32_t>(now_ms - frameInfo->decodeStartTimeMs);
+    decode_time_ms = now_ms - frameInfo->decodeStartTimeMs;
   }
   _timing->StopDecodeTimer(decodedImage.timestamp(), *decode_time_ms, now_ms,
                            frameInfo->renderTimeMs);
@@ -182,6 +181,9 @@ int32_t VCMDecodedFrameCallback::Pop(uint32_t timestamp) {
   return VCM_OK;
 }
 
+VCMGenericDecoder::VCMGenericDecoder(std::unique_ptr<VideoDecoder> decoder)
+    : VCMGenericDecoder(decoder.release(), false /* isExternal */) {}
+
 VCMGenericDecoder::VCMGenericDecoder(VideoDecoder* decoder, bool isExternal)
     : _callback(NULL),
       _frameInfos(),
@@ -234,10 +236,10 @@ int32_t VCMGenericDecoder::Decode(const VCMEncodedFrame& frame, int64_t nowMs) {
 
     _callback->OnDecoderImplementationName(decoder_->ImplementationName());
     if (ret < WEBRTC_VIDEO_CODEC_OK) {
-        LOG(LS_WARNING) << "Failed to decode frame with timestamp "
-                        << frame.TimeStamp() << ", error code: " << ret;
-        _callback->Pop(frame.TimeStamp());
-        return ret;
+      RTC_LOG(LS_WARNING) << "Failed to decode frame with timestamp "
+                          << frame.TimeStamp() << ", error code: " << ret;
+      _callback->Pop(frame.TimeStamp());
+      return ret;
     } else if (ret == WEBRTC_VIDEO_CODEC_NO_OUTPUT ||
                ret == WEBRTC_VIDEO_CODEC_REQUEST_SLI) {
         // No output

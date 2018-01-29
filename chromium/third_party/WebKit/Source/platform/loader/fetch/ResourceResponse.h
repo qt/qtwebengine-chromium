@@ -30,6 +30,7 @@
 #include <memory>
 #include <utility>
 
+#include "base/memory/scoped_refptr.h"
 #include "base/time/time.h"
 #include "platform/PlatformExport.h"
 #include "platform/blob/BlobData.h"
@@ -39,7 +40,6 @@
 #include "platform/network/HTTPParsers.h"
 #include "platform/weborigin/KURL.h"
 #include "platform/wtf/RefCounted.h"
-#include "platform/wtf/RefPtr.h"
 #include "platform/wtf/Time.h"
 #include "platform/wtf/Vector.h"
 #include "platform/wtf/text/CString.h"
@@ -225,10 +225,10 @@ class PLATFORM_EXPORT ResourceResponse final {
   void SetWasCached(bool);
 
   ResourceLoadTiming* GetResourceLoadTiming() const;
-  void SetResourceLoadTiming(RefPtr<ResourceLoadTiming>);
+  void SetResourceLoadTiming(scoped_refptr<ResourceLoadTiming>);
 
-  RefPtr<ResourceLoadInfo> GetResourceLoadInfo() const;
-  void SetResourceLoadInfo(RefPtr<ResourceLoadInfo>);
+  scoped_refptr<ResourceLoadInfo> GetResourceLoadInfo() const;
+  void SetResourceLoadInfo(scoped_refptr<ResourceLoadInfo>);
 
   HTTPVersion HttpVersion() const { return http_version_; }
   void SetHTTPVersion(HTTPVersion version) { http_version_ = version; }
@@ -288,13 +288,6 @@ class PLATFORM_EXPORT ResourceResponse final {
   }
   void SetWasFetchedViaServiceWorker(bool value) {
     was_fetched_via_service_worker_ = value;
-  }
-
-  bool WasFetchedViaForeignFetch() const {
-    return was_fetched_via_foreign_fetch_;
-  }
-  void SetWasFetchedViaForeignFetch(bool value) {
-    was_fetched_via_foreign_fetch_ = value;
   }
 
   // See ServiceWorkerResponseInfo::was_fallback_required.
@@ -393,7 +386,7 @@ class PLATFORM_EXPORT ResourceResponse final {
 
   // Extra data associated with this response.
   ExtraData* GetExtraData() const { return extra_data_.get(); }
-  void SetExtraData(RefPtr<ExtraData> extra_data) {
+  void SetExtraData(scoped_refptr<ExtraData> extra_data) {
     extra_data_ = std::move(extra_data);
   }
 
@@ -460,9 +453,6 @@ class PLATFORM_EXPORT ResourceResponse final {
   // Was the resource fetched over a ServiceWorker.
   bool was_fetched_via_service_worker_ : 1;
 
-  // Was the resource fetched using a foreign fetch service worker.
-  bool was_fetched_via_foreign_fetch_ : 1;
-
   // Was the fallback request with skip service worker flag required.
   bool was_fallback_required_by_service_worker_ : 1;
 
@@ -486,8 +476,8 @@ class PLATFORM_EXPORT ResourceResponse final {
   // valid data.
   SecurityDetails security_details_;
 
-  RefPtr<ResourceLoadTiming> resource_load_timing_;
-  RefPtr<ResourceLoadInfo> resource_load_info_;
+  scoped_refptr<ResourceLoadTiming> resource_load_timing_;
+  scoped_refptr<ResourceLoadInfo> resource_load_info_;
 
   mutable CacheControlHeader cache_control_header_;
 
@@ -544,10 +534,10 @@ class PLATFORM_EXPORT ResourceResponse final {
 
   // The handle to the downloaded file to ensure the underlying file will not
   // be deleted.
-  RefPtr<BlobDataHandle> downloaded_file_handle_;
+  scoped_refptr<BlobDataHandle> downloaded_file_handle_;
 
   // ExtraData associated with the response.
-  RefPtr<ExtraData> extra_data_;
+  scoped_refptr<ExtraData> extra_data_;
 
   // PlzNavigate: the redirect responses are transmitted
   // inside the final response.
@@ -582,7 +572,7 @@ struct CrossThreadResourceResponseData {
   int http_status_code_;
   String http_status_text_;
   std::unique_ptr<CrossThreadHTTPHeaderMapData> http_headers_;
-  RefPtr<ResourceLoadTiming> resource_load_timing_;
+  scoped_refptr<ResourceLoadTiming> resource_load_timing_;
   bool has_major_certificate_errors_;
   bool is_legacy_symantec_cert_;
   base::Time cert_validity_start_;
@@ -598,7 +588,6 @@ struct CrossThreadResourceResponseData {
   bool was_fetched_via_spdy_;
   bool was_fetched_via_proxy_;
   bool was_fetched_via_service_worker_;
-  bool was_fetched_via_foreign_fetch_;
   bool was_fallback_required_by_service_worker_;
   network::mojom::FetchResponseType response_type_via_service_worker_;
   Vector<KURL> url_list_via_service_worker_;
@@ -611,7 +600,7 @@ struct CrossThreadResourceResponseData {
   long long encoded_body_length_;
   long long decoded_body_length_;
   String downloaded_file_path_;
-  RefPtr<BlobDataHandle> downloaded_file_handle_;
+  scoped_refptr<BlobDataHandle> downloaded_file_handle_;
 };
 
 }  // namespace blink

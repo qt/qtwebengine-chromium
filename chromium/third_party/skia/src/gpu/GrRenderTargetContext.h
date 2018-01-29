@@ -18,10 +18,12 @@
 #include "GrXferProcessor.h"
 #include "SkRefCnt.h"
 #include "SkSurfaceProps.h"
+#include "text/GrTextUtils.h"
 
 class GrBackendSemaphore;
 class GrCCPRAtlas;
 class GrClip;
+class GrColorSpaceXform;
 class GrCoverageCountingPathRenderer;
 class GrDrawingManager;
 class GrDrawOp;
@@ -330,12 +332,11 @@ public:
     const GrCaps* caps() const { return fContext->caps(); }
     int width() const { return fRenderTargetProxy->width(); }
     int height() const { return fRenderTargetProxy->height(); }
-    GrPixelConfig config() const { return fRenderTargetProxy->config(); }
     int numColorSamples() const { return fRenderTargetProxy->numColorSamples(); }
     int numStencilSamples() const { return fRenderTargetProxy->numStencilSamples(); }
     const SkSurfaceProps& surfaceProps() const { return fSurfaceProps; }
-    GrColorSpaceXform* getColorXformFromSRGB() const { return fColorXformFromSRGB.get(); }
     GrSurfaceOrigin origin() const { return fRenderTargetProxy->origin(); }
+    GrMipMapped mipMapped() const;
 
     bool wasAbandoned() const;
 
@@ -355,6 +356,7 @@ public:
     sk_sp<GrSurfaceProxy> asSurfaceProxyRef() override { return fRenderTargetProxy; }
 
     GrTextureProxy* asTextureProxy() override;
+    const GrTextureProxy* asTextureProxy() const override;
     sk_sp<GrTextureProxy> asTextureProxyRef() override;
 
     GrRenderTargetProxy* asRenderTargetProxy() override { return fRenderTargetProxy.get(); }
@@ -366,6 +368,8 @@ public:
     GrRenderTargetContextPriv priv();
     const GrRenderTargetContextPriv priv() const;
 
+    GrTextUtils::Target* textTarget() { return fTextTarget.get(); }
+
     bool isWrapped_ForTesting() const;
 
 protected:
@@ -376,6 +380,8 @@ protected:
     SkDEBUGCODE(void validate() const override;)
 
 private:
+    class TextTarget;
+
     inline GrAAType chooseAAType(GrAA aa, GrAllowMixedSamples allowMixedSamples) {
         return GrChooseAAType(aa, this->fsaaType(), allowMixedSamples, *this->caps());
     }
@@ -441,16 +447,16 @@ private:
     GrRenderTargetOpList* getRTOpList();
     GrOpList* getOpList() override;
 
-    sk_sp<GrRenderTargetProxy>        fRenderTargetProxy;
+    std::unique_ptr<GrTextUtils::Target> fTextTarget;
+    sk_sp<GrRenderTargetProxy> fRenderTargetProxy;
 
     // In MDB-mode the GrOpList can be closed by some other renderTargetContext that has picked
     // it up. For this reason, the GrOpList should only ever be accessed via 'getOpList'.
-    sk_sp<GrRenderTargetOpList>       fOpList;
-    GrInstancedPipelineInfo           fInstancedPipelineInfo;
+    sk_sp<GrRenderTargetOpList> fOpList;
+    GrInstancedPipelineInfo fInstancedPipelineInfo;
 
-    sk_sp<GrColorSpaceXform>          fColorXformFromSRGB;
-    SkSurfaceProps                    fSurfaceProps;
-    bool                              fManagedOpList;
+    SkSurfaceProps fSurfaceProps;
+    bool fManagedOpList;
 
     typedef GrSurfaceContext INHERITED;
 };

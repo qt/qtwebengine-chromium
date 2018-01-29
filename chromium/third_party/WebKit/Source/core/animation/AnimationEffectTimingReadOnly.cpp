@@ -62,8 +62,9 @@ String AnimationEffectTimingReadOnly::easing() {
   return parent_->SpecifiedTiming().timing_function->ToString();
 }
 
-DEFINE_TRACE(AnimationEffectTimingReadOnly) {
+void AnimationEffectTimingReadOnly::Trace(blink::Visitor* visitor) {
   visitor->Trace(parent_);
+  ScriptWrappable::Trace(visitor);
 }
 
 }  // namespace blink

@@ -24,6 +24,9 @@
 #include "services/device/public/cpp/generic_sensor/sensor_traits.h"
 #include "services/device/public/interfaces/constants.mojom.h"
 
+using ::testing::_;
+using ::testing::Invoke;
+
 namespace device {
 
 using mojom::SensorType;
@@ -199,7 +202,7 @@ class GenericSensorServiceTest : public DeviceServiceTestBase {
 // Requests the SensorProvider to create a sensor.
 TEST_F(GenericSensorServiceTest, GetSensorTest) {
   mojom::SensorPtr sensor;
-  auto client = base::MakeUnique<TestSensorClient>(SensorType::PROXIMITY);
+  auto client = std::make_unique<TestSensorClient>(SensorType::PROXIMITY);
   base::RunLoop run_loop;
   sensor_provider_->GetSensor(
       SensorType::PROXIMITY, mojo::MakeRequest(&sensor),
@@ -211,7 +214,7 @@ TEST_F(GenericSensorServiceTest, GetSensorTest) {
 // Tests GetDefaultConfiguration.
 TEST_F(GenericSensorServiceTest, GetDefaultConfigurationTest) {
   mojom::SensorPtr sensor;
-  auto client = base::MakeUnique<TestSensorClient>(SensorType::ACCELEROMETER);
+  auto client = std::make_unique<TestSensorClient>(SensorType::ACCELEROMETER);
   base::RunLoop run_loop;
 
   sensor_provider_->GetSensor(SensorType::ACCELEROMETER,
@@ -231,7 +234,7 @@ TEST_F(GenericSensorServiceTest, GetDefaultConfigurationTest) {
 // SensorClient::SensorReadingChanged().
 TEST_F(GenericSensorServiceTest, ValidAddConfigurationTest) {
   mojom::SensorPtr sensor;
-  auto client = base::MakeUnique<TestSensorClient>(SensorType::AMBIENT_LIGHT);
+  auto client = std::make_unique<TestSensorClient>(SensorType::AMBIENT_LIGHT);
   sensor_provider_->GetSensor(SensorType::AMBIENT_LIGHT,
                               mojo::MakeRequest(&sensor),
                               base::BindOnce(&TestSensorClient::OnSensorCreated,
@@ -255,11 +258,10 @@ TEST_F(GenericSensorServiceTest, ValidAddConfigurationTest) {
 
 // Tests adding an invalid configuation, the max allowed frequency is 50.0 in
 // the mocked SensorImpl, while we add one with 60.0.
-// Failing on Android Tests (dbg); see https://crbug.com/761742.
 TEST_F(GenericSensorServiceTest, InvalidAddConfigurationTest) {
   mojom::SensorPtr sensor;
   auto client =
-      base::MakeUnique<TestSensorClient>(SensorType::LINEAR_ACCELERATION);
+      std::make_unique<TestSensorClient>(SensorType::LINEAR_ACCELERATION);
   base::RunLoop run_loop;
 
   sensor_provider_->GetSensor(SensorType::LINEAR_ACCELERATION,
@@ -283,7 +285,7 @@ TEST_F(GenericSensorServiceTest, InvalidAddConfigurationTest) {
 // its clients.
 TEST_F(GenericSensorServiceTest, MultipleClientsTest) {
   mojom::SensorPtr sensor_1;
-  auto client_1 = base::MakeUnique<TestSensorClient>(SensorType::AMBIENT_LIGHT);
+  auto client_1 = std::make_unique<TestSensorClient>(SensorType::AMBIENT_LIGHT);
   sensor_provider_->GetSensor(SensorType::AMBIENT_LIGHT,
                               mojo::MakeRequest(&sensor_1),
                               base::BindOnce(&TestSensorClient::OnSensorCreated,
@@ -291,7 +293,7 @@ TEST_F(GenericSensorServiceTest, MultipleClientsTest) {
                                              base::BindOnce(&base::DoNothing)));
 
   mojom::SensorPtr sensor_2;
-  auto client_2 = base::MakeUnique<TestSensorClient>(SensorType::AMBIENT_LIGHT);
+  auto client_2 = std::make_unique<TestSensorClient>(SensorType::AMBIENT_LIGHT);
   sensor_provider_->GetSensor(SensorType::AMBIENT_LIGHT,
                               mojo::MakeRequest(&sensor_2),
                               base::BindOnce(&TestSensorClient::OnSensorCreated,
@@ -323,17 +325,16 @@ TEST_F(GenericSensorServiceTest, MultipleClientsTest) {
 
 // Tests adding more than one clients. If mojo connection is broken on one
 // client, other clients should not be affected.
-// Failing on Android Tests (dbg); see https://crbug.com/761742.
 TEST_F(GenericSensorServiceTest, ClientMojoConnectionBrokenTest) {
   mojom::SensorPtr sensor_1;
-  auto client_1 = base::MakeUnique<TestSensorClient>(SensorType::AMBIENT_LIGHT);
+  auto client_1 = std::make_unique<TestSensorClient>(SensorType::AMBIENT_LIGHT);
   sensor_provider_->GetSensor(SensorType::AMBIENT_LIGHT,
                               mojo::MakeRequest(&sensor_1),
                               base::BindOnce(&TestSensorClient::OnSensorCreated,
                                              base::Unretained(client_1.get()),
                                              base::BindOnce(&base::DoNothing)));
   mojom::SensorPtr sensor_2;
-  auto client_2 = base::MakeUnique<TestSensorClient>(SensorType::AMBIENT_LIGHT);
+  auto client_2 = std::make_unique<TestSensorClient>(SensorType::AMBIENT_LIGHT);
   {
     base::RunLoop run_loop;
     sensor_provider_->GetSensor(
@@ -371,7 +372,7 @@ TEST_F(GenericSensorServiceTest, ClientMojoConnectionBrokenTest) {
 // Test add and remove configuration operations.
 TEST_F(GenericSensorServiceTest, AddAndRemoveConfigurationTest) {
   mojom::SensorPtr sensor;
-  auto client = base::MakeUnique<TestSensorClient>(SensorType::AMBIENT_LIGHT);
+  auto client = std::make_unique<TestSensorClient>(SensorType::AMBIENT_LIGHT);
   sensor_provider_->GetSensor(SensorType::AMBIENT_LIGHT,
                               mojo::MakeRequest(&sensor),
                               base::BindOnce(&TestSensorClient::OnSensorCreated,
@@ -428,10 +429,9 @@ TEST_F(GenericSensorServiceTest, AddAndRemoveConfigurationTest) {
 // AddConfiguration(). In this way we make sure it won't be missed by the
 // early quit of main thread (when there is an unexpected notification by
 // SensorReadingChanged()).
-// Failing on Android Tests (dbg); see https://crbug.com/761742.
 TEST_F(GenericSensorServiceTest, SuspendTest) {
   mojom::SensorPtr sensor;
-  auto client = base::MakeUnique<TestSensorClient>(SensorType::AMBIENT_LIGHT);
+  auto client = std::make_unique<TestSensorClient>(SensorType::AMBIENT_LIGHT);
   sensor_provider_->GetSensor(SensorType::AMBIENT_LIGHT,
                               mojo::MakeRequest(&sensor),
                               base::BindOnce(&TestSensorClient::OnSensorCreated,
@@ -466,7 +466,7 @@ TEST_F(GenericSensorServiceTest, SuspendTest) {
 // be notified by SensorReadingChanged() as usual.
 TEST_F(GenericSensorServiceTest, SuspendThenResumeTest) {
   mojom::SensorPtr sensor;
-  auto client = base::MakeUnique<TestSensorClient>(SensorType::AMBIENT_LIGHT);
+  auto client = std::make_unique<TestSensorClient>(SensorType::AMBIENT_LIGHT);
   sensor_provider_->GetSensor(SensorType::AMBIENT_LIGHT,
                               mojo::MakeRequest(&sensor),
                               base::BindOnce(&TestSensorClient::OnSensorCreated,
@@ -511,17 +511,16 @@ TEST_F(GenericSensorServiceTest, SuspendThenResumeTest) {
 
 // Test suspend when there are more than one client. The suspended client won't
 // receive SensorReadingChanged() notification.
-// Failing on Android Tests (dbg); see https://crbug.com/761742.
 TEST_F(GenericSensorServiceTest, MultipleClientsSuspendAndResumeTest) {
   mojom::SensorPtr sensor_1;
-  auto client_1 = base::MakeUnique<TestSensorClient>(SensorType::AMBIENT_LIGHT);
+  auto client_1 = std::make_unique<TestSensorClient>(SensorType::AMBIENT_LIGHT);
   sensor_provider_->GetSensor(SensorType::AMBIENT_LIGHT,
                               mojo::MakeRequest(&sensor_1),
                               base::BindOnce(&TestSensorClient::OnSensorCreated,
                                              base::Unretained(client_1.get()),
                                              base::BindOnce(&base::DoNothing)));
   mojom::SensorPtr sensor_2;
-  auto client_2 = base::MakeUnique<TestSensorClient>(SensorType::AMBIENT_LIGHT);
+  auto client_2 = std::make_unique<TestSensorClient>(SensorType::AMBIENT_LIGHT);
   sensor_provider_->GetSensor(SensorType::AMBIENT_LIGHT,
                               mojo::MakeRequest(&sensor_2),
                               base::BindOnce(&TestSensorClient::OnSensorCreated,

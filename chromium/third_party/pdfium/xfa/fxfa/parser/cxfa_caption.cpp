@@ -1,4 +1,4 @@
-// Copyright 2016 PDFium Authors. All rights reserved.
+// Copyright 2017 PDFium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,39 +6,35 @@
 
 #include "xfa/fxfa/parser/cxfa_caption.h"
 
-#include "xfa/fxfa/parser/cxfa_measurement.h"
-#include "xfa/fxfa/parser/cxfa_node.h"
+namespace {
 
-CXFA_Caption::CXFA_Caption(CXFA_Node* pNode) : CXFA_Data(pNode) {}
+const CXFA_Node::PropertyData kPropertyData[] = {
+    {XFA_Element::Margin, 1, 0}, {XFA_Element::Para, 1, 0},
+    {XFA_Element::Font, 1, 0},   {XFA_Element::Value, 1, 0},
+    {XFA_Element::Extras, 1, 0}, {XFA_Element::Unknown, 0, 0}};
+const CXFA_Node::AttributeData kAttributeData[] = {
+    {XFA_Attribute::Id, XFA_AttributeType::CData, nullptr},
+    {XFA_Attribute::Use, XFA_AttributeType::CData, nullptr},
+    {XFA_Attribute::Reserve, XFA_AttributeType::Measure, (void*)L"-1un"},
+    {XFA_Attribute::Presence, XFA_AttributeType::Enum,
+     (void*)XFA_AttributeEnum::Visible},
+    {XFA_Attribute::Usehref, XFA_AttributeType::CData, nullptr},
+    {XFA_Attribute::Placement, XFA_AttributeType::Enum,
+     (void*)XFA_AttributeEnum::Left},
+    {XFA_Attribute::Unknown, XFA_AttributeType::Integer, nullptr}};
 
-int32_t CXFA_Caption::GetPresence() {
-  XFA_ATTRIBUTEENUM eAttr = XFA_ATTRIBUTEENUM_Visible;
-  m_pNode->TryEnum(XFA_ATTRIBUTE_Presence, eAttr);
-  return eAttr;
-}
+constexpr wchar_t kName[] = L"caption";
 
-int32_t CXFA_Caption::GetPlacementType() {
-  XFA_ATTRIBUTEENUM eAttr = XFA_ATTRIBUTEENUM_Left;
-  m_pNode->TryEnum(XFA_ATTRIBUTE_Placement, eAttr);
-  return eAttr;
-}
+}  // namespace
 
-float CXFA_Caption::GetReserve() {
-  CXFA_Measurement ms;
-  m_pNode->TryMeasure(XFA_ATTRIBUTE_Reserve, ms);
-  return ms.ToUnit(XFA_UNIT_Pt);
-}
+CXFA_Caption::CXFA_Caption(CXFA_Document* doc, XFA_PacketType packet)
+    : CXFA_Node(doc,
+                packet,
+                (XFA_XDPPACKET_Template | XFA_XDPPACKET_Form),
+                XFA_ObjectType::Node,
+                XFA_Element::Caption,
+                kPropertyData,
+                kAttributeData,
+                kName) {}
 
-CXFA_Margin CXFA_Caption::GetMargin() {
-  return CXFA_Margin(m_pNode ? m_pNode->GetChild(0, XFA_Element::Margin)
-                             : nullptr);
-}
-
-CXFA_Font CXFA_Caption::GetFont() {
-  return CXFA_Font(m_pNode ? m_pNode->GetChild(0, XFA_Element::Font) : nullptr);
-}
-
-CXFA_Value CXFA_Caption::GetValue() {
-  return CXFA_Value(m_pNode ? m_pNode->GetChild(0, XFA_Element::Value)
-                            : nullptr);
-}
+CXFA_Caption::~CXFA_Caption() {}

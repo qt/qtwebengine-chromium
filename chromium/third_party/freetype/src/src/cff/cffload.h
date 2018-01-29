@@ -21,9 +21,9 @@
 
 
 #include <ft2build.h>
-#include "cfftypes.h"
+#include FT_INTERNAL_CFF_TYPES_H
 #include "cffparse.h"
-#include "cffobjs.h"  /* for CFF_Face */
+#include FT_INTERNAL_CFF_OBJECTS_TYPES_H  /* for CFF_Face */
 
 
 FT_BEGIN_HEADER
@@ -60,9 +60,6 @@ FT_BEGIN_HEADER
   cff_charset_cid_to_gindex( CFF_Charset  charset,
                              FT_UInt      cid );
 
-
-  FT_LOCAL( FT_UInt32 )
-  cff_random( FT_UInt32  r );
 
   FT_LOCAL( FT_Error )
   cff_font_load( FT_Library  library,

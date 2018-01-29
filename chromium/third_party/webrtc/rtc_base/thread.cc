@@ -176,7 +176,7 @@ bool Thread::SleepMs(int milliseconds) {
   ts.tv_nsec = (milliseconds % 1000) * 1000000;
   int ret = nanosleep(&ts, nullptr);
   if (ret != 0) {
-    LOG_ERR(LS_WARNING) << "nanosleep() returning early";
+    RTC_LOG_ERR(LS_WARNING) << "nanosleep() returning early";
     return false;
   }
   return true;
@@ -222,7 +222,7 @@ bool Thread::Start(Runnable* runnable) {
 
   int error_code = pthread_create(&thread_, &attr, PreRun, init);
   if (0 != error_code) {
-    LOG(LS_ERROR) << "Unable to create pthread, error " << error_code;
+    RTC_LOG(LS_ERROR) << "Unable to create pthread, error " << error_code;
     return false;
   }
   running_.Set();
@@ -240,7 +240,8 @@ void Thread::UnwrapCurrent() {
 #if defined(WEBRTC_WIN)
   if (thread_ != nullptr) {
     if (!CloseHandle(thread_)) {
-      LOG_GLE(LS_ERROR) << "When unwrapping thread, failed to close handle.";
+      RTC_LOG_GLE(LS_ERROR)
+          << "When unwrapping thread, failed to close handle.";
     }
     thread_ = nullptr;
   }
@@ -256,8 +257,8 @@ void Thread::Join() {
   if (running()) {
     RTC_DCHECK(!IsCurrent());
     if (Current() && !Current()->blocking_calls_allowed_) {
-      LOG(LS_WARNING) << "Waiting for the thread to join, "
-                      << "but blocking calls have been disallowed";
+      RTC_LOG(LS_WARNING) << "Waiting for the thread to join, "
+                          << "but blocking calls have been disallowed";
     }
 
 #if defined(WEBRTC_WIN)
@@ -506,7 +507,7 @@ bool Thread::WrapCurrentWithThreadManager(ThreadManager* thread_manager,
     // This gives us the best chance of succeeding.
     thread_ = OpenThread(SYNCHRONIZE, FALSE, GetCurrentThreadId());
     if (!thread_) {
-      LOG_GLE(LS_ERROR) << "Unable to get handle to thread.";
+      RTC_LOG_GLE(LS_ERROR) << "Unable to get handle to thread.";
       return false;
     }
     thread_id_ = GetCurrentThreadId();
@@ -529,6 +530,7 @@ AutoThread::AutoThread() : Thread(SocketServer::CreateDefault()) {
 
 AutoThread::~AutoThread() {
   Stop();
+  DoDestroy();
   if (ThreadManager::Instance()->CurrentThread() == this) {
     ThreadManager::Instance()->SetCurrentThread(nullptr);
   }
@@ -550,6 +552,12 @@ AutoSocketServerThread::~AutoSocketServerThread() {
   // P2PTransportChannelPingTest, relying on the message posted in
   // cricket::Connection::Destroy.
   ProcessMessages(0);
+  // Stop and destroy the thread before clearing it as the current thread.
+  // Sometimes there are messages left in the MessageQueue that will be
+  // destroyed by DoDestroy, and sometimes the destructors of the message and/or
+  // its contents rely on this thread still being set as the current thread.
+  Stop();
+  DoDestroy();
   rtc::ThreadManager::Instance()->SetCurrentThread(old_thread_);
   if (old_thread_) {
     MessageQueueManager::Add(old_thread_);

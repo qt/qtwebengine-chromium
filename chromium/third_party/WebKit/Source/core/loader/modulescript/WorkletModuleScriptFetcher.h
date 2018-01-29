@@ -35,11 +35,11 @@ class CORE_EXPORT WorkletModuleScriptFetcher final
   void OnRead(const ModuleScriptCreationParams&) override;
   void OnFailed() override;
 
-  DECLARE_TRACE();
+  void Trace(blink::Visitor*) override;
 
  private:
   void Finalize(const WTF::Optional<ModuleScriptCreationParams>&,
-                ConsoleMessage* error_message);
+                const HeapVector<Member<ConsoleMessage>>& error_messages);
 
   Member<WorkletModuleResponsesMapProxy> module_responses_map_proxy_;
 };

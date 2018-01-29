@@ -313,6 +313,7 @@ class CONTENT_EXPORT RenderWidgetHostViewMac
                          int error_code) override;
   void Destroy() override;
   void SetTooltipText(const base::string16& tooltip_text) override;
+  void UpdateScreenInfo(gfx::NativeView view) override;
   bool IsSurfaceAvailableForCopy() const override;
   void CopyFromSurface(const gfx::Rect& src_rect,
                        const gfx::Size& output_size,
@@ -331,8 +332,10 @@ class CONTENT_EXPORT RenderWidgetHostViewMac
   void DidCreateNewRendererCompositorFrameSink(
       viz::mojom::CompositorFrameSinkClient* renderer_compositor_frame_sink)
       override;
-  void SubmitCompositorFrame(const viz::LocalSurfaceId& local_surface_id,
-                             viz::CompositorFrame frame) override;
+  void SubmitCompositorFrame(
+      const viz::LocalSurfaceId& local_surface_id,
+      viz::CompositorFrame frame,
+      viz::mojom::HitTestRegionListPtr hit_test_region_list) override;
   void OnDidNotProduceFrame(const viz::BeginFrameAck& ack) override;
   void ClearCompositorFrame() override;
   BrowserAccessibilityManager* CreateBrowserAccessibilityManager(
@@ -348,13 +351,15 @@ class CONTENT_EXPORT RenderWidgetHostViewMac
   void GestureEventAck(const blink::WebGestureEvent& event,
                        InputEventAckState ack_result) override;
 
+  void DidOverscroll(const ui::DidOverscrollParams& params) override;
+
   std::unique_ptr<SyntheticGestureTarget> CreateSyntheticGestureTarget()
       override;
 
   viz::FrameSinkId GetFrameSinkId() override;
   viz::FrameSinkId FrameSinkIdAtPoint(viz::SurfaceHittestDelegate* delegate,
-                                      const gfx::Point& point,
-                                      gfx::Point* transformed_point) override;
+                                      const gfx::PointF& point,
+                                      gfx::PointF* transformed_point) override;
   // Returns true when we can do SurfaceHitTesting for the event type.
   bool ShouldRouteEvent(const blink::WebInputEvent& event) const;
   // This method checks |event| to see if a GesturePinch event can be routed
@@ -373,13 +378,13 @@ class CONTENT_EXPORT RenderWidgetHostViewMac
                          const ui::LatencyInfo& latency) override;
   void ProcessGestureEvent(const blink::WebGestureEvent& event,
                            const ui::LatencyInfo& latency) override;
-  bool TransformPointToLocalCoordSpace(const gfx::Point& point,
+  bool TransformPointToLocalCoordSpace(const gfx::PointF& point,
                                        const viz::SurfaceId& original_surface,
-                                       gfx::Point* transformed_point) override;
+                                       gfx::PointF* transformed_point) override;
   bool TransformPointToCoordSpaceForView(
-      const gfx::Point& point,
+      const gfx::PointF& point,
       RenderWidgetHostViewBase* target_view,
-      gfx::Point* transformed_point) override;
+      gfx::PointF* transformed_point) override;
 
   // TextInputManager::Observer implementation.
   void OnUpdateTextInputStateCalled(TextInputManager* text_input_manager,
@@ -493,6 +498,7 @@ class CONTENT_EXPORT RenderWidgetHostViewMac
   SkColor BrowserCompositorMacGetGutterColor(SkColor color) const override;
   void BrowserCompositorMacOnBeginFrame() override;
   viz::LocalSurfaceId GetLocalSurfaceId() const override;
+  void OnFrameTokenChanged(uint32_t frame_token) override;
 
   // AcceleratedWidgetMacNSView implementation.
   NSView* AcceleratedWidgetGetNSView() const override;

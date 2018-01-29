@@ -29,6 +29,7 @@
 #include "content/browser/appcache/appcache.h"
 #include "content/browser/appcache/appcache_backend_impl.h"
 #include "content/browser/appcache/appcache_job.h"
+#include "content/browser/appcache/appcache_url_loader_job.h"
 #include "content/browser/appcache/appcache_url_loader_request.h"
 #include "content/browser/appcache/appcache_url_request.h"
 #include "content/browser/appcache/appcache_url_request_job.h"
@@ -157,18 +158,18 @@ class AppCacheRequestHandlerTest
    public:
     MockURLRequestJobFactory() {}
 
-    ~MockURLRequestJobFactory() override { DCHECK(!job_); }
+    ~MockURLRequestJobFactory() override { DCHECK(!request_job_); }
 
     void SetJob(std::unique_ptr<net::URLRequestJob> job) {
-      job_ = std::move(job);
+      request_job_ = std::move(job);
     }
 
     net::URLRequestJob* MaybeCreateJobWithProtocolHandler(
         const std::string& scheme,
         net::URLRequest* request,
         net::NetworkDelegate* network_delegate) const override {
-      if (job_)
-        return job_.release();
+      if (request_job_)
+        return request_job_.release();
 
       // Some of these tests trigger UpdateJobs which start URLRequests.
       // We short circuit those be returning error jobs.
@@ -198,7 +199,7 @@ class AppCacheRequestHandlerTest
     }
 
    private:
-    mutable std::unique_ptr<net::URLRequestJob> job_;
+    mutable std::unique_ptr<net::URLRequestJob> request_job_;
   };
 
   static void SetUpTestCase() {
@@ -216,7 +217,7 @@ class AppCacheRequestHandlerTest
   // Test harness --------------------------------------------------
 
   AppCacheRequestHandlerTest()
-      : host_(NULL), request_(nullptr), request_handler_type_(GetParam()) {
+      : host_(nullptr), request_(nullptr), request_handler_type_(GetParam()) {
     AppCacheRequestHandler::SetRunningInTests(true);
     if (request_handler_type_ == URLLOADER)
       feature_list_.InitAndEnableFeature(features::kNetworkService);
@@ -259,7 +260,8 @@ class AppCacheRequestHandlerTest
 
   void TearDownTest() {
     DCHECK(io_thread_->task_runner()->BelongsToCurrentThread());
-    job_ = NULL;
+    appcache_url_request_job_.reset();
+    appcache_url_loader_job_.reset();
     handler_.reset();
     request_ = nullptr;
     url_request_.reset();
@@ -269,7 +271,7 @@ class AppCacheRequestHandlerTest
     mock_policy_.reset();
     job_factory_.reset();
     empty_context_.reset();
-    host_ = NULL;
+    host_ = nullptr;
   }
 
   void TestFinished() {
@@ -302,6 +304,25 @@ class AppCacheRequestHandlerTest
     task_stack_.pop();
   }
 
+  void SetAppCacheJob(AppCacheJob* job) {
+    if (!job) {
+      appcache_url_request_job_.reset();
+      appcache_url_loader_job_ = nullptr;
+      return;
+    }
+    if (request_handler_type_ == URLREQUEST)
+      appcache_url_request_job_.reset(job->AsURLRequestJob());
+    else
+      appcache_url_loader_job_ = job->AsURLLoaderJob()->GetDerivedWeakPtr();
+  }
+
+  AppCacheJob* job() {
+    if (request_handler_type_ == URLREQUEST)
+      return appcache_url_request_job_.get();
+    else
+      return appcache_url_loader_job_.get();
+  }
+
   // MainResource_Miss --------------------------------------------------
 
   void MainResource_Miss() {
@@ -313,17 +334,17 @@ class AppCacheRequestHandlerTest
                                         RESOURCE_TYPE_MAIN_FRAME));
     EXPECT_TRUE(handler_.get());
 
-    job_.reset(handler_->MaybeLoadResource(nullptr));
-    EXPECT_TRUE(job_.get());
-    EXPECT_TRUE(job_->IsWaiting());
+    SetAppCacheJob(handler_->MaybeLoadResource(nullptr));
+    EXPECT_TRUE(job());
+    EXPECT_TRUE(job()->IsWaiting());
 
     // We have to wait for completion of storage->FindResponseForMainRequest.
     ScheduleNextTask();
   }
 
   void Verify_MainResource_Miss() {
-    EXPECT_FALSE(job_->IsWaiting());
-    EXPECT_TRUE(job_->IsDeliveringNetworkResponse());
+    EXPECT_FALSE(job()->IsWaiting());
+    EXPECT_TRUE(job()->IsDeliveringNetworkResponse());
 
     int64_t cache_id = kAppCacheNoCacheId;
     GURL manifest_url;
@@ -332,12 +353,11 @@ class AppCacheRequestHandlerTest
     EXPECT_EQ(GURL(), manifest_url);
     EXPECT_EQ(0, handler_->found_group_id_);
 
-    std::unique_ptr<AppCacheJob> fallback_job(
-        handler_->MaybeLoadFallbackForRedirect(nullptr,
-                                               GURL("http://blah/redirect")));
-    EXPECT_FALSE(fallback_job);
-    fallback_job.reset(handler_->MaybeLoadFallbackForResponse(nullptr));
-    EXPECT_FALSE(fallback_job);
+    SetAppCacheJob(handler_->MaybeLoadFallbackForRedirect(
+        nullptr, GURL("http://blah/redirect")));
+    EXPECT_FALSE(job());
+    SetAppCacheJob(handler_->MaybeLoadFallbackForResponse(nullptr));
+    EXPECT_FALSE(job());
 
     EXPECT_TRUE(host_->preferred_manifest_url().is_empty());
 
@@ -360,17 +380,17 @@ class AppCacheRequestHandlerTest
         GURL(), AppCacheEntry(),
         1, 2, GURL("http://blah/manifest/"));
 
-    job_.reset(handler_->MaybeLoadResource(nullptr));
-    EXPECT_TRUE(job_.get());
-    EXPECT_TRUE(job_->IsWaiting());
+    SetAppCacheJob(handler_->MaybeLoadResource(nullptr));
+    EXPECT_TRUE(job());
+    EXPECT_TRUE(job()->IsWaiting());
 
     // We have to wait for completion of storage->FindResponseForMainRequest.
     ScheduleNextTask();
   }
 
   void Verify_MainResource_Hit() {
-    EXPECT_FALSE(job_->IsWaiting());
-    EXPECT_TRUE(job_->IsDeliveringAppCacheResponse());
+    EXPECT_FALSE(job()->IsWaiting());
+    EXPECT_TRUE(job()->IsDeliveringAppCacheResponse());
 
     int64_t cache_id = kAppCacheNoCacheId;
     GURL manifest_url;
@@ -379,9 +399,8 @@ class AppCacheRequestHandlerTest
     EXPECT_EQ(GURL("http://blah/manifest/"), manifest_url);
     EXPECT_EQ(2, handler_->found_group_id_);
 
-    std::unique_ptr<AppCacheJob> fallback_job(
-        handler_->MaybeLoadFallbackForResponse(nullptr));
-    EXPECT_FALSE(fallback_job);
+    SetAppCacheJob(handler_->MaybeLoadFallbackForResponse(nullptr));
+    EXPECT_FALSE(job());
 
     EXPECT_EQ(GURL("http://blah/manifest/"),
               host_->preferred_manifest_url());
@@ -406,9 +425,9 @@ class AppCacheRequestHandlerTest
         AppCacheEntry(AppCacheEntry::EXPLICIT, 1),
         1, 2, GURL("http://blah/manifest/"));
 
-    job_.reset(handler_->MaybeLoadResource(nullptr));
-    EXPECT_TRUE(job_.get());
-    EXPECT_TRUE(job_->IsWaiting());
+    SetAppCacheJob(handler_->MaybeLoadResource(nullptr));
+    EXPECT_TRUE(job());
+    EXPECT_TRUE(job()->IsWaiting());
 
     // We have to wait for completion of storage->FindResponseForMainRequest.
     ScheduleNextTask();
@@ -422,7 +441,7 @@ class AppCacheRequestHandlerTest
         net::HttpUtil::AssembleRawHeaders(headers.c_str(), headers.length()));
 
     if (request_handler_type_ == URLREQUEST) {
-      job_factory_->SetJob(base::MakeUnique<MockURLRequestJob>(
+      job_factory_->SetJob(std::make_unique<MockURLRequestJob>(
           url_request_.get(), nullptr, info));
       request_->AsURLRequest()->GetURLRequest()->Start();
       // All our simulation needs to satisfy are the DCHECK's for the request
@@ -438,7 +457,7 @@ class AppCacheRequestHandlerTest
 
   void SimulateResponseInfo(const net::HttpResponseInfo& info) {
     if (request_handler_type_ == URLREQUEST) {
-      job_factory_->SetJob(base::MakeUnique<MockURLRequestJob>(
+      job_factory_->SetJob(std::make_unique<MockURLRequestJob>(
           url_request_.get(), nullptr, info));
       request_->AsURLRequest()->GetURLRequest()->Start();
     } else {
@@ -449,25 +468,27 @@ class AppCacheRequestHandlerTest
   }
 
   void Verify_MainResource_Fallback() {
-    EXPECT_FALSE(job_->IsWaiting());
-    EXPECT_TRUE(job_->IsDeliveringNetworkResponse());
+    EXPECT_FALSE(job()->IsWaiting());
+    EXPECT_TRUE(job()->IsDeliveringNetworkResponse());
 
     // The handler expects to the job to tell it that the request is going to
     // be restarted before it sees the next request.
-    handler_->OnPrepareToRestart();
+    if (request_handler_type_ == URLREQUEST) {
+      handler_->OnPrepareToRestartURLRequest();
 
-    // When the request is restarted, the existing job is dropped so a
-    // real network job gets created. We expect NULL here which will cause
-    // the net library to create a real job.
-    job_.reset(handler_->MaybeLoadResource(nullptr));
-    EXPECT_FALSE(job_.get());
+      // When the request is restarted, the existing job is dropped so a
+      // real network job gets created. We expect NULL here which will cause
+      // the net library to create a real job.
+      SetAppCacheJob(handler_->MaybeLoadResource(nullptr));
+      EXPECT_FALSE(job());
+    }
 
     // Simulate an http error of the real network job.
     SimulateResponseCode(500);
 
-    job_.reset(handler_->MaybeLoadFallbackForResponse(nullptr));
-    EXPECT_TRUE(job_.get());
-    EXPECT_TRUE(job_->IsDeliveringAppCacheResponse());
+    SetAppCacheJob(handler_->MaybeLoadFallbackForResponse(nullptr));
+    EXPECT_TRUE(job());
+    EXPECT_TRUE(job()->IsDeliveringAppCacheResponse());
 
     int64_t cache_id = kAppCacheNoCacheId;
     GURL manifest_url;
@@ -500,27 +521,29 @@ class AppCacheRequestHandlerTest
         AppCacheEntry(AppCacheEntry::EXPLICIT, 1),
         1, 2, GURL("http://blah/manifest/"));
 
-    job_.reset(handler_->MaybeLoadResource(nullptr));
-    EXPECT_TRUE(job_.get());
-    EXPECT_TRUE(job_->IsWaiting());
+    SetAppCacheJob(handler_->MaybeLoadResource(nullptr));
+    EXPECT_TRUE(job());
+    EXPECT_TRUE(job()->IsWaiting());
 
     // We have to wait for completion of storage->FindResponseForMainRequest.
     ScheduleNextTask();
   }
 
   void Verify_MainResource_FallbackOverride() {
-    EXPECT_FALSE(job_->IsWaiting());
-    EXPECT_TRUE(job_->IsDeliveringNetworkResponse());
+    EXPECT_FALSE(job()->IsWaiting());
+    EXPECT_TRUE(job()->IsDeliveringNetworkResponse());
 
     // The handler expects to the job to tell it that the request is going to
     // be restarted before it sees the next request.
-    handler_->OnPrepareToRestart();
+    if (request_handler_type_ == URLREQUEST) {
+      handler_->OnPrepareToRestartURLRequest();
 
-    // When the request is restarted, the existing job is dropped so a
-    // real network job gets created. We expect NULL here which will cause
-    // the net library to create a real job.
-    job_.reset(handler_->MaybeLoadResource(nullptr));
-    EXPECT_FALSE(job_.get());
+      // When the request is restarted, the existing job is dropped so a
+      // real network job gets created. We expect NULL here which will cause
+      // the net library to create a real job.
+      SetAppCacheJob(handler_->MaybeLoadResource(nullptr));
+      EXPECT_FALSE(job());
+    }
 
     // Simulate an http error of the real network job, but with custom
     // headers that override the fallback behavior.
@@ -533,8 +556,8 @@ class AppCacheRequestHandlerTest
         std::string(kOverrideHeaders, arraysize(kOverrideHeaders)));
     SimulateResponseInfo(info);
 
-    job_.reset(handler_->MaybeLoadFallbackForResponse(nullptr));
-    EXPECT_FALSE(job_.get());
+    SetAppCacheJob(handler_->MaybeLoadFallbackForResponse(nullptr));
+    EXPECT_FALSE(job());
 
     // GetExtraResponseInfo should return no information.
     int64_t cache_id = kAppCacheNoCacheId;
@@ -569,16 +592,15 @@ class AppCacheRequestHandlerTest
                                         RESOURCE_TYPE_SUB_RESOURCE));
     EXPECT_TRUE(handler_.get());
 
-    job_.reset(handler_->MaybeLoadResource(nullptr));
-    EXPECT_TRUE(job_.get());
-    EXPECT_TRUE(job_->IsDeliveringErrorResponse());
+    SetAppCacheJob(handler_->MaybeLoadResource(nullptr));
+    EXPECT_TRUE(job());
+    EXPECT_TRUE(job()->IsDeliveringErrorResponse());
 
-    std::unique_ptr<AppCacheJob> fallback_job(
-        handler_->MaybeLoadFallbackForRedirect(nullptr,
-                                               GURL("http://blah/redirect")));
-    EXPECT_FALSE(fallback_job);
-    fallback_job.reset(handler_->MaybeLoadFallbackForResponse(nullptr));
-    EXPECT_FALSE(fallback_job);
+    SetAppCacheJob(handler_->MaybeLoadFallbackForRedirect(
+        nullptr, GURL("http://blah/redirect")));
+    EXPECT_FALSE(job());
+    SetAppCacheJob(handler_->MaybeLoadFallbackForResponse(nullptr));
+    EXPECT_FALSE(job());
 
     TestFinished();
   }
@@ -594,20 +616,19 @@ class AppCacheRequestHandlerTest
     EXPECT_TRUE(CreateRequestAndHandler(GURL("http://blah/"), host_,
                                         RESOURCE_TYPE_SUB_RESOURCE));
     EXPECT_TRUE(handler_.get());
-    job_.reset(handler_->MaybeLoadResource(nullptr));
-    EXPECT_TRUE(job_.get());
-    EXPECT_TRUE(job_->IsWaiting());
+    SetAppCacheJob(handler_->MaybeLoadResource(nullptr));
+    EXPECT_TRUE(job());
+    EXPECT_TRUE(job()->IsWaiting());
 
-    host_->FinishCacheSelection(cache.get(), NULL);
-    EXPECT_FALSE(job_->IsWaiting());
-    EXPECT_TRUE(job_->IsDeliveringErrorResponse());
+    host_->FinishCacheSelection(cache.get(), nullptr);
+    EXPECT_FALSE(job()->IsWaiting());
+    EXPECT_TRUE(job()->IsDeliveringErrorResponse());
 
-    std::unique_ptr<AppCacheJob> fallback_job(
-        handler_->MaybeLoadFallbackForRedirect(nullptr,
-                                               GURL("http://blah/redirect")));
-    EXPECT_FALSE(fallback_job);
-    fallback_job.reset(handler_->MaybeLoadFallbackForResponse(nullptr));
-    EXPECT_FALSE(fallback_job);
+    SetAppCacheJob(handler_->MaybeLoadFallbackForRedirect(
+        nullptr, GURL("http://blah/redirect")));
+    EXPECT_FALSE(job());
+    SetAppCacheJob(handler_->MaybeLoadFallbackForResponse(nullptr));
+    EXPECT_FALSE(job());
 
     TestFinished();
   }
@@ -623,16 +644,15 @@ class AppCacheRequestHandlerTest
     EXPECT_TRUE(CreateRequestAndHandler(GURL("http://blah/"), host_,
                                         RESOURCE_TYPE_SUB_RESOURCE));
     EXPECT_TRUE(handler_.get());
-    job_.reset(handler_->MaybeLoadResource(nullptr));
-    EXPECT_TRUE(job_.get());
-    EXPECT_TRUE(job_->IsDeliveringAppCacheResponse());
+    SetAppCacheJob(handler_->MaybeLoadResource(nullptr));
+    EXPECT_TRUE(job());
+    EXPECT_TRUE(job()->IsDeliveringAppCacheResponse());
 
-    std::unique_ptr<AppCacheJob> fallback_job(
-        handler_->MaybeLoadFallbackForRedirect(nullptr,
-                                               GURL("http://blah/redirect")));
-    EXPECT_FALSE(fallback_job);
-    fallback_job.reset(handler_->MaybeLoadFallbackForResponse(nullptr));
-    EXPECT_FALSE(fallback_job);
+    SetAppCacheJob(handler_->MaybeLoadFallbackForRedirect(
+        nullptr, GURL("http://blah/redirect")));
+    EXPECT_FALSE(job());
+    SetAppCacheJob(handler_->MaybeLoadFallbackForResponse(nullptr));
+    EXPECT_FALSE(job());
 
     TestFinished();
   }
@@ -650,34 +670,16 @@ class AppCacheRequestHandlerTest
     EXPECT_TRUE(CreateRequestAndHandler(GURL("http://blah/"), host_,
                                         RESOURCE_TYPE_SUB_RESOURCE));
     EXPECT_TRUE(handler_.get());
-    job_.reset(handler_->MaybeLoadResource(nullptr));
-    // If the request goes to the network, the URLRequest job is destroyed. The
-    // URLLoader job is destroyed when the URLLoaderClient disconnects.
-    if (request_handler_type_ == URLREQUEST) {
-      EXPECT_FALSE(job_.get());
-    } else {
-      // In the URLLoader world, the same job instance is used to provide the
-      // fallback.
-      EXPECT_TRUE(job_.get());
-      EXPECT_TRUE(job_->IsDeliveringNetworkResponse());
-    }
+    SetAppCacheJob(handler_->MaybeLoadResource(nullptr));
+    EXPECT_FALSE(job());
 
-    std::unique_ptr<AppCacheJob> redirect_fallback_job;
-    redirect_fallback_job.reset(handler_->MaybeLoadFallbackForRedirect(
+    SetAppCacheJob(handler_->MaybeLoadFallbackForRedirect(
         nullptr, GURL("http://not_blah/redirect")));
-    EXPECT_TRUE(redirect_fallback_job.get());
-    EXPECT_TRUE(redirect_fallback_job->IsDeliveringAppCacheResponse());
+    EXPECT_TRUE(job());
+    EXPECT_TRUE(job()->IsDeliveringAppCacheResponse());
 
-    if (request_handler_type_ == URLLOADER) {
-      // In the URLLoader world, the same job instance is used to provide the
-      // fallback.
-      EXPECT_EQ(job_.get(), redirect_fallback_job.get());
-      job_.release();
-    }
-
-    std::unique_ptr<AppCacheJob> fallback_job(
-        handler_->MaybeLoadFallbackForResponse(nullptr));
-    EXPECT_FALSE(fallback_job);
+    SetAppCacheJob(handler_->MaybeLoadFallbackForResponse(nullptr));
+    EXPECT_FALSE(job());
 
     TestFinished();
   }
@@ -695,28 +697,16 @@ class AppCacheRequestHandlerTest
     EXPECT_TRUE(CreateRequestAndHandler(GURL("http://blah/"), host_,
                                         RESOURCE_TYPE_SUB_RESOURCE));
     EXPECT_TRUE(handler_.get());
-    job_.reset(handler_->MaybeLoadResource(nullptr));
-    if (request_handler_type_ == URLREQUEST) {
-      EXPECT_FALSE(job_.get());
-    } else {
-      // In the URLLoader world, the same job instance is used to provide the
-      // fallback.
-      EXPECT_TRUE(job_.get());
-      EXPECT_TRUE(job_->IsDeliveringNetworkResponse());
-    }
+    SetAppCacheJob(handler_->MaybeLoadResource(nullptr));
+    EXPECT_FALSE(job());
 
-    std::unique_ptr<AppCacheJob> fallback_job(
-        handler_->MaybeLoadFallbackForRedirect(nullptr,
-                                               GURL("http://blah/redirect")));
-    EXPECT_FALSE(fallback_job);
-
-    // Fallback responses are provided by a new job instance.
-    if (request_handler_type_ == URLLOADER)
-      job_.reset(nullptr);
+    SetAppCacheJob(handler_->MaybeLoadFallbackForRedirect(
+        nullptr, GURL("http://blah/redirect")));
+    EXPECT_FALSE(job());
 
     SimulateResponseCode(200);
-    fallback_job.reset(handler_->MaybeLoadFallbackForResponse(nullptr));
-    EXPECT_FALSE(fallback_job);
+    SetAppCacheJob(handler_->MaybeLoadFallbackForResponse(nullptr));
+    EXPECT_FALSE(job());
 
     TestFinished();
   }
@@ -735,22 +725,14 @@ class AppCacheRequestHandlerTest
     EXPECT_TRUE(CreateRequestAndHandler(GURL("http://blah/"), host_,
                                         RESOURCE_TYPE_SUB_RESOURCE));
     EXPECT_TRUE(handler_.get());
-    job_.reset(handler_->MaybeLoadResource(nullptr));
-    // If the request goes to the network, the URLRequest job is destroyed. The
-    // URLLoader job is destroyed when the URLLoaderClient disconnects.
-    if (request_handler_type_ == URLREQUEST) {
-      EXPECT_FALSE(job_.get());
-    } else {
-      EXPECT_TRUE(job_.get());
-      EXPECT_TRUE(job_->IsDeliveringNetworkResponse());
-    }
+    SetAppCacheJob(handler_->MaybeLoadResource(nullptr));
+    EXPECT_FALSE(job());
 
-    std::unique_ptr<AppCacheJob> fallback_job(
-        handler_->MaybeLoadFallbackForRedirect(nullptr,
-                                               GURL("http://blah/redirect")));
-    EXPECT_FALSE(fallback_job);
-    fallback_job.reset(handler_->MaybeLoadFallbackForResponse(nullptr));
-    EXPECT_FALSE(fallback_job);
+    SetAppCacheJob(handler_->MaybeLoadFallbackForRedirect(
+        nullptr, GURL("http://blah/redirect")));
+    EXPECT_FALSE(job());
+    SetAppCacheJob(handler_->MaybeLoadFallbackForResponse(nullptr));
+    EXPECT_FALSE(job());
 
     TestFinished();
   }
@@ -768,7 +750,7 @@ class AppCacheRequestHandlerTest
     EXPECT_TRUE(handler_.get());
 
     backend_impl_->UnregisterHost(1);
-    host_ = NULL;
+    host_ = nullptr;
 
     EXPECT_FALSE(handler_->MaybeLoadResource(nullptr));
     EXPECT_FALSE(handler_->MaybeLoadFallbackForRedirect(
@@ -788,16 +770,15 @@ class AppCacheRequestHandlerTest
                                         RESOURCE_TYPE_SUB_RESOURCE));
     EXPECT_TRUE(handler_.get());
 
-    job_.reset(handler_->MaybeLoadResource(nullptr));
-    EXPECT_TRUE(job_.get());
-    EXPECT_TRUE(job_->IsWaiting());
+    SetAppCacheJob(handler_->MaybeLoadResource(nullptr));
+    EXPECT_TRUE(job());
+    EXPECT_TRUE(job()->IsWaiting());
 
     backend_impl_->UnregisterHost(1);
-    host_ = NULL;
+    host_ = nullptr;
 
     if (request_handler_type_ == URLREQUEST) {
-      EXPECT_TRUE(
-          static_cast<AppCacheURLRequestJob*>(job_.get())->has_been_killed());
+      EXPECT_TRUE(appcache_url_request_job_->has_been_killed());
     }
     EXPECT_FALSE(handler_->MaybeLoadResource(nullptr));
     EXPECT_FALSE(handler_->MaybeLoadFallbackForRedirect(
@@ -818,18 +799,17 @@ class AppCacheRequestHandlerTest
     EXPECT_TRUE(CreateRequestAndHandler(GURL("http://blah/"), host_,
                                         RESOURCE_TYPE_SUB_RESOURCE));
     EXPECT_TRUE(handler_.get());
-    job_.reset(handler_->MaybeLoadResource(nullptr));
-    EXPECT_TRUE(job_.get());
+    SetAppCacheJob(handler_->MaybeLoadResource(nullptr));
+    EXPECT_TRUE(job());
 
     backend_impl_.reset();
     mock_frontend_.reset();
     mock_service_.reset();
     mock_policy_.reset();
-    host_ = NULL;
+    host_ = nullptr;
 
     if (request_handler_type_ == URLREQUEST) {
-      EXPECT_TRUE(
-          static_cast<AppCacheURLRequestJob*>(job_.get())->has_been_killed());
+      EXPECT_TRUE(appcache_url_request_job_->has_been_killed());
     }
     EXPECT_FALSE(handler_->MaybeLoadResource(nullptr));
     EXPECT_FALSE(handler_->MaybeLoadFallbackForRedirect(
@@ -850,7 +830,7 @@ class AppCacheRequestHandlerTest
     mock_frontend_.reset();
     mock_service_.reset();
     mock_policy_.reset();
-    host_ = NULL;
+    host_ = nullptr;
 
     EXPECT_FALSE(handler_->host_for_cross_site_transfer_.get());
     EXPECT_FALSE(handler_->MaybeLoadResource(nullptr));
@@ -886,19 +866,17 @@ class AppCacheRequestHandlerTest
                                         RESOURCE_TYPE_MAIN_FRAME));
     EXPECT_TRUE(handler_.get());
 
-    job_.reset(handler_->MaybeLoadResource(nullptr));
-    EXPECT_TRUE(job_.get());
-    EXPECT_TRUE(job_->IsWaiting());
-    EXPECT_FALSE(job_->IsStarted());
+    SetAppCacheJob(handler_->MaybeLoadResource(nullptr));
+    EXPECT_TRUE(job());
+    EXPECT_TRUE(job()->IsWaiting());
+    EXPECT_FALSE(job()->IsStarted());
 
-    base::WeakPtr<AppCacheJob> weak_job = job_->GetWeakPtr();
+    base::WeakPtr<AppCacheJob> weak_job = job()->GetWeakPtr();
 
     // TODO(ananta/michaeln)
     // Rewrite this test for URLLoader.
     if (request_handler_type_ == URLREQUEST) {
-      std::unique_ptr<AppCacheURLRequestJob> job(
-          static_cast<AppCacheURLRequestJob*>(job_.release()));
-      job_factory_->SetJob(std::move(job));
+      job_factory_->SetJob(std::move(appcache_url_request_job_));
 
       request_->AsURLRequest()->GetURLRequest()->Start();
       ASSERT_TRUE(weak_job);
@@ -909,47 +887,6 @@ class AppCacheRequestHandlerTest
     }
 
     EXPECT_FALSE(handler_->MaybeLoadFallbackForResponse(nullptr));
-
-    TestFinished();
-  }
-
-  // WorkerRequest -----------------------------
-
-  void WorkerRequest() {
-    EXPECT_TRUE(AppCacheRequestHandler::IsMainResourceType(
-        RESOURCE_TYPE_MAIN_FRAME));
-    EXPECT_TRUE(AppCacheRequestHandler::IsMainResourceType(
-        RESOURCE_TYPE_SUB_FRAME));
-    EXPECT_TRUE(AppCacheRequestHandler::IsMainResourceType(
-        RESOURCE_TYPE_SHARED_WORKER));
-    EXPECT_FALSE(AppCacheRequestHandler::IsMainResourceType(
-        RESOURCE_TYPE_WORKER));
-
-
-    const int kParentHostId = host_->host_id();
-    const int kWorkerHostId = 2;
-    const int kAbandonedWorkerHostId = 3;
-    const int kNonExsitingHostId = 700;
-
-    backend_impl_->RegisterHost(kWorkerHostId);
-    AppCacheHost* worker_host = backend_impl_->GetHost(kWorkerHostId);
-    worker_host->SelectCacheForWorker(kParentHostId, kMockProcessId);
-    EXPECT_TRUE(CreateRequestAndHandler(GURL("http://blah/"), worker_host,
-                                        RESOURCE_TYPE_SHARED_WORKER));
-    EXPECT_TRUE(handler_.get());
-    // Verify that the handler is associated with the parent host.
-    EXPECT_EQ(host_, handler_->host_);
-
-    // Create a new worker host, but associate it with a parent host that
-    // does not exists to simulate the host having been torn down.
-    backend_impl_->UnregisterHost(kWorkerHostId);
-    backend_impl_->RegisterHost(kAbandonedWorkerHostId);
-    worker_host = backend_impl_->GetHost(kAbandonedWorkerHostId);
-    EXPECT_EQ(NULL, backend_impl_->GetHost(kNonExsitingHostId));
-    worker_host->SelectCacheForWorker(kNonExsitingHostId, kMockProcessId);
-    EXPECT_TRUE(CreateRequestAndHandler(GURL("http://blah/"), worker_host,
-                                        RESOURCE_TYPE_SHARED_WORKER));
-    EXPECT_FALSE(handler_.get());
 
     TestFinished();
   }
@@ -971,17 +908,17 @@ class AppCacheRequestHandlerTest
         GURL(), AppCacheEntry(),
         1, 2, GURL("http://blah/manifest/"));
 
-    job_.reset(handler_->MaybeLoadResource(nullptr));
-    EXPECT_TRUE(job_.get());
-    EXPECT_TRUE(job_->IsWaiting());
+    SetAppCacheJob(handler_->MaybeLoadResource(nullptr));
+    EXPECT_TRUE(job());
+    EXPECT_TRUE(job()->IsWaiting());
 
     // We have to wait for completion of storage->FindResponseForMainRequest.
     ScheduleNextTask();
   }
 
   void Verify_MainResource_Blocked() {
-    EXPECT_FALSE(job_->IsWaiting());
-    EXPECT_FALSE(job_->IsDeliveringAppCacheResponse());
+    EXPECT_FALSE(job()->IsWaiting());
+    EXPECT_FALSE(job()->IsDeliveringAppCacheResponse());
 
     EXPECT_EQ(0, handler_->found_cache_id_);
     EXPECT_EQ(0, handler_->found_group_id_);
@@ -1052,7 +989,8 @@ class AppCacheRequestHandlerTest
   AppCacheRequest* request_;
   std::unique_ptr<net::URLRequest> url_request_;
   std::unique_ptr<AppCacheRequestHandler> handler_;
-  std::unique_ptr<AppCacheJob> job_;
+  std::unique_ptr<AppCacheURLRequestJob> appcache_url_request_job_;
+  base::WeakPtr<AppCacheURLLoaderJob> appcache_url_loader_job_;
 
   static std::unique_ptr<base::Thread> io_thread_;
   static std::unique_ptr<base::test::ScopedTaskEnvironment>
@@ -1139,10 +1077,6 @@ TEST_P(AppCacheRequestHandlerTest, UnsupportedScheme) {
 
 TEST_P(AppCacheRequestHandlerTest, CanceledRequest) {
   RunTestOnIOThread(&AppCacheRequestHandlerTest::CanceledRequest);
-}
-
-TEST_P(AppCacheRequestHandlerTest, WorkerRequest) {
-  RunTestOnIOThread(&AppCacheRequestHandlerTest::WorkerRequest);
 }
 
 TEST_P(AppCacheRequestHandlerTest, MainResource_Blocked) {

@@ -9,28 +9,40 @@
 #include "bindings/core/v8/SourceLocation.h"
 #include "bindings/core/v8/WorkerOrWorkletScriptController.h"
 #include "core/dom/Modulator.h"
-#include "core/dom/TaskRunnerHelper.h"
 #include "core/inspector/MainThreadDebugger.h"
 #include "core/loader/modulescript/ModuleScriptFetchRequest.h"
 #include "core/probe/CoreProbes.h"
+#include "core/workers/GlobalScopeCreationParams.h"
 #include "core/workers/WorkerReportingProxy.h"
 #include "core/workers/WorkletModuleResponsesMap.h"
 #include "core/workers/WorkletModuleTreeClient.h"
 #include "core/workers/WorkletPendingTasks.h"
 #include "platform/bindings/TraceWrapperMember.h"
+#include "public/platform/TaskType.h"
 
 namespace blink {
 
-WorkletGlobalScope::WorkletGlobalScope(const KURL& url,
-                                       const String& user_agent,
-                                       RefPtr<SecurityOrigin> security_origin,
-                                       v8::Isolate* isolate,
-                                       WorkerClients* worker_clients,
-                                       WorkerReportingProxy& reporting_proxy)
-    : WorkerOrWorkletGlobalScope(isolate, worker_clients, reporting_proxy),
-      url_(url),
-      user_agent_(user_agent) {
-  SetSecurityOrigin(std::move(security_origin));
+// Partial implementation of the "set up a worklet environment settings object"
+// algorithm:
+// https://drafts.css-houdini.org/worklets/#script-settings-for-worklets
+WorkletGlobalScope::WorkletGlobalScope(
+    std::unique_ptr<GlobalScopeCreationParams> creation_params,
+    v8::Isolate* isolate,
+    WorkerReportingProxy& reporting_proxy)
+    : WorkerOrWorkletGlobalScope(isolate,
+                                 creation_params->worker_clients,
+                                 reporting_proxy),
+      url_(creation_params->script_url),
+      user_agent_(creation_params->user_agent),
+      document_security_origin_(creation_params->starter_origin) {
+  // Step 2: "Let inheritedAPIBaseURL be outsideSettings's API base URL."
+  // |url_| is the inheritedAPIBaseURL passed from the parent Document.
+
+  // Step 3: "Let origin be a unique opaque origin."
+  SetSecurityOrigin(SecurityOrigin::CreateUnique());
+
+  // Step 5: "Let inheritedReferrerPolicy be outsideSettings's referrer policy."
+  SetReferrerPolicy(creation_params->referrer_policy);
 }
 
 WorkletGlobalScope::~WorkletGlobalScope() = default;
@@ -42,31 +54,6 @@ void WorkletGlobalScope::EvaluateClassicScript(
   // Worklet should evaluate a script as a module script (as opposed to a
   // classic script).
   NOTREACHED();
-}
-
-v8::Local<v8::Object> WorkletGlobalScope::Wrap(
-    v8::Isolate*,
-    v8::Local<v8::Object> creation_context) {
-  LOG(FATAL) << "WorkletGlobalScope must never be wrapped with wrap method. "
-                "The global object of ECMAScript environment is used as the "
-                "wrapper.";
-  return v8::Local<v8::Object>();
-}
-
-v8::Local<v8::Object> WorkletGlobalScope::AssociateWithWrapper(
-    v8::Isolate*,
-    const WrapperTypeInfo*,
-    v8::Local<v8::Object> wrapper) {
-  LOG(FATAL) << "WorkletGlobalScope must never be wrapped with wrap method. "
-                "The global object of ECMAScript environment is used as the "
-                "wrapper.";
-  return v8::Local<v8::Object>();
-}
-
-bool WorkletGlobalScope::HasPendingActivity() const {
-  // The worklet global scope wrapper is kept alive as longs as its execution
-  // context is active.
-  return !ExecutionContext::IsContextDestroyed();
 }
 
 ExecutionContext* WorkletGlobalScope::GetExecutionContext() const {
@@ -89,8 +76,8 @@ bool WorkletGlobalScope::IsSecureContext(String& error_message) const {
 void WorkletGlobalScope::FetchAndInvokeScript(
     const KURL& module_url_record,
     WorkletModuleResponsesMap* module_responses_map,
-    WebURLRequest::FetchCredentialsMode credentials_mode,
-    RefPtr<WebTaskRunner> outside_settings_task_runner,
+    network::mojom::FetchCredentialsMode credentials_mode,
+    scoped_refptr<WebTaskRunner> outside_settings_task_runner,
     WorkletPendingTasks* pending_tasks) {
   DCHECK(IsContextThread());
   if (!module_responses_map_proxy_) {
@@ -98,7 +85,7 @@ void WorkletGlobalScope::FetchAndInvokeScript(
     // loading and this usage is not explicitly spec'ed.
     module_responses_map_proxy_ = WorkletModuleResponsesMapProxy::Create(
         module_responses_map, outside_settings_task_runner,
-        TaskRunnerHelper::Get(TaskType::kUnspecedLoading, this));
+        GetTaskRunner(TaskType::kUnspecedLoading));
   }
 
   // Step 1: "Let insideSettings be the workletGlobalScope's associated
@@ -106,11 +93,25 @@ void WorkletGlobalScope::FetchAndInvokeScript(
   // Step 2: "Let script by the result of fetch a worklet script given
   // moduleURLRecord, moduleResponsesMap, credentialOptions, outsideSettings,
   // and insideSettings when it asynchronously completes."
-  String nonce = "";
+
+  // [FMWST]
+  // https://html.spec.whatwg.org/multipage/webappapis.html#fetch-a-module-worker-script-tree
+  // [FMWST] Step 2: "Let options be a script fetch options whose cryptographic
+  // nonce is the empty string,
+  String nonce;
+  // integrity metadata is the empty string,
+  String integrity_attribute;
+  // parser metadata is "not-parser-inserted",
   ParserDisposition parser_state = kNotParserInserted;
+  // and credentials mode is credentials mode.
+  ScriptFetchOptions options(nonce, IntegrityMetadataSet(), integrity_attribute,
+                             parser_state, credentials_mode);
+
   Modulator* modulator = Modulator::From(ScriptController()->GetScriptState());
-  ModuleScriptFetchRequest module_request(module_url_record, nonce,
-                                          parser_state, credentials_mode);
+  // [FMWST] Step 3. "Perform the internal module script graph fetching
+  // procedure ..."
+  ModuleScriptFetchRequest module_request(
+      module_url_record, modulator->GetReferrerPolicy(), options);
 
   // Step 3 to 5 are implemented in
   // WorkletModuleTreeClient::NotifyModuleTreeLoadFinished.
@@ -132,30 +133,25 @@ void WorkletGlobalScope::SetModuleResponsesMapProxyForTesting(
   module_responses_map_proxy_ = proxy;
 }
 
-void WorkletGlobalScope::SetModulator(Modulator* modulator) {
-  modulator_ = modulator;
-}
-
-KURL WorkletGlobalScope::VirtualCompleteURL(const String& url) const {
+KURL WorkletGlobalScope::CompleteURL(const String& url) const {
   // Always return a null URL when passed a null string.
   // TODO(ikilpatrick): Should we change the KURL constructor to have this
   // behavior?
   if (url.IsNull())
     return KURL();
   // Always use UTF-8 in Worklets.
-  return KURL(url_, url);
+  return KURL(BaseURL(), url);
 }
 
-DEFINE_TRACE(WorkletGlobalScope) {
+void WorkletGlobalScope::Trace(blink::Visitor* visitor) {
   visitor->Trace(module_responses_map_proxy_);
-  visitor->Trace(modulator_);
-  ExecutionContext::Trace(visitor);
   SecurityContext::Trace(visitor);
   WorkerOrWorkletGlobalScope::Trace(visitor);
 }
 
-DEFINE_TRACE_WRAPPERS(WorkletGlobalScope) {
-  visitor->TraceWrappers(modulator_);
+void WorkletGlobalScope::TraceWrappers(
+    const ScriptWrappableVisitor* visitor) const {
+  WorkerOrWorkletGlobalScope::TraceWrappers(visitor);
 }
 
 }  // namespace blink

@@ -11,7 +11,7 @@
 
 #include "xfa/fxfa/parser/xfa_resolvenode_rs.h"
 
-class CXFA_ScriptContext;
+class CFXJSE_Engine;
 
 enum XFA_LOGIC_TYPE {
   XFA_LOGIC_NoTransparent,
@@ -56,7 +56,7 @@ class CXFA_NodeHelper {
   bool ResolveNodes_CreateNode(WideString wsName,
                                WideString wsCondition,
                                bool bLastNode,
-                               CXFA_ScriptContext* pScriptContext);
+                               CFXJSE_Engine* pScriptContext);
   bool CreateNode_ForCondition(WideString& wsCondition);
   void SetCreateNodeType(CXFA_Node* refNode);
   bool NodeIsProperty(CXFA_Node* refNode);
@@ -64,7 +64,7 @@ class CXFA_NodeHelper {
   XFA_Element m_eLastCreateType;
   CXFA_Node* m_pCreateParent;
   int32_t m_iCreateCount;
-  XFA_RESOVENODE_RSTYPE m_iCreateFlag;
+  XFA_RESOLVENODE_RSTYPE m_iCreateFlag;
   int32_t m_iCurAllStart;
   CXFA_Node* m_pAllStartParent;
 };

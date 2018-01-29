@@ -52,8 +52,7 @@ void WorkletScriptLoader::NotifyFinished(Resource* resource) {
   } else {
     was_script_load_successful_ = true;
     client_->NotifyWorkletScriptLoadingFinished(
-        this, ScriptSourceCode(static_cast<ScriptResource*>(resource),
-                               String() /* nonce */, kNotParserInserted));
+        this, ScriptSourceCode(static_cast<ScriptResource*>(resource)));
   }
   fetcher_ = nullptr;
   client_ = nullptr;
@@ -64,10 +63,10 @@ bool WorkletScriptLoader::WasScriptLoadSuccessful() const {
   return was_script_load_successful_;
 }
 
-DEFINE_TRACE(WorkletScriptLoader) {
+void WorkletScriptLoader::Trace(blink::Visitor* visitor) {
   visitor->Trace(fetcher_);
   visitor->Trace(client_);
-  ResourceOwner<ScriptResource, ScriptResourceClient>::Trace(visitor);
+  ResourceOwner<ScriptResource>::Trace(visitor);
 }
 
 }  // namespace blink

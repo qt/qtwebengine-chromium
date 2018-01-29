@@ -18,7 +18,6 @@
 #include "media/base/content_decryption_module.h"
 #include "media/base/media_switches.h"
 #include "media/base/mock_filters.h"
-#include "media/cdm/cdm_file_io.h"
 #include "media/cdm/cdm_module.h"
 #include "media/cdm/external_clear_key_test_helper.h"
 #include "media/cdm/mock_helpers.h"
@@ -90,10 +89,8 @@ class CdmAdapterTest : public testing::Test {
 
   CdmAdapterTest() {
     // Enable use of External Clear Key CDM.
-    scoped_feature_list_.InitWithFeatures(
-        {media::kExternalClearKeyForTesting,
-         media::kSupportExperimentalCdmInterface},
-        {});
+    scoped_feature_list_.InitWithFeatures({media::kExternalClearKeyForTesting},
+                                          {});
 
 #if BUILDFLAG(ENABLE_CDM_HOST_VERIFICATION)
     CdmModule::GetInstance()->Initialize(helper_.LibraryPath(), {});

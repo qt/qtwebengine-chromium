@@ -27,9 +27,9 @@
 
 #include <memory>
 
-#include "platform/ScriptForbiddenScope.h"
 #include "platform/WebTaskRunner.h"
 #include "platform/bindings/DOMDataStore.h"
+#include "platform/bindings/ScriptForbiddenScope.h"
 #include "platform/bindings/V8Binding.h"
 #include "platform/bindings/V8ObjectConstructor.h"
 #include "platform/bindings/V8PrivateProperty.h"
@@ -48,7 +48,7 @@ v8::Isolate* MainThreadIsolate() {
   return V8PerIsolateData::MainThreadIsolate();
 }
 
-static V8PerIsolateData* g_main_thread_per_isolate_data = 0;
+static V8PerIsolateData* g_main_thread_per_isolate_data = nullptr;
 
 static void BeforeCallEnteredCallback(v8::Isolate* isolate) {
   CHECK(!ScriptForbiddenScope::IsScriptForbidden());
@@ -60,15 +60,13 @@ static void MicrotasksCompletedCallback(v8::Isolate* isolate) {
 
 V8PerIsolateData::V8PerIsolateData(
     WebTaskRunner* task_runner,
-    const intptr_t* table,
     V8ContextSnapshotMode v8_context_snapshot_mode)
     : v8_context_snapshot_mode_(v8_context_snapshot_mode),
       isolate_holder_(
-          task_runner ? task_runner->ToSingleThreadTaskRunner() : nullptr,
+          task_runner,
           gin::IsolateHolder::kSingleThread,
           IsMainThread() ? gin::IsolateHolder::kDisallowAtomicsWait
                          : gin::IsolateHolder::kAllowAtomicsWait,
-          table,
           v8_context_snapshot_mode_ == V8ContextSnapshotMode::kUseSnapshot
               ? &startup_data_
               : nullptr),
@@ -78,7 +76,8 @@ V8PerIsolateData::V8PerIsolateData(
       constructor_mode_(ConstructorMode::kCreateNewObject),
       use_counter_disabled_(false),
       is_handling_recursion_level_error_(false),
-      is_reporting_exception_(false) {
+      is_reporting_exception_(false),
+      runtime_call_stats_(base::DefaultTickClock::GetInstance()) {
   // If it fails to load the snapshot file, falls back to kDontUseSnapshot mode.
   // TODO(peria): Remove this fallback routine.
   if (v8_context_snapshot_mode_ == V8ContextSnapshotMode::kUseSnapshot &&
@@ -96,16 +95,17 @@ V8PerIsolateData::V8PerIsolateData(
 
 // This constructor is used for taking a V8 context snapshot. It must run on the
 // main thread.
-V8PerIsolateData::V8PerIsolateData(const intptr_t* reference_table)
+V8PerIsolateData::V8PerIsolateData()
     : v8_context_snapshot_mode_(V8ContextSnapshotMode::kTakeSnapshot),
-      isolate_holder_(reference_table, &startup_data_),
+      isolate_holder_(&startup_data_),
       interface_template_map_for_v8_context_snapshot_(GetIsolate()),
       string_cache_(WTF::WrapUnique(new StringCache(GetIsolate()))),
       private_property_(V8PrivateProperty::Create()),
       constructor_mode_(ConstructorMode::kCreateNewObject),
       use_counter_disabled_(false),
       is_handling_recursion_level_error_(false),
-      is_reporting_exception_(false) {
+      is_reporting_exception_(false),
+      runtime_call_stats_(base::DefaultTickClock::GetInstance()) {
   CHECK(IsMainThread());
 
   // SnapshotCreator enters the isolate, so we don't call Isolate::Enter() here.
@@ -120,17 +120,12 @@ v8::Isolate* V8PerIsolateData::MainThreadIsolate() {
 }
 
 v8::Isolate* V8PerIsolateData::Initialize(WebTaskRunner* task_runner,
-                                          const intptr_t* reference_table,
                                           V8ContextSnapshotMode context_mode) {
-  DCHECK(context_mode == V8ContextSnapshotMode::kDontUseSnapshot ||
-         reference_table);
-
   V8PerIsolateData* data = nullptr;
   if (context_mode == V8ContextSnapshotMode::kTakeSnapshot) {
-    CHECK(reference_table);
-    data = new V8PerIsolateData(reference_table);
+    data = new V8PerIsolateData();
   } else {
-    data = new V8PerIsolateData(task_runner, reference_table, context_mode);
+    data = new V8PerIsolateData(task_runner, context_mode);
   }
   DCHECK(data);
 
@@ -176,7 +171,7 @@ void V8PerIsolateData::Destroy(v8::Isolate* isolate) {
   data->operation_template_map_for_non_main_world_.clear();
   data->operation_template_map_for_main_world_.clear();
   if (IsMainThread())
-    g_main_thread_per_isolate_data = 0;
+    g_main_thread_per_isolate_data = nullptr;
 
   // FIXME: Remove once all v8::Isolate::GetCurrent() calls are gone.
   isolate->Exit();
@@ -334,15 +329,15 @@ v8::Local<v8::Object> V8PerIsolateData::FindInstanceInPrototypeChain(
       templ);
 }
 
-void V8PerIsolateData::AddEndOfScopeTask(std::unique_ptr<EndOfScopeTask> task) {
+void V8PerIsolateData::AddEndOfScopeTask(WTF::Closure task) {
   end_of_scope_tasks_.push_back(std::move(task));
 }
 
 void V8PerIsolateData::RunEndOfScopeTasks() {
-  Vector<std::unique_ptr<EndOfScopeTask>> tasks;
+  Vector<WTF::Closure> tasks;
   tasks.swap(end_of_scope_tasks_);
-  for (const auto& task : tasks)
-    task->Run();
+  for (auto& task : tasks)
+    std::move(task).Run();
   DCHECK(end_of_scope_tasks_.IsEmpty());
 }
 

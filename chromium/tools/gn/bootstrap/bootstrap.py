@@ -63,7 +63,9 @@ def scoped_tempdir():
 
 
 def run_build(tempdir, options):
-  if options.debug:
+  if options.build_path:
+    build_rel = options.build_path
+  elif options.debug:
     build_rel = os.path.join('out', 'Debug')
   else:
     build_rel = os.path.join('out', 'Release')
@@ -109,6 +111,8 @@ def main(argv):
                     help='Re-used build directory instead of using new '
                          'temporary location each time')
   parser.add_option('--gn-gen-args', help='Args to pass to gn gen --args')
+  parser.add_option('--build-path', help='The directory in which to build gn, '
+                    'relative to the src directory. (eg. out/Release)')
   parser.add_option('-v', '--verbose', action='store_true',
                     help='Log more details')
   options, args = parser.parse_args(argv)
@@ -181,7 +185,16 @@ def build_gn_with_ninja_manually(tempdir, options):
       {
           'ENABLE_LOCATION_SOURCE': 'false',
           'ENABLE_PROFILING': 'false',
-          'CAN_UNWIND_WITH_FRAME_POINTERS': 'false'
+          'CAN_UNWIND_WITH_FRAME_POINTERS': 'false',
+          'UNSAFE_DEVELOPER_BUILD': 'false'
+      })
+
+  write_buildflag_header_manually(root_gen_dir, 'base/cfi_flags.h',
+      {
+          'CFI_CAST_CHECK': 'false',
+          'CFI_ICALL_CHECK': 'false',
+          'CFI_ENFORCEMENT_TRAP': 'false',
+          'CFI_ENFORCEMENT_DIAGNOSTIC': 'false'
       })
 
   write_build_date_header(root_gen_dir)
@@ -473,6 +486,7 @@ def write_gn_ninja(path, root_gen_dir, options):
       'base/metrics/sample_vector.cc',
       'base/metrics/sparse_histogram.cc',
       'base/metrics/statistics_recorder.cc',
+      'base/observer_list_threadsafe.cc',
       'base/path_service.cc',
       'base/pending_task.cc',
       'base/pickle.cc',

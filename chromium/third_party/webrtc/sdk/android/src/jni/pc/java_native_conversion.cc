@@ -13,121 +13,73 @@
 #include <string>
 
 #include "pc/webrtcsdp.h"
+#include "sdk/android/generated_peerconnection_jni/jni/IceCandidate_jni.h"
+#include "sdk/android/generated_peerconnection_jni/jni/MediaStreamTrack_jni.h"
 #include "sdk/android/src/jni/classreferenceholder.h"
 
 namespace webrtc {
 namespace jni {
 
-DataChannelInit JavaToNativeDataChannelInit(JNIEnv* jni, jobject j_init) {
-  DataChannelInit init;
+namespace {
 
-  jclass j_init_class = FindClass(jni, "org/webrtc/DataChannel$Init");
-  jfieldID ordered_id = GetFieldID(jni, j_init_class, "ordered", "Z");
-  jfieldID max_retransmit_time_id =
-      GetFieldID(jni, j_init_class, "maxRetransmitTimeMs", "I");
-  jfieldID max_retransmits_id =
-      GetFieldID(jni, j_init_class, "maxRetransmits", "I");
-  jfieldID protocol_id =
-      GetFieldID(jni, j_init_class, "protocol", "Ljava/lang/String;");
-  jfieldID negotiated_id = GetFieldID(jni, j_init_class, "negotiated", "Z");
-  jfieldID id_id = GetFieldID(jni, j_init_class, "id", "I");
-
-  init.ordered = GetBooleanField(jni, j_init, ordered_id);
-  init.maxRetransmitTime = GetIntField(jni, j_init, max_retransmit_time_id);
-  init.maxRetransmits = GetIntField(jni, j_init, max_retransmits_id);
-  init.protocol =
-      JavaToStdString(jni, GetStringField(jni, j_init, protocol_id));
-  init.negotiated = GetBooleanField(jni, j_init, negotiated_id);
-  init.id = GetIntField(jni, j_init, id_id);
-
-  return init;
+jobject CreateJavaIceCandidate(JNIEnv* env,
+                               const std::string& sdp_mid,
+                               int sdp_mline_index,
+                               const std::string& sdp,
+                               const std::string server_url) {
+  return Java_IceCandidate_Constructor(
+      env, NativeToJavaString(env, sdp_mid), sdp_mline_index,
+      NativeToJavaString(env, sdp), NativeToJavaString(env, server_url));
 }
 
-jobject NativeToJavaMediaType(JNIEnv* jni, cricket::MediaType media_type) {
-  jclass j_media_type_class =
-      FindClass(jni, "org/webrtc/MediaStreamTrack$MediaType");
+}  // namespace
 
-  const char* media_type_str = nullptr;
-  switch (media_type) {
-    case cricket::MEDIA_TYPE_AUDIO:
-      media_type_str = "MEDIA_TYPE_AUDIO";
-      break;
-    case cricket::MEDIA_TYPE_VIDEO:
-      media_type_str = "MEDIA_TYPE_VIDEO";
-      break;
-    case cricket::MEDIA_TYPE_DATA:
-      RTC_NOTREACHED();
-      break;
-  }
-  jfieldID j_media_type_fid =
-      GetStaticFieldID(jni, j_media_type_class, media_type_str,
-                       "Lorg/webrtc/MediaStreamTrack$MediaType;");
-  return GetStaticObjectField(jni, j_media_type_class, j_media_type_fid);
+jobject NativeToJavaMediaType(JNIEnv* jni, cricket::MediaType media_type) {
+  return Java_MediaType_fromNativeIndex(jni, media_type);
 }
 
 cricket::MediaType JavaToNativeMediaType(JNIEnv* jni, jobject j_media_type) {
-  jclass j_media_type_class =
-      FindClass(jni, "org/webrtc/MediaStreamTrack$MediaType");
-  jmethodID j_name_id =
-      GetMethodID(jni, j_media_type_class, "name", "()Ljava/lang/String;");
-  jstring j_type_string =
-      (jstring)jni->CallObjectMethod(j_media_type, j_name_id);
-  CHECK_EXCEPTION(jni) << "error during CallObjectMethod";
-  std::string type_string = JavaToStdString(jni, j_type_string);
-
-  RTC_DCHECK(type_string == "MEDIA_TYPE_AUDIO" ||
-             type_string == "MEDIA_TYPE_VIDEO")
-      << "Media type: " << type_string;
-  return type_string == "MEDIA_TYPE_AUDIO" ? cricket::MEDIA_TYPE_AUDIO
-                                           : cricket::MEDIA_TYPE_VIDEO;
+  return static_cast<cricket::MediaType>(
+      Java_MediaType_getNative(jni, j_media_type));
 }
 
 cricket::Candidate JavaToNativeCandidate(JNIEnv* jni, jobject j_candidate) {
-  jclass j_candidate_class = GetObjectClass(jni, j_candidate);
-  jfieldID j_sdp_mid_id =
-      GetFieldID(jni, j_candidate_class, "sdpMid", "Ljava/lang/String;");
   std::string sdp_mid =
-      JavaToStdString(jni, GetStringField(jni, j_candidate, j_sdp_mid_id));
-  jfieldID j_sdp_id =
-      GetFieldID(jni, j_candidate_class, "sdp", "Ljava/lang/String;");
+      JavaToStdString(jni, Java_IceCandidate_getSdpMid(jni, j_candidate));
   std::string sdp =
-      JavaToStdString(jni, GetStringField(jni, j_candidate, j_sdp_id));
+      JavaToStdString(jni, Java_IceCandidate_getSdp(jni, j_candidate));
   cricket::Candidate candidate;
   if (!SdpDeserializeCandidate(sdp_mid, sdp, &candidate, NULL)) {
-    LOG(LS_ERROR) << "SdpDescrializeCandidate failed with sdp " << sdp;
+    RTC_LOG(LS_ERROR) << "SdpDescrializeCandidate failed with sdp " << sdp;
   }
   return candidate;
 }
 
-jobject NativeToJavaCandidate(JNIEnv* jni,
-                              jclass* candidate_class,
+jobject NativeToJavaCandidate(JNIEnv* env,
                               const cricket::Candidate& candidate) {
   std::string sdp = SdpSerializeCandidate(candidate);
   RTC_CHECK(!sdp.empty()) << "got an empty ICE candidate";
-  jmethodID ctor = GetMethodID(jni, *candidate_class, "<init>",
-                               "(Ljava/lang/String;ILjava/lang/String;)V");
-  jstring j_mid = JavaStringFromStdString(jni, candidate.transport_name());
-  jstring j_sdp = JavaStringFromStdString(jni, sdp);
   // sdp_mline_index is not used, pass an invalid value -1.
-  jobject j_candidate =
-      jni->NewObject(*candidate_class, ctor, j_mid, -1, j_sdp);
-  CHECK_EXCEPTION(jni) << "error during Java Candidate NewObject";
-  return j_candidate;
+  return CreateJavaIceCandidate(env, candidate.transport_name(),
+                                -1 /* sdp_mline_index */, sdp,
+                                "" /* server_url */);
+}
+
+jobject NativeToJavaIceCandidate(JNIEnv* env,
+                                 const IceCandidateInterface& candidate) {
+  std::string sdp;
+  RTC_CHECK(candidate.ToString(&sdp)) << "got so far: " << sdp;
+  return CreateJavaIceCandidate(env, candidate.sdp_mid(),
+                                candidate.sdp_mline_index(), sdp,
+                                candidate.candidate().url());
 }
 
 jobjectArray NativeToJavaCandidateArray(
     JNIEnv* jni,
     const std::vector<cricket::Candidate>& candidates) {
-  jclass candidate_class = FindClass(jni, "org/webrtc/IceCandidate");
-  jobjectArray java_candidates =
-      jni->NewObjectArray(candidates.size(), candidate_class, NULL);
-  int i = 0;
-  for (const cricket::Candidate& candidate : candidates) {
-    jobject j_candidate =
-        NativeToJavaCandidate(jni, &candidate_class, candidate);
-    jni->SetObjectArrayElement(java_candidates, i++, j_candidate);
-  }
-  return java_candidates;
+  return NativeToJavaObjectArray(jni, candidates,
+                                 org_webrtc_IceCandidate_clazz(jni),
+                                 &NativeToJavaCandidate);
 }
 
 SessionDescriptionInterface* JavaToNativeSessionDescription(JNIEnv* jni,
@@ -156,13 +108,13 @@ jobject NativeToJavaSessionDescription(
     const SessionDescriptionInterface* desc) {
   std::string sdp;
   RTC_CHECK(desc->ToString(&sdp)) << "got so far: " << sdp;
-  jstring j_description = JavaStringFromStdString(jni, sdp);
+  jstring j_description = NativeToJavaString(jni, sdp);
 
   jclass j_type_class = FindClass(jni, "org/webrtc/SessionDescription$Type");
   jmethodID j_type_from_canonical = GetStaticMethodID(
       jni, j_type_class, "fromCanonicalForm",
       "(Ljava/lang/String;)Lorg/webrtc/SessionDescription$Type;");
-  jstring j_type_string = JavaStringFromStdString(jni, desc->type());
+  jstring j_type_string = NativeToJavaString(jni, desc->type());
   jobject j_type = jni->CallStaticObjectMethod(
       j_type_class, j_type_from_canonical, j_type_string);
   CHECK_EXCEPTION(jni) << "error during CallObjectMethod";
@@ -208,9 +160,7 @@ JavaToNativePeerConnectionFactoryOptions(JNIEnv* jni, jobject options) {
 PeerConnectionInterface::IceTransportsType JavaToNativeIceTransportsType(
     JNIEnv* jni,
     jobject j_ice_transports_type) {
-  std::string enum_name =
-      GetJavaEnumName(jni, "org/webrtc/PeerConnection$IceTransportsType",
-                      j_ice_transports_type);
+  std::string enum_name = GetJavaEnumName(jni, j_ice_transports_type);
 
   if (enum_name == "ALL")
     return PeerConnectionInterface::kAll;
@@ -231,8 +181,7 @@ PeerConnectionInterface::IceTransportsType JavaToNativeIceTransportsType(
 PeerConnectionInterface::BundlePolicy JavaToNativeBundlePolicy(
     JNIEnv* jni,
     jobject j_bundle_policy) {
-  std::string enum_name = GetJavaEnumName(
-      jni, "org/webrtc/PeerConnection$BundlePolicy", j_bundle_policy);
+  std::string enum_name = GetJavaEnumName(jni, j_bundle_policy);
 
   if (enum_name == "BALANCED")
     return PeerConnectionInterface::kBundlePolicyBalanced;
@@ -250,8 +199,7 @@ PeerConnectionInterface::BundlePolicy JavaToNativeBundlePolicy(
 PeerConnectionInterface::RtcpMuxPolicy JavaToNativeRtcpMuxPolicy(
     JNIEnv* jni,
     jobject j_rtcp_mux_policy) {
-  std::string enum_name = GetJavaEnumName(
-      jni, "org/webrtc/PeerConnection$RtcpMuxPolicy", j_rtcp_mux_policy);
+  std::string enum_name = GetJavaEnumName(jni, j_rtcp_mux_policy);
 
   if (enum_name == "NEGOTIATE")
     return PeerConnectionInterface::kRtcpMuxPolicyNegotiate;
@@ -266,9 +214,7 @@ PeerConnectionInterface::RtcpMuxPolicy JavaToNativeRtcpMuxPolicy(
 PeerConnectionInterface::TcpCandidatePolicy JavaToNativeTcpCandidatePolicy(
     JNIEnv* jni,
     jobject j_tcp_candidate_policy) {
-  std::string enum_name =
-      GetJavaEnumName(jni, "org/webrtc/PeerConnection$TcpCandidatePolicy",
-                      j_tcp_candidate_policy);
+  std::string enum_name = GetJavaEnumName(jni, j_tcp_candidate_policy);
 
   if (enum_name == "ENABLED")
     return PeerConnectionInterface::kTcpCandidatePolicyEnabled;
@@ -283,9 +229,7 @@ PeerConnectionInterface::TcpCandidatePolicy JavaToNativeTcpCandidatePolicy(
 PeerConnectionInterface::CandidateNetworkPolicy
 JavaToNativeCandidateNetworkPolicy(JNIEnv* jni,
                                    jobject j_candidate_network_policy) {
-  std::string enum_name =
-      GetJavaEnumName(jni, "org/webrtc/PeerConnection$CandidateNetworkPolicy",
-                      j_candidate_network_policy);
+  std::string enum_name = GetJavaEnumName(jni, j_candidate_network_policy);
 
   if (enum_name == "ALL")
     return PeerConnectionInterface::kCandidateNetworkPolicyAll;
@@ -299,8 +243,7 @@ JavaToNativeCandidateNetworkPolicy(JNIEnv* jni,
 }
 
 rtc::KeyType JavaToNativeKeyType(JNIEnv* jni, jobject j_key_type) {
-  std::string enum_name =
-      GetJavaEnumName(jni, "org/webrtc/PeerConnection$KeyType", j_key_type);
+  std::string enum_name = GetJavaEnumName(jni, j_key_type);
 
   if (enum_name == "RSA")
     return rtc::KT_RSA;
@@ -313,9 +256,7 @@ rtc::KeyType JavaToNativeKeyType(JNIEnv* jni, jobject j_key_type) {
 
 PeerConnectionInterface::ContinualGatheringPolicy
 JavaToNativeContinualGatheringPolicy(JNIEnv* jni, jobject j_gathering_policy) {
-  std::string enum_name =
-      GetJavaEnumName(jni, "org/webrtc/PeerConnection$ContinualGatheringPolicy",
-                      j_gathering_policy);
+  std::string enum_name = GetJavaEnumName(jni, j_gathering_policy);
   if (enum_name == "GATHER_ONCE")
     return PeerConnectionInterface::GATHER_ONCE;
 
@@ -330,9 +271,7 @@ JavaToNativeContinualGatheringPolicy(JNIEnv* jni, jobject j_gathering_policy) {
 PeerConnectionInterface::TlsCertPolicy JavaToNativeTlsCertPolicy(
     JNIEnv* jni,
     jobject j_ice_server_tls_cert_policy) {
-  std::string enum_name =
-      GetJavaEnumName(jni, "org/webrtc/PeerConnection$TlsCertPolicy",
-                      j_ice_server_tls_cert_policy);
+  std::string enum_name = GetJavaEnumName(jni, j_ice_server_tls_cert_policy);
 
   if (enum_name == "TLS_CERT_POLICY_SECURE")
     return PeerConnectionInterface::kTlsCertPolicySecure;
@@ -459,8 +398,6 @@ void JavaToNativeRTCConfiguration(
 
   jfieldID j_ice_check_min_interval_id = GetFieldID(
       jni, j_rtc_config_class, "iceCheckMinInterval", "Ljava/lang/Integer;");
-  jclass j_integer_class = jni->FindClass("java/lang/Integer");
-  jmethodID int_value_id = GetMethodID(jni, j_integer_class, "intValue", "()I");
 
   jfieldID j_disable_ipv6_on_wifi_id =
       GetFieldID(jni, j_rtc_config_class, "disableIPv6OnWifi", "Z");
@@ -514,12 +451,8 @@ void JavaToNativeRTCConfiguration(
       jni, j_rtc_config, j_presume_writable_when_fully_relayed_id);
   jobject j_ice_check_min_interval =
       GetNullableObjectField(jni, j_rtc_config, j_ice_check_min_interval_id);
-  if (!IsNull(jni, j_ice_check_min_interval)) {
-    int ice_check_min_interval_value =
-        jni->CallIntMethod(j_ice_check_min_interval, int_value_id);
-    rtc_config->ice_check_min_interval =
-        rtc::Optional<int>(ice_check_min_interval_value);
-  }
+  rtc_config->ice_check_min_interval =
+      JavaToNativeOptionalInt(jni, j_ice_check_min_interval);
   rtc_config->disable_ipv6_on_wifi =
       GetBooleanField(jni, j_rtc_config, j_disable_ipv6_on_wifi_id);
   rtc_config->max_ipv6_networks =
@@ -544,9 +477,9 @@ void JavaToNativeRtpParameters(JNIEnv* jni,
   RTC_CHECK(parameters != nullptr);
   jclass parameters_class = jni->FindClass("org/webrtc/RtpParameters");
   jfieldID encodings_id =
-      GetFieldID(jni, parameters_class, "encodings", "Ljava/util/LinkedList;");
+      GetFieldID(jni, parameters_class, "encodings", "Ljava/util/List;");
   jfieldID codecs_id =
-      GetFieldID(jni, parameters_class, "codecs", "Ljava/util/LinkedList;");
+      GetFieldID(jni, parameters_class, "codecs", "Ljava/util/List;");
 
   // Convert encodings.
   jobject j_encodings = GetObjectField(jni, j_parameters, encodings_id);
@@ -558,9 +491,7 @@ void JavaToNativeRtpParameters(JNIEnv* jni,
                                    "maxBitrateBps", "Ljava/lang/Integer;");
   jfieldID ssrc_id =
       GetFieldID(jni, j_encoding_parameters_class, "ssrc", "Ljava/lang/Long;");
-  jclass j_integer_class = jni->FindClass("java/lang/Integer");
   jclass j_long_class = jni->FindClass("java/lang/Long");
-  jmethodID int_value_id = GetMethodID(jni, j_integer_class, "intValue", "()I");
   jmethodID long_value_id = GetMethodID(jni, j_long_class, "longValue", "()J");
 
   for (jobject j_encoding_parameters : Iterable(jni, j_encodings)) {
@@ -568,11 +499,7 @@ void JavaToNativeRtpParameters(JNIEnv* jni,
     encoding.active = GetBooleanField(jni, j_encoding_parameters, active_id);
     jobject j_bitrate =
         GetNullableObjectField(jni, j_encoding_parameters, bitrate_id);
-    if (!IsNull(jni, j_bitrate)) {
-      int bitrate_value = jni->CallIntMethod(j_bitrate, int_value_id);
-      CHECK_EXCEPTION(jni) << "error during CallIntMethod";
-      encoding.max_bitrate_bps = rtc::Optional<int>(bitrate_value);
-    }
+    encoding.max_bitrate_bps = JavaToNativeOptionalInt(jni, j_bitrate);
     jobject j_ssrc =
         GetNullableObjectField(jni, j_encoding_parameters, ssrc_id);
     if (!IsNull(jni, j_ssrc)) {
@@ -602,18 +529,10 @@ void JavaToNativeRtpParameters(JNIEnv* jni,
     codec.kind =
         JavaToNativeMediaType(jni, GetObjectField(jni, j_codec, kind_id));
     jobject j_clock_rate = GetNullableObjectField(jni, j_codec, clock_rate_id);
-    if (!IsNull(jni, j_clock_rate)) {
-      int clock_rate_value = jni->CallIntMethod(j_clock_rate, int_value_id);
-      CHECK_EXCEPTION(jni) << "error during CallIntMethod";
-      codec.clock_rate = rtc::Optional<int>(clock_rate_value);
-    }
+    codec.clock_rate = JavaToNativeOptionalInt(jni, j_clock_rate);
     jobject j_num_channels =
         GetNullableObjectField(jni, j_codec, num_channels_id);
-    if (!IsNull(jni, j_num_channels)) {
-      int num_channels_value = jni->CallIntMethod(j_num_channels, int_value_id);
-      CHECK_EXCEPTION(jni) << "error during CallIntMethod";
-      codec.num_channels = rtc::Optional<int>(num_channels_value);
-    }
+    codec.num_channels = JavaToNativeOptionalInt(jni, j_num_channels);
     parameters->codecs.push_back(codec);
   }
 }
@@ -630,7 +549,7 @@ jobject NativeToJavaRtpParameters(JNIEnv* jni,
   jclass encoding_class = jni->FindClass("org/webrtc/RtpParameters$Encoding");
   jmethodID encoding_ctor = GetMethodID(jni, encoding_class, "<init>", "()V");
   jfieldID encodings_id =
-      GetFieldID(jni, parameters_class, "encodings", "Ljava/util/LinkedList;");
+      GetFieldID(jni, parameters_class, "encodings", "Ljava/util/List;");
   jobject j_encodings = GetObjectField(jni, j_parameters, encodings_id);
   jmethodID encodings_add = GetMethodID(jni, GetObjectClass(jni, j_encodings),
                                         "add", "(Ljava/lang/Object;)Z");
@@ -640,9 +559,7 @@ jobject NativeToJavaRtpParameters(JNIEnv* jni,
   jfieldID ssrc_id =
       GetFieldID(jni, encoding_class, "ssrc", "Ljava/lang/Long;");
 
-  jclass integer_class = jni->FindClass("java/lang/Integer");
   jclass long_class = jni->FindClass("java/lang/Long");
-  jmethodID integer_ctor = GetMethodID(jni, integer_class, "<init>", "(I)V");
   jmethodID long_ctor = GetMethodID(jni, long_class, "<init>", "(J)V");
 
   for (const RtpEncodingParameters& encoding : parameters.encodings) {
@@ -651,13 +568,8 @@ jobject NativeToJavaRtpParameters(JNIEnv* jni,
     CHECK_EXCEPTION(jni) << "error during NewObject";
     jni->SetBooleanField(j_encoding_parameters, active_id, encoding.active);
     CHECK_EXCEPTION(jni) << "error during SetBooleanField";
-    if (encoding.max_bitrate_bps) {
-      jobject j_bitrate_value = jni->NewObject(integer_class, integer_ctor,
-                                               *(encoding.max_bitrate_bps));
-      CHECK_EXCEPTION(jni) << "error during NewObject";
-      jni->SetObjectField(j_encoding_parameters, bitrate_id, j_bitrate_value);
-      CHECK_EXCEPTION(jni) << "error during SetObjectField";
-    }
+    jni->SetObjectField(j_encoding_parameters, bitrate_id,
+                        NativeToJavaInteger(jni, encoding.max_bitrate_bps));
     if (encoding.ssrc) {
       jobject j_ssrc_value = jni->NewObject(long_class, long_ctor,
                                             static_cast<jlong>(*encoding.ssrc));
@@ -675,7 +587,7 @@ jobject NativeToJavaRtpParameters(JNIEnv* jni,
   jclass codec_class = jni->FindClass("org/webrtc/RtpParameters$Codec");
   jmethodID codec_ctor = GetMethodID(jni, codec_class, "<init>", "()V");
   jfieldID codecs_id =
-      GetFieldID(jni, parameters_class, "codecs", "Ljava/util/LinkedList;");
+      GetFieldID(jni, parameters_class, "codecs", "Ljava/util/List;");
   jobject j_codecs = GetObjectField(jni, j_parameters, codecs_id);
   jmethodID codecs_add = GetMethodID(jni, GetObjectClass(jni, j_codecs), "add",
                                      "(Ljava/lang/Object;)Z");
@@ -693,26 +605,15 @@ jobject NativeToJavaRtpParameters(JNIEnv* jni,
     CHECK_EXCEPTION(jni) << "error during NewObject";
     jni->SetIntField(j_codec, payload_type_id, codec.payload_type);
     CHECK_EXCEPTION(jni) << "error during SetIntField";
-    jni->SetObjectField(j_codec, name_id,
-                        JavaStringFromStdString(jni, codec.name));
+    jni->SetObjectField(j_codec, name_id, NativeToJavaString(jni, codec.name));
     CHECK_EXCEPTION(jni) << "error during SetObjectField";
     jni->SetObjectField(j_codec, kind_id,
                         NativeToJavaMediaType(jni, codec.kind));
     CHECK_EXCEPTION(jni) << "error during SetObjectField";
-    if (codec.clock_rate) {
-      jobject j_clock_rate_value =
-          jni->NewObject(integer_class, integer_ctor, *(codec.clock_rate));
-      CHECK_EXCEPTION(jni) << "error during NewObject";
-      jni->SetObjectField(j_codec, clock_rate_id, j_clock_rate_value);
-      CHECK_EXCEPTION(jni) << "error during SetObjectField";
-    }
-    if (codec.num_channels) {
-      jobject j_num_channels_value =
-          jni->NewObject(integer_class, integer_ctor, *(codec.num_channels));
-      CHECK_EXCEPTION(jni) << "error during NewObject";
-      jni->SetObjectField(j_codec, num_channels_id, j_num_channels_value);
-      CHECK_EXCEPTION(jni) << "error during SetObjectField";
-    }
+    jni->SetObjectField(j_codec, clock_rate_id,
+                        NativeToJavaInteger(jni, codec.clock_rate));
+    jni->SetObjectField(j_codec, num_channels_id,
+                        NativeToJavaInteger(jni, codec.num_channels));
     jboolean added = jni->CallBooleanMethod(j_codecs, codecs_add, j_codec);
     CHECK_EXCEPTION(jni) << "error during CallBooleanMethod";
     RTC_CHECK(added);

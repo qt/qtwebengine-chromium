@@ -3267,6 +3267,81 @@ TEST_F(DiskCacheEntryTest, SimpleCacheDoomCreateRace) {
   EXPECT_THAT(doom_callback.GetResult(net::ERR_IO_PENDING), IsOk());
 }
 
+TEST_F(DiskCacheEntryTest, SimpleCacheDoomCreateOptimistic) {
+  // Test that we optimize the doom -> create sequence when optimistic ops
+  // are on.
+  SetSimpleCacheMode();
+  InitCache();
+  const char kKey[] = "the key";
+
+  // Create entry and initiate its Doom.
+  disk_cache::Entry* entry1 = nullptr;
+  ASSERT_THAT(CreateEntry(kKey, &entry1), IsOk());
+  ASSERT_TRUE(entry1 != nullptr);
+
+  net::TestCompletionCallback doom_callback;
+  cache_->DoomEntry(kKey, doom_callback.callback());
+
+  disk_cache::Entry* entry2 = nullptr;
+  net::TestCompletionCallback create_callback;
+  // Open entry2, with same key. With optimistic ops, this should succeed
+  // immediately, hence us using cache_->CreateEntry directly rather than using
+  // the DiskCacheTestWithCache::CreateEntry wrapper which blocks when needed.
+  ASSERT_EQ(net::OK,
+            cache_->CreateEntry(kKey, &entry2, create_callback.callback()));
+
+  // Do some I/O to make sure it's alive.
+  const int kSize = 2048;
+  scoped_refptr<net::IOBuffer> buf_1(new net::IOBuffer(kSize));
+  scoped_refptr<net::IOBuffer> buf_2(new net::IOBuffer(kSize));
+  CacheTestFillBuffer(buf_1->data(), kSize, false);
+
+  EXPECT_EQ(kSize, WriteData(entry2, /* stream_index = */ 1, /* offset = */ 0,
+                             buf_1.get(), kSize, /* truncate = */ false));
+  EXPECT_EQ(kSize, ReadData(entry2, /* stream_index = */ 1, /* offset = */ 0,
+                            buf_2.get(), kSize));
+
+  doom_callback.WaitForResult();
+
+  entry1->Close();
+  entry2->Close();
+}
+
+TEST_F(DiskCacheEntryTest, SimpleCacheDoomCreateOptimisticMassDoom) {
+  // Test that shows that a certain DCHECK in mass doom code had to be removed
+  // once optimistic doom -> create was added.
+  SetSimpleCacheMode();
+  InitCache();
+  const char kKey[] = "the key";
+
+  // Create entry and initiate its Doom.
+  disk_cache::Entry* entry1 = nullptr;
+  ASSERT_THAT(CreateEntry(kKey, &entry1), IsOk());
+  ASSERT_TRUE(entry1 != nullptr);
+
+  net::TestCompletionCallback doom_callback;
+  cache_->DoomEntry(kKey, doom_callback.callback());
+
+  disk_cache::Entry* entry2 = nullptr;
+  net::TestCompletionCallback create_callback;
+  // Open entry2, with same key. With optimistic ops, this should succeed
+  // immediately, hence us using cache_->CreateEntry directly rather than using
+  // the DiskCacheTestWithCache::CreateEntry wrapper which blocks when needed.
+  ASSERT_EQ(net::OK,
+            cache_->CreateEntry(kKey, &entry2, create_callback.callback()));
+
+  net::TestCompletionCallback doomall_callback;
+
+  // This is what had code that had a no-longer valid DCHECK.
+  cache_->DoomAllEntries(doomall_callback.callback());
+
+  doom_callback.WaitForResult();
+  doomall_callback.WaitForResult();
+
+  entry1->Close();
+  entry2->Close();
+}
+
 TEST_F(DiskCacheEntryTest, SimpleCacheDoomDoom) {
   // Test sequence:
   // Create, Doom, Create, Doom (1st entry), Open.
@@ -4337,11 +4412,13 @@ TEST_F(DiskCacheEntryTest, SimpleCacheSparseErrorHandling) {
 
   std::string key("a key");
 
-  uint64_t hash = disk_cache::simple_util::GetEntryHashKey(key);
+  disk_cache::SimpleFileTracker::EntryFileKey num_key(
+      disk_cache::simple_util::GetEntryHashKey(key));
   base::FilePath path_0 = cache_path_.AppendASCII(
-      disk_cache::simple_util::GetFilenameFromEntryHashAndFileIndex(hash, 0));
+      disk_cache::simple_util::GetFilenameFromEntryFileKeyAndFileIndex(num_key,
+                                                                       0));
   base::FilePath path_s = cache_path_.AppendASCII(
-      disk_cache::simple_util::GetSparseFilenameFromEntryHash(hash));
+      disk_cache::simple_util::GetSparseFilenameFromEntryFileKey(num_key));
 
   disk_cache::Entry* entry = nullptr;
   ASSERT_THAT(CreateEntry(key, &entry), IsOk());
@@ -4465,6 +4542,36 @@ TEST_F(DiskCacheEntryTest, SimpleCacheConvertToSparseStream2LeftOver) {
   scoped_refptr<net::IOBuffer> buffer2(new net::IOBuffer(kSize));
   EXPECT_EQ(kSize, ReadSparseData(entry, 5, buffer2.get(), kSize));
   EXPECT_EQ(0, memcmp(buffer->data(), buffer2->data(), kSize));
+  entry->Close();
+}
+
+TEST_F(DiskCacheEntryTest, SimpleCacheLazyStream2CreateFailure) {
+  // Testcase for what happens when lazy-creation of stream 2 fails.
+  const int kSize = 10;
+  scoped_refptr<net::IOBuffer> buffer(new net::IOBuffer(kSize));
+  CacheTestFillBuffer(buffer->data(), kSize, false);
+
+  // Synchronous ops, for ease of disk state;
+  SetCacheType(net::APP_CACHE);
+  SetSimpleCacheMode();
+  InitCache();
+
+  const char kKey[] = "a key";
+  disk_cache::Entry* entry = nullptr;
+  ASSERT_THAT(CreateEntry(kKey, &entry), IsOk());
+
+  // Create _1 file for stream 2; this should inject a failure when the cache
+  // tries to create it itself.
+  base::FilePath entry_file1_path = cache_path_.AppendASCII(
+      disk_cache::simple_util::GetFilenameFromKeyAndFileIndex(kKey, 1));
+  base::File entry_file1(entry_file1_path,
+                         base::File::FLAG_WRITE | base::File::FLAG_CREATE);
+  ASSERT_TRUE(entry_file1.IsValid());
+  entry_file1.Close();
+
+  EXPECT_EQ(net::ERR_CACHE_WRITE_FAILURE,
+            WriteData(entry, /* index = */ 2, /* offset = */ 0, buffer.get(),
+                      kSize, /* truncate = */ false));
   entry->Close();
 }
 

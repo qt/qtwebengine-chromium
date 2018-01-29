@@ -15,6 +15,7 @@
 
 #include "base/base64.h"
 #include "base/command_line.h"
+#include "base/files/file_path.h"
 #include "base/guid.h"
 #include "base/lazy_instance.h"
 #include "base/logging.h"
@@ -41,6 +42,8 @@
 #include "content/public/common/content_switches.h"
 #include "content/public/common/service_manager_connection.h"
 #include "content/public/common/service_names.mojom.h"
+#include "media/capabilities/video_decode_stats_db_impl.h"
+#include "media/mojo/services/video_decode_perf_history.h"
 #include "net/cookies/cookie_store.h"
 #include "net/ssl/channel_id_service.h"
 #include "net/ssl/channel_id_store.h"
@@ -84,6 +87,7 @@ const char kMojoWasInitialized[] = "mojo-was-initialized";
 const char kServiceManagerConnection[] = "service-manager-connection";
 const char kServiceUserId[] = "service-user-id";
 const char kStoragePartitionMapKeyName[] = "content_storage_partition_map";
+const char kVideoDecodePerfHistoryId[] = "video-decode-perf-history";
 
 #if defined(OS_CHROMEOS)
 const char kMountPointsKey[] = "mount_points";
@@ -106,7 +110,7 @@ StoragePartitionImplMap* GetStoragePartitionMap(
           browser_context->GetUserData(kStoragePartitionMapKeyName));
   if (!partition_map) {
     auto partition_map_owned =
-        base::MakeUnique<StoragePartitionImplMap>(browser_context);
+        std::make_unique<StoragePartitionImplMap>(browser_context);
     partition_map = partition_map_owned.get();
     browser_context->SetUserData(kStoragePartitionMapKeyName,
                                  std::move(partition_map_owned));
@@ -204,9 +208,7 @@ DownloadManager* BrowserContext::GetDownloadManager(
     BrowserContext* context) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
   if (!context->GetUserData(kDownloadManagerKeyName)) {
-    DownloadManager* download_manager =
-        new DownloadManagerImpl(
-            GetContentClient()->browser()->GetNetLog(), context);
+    DownloadManager* download_manager = new DownloadManagerImpl(context);
 
     SetDownloadManager(context, base::WrapUnique(download_manager));
     download_manager->SetDelegate(context->GetDownloadManagerDelegate());
@@ -230,14 +232,14 @@ storage::ExternalMountPoints* BrowserContext::GetMountPoints(
         storage::ExternalMountPoints::CreateRefCounted();
     context->SetUserData(
         kMountPointsKey,
-        base::MakeUnique<UserDataAdapter<storage::ExternalMountPoints>>(
+        std::make_unique<UserDataAdapter<storage::ExternalMountPoints>>(
             mount_points.get()));
   }
 
   return UserDataAdapter<storage::ExternalMountPoints>::Get(context,
                                                             kMountPointsKey);
 #else
-  return NULL;
+  return nullptr;
 #endif
 }
 
@@ -248,7 +250,7 @@ content::BrowsingDataRemover* content::BrowserContext::GetBrowsingDataRemover(
 
   if (!context->GetUserData(kBrowsingDataRemoverKey)) {
     std::unique_ptr<BrowsingDataRemoverImpl> remover =
-        base::MakeUnique<BrowsingDataRemoverImpl>(context);
+        std::make_unique<BrowsingDataRemoverImpl>(context);
     remover->SetEmbedderDelegate(context->GetBrowsingDataRemoverDelegate());
     context->SetUserData(kBrowsingDataRemoverKey, std::move(remover));
   }
@@ -305,22 +307,25 @@ void BrowserContext::ForEachStoragePartition(
 
 StoragePartition* BrowserContext::GetDefaultStoragePartition(
     BrowserContext* browser_context) {
-  return GetStoragePartition(browser_context, NULL);
+  return GetStoragePartition(browser_context, nullptr);
 }
 
 // static
 void BrowserContext::CreateMemoryBackedBlob(BrowserContext* browser_context,
-                                            const char* data, size_t length,
-                                            const BlobCallback& callback) {
+                                            const char* data,
+                                            size_t length,
+                                            const std::string& content_type,
+                                            BlobCallback callback) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
   ChromeBlobStorageContext* blob_context =
       ChromeBlobStorageContext::GetFor(browser_context);
   BrowserThread::PostTaskAndReplyWithResult(
       BrowserThread::IO, FROM_HERE,
-      base::Bind(&ChromeBlobStorageContext::CreateMemoryBackedBlob,
-                 base::WrapRefCounted(blob_context), data, length),
-      callback);
+      base::BindOnce(&ChromeBlobStorageContext::CreateMemoryBackedBlob,
+                     base::WrapRefCounted(blob_context), data, length,
+                     content_type),
+      std::move(callback));
 }
 
 // static
@@ -330,17 +335,17 @@ void BrowserContext::CreateFileBackedBlob(
     int64_t offset,
     int64_t size,
     const base::Time& expected_modification_time,
-    const BlobCallback& callback) {
+    BlobCallback callback) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
   ChromeBlobStorageContext* blob_context =
       ChromeBlobStorageContext::GetFor(browser_context);
   BrowserThread::PostTaskAndReplyWithResult(
       BrowserThread::IO, FROM_HERE,
-      base::Bind(&ChromeBlobStorageContext::CreateFileBackedBlob,
-                 base::WrapRefCounted(blob_context), path, offset, size,
-                 expected_modification_time),
-      callback);
+      base::BindOnce(&ChromeBlobStorageContext::CreateFileBackedBlob,
+                     base::WrapRefCounted(blob_context), path, offset, size,
+                     expected_modification_time),
+      std::move(callback));
 }
 
 // static
@@ -458,10 +463,10 @@ void BrowserContext::Initialize(
   RemoveBrowserContextFromUserIdMap(browser_context);
   g_user_id_to_context.Get()[new_id] = browser_context;
   browser_context->SetUserData(kServiceUserId,
-                               base::MakeUnique<ServiceUserIdHolder>(new_id));
+                               std::make_unique<ServiceUserIdHolder>(new_id));
 
   browser_context->SetUserData(
-      kMojoWasInitialized, base::MakeUnique<base::SupportsUserData::Data>());
+      kMojoWasInitialized, std::make_unique<base::SupportsUserData::Data>());
 
   ServiceManagerConnection* service_manager_connection =
       ServiceManagerConnection::GetForProcess();
@@ -577,6 +582,24 @@ std::string BrowserContext::CreateRandomMediaDeviceIDSalt() {
   base::Base64Encode(base::RandBytesAsString(16), &salt);
   DCHECK(!salt.empty());
   return salt;
+}
+
+media::VideoDecodePerfHistory* BrowserContext::GetVideoDecodePerfHistory() {
+  media::VideoDecodePerfHistory* decode_history =
+      static_cast<media::VideoDecodePerfHistory*>(
+          GetUserData(kVideoDecodePerfHistoryId));
+
+  // Lazily created. Note, this does not trigger loading the DB from disk. That
+  // occurs later upon first VideoDecodePerfHistory API request that requires DB
+  // access. DB operations will not block the UI thread.
+  if (!decode_history) {
+    auto db_factory = std::make_unique<media::VideoDecodeStatsDBImplFactory>(
+        GetPath().Append(FILE_PATH_LITERAL("VideoDecodeStats")));
+    decode_history = new media::VideoDecodePerfHistory(std::move(db_factory));
+    SetUserData(kVideoDecodePerfHistoryId, base::WrapUnique(decode_history));
+  }
+
+  return decode_history;
 }
 
 }  // namespace content

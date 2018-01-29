@@ -54,7 +54,7 @@ struct ImageDesc final
     ImageDesc(const Extents &size,
               const Format &format,
               const GLsizei samples,
-              const GLboolean fixedSampleLocations,
+              const bool fixedSampleLocations,
               const InitState initState);
 
     ImageDesc(const ImageDesc &other) = default;
@@ -63,7 +63,7 @@ struct ImageDesc final
     Extents size;
     Format format;
     GLsizei samples;
-    GLboolean fixedSampleLocations;
+    bool fixedSampleLocations;
 
     // Needed for robust resource initialization.
     InitState initState;
@@ -91,6 +91,7 @@ struct SwizzleState final
 struct TextureState final : private angle::NonCopyable
 {
     TextureState(GLenum target);
+    ~TextureState();
 
     bool swizzleRequired() const;
     GLuint getEffectiveBaseLevel() const;
@@ -136,7 +137,7 @@ struct TextureState final : private angle::NonCopyable
     void setImageDescChainMultisample(Extents baseSize,
                                       const Format &format,
                                       GLsizei samples,
-                                      GLboolean fixedSampleLocations,
+                                      bool fixedSampleLocations,
                                       InitState initState);
 
     void clearImageDesc(GLenum target, size_t level);
@@ -160,7 +161,7 @@ struct TextureState final : private angle::NonCopyable
     GLenum mUsage;
 
     std::vector<ImageDesc> mImageDescs;
-
+    InitState mInitState;
 };
 
 bool operator==(const TextureState &a, const TextureState &b);
@@ -249,7 +250,7 @@ class Texture final : public egl::ImageSibling,
     size_t getHeight(GLenum target, size_t level) const;
     size_t getDepth(GLenum target, size_t level) const;
     GLsizei getSamples(GLenum target, size_t level) const;
-    GLboolean getFixedSampleLocations(GLenum target, size_t level) const;
+    bool getFixedSampleLocations(GLenum target, size_t level) const;
     const Format &getFormat(GLenum target, size_t level) const;
 
     // Returns the value called "q" in the GLES 3.0.4 spec section 3.8.10.
@@ -338,7 +339,7 @@ class Texture final : public egl::ImageSibling,
                                 GLsizei samples,
                                 GLint internalformat,
                                 const Extents &size,
-                                GLboolean fixedSampleLocations);
+                                bool fixedSampleLocations);
 
     Error setEGLImageTarget(const Context *context, GLenum target, egl::Image *imageTarget);
 
@@ -365,6 +366,7 @@ class Texture final : public egl::ImageSibling,
     // Needed for robust resource init.
     Error ensureInitialized(const Context *context);
     InitState initState(const ImageIndex &imageIndex) const override;
+    InitState initState() const;
     void setInitState(const ImageIndex &imageIndex, InitState initState) override;
 
     enum DirtyBitType

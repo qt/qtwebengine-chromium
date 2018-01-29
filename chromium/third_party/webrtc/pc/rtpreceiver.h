@@ -18,6 +18,7 @@
 #include <stdint.h>
 
 #include <string>
+#include <vector>
 
 #include "api/mediastreaminterface.h"
 #include "api/rtpreceiverinterface.h"
@@ -48,10 +49,11 @@ class AudioRtpReceiver : public ObserverInterface,
   // sees.
   // TODO(deadbeef): Use rtc::Optional, or have another constructor that
   // doesn't take an SSRC, and make this one DCHECK(ssrc != 0).
-  AudioRtpReceiver(const std::string& track_id,
-                   uint32_t ssrc,
-                   cricket::VoiceChannel* channel);
-
+  AudioRtpReceiver(
+      const std::string& receiver_id,
+      std::vector<rtc::scoped_refptr<MediaStreamInterface>> streams,
+      uint32_t ssrc,
+      cricket::VoiceChannel* channel);
   virtual ~AudioRtpReceiver();
 
   // ObserverInterface implementation
@@ -67,6 +69,10 @@ class AudioRtpReceiver : public ObserverInterface,
   // RtpReceiverInterface implementation
   rtc::scoped_refptr<MediaStreamTrackInterface> track() const override {
     return track_.get();
+  }
+  std::vector<rtc::scoped_refptr<MediaStreamInterface>> streams()
+      const override {
+    return streams_;
   }
 
   cricket::MediaType media_type() const override {
@@ -98,6 +104,7 @@ class AudioRtpReceiver : public ObserverInterface,
   const uint32_t ssrc_;
   cricket::VoiceChannel* channel_;
   const rtc::scoped_refptr<AudioTrackInterface> track_;
+  std::vector<rtc::scoped_refptr<MediaStreamInterface>> streams_;
   bool cached_track_enabled_;
   double cached_volume_ = 1;
   bool stopped_ = false;
@@ -110,10 +117,12 @@ class VideoRtpReceiver : public rtc::RefCountedObject<RtpReceiverInternal>,
  public:
   // An SSRC of 0 will create a receiver that will match the first SSRC it
   // sees.
-  VideoRtpReceiver(const std::string& track_id,
-                   rtc::Thread* worker_thread,
-                   uint32_t ssrc,
-                   cricket::VideoChannel* channel);
+  VideoRtpReceiver(
+      const std::string& track_id,
+      std::vector<rtc::scoped_refptr<MediaStreamInterface>> streams,
+      rtc::Thread* worker_thread,
+      uint32_t ssrc,
+      cricket::VideoChannel* channel);
 
   virtual ~VideoRtpReceiver();
 
@@ -124,6 +133,10 @@ class VideoRtpReceiver : public rtc::RefCountedObject<RtpReceiverInternal>,
   // RtpReceiverInterface implementation
   rtc::scoped_refptr<MediaStreamTrackInterface> track() const override {
     return track_.get();
+  }
+  std::vector<rtc::scoped_refptr<MediaStreamInterface>> streams()
+      const override {
+    return streams_;
   }
 
   cricket::MediaType media_type() const override {
@@ -159,6 +172,7 @@ class VideoRtpReceiver : public rtc::RefCountedObject<RtpReceiverInternal>,
   // the VideoRtpReceiver is stopped.
   rtc::scoped_refptr<VideoTrackSource> source_;
   rtc::scoped_refptr<VideoTrackInterface> track_;
+  std::vector<rtc::scoped_refptr<MediaStreamInterface>> streams_;
   bool stopped_ = false;
   RtpReceiverObserverInterface* observer_ = nullptr;
   bool received_first_packet_ = false;

@@ -54,10 +54,8 @@ class V8TemplateMapTraits : public v8::StdMapTraits<void*, v8::Object> {
   typedef v8::GlobalValueMap<void*, v8::Object, V8TemplateMapTraits> MapType;
   typedef void WeakCallbackDataType;
 
-  static WeakCallbackDataType* WeakCallbackParameter(
-      MapType* map,
-      void* key,
-      const v8::Local<v8::Object>& value) {
+  static WeakCallbackDataType*
+  WeakCallbackParameter(MapType* map, void* key, v8::Local<v8::Object> value) {
     return key;
   }
   static MapType* MapFromWeakCallbackInfo(
@@ -181,6 +179,7 @@ class CFXJS_Engine {
   v8::Local<v8::Object> GetThisObj();
 
   v8::Local<v8::Value> NewNull();
+  v8::Local<v8::Value> NewUndefined();
   v8::Local<v8::Array> NewArray();
   v8::Local<v8::Number> NewNumber(int number);
   v8::Local<v8::Number> NewNumber(double number);

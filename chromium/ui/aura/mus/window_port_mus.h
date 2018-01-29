@@ -62,12 +62,12 @@ class AURA_EXPORT WindowPortMus : public WindowPort, public WindowMus {
     return client_surface_embedder_.get();
   }
 
-  const viz::SurfaceInfo& PrimarySurfaceInfoForTesting() const {
-    return primary_surface_info_;
+  const viz::SurfaceId& PrimarySurfaceIdForTesting() const {
+    return primary_surface_id_;
   }
 
-  void SetTextInputState(mojo::TextInputStatePtr state);
-  void SetImeVisibility(bool visible, mojo::TextInputStatePtr state);
+  void SetTextInputState(ui::mojom::TextInputStatePtr state);
+  void SetImeVisibility(bool visible, ui::mojom::TextInputStatePtr state);
 
   const ui::CursorData& cursor() const { return cursor_; }
   void SetCursor(const ui::CursorData& cursor);
@@ -88,12 +88,6 @@ class AURA_EXPORT WindowPortMus : public WindowPort, public WindowMus {
   void Embed(ui::mojom::WindowTreeClientPtr client,
              uint32_t flags,
              const ui::mojom::WindowTree::EmbedCallback& callback);
-
-  // Schedules an embed of a client. See
-  // mojom::WindowTreeClient::ScheduleEmbed() for details.
-  void ScheduleEmbed(
-      ui::mojom::WindowTreeClientPtr client,
-      base::OnceCallback<void(const base::UnguessableToken&)> callback);
 
   std::unique_ptr<viz::ClientLayerTreeFrameSink> RequestLayerTreeFrameSink(
       scoped_refptr<viz::ContextProvider> context_provider,
@@ -283,7 +277,7 @@ class AURA_EXPORT WindowPortMus : public WindowPort, public WindowMus {
   void OnEventTargetingPolicyChanged() override;
   bool ShouldRestackTransientChildren() override;
 
-  void UpdatePrimarySurfaceInfo();
+  void UpdatePrimarySurfaceId();
   void UpdateClientSurfaceEmbedder();
 
   WindowTreeClient* window_tree_client_;
@@ -296,10 +290,7 @@ class AURA_EXPORT WindowPortMus : public WindowPort, public WindowMus {
   ServerChangeIdType next_server_change_id_ = 0;
   ServerChanges server_changes_;
 
-  // Only set when it is embedding another client inside.
-  viz::FrameSinkId embed_frame_sink_id_;
-
-  viz::SurfaceInfo primary_surface_info_;
+  viz::SurfaceId primary_surface_id_;
   viz::SurfaceInfo fallback_surface_info_;
 
   viz::LocalSurfaceId local_surface_id_;

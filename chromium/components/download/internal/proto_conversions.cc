@@ -143,6 +143,8 @@ ProtoConversions::BatteryRequirementsFromProto(
       return SchedulingParams::BatteryRequirements::BATTERY_INSENSITIVE;
     case protodb::SchedulingParams_BatteryRequirements_BATTERY_SENSITIVE:
       return SchedulingParams::BatteryRequirements::BATTERY_SENSITIVE;
+    case protodb::SchedulingParams_BatteryRequirements_BATTERY_CHARGING:
+      return SchedulingParams::BatteryRequirements::BATTERY_CHARGING;
   }
 
   NOTREACHED();
@@ -157,6 +159,8 @@ ProtoConversions::BatteryRequirementsToProto(
       return protodb::SchedulingParams_BatteryRequirements_BATTERY_INSENSITIVE;
     case SchedulingParams::BatteryRequirements::BATTERY_SENSITIVE:
       return protodb::SchedulingParams_BatteryRequirements_BATTERY_SENSITIVE;
+    case SchedulingParams::BatteryRequirements::BATTERY_CHARGING:
+      return protodb::SchedulingParams_BatteryRequirements_BATTERY_CHARGING;
     case SchedulingParams::BatteryRequirements::COUNT:
       break;
   }
@@ -232,6 +236,7 @@ RequestParams ProtoConversions::RequestParamsFromProto(
   RequestParams request_params;
   request_params.url = GURL(proto.url());
   request_params.method = proto.method();
+  request_params.fetch_error_body = proto.fetch_error_body();
 
   for (int i = 0; i < proto.headers_size(); i++) {
     protodb::RequestHeader header = proto.headers(i);
@@ -245,6 +250,7 @@ void ProtoConversions::RequestParamsToProto(const RequestParams& request_params,
                                             protodb::RequestParams* proto) {
   proto->set_url(request_params.url.spec());
   proto->set_method(request_params.method);
+  proto->set_fetch_error_body(request_params.fetch_error_body);
 
   int i = 0;
   net::HttpRequestHeaders::Iterator iter(request_params.request_headers);

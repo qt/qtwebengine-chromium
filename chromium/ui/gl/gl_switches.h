@@ -30,6 +30,10 @@ GL_EXPORT extern const char kANGLEImplementationOpenGLName[];
 GL_EXPORT extern const char kANGLEImplementationOpenGLESName[];
 GL_EXPORT extern const char kANGLEImplementationNullName[];
 
+GL_EXPORT extern const char kANGLEImplementationD3D11NULLName[];
+GL_EXPORT extern const char kANGLEImplementationOpenGLNULLName[];
+GL_EXPORT extern const char kANGLEImplementationOpenGLESNULLName[];
+
 }  // namespace gl
 
 namespace switches {
@@ -51,6 +55,7 @@ GL_EXPORT extern const char kDisableGLExtensions[];
 GL_EXPORT extern const char kEnableSwapBuffersWithBounds[];
 GL_EXPORT extern const char kEnableDirectCompositionLayers[];
 GL_EXPORT extern const char kDisableDirectCompositionLayers[];
+GL_EXPORT extern const char kEnablePresentationCallback[];
 
 // These flags are used by the test harness code, not passed in by users.
 GL_EXPORT extern const char kDisableGLDrawingForTests[];

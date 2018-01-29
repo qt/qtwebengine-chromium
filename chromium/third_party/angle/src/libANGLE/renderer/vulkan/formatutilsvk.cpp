@@ -8,6 +8,7 @@
 
 #include "libANGLE/renderer/vulkan/formatutilsvk.h"
 
+#include "libANGLE/formatutils.h"
 #include "libANGLE/renderer/load_functions_table.h"
 
 namespace rx
@@ -16,14 +17,52 @@ namespace rx
 namespace vk
 {
 
-const angle::Format &Format::format() const
+Format::Format()
+    : internalFormat(GL_NONE),
+      textureFormatID(angle::Format::ID::NONE),
+      vkTextureFormat(VK_FORMAT_UNDEFINED),
+      bufferFormatID(angle::Format::ID::NONE),
+      vkBufferFormat(VK_FORMAT_UNDEFINED),
+      dataInitializerFunction(nullptr),
+      loadFunctions()
 {
-    return angle::Format::Get(formatID);
 }
 
-LoadFunctionMap Format::getLoadFunctions() const
+const angle::Format &Format::textureFormat() const
 {
-    return GetLoadFunctionsMap(internalFormat, formatID);
+    return angle::Format::Get(textureFormatID);
+}
+
+const angle::Format &Format::bufferFormat() const
+{
+    return angle::Format::Get(bufferFormatID);
+}
+
+FormatTable::FormatTable()
+{
+}
+
+FormatTable::~FormatTable()
+{
+}
+
+void FormatTable::initialize(VkPhysicalDevice physicalDevice, gl::TextureCapsMap *textureCapsMap)
+{
+    for (size_t formatIndex = 0; formatIndex < angle::kNumANGLEFormats; ++formatIndex)
+    {
+        angle::Format::ID formatID       = static_cast<angle::Format::ID>(formatIndex);
+        const angle::Format &angleFormat = angle::Format::Get(formatID);
+        mFormatData[formatIndex].initialize(physicalDevice, angleFormat);
+
+        mFormatData[formatIndex].loadFunctions = GetLoadFunctionsMap(
+            mFormatData[formatIndex].internalFormat, mFormatData[formatIndex].textureFormatID);
+    }
+}
+
+const Format &FormatTable::operator[](GLenum internalFormat) const
+{
+    angle::Format::ID formatID = angle::Format::InternalFormatToID(internalFormat);
+    return mFormatData[static_cast<size_t>(formatID)];
 }
 
 // TODO(jmadill): This is temporary. Figure out how to handle format conversions.

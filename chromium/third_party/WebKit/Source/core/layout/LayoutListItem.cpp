@@ -38,7 +38,9 @@ namespace blink {
 using namespace HTMLNames;
 
 LayoutListItem::LayoutListItem(Element* element)
-    : LayoutBlockFlow(element), marker_(nullptr) {
+    : LayoutBlockFlow(element),
+      marker_(nullptr),
+      need_block_direction_align_(false) {
   SetInline(false);
 
   SetConsumesSubtreeChangeNotification();
@@ -128,11 +130,6 @@ static LayoutObject* GetParentOfFirstLineBox(LayoutBlockFlow* curr,
     if (curr_child == marker)
       continue;
 
-    // Shouldn't add marker into Overflow box, instead, add marker
-    // into listitem
-    if (curr->HasOverflowClip())
-      break;
-
     if (curr_child->IsInline() &&
         (!curr_child->IsLayoutInline() ||
          curr->GeneratesLineBoxesForInlineChild(curr_child)))
@@ -141,9 +138,12 @@ static LayoutObject* GetParentOfFirstLineBox(LayoutBlockFlow* curr,
     if (curr_child->IsFloating() || curr_child->IsOutOfFlowPositioned())
       continue;
 
+    if (curr->HasOverflowClip())
+      return curr;
+
     if (!curr_child->IsLayoutBlockFlow() ||
         (curr_child->IsBox() && ToLayoutBox(curr_child)->IsWritingModeRoot()))
-      break;
+      return curr_child;
 
     if (curr->IsListItem() && in_quirks_mode && curr_child->GetNode() &&
         (IsHTMLUListElement(*curr_child->GetNode()) ||
@@ -166,6 +166,59 @@ static LayoutObject* FirstNonMarkerChild(LayoutObject* parent) {
   return result;
 }
 
+// 1. Place marker as a child of <li>. Make sure don't share parent with empty
+// inline elements which don't gernerate inlineBox.
+// 2. Manage the logicalHeight of marker_container(marker's anonymous parent):
+// If marker is the only child of marker_container, set logicalHeight of
+// marker_container to 0px; else restore it to logicalHeight of <li>.
+bool LayoutListItem::PrepareForBlockDirectionAlign(
+    const LayoutObject* line_box_parent) {
+  LayoutObject* marker_parent = marker_->Parent();
+  // Deal with the situation of layout tree changed.
+  if (marker_parent && marker_parent->IsAnonymous()) {
+    // When list-position-style change from outside to inside, we need to
+    // restore logicalHeight. So add isinside().
+    if (marker_->IsInside() || marker_->NextSibling()) {
+      // Restore old marker_container logicalHeight.
+      if (marker_parent->MutableStyleRef().LogicalHeight().IsZero()) {
+        marker_parent->MutableStyleRef().SetLogicalHeight(
+            Style()->LogicalHeight());
+      }
+
+      // If marker_parent isn't the ancestor of line_box_parent, marker might
+      // generate a new empty line. We need to remove marker here.E.g:
+      // <li><span><div>text<div><span></li>
+      if (line_box_parent && !line_box_parent->IsDescendantOf(marker_parent)) {
+        marker_->Remove();
+        marker_parent = nullptr;
+      }
+    } else {
+      if (line_box_parent)
+        marker_parent->MutableStyleRef().SetLogicalHeight(Length(0, kFixed));
+    }
+  }
+
+  // Create marker_container, set its height to 0px, and add it to li.
+  if (!marker_parent) {
+    LayoutObject* before_child = FirstNonMarkerChild(this);
+    if (!marker_->IsInside() && before_child && before_child->IsLayoutBlock()) {
+      // Create marker_container and set its logicalHeight to 0px.
+      LayoutBlock* marker_container = CreateAnonymousBlock();
+      if (line_box_parent)
+        marker_container->MutableStyleRef().SetLogicalHeight(Length(0, kFixed));
+      marker_container->AddChild(marker_,
+                                 FirstNonMarkerChild(marker_container));
+      AddChild(marker_container, before_child);
+    } else {
+      AddChild(marker_, before_child);
+    }
+
+    marker_->UpdateMarginsAndContent();
+    return true;
+  }
+  return false;
+}
+
 bool LayoutListItem::UpdateMarkerLocation() {
   DCHECK(marker_);
 
@@ -174,6 +227,16 @@ bool LayoutListItem::UpdateMarkerLocation() {
   // position:static element that should be attached to LayoutListItem block.
   LayoutObject* line_box_parent =
       marker_->IsInside() ? this : GetParentOfFirstLineBox(this, marker_);
+
+  if (!marker_->IsInside() && line_box_parent &&
+      (line_box_parent->HasOverflowClip() ||
+       !line_box_parent->IsLayoutBlockFlow() ||
+       (line_box_parent->IsBox() &&
+        ToLayoutBox(line_box_parent)->IsWritingModeRoot())))
+    need_block_direction_align_ = true;
+  if (need_block_direction_align_)
+    return PrepareForBlockDirectionAlign(line_box_parent);
+
   if (!line_box_parent) {
     // If the marker is currently contained inside an anonymous box, then we
     // are the only item in that anonymous box (since no line box parent was
@@ -203,6 +266,61 @@ void LayoutListItem::AddOverflowFromChildren() {
   PositionListMarker();
 }
 
+// Align marker_inline_box in block direction according to line_box_root's
+// baseline.
+void LayoutListItem::AlignMarkerInBlockDirection() {
+  LayoutObject* line_box_parent = GetParentOfFirstLineBox(this, marker_);
+  if (!line_box_parent || !line_box_parent->IsBox())
+    return;
+
+  LayoutBox* line_box_parent_block = ToLayoutBox(line_box_parent);
+  // Don't align marker if line_box_parent has a different writing-mode.
+  // Just let marker positioned at the left-top of line_box_parent.
+  if (line_box_parent_block->IsWritingModeRoot())
+    return;
+
+  InlineBox* marker_inline_box = marker_->InlineBoxWrapper();
+  RootInlineBox& marker_root = marker_inline_box->Root();
+  if (line_box_parent_block->IsLayoutBlockFlow()) {
+    // If marker_ and line_box_parent_block share a same RootInlineBox, no need
+    // to align marker.
+    if (ToLayoutBlockFlow(line_box_parent_block)->FirstRootBox() ==
+        &marker_root)
+      return;
+  }
+
+  LayoutUnit offset = line_box_parent_block->FirstLineBoxBaseline();
+  if (offset != -1) {
+    for (LayoutBox* o = line_box_parent_block; o != this; o = o->ParentBox())
+      offset += o->LogicalTop();
+
+    // Compute marker_inline_box's baseline.
+    // We shouldn't use FirstLineBoxBaseline here. FirstLineBoxBaseline is
+    // the baseline of root. We should compute marker_inline_box's baseline
+    // instead. BaselinePosition is workable when marker is an image.
+    // However, when marker is text, BaselinePosition contains lineheight
+    // information. So use marker_font_metrics.Ascent when marker is text.
+    if (marker_->IsImage()) {
+      offset -= marker_inline_box->BaselinePosition(marker_root.BaselineType());
+    } else {
+      const SimpleFontData* marker_font_data =
+          marker_->Style(true)->GetFont().PrimaryFont();
+      if (marker_font_data) {
+        const FontMetrics& marker_font_metrics =
+            marker_font_data->GetFontMetrics();
+        offset -= marker_font_metrics.Ascent(marker_root.BaselineType());
+      }
+    }
+    offset -= marker_inline_box->LogicalTop();
+
+    for (LayoutBox* o = marker_->ParentBox(); o != this; o = o->ParentBox()) {
+      offset -= o->LogicalTop();
+    }
+
+    marker_inline_box->MoveInBlockDirection(offset);
+  }
+}
+
 void LayoutListItem::PositionListMarker() {
   if (marker_ && marker_->Parent() && marker_->Parent()->IsBox() &&
       !marker_->IsInside() && marker_->InlineBoxWrapper()) {
@@ -222,13 +340,25 @@ void LayoutListItem::PositionListMarker() {
     LayoutUnit line_top = root.LineTop();
     LayoutUnit line_bottom = root.LineBottom();
 
+    if (need_block_direction_align_)
+      AlignMarkerInBlockDirection();
+
+    // We figured out the inline position of the marker before laying out the
+    // line so that floats later in the line don't interfere with it. However
+    // if the line has shifted down then that position will be too far out.
+    // So we always take the lowest value of (1) the position of the marker
+    // if we calculate it now and (2) the inline position we calculated before
+    // laying out the line.
     // TODO(jchaffraix): Propagating the overflow to the line boxes seems
     // pretty wrong (https://crbug.com/554160).
     // FIXME: Need to account for relative positioning in the layout overflow.
     if (Style()->IsLeftToRightDirection()) {
-      marker_logical_left = marker_->LineOffset() - line_offset -
-                            PaddingStart() - BorderStart() +
-                            marker_->MarginStart();
+      LayoutUnit marker_line_offset =
+          std::min(marker_->LineOffset(),
+                   LogicalLeftOffsetForLine(marker_->LogicalTop(),
+                                            kDoNotIndentText, LayoutUnit()));
+      marker_logical_left = marker_line_offset - line_offset - PaddingStart() -
+                            BorderStart() + marker_->MarginStart();
       marker_->InlineBoxWrapper()->MoveInInlineDirection(
           marker_logical_left - marker_old_logical_left);
       for (InlineFlowBox* box = marker_->InlineBoxWrapper()->Parent(); box;
@@ -259,9 +389,12 @@ void LayoutListItem::PositionListMarker() {
           hit_self_painting_layer = true;
       }
     } else {
-      marker_logical_left = marker_->LineOffset() - line_offset +
-                            PaddingStart() + BorderStart() +
-                            marker_->MarginEnd();
+      LayoutUnit marker_line_offset =
+          std::max(marker_->LineOffset(),
+                   LogicalRightOffsetForLine(marker_->LogicalTop(),
+                                             kDoNotIndentText, LayoutUnit()));
+      marker_logical_left = marker_line_offset - line_offset + PaddingStart() +
+                            BorderStart() + marker_->MarginEnd();
       marker_->InlineBoxWrapper()->MoveInInlineDirection(
           marker_logical_left - marker_old_logical_left);
       for (InlineFlowBox* box = marker_->InlineBoxWrapper()->Parent(); box;

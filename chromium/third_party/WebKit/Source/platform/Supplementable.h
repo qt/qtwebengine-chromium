@@ -99,7 +99,7 @@ class Supplementable;
 // support wrapper-tracing.
 class PLATFORM_EXPORT TraceWrapperBaseForSupplement {
  public:
-  DEFINE_INLINE_VIRTUAL_TRACE_WRAPPERS() {}
+  virtual void TraceWrappers(const ScriptWrappableVisitor* visitor) const {}
 };
 
 template <typename T>
@@ -123,17 +123,19 @@ class Supplement : public GarbageCollectedMixin,
     supplementable.ProvideSupplement(key, supplement);
   }
 
-  static Supplement<T>* From(Supplementable<T>& supplementable,
+  static Supplement<T>* From(const Supplementable<T>& supplementable,
                              const char* key) {
     return supplementable.RequireSupplement(key);
   }
 
-  static Supplement<T>* From(Supplementable<T>* supplementable,
+  static Supplement<T>* From(const Supplementable<T>* supplementable,
                              const char* key) {
-    return supplementable ? supplementable->RequireSupplement(key) : 0;
+    return supplementable ? supplementable->RequireSupplement(key) : nullptr;
   }
 
-  DEFINE_INLINE_VIRTUAL_TRACE() { visitor->Trace(supplementable_); }
+  virtual void Trace(blink::Visitor* visitor) {
+    visitor->Trace(supplementable_);
+  }
 
  private:
   Member<T> supplementable_;
@@ -158,7 +160,7 @@ class Supplementable : public GarbageCollectedMixin {
     this->supplements_.erase(key);
   }
 
-  Supplement<T>* RequireSupplement(const char* key) {
+  Supplement<T>* RequireSupplement(const char* key) const {
 #if DCHECK_IS_ON()
     DCHECK_EQ(attached_thread_id_, CurrentThread());
 #endif
@@ -171,8 +173,8 @@ class Supplementable : public GarbageCollectedMixin {
 #endif
   }
 
-  DEFINE_INLINE_VIRTUAL_TRACE() { visitor->Trace(supplements_); }
-  DEFINE_INLINE_VIRTUAL_TRACE_WRAPPERS() {
+  virtual void Trace(blink::Visitor* visitor) { visitor->Trace(supplements_); }
+  virtual void TraceWrappers(const ScriptWrappableVisitor* visitor) const {
     for (const auto& supplement : supplements_.Values())
       visitor->TraceWrappers(supplement);
   }

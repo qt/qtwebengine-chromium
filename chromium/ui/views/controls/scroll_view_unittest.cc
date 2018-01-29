@@ -151,6 +151,23 @@ ui::MouseEvent TestLeftMouseAt(const gfx::Point& location, ui::EventType type) {
                         ui::EF_LEFT_MOUSE_BUTTON, ui::EF_LEFT_MOUSE_BUTTON);
 }
 
+// This view has a large width, but the height always matches the parent's
+// height. This is similar to a TableView that has many columns showing, but
+// very few rows.
+class VerticalResizingView : public View {
+ public:
+  VerticalResizingView() = default;
+  ~VerticalResizingView() override = default;
+  void Layout() override {
+    int width = 10000;
+    int height = parent()->height();
+    SetBounds(x(), y(), width, height);
+  }
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(VerticalResizingView);
+};
+
 }  // namespace
 
 using test::ScrollViewTestApi;
@@ -175,7 +192,7 @@ class ScrollViewTest : public ViewsTestBase {
     // Otherwise, the swizzlers are interleaved and restore incorrect methods.
     scroller_style_.reset();
     scroller_style_ =
-        base::MakeUnique<ui::test::ScopedPreferredScrollerStyle>(enabled);
+        std::make_unique<ui::test::ScopedPreferredScrollerStyle>(enabled);
   }
 
  private:
@@ -184,7 +201,7 @@ class ScrollViewTest : public ViewsTestBase {
   // change modes, which requires a MessageLoop to exist. Tests should only
   // modify this via SetOverlayScrollersEnabled().
   std::unique_ptr<ui::test::ScopedPreferredScrollerStyle> scroller_style_ =
-      base::MakeUnique<ui::test::ScopedPreferredScrollerStyle>(false);
+      std::make_unique<ui::test::ScopedPreferredScrollerStyle>(false);
 
  protected:
 #endif
@@ -290,6 +307,7 @@ class WidgetScrollViewTest : public test::WidgetTest,
                             base::TimeTicks start_time) override {}
   void OnCompositingEnded(ui::Compositor* compositor) override {}
   void OnCompositingLockStateChanged(ui::Compositor* compositor) override {}
+  void OnCompositingChildResizing(ui::Compositor* compositor) override {}
   void OnCompositingShuttingDown(ui::Compositor* compositor) override {}
 
   Widget* widget_ = nullptr;
@@ -328,6 +346,18 @@ TEST_F(ScrollViewTest, BoundedViewportSizedToFit) {
   // Make sure the width of |contents| is set properly not to overflow the
   // viewport.
   EXPECT_EQ(96, contents->width());
+}
+
+// Verifies that the vertical scrollbar does not unnecessarily appear for a
+// contents whose height always matches the height of the viewport.
+TEST_F(ScrollViewTest, VerticalScrollbarDoesNotAppearUnnecessarily) {
+  const gfx::Rect default_outer_bounds(0, 0, 100, 100);
+  View* contents = new VerticalResizingView;
+  scroll_view_.SetContents(contents);
+  scroll_view_.SetBoundsRect(default_outer_bounds);
+  scroll_view_.Layout();
+  EXPECT_FALSE(scroll_view_.vertical_scroll_bar()->visible());
+  EXPECT_TRUE(scroll_view_.horizontal_scroll_bar()->visible());
 }
 
 // Verifies the scrollbars are added as necessary.

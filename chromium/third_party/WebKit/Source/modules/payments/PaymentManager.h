@@ -16,9 +16,7 @@ namespace blink {
 class PaymentInstruments;
 class ServiceWorkerRegistration;
 
-class MODULES_EXPORT PaymentManager final
-    : public GarbageCollectedFinalized<PaymentManager>,
-      public ScriptWrappable {
+class MODULES_EXPORT PaymentManager final : public ScriptWrappable {
   DEFINE_WRAPPERTYPEINFO();
   WTF_MAKE_NONCOPYABLE(PaymentManager);
 
@@ -30,7 +28,7 @@ class MODULES_EXPORT PaymentManager final
   const String& userHint();
   void setUserHint(const String&);
 
-  DECLARE_TRACE();
+  void Trace(blink::Visitor*);
 
  private:
   explicit PaymentManager(ServiceWorkerRegistration*);

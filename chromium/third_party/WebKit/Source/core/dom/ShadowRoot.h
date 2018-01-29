@@ -102,10 +102,11 @@ class CORE_EXPORT ShadowRoot final : public DocumentFragment, public TreeScope {
   InsertionNotificationRequest InsertedInto(ContainerNode*) override;
   void RemovedFrom(ContainerNode*) override;
 
+  void SetNeedsAssignmentRecalc();
+
   // For V0
   ShadowRoot* YoungerShadowRoot() const;
   ShadowRoot* OlderShadowRoot() const;
-  ShadowRoot* olderShadowRootForBindings() const;
   void SetYoungerShadowRoot(ShadowRoot&);
   void SetOlderShadowRoot(ShadowRoot&);
   bool IsYoungest() const { return !YoungerShadowRoot(); }
@@ -166,8 +167,8 @@ class CORE_EXPORT ShadowRoot final : public DocumentFragment, public TreeScope {
     style_sheet_list_ = style_sheet_list;
   }
 
-  DECLARE_VIRTUAL_TRACE();
-  DECLARE_VIRTUAL_TRACE_WRAPPERS();
+  virtual void Trace(blink::Visitor*);
+  virtual void TraceWrappers(const ScriptWrappableVisitor*) const;
 
  private:
   ShadowRoot(Document&, ShadowRootType);

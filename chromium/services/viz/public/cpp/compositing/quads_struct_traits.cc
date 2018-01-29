@@ -106,42 +106,14 @@ bool StructTraits<viz::mojom::StreamVideoQuadStateDataView, viz::DrawQuad>::
 }
 
 // static
-viz::mojom::SurfaceDrawQuadType
-EnumTraits<viz::mojom::SurfaceDrawQuadType, viz::SurfaceDrawQuadType>::ToMojom(
-    viz::SurfaceDrawQuadType surface_draw_quad_type) {
-  switch (surface_draw_quad_type) {
-    case viz::SurfaceDrawQuadType::PRIMARY:
-      return viz::mojom::SurfaceDrawQuadType::PRIMARY;
-    case viz::SurfaceDrawQuadType::FALLBACK:
-      return viz::mojom::SurfaceDrawQuadType::FALLBACK;
-  }
-  NOTREACHED();
-  return viz::mojom::SurfaceDrawQuadType::PRIMARY;
-}
-
-// static
-bool EnumTraits<viz::mojom::SurfaceDrawQuadType, viz::SurfaceDrawQuadType>::
-    FromMojom(viz::mojom::SurfaceDrawQuadType input,
-              viz::SurfaceDrawQuadType* out) {
-  switch (input) {
-    case viz::mojom::SurfaceDrawQuadType::PRIMARY:
-      *out = viz::SurfaceDrawQuadType::PRIMARY;
-      return true;
-    case viz::mojom::SurfaceDrawQuadType::FALLBACK:
-      *out = viz::SurfaceDrawQuadType::FALLBACK;
-      return true;
-  }
-  return false;
-}
-
-// static
 bool StructTraits<viz::mojom::SurfaceQuadStateDataView, viz::DrawQuad>::Read(
     viz::mojom::SurfaceQuadStateDataView data,
     viz::DrawQuad* out) {
   viz::SurfaceDrawQuad* quad = static_cast<viz::SurfaceDrawQuad*>(out);
   quad->default_background_color = data.default_background_color();
-  return data.ReadSurfaceDrawQuadType(&quad->surface_draw_quad_type) &&
-         data.ReadSurface(&quad->surface_id);
+  quad->stretch_content_to_fill_bounds = data.stretch_content_to_fill_bounds();
+  return data.ReadPrimarySurfaceId(&quad->primary_surface_id) &&
+         data.ReadFallbackSurfaceId(&quad->fallback_surface_id);
 }
 
 // static
@@ -193,39 +165,6 @@ bool StructTraits<viz::mojom::TileQuadStateDataView, viz::DrawQuad>::Read(
   return true;
 }
 
-viz::mojom::YUVColorSpace
-EnumTraits<viz::mojom::YUVColorSpace, viz::YUVVideoDrawQuad::ColorSpace>::
-    ToMojom(viz::YUVVideoDrawQuad::ColorSpace color_space) {
-  switch (color_space) {
-    case viz::YUVVideoDrawQuad::REC_601:
-      return viz::mojom::YUVColorSpace::REC_601;
-    case viz::YUVVideoDrawQuad::REC_709:
-      return viz::mojom::YUVColorSpace::REC_709;
-    case viz::YUVVideoDrawQuad::JPEG:
-      return viz::mojom::YUVColorSpace::JPEG;
-  }
-  NOTREACHED();
-  return viz::mojom::YUVColorSpace::JPEG;
-}
-
-// static
-bool EnumTraits<viz::mojom::YUVColorSpace, viz::YUVVideoDrawQuad::ColorSpace>::
-    FromMojom(viz::mojom::YUVColorSpace input,
-              viz::YUVVideoDrawQuad::ColorSpace* out) {
-  switch (input) {
-    case viz::mojom::YUVColorSpace::REC_601:
-      *out = viz::YUVVideoDrawQuad::REC_601;
-      return true;
-    case viz::mojom::YUVColorSpace::REC_709:
-      *out = viz::YUVVideoDrawQuad::REC_709;
-      return true;
-    case viz::mojom::YUVColorSpace::JPEG:
-      *out = viz::YUVVideoDrawQuad::JPEG;
-      return true;
-  }
-  return false;
-}
-
 // static
 bool StructTraits<viz::mojom::YUVVideoQuadStateDataView, viz::DrawQuad>::Read(
     viz::mojom::YUVVideoQuadStateDataView data,
@@ -251,8 +190,6 @@ bool StructTraits<viz::mojom::YUVVideoQuadStateDataView, viz::DrawQuad>::Read(
                 "The A plane resource should be the last resource ID.");
   quad->resources.count = data.a_plane_resource_id() ? 4 : 3;
 
-  if (!data.ReadColorSpace(&quad->color_space))
-    return false;
   quad->resource_offset = data.resource_offset();
   quad->resource_multiplier = data.resource_multiplier();
   quad->bits_per_channel = data.bits_per_channel();

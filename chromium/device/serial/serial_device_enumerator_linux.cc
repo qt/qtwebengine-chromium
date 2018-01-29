@@ -37,11 +37,11 @@ SerialDeviceEnumeratorLinux::SerialDeviceEnumeratorLinux() {
   udev_.reset(udev_new());
 }
 
-SerialDeviceEnumeratorLinux::~SerialDeviceEnumeratorLinux() {}
+SerialDeviceEnumeratorLinux::~SerialDeviceEnumeratorLinux() = default;
 
 std::vector<mojom::SerialDeviceInfoPtr>
 SerialDeviceEnumeratorLinux::GetDevices() {
-  base::ThreadRestrictions::AssertIOAllowed();
+  base::AssertBlockingAllowed();
 
   std::vector<mojom::SerialDeviceInfoPtr> devices;
   ScopedUdevEnumeratePtr enumerate(udev_enumerate_new(udev_.get()));

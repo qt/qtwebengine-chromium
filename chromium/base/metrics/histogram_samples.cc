@@ -7,6 +7,7 @@
 #include <limits>
 
 #include "base/compiler_specific.h"
+#include "base/metrics/histogram_macros.h"
 #include "base/numerics/safe_conversions.h"
 #include "base/numerics/safe_math.h"
 #include "base/pickle.h"
@@ -185,7 +186,7 @@ HistogramSamples::HistogramSamples(uint64_t id, Metadata* meta)
 
 // This mustn't do anything with |meta_|. It was passed to the ctor and may
 // be invalid by the time this dtor gets called.
-HistogramSamples::~HistogramSamples() {}
+HistogramSamples::~HistogramSamples() = default;
 
 void HistogramSamples::Add(const HistogramSamples& other) {
   IncreaseSumAndCount(other.sum(), other.redundant_count());
@@ -251,7 +252,17 @@ void HistogramSamples::IncreaseSumAndCount(int64_t sum,
   subtle::NoBarrier_AtomicIncrement(&meta_->redundant_count, count);
 }
 
-SampleCountIterator::~SampleCountIterator() {}
+void HistogramSamples::RecordNegativeSample(NegativeSampleReason reason,
+                                            HistogramBase::Count increment) {
+  UMA_HISTOGRAM_ENUMERATION("UMA.NegativeSamples.Reason", reason,
+                            MAX_NEGATIVE_SAMPLE_REASONS);
+  UMA_HISTOGRAM_CUSTOM_COUNTS("UMA.NegativeSamples.Increment", increment, 1,
+                              1 << 30, 100);
+  UMA_HISTOGRAM_SPARSE_SLOWLY("UMA.NegativeSamples.Histogram",
+                              static_cast<int32_t>(id()));
+}
+
+SampleCountIterator::~SampleCountIterator() = default;
 
 bool SampleCountIterator::GetBucketIndex(size_t* index) const {
   DCHECK(!Done());
@@ -269,7 +280,7 @@ SingleSampleIterator::SingleSampleIterator(HistogramBase::Sample min,
                                            size_t bucket_index)
     : min_(min), max_(max), bucket_index_(bucket_index), count_(count) {}
 
-SingleSampleIterator::~SingleSampleIterator() {}
+SingleSampleIterator::~SingleSampleIterator() = default;
 
 bool SingleSampleIterator::Done() const {
   return count_ == 0;

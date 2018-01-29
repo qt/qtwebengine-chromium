@@ -11,6 +11,8 @@
 #include "GrGpuResourcePriv.h"
 #include "GrSurface.h"
 #include "GrSurfaceProxy.h"
+
+#include "SkArenaAlloc.h"
 #include "SkTDynamicHash.h"
 #include "SkTMultiMap.h"
 
@@ -37,11 +39,13 @@ public:
             : fResourceProvider(resourceProvider) {
     }
 
+    ~GrResourceAllocator();
+
     unsigned int curOp() const { return fNumOps; }
     void incOps() { fNumOps++; }
     unsigned int numOps() const { return fNumOps; }
 
-    // Add a usage interval from start to end inclusive. This is usually used for renderTargets.
+    // Add a usage interval from 'start' to 'end' inclusive. This is usually used for renderTargets.
     // If an existing interval already exists it will be expanded to include the new range.
     void addInterval(GrSurfaceProxy*, unsigned int start, unsigned int end);
 
@@ -51,8 +55,13 @@ public:
         this->addInterval(proxy, fNumOps, fNumOps);
     }
 
-    void assign();
-    SkDEBUGCODE(void dump();)
+    // Returns true when the opLists from 'startIndex' to 'stopIndex' should be executed;
+    // false when nothing remains to be executed.
+    // This is used to execute a portion of the queued opLists in order to reduce the total
+    // amount of GPU resources required.
+    bool assign(int* startIndex, int* stopIndex);
+
+    void markEndOfOpList(int opListIndex);
 
 private:
     class Interval;
@@ -61,8 +70,8 @@ private:
     void expire(unsigned int curIndex);
 
     // These two methods wrap the interactions with the free pool
-    void freeUpSurface(GrSurface* surface);
-    sk_sp<GrSurface> findSurfaceFor(const GrSurfaceProxy* proxy);
+    void freeUpSurface(sk_sp<GrSurface> surface);
+    sk_sp<GrSurface> findSurfaceFor(const GrSurfaceProxy* proxy, bool needsStencil);
 
     struct FreePoolTraits {
         static const GrScratchKey& GetKey(const GrSurface& s) {
@@ -70,6 +79,7 @@ private:
         }
 
         static uint32_t Hash(const GrScratchKey& key) { return key.hash(); }
+        static void OnFree(GrSurface* s) { s->unref(); }
     };
     typedef SkTMultiMap<GrSurface, GrScratchKey, FreePoolTraits> FreePoolMultiMap;
 
@@ -86,28 +96,59 @@ private:
             SkASSERT(proxy);
         }
 
+        void resetTo(GrSurfaceProxy* proxy, unsigned int start, unsigned int end) {
+            SkASSERT(proxy);
+
+            fProxy = proxy;
+            fProxyID = proxy->uniqueID().asUInt();
+            fStart = start;
+            fEnd = end;
+            fNext = nullptr;
+        }
+
+        ~Interval() {
+            SkASSERT(!fAssignedSurface);
+        }
+
+        const GrSurfaceProxy* proxy() const { return fProxy; }
+        GrSurfaceProxy* proxy() { return fProxy; }
+        unsigned int start() const { return fStart; }
+        unsigned int end() const { return fEnd; }
+        const Interval* next() const { return fNext; }
+        Interval* next() { return fNext; }
+
+        void setNext(Interval* next) { fNext = next; }
+
+        void extendEnd(unsigned int newEnd) {
+            SkASSERT(newEnd >= fEnd);
+            fEnd = newEnd;
+        }
+
+        void assign(sk_sp<GrSurface>);
+        bool wasAssignedSurface() const { return fAssignedSurface; }
+        sk_sp<GrSurface> detachSurface() { return std::move(fAssignedSurface); }
+
         // for SkTDynamicHash
         static const uint32_t& GetKey(const Interval& intvl) {
             return intvl.fProxyID;
         }
         static uint32_t Hash(const uint32_t& key) { return key; }
 
-        GrSurfaceProxy* fProxy;
-        uint32_t        fProxyID; // This is here b.c. DynamicHash requires a ref to the key
-        unsigned int    fStart;
-        unsigned int    fEnd;
-        Interval*       fNext;
+    private:
+        sk_sp<GrSurface> fAssignedSurface;
+        GrSurfaceProxy*  fProxy;
+        uint32_t         fProxyID; // This is here b.c. DynamicHash requires a ref to the key
+        unsigned int     fStart;
+        unsigned int     fEnd;
+        Interval*        fNext;
     };
 
     class IntervalList {
     public:
         IntervalList() = default;
         ~IntervalList() {
-            while (fHead) {
-                Interval* temp = fHead;
-                fHead = temp->fNext;
-                delete temp;
-            }
+            // The only time we delete an IntervalList is in the GrResourceAllocator dtor.
+            // Since the arena allocator will clean up for us we don't bother here.
         }
 
         bool empty() const { return !SkToBool(fHead); }
@@ -120,15 +161,25 @@ private:
         Interval* fHead = nullptr;
     };
 
-    GrResourceProvider* fResourceProvider;
-    FreePoolMultiMap    fFreePool;          // Recently created/used GrSurfaces
-    IntvlHash           fIntvlHash;         // All the intervals, hashed by proxyID
+    // Gathered statistics indicate that 99% of flushes will be covered by <= 12 Intervals
+    static const int kInitialArenaSize = 12 * sizeof(Interval);
 
-    IntervalList        fIntvlList;         // All the intervals sorted by increasing start
-    IntervalList        fActiveIntvls;      // List of live intervals during assignment
-                                            // (sorted by increasing end)
-    unsigned int        fNumOps = 0;
-    SkDEBUGCODE(bool    fAssigned = false;)
+    GrResourceProvider*    fResourceProvider;
+    FreePoolMultiMap       fFreePool;          // Recently created/used GrSurfaces
+    IntvlHash              fIntvlHash;         // All the intervals, hashed by proxyID
+
+    IntervalList           fIntvlList;         // All the intervals sorted by increasing start
+    IntervalList           fActiveIntvls;      // List of live intervals during assignment
+                                               // (sorted by increasing end)
+    unsigned int           fNumOps = 0;
+    SkTArray<unsigned int> fEndOfOpListOpIndices;
+    int                    fCurOpListIndex = 0;
+
+    SkDEBUGCODE(bool       fAssigned = false;)
+
+    char                   fStorage[kInitialArenaSize];
+    SkArenaAlloc           fIntervalAllocator { fStorage, kInitialArenaSize, 0 };
+    Interval*              fFreeIntervalList = nullptr;
 };
 
 #endif // GrResourceAllocator_DEFINED

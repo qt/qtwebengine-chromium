@@ -14,8 +14,8 @@
 #include "extensions/common/constants.h"
 #include "extensions/common/extension_messages.h"
 #include "extensions/common/manifest_handlers/background_info.h"
+#include "extensions/renderer/api/automation/automation_api_helper.h"
 #include "extensions/renderer/console.h"
-#include "extensions/renderer/content_watcher.h"
 #include "extensions/renderer/dispatcher.h"
 #include "extensions/renderer/extension_bindings_system.h"
 #include "extensions/renderer/renderer_messaging_service.h"
@@ -105,6 +105,10 @@ ExtensionFrameHelper::ExtensionFrameHelper(content::RenderFrame* render_frame,
       did_create_current_document_element_(false),
       weak_ptr_factory_(this) {
   g_frame_helpers.Get().insert(this);
+  if (render_frame->IsMainFrame()) {
+    // Manages its own lifetime.
+    new AutomationApiHelper(render_frame);
+  }
 }
 
 ExtensionFrameHelper::~ExtensionFrameHelper() {
@@ -124,6 +128,39 @@ std::vector<content::RenderFrame*> ExtensionFrameHelper::GetExtensionFrames(
       render_frames.push_back(helper->render_frame());
   }
   return render_frames;
+}
+
+// static
+v8::Local<v8::Array> ExtensionFrameHelper::GetV8MainFrames(
+    v8::Local<v8::Context> context,
+    const std::string& extension_id,
+    int browser_window_id,
+    int tab_id,
+    ViewType view_type) {
+  std::vector<content::RenderFrame*> render_frames =
+      GetExtensionFrames(extension_id, browser_window_id, tab_id, view_type);
+  v8::Local<v8::Array> v8_frames = v8::Array::New(context->GetIsolate());
+
+  int v8_index = 0;
+  for (content::RenderFrame* frame : render_frames) {
+    if (!frame->IsMainFrame())
+      continue;
+
+    blink::WebLocalFrame* web_frame = frame->GetWebFrame();
+    if (!blink::WebFrame::ScriptCanAccess(web_frame))
+      continue;
+
+    v8::Local<v8::Context> frame_context = web_frame->MainWorldScriptContext();
+    if (!frame_context.IsEmpty()) {
+      v8::Local<v8::Value> window = frame_context->Global();
+      CHECK(!window.IsEmpty());
+      v8::Maybe<bool> maybe =
+          v8_frames->CreateDataProperty(context, v8_index++, window);
+      CHECK(maybe.IsJust() && maybe.FromJust());
+    }
+  }
+
+  return v8_frames;
 }
 
 // static
@@ -193,14 +230,6 @@ void ExtensionFrameHelper::ScheduleAtDocumentEnd(
 void ExtensionFrameHelper::ScheduleAtDocumentIdle(
     const base::Closure& callback) {
   document_idle_callbacks_.push_back(callback);
-}
-
-void ExtensionFrameHelper::DidMatchCSS(
-    const blink::WebVector<blink::WebString>& newly_matching_selectors,
-    const blink::WebVector<blink::WebString>& stopped_matching_selectors) {
-  extension_dispatcher_->content_watcher()->DidMatchCSS(
-      render_frame()->GetWebFrame(), newly_matching_selectors,
-      stopped_matching_selectors);
 }
 
 void ExtensionFrameHelper::DidStartProvisionalLoad(
@@ -341,8 +370,11 @@ void ExtensionFrameHelper::OnSetFrameName(const std::string& name) {
   render_frame()->GetWebFrame()->SetName(blink::WebString::FromUTF8(name));
 }
 
-void ExtensionFrameHelper::OnAppWindowClosed() {
+void ExtensionFrameHelper::OnAppWindowClosed(bool send_onclosed) {
   DCHECK(render_frame()->IsMainFrame());
+
+  if (!send_onclosed)
+    return;
 
   v8::HandleScope scope(v8::Isolate::GetCurrent());
   v8::Local<v8::Context> v8_context =

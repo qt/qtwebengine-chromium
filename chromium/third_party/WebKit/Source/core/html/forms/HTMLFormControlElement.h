@@ -50,7 +50,7 @@ class CORE_EXPORT HTMLFormControlElement : public LabelableElement,
 
  public:
   ~HTMLFormControlElement() override;
-  DECLARE_VIRTUAL_TRACE();
+  void Trace(blink::Visitor*) override;
 
   String formAction() const;
   void setFormAction(const AtomicString&);
@@ -102,7 +102,7 @@ class CORE_EXPORT HTMLFormControlElement : public LabelableElement,
   void HideVisibleValidationMessage();
   bool checkValidity(
       HeapVector<Member<HTMLFormControlElement>>* unhandled_invalid_controls =
-          0,
+          nullptr,
       CheckValidityEventBehavior = kCheckValidityDispatchInvalidEvent);
   bool reportValidity();
   // This must be called only after the caller check the element is focusable.
@@ -125,7 +125,7 @@ class CORE_EXPORT HTMLFormControlElement : public LabelableElement,
   bool IsAutofilled() const { return is_autofilled_; }
   void SetAutofilled(bool = true);
 
-  static HTMLFormControlElement* EnclosingFormControlElement(Node*);
+  static const HTMLFormControlElement* EnclosingFormControlElement(const Node*);
 
   String NameForAutofill() const;
 
@@ -177,7 +177,7 @@ class CORE_EXPORT HTMLFormControlElement : public LabelableElement,
   bool IsFormControlElement() const final { return true; }
   bool AlwaysCreateUserAgentShadowRoot() const override { return true; }
 
-  int tabIndex() const;
+  int tabIndex() const override;
 
   bool IsValidElement() override;
   bool MatchesValidityPseudoClasses() const override;
@@ -198,6 +198,7 @@ class CORE_EXPORT HTMLFormControlElement : public LabelableElement,
   mutable AncestorDisabledState ancestor_disabled_state_;
   enum DataListAncestorState { kUnknown, kInsideDataList, kNotInsideDataList };
   mutable enum DataListAncestorState data_list_ancestor_state_;
+  mutable bool may_have_field_set_ancestor_ : 1;
 
   bool is_autofilled_ : 1;
   bool has_validation_message_ : 1;

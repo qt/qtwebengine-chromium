@@ -64,6 +64,11 @@ webrtc::AudioSendStream::Stats FakeAudioSendStream::GetStats() const {
   return stats_;
 }
 
+webrtc::AudioSendStream::Stats FakeAudioSendStream::GetStats(
+    bool /*has_remote_tracks*/) const {
+  return stats_;
+}
+
 FakeAudioReceiveStream::FakeAudioReceiveStream(
     int id, const webrtc::AudioReceiveStream::Config& config)
     : id_(id), config_(config) {
@@ -189,7 +194,7 @@ void FakeVideoSendStream::OnFrame(const webrtc::VideoFrame& frame) {
     video_streams_ = encoder_config_.video_stream_factory->CreateEncoderStreams(
         frame.width(), frame.height(), encoder_config_);
   }
-  last_frame_ = rtc::Optional<webrtc::VideoFrame>(frame);
+  last_frame_ = frame;
 }
 
 void FakeVideoSendStream::SetStats(
@@ -593,6 +598,12 @@ void FakeCall::SetBitrateConfig(
 void FakeCall::SetBitrateConfigMask(
     const webrtc::Call::Config::BitrateConfigMask& mask) {
   // TODO(zstein): not implemented
+}
+
+void FakeCall::SetBitrateAllocationStrategy(
+    std::unique_ptr<rtc::BitrateAllocationStrategy>
+        bitrate_allocation_strategy) {
+  // TODO(alexnarest): not implemented
 }
 
 void FakeCall::SignalChannelNetworkState(webrtc::MediaType media,

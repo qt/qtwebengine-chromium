@@ -33,7 +33,7 @@ class HTMLMarqueeElement final : public HTMLElement {
   DEFINE_WRAPPERTYPEINFO();
 
  public:
-  DECLARE_VIRTUAL_TRACE();
+  virtual void Trace(blink::Visitor*);
 
   static HTMLMarqueeElement* Create(Document&);
 
@@ -59,9 +59,10 @@ class HTMLMarqueeElement final : public HTMLElement {
   void DidAddUserAgentShadowRoot(ShadowRoot&) override;
 
   bool IsPresentationAttribute(const QualifiedName&) const override;
-  void CollectStyleForPresentationAttribute(const QualifiedName&,
-                                            const AtomicString&,
-                                            MutableStylePropertySet*) override;
+  void CollectStyleForPresentationAttribute(
+      const QualifiedName&,
+      const AtomicString&,
+      MutableCSSPropertyValueSet*) override;
 
   class RequestAnimationFrameCallback;
   class AnimationFinished;

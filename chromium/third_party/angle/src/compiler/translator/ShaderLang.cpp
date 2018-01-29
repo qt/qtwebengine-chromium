@@ -112,6 +112,35 @@ TranslatorHLSL *GetTranslatorHLSLFromHandle(ShHandle handle)
 }
 #endif  // ANGLE_ENABLE_HLSL
 
+GLenum GetGeometryShaderPrimitiveTypeEnum(sh::TLayoutPrimitiveType primitiveType)
+{
+    switch (primitiveType)
+    {
+        case EptPoints:
+            return GL_POINTS;
+        case EptLines:
+            return GL_LINES;
+        case EptLinesAdjacency:
+            return GL_LINES_ADJACENCY_EXT;
+        case EptTriangles:
+            return GL_TRIANGLES;
+        case EptTrianglesAdjacency:
+            return GL_TRIANGLES_ADJACENCY_EXT;
+
+        case EptLineStrip:
+            return GL_LINE_STRIP;
+        case EptTriangleStrip:
+            return GL_TRIANGLE_STRIP;
+
+        case EptUndefined:
+            return GL_INVALID_VALUE;
+
+        default:
+            UNREACHABLE();
+            return GL_INVALID_VALUE;
+    }
+}
+
 }  // anonymous namespace
 
 //
@@ -243,6 +272,7 @@ void InitBuiltInResources(ShBuiltInResources *resources)
     resources->MaxAtomicCounterBufferSize      = 32;
 
     resources->MaxUniformBufferBindings = 32;
+    resources->MaxShaderStorageBufferBindings = 4;
 
     resources->MaxGeometryUniformComponents     = 1024;
     resources->MaxGeometryUniformBlocks         = 12;
@@ -499,6 +529,50 @@ const std::map<std::string, unsigned int> *GetUniformRegisterMap(const ShHandle 
 #else
     return nullptr;
 #endif  // ANGLE_ENABLE_HLSL
+}
+
+GLenum GetGeometryShaderInputPrimitiveType(const ShHandle handle)
+{
+    ASSERT(handle);
+
+    TShHandleBase *base = static_cast<TShHandleBase *>(handle);
+    TCompiler *compiler = base->getAsCompiler();
+    ASSERT(compiler);
+
+    return GetGeometryShaderPrimitiveTypeEnum(compiler->getGeometryShaderInputPrimitiveType());
+}
+
+GLenum GetGeometryShaderOutputPrimitiveType(const ShHandle handle)
+{
+    ASSERT(handle);
+
+    TShHandleBase *base = static_cast<TShHandleBase *>(handle);
+    TCompiler *compiler = base->getAsCompiler();
+    ASSERT(compiler);
+
+    return GetGeometryShaderPrimitiveTypeEnum(compiler->getGeometryShaderOutputPrimitiveType());
+}
+
+int GetGeometryShaderInvocations(const ShHandle handle)
+{
+    ASSERT(handle);
+
+    TShHandleBase *base = static_cast<TShHandleBase *>(handle);
+    TCompiler *compiler = base->getAsCompiler();
+    ASSERT(compiler);
+
+    return compiler->getGeometryShaderInvocations();
+}
+
+int GetGeometryShaderMaxVertices(const ShHandle handle)
+{
+    ASSERT(handle);
+
+    TShHandleBase *base = static_cast<TShHandleBase *>(handle);
+    TCompiler *compiler = base->getAsCompiler();
+    ASSERT(compiler);
+
+    return compiler->getGeometryShaderMaxVertices();
 }
 
 }  // namespace sh

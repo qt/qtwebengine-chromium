@@ -25,10 +25,10 @@
 
 #include "core/loader/DocumentLoadTiming.h"
 
+#include "base/memory/scoped_refptr.h"
 #include "core/loader/DocumentLoader.h"
 #include "platform/instrumentation/tracing/TraceEvent.h"
 #include "platform/weborigin/SecurityOrigin.h"
-#include "platform/wtf/RefPtr.h"
 
 namespace blink {
 
@@ -49,7 +49,7 @@ DocumentLoadTiming::DocumentLoadTiming(DocumentLoader& document_loader)
       has_same_origin_as_previous_document_(false),
       document_loader_(document_loader) {}
 
-DEFINE_TRACE(DocumentLoadTiming) {
+void DocumentLoadTiming::Trace(blink::Visitor* visitor) {
   visitor->Trace(document_loader_);
 }
 
@@ -139,7 +139,7 @@ void DocumentLoadTiming::AddRedirect(const KURL& redirecting_url,
 
   // Check if the redirected url is allowed to access the redirecting url's
   // timing information.
-  RefPtr<SecurityOrigin> redirected_security_origin =
+  scoped_refptr<SecurityOrigin> redirected_security_origin =
       SecurityOrigin::Create(redirected_url);
   has_cross_origin_redirect_ |=
       !redirected_security_origin->CanRequest(redirecting_url);

@@ -28,7 +28,7 @@ struct ServiceWorkerRegistrationInfo;
 
 // Represents the core of a service worker registration object. Other
 // registration derivatives (WebServiceWorkerRegistration etc) ultimately refer
-// to this class. This is refcounted via ServiceWorkerRegistrationHandle to
+// to this class. This is refcounted via ServiceWorkerRegistrationObjectHost to
 // facilitate multiple controllees being associated with the same registration.
 class CONTENT_EXPORT ServiceWorkerRegistration
     : public base::RefCounted<ServiceWorkerRegistration>,
@@ -45,6 +45,8 @@ class CONTENT_EXPORT ServiceWorkerRegistration
     virtual void OnRegistrationFailed(
         ServiceWorkerRegistration* registration) {}
     virtual void OnRegistrationFinishedUninstalling(
+        ServiceWorkerRegistration* registration) {}
+    virtual void OnRegistrationDeleted(
         ServiceWorkerRegistration* registration) {}
     virtual void OnUpdateFound(
         ServiceWorkerRegistration* registration) {}
@@ -97,7 +99,7 @@ class CONTENT_EXPORT ServiceWorkerRegistration
     return active_version() || waiting_version();
   }
 
-  const NavigationPreloadState& navigation_preload_state() const {
+  const blink::mojom::NavigationPreloadState navigation_preload_state() const {
     return navigation_preload_state_;
   }
 
@@ -205,7 +207,7 @@ class CONTENT_EXPORT ServiceWorkerRegistration
   bool is_uninstalling_;
   bool is_uninstalled_;
   bool should_activate_when_ready_;
-  NavigationPreloadState navigation_preload_state_;
+  blink::mojom::NavigationPreloadState navigation_preload_state_;
   base::Time last_update_check_;
   int64_t resources_total_size_bytes_;
 

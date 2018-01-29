@@ -5,6 +5,7 @@
 <link rel="import" href="chrome://resources/cr_components/chromeos/network/network_ip_config.html">
 <link rel="import" href="chrome://resources/cr_components/chromeos/network/network_nameservers.html">
 <link rel="import" href="chrome://resources/cr_components/chromeos/network/network_property_list.html">
+<link rel="import" href="chrome://resources/cr_components/chromeos/network/network_siminfo.html">
 <link rel="import" href="chrome://resources/cr_elements/chromeos/network/cr_network_icon.html">
 <link rel="import" href="chrome://resources/cr_elements/chromeos/network/cr_onc_types.html">
 <link rel="import" href="chrome://resources/cr_elements/cr_expand_button/cr_expand_button.html">
@@ -23,7 +24,6 @@
 <link rel="import" href="../route.html">
 <link rel="import" href="internet_shared_css.html">
 <link rel="import" href="network_proxy_section.html">
-<link rel="import" href="network_siminfo.html">
 <link rel="import" href="tether_connection_dialog.html">
 
 <dom-module id="settings-internet-detail-page">
@@ -96,7 +96,7 @@
       <paper-button class="primary-button" on-tap="onConnectTap_"
           hidden$="[[!showConnect_(networkProperties, globalPolicy)]]"
           disabled="[[!enableConnect_(networkProperties, defaultNetwork,
-              globalPolicy)]]">
+              globalPolicy, networkPropertiesReceived_)]]">
         $i18n{networkButtonConnect}
       </paper-button>
       <paper-button class="primary-button" on-tap="onDisconnectTap_"
@@ -156,15 +156,6 @@
                   globalPolicy)]]"
               aria-labelledby="autoConnectToggleLabel">
           </paper-toggle-button>
-        </div>
-      </template>
-      <!-- Choose Mobile Network (Cellular only). -->
-      <template is="dom-if"
-          if="[[showCellularChooseNetwork_(networkProperties)]]">
-        <div class="settings-box single-column stretch">
-          <network-choose-mobile networking-private="[[networkingPrivate]]"
-              network-properties="[[networkProperties]]">
-          </network-choose-mobile>
         </div>
       </template>
       <!-- Data roaming (Cellular only). -->
@@ -245,6 +236,15 @@
 
         <iron-collapse opened="[[networkExpanded_]]">
           <div class="settings-box single-column stretch indented">
+            <!-- Choose Mobile Network (Cellular only). -->
+            <template is="dom-if"
+                if="[[showCellularChooseNetwork_(networkProperties)]]">
+              <network-choose-mobile
+                  networking-private="[[networkingPrivate]]"
+                  network-properties="[[networkProperties]]">
+              </network-choose-mobile>
+            </template>
+
             <!-- APN -->
             <template is="dom-if" if="[[isCellular_(networkProperties)]]">
               <network-apnlist editable on-apn-change="onNetworkPropertyChange_"

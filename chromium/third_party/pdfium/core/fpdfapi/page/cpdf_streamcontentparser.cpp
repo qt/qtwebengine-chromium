@@ -256,14 +256,12 @@ CPDF_StreamContentParser::CPDF_StreamContentParser(
       m_ParamStartPos(0),
       m_ParamCount(0),
       m_pCurStates(pdfium::MakeUnique<CPDF_AllStates>()),
-      m_pLastTextObject(nullptr),
       m_DefFontSize(0),
       m_PathStartX(0.0f),
       m_PathStartY(0.0f),
       m_PathCurrentX(0.0f),
       m_PathCurrentY(0.0f),
       m_PathClipType(0),
-      m_pLastImage(nullptr),
       m_bColored(false),
       m_bResourceMissing(false) {
   if (pmtContentToUser)
@@ -412,12 +410,12 @@ float CPDF_StreamContentParser::GetNumber(uint32_t index) {
   }
   ContentParam& param = m_ParamBuf[real_index];
   if (param.m_Type == ContentParam::NUMBER) {
-    return param.m_Number.m_bInteger ? (float)param.m_Number.m_Integer
-                                     : param.m_Number.m_Float;
+    return param.m_Number.m_bInteger
+               ? static_cast<float>(param.m_Number.m_Integer)
+               : param.m_Number.m_Float;
   }
-  if (param.m_Type == 0 && param.m_pObject) {
+  if (param.m_Type == 0 && param.m_pObject)
     return param.m_pObject->GetNumber();
-  }
   return 0;
 }
 
@@ -767,20 +765,21 @@ void CPDF_StreamContentParser::Handle_ExecuteXObject() {
 }
 
 void CPDF_StreamContentParser::AddForm(CPDF_Stream* pStream) {
-  auto pFormObj = pdfium::MakeUnique<CPDF_FormObject>();
-  pFormObj->m_pForm = pdfium::MakeUnique<CPDF_Form>(
-      m_pDocument.Get(), m_pPageResources.Get(), pStream, m_pResources.Get());
-  pFormObj->m_FormMatrix = m_pCurStates->m_CTM;
-  pFormObj->m_FormMatrix.Concat(m_mtContentToUser);
   CPDF_AllStates status;
   status.m_GeneralState = m_pCurStates->m_GeneralState;
   status.m_GraphState = m_pCurStates->m_GraphState;
   status.m_ColorState = m_pCurStates->m_ColorState;
   status.m_TextState = m_pCurStates->m_TextState;
-  pFormObj->m_pForm->ParseContentWithParams(&status, nullptr, nullptr,
-                                            m_ParsedSet.Get());
+  auto form = pdfium::MakeUnique<CPDF_Form>(
+      m_pDocument.Get(), m_pPageResources.Get(), pStream, m_pResources.Get());
+  form->ParseContentWithParams(&status, nullptr, nullptr, m_ParsedSet.Get());
+
+  CFX_Matrix matrix = m_pCurStates->m_CTM;
+  matrix.Concat(m_mtContentToUser);
+
+  auto pFormObj = pdfium::MakeUnique<CPDF_FormObject>(std::move(form), matrix);
   if (!m_pObjectHolder->BackgroundAlphaNeeded() &&
-      pFormObj->m_pForm->BackgroundAlphaNeeded()) {
+      pFormObj->form()->BackgroundAlphaNeeded()) {
     m_pObjectHolder->SetBackgroundAlphaNeeded(true);
   }
   pFormObj->CalcBoundingBox();
@@ -1618,7 +1617,8 @@ void CPDF_StreamContentParser::ParsePathObject() {
 
         int value;
         bool bInteger = FX_atonum(m_pSyntax->GetWord(), &value);
-        params[nParams++] = bInteger ? (float)value : *(float*)&value;
+        params[nParams++] = bInteger ? static_cast<float>(value)
+                                     : *reinterpret_cast<float*>(&value);
         break;
       }
       default:

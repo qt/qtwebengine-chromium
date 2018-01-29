@@ -53,6 +53,15 @@ Polymer({
      * @private
      */
     firstDefaultImageIndex_: Number,
+
+    /**
+     * True when camera video mode is enabled.
+     * @private {boolean}
+     */
+    cameraVideoModeEnabled_: {
+      type: Boolean,
+      value: false,
+    },
   },
 
   listeners: {
@@ -173,7 +182,7 @@ Polymer({
       case CrPicture.SelectionTypes.OLD:
         var imageIndex = image.dataset.imageIndex;
         if (imageIndex !== undefined && imageIndex >= 0 && image.src)
-          this.browserProxy_.selectDefaultImage(image.src);
+          this.browserProxy_.selectDefaultImage(image.dataset.url);
         else
           this.browserProxy_.selectOldImage();
         break;

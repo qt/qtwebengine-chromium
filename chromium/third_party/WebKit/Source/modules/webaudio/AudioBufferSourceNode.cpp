@@ -81,12 +81,12 @@ AudioBufferSourceHandler::AudioBufferSourceHandler(
   Initialize();
 }
 
-RefPtr<AudioBufferSourceHandler> AudioBufferSourceHandler::Create(
+scoped_refptr<AudioBufferSourceHandler> AudioBufferSourceHandler::Create(
     AudioNode& node,
     float sample_rate,
     AudioParamHandler& playback_rate,
     AudioParamHandler& detune) {
-  return WTF::AdoptRef(
+  return base::AdoptRef(
       new AudioBufferSourceHandler(node, sample_rate, playback_rate, detune));
 }
 
@@ -655,9 +655,12 @@ AudioBufferSourceNode::AudioBufferSourceNode(BaseAudioContext& context)
     : AudioScheduledSourceNode(context),
       playback_rate_(AudioParam::Create(context,
                                         kParamTypeAudioBufferSourcePlaybackRate,
+                                        "AudioBufferSource.playbackRate",
                                         1.0)),
-      detune_(
-          AudioParam::Create(context, kParamTypeAudioBufferSourceDetune, 0.0)) {
+      detune_(AudioParam::Create(context,
+                                 kParamTypeAudioBufferSourceDetune,
+                                 "AudioBufferSource.detune",
+                                 0.0)) {
   SetHandler(AudioBufferSourceHandler::Create(*this, context.sampleRate(),
                                               playback_rate_->Handler(),
                                               detune_->Handler()));
@@ -698,7 +701,7 @@ AudioBufferSourceNode* AudioBufferSourceNode::Create(
   return node;
 }
 
-DEFINE_TRACE(AudioBufferSourceNode) {
+void AudioBufferSourceNode::Trace(blink::Visitor* visitor) {
   visitor->Trace(playback_rate_);
   visitor->Trace(detune_);
   AudioScheduledSourceNode::Trace(visitor);

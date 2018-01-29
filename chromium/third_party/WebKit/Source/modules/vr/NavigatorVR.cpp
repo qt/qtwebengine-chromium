@@ -31,8 +31,8 @@ namespace {
 const char kFeaturePolicyBlockedMessage[] =
     "Access to the feature \"vr\" is disallowed by feature policy.";
 
-const char kIframeBlockedOnUserGestureMessage[] =
-    "Access to the method is blocked on a user gesture in cross-origin "
+const char kGetVRDisplaysCrossOriginBlockedMessage[] =
+    "Access to navigator.getVRDisplays requires a user gesture in cross-origin "
     "embedded frames.";
 
 const char kNotAssociatedWithDocumentMessage[] =
@@ -115,21 +115,21 @@ ScriptPromise NavigatorVR::getVRDisplays(ScriptState* script_state) {
         script_state, DOMException::Create(kInvalidStateError,
                                            kNotAssociatedWithDocumentMessage));
   }
-  if (IsSupportedInFeaturePolicy(WebFeaturePolicyFeature::kWebVr)) {
-    if (!frame->IsFeatureEnabled(WebFeaturePolicyFeature::kWebVr)) {
+  if (IsSupportedInFeaturePolicy(FeaturePolicyFeature::kWebVr)) {
+    if (!frame->IsFeatureEnabled(FeaturePolicyFeature::kWebVr)) {
       return ScriptPromise::RejectWithDOMException(
           script_state,
           DOMException::Create(kSecurityError, kFeaturePolicyBlockedMessage));
     }
-  } else if (!frame->HasReceivedUserGesture() &&
-             frame->IsCrossOriginSubframe()) {
+  } else if (!frame->HasBeenActivated() && frame->IsCrossOriginSubframe()) {
     // Before we introduced feature policy, cross-origin iframes had access to
     // WebVR APIs. Ideally, we want to block access to WebVR APIs for
     // cross-origin iframes. To be backward compatible, we changed to require a
     // user gesture for cross-origin iframes.
     return ScriptPromise::RejectWithDOMException(
-        script_state, DOMException::Create(kSecurityError,
-                                           kIframeBlockedOnUserGestureMessage));
+        script_state,
+        DOMException::Create(kSecurityError,
+                             kGetVRDisplaysCrossOriginBlockedMessage));
   }
 
   // Similar to the restriciton above, we're going to block developers from
@@ -175,7 +175,7 @@ Document* NavigatorVR::GetDocument() {
   return GetSupplementable()->GetFrame()->GetDocument();
 }
 
-DEFINE_TRACE(NavigatorVR) {
+void NavigatorVR::Trace(blink::Visitor* visitor) {
   visitor->Trace(vr_);
   visitor->Trace(controller_);
   Supplement<Navigator>::Trace(visitor);

@@ -8,6 +8,8 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
+#include <memory>
+
 #include "api/audio_codecs/builtin_audio_decoder_factory.h"
 #include "api/audio_codecs/builtin_audio_encoder_factory.h"
 #include "media/engine/webrtcmediaengine.h"
@@ -232,12 +234,6 @@ TEST(WebRtcMediaEngineTest, FilterRtpExtensions_RemoveRedundantBwe_3) {
       FilterRtpExtensions(extensions, SupportedExtensions2, true);
   EXPECT_EQ(1, filtered.size());
   EXPECT_EQ(RtpExtension::kTimestampOffsetUri, filtered[0].uri);
-}
-
-TEST(WebRtcMediaEngineFactoryTest, CreateOldApi) {
-  std::unique_ptr<MediaEngineInterface> engine(
-      WebRtcMediaEngineFactory::Create(nullptr, nullptr, nullptr));
-  EXPECT_TRUE(engine);
 }
 
 TEST(WebRtcMediaEngineFactoryTest, CreateWithBuiltinDecoders) {

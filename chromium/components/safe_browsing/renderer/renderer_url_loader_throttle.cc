@@ -5,6 +5,7 @@
 #include "components/safe_browsing/renderer/renderer_url_loader_throttle.h"
 
 #include "base/logging.h"
+#include "base/trace_event/trace_event.h"
 #include "components/safe_browsing/common/utils.h"
 #include "content/public/common/resource_request.h"
 #include "mojo/public/cpp/bindings/interface_request.h"
@@ -20,6 +21,9 @@ RendererURLLoaderThrottle::RendererURLLoaderThrottle(
       weak_factory_(this) {}
 
 RendererURLLoaderThrottle::~RendererURLLoaderThrottle() {
+  if (deferred_)
+    TRACE_EVENT_ASYNC_END0("safe_browsing", "Deferred", this);
+
   if (!user_action_involved_)
     LogNoUserActionResourceLoadingDelay(total_delay_);
 }
@@ -45,6 +49,7 @@ void RendererURLLoaderThrottle::WillStartRequest(
     safe_browsing_ = safe_browsing_ptr_.get();
   }
 
+  original_url_ = request.url;
   pending_checks_++;
   // Use a weak pointer to self because |safe_browsing_| may not be owned by
   // this object.
@@ -81,7 +86,10 @@ void RendererURLLoaderThrottle::WillRedirectRequest(
                      base::Unretained(this)));
 }
 
-void RendererURLLoaderThrottle::WillProcessResponse(bool* defer) {
+void RendererURLLoaderThrottle::WillProcessResponse(
+    const GURL& response_url,
+    const content::ResourceResponseHead& response_head,
+    bool* defer) {
   // If |blocked_| is true, the resource load has been canceled and there
   // shouldn't be such a notification.
   DCHECK(!blocked_);
@@ -93,6 +101,8 @@ void RendererURLLoaderThrottle::WillProcessResponse(bool* defer) {
   deferred_ = true;
   defer_start_time_ = base::TimeTicks::Now();
   *defer = true;
+  TRACE_EVENT_ASYNC_BEGIN1("safe_browsing", "Deferred", this, "original_url",
+                           original_url_.spec());
 }
 
 void RendererURLLoaderThrottle::OnCompleteCheck(bool proceed,
@@ -159,6 +169,7 @@ void RendererURLLoaderThrottle::OnCompleteCheckInternal(
 
     if (pending_checks_ == 0 && deferred_) {
       deferred_ = false;
+      TRACE_EVENT_ASYNC_END0("safe_browsing", "Deferred", this);
       delegate_->Resume();
     }
   } else {
@@ -190,6 +201,7 @@ void RendererURLLoaderThrottle::OnConnectionError() {
     total_delay_ = base::TimeTicks::Now() - defer_start_time_;
 
     deferred_ = false;
+    TRACE_EVENT_ASYNC_END0("safe_browsing", "Deferred", this);
     delegate_->Resume();
   }
 }

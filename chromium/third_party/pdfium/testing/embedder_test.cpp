@@ -106,6 +106,8 @@ void EmbedderTest::SetUp() {
   info->version = 1;
   info->FSDK_UnSupport_Handler = UnsupportedHandlerTrampoline;
   FSDK_SetUnSpObjProcessHandler(info);
+
+  m_SavedDocument = nullptr;
 }
 
 void EmbedderTest::TearDown() {
@@ -205,11 +207,9 @@ bool EmbedderTest::OpenDocumentHelper(const char* password,
   }
   *form_handle = SetupFormFillEnvironment(*document);
 #ifdef PDF_ENABLE_XFA
-  int docType = DOCTYPE_PDF;
-  if (FPDF_HasXFAField(*document, &docType)) {
-    if (docType != DOCTYPE_PDF)
-      (void)FPDF_LoadXFA(*document);
-  }
+  int doc_type = FPDF_GetFormType(*document);
+  if (doc_type == FORMTYPE_XFA_FULL || doc_type == FORMTYPE_XFA_FOREGROUND)
+    FPDF_LoadXFA(*document);
 #endif  // PDF_ENABLE_XFA
   (void)FPDF_GetDocPermissions(*document);
   return true;
@@ -312,10 +312,7 @@ void EmbedderTest::UnloadPage(FPDF_PAGE page) {
   page_reverse_map_.erase(it);
 }
 
-void EmbedderTest::TestSaved(int width,
-                             int height,
-                             const char* md5,
-                             const char* password) {
+FPDF_DOCUMENT EmbedderTest::OpenSavedDocument(const char* password) {
   memset(&saved_file_access_, 0, sizeof(saved_file_access_));
   saved_file_access_.m_FileLen = m_String.size();
   saved_file_access_.m_GetBlock = GetBlockFromString;
@@ -324,28 +321,61 @@ void EmbedderTest::TestSaved(int width,
   saved_fake_file_access_ =
       pdfium::MakeUnique<FakeFileAccess>(&saved_file_access_);
 
-  ASSERT_TRUE(OpenDocumentHelper(password, false, saved_fake_file_access_.get(),
+  EXPECT_TRUE(OpenDocumentHelper(password, false, saved_fake_file_access_.get(),
                                  &m_SavedDocument, &m_SavedAvail,
                                  &m_SavedForm));
-  EXPECT_EQ(1, FPDF_GetPageCount(m_SavedDocument));
-  m_SavedPage = FPDF_LoadPage(m_SavedDocument, 0);
-  ASSERT_TRUE(m_SavedPage);
-  FPDF_BITMAP new_bitmap =
-      RenderPageWithFlags(m_SavedPage, m_SavedForm, FPDF_ANNOT);
+  return m_SavedDocument;
+}
+
+void EmbedderTest::CloseSavedDocument() {
+  ASSERT(m_SavedDocument);
+
+  FPDFDOC_ExitFormFillEnvironment(m_SavedForm);
+  FPDF_CloseDocument(m_SavedDocument);
+  FPDFAvail_Destroy(m_SavedAvail);
+
+  m_SavedForm = nullptr;
+  m_SavedDocument = nullptr;
+  m_SavedAvail = nullptr;
+}
+
+FPDF_PAGE EmbedderTest::LoadSavedPage(int page_number) {
+  ASSERT(m_SavedDocument);
+
+  EXPECT_LT(page_number, FPDF_GetPageCount(m_SavedDocument));
+  FPDF_PAGE page = FPDF_LoadPage(m_SavedDocument, page_number);
+
+  ASSERT(page);
+  return page;
+}
+
+FPDF_BITMAP EmbedderTest::RenderSavedPage(FPDF_PAGE page) {
+  return RenderPageWithFlags(page, m_SavedForm, 0);
+}
+
+void EmbedderTest::CloseSavedPage(FPDF_PAGE page) {
+  ASSERT(page);
+  FPDF_ClosePage(page);
+}
+
+void EmbedderTest::VerifySavedRendering(FPDF_PAGE page,
+                                        int width,
+                                        int height,
+                                        const char* md5) {
+  ASSERT(m_SavedDocument);
+  ASSERT(page);
+
+  FPDF_BITMAP new_bitmap = RenderPageWithFlags(page, m_SavedForm, FPDF_ANNOT);
   CompareBitmap(new_bitmap, width, height, md5);
   FPDFBitmap_Destroy(new_bitmap);
 }
 
-void EmbedderTest::CloseSaved() {
-  FPDF_ClosePage(m_SavedPage);
-  FPDFDOC_ExitFormFillEnvironment(m_SavedForm);
-  FPDF_CloseDocument(m_SavedDocument);
-  FPDFAvail_Destroy(m_SavedAvail);
-}
-
-void EmbedderTest::TestAndCloseSaved(int width, int height, const char* md5) {
-  TestSaved(width, height, md5);
-  CloseSaved();
+void EmbedderTest::VerifySavedDocument(int width, int height, const char* md5) {
+  OpenSavedDocument();
+  FPDF_PAGE page = LoadSavedPage(0);
+  VerifySavedRendering(page, width, height, md5);
+  CloseSavedPage(page);
+  CloseSavedDocument();
 }
 
 void EmbedderTest::SetWholeFileAvailable() {
@@ -400,14 +430,14 @@ FPDF_PAGE EmbedderTest::GetPageTrampoline(FPDF_FORMFILLINFO* info,
                                                               page_index);
 }
 
-std::string EmbedderTest::HashBitmap(FPDF_BITMAP bitmap,
-                                     int expected_width,
-                                     int expected_height) {
+// static
+std::string EmbedderTest::HashBitmap(FPDF_BITMAP bitmap) {
   uint8_t digest[16];
-  CRYPT_MD5Generate(
-      static_cast<uint8_t*>(FPDFBitmap_GetBuffer(bitmap)),
-      expected_width * GetBitmapBytesPerPixel(bitmap) * expected_height,
-      digest);
+  CRYPT_MD5Generate(static_cast<uint8_t*>(FPDFBitmap_GetBuffer(bitmap)),
+                    FPDFBitmap_GetWidth(bitmap) *
+                        GetBitmapBytesPerPixel(bitmap) *
+                        FPDFBitmap_GetHeight(bitmap),
+                    digest);
   return CryptToBase16(digest);
 }
 
@@ -428,8 +458,7 @@ void EmbedderTest::CompareBitmap(FPDF_BITMAP bitmap,
   if (!expected_md5sum)
     return;
 
-  EXPECT_EQ(expected_md5sum,
-            HashBitmap(bitmap, expected_width, expected_height));
+  EXPECT_EQ(expected_md5sum, HashBitmap(bitmap));
 }
 
 // static

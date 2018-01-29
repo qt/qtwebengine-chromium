@@ -166,6 +166,8 @@ void DownloadDriverImpl::Start(
   download_url_params->set_transient(true);
   download_url_params->set_method(request_params.method);
   download_url_params->set_file_path(file_path);
+  if (request_params.fetch_error_body)
+    download_url_params->set_fetch_error_body(true);
 
   download_manager_->DownloadUrl(std::move(download_url_params));
 }
@@ -264,6 +266,15 @@ void DownloadDriverImpl::OnDownloadRemoved(content::DownloadManager* manager,
 
 void DownloadDriverImpl::OnDownloadCreated(content::DownloadManager* manager,
                                            content::DownloadItem* item) {
+  if (guid_to_remove_.find(item->GetGuid()) != guid_to_remove_.end()) {
+    // Client has removed the download before content persistence layer created
+    // the record, remove the download immediately.
+    base::ThreadTaskRunnerHandle::Get()->PostTask(
+        FROM_HERE, base::Bind(&DownloadDriverImpl::DoRemoveDownload,
+                              weak_ptr_factory_.GetWeakPtr(), item->GetGuid()));
+    return;
+  }
+
   // Listens to all downloads.
   DCHECK(client_);
   DriverEntry entry = CreateDriverEntry(item);

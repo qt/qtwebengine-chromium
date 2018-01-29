@@ -39,6 +39,8 @@ class PreviewModeClient : public PDFEngine::Client {
   void UpdateTickMarks(const std::vector<pp::Rect>& tickmarks) override;
   void NotifyNumberOfFindResultsChanged(int total, bool final_result) override;
   void NotifySelectedFindResultChanged(int current_find_index) override;
+  void NotifyPageBecameVisible(
+      const PDFEngine::PageFeatures* page_features) override;
   void GetDocumentPassword(
       pp::CompletionCallbackWithOutput<pp::Var> callback) override;
   void Alert(const std::string& message) override;
@@ -55,16 +57,15 @@ class PreviewModeClient : public PDFEngine::Client {
   void SubmitForm(const std::string& url,
                   const void* data,
                   int length) override;
-  std::string ShowFileSelectionDialog() override;
   pp::URLLoader CreateURLLoader() override;
-  void ScheduleCallback(int id, int delay_in_ms) override;
-  void ScheduleTouchTimerCallback(int id, int delay_in_ms) override;
-  void SearchString(const base::char16* string,
-                    const base::char16* term,
-                    bool case_sensitive,
-                    std::vector<SearchStringResult>* results) override;
+  void ScheduleCallback(int id, base::TimeDelta delay) override;
+  void ScheduleTouchTimerCallback(int id, base::TimeDelta delay) override;
+  std::vector<SearchStringResult> SearchString(const base::char16* string,
+                                               const base::char16* term,
+                                               bool case_sensitive) override;
   void DocumentPaintOccurred() override;
-  void DocumentLoadComplete(int page_count) override;
+  void DocumentLoadComplete(
+      const PDFEngine::DocumentFeatures& document_features) override;
   void DocumentLoadFailed() override;
   void FontSubstituted() override;
   pp::Instance* GetPluginInstance() override;

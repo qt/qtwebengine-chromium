@@ -28,20 +28,21 @@
 #define MessagePort_h
 
 #include <memory>
+#include "base/memory/scoped_refptr.h"
+#include "bindings/core/v8/ActiveScriptWrappable.h"
 #include "bindings/core/v8/serialization/SerializedScriptValue.h"
 #include "core/CoreExport.h"
 #include "core/dom/ContextLifecycleObserver.h"
 #include "core/dom/events/EventListener.h"
 #include "core/dom/events/EventTarget.h"
 #include "platform/WebTaskRunner.h"
-#include "platform/bindings/ActiveScriptWrappable.h"
-#include "platform/wtf/RefPtr.h"
 #include "platform/wtf/Vector.h"
+#include "public/platform/WebVector.h"
 #include "third_party/WebKit/common/message_port/message_port_channel.h"
 
 namespace blink {
 
-struct BlinkMessagePortMessage;
+struct BlinkTransferableMessage;
 class ExceptionState;
 class ExecutionContext;
 class ScriptState;
@@ -58,7 +59,7 @@ class CORE_EXPORT MessagePort : public EventTargetWithInlineData,
   ~MessagePort() override;
 
   void postMessage(ScriptState*,
-                   RefPtr<SerializedScriptValue> message,
+                   scoped_refptr<SerializedScriptValue> message,
                    const MessagePortArray&,
                    ExceptionState&);
   static bool CanTransferArrayBuffersAndImageBitmaps() { return false; }
@@ -123,11 +124,11 @@ class CORE_EXPORT MessagePort : public EventTargetWithInlineData,
   // For testing only: allows inspection of the entangled channel.
   MojoHandle EntangledHandleForTesting() const;
 
-  DECLARE_VIRTUAL_TRACE();
+  virtual void Trace(blink::Visitor*);
 
  protected:
   explicit MessagePort(ExecutionContext&);
-  bool TryGetMessage(BlinkMessagePortMessage&);
+  bool TryGetMessage(BlinkTransferableMessage&);
 
  private:
   void MessageAvailable();
@@ -139,7 +140,7 @@ class CORE_EXPORT MessagePort : public EventTargetWithInlineData,
   bool started_ = false;
   bool closed_ = false;
 
-  RefPtr<WebTaskRunner> task_runner_;
+  scoped_refptr<WebTaskRunner> task_runner_;
 };
 
 }  // namespace blink

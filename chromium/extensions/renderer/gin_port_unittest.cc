@@ -71,8 +71,6 @@ class GinPortTest : public APIBindingTest {
   void SetUp() override {
     APIBindingTest::SetUp();
     event_handler_ = std::make_unique<APIEventHandler>(
-        base::Bind(&RunFunctionOnGlobalAndIgnoreResult),
-        base::Bind(&RunFunctionOnGlobalAndReturnHandle),
         base::Bind(&DoNothingOnEventListenersChanged), nullptr);
     delegate_ = std::make_unique<testing::StrictMock<TestPortDelegate>>();
   }
@@ -182,9 +180,8 @@ TEST_F(GinPortTest, TestPostMessage) {
       EXPECT_EQ(expected_message->user_gesture,
                 delegate()->last_message()->user_gesture);
     } else {
-      RunFunctionAndExpectError(
-          v8_function, context, arraysize(args), args,
-          "Uncaught Error: Illegal argument to Port.postMessage");
+      RunFunctionAndExpectError(v8_function, context, arraysize(args), args,
+                                "Uncaught Error: Could not serialize message.");
       EXPECT_FALSE(delegate()->last_port_id());
       EXPECT_FALSE(delegate()->last_message())
           << delegate()->last_message()->data;

@@ -31,13 +31,13 @@
 #include "platform/DragImage.h"
 
 #include <memory>
+#include "base/memory/scoped_refptr.h"
 #include "platform/fonts/FontDescription.h"
 #include "platform/geometry/IntSize.h"
 #include "platform/graphics/BitmapImage.h"
 #include "platform/graphics/Image.h"
 #include "platform/graphics/skia/SkiaUtils.h"
 #include "platform/weborigin/KURL.h"
-#include "platform/wtf/RefPtr.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/skia/include/core/SkCanvas.h"
 #include "third_party/skia/include/core/SkColor.h"
@@ -49,12 +49,12 @@ namespace blink {
 
 class TestImage : public Image {
  public:
-  static RefPtr<TestImage> Create(sk_sp<SkImage> image) {
-    return WTF::AdoptRef(new TestImage(image));
+  static scoped_refptr<TestImage> Create(sk_sp<SkImage> image) {
+    return base::AdoptRef(new TestImage(image));
   }
 
-  static RefPtr<TestImage> Create(const IntSize& size) {
-    return WTF::AdoptRef(new TestImage(size));
+  static scoped_refptr<TestImage> Create(const IntSize& size) {
+    return base::AdoptRef(new TestImage(size));
   }
 
   IntSize Size() const override {
@@ -107,14 +107,14 @@ class TestImage : public Image {
 };
 
 TEST(DragImageTest, NullHandling) {
-  EXPECT_FALSE(DragImage::Create(0));
+  EXPECT_FALSE(DragImage::Create(nullptr));
 
-  RefPtr<TestImage> null_test_image(TestImage::Create(IntSize()));
+  scoped_refptr<TestImage> null_test_image(TestImage::Create(IntSize()));
   EXPECT_FALSE(DragImage::Create(null_test_image.get()));
 }
 
 TEST(DragImageTest, NonNullHandling) {
-  RefPtr<TestImage> test_image(TestImage::Create(IntSize(2, 2)));
+  scoped_refptr<TestImage> test_image(TestImage::Create(IntSize(2, 2)));
   std::unique_ptr<DragImage> drag_image = DragImage::Create(test_image.get());
   ASSERT_TRUE(drag_image);
 
@@ -128,12 +128,12 @@ TEST(DragImageTest, CreateDragImage) {
   // Tests that the DrageImage implementation doesn't choke on null values
   // of imageForCurrentFrame().
   // FIXME: how is this test any different from test NullHandling?
-  RefPtr<TestImage> test_image(TestImage::Create(IntSize()));
+  scoped_refptr<TestImage> test_image(TestImage::Create(IntSize()));
   EXPECT_FALSE(DragImage::Create(test_image.get()));
 }
 
 TEST(DragImageTest, TrimWhitespace) {
-  KURL url(kParsedURLString, "http://www.example.com/");
+  KURL url("http://www.example.com/");
   String test_label = "          Example Example Example      \n    ";
   String expected_label = "Example Example Example";
   float device_scale_factor = 1.0f;
@@ -169,7 +169,7 @@ TEST(DragImageTest, InterpolationNone) {
   test_bitmap.eraseArea(SkIRect::MakeXYWH(1, 0, 1, 1), 0xFF000000);
   test_bitmap.eraseArea(SkIRect::MakeXYWH(1, 1, 1, 1), 0xFFFFFFFF);
 
-  RefPtr<TestImage> test_image =
+  scoped_refptr<TestImage> test_image =
       TestImage::Create(SkImage::MakeFromBitmap(test_bitmap));
   std::unique_ptr<DragImage> drag_image = DragImage::Create(
       test_image.get(), kDoNotRespectImageOrientation, 1, kInterpolationNone);

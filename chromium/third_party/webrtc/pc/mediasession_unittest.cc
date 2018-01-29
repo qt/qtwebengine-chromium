@@ -18,6 +18,7 @@
 #include "p2p/base/transportdescription.h"
 #include "p2p/base/transportinfo.h"
 #include "pc/mediasession.h"
+#include "pc/rtpmediautils.h"
 #include "pc/srtpfilter.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/fakesslidentity.h"
@@ -66,7 +67,6 @@ using cricket::MEDIA_TYPE_DATA;
 using cricket::SEC_DISABLED;
 using cricket::SEC_ENABLED;
 using cricket::SEC_REQUIRED;
-using cricket::RtpTransceiverDirection;
 using rtc::CS_AES_CM_128_HMAC_SHA1_32;
 using rtc::CS_AES_CM_128_HMAC_SHA1_80;
 using rtc::CS_AEAD_AES_128_GCM;
@@ -256,7 +256,16 @@ std::vector<MediaDescriptionOptions>::iterator FindFirstMediaDescriptionByMid(
   return std::find_if(
       opts->media_description_options.begin(),
       opts->media_description_options.end(),
-      [mid](const MediaDescriptionOptions& t) { return t.mid == mid; });
+      [&mid](const MediaDescriptionOptions& t) { return t.mid == mid; });
+}
+
+std::vector<MediaDescriptionOptions>::const_iterator
+FindFirstMediaDescriptionByMid(const std::string& mid,
+                               const MediaSessionOptions& opts) {
+  return std::find_if(
+      opts.media_description_options.begin(),
+      opts.media_description_options.end(),
+      [&mid](const MediaDescriptionOptions& t) { return t.mid == mid; });
 }
 
 // Add a media section to the |session_options|.
@@ -267,7 +276,7 @@ static void AddMediaSection(MediaType type,
                             MediaSessionOptions* opts) {
   opts->media_description_options.push_back(MediaDescriptionOptions(
       type, mid,
-      cricket::RtpTransceiverDirection::FromMediaContentDirection(direction),
+      cricket::RtpTransceiverDirectionFromMediaContentDirection(direction),
       stopped));
 }
 
@@ -402,7 +411,7 @@ class MediaSessionDescriptionFactoryTest : public testing::Test {
   }
 
   void TestTransportInfo(bool offer,
-                         MediaSessionOptions& options,
+                         const MediaSessionOptions& options,
                          bool has_current_desc) {
     const std::string current_audio_ufrag = "current_audio_ufrag";
     const std::string current_audio_pwd = "current_audio_pwd";
@@ -448,7 +457,7 @@ class MediaSessionDescriptionFactoryTest : public testing::Test {
                   ti_audio->description.ice_pwd.size());
       }
       auto media_desc_options_it =
-          FindFirstMediaDescriptionByMid("audio", &options);
+          FindFirstMediaDescriptionByMid("audio", options);
       EXPECT_EQ(
           media_desc_options_it->transport_options.enable_ice_renomination,
           GetIceRenomination(ti_audio));
@@ -476,7 +485,7 @@ class MediaSessionDescriptionFactoryTest : public testing::Test {
         }
       }
       auto media_desc_options_it =
-          FindFirstMediaDescriptionByMid("video", &options);
+          FindFirstMediaDescriptionByMid("video", options);
       EXPECT_EQ(
           media_desc_options_it->transport_options.enable_ice_renomination,
           GetIceRenomination(ti_video));
@@ -503,7 +512,7 @@ class MediaSessionDescriptionFactoryTest : public testing::Test {
         }
       }
       auto media_desc_options_it =
-          FindFirstMediaDescriptionByMid("data", &options);
+          FindFirstMediaDescriptionByMid("data", options);
       EXPECT_EQ(
           media_desc_options_it->transport_options.enable_ice_renomination,
           GetIceRenomination(ti_data));
@@ -3399,6 +3408,64 @@ TEST_F(MediaSessionDescriptionFactoryTest,
   EXPECT_EQ(video_codecs, vcd2->codecs());
 }
 
+// Test that when creating an answer, the codecs use local parameters instead of
+// the remote ones.
+TEST_F(MediaSessionDescriptionFactoryTest, CreateAnswerWithLocalCodecParams) {
+  const std::string audio_param_name = "audio_param";
+  const std::string audio_value1 = "audio_v1";
+  const std::string audio_value2 = "audio_v2";
+  const std::string video_param_name = "video_param";
+  const std::string video_value1 = "video_v1";
+  const std::string video_value2 = "video_v2";
+
+  auto audio_codecs1 = MAKE_VECTOR(kAudioCodecs1);
+  auto audio_codecs2 = MAKE_VECTOR(kAudioCodecs1);
+  auto video_codecs1 = MAKE_VECTOR(kVideoCodecs1);
+  auto video_codecs2 = MAKE_VECTOR(kVideoCodecs1);
+
+  // Set the parameters for codecs.
+  audio_codecs1[0].SetParam(audio_param_name, audio_value1);
+  video_codecs1[0].SetParam(video_param_name, video_value1);
+  audio_codecs2[0].SetParam(audio_param_name, audio_value2);
+  video_codecs2[0].SetParam(video_param_name, video_value2);
+
+  f1_.set_audio_codecs(audio_codecs1, audio_codecs1);
+  f1_.set_video_codecs(video_codecs1);
+  f2_.set_audio_codecs(audio_codecs2, audio_codecs2);
+  f2_.set_video_codecs(video_codecs2);
+
+  MediaSessionOptions opts;
+  AddMediaSection(MEDIA_TYPE_AUDIO, "audio", cricket::MD_SENDRECV, kActive,
+                  &opts);
+  AddMediaSection(MEDIA_TYPE_VIDEO, "video", cricket::MD_SENDRECV, kActive,
+                  &opts);
+
+  std::unique_ptr<SessionDescription> offer(f1_.CreateOffer(opts, nullptr));
+  ASSERT_TRUE(offer);
+  auto offer_acd =
+      static_cast<AudioContentDescription*>(offer->contents()[0].description);
+  auto offer_vcd =
+      static_cast<VideoContentDescription*>(offer->contents()[1].description);
+  std::string value;
+  EXPECT_TRUE(offer_acd->codecs()[0].GetParam(audio_param_name, &value));
+  EXPECT_EQ(audio_value1, value);
+  EXPECT_TRUE(offer_vcd->codecs()[0].GetParam(video_param_name, &value));
+  EXPECT_EQ(video_value1, value);
+
+  std::unique_ptr<SessionDescription> answer(
+      f2_.CreateAnswer(offer.get(), opts, nullptr));
+  ASSERT_TRUE(answer);
+  auto answer_acd =
+      static_cast<AudioContentDescription*>(answer->contents()[0].description);
+  auto answer_vcd =
+      static_cast<VideoContentDescription*>(answer->contents()[1].description);
+  // Use the parameters from the local codecs.
+  EXPECT_TRUE(answer_acd->codecs()[0].GetParam(audio_param_name, &value));
+  EXPECT_EQ(audio_value2, value);
+  EXPECT_TRUE(answer_vcd->codecs()[0].GetParam(video_param_name, &value));
+  EXPECT_EQ(video_value2, value);
+}
+
 class MediaProtocolTest : public ::testing::TestWithParam<const char*> {
  public:
   MediaProtocolTest() : f1_(&tdf1_), f2_(&tdf2_) {
@@ -3541,7 +3608,7 @@ void TestAudioCodecsOffer(MediaContentDirection direction) {
   MediaSessionOptions opts;
   AddMediaSection(MEDIA_TYPE_AUDIO, "audio", direction, kActive, &opts);
 
-  if (RtpTransceiverDirection::FromMediaContentDirection(direction).send) {
+  if (direction == cricket::MD_SENDRECV || direction == cricket::MD_SENDONLY) {
     AttachSenderToMediaSection("audio", MEDIA_TYPE_AUDIO, kAudioTrack1,
                                {kMediaStream1}, 1, &opts);
   }
@@ -3640,8 +3707,8 @@ void TestAudioCodecsAnswer(MediaContentDirection offer_direction,
   AddMediaSection(MEDIA_TYPE_AUDIO, "audio", offer_direction, kActive,
                   &offer_opts);
 
-  if (RtpTransceiverDirection::FromMediaContentDirection(offer_direction)
-          .send) {
+  if (webrtc::RtpTransceiverDirectionHasSend(
+          RtpTransceiverDirectionFromMediaContentDirection(offer_direction))) {
     AttachSenderToMediaSection("audio", MEDIA_TYPE_AUDIO, kAudioTrack1,
                                {kMediaStream1}, 1, &offer_opts);
   }
@@ -3654,8 +3721,8 @@ void TestAudioCodecsAnswer(MediaContentDirection offer_direction,
   AddMediaSection(MEDIA_TYPE_AUDIO, "audio", answer_direction, kActive,
                   &answer_opts);
 
-  if (RtpTransceiverDirection::FromMediaContentDirection(answer_direction)
-          .send) {
+  if (webrtc::RtpTransceiverDirectionHasSend(
+          RtpTransceiverDirectionFromMediaContentDirection(answer_direction))) {
     AttachSenderToMediaSection("audio", MEDIA_TYPE_AUDIO, kAudioTrack1,
                                {kMediaStream1}, 1, &answer_opts);
   }

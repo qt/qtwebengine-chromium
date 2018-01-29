@@ -7,7 +7,7 @@
 
 #include "bindings/core/v8/v8_idle_request_callback.h"
 #include "core/dom/IdleDeadline.h"
-#include "core/dom/SuspendableObject.h"
+#include "core/dom/PausableObject.h"
 #include "platform/Timer.h"
 #include "platform/bindings/TraceWrapperMember.h"
 #include "platform/heap/Handle.h"
@@ -23,7 +23,7 @@ class IdleRequestOptions;
 
 class CORE_EXPORT ScriptedIdleTaskController
     : public GarbageCollectedFinalized<ScriptedIdleTaskController>,
-      public SuspendableObject,
+      public PausableObject,
       public TraceWrapperBase {
   USING_GARBAGE_COLLECTED_MIXIN(ScriptedIdleTaskController);
 
@@ -33,8 +33,8 @@ class CORE_EXPORT ScriptedIdleTaskController
   }
   ~ScriptedIdleTaskController();
 
-  DECLARE_TRACE();
-  DECLARE_TRACE_WRAPPERS();
+  void Trace(blink::Visitor*);
+  void TraceWrappers(const ScriptWrappableVisitor*) const;
 
   using CallbackId = int;
 
@@ -43,8 +43,8 @@ class CORE_EXPORT ScriptedIdleTaskController
   class IdleTask : public GarbageCollectedFinalized<IdleTask>,
                    public TraceWrapperBase {
    public:
-    DEFINE_INLINE_VIRTUAL_TRACE() {}
-    DEFINE_INLINE_VIRTUAL_TRACE_WRAPPERS() {}
+    virtual void Trace(blink::Visitor* visitor) {}
+    virtual void TraceWrappers(const ScriptWrappableVisitor* visitor) const {}
     virtual ~IdleTask() = default;
     virtual void invoke(IdleDeadline*) = 0;
   };
@@ -58,8 +58,8 @@ class CORE_EXPORT ScriptedIdleTaskController
     }
     ~V8IdleTask() = default;
     void invoke(IdleDeadline*) override;
-    DECLARE_TRACE();
-    DECLARE_TRACE_WRAPPERS();
+    void Trace(blink::Visitor*);
+    void TraceWrappers(const ScriptWrappableVisitor*) const;
 
    private:
     explicit V8IdleTask(V8IdleRequestCallback*);
@@ -69,10 +69,10 @@ class CORE_EXPORT ScriptedIdleTaskController
   int RegisterCallback(IdleTask*, const IdleRequestOptions&);
   void CancelCallback(CallbackId);
 
-  // SuspendableObject interface.
+  // PausableObject interface.
   void ContextDestroyed(ExecutionContext*) override;
-  void Suspend() override;
-  void Resume() override;
+  void Pause() override;
+  void Unpause() override;
 
   void CallbackFired(CallbackId,
                      double deadline_seconds,
@@ -82,7 +82,7 @@ class CORE_EXPORT ScriptedIdleTaskController
   friend class internal::IdleRequestCallbackWrapper;
   explicit ScriptedIdleTaskController(ExecutionContext*);
 
-  void ScheduleCallback(RefPtr<internal::IdleRequestCallbackWrapper>,
+  void ScheduleCallback(scoped_refptr<internal::IdleRequestCallbackWrapper>,
                         long long timeout_millis);
 
   int NextCallbackId();
@@ -101,7 +101,7 @@ class CORE_EXPORT ScriptedIdleTaskController
   HeapHashMap<CallbackId, TraceWrapperMember<IdleTask>> idle_tasks_;
   Vector<CallbackId> pending_timeouts_;
   CallbackId next_callback_id_;
-  bool suspended_;
+  bool paused_;
 };
 
 }  // namespace blink

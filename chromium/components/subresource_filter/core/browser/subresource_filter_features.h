@@ -91,13 +91,6 @@ struct Configuration {
     // Whether to whitelist a site when a page loaded from that site is
     // reloaded.
     bool should_whitelist_site_on_reload = false;
-
-    // Whether to apply a more powerful popup blocker on pages with activation.
-    bool should_strengthen_popup_blocker = false;
-
-    // Whether to disable rules from the ruleset. In practice this might be used
-    // if e.g. only popup blocking behavior is desired.
-    bool should_disable_ruleset_rules = false;
   };
 
   // General settings that apply outside of the scope of a navigation.
@@ -134,11 +127,7 @@ struct Configuration {
   //  4.) Update unittests to cover the new preset.
   static Configuration MakePresetForLiveRunOnPhishingSites();
   static Configuration MakePresetForPerformanceTestingDryRunOnAllSites();
-  static Configuration MakePresetForLiveRunForAbusiveAds();
   static Configuration MakePresetForLiveRunForBetterAds();
-
-  // Site violates abusive and better ads standards.
-  static Configuration MakePresetForLiveRunForAllAds();
 
   // Not really a preset, but used as the configuration for forcing activation
   // (e.g. via devtools).
@@ -221,8 +210,6 @@ extern const char kActivationListSocialEngineeringAdsInterstitial[];
 extern const char kActivationListPhishingInterstitial[];
 extern const char kActivationListSubresourceFilter[];
 extern const char kActivationListBetterAds[];
-extern const char kActivationListAbusiveAds[];
-extern const char kActivationListAllAds[];
 
 extern const char kActivationPriorityParameterName[];
 
@@ -232,19 +219,13 @@ extern const char kSuppressNotificationsParameterName[];
 
 extern const char kWhitelistSiteOnReloadParameterName[];
 
-extern const char kStrengthenPopupBlockerParameterName[];
-
-extern const char kDisableRulesetRules[];
-
 extern const char kRulesetFlavorParameterName[];
 
 extern const char kEnablePresetsParameterName[];
 extern const char kDisablePresetsParameterName[];
 extern const char kPresetLiveRunOnPhishingSites[];
 extern const char kPresetPerformanceTestingDryRunOnAllSites[];
-extern const char kPresetLiveRunForAbusiveAds[];
 extern const char kPresetLiveRunForBetterAds[];
-extern const char kPresetLiveRunForAllAds[];
 
 }  // namespace subresource_filter
 

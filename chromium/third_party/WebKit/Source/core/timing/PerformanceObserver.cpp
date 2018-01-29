@@ -11,6 +11,7 @@
 #include "bindings/core/v8/v8_performance_observer_callback.h"
 #include "core/dom/ExecutionContext.h"
 #include "core/frame/LocalDOMWindow.h"
+#include "core/frame/UseCounter.h"
 #include "core/timing/DOMWindowPerformance.h"
 #include "core/timing/Performance.h"
 #include "core/timing/PerformanceEntry.h"
@@ -28,10 +29,12 @@ PerformanceObserver* PerformanceObserver::Create(
   LocalDOMWindow* window = ToLocalDOMWindow(script_state->GetContext());
   ExecutionContext* context = ExecutionContext::From(script_state);
   if (window) {
+    UseCounter::Count(context, WebFeature::kPerformanceObserverForWindow);
     return new PerformanceObserver(
         context, DOMWindowPerformance::performance(*window), callback);
   }
   if (context->IsWorkerGlobalScope()) {
+    UseCounter::Count(context, WebFeature::kPerformanceObserverForWorker);
     return new PerformanceObserver(context,
                                    WorkerGlobalScopePerformance::performance(
                                        *ToWorkerGlobalScope(context)),
@@ -104,11 +107,14 @@ bool PerformanceObserver::HasPendingActivity() const {
 }
 
 bool PerformanceObserver::ShouldBeSuspended() const {
-  return execution_context_->IsContextSuspended();
+  return execution_context_->IsContextPaused();
 }
 
 void PerformanceObserver::Deliver() {
   DCHECK(!ShouldBeSuspended());
+
+  if (!GetExecutionContext())
+    return;
 
   if (performance_entries_.IsEmpty())
     return;
@@ -117,18 +123,20 @@ void PerformanceObserver::Deliver() {
   performance_entries.swap(performance_entries_);
   PerformanceObserverEntryList* entry_list =
       new PerformanceObserverEntryList(performance_entries);
-  callback_->call(this, entry_list, this);
+  callback_->InvokeAndReportException(this, entry_list, this);
 }
 
-DEFINE_TRACE(PerformanceObserver) {
-  ContextClient::Trace(visitor);
+void PerformanceObserver::Trace(blink::Visitor* visitor) {
   visitor->Trace(execution_context_);
   visitor->Trace(callback_);
   visitor->Trace(performance_);
   visitor->Trace(performance_entries_);
+  ScriptWrappable::Trace(visitor);
+  ContextClient::Trace(visitor);
 }
 
-DEFINE_TRACE_WRAPPERS(PerformanceObserver) {
+void PerformanceObserver::TraceWrappers(
+    const ScriptWrappableVisitor* visitor) const {
   visitor->TraceWrappers(callback_);
 }
 

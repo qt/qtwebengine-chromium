@@ -13,9 +13,11 @@
 #include "base/task_runner.h"
 #include "base/unguessable_token.h"
 #include "components/viz/common/frame_sinks/copy_output_result.h"
-#include "components/viz/common/quads/texture_mailbox.h"
 #include "components/viz/common/resources/single_release_callback.h"
 #include "components/viz/common/viz_common_export.h"
+#include "gpu/command_buffer/common/mailbox.h"
+#include "gpu/command_buffer/common/sync_token.h"
+#include "mojo/public/cpp/bindings/struct_traits.h"
 #include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/geometry/vector2d.h"
 
@@ -88,24 +90,42 @@ class VIZ_COMMON_EXPORT CopyOutputRequest {
   bool has_source() const { return source_.has_value(); }
   const base::UnguessableToken& source() const { return *source_; }
 
-  // By default copy requests copy the entire surface (or layer's subtree
-  // output). Specifying an area requests that only a portion be copied. Note
-  // that in some cases it may be necessary to sample the pixels surrounding the
-  // area.
+  // Optionally specify the clip rect; meaning that just a portion of the entire
+  // surface (or layer's subtree output) should be scanned to produce a result.
+  // This rect is in the same space as the RenderPass output rect, pre-scaling.
+  // This is related to set_result_selection() (see below).
   void set_area(const gfx::Rect& area) { area_ = area; }
   bool has_area() const { return area_.has_value(); }
   const gfx::Rect& area() const { return *area_; }
 
+  // Optionally specify that only a portion of the result be generated. The
+  // selection rect will be clamped to the result bounds, which always starts at
+  // 0,0 and spans the post-scaling size of the copy area (see set_area()
+  // above).
+  void set_result_selection(const gfx::Rect& selection) {
+    result_selection_ = selection;
+  }
+  bool has_result_selection() const { return result_selection_.has_value(); }
+  const gfx::Rect& result_selection() const { return *result_selection_; }
+
   // Legacy support for providing textures up-front, to copy results into.
   // TODO(miu): Remove these methods after tab capture is moved to VIZ.
   // http://crbug.com/754872
-  void SetTextureMailbox(const TextureMailbox& texture_mailbox);
-  bool has_texture_mailbox() const { return texture_mailbox_.has_value(); }
-  const TextureMailbox& texture_mailbox() const { return *texture_mailbox_; }
+  // The texture bound to the mailbox is expected to have a GL_TEXTURE_2D
+  // target.
+  void SetMailbox(const gpu::Mailbox& mailbox,
+                  const gpu::SyncToken& sync_token);
+  bool has_mailbox() const { return mailbox_.has_value(); }
+  const gpu::Mailbox& mailbox() const { return *mailbox_; }
+  const gpu::SyncToken& sync_token() const { return *sync_token_; }
 
   // Sends the result from executing this request. Called by the internal
   // implementation, usually a DirectRenderer.
   void SendResult(std::unique_ptr<CopyOutputResult> result);
+
+  // Returns true if SendResult() will deliver the CopyOutputResult using the
+  // same TaskRunner as that to which the current task was posted.
+  bool SendsResultsInCurrentSequence() const;
 
   // Creates a RGBA_BITMAP request that ignores results, for testing purposes.
   static std::unique_ptr<CopyOutputRequest> CreateStubForTesting();
@@ -124,7 +144,9 @@ class VIZ_COMMON_EXPORT CopyOutputRequest {
   gfx::Vector2d scale_to_;
   base::Optional<base::UnguessableToken> source_;
   base::Optional<gfx::Rect> area_;
-  base::Optional<TextureMailbox> texture_mailbox_;
+  base::Optional<gfx::Rect> result_selection_;
+  base::Optional<gpu::Mailbox> mailbox_;
+  base::Optional<gpu::SyncToken> sync_token_;
 
   DISALLOW_COPY_AND_ASSIGN(CopyOutputRequest);
 };

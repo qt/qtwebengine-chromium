@@ -10,11 +10,12 @@
 
 namespace blink {
 
-DEFINE_TRACE(ModuleTreeLinkerRegistry) {
+void ModuleTreeLinkerRegistry::Trace(blink::Visitor* visitor) {
   visitor->Trace(active_tree_linkers_);
 }
 
-DEFINE_TRACE_WRAPPERS(ModuleTreeLinkerRegistry) {
+void ModuleTreeLinkerRegistry::TraceWrappers(
+    const ScriptWrappableVisitor* visitor) const {
   for (const auto& member : active_tree_linkers_)
     visitor->TraceWrappers(member);
 }

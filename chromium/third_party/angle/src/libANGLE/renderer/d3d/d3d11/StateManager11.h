@@ -31,6 +31,7 @@ class ShaderConstants11 : angle::NonCopyable
 {
   public:
     ShaderConstants11();
+    ~ShaderConstants11();
 
     void init(const gl::Caps &caps);
     size_t getRequiredBufferSize(gl::SamplerType samplerType) const;
@@ -140,6 +141,35 @@ class ShaderConstants11 : angle::NonCopyable
     bool mSamplerMetadataCSDirty;
 };
 
+class DrawCallVertexParams final : angle::NonCopyable
+{
+  public:
+    // Use when in a drawArrays call.
+    DrawCallVertexParams(GLint firstVertex, GLsizei vertexCount, GLsizei instances);
+
+    // Use when in a drawElements call.
+    DrawCallVertexParams(bool firstVertexDefinitelyZero,
+                         const gl::HasIndexRange &hasIndexRange,
+                         GLint baseVertex,
+                         GLsizei instances);
+
+    // It should be possible to also use an overload to handle the 'slow' indirect draw path.
+    // TODO(jmadill): Indirect draw slow path overload.
+
+    GLint firstVertex() const;
+    GLsizei vertexCount() const;
+    GLsizei instances() const;
+
+  private:
+    void ensureResolved() const;
+
+    mutable const gl::HasIndexRange *mHasIndexRange;
+    mutable Optional<GLint> mFirstVertex;
+    mutable GLsizei mVertexCount;
+    GLsizei mInstances;
+    GLint mBaseVertex;
+};
+
 class StateManager11 final : angle::NonCopyable
 {
   public:
@@ -236,18 +266,17 @@ class StateManager11 final : angle::NonCopyable
     // Not handled by an internal dirty bit because of the extra draw parameters.
     gl::Error applyVertexBuffer(const gl::Context *context,
                                 GLenum mode,
-                                GLint first,
-                                GLsizei count,
-                                GLsizei instances,
-                                TranslatedIndexData *indexInfo);
+                                const DrawCallVertexParams &vertexParams,
+                                bool isIndexedRendering);
 
     gl::Error applyIndexBuffer(const gl::Context *context,
                                const void *indices,
                                GLsizei count,
                                GLenum type,
-                               TranslatedIndexData *indexInfo);
+                               const gl::HasIndexRange &lazyIndexRange,
+                               bool usePrimitiveRestartWorkaround);
 
-    bool setIndexBuffer(ID3D11Buffer *buffer, DXGI_FORMAT indexFormat, unsigned int offset);
+    void setIndexBuffer(ID3D11Buffer *buffer, DXGI_FORMAT indexFormat, unsigned int offset);
 
     gl::Error updateVertexOffsetsForPointSpritesEmulation(GLint startVertex,
                                                           GLsizei emulatedInstanceId);
@@ -291,10 +320,7 @@ class StateManager11 final : angle::NonCopyable
     gl::Error syncProgram(const gl::Context *context, GLenum drawMode);
 
     gl::Error syncTextures(const gl::Context *context);
-    gl::Error applyTextures(const gl::Context *context,
-                            gl::SamplerType shaderType,
-                            const FramebufferTextureArray &framebufferTextures,
-                            size_t framebufferTextureCount);
+    gl::Error applyTextures(const gl::Context *context, gl::SamplerType shaderType);
 
     gl::Error setSamplerState(const gl::Context *context,
                               gl::SamplerType type,
@@ -331,6 +357,8 @@ class StateManager11 final : angle::NonCopyable
 
     // Called by the Framebuffer11 directly.
     void processFramebufferInvalidation(const gl::Context *context);
+
+    bool syncIndexBuffer(ID3D11Buffer *buffer, DXGI_FORMAT indexFormat, unsigned int offset);
 
     enum DirtyBitType
     {
@@ -416,7 +444,8 @@ class StateManager11 final : angle::NonCopyable
     class SRVCache : angle::NonCopyable
     {
       public:
-        SRVCache() : mHighestUsedSRV(0) {}
+        SRVCache();
+        ~SRVCache();
 
         void initialize(size_t size) { mCurrentSRVs.resize(size); }
 
@@ -480,6 +509,7 @@ class StateManager11 final : angle::NonCopyable
     ID3D11Buffer *mAppliedIB;
     DXGI_FORMAT mAppliedIBFormat;
     unsigned int mAppliedIBOffset;
+    bool mIndexBufferIsDirty;
 
     // Vertex, index and input layouts
     VertexDataManager mVertexDataManager;

@@ -83,6 +83,8 @@ source_set("audio") {
     "audio_features.h",
     "audio_input_controller.cc",
     "audio_input_controller.h",
+    "audio_input_delegate.cc",
+    "audio_input_delegate.h",
     "audio_input_device.cc",
     "audio_input_device.h",
     "audio_input_ipc.cc",
@@ -301,6 +303,13 @@ source_set("audio") {
     libs += [ "media_client" ]
   }
 
+  if (enable_webrtc) {
+    sources += [
+      "audio_input_stream_data_interceptor.cc",
+      "audio_input_stream_data_interceptor.h",
+    ]
+  }
+
   configs += [ "//build/config/compiler:no_size_t_to_int_warning" ]
 }
 
@@ -324,6 +333,8 @@ static_library("test_support") {
   sources = [
     "audio_device_info_accessor_for_tests.cc",
     "audio_device_info_accessor_for_tests.h",
+    "audio_system_test_util.cc",
+    "audio_system_test_util.h",
     "audio_unittest_util.cc",
     "audio_unittest_util.h",
     "mock_audio_manager.cc",
@@ -387,6 +398,10 @@ source_set("unit_tests") {
     "//build/config/compiler:no_size_t_to_int_warning",
     "//media:media_config",
   ]
+
+  if (enable_webrtc) {
+    sources += [ "audio_input_stream_data_interceptor_unittest.cc" ]
+  }
 
   if (is_android) {
     sources += [ "android/audio_android_unittest.cc" ]

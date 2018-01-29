@@ -134,7 +134,7 @@ void LayoutBlock::WillBeDestroyed() {
   if (!DocumentBeingDestroyed() && Parent())
     Parent()->DirtyLinesFromChangedChild(this);
 
-  if (LocalFrame* frame = this->GetFrame()) {
+  if (LocalFrame* frame = GetFrame()) {
     frame->Selection().LayoutBlockWillBeDestroyed(*this);
     frame->GetPage()->GetDragCaret().LayoutBlockWillBeDestroyed(*this);
   }
@@ -193,6 +193,7 @@ void LayoutBlock::StyleWillChange(StyleDifference diff,
   LayoutBox::StyleWillChange(diff, new_style);
 }
 
+enum LogicalExtent { kLogicalWidth, kLogicalHeight };
 static bool BorderOrPaddingLogicalDimensionChanged(
     const ComputedStyle& old_style,
     const ComputedStyle& new_style,
@@ -421,8 +422,9 @@ void LayoutBlock::UpdateLayout() {
   if (needs_scroll_anchoring)
     GetScrollableArea()->GetScrollAnchor()->NotifyBeforeLayout();
 
-  // Table cells call layoutBlock directly, so don't add any logic here.  Put
-  // code into layoutBlock().
+  // Table cells call UpdateBlockLayout directly, as does
+  // PaintLayerScrollableArea for nested scrollbar layouts. Most logic should be
+  // in UpdateBlockLayout instead of UpdateLayout.
   UpdateBlockLayout(false);
 
   // It's safe to check for control clip here, since controls can never be table
@@ -581,7 +583,7 @@ void LayoutBlock::UpdateBlockChildDirtyBitsBeforeLayout(bool relayout_children,
   // determine this, so that we can avoid the relayout.
   bool has_relative_logical_height =
       child.HasRelativeLogicalHeight() ||
-      (child.IsAnonymous() && this->HasRelativeLogicalHeight()) ||
+      (child.IsAnonymous() && HasRelativeLogicalHeight()) ||
       child.StretchesToViewport();
   if (relayout_children || (has_relative_logical_height && !IsLayoutView()) ||
       (height_available_to_children_changed_ &&
@@ -792,7 +794,8 @@ void LayoutBlock::LayoutPositionedObject(LayoutBox* positioned_object,
 
   if (!positioned_object->NormalChildNeedsLayout() &&
       (relayout_children || height_available_to_children_changed_ ||
-       NeedsLayoutDueToStaticPosition(positioned_object)))
+       (!IsLayoutNGBlockFlow() &&
+        NeedsLayoutDueToStaticPosition(positioned_object))))
     layout_scope.SetChildNeedsLayout(positioned_object);
 
   LayoutUnit logical_top_estimate;
@@ -962,6 +965,12 @@ void LayoutBlock::RemovePositionedObject(LayoutBox* o) {
     g_positioned_descendants_map->erase(container);
     container->has_positioned_objects_ = false;
   }
+
+  // Need to clear the anchor of the positioned object in its container box.
+  // The anchors are created in the logical container box, not in the CSS
+  // containing block.
+  if (LayoutObject* parent = o->Parent())
+    parent->MarkContainerNeedsCollectInlines();
 }
 
 PaintInvalidationReason LayoutBlock::InvalidatePaint(
@@ -1015,7 +1024,7 @@ void LayoutBlock::RemovePositionedObjects(
     }
   }
 
-  for (auto object : dead_objects) {
+  for (auto* object : dead_objects) {
     DCHECK_EQ(g_positioned_container_map->at(object), this);
     positioned_descendants->erase(object);
     g_positioned_container_map->erase(object);
@@ -1412,6 +1421,11 @@ void LayoutBlock::ComputePreferredLogicalWidths() {
                      LayoutUnit(style_to_use.LogicalMinWidth().Value())));
   }
 
+  LayoutUnit border_and_padding = BorderAndPaddingLogicalWidth();
+  DCHECK_GE(border_and_padding, LayoutUnit());
+  min_preferred_logical_width_ += border_and_padding;
+  max_preferred_logical_width_ += border_and_padding;
+
   // Table layout uses integers, ceil the preferred widths to ensure that they
   // can contain the contents.
   if (IsTableCell()) {
@@ -1420,11 +1434,6 @@ void LayoutBlock::ComputePreferredLogicalWidths() {
     max_preferred_logical_width_ =
         LayoutUnit(max_preferred_logical_width_.Ceil());
   }
-
-  LayoutUnit border_and_padding = BorderAndPaddingLogicalWidth();
-  DCHECK_GE(border_and_padding, LayoutUnit());
-  min_preferred_logical_width_ += border_and_padding;
-  max_preferred_logical_width_ += border_and_padding;
 
   ClearPreferredLogicalWidthsDirty();
 }
@@ -1436,7 +1445,7 @@ void LayoutBlock::ComputeBlockPreferredLogicalWidths(
   bool nowrap = style_to_use.WhiteSpace() == EWhiteSpace::kNowrap;
 
   LayoutObject* child = FirstChild();
-  LayoutBlock* containing_block = this->ContainingBlock();
+  LayoutBlock* containing_block = ContainingBlock();
   LayoutUnit float_left_width, float_right_width;
   while (child) {
     // Positioned children don't affect the min/max width. Spanners only affect
@@ -1454,7 +1463,7 @@ void LayoutBlock::ComputeBlockPreferredLogicalWidths(
       child->SetPreferredLogicalWidthsDirty();
     }
 
-    RefPtr<ComputedStyle> child_style = child->MutableStyle();
+    scoped_refptr<ComputedStyle> child_style = child->MutableStyle();
     if (child->IsFloating() ||
         (child->IsBox() && ToLayoutBox(child)->AvoidsFloats())) {
       LayoutUnit float_total_width = float_left_width + float_right_width;
@@ -1856,8 +1865,7 @@ void LayoutBlock::AddOutlineRects(
       !HasOverflowClip() && !HasControlClip()) {
     AddOutlineRectsForNormalChildren(rects, additional_offset,
                                      include_block_overflows);
-    if (TrackedLayoutBoxListHashSet* positioned_objects =
-            this->PositionedObjects()) {
+    if (TrackedLayoutBoxListHashSet* positioned_objects = PositionedObjects()) {
       for (auto* box : *positioned_objects)
         AddOutlineRectsForDescendant(*box, rects, additional_offset,
                                      include_block_overflows);
@@ -1973,7 +1981,7 @@ LayoutBlock* LayoutBlock::CreateAnonymousWithParentAndDisplay(
     new_display = EDisplay::kBlock;
   }
 
-  RefPtr<ComputedStyle> new_style =
+  scoped_refptr<ComputedStyle> new_style =
       ComputedStyle::CreateAnonymousStyleWithDisplay(parent->StyleRef(),
                                                      new_display);
   parent->UpdateAnonymousChildStyle(*new_box, *new_style);
@@ -1983,12 +1991,9 @@ LayoutBlock* LayoutBlock::CreateAnonymousWithParentAndDisplay(
 
 bool LayoutBlock::RecalcNormalFlowChildOverflowIfNeeded(
     LayoutObject* layout_object) {
-  if (layout_object->IsOutOfFlowPositioned() ||
-      !layout_object->NeedsOverflowRecalcAfterStyleChange())
+  if (layout_object->IsOutOfFlowPositioned())
     return false;
-
-  DCHECK(layout_object->IsLayoutBlock());
-  return ToLayoutBlock(layout_object)->RecalcOverflowAfterStyleChange();
+  return layout_object->RecalcOverflowAfterStyleChange();
 }
 
 bool LayoutBlock::RecalcChildOverflowAfterStyleChange() {
@@ -2020,21 +2025,13 @@ bool LayoutBlock::RecalcPositionedDescendantsOverflowAfterStyleChange() {
     return children_overflow_changed;
 
   for (auto* box : *positioned_descendants) {
-    if (!box->NeedsOverflowRecalcAfterStyleChange())
-      continue;
-    LayoutBlock* block = ToLayoutBlock(box);
-    if (!block->RecalcOverflowAfterStyleChange() ||
-        box->Style()->GetPosition() == EPosition::kFixed)
-      continue;
-
-    children_overflow_changed = true;
+    if (box->RecalcOverflowAfterStyleChange())
+      children_overflow_changed = true;
   }
   return children_overflow_changed;
 }
 
 bool LayoutBlock::RecalcOverflowAfterStyleChange() {
-  DCHECK(NeedsOverflowRecalcAfterStyleChange());
-
   bool children_overflow_changed = false;
   if (ChildNeedsOverflowRecalcAfterStyleChange())
     children_overflow_changed = RecalcChildOverflowAfterStyleChange();

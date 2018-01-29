@@ -18,8 +18,8 @@
 #include "modules/include/module_common_types.h"
 #include "modules/video_coding/packet.h"
 #include "modules/video_coding/rtp_frame_reference_finder.h"
-#include "modules/video_coding/sequence_number_util.h"
 #include "rtc_base/criticalsection.h"
+#include "rtc_base/numerics/sequence_number_util.h"
 #include "rtc_base/scoped_ref_ptr.h"
 #include "rtc_base/thread_annotations.h"
 
@@ -159,6 +159,10 @@ class PacketBuffer {
   rtc::Optional<uint16_t> newest_inserted_seq_num_ RTC_GUARDED_BY(crit_);
   std::set<uint16_t, DescendingSeqNumComp<uint16_t>> missing_packets_
       RTC_GUARDED_BY(crit_);
+
+  // Indicates if we should require SPS, PPS, and IDR for a particular
+  // RTP timestamp to treat the corresponding frame as a keyframe.
+  const bool sps_pps_idr_is_h264_keyframe_;
 
   mutable volatile int ref_count_ = 0;
 };

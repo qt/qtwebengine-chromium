@@ -42,6 +42,10 @@ if (is_ios || is_mac) {
       "objc/Framework/Classes/VideoToolbox",
       "objc/Framework/Headers",
     ]
+    cflags = [
+      "-Wstrict-overflow",
+      "-Wmissing-field-initializers",
+    ]
   }
 
   rtc_static_library("common_objc") {
@@ -130,6 +134,7 @@ if (is_ios || is_mac) {
         ":common_objc",
         "../api:libjingle_peerconnection_api",
         "../api:video_frame_api",
+        "../api:video_frame_api_i420",
         "../common_video",
         "../media:rtc_media_base",
         "../rtc_base:rtc_base",
@@ -269,8 +274,8 @@ if (is_ios || is_mac) {
       ]
       if (is_ios) {
         sources += [
-          "objc/Framework/Classes/PeerConnection/RTCFileVideoCapturer.h",
           "objc/Framework/Classes/PeerConnection/RTCFileVideoCapturer.m",
+          "objc/Framework/Headers/WebRTC/RTCFileVideoCapturer.h",
         ]
       }
       libs = [ "AVFoundation.framework" ]
@@ -314,6 +319,8 @@ if (is_ios || is_mac) {
 
     rtc_static_library("peerconnectionfactory_objc") {
       sources = [
+        "objc/Framework/Classes/PeerConnection/RTCDefaultVideoDecoderFactory.m",
+        "objc/Framework/Classes/PeerConnection/RTCDefaultVideoEncoderFactory.m",
         "objc/Framework/Classes/PeerConnection/RTCPeerConnectionFactory+Native.h",
         "objc/Framework/Classes/PeerConnection/RTCPeerConnectionFactory+Private.h",
         "objc/Framework/Classes/PeerConnection/RTCPeerConnectionFactory.mm",
@@ -386,6 +393,7 @@ if (is_ios || is_mac) {
         "objc/Framework/Classes/PeerConnection/RTCAudioSource.mm",
         "objc/Framework/Classes/PeerConnection/RTCAudioTrack+Private.h",
         "objc/Framework/Classes/PeerConnection/RTCAudioTrack.mm",
+        "objc/Framework/Classes/PeerConnection/RTCConfiguration+Native.h",
         "objc/Framework/Classes/PeerConnection/RTCConfiguration+Private.h",
         "objc/Framework/Classes/PeerConnection/RTCConfiguration.mm",
         "objc/Framework/Classes/PeerConnection/RTCDataChannel+Private.h",
@@ -413,6 +421,7 @@ if (is_ios || is_mac) {
         "objc/Framework/Classes/PeerConnection/RTCMetricsSampleInfo+Private.h",
         "objc/Framework/Classes/PeerConnection/RTCMetricsSampleInfo.mm",
         "objc/Framework/Classes/PeerConnection/RTCPeerConnection+DataChannel.mm",
+        "objc/Framework/Classes/PeerConnection/RTCPeerConnection+Native.h",
         "objc/Framework/Classes/PeerConnection/RTCPeerConnection+Private.h",
         "objc/Framework/Classes/PeerConnection/RTCPeerConnection+Stats.mm",
         "objc/Framework/Classes/PeerConnection/RTCPeerConnection.mm",
@@ -512,15 +521,77 @@ if (is_ios || is_mac) {
     }
 
     if (rtc_include_tests) {
+      if (is_ios) {
+        rtc_source_set("sdk_unittests_sources") {
+          testonly = true
+          include_dirs = [
+            "objc/Framework/Headers",
+            "objc/Framework/Classes",
+          ]
+
+          sources = [
+            "objc/Framework/UnitTests/RTCFileVideoCapturer_xctest.mm",
+          ]
+
+          if (current_cpu == "arm64" || use_ios_simulator) {
+            sources += [ "objc/Framework/UnitTests/RTCMTLVideoView_xctest.mm" ]
+          }
+
+          if (use_ios_simulator) {
+            # Only include this file on simulator, as it's already
+            # included in device builds.
+            sources += [ "objc/Framework/Classes/Metal/RTCMTLVideoView.m" ]
+            libs = [ "CoreVideo.framework" ]
+          }
+          deps = [
+            ":common_objc",
+            ":peerconnection_objc",
+            ":peerconnectionfactory_objc",
+            ":videotoolbox_objc",
+            ":videotracksource_objc",
+            "..//system_wrappers:system_wrappers_default",
+            "../media:rtc_media_base",
+            "../modules:module_api",
+            "../rtc_base:rtc_base",
+            "../rtc_base:rtc_base_tests_utils",
+            "../system_wrappers:system_wrappers_default",
+          ]
+          public_deps = [
+            "//build/config/ios:xctest",
+            "//third_party/ocmock",
+          ]
+        }
+
+        bundle_data("sdk_unittests_bundle_data") {
+          # Sample video taken from https://media.xiph.org/video/derf/
+          sources = [
+            "objc/Framework/UnitTests/foreman.mp4",
+          ]
+          outputs = [
+            "{{bundle_resources_dir}}/{{source_file_part}}",
+          ]
+        }
+
+        rtc_ios_xctest_test("sdk_unittests") {
+          info_plist = "//test/ios/Info.plist"
+          sources = [
+            "objc/Framework/UnitTests/main.m",
+          ]
+
+          _bundle_id_suffix = ios_generic_test_bundle_id_suffix
+          extra_substitutions = [ "GTEST_BUNDLE_ID_SUFFIX=$_bundle_id_suffix" ]
+          deps = [
+            ":sdk_unittests_bundle_data",
+            ":sdk_unittests_sources",
+          ]
+          ldflags = [ "-all_load" ]
+        }
+      }
+
+      # TODO(denicija): once all tests are migrated to xctest remove this source set.
       rtc_source_set("sdk_unittests_objc") {
         testonly = true
 
-        # Skip restricting visibility on mobile platforms since the tests on those
-        # gets additional generated targets which would require many lines here to
-        # cover (which would be confusing to read and hard to maintain).
-        if (!is_android && !is_ios) {
-          visibility = [ "..:rtc_unittests" ]
-        }
         sources = [
           "objc/Framework/UnitTests/RTCConfigurationTest.mm",
           "objc/Framework/UnitTests/RTCDataChannelConfigurationTest.mm",
@@ -567,18 +638,8 @@ if (is_ios || is_mac) {
 
         if (is_ios) {
           sources += [ "objc/Framework/UnitTests/RTCAudioSessionTest.mm" ]
-
-          # RTCMTLVideoView not supported on 32-bit arm
-          if (current_cpu != "arm") {
-            sources += [ "objc/Framework/UnitTests/RTCMTLVideoViewTests.mm" ]
-            if (current_cpu != "arm64") {
-              # Only include this file on simulator, as it's already
-              # included in device builds.
-              sources += [ "objc/Framework/Classes/Metal/RTCMTLVideoView.m" ]
-              libs = [ "CoreVideo.framework" ]
-            }
-          }
         }
+
         if (!build_with_chromium && is_clang) {
           # Suppress warnings from the Chromium Clang plugin
           # (bugs.webrtc.org/163).
@@ -608,6 +669,7 @@ if (is_ios || is_mac) {
           "objc/Framework/Headers/WebRTC/RTCDispatcher.h",
           "objc/Framework/Headers/WebRTC/RTCEAGLVideoView.h",
           "objc/Framework/Headers/WebRTC/RTCFieldTrials.h",
+          "objc/Framework/Headers/WebRTC/RTCFileVideoCapturer.h",
           "objc/Framework/Headers/WebRTC/RTCIceCandidate.h",
           "objc/Framework/Headers/WebRTC/RTCIceServer.h",
           "objc/Framework/Headers/WebRTC/RTCIntervalRange.h",
@@ -708,6 +770,7 @@ if (is_ios || is_mac) {
       ]
 
       deps = [
+        "../api:video_frame_api_i420",
         "../common_video",
         "../rtc_base:rtc_base_approved",
       ]

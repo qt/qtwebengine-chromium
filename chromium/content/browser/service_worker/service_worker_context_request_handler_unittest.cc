@@ -109,7 +109,7 @@ class ServiceWorkerContextRequestHandlerTest : public testing::Test {
   // Creates a ServiceWorkerContextHandler directly.
   std::unique_ptr<ServiceWorkerContextRequestHandler> CreateHandler(
       ResourceType resource_type) {
-    return base::MakeUnique<ServiceWorkerContextRequestHandler>(
+    return std::make_unique<ServiceWorkerContextRequestHandler>(
         context()->AsWeakPtr(), provider_host_,
         base::WeakPtr<storage::BlobStorageContext>(), resource_type);
   }
@@ -121,9 +121,11 @@ class ServiceWorkerContextRequestHandlerTest : public testing::Test {
     ServiceWorkerRequestHandler::InitializeHandler(
         request, helper_->context_wrapper(), &blob_storage_context_,
         helper_->mock_render_process_id(), provider_host_->provider_id(),
-        false /* skip_service_worker */, FETCH_REQUEST_MODE_NO_CORS,
-        FETCH_CREDENTIALS_MODE_OMIT, FetchRedirectMode::FOLLOW_MODE,
-        std::string() /* integrity */, RESOURCE_TYPE_SERVICE_WORKER,
+        false /* skip_service_worker */,
+        network::mojom::FetchRequestMode::kNoCORS,
+        network::mojom::FetchCredentialsMode::kOmit,
+        FetchRedirectMode::FOLLOW_MODE, std::string() /* integrity */,
+        false /* keepalive */, RESOURCE_TYPE_SERVICE_WORKER,
         REQUEST_CONTEXT_TYPE_SERVICE_WORKER, REQUEST_CONTEXT_FRAME_TYPE_NONE,
         nullptr);
   }
@@ -254,9 +256,10 @@ TEST_F(ServiceWorkerContextRequestHandlerTest,
   ServiceWorkerRequestHandler::InitializeHandler(
       request.get(), helper_->context_wrapper(), &blob_storage_context_,
       helper_->mock_render_process_id(), provider_host_->provider_id(),
-      true /* skip_service_worker */, FETCH_REQUEST_MODE_NO_CORS,
-      FETCH_CREDENTIALS_MODE_OMIT, FetchRedirectMode::FOLLOW_MODE,
-      std::string() /* integrity */, RESOURCE_TYPE_SERVICE_WORKER,
+      true /* skip_service_worker */, network::mojom::FetchRequestMode::kNoCORS,
+      network::mojom::FetchCredentialsMode::kOmit,
+      FetchRedirectMode::FOLLOW_MODE, std::string() /* integrity */,
+      false /* keepalive */, RESOURCE_TYPE_SERVICE_WORKER,
       REQUEST_CONTEXT_TYPE_SERVICE_WORKER, REQUEST_CONTEXT_FRAME_TYPE_NONE,
       nullptr);
   // Verify a ServiceWorkerRequestHandler was created.

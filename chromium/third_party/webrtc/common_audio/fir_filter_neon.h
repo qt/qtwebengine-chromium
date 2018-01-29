@@ -23,6 +23,7 @@ class FIRFilterNEON : public FIRFilter {
   FIRFilterNEON(const float* coefficients,
                 size_t coefficients_length,
                 size_t max_input_length);
+  ~FIRFilterNEON() override;
 
   void Filter(const float* in, size_t length, float* out) override;
 

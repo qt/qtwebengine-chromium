@@ -19,7 +19,11 @@ namespace GrTest {
     void SetupAlwaysEvictAtlas(GrContext*);
 
     GrBackendTexture CreateBackendTexture(GrBackend, int width, int height,
-                                          GrPixelConfig, GrBackendObject);
+                                          GrPixelConfig, GrMipMapped, GrBackendObject);
+
+    GrBackendRenderTarget CreateBackendRenderTarget(GrBackend, int width, int height,
+                                                    int sampleCnt, int stencilBits,
+                                                    GrPixelConfig, GrBackendObject);
 };
 
 #endif

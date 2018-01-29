@@ -12,6 +12,7 @@
 #include "compiler/translator/TranslatorVulkan.h"
 
 #include "angle_gl.h"
+#include "common/utilities.h"
 #include "compiler/translator/OutputVulkanGLSL.h"
 #include "compiler/translator/util.h"
 
@@ -41,7 +42,7 @@ class DeclareDefaultUniformsTraverser : public TIntermTraverser
 
         TIntermTyped *variable = sequence.front()->getAsTyped();
         const TType &type      = variable->getType();
-        bool isUniform         = (type.getQualifier() == EvqUniform);
+        bool isUniform = (type.getQualifier() == EvqUniform) && !IsOpaqueType(type.getBasicType());
 
         if (visit == PreVisit)
         {
@@ -60,14 +61,14 @@ class DeclareDefaultUniformsTraverser : public TIntermTraverser
             if (isUniform)
             {
                 (*mSink) << ";\n";
+
+                // Remove the uniform declaration from the tree so it isn't parsed again.
+                TIntermSequence emptyReplacement;
+                mMultiReplacements.push_back(NodeReplaceWithMultipleEntry(
+                    getParentNode()->getAsBlock(), node, emptyReplacement));
             }
 
             mInDefaultUniform = false;
-
-            // Remove the uniform declaration from the tree so it isn't parsed again.
-            TIntermSequence emptyReplacement;
-            mMultiReplacements.push_back(NodeReplaceWithMultipleEntry(getParentNode()->getAsBlock(),
-                                                                      node, emptyReplacement));
         }
         return true;
     }
@@ -94,14 +95,25 @@ TranslatorVulkan::TranslatorVulkan(sh::GLenum type, ShShaderSpec spec)
 {
 }
 
-void TranslatorVulkan::translate(TIntermBlock *root, ShCompileOptions compileOptions)
+void TranslatorVulkan::translate(TIntermBlock *root,
+                                 ShCompileOptions compileOptions,
+                                 PerformanceDiagnostics * /*perfDiagnostics*/)
 {
     TInfoSinkBase &sink = getInfoSink().obj;
 
     sink << "#version 450 core\n";
 
     // Write out default uniforms into a uniform block assigned to a specific set/binding.
-    if (!getUniforms().empty())
+    int defaultUniformCount = 0;
+    for (const auto &uniform : getUniforms())
+    {
+        if (!uniform.isBuiltIn() && uniform.staticUse && !gl::IsOpaqueType(uniform.type))
+        {
+            ++defaultUniformCount;
+        }
+    }
+
+    if (defaultUniformCount > 0)
     {
         sink << "\nlayout(@@ DEFAULT-UNIFORMS-SET-BINDING @@) uniform defaultUniforms\n{\n";
 

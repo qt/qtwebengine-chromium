@@ -277,7 +277,7 @@ class MediaStreamUIProxyFeaturePolicyTest
   // The header policy should only be set once on page load, so we refresh the
   // page to simulate that.
   void RefreshPageAndSetHeaderPolicy(RenderFrameHost* rfh,
-                                     blink::WebFeaturePolicyFeature feature,
+                                     blink::FeaturePolicyFeature feature,
                                      bool enabled) {
     NavigateAndCommit(rfh->GetLastCommittedURL());
     std::vector<url::Origin> whitelist;
@@ -306,7 +306,7 @@ class MediaStreamUIProxyFeaturePolicyTest
   std::unique_ptr<MediaStreamRequest> CreateRequest(RenderFrameHost* rfh,
                                                     MediaStreamType mic_type,
                                                     MediaStreamType cam_type) {
-    return base::MakeUnique<MediaStreamRequest>(
+    return std::make_unique<MediaStreamRequest>(
         rfh->GetProcess()->GetID(), rfh->GetRoutingID(), 0,
         rfh->GetLastCommittedURL(), false, MEDIA_GENERATE_STREAM, std::string(),
         std::string(), mic_type, cam_type, false);
@@ -387,7 +387,7 @@ TEST_F(MediaStreamUIProxyFeaturePolicyTest, FeaturePolicy) {
 
   // Mic disabled.
   RefreshPageAndSetHeaderPolicy(main_rfh(),
-                                blink::WebFeaturePolicyFeature::kMicrophone,
+                                blink::FeaturePolicyFeature::kMicrophone,
                                 /*enabled=*/false);
   GetResultForRequest(CreateRequest(main_rfh(), MEDIA_DEVICE_AUDIO_CAPTURE,
                                     MEDIA_DEVICE_VIDEO_CAPTURE),
@@ -398,7 +398,7 @@ TEST_F(MediaStreamUIProxyFeaturePolicyTest, FeaturePolicy) {
 
   // Camera disabled.
   RefreshPageAndSetHeaderPolicy(main_rfh(),
-                                blink::WebFeaturePolicyFeature::kCamera,
+                                blink::FeaturePolicyFeature::kCamera,
                                 /*enabled=*/false);
   GetResultForRequest(CreateRequest(main_rfh(), MEDIA_DEVICE_AUDIO_CAPTURE,
                                     MEDIA_DEVICE_VIDEO_CAPTURE),
@@ -409,7 +409,7 @@ TEST_F(MediaStreamUIProxyFeaturePolicyTest, FeaturePolicy) {
 
   // Camera disabled resulting in no devices being returned.
   RefreshPageAndSetHeaderPolicy(main_rfh(),
-                                blink::WebFeaturePolicyFeature::kCamera,
+                                blink::FeaturePolicyFeature::kCamera,
                                 /*enabled=*/false);
   GetResultForRequest(
       CreateRequest(main_rfh(), MEDIA_NO_SERVICE, MEDIA_DEVICE_VIDEO_CAPTURE),

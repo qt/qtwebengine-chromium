@@ -73,6 +73,42 @@ class PresubmitTest(unittest.TestCase):
         # pylint: disable=E1101
         subprocess.Popen.assert_not_called()
 
+    def testCheckPublicHeaderWithBlinkMojo(self):
+        """This verifies that _CheckForWrongMojomIncludes detects -blink mojo
+        headers in public files.
+        """
+
+        mock_input_api = MockInputApi()
+        potentially_bad_content = '#include "public/platform/modules/cache_storage.mojom-blink.h"'
+        mock_input_api.files = [
+            MockAffectedFile('third_party/WebKit/public/AHeader.h',
+                             [potentially_bad_content], None)
+        ]
+        # Access to a protected member _CheckForWrongMojomIncludes
+        # pylint: disable=W0212
+        errors = PRESUBMIT._CheckForWrongMojomIncludes(mock_input_api,
+                                                       MockOutputApi())
+        self.assertEquals(
+            'Public blink headers using Blink variant mojoms found. ' +
+            'You must include .mojom-shared.h instead:',
+            errors[0].message)
+
+    def testCheckInternalHeaderWithBlinkMojo(self):
+        """This verifies that _CheckForWrongMojomIncludes accepts -blink mojo
+        headers in blink internal files.
+        """
+
+        mock_input_api = MockInputApi()
+        potentially_bad_content = '#include "public/platform/modules/cache_storage.mojom-blink.h"'
+        mock_input_api.files = [
+            MockAffectedFile('third_party/WebKit/Source/public/AHeader.h',
+                             [potentially_bad_content], None)
+        ]
+        # Access to a protected member _CheckForWrongMojomIncludes
+        # pylint: disable=W0212
+        errors = PRESUBMIT._CheckForWrongMojomIncludes(mock_input_api,
+                                                       MockOutputApi())
+        self.assertEquals([], errors)
 
 class CxxDependencyTest(unittest.TestCase):
     allow_list = [
@@ -80,9 +116,10 @@ class CxxDependencyTest(unittest.TestCase):
         'gfx::CubicBezier',
         'gfx::ICCProfile',
         'gfx::ScrollOffset',
+        'scoped_refptr<base::SingleThreadTaskRunner>',
     ]
     disallow_list = [
-        'scoped_refptr<base::SingleThreadTaskRunner>',
+        'GURL',
         'base::Callback<void()>',
         'base::OnceCallback<void()>',
         'content::RenderFrame',
@@ -101,7 +138,7 @@ class CxxDependencyTest(unittest.TestCase):
         ]
         # Access to a protected member
         # pylint: disable=W0212
-        return PRESUBMIT._CheckForForbiddenNamespace(mock_input_api, MockOutputApi())
+        return PRESUBMIT._CheckForForbiddenChromiumCode(mock_input_api, MockOutputApi())
 
     # References in comments should never be checked.
     def testCheckCommentsIgnored(self):
@@ -116,59 +153,53 @@ class CxxDependencyTest(unittest.TestCase):
 
     # core, modules, public, et cetera should all have dependency enforcement.
     def testCheckCoreEnforcement(self):
-        filename = 'third_party/WebKit/Source/core/frame/frame.cc',
+        filename = 'third_party/WebKit/Source/core/frame/frame.cc'
         for item in self.allow_list:
             errors = self.runCheck(filename, ['%s' % item])
             self.assertEqual([], errors)
 
         for item in self.disallow_list:
             errors = self.runCheck(filename, ['%s' % item])
-            self.assertGreater(len(errors), 0)
+            self.assertEquals(1, len(errors))
             self.assertRegexpMatches(
                 errors[0].message,
-                '^Do not use Chromium class from namespace [A-Za-z0-9_]+ inside Blink core:')
-            if len(errors) == 2:
-                self.assertRegexpMatches(errors[1].message, '^Do not use Chromium class [A-Za-z0-9_]+ inside Blink core:')
-            else:
-                self.assertEquals(1, len(errors))
+                r'^[^:]+:\d+ uses disallowed identifier .+$')
 
     def testCheckModulesEnforcement(self):
-        filename = 'third_party/WebKit/Source/modules/modules_initializer.cc',
+        filename = 'third_party/WebKit/Source/modules/modules_initializer.cc'
         for item in self.allow_list:
             errors = self.runCheck(filename, ['%s' % item])
             self.assertEqual([], errors)
 
         for item in self.disallow_list:
             errors = self.runCheck(filename, ['%s' % item])
-            self.assertGreater(len(errors), 0)
+            self.assertEquals(1, len(errors))
             self.assertRegexpMatches(
                 errors[0].message,
-                '^Do not use Chromium class from namespace [A-Za-z0-9_]+ inside Blink core:')
-            if len(errors) == 2:
-                self.assertRegexpMatches(errors[1].message, '^Do not use Chromium class [A-Za-z0-9_]+ inside Blink core:')
-            else:
-                self.assertEquals(1, len(errors))
+                r'^[^:]+:\d+ uses disallowed identifier .+$')
 
     def testCheckPublicEnforcement(self):
-        filename = 'third_party/WebKit/Source/public/platform/WebThread.h',
+        filename = 'third_party/WebKit/Source/public/platform/WebThread.h'
         for item in self.allow_list:
             errors = self.runCheck(filename, ['%s' % item])
             self.assertEqual([], errors)
 
         for item in self.disallow_list:
             errors = self.runCheck(filename, ['%s' % item])
-            self.assertGreater(len(errors), 0)
+            self.assertEquals(1, len(errors))
             self.assertRegexpMatches(
                 errors[0].message,
-                '^Do not use Chromium class from namespace [A-Za-z0-9_]+ inside Blink core:')
-            if len(errors) == 2:
-                self.assertRegexpMatches(errors[1].message, '^Do not use Chromium class [A-Za-z0-9_]+ inside Blink core:')
-            else:
-                self.assertEquals(1, len(errors))
+                r'^[^:]+:\d+ uses disallowed identifier .+$')
 
     # platform and controller should be opted out of enforcement, but aren't
     # currently checked because the PRESUBMIT test mocks are missing too
     # much functionality...
+
+    # External module checks should not affect CSS files.
+    def testCheckCSSIgnored(self):
+        filename = 'third_party/WebKit/Source/devtools/front_end/timeline/someFile.css'
+        errors = self.runCheck(filename, ['.toolbar::after { color: pink; }\n'])
+        self.assertEqual([], errors)
 
 if __name__ == '__main__':
     unittest.main()

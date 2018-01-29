@@ -120,7 +120,7 @@ WebScopedAXContext::WebScopedAXContext(WebDocument& root_document)
 }
 
 WebScopedAXContext::~WebScopedAXContext() {
-  private_.reset(0);
+  private_.reset(nullptr);
 }
 
 WebAXObject WebScopedAXContext::Root() const {
@@ -150,14 +150,14 @@ int WebAXObject::AxID() const {
   if (IsDetached())
     return -1;
 
-  return private_->AxObjectID();
+  return private_->AXObjectID();
 }
 
 int WebAXObject::GenerateAXID() const {
   if (IsDetached())
     return -1;
 
-  return private_->AxObjectCache().GenerateAXID();
+  return private_->AXObjectCache().GenerateAXID();
 }
 
 bool WebAXObject::UpdateLayoutAndCheckValidity() {
@@ -497,7 +497,7 @@ bool WebAXObject::IsInLiveRegion() const {
   if (IsDetached())
     return false;
 
-  return 0 != private_->LiveRegionRoot();
+  return !!private_->LiveRegionRoot();
 }
 
 bool WebAXObject::LiveRegionAtomic() const {
@@ -986,6 +986,13 @@ bool WebAXObject::MinValueForRange(float* out_value) const {
   return private_->MinValueForRange(out_value);
 }
 
+bool WebAXObject::StepValueForRange(float* out_value) const {
+  if (IsDetached())
+    return false;
+
+  return private_->StepValueForRange(out_value);
+}
+
 WebNode WebAXObject::GetNode() const {
   if (IsDetached())
     return WebNode();
@@ -1434,7 +1441,8 @@ void WebAXObject::SetScrollOffset(const WebPoint& offset) const {
 
 void WebAXObject::GetRelativeBounds(WebAXObject& offset_container,
                                     WebFloatRect& bounds_in_container,
-                                    SkMatrix44& container_transform) const {
+                                    SkMatrix44& container_transform,
+                                    bool* clips_children) const {
   if (IsDetached())
     return;
 
@@ -1444,7 +1452,8 @@ void WebAXObject::GetRelativeBounds(WebAXObject& offset_container,
 
   AXObject* container = nullptr;
   FloatRect bounds;
-  private_->GetRelativeBounds(&container, bounds, container_transform);
+  private_->GetRelativeBounds(&container, bounds, container_transform,
+                              clips_children);
   offset_container = WebAXObject(container);
   bounds_in_container = WebFloatRect(bounds);
 }
@@ -1494,7 +1503,8 @@ WebAXObject WebAXObject::FromWebNode(const WebNode& web_node) {
 // static
 WebAXObject WebAXObject::FromWebDocument(const WebDocument& web_document) {
   const Document* document = web_document.ConstUnwrap<Document>();
-  AXObjectCacheImpl* cache = ToAXObjectCacheImpl(document->AxObjectCache());
+  AXObjectCacheImpl* cache =
+      ToAXObjectCacheImpl(document->GetOrCreateAXObjectCache());
   return cache ? WebAXObject(cache->GetOrCreate(
                      ToLayoutView(LayoutAPIShim::LayoutObjectFrom(
                          document->GetLayoutViewItem()))))
@@ -1505,7 +1515,8 @@ WebAXObject WebAXObject::FromWebDocument(const WebDocument& web_document) {
 WebAXObject WebAXObject::FromWebDocumentByID(const WebDocument& web_document,
                                              int ax_id) {
   const Document* document = web_document.ConstUnwrap<Document>();
-  AXObjectCacheImpl* cache = ToAXObjectCacheImpl(document->AxObjectCache());
+  AXObjectCacheImpl* cache =
+      ToAXObjectCacheImpl(document->GetOrCreateAXObjectCache());
   return cache ? WebAXObject(cache->ObjectFromAXID(ax_id)) : WebAXObject();
 }
 
@@ -1513,7 +1524,8 @@ WebAXObject WebAXObject::FromWebDocumentByID(const WebDocument& web_document,
 WebAXObject WebAXObject::FromWebDocumentFocused(
     const WebDocument& web_document) {
   const Document* document = web_document.ConstUnwrap<Document>();
-  AXObjectCacheImpl* cache = ToAXObjectCacheImpl(document->AxObjectCache());
+  AXObjectCacheImpl* cache =
+      ToAXObjectCacheImpl(document->GetOrCreateAXObjectCache());
   return cache ? WebAXObject(cache->FocusedObject()) : WebAXObject();
 }
 

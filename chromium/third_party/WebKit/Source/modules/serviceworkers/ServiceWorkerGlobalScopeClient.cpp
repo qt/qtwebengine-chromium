@@ -80,10 +80,6 @@ void ServiceWorkerGlobalScopeClient::ClearCachedMetadata(const WebURL& url) {
   client_.ClearCachedMetadata(url);
 }
 
-WebURL ServiceWorkerGlobalScopeClient::Scope() const {
-  return client_.Scope();
-}
-
 void ServiceWorkerGlobalScopeClient::DidHandleActivateEvent(
     int event_id,
     mojom::ServiceWorkerEventStatus status,
@@ -274,13 +270,6 @@ void ServiceWorkerGlobalScopeClient::Navigate(
   client_.Navigate(client_uuid, url, std::move(callback));
 }
 
-void ServiceWorkerGlobalScopeClient::RegisterForeignFetchScopes(
-    int install_event_id,
-    const WebVector<WebURL>& sub_scopes,
-    const WebVector<WebSecurityOrigin>& origins) {
-  client_.RegisterForeignFetchScopes(install_event_id, sub_scopes, origins);
-}
-
 const char* ServiceWorkerGlobalScopeClient::SupplementName() {
   return "ServiceWorkerGlobalScopeClient";
 }
@@ -298,7 +287,7 @@ ServiceWorkerGlobalScopeClient* ServiceWorkerGlobalScopeClient::From(
   return client;
 }
 
-DEFINE_TRACE(ServiceWorkerGlobalScopeClient) {
+void ServiceWorkerGlobalScopeClient::Trace(blink::Visitor* visitor) {
   Supplement<WorkerClients>::Trace(visitor);
 }
 

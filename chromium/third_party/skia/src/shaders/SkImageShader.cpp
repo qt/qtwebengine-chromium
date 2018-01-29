@@ -165,9 +165,9 @@ void SkImageShader::toString(SkString* str) const {
 
 #if SK_SUPPORT_GPU
 
-#include "SkGr.h"
+#include "GrColorSpaceInfo.h"
 #include "GrContext.h"
-#include "effects/GrSimpleTextureEffect.h"
+#include "SkGr.h"
 #include "effects/GrBicubicEffect.h"
 #include "effects/GrSimpleTextureEffect.h"
 
@@ -212,26 +212,25 @@ std::unique_ptr<GrFragmentProcessor> SkImageShader::asFragmentProcessor(
     sk_sp<SkColorSpace> texColorSpace;
     SkScalar scaleAdjust[2] = { 1.0f, 1.0f };
     sk_sp<GrTextureProxy> proxy(as_IB(fImage)->asTextureProxyRef(
-            args.fContext, samplerState, args.fDstColorSpace, &texColorSpace, scaleAdjust));
+            args.fContext, samplerState, args.fDstColorSpaceInfo->colorSpace(), &texColorSpace,
+            scaleAdjust));
     if (!proxy) {
         return nullptr;
     }
 
-    bool isAlphaOnly = GrPixelConfigIsAlphaOnly(proxy->config());
+    GrPixelConfig config = proxy->config();
+    bool isAlphaOnly = GrPixelConfigIsAlphaOnly(config);
 
     lmInverse.postScale(scaleAdjust[0], scaleAdjust[1]);
 
-    sk_sp<GrColorSpaceXform> colorSpaceXform = GrColorSpaceXform::Make(texColorSpace.get(),
-                                                                       args.fDstColorSpace);
     std::unique_ptr<GrFragmentProcessor> inner;
     if (doBicubic) {
-        inner = GrBicubicEffect::Make(std::move(proxy), std::move(colorSpaceXform), lmInverse,
-                                      wrapModes);
+        inner = GrBicubicEffect::Make(std::move(proxy), lmInverse, wrapModes);
     } else {
-        inner = GrSimpleTextureEffect::Make(std::move(proxy), std::move(colorSpaceXform), lmInverse,
-                                            samplerState);
+        inner = GrSimpleTextureEffect::Make(std::move(proxy), lmInverse, samplerState);
     }
-
+    inner = GrColorSpaceXformEffect::Make(std::move(inner), texColorSpace.get(), config,
+                                          args.fDstColorSpaceInfo->colorSpace());
     if (isAlphaOnly) {
         return inner;
     }
@@ -250,20 +249,9 @@ sk_sp<SkShader> SkMakeBitmapShader(const SkBitmap& src, SkShader::TileMode tmx,
                                tmx, tmy, localMatrix);
 }
 
-static sk_sp<SkFlattenable> SkBitmapProcShader_CreateProc(SkReadBuffer& buffer) {
-    SkMatrix lm;
-    buffer.readMatrix(&lm);
-    sk_sp<SkImage> image = buffer.readBitmapAsImage();
-    SkShader::TileMode mx = (SkShader::TileMode)buffer.readUInt();
-    SkShader::TileMode my = (SkShader::TileMode)buffer.readUInt();
-    return image ? image->makeShader(mx, my, &lm) : nullptr;
-}
-
 SK_DEFINE_FLATTENABLE_REGISTRAR_GROUP_START(SkShaderBase)
 SK_DEFINE_FLATTENABLE_REGISTRAR_ENTRY(SkImageShader)
-SkFlattenable::Register("SkBitmapProcShader", SkBitmapProcShader_CreateProc, kSkShaderBase_Type);
 SK_DEFINE_FLATTENABLE_REGISTRAR_GROUP_END
-
 
 bool SkImageShader::onAppendStages(const StageRec& rec) const {
     SkRasterPipeline* p = rec.fPipeline;
@@ -313,7 +301,7 @@ bool SkImageShader::onAppendStages(const StageRec& rec) const {
         }
     }
 
-    p->append(SkRasterPipeline::seed_shader);
+    p->append_seed_shader();
 
     struct MiscCtx {
         std::unique_ptr<SkBitmapController::State> state;

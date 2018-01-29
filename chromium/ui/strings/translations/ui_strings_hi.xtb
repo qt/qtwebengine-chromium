@@ -91,7 +91,6 @@
 <translation id="5941711191222866238">छोटा करें</translation>
 <translation id="5943826764092288734">{HOURS,plural, =1{1 घंटा}one{# घंटे}other{# घंटे}}</translation>
 <translation id="5948410903763073882">Alt+<ph name="KEY_COMBO_NAME" /></translation>
-<translation id="598033046487663418">सभी ऐप्स</translation>
 <translation id="6012623610530968780"><ph name="TOTAL_PAGE_NUM" /> में से <ph name="SELECTED_PAGE" /> पेज</translation>
 <translation id="6022924867608035986">खोज बॉक्स का लेख मिटाएं</translation>
 <translation id="6040143037577758943">बंद करें</translation>
@@ -119,7 +118,7 @@
 <translation id="6907759265145635167"><ph name="QUANTITY" /> PB/s</translation>
 <translation id="6917971086528278418">{YEARS,plural, =1{1 वर्ष शेष}one{# वर्ष शेष}other{# वर्ष शेष}}</translation>
 <translation id="6945221475159498467">चुनें</translation>
-<translation id="6965382102122355670">ठीक</translation>
+<translation id="6965382102122355670">ठीक है</translation>
 <translation id="7052633198403197513">F1</translation>
 <translation id="7130207228079676353">सबसे अधिक संभावना है</translation>
 <translation id="7222373446505536781">F11</translation>
@@ -144,6 +143,7 @@
 <translation id="8352146631962686268">{YEARS,plural, =1{1 वर्ष}one{# वर्ष}other{# वर्ष}}</translation>
 <translation id="8371695176452482769">अब बोलें</translation>
 <translation id="838869780401515933">चेक करें</translation>
+<translation id="8393700583063109961">संदेश भेजें</translation>
 <translation id="8394908167088220973">मीडिया चलाएं/रोकें</translation>
 <translation id="8400147561352026160">Shift+<ph name="KEY_COMBO_NAME" /></translation>
 <translation id="8458811141851741261">{YEARS,plural, =1{1y}one{#y}other{#y}}</translation>

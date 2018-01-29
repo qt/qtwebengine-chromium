@@ -29,13 +29,15 @@ class ContextImpl : public GLImplFactory
 {
   public:
     ContextImpl(const gl::ContextState &state);
-    virtual ~ContextImpl();
+    ~ContextImpl() override;
+
+    virtual void onDestroy(const gl::Context *context) {}
 
     virtual gl::Error initialize() = 0;
 
     // Flush and finish.
-    virtual gl::Error flush()  = 0;
-    virtual gl::Error finish() = 0;
+    virtual gl::Error flush(const gl::Context *context)  = 0;
+    virtual gl::Error finish(const gl::Context *context) = 0;
 
     // Drawing methods.
     virtual gl::Error drawArrays(const gl::Context *context,
@@ -128,10 +130,14 @@ class ContextImpl : public GLImplFactory
     virtual std::string getVendorString() const        = 0;
     virtual std::string getRendererDescription() const = 0;
 
-    // Debug markers.
+    // EXT_debug_marker
     virtual void insertEventMarker(GLsizei length, const char *marker) = 0;
     virtual void pushGroupMarker(GLsizei length, const char *marker)   = 0;
     virtual void popGroupMarker() = 0;
+
+    // KHR_debug
+    virtual void pushDebugGroup(GLenum source, GLuint id, GLsizei length, const char *message) = 0;
+    virtual void popDebugGroup()                                                               = 0;
 
     // State sync with dirty bits.
     virtual void syncState(const gl::Context *context, const gl::State::DirtyBits &dirtyBits) = 0;

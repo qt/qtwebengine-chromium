@@ -44,6 +44,11 @@ bool ExtensionsAPIClient::ShouldHideResponseHeader(
   return false;
 }
 
+bool ExtensionsAPIClient::ShouldHideBrowserNetworkRequest(
+    const GURL& url) const {
+  return false;
+}
+
 AppViewGuestDelegate* ExtensionsAPIClient::CreateAppViewGuestDelegate() const {
   return NULL;
 }
@@ -130,6 +135,11 @@ FeedbackPrivateDelegate* ExtensionsAPIClient::GetFeedbackPrivateDelegate() {
 #if defined(OS_CHROMEOS)
 NonNativeFileSystemDelegate*
 ExtensionsAPIClient::GetNonNativeFileSystemDelegate() {
+  return nullptr;
+}
+
+MediaPerceptionAPIDelegate*
+ExtensionsAPIClient::GetMediaPerceptionAPIDelegate() {
   return nullptr;
 }
 

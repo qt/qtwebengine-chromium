@@ -37,6 +37,7 @@
 #include "core/animation/css/CSSAnimations.h"
 #include "core/css/CSSIdentifierValue.h"
 #include "core/css/CSSPrimitiveValue.h"
+#include "core/css/CSSPropertyValueSet.h"
 #include "core/css/CSSSelectorWatch.h"
 #include "core/css/CSSStyleSheet.h"
 #include "core/css/CSSValue.h"
@@ -44,7 +45,6 @@
 #include "core/css/SelectorQuery.h"
 #include "core/css/StyleChangeReason.h"
 #include "core/css/StyleEngine.h"
-#include "core/css/StylePropertySet.h"
 #include "core/css/parser/CSSParser.h"
 #include "core/css/resolver/SelectorFilterParentScope.h"
 #include "core/css/resolver/StyleResolver.h"
@@ -120,6 +120,7 @@
 #include "core/html/parser/HTMLParserIdioms.h"
 #include "core/input/EventHandler.h"
 #include "core/intersection_observer/ElementIntersectionObserverData.h"
+#include "core/layout/AdjustForAbsoluteZoom.h"
 #include "core/layout/LayoutTextFragment.h"
 #include "core/layout/api/LayoutBoxItem.h"
 #include "core/layout/api/LayoutViewItem.h"
@@ -516,9 +517,6 @@ void Element::scrollIntoViewWithOptions(const ScrollIntoViewOptions& options) {
   if (!GetLayoutObject() || !GetDocument().GetPage())
     return;
 
-  bool make_visible_in_visual_viewport =
-      !GetDocument().GetPage()->GetSettings().GetInertVisualViewport();
-
   ScrollBehavior behavior = (options.behavior() == "smooth")
                                 ? kScrollBehaviorSmooth
                                 : kScrollBehaviorAuto;
@@ -531,9 +529,8 @@ void Element::scrollIntoViewWithOptions(const ScrollIntoViewOptions& options) {
       ToPhysicalAlignment(options, kVerticalScroll, is_horizontal_writing_mode);
 
   LayoutRect bounds = BoundingBox();
-  GetLayoutObject()->ScrollRectToVisible(
-      bounds, align_x, align_y, kProgrammaticScroll,
-      make_visible_in_visual_viewport, behavior);
+  GetLayoutObject()->ScrollRectToVisible(bounds, align_x, align_y,
+                                         kProgrammaticScroll, false, behavior);
 
   GetDocument().SetSequentialFocusNavigationStartingPoint(this);
 }
@@ -544,20 +541,16 @@ void Element::scrollIntoViewIfNeeded(bool center_if_needed) {
   if (!GetLayoutObject())
     return;
 
-  bool make_visible_in_visual_viewport =
-      !GetDocument().GetPage()->GetSettings().GetInertVisualViewport();
-
   LayoutRect bounds = BoundingBox();
-  if (center_if_needed)
+  if (center_if_needed) {
     GetLayoutObject()->ScrollRectToVisible(
         bounds, ScrollAlignment::kAlignCenterIfNeeded,
-        ScrollAlignment::kAlignCenterIfNeeded, kProgrammaticScroll,
-        make_visible_in_visual_viewport);
-  else
+        ScrollAlignment::kAlignCenterIfNeeded, kProgrammaticScroll, false);
+  } else {
     GetLayoutObject()->ScrollRectToVisible(
         bounds, ScrollAlignment::kAlignToEdgeIfNeeded,
-        ScrollAlignment::kAlignToEdgeIfNeeded, kProgrammaticScroll,
-        make_visible_in_visual_viewport);
+        ScrollAlignment::kAlignToEdgeIfNeeded, kProgrammaticScroll, false);
+  }
 }
 
 void Element::setDistributeScroll(ScrollStateCallback* scroll_state_callback,
@@ -722,7 +715,7 @@ void Element::CallApplyScroll(ScrollState& scroll_state) {
 int Element::OffsetLeft() {
   GetDocument().EnsurePaintLocationDataValidForNode(this);
   if (LayoutBoxModelObject* layout_object = GetLayoutBoxModelObject())
-    return AdjustLayoutUnitForAbsoluteZoom(
+    return AdjustForAbsoluteZoom::AdjustLayoutUnit(
                LayoutUnit(
                    layout_object->PixelSnappedOffsetLeft(OffsetParent())),
                layout_object->StyleRef())
@@ -733,7 +726,7 @@ int Element::OffsetLeft() {
 int Element::OffsetTop() {
   GetDocument().EnsurePaintLocationDataValidForNode(this);
   if (LayoutBoxModelObject* layout_object = GetLayoutBoxModelObject())
-    return AdjustLayoutUnitForAbsoluteZoom(
+    return AdjustForAbsoluteZoom::AdjustLayoutUnit(
                LayoutUnit(layout_object->PixelSnappedOffsetTop(OffsetParent())),
                layout_object->StyleRef())
         .Round();
@@ -743,7 +736,7 @@ int Element::OffsetTop() {
 int Element::OffsetWidth() {
   GetDocument().EnsurePaintLocationDataValidForNode(this);
   if (LayoutBoxModelObject* layout_object = GetLayoutBoxModelObject())
-    return AdjustLayoutUnitForAbsoluteZoom(
+    return AdjustForAbsoluteZoom::AdjustLayoutUnit(
                LayoutUnit(
                    layout_object->PixelSnappedOffsetWidth(OffsetParent())),
                layout_object->StyleRef())
@@ -754,7 +747,7 @@ int Element::OffsetWidth() {
 int Element::OffsetHeight() {
   GetDocument().EnsurePaintLocationDataValidForNode(this);
   if (LayoutBoxModelObject* layout_object = GetLayoutBoxModelObject())
-    return AdjustLayoutUnitForAbsoluteZoom(
+    return AdjustForAbsoluteZoom::AdjustLayoutUnit(
                LayoutUnit(
                    layout_object->PixelSnappedOffsetHeight(OffsetParent())),
                layout_object->StyleRef())
@@ -773,8 +766,8 @@ int Element::clientLeft() {
   GetDocument().UpdateStyleAndLayoutIgnorePendingStylesheetsForNode(this);
 
   if (LayoutBox* layout_object = GetLayoutBox())
-    return AdjustLayoutUnitForAbsoluteZoom(layout_object->ClientLeft(),
-                                           layout_object->StyleRef())
+    return AdjustForAbsoluteZoom::AdjustLayoutUnit(layout_object->ClientLeft(),
+                                                   layout_object->StyleRef())
         .Round();
   return 0;
 }
@@ -783,8 +776,8 @@ int Element::clientTop() {
   GetDocument().UpdateStyleAndLayoutIgnorePendingStylesheetsForNode(this);
 
   if (LayoutBox* layout_object = GetLayoutBox())
-    return AdjustLayoutUnitForAbsoluteZoom(layout_object->ClientTop(),
-                                           layout_object->StyleRef())
+    return AdjustForAbsoluteZoom::AdjustLayoutUnit(layout_object->ClientTop(),
+                                                   layout_object->StyleRef())
         .Round();
   return 0;
 }
@@ -803,11 +796,11 @@ int Element::clientWidth() {
           !GetDocument().GetFrame()->IsLocalRoot())
         GetDocument().UpdateStyleAndLayoutIgnorePendingStylesheetsForNode(this);
       if (GetDocument().GetPage()->GetSettings().GetForceZeroLayoutHeight())
-        return AdjustLayoutUnitForAbsoluteZoom(
+        return AdjustForAbsoluteZoom::AdjustLayoutUnit(
                    layout_view.OverflowClipRect(LayoutPoint()).Width(),
                    layout_view.StyleRef())
             .Round();
-      return AdjustLayoutUnitForAbsoluteZoom(
+      return AdjustForAbsoluteZoom::AdjustLayoutUnit(
                  LayoutUnit(layout_view.GetLayoutSize().Width()),
                  layout_view.StyleRef())
           .Round();
@@ -817,7 +810,7 @@ int Element::clientWidth() {
   GetDocument().UpdateStyleAndLayoutIgnorePendingStylesheetsForNode(this);
 
   if (LayoutBox* layout_object = GetLayoutBox())
-    return AdjustLayoutUnitForAbsoluteZoom(
+    return AdjustForAbsoluteZoom::AdjustLayoutUnit(
                LayoutUnit(layout_object->PixelSnappedClientWidth()),
                layout_object->StyleRef())
         .Round();
@@ -839,11 +832,11 @@ int Element::clientHeight() {
           !GetDocument().GetFrame()->IsLocalRoot())
         GetDocument().UpdateStyleAndLayoutIgnorePendingStylesheetsForNode(this);
       if (GetDocument().GetPage()->GetSettings().GetForceZeroLayoutHeight())
-        return AdjustLayoutUnitForAbsoluteZoom(
+        return AdjustForAbsoluteZoom::AdjustLayoutUnit(
                    layout_view.OverflowClipRect(LayoutPoint()).Height(),
                    layout_view.StyleRef())
             .Round();
-      return AdjustLayoutUnitForAbsoluteZoom(
+      return AdjustForAbsoluteZoom::AdjustLayoutUnit(
                  LayoutUnit(layout_view.GetLayoutSize().Height()),
                  layout_view.StyleRef())
           .Round();
@@ -853,7 +846,7 @@ int Element::clientHeight() {
   GetDocument().UpdateStyleAndLayoutIgnorePendingStylesheetsForNode(this);
 
   if (LayoutBox* layout_object = GetLayoutBox())
-    return AdjustLayoutUnitForAbsoluteZoom(
+    return AdjustForAbsoluteZoom::AdjustLayoutUnit(
                LayoutUnit(layout_object->PixelSnappedClientHeight()),
                layout_object->StyleRef())
         .Round();
@@ -872,8 +865,9 @@ double Element::scrollLeft() {
     return 0;
   }
 
-  if (LayoutBox* box = GetLayoutBox())
-    return AdjustScrollForAbsoluteZoom(box->ScrollLeft(), *box);
+  if (LayoutBox* box = GetLayoutBox()) {
+    return AdjustForAbsoluteZoom::AdjustScroll(box->ScrollLeft(), *box);
+  }
 
   return 0;
 }
@@ -890,8 +884,9 @@ double Element::scrollTop() {
     return 0;
   }
 
-  if (LayoutBox* box = GetLayoutBox())
-    return AdjustScrollForAbsoluteZoom(box->ScrollTop(), *box);
+  if (LayoutBox* box = GetLayoutBox()) {
+    return AdjustForAbsoluteZoom::AdjustScroll(box->ScrollTop(), *box);
+  }
 
   return 0;
 }
@@ -941,18 +936,22 @@ int Element::scrollWidth() {
   GetDocument().UpdateStyleAndLayoutIgnorePendingStylesheetsForNode(this);
 
   if (GetDocument().ScrollingElementNoLayout() == this) {
-    if (GetDocument().View())
-      return AdjustForAbsoluteZoom(GetDocument()
-                                       .View()
-                                       ->LayoutViewportScrollableArea()
-                                       ->ContentsSize()
-                                       .Width(),
-                                   GetDocument().GetFrame()->PageZoomFactor());
+    if (GetDocument().View()) {
+      return AdjustForAbsoluteZoom::AdjustInt(
+          GetDocument()
+              .View()
+              ->LayoutViewportScrollableArea()
+              ->ContentsSize()
+              .Width(),
+          GetDocument().GetFrame()->PageZoomFactor());
+    }
     return 0;
   }
 
-  if (LayoutBox* box = GetLayoutBox())
-    return AdjustForAbsoluteZoom(box->PixelSnappedScrollWidth(), box);
+  if (LayoutBox* box = GetLayoutBox()) {
+    return AdjustForAbsoluteZoom::AdjustInt(box->PixelSnappedScrollWidth(),
+                                            box);
+  }
   return 0;
 }
 
@@ -963,18 +962,22 @@ int Element::scrollHeight() {
   GetDocument().UpdateStyleAndLayoutIgnorePendingStylesheetsForNode(this);
 
   if (GetDocument().ScrollingElementNoLayout() == this) {
-    if (GetDocument().View())
-      return AdjustForAbsoluteZoom(GetDocument()
-                                       .View()
-                                       ->LayoutViewportScrollableArea()
-                                       ->ContentsSize()
-                                       .Height(),
-                                   GetDocument().GetFrame()->PageZoomFactor());
+    if (GetDocument().View()) {
+      return AdjustForAbsoluteZoom::AdjustInt(
+          GetDocument()
+              .View()
+              ->LayoutViewportScrollableArea()
+              ->ContentsSize()
+              .Height(),
+          GetDocument().GetFrame()->PageZoomFactor());
+    }
     return 0;
   }
 
-  if (LayoutBox* box = GetLayoutBox())
-    return AdjustForAbsoluteZoom(box->PixelSnappedScrollHeight(), box);
+  if (LayoutBox* box = GetLayoutBox()) {
+    return AdjustForAbsoluteZoom::AdjustInt(box->PixelSnappedScrollHeight(),
+                                            box);
+  }
   return 0;
 }
 
@@ -1086,10 +1089,7 @@ void Element::ScrollFrameBy(const ScrollToOptions& scroll_to_options) {
   if (!frame || !frame->View() || !GetDocument().GetPage())
     return;
 
-  ScrollableArea* viewport =
-      GetDocument().GetPage()->GetSettings().GetInertVisualViewport()
-          ? frame->View()->LayoutViewportScrollableArea()
-          : frame->View()->GetScrollableArea();
+  ScrollableArea* viewport = frame->View()->LayoutViewportScrollableArea();
   if (!viewport)
     return;
 
@@ -1109,10 +1109,7 @@ void Element::ScrollFrameTo(const ScrollToOptions& scroll_to_options) {
   if (!frame || !frame->View() || !GetDocument().GetPage())
     return;
 
-  ScrollableArea* viewport =
-      GetDocument().GetPage()->GetSettings().GetInertVisualViewport()
-          ? frame->View()->LayoutViewportScrollableArea()
-          : frame->View()->GetScrollableArea();
+  ScrollableArea* viewport = frame->View()->LayoutViewportScrollableArea();
   if (!viewport)
     return;
 
@@ -1711,10 +1708,6 @@ Node::InsertionNotificationRequest Element::InsertedInto(
   // by the time we reach updateId
   ContainerNode::InsertedInto(insertion_point);
 
-  if (ContainsFullScreenElement() && parentElement() &&
-      !parentElement()->ContainsFullScreenElement())
-    SetContainsFullScreenElementOnAncestorsCrossingFrameBoundaries(true);
-
   DCHECK(!HasRareData() || !GetElementRareData()->HasPseudoElements());
 
   if (!insertion_point->IsInTreeScope())
@@ -1853,7 +1846,8 @@ void Element::AttachLayoutTree(AttachContext& context) {
 
   AddCallbackSelectors();
 
-  if (HasRareData() && !GetLayoutObject()) {
+  if (HasRareData() && !GetLayoutObject() &&
+      !GetElementRareData()->GetComputedStyle()) {
     if (ElementAnimations* element_animations =
             GetElementRareData()->GetElementAnimations()) {
       element_animations->CssAnimations().Cancel();
@@ -1948,7 +1942,7 @@ void Element::DetachLayoutTree(const AttachContext& context) {
   DCHECK(NeedsAttach());
 }
 
-RefPtr<ComputedStyle> Element::StyleForLayoutObject() {
+scoped_refptr<ComputedStyle> Element::StyleForLayoutObject() {
   DCHECK(GetDocument().InStyleRecalc());
 
   // FIXME: Instead of clearing updates that may have been added from calls to
@@ -1957,9 +1951,9 @@ RefPtr<ComputedStyle> Element::StyleForLayoutObject() {
   if (ElementAnimations* element_animations = GetElementAnimations())
     element_animations->CssAnimations().ClearPendingUpdate();
 
-  RefPtr<ComputedStyle> style = HasCustomStyleCallbacks()
-                                    ? CustomStyleForLayoutObject()
-                                    : OriginalStyleForLayoutObject();
+  scoped_refptr<ComputedStyle> style = HasCustomStyleCallbacks()
+                                           ? CustomStyleForLayoutObject()
+                                           : OriginalStyleForLayoutObject();
   if (!style) {
     DCHECK(IsBeforePseudoElement() || IsAfterPseudoElement());
     return nullptr;
@@ -1972,7 +1966,7 @@ RefPtr<ComputedStyle> Element::StyleForLayoutObject() {
   }
 
   if (style->HasTransform()) {
-    if (const StylePropertySet* inline_style = InlineStyle()) {
+    if (const CSSPropertyValueSet* inline_style = InlineStyle()) {
       style->SetHasInlineTransform(
           inline_style->HasProperty(CSSPropertyTransform) ||
           inline_style->HasProperty(CSSPropertyTranslate) ||
@@ -1987,7 +1981,7 @@ RefPtr<ComputedStyle> Element::StyleForLayoutObject() {
   return style;
 }
 
-RefPtr<ComputedStyle> Element::OriginalStyleForLayoutObject() {
+scoped_refptr<ComputedStyle> Element::OriginalStyleForLayoutObject() {
   DCHECK(GetDocument().InStyleRecalc());
   return GetDocument().EnsureStyleResolver().StyleForElement(this);
 }
@@ -2081,7 +2075,7 @@ void Element::RecalcStyle(StyleRecalcChange change) {
     DidRecalcStyle();
 }
 
-RefPtr<ComputedStyle> Element::PropagateInheritedProperties(
+scoped_refptr<ComputedStyle> Element::PropagateInheritedProperties(
     StyleRecalcChange change) {
   if (change != kIndependentInherit)
     return nullptr;
@@ -2096,7 +2090,7 @@ RefPtr<ComputedStyle> Element::PropagateInheritedProperties(
   const ComputedStyle* style = GetComputedStyle();
   if (!style || style->Animations() || style->Transitions())
     return nullptr;
-  RefPtr<ComputedStyle> new_style = ComputedStyle::Clone(*style);
+  scoped_refptr<ComputedStyle> new_style = ComputedStyle::Clone(*style);
   new_style->PropagateIndependentInheritedProperties(*parent_style);
   INCREMENT_STYLE_STATS_COUNTER(GetDocument().GetStyleEngine(),
                                 independent_inherited_styles_propagated, 1);
@@ -2109,12 +2103,12 @@ StyleRecalcChange Element::RecalcOwnStyle(StyleRecalcChange change) {
   DCHECK(change >= kIndependentInherit || NeedsStyleRecalc());
   DCHECK(ParentComputedStyle());
 
-  RefPtr<ComputedStyle> old_style = MutableComputedStyle();
+  scoped_refptr<ComputedStyle> old_style = MutableComputedStyle();
 
   // When propagating inherited changes, we don't need to do a full style recalc
   // if the only changed properties are independent. In this case, we can simply
   // set these directly on the ComputedStyle object.
-  RefPtr<ComputedStyle> new_style = PropagateInheritedProperties(change);
+  scoped_refptr<ComputedStyle> new_style = PropagateInheritedProperties(change);
   if (!new_style)
     new_style = StyleForLayoutObject();
   if (!new_style)
@@ -2152,21 +2146,24 @@ StyleRecalcChange Element::RecalcOwnStyle(StyleRecalcChange change) {
   if (local_change != kNoChange)
     UpdateCallbackSelectors(old_style.get(), new_style.get());
 
-  if (LayoutObject* layout_object = GetLayoutObject()) {
-    // kNoChange may means that the computed style didn't change, but there are
-    // additional flags in ComputedStyle which may have changed. For instance,
-    // the AffectedBy* flags. We don't need to go through the visual
-    // invalidation diffing in that case, but we replace the old ComputedStyle
-    // object with the new one to ensure the mentioned flags are up to date.
-    if (local_change == kNoChange)
-      layout_object->SetStyleInternal(new_style.get());
-    else
+  if (LayoutObject* layout_object = this->GetLayoutObject()) {
+    if (local_change != kNoChange) {
       layout_object->SetStyle(new_style.get());
+    } else {
+      // Although no change occurred, we use the new style so that the cousin
+      // style sharing code won't get fooled into believing this style is the
+      // same.
+      // FIXME: We may be able to remove this hack, see discussion in
+      // https://codereview.chromium.org/30453002/
+      layout_object->SetStyleInternal(new_style.get());
+    }
   } else {
-    if (ShouldStoreNonLayoutObjectComputedStyle(*new_style))
-      StoreNonLayoutObjectComputedStyle(new_style);
-    else if (HasRareData())
-      GetElementRareData()->ClearComputedStyle();
+    if (local_change != kNoChange) {
+      if (ShouldStoreNonLayoutObjectComputedStyle(*new_style))
+        StoreNonLayoutObjectComputedStyle(new_style);
+      else if (HasRareData())
+        GetElementRareData()->ClearComputedStyle();
+    }
   }
 
   if (GetStyleChangeType() >= kSubtreeStyleChange)
@@ -2277,11 +2274,11 @@ void Element::UpdateCallbackSelectors(const ComputedStyle* old_style,
 }
 
 void Element::AddCallbackSelectors() {
-  UpdateCallbackSelectors(0, GetComputedStyle());
+  UpdateCallbackSelectors(nullptr, GetComputedStyle());
 }
 
 void Element::RemoveCallbackSelectors() {
-  UpdateCallbackSelectors(GetComputedStyle(), 0);
+  UpdateCallbackSelectors(GetComputedStyle(), nullptr);
 }
 
 ElementShadow* Element::Shadow() const {
@@ -2376,27 +2373,24 @@ ShadowRoot* Element::createShadowRoot(const ScriptState* script_state,
       script_state, GetDocument(),
       HostsUsingFeatures::Feature::kElementCreateShadowRoot);
   if (ShadowRoot* root = GetShadowRoot()) {
-    if (root->IsV1()) {
-      exception_state.ThrowDOMException(kInvalidStateError,
-                                        "Shadow root cannot be created on a "
-                                        "host which already hosts a v1 shadow "
-                                        "tree.");
-      return nullptr;
-    }
     if (root->GetType() == ShadowRootType::kUserAgent) {
       exception_state.ThrowDOMException(
           kInvalidStateError,
-          "Shadow root cannot be created on a "
-          "host which already hosts an user-agent "
+          "Shadow root cannot be created on a host which already hosts a "
+          "user-agent shadow tree.");
+    } else {
+      exception_state.ThrowDOMException(
+          kInvalidStateError,
+          "Shadow root cannot be created on a host which already hosts a "
           "shadow tree.");
-      return nullptr;
     }
-  } else if (AlwaysCreateUserAgentShadowRoot()) {
+    return nullptr;
+  }
+  if (AlwaysCreateUserAgentShadowRoot()) {
     exception_state.ThrowDOMException(
         kInvalidStateError,
-        "Shadow root cannot be created on a host "
-        "which already hosts an user-agent shadow "
-        "tree.");
+        "Shadow root cannot be created on a host which already hosts a "
+        "user-agent shadow tree.");
     return nullptr;
   }
   // Some elements make assumptions about what kind of layoutObjects they allow
@@ -2580,7 +2574,7 @@ void Element::ChildrenChanged(const ChildrenChange& change) {
 
   // TODO(hayato): Confirm that we can skip this if a shadow tree is v1.
   if (ElementShadow* shadow = Shadow())
-    shadow->SetNeedsDistributionRecalc();
+    shadow->SetNeedsDistributionRecalcWillBeSetNeedsAssignmentRecalc();
 }
 
 void Element::FinishParsingChildren() {
@@ -2840,6 +2834,11 @@ bool Element::hasAttributeNS(const AtomicString& namespace_uri,
   return GetElementData()->Attributes().Find(q_name);
 }
 
+void Element::focus(FocusOptions options) {
+  focus(FocusParams(SelectionBehaviorOnFocus::kRestore, kWebFocusTypeNone,
+                    nullptr, options));
+}
+
 void Element::focus(const FocusParams& params) {
   if (!isConnected())
     return;
@@ -2870,7 +2869,7 @@ void Element::focus(const FocusParams& params) {
                          .FindFocusableElementInShadowHost(*this);
     if (found && IsShadowIncludingInclusiveAncestorOf(found)) {
       found->focus(FocusParams(SelectionBehaviorOnFocus::kReset,
-                               kWebFocusTypeForward, nullptr));
+                               kWebFocusTypeForward, nullptr, params.options));
       return;
     }
   }
@@ -2880,7 +2879,7 @@ void Element::focus(const FocusParams& params) {
     return;
 
   if (GetDocument().FocusedElement() == this &&
-      GetDocument().GetFrame()->HasReceivedUserGesture()) {
+      GetDocument().GetFrame()->HasBeenActivated()) {
     // Bring up the keyboard in the context of anything triggered by a user
     // gesture. Since tracking that across arbitrary boundaries (eg.
     // animations) is difficult, for now we match IE's heuristic and bring
@@ -2894,6 +2893,12 @@ void Element::focus(const FocusParams& params) {
 
 void Element::UpdateFocusAppearance(
     SelectionBehaviorOnFocus selection_behavior) {
+  UpdateFocusAppearanceWithOptions(selection_behavior, FocusOptions());
+}
+
+void Element::UpdateFocusAppearanceWithOptions(
+    SelectionBehaviorOnFocus selection_behavior,
+    const FocusOptions& options) {
   if (selection_behavior == SelectionBehaviorOnFocus::kNone)
     return;
   if (IsRootEditableElement(*this)) {
@@ -2921,10 +2926,13 @@ void Element::UpdateFocusAppearance(
             .SetShouldClearTypingStyle(true)
             .SetDoNotSetFocus(true)
             .Build());
-    frame->Selection().RevealSelection();
+    if (!options.preventScroll())
+      frame->Selection().RevealSelection();
   } else if (GetLayoutObject() &&
              !GetLayoutObject()->IsLayoutEmbeddedContent()) {
-    GetLayoutObject()->ScrollRectToVisible(BoundingBox());
+    if (!options.preventScroll()) {
+      GetLayoutObject()->ScrollRectToVisible(BoundingBox());
+    }
   }
 }
 
@@ -2932,10 +2940,12 @@ void Element::blur() {
   CancelFocusAppearanceUpdate();
   if (AdjustedFocusedElementInTreeScope() == this) {
     Document& doc = GetDocument();
-    if (doc.GetPage())
-      doc.GetPage()->GetFocusController().SetFocusedElement(0, doc.GetFrame());
-    else
+    if (doc.GetPage()) {
+      doc.GetPage()->GetFocusController().SetFocusedElement(nullptr,
+                                                            doc.GetFrame());
+    } else {
       doc.ClearFocusedElement();
+    }
   }
 }
 
@@ -3359,7 +3369,7 @@ String Element::outerText() {
 }
 
 String Element::TextFromChildren() {
-  Text* first_text_node = 0;
+  Text* first_text_node = nullptr;
   bool found_multiple_text_nodes = false;
   unsigned total_length = 0;
 
@@ -3466,7 +3476,7 @@ const ComputedStyle* Element::EnsureComputedStyle(
       layout_parent_style = parent_layout_object->Style();
   }
 
-  RefPtr<ComputedStyle> result =
+  scoped_refptr<ComputedStyle> result =
       GetDocument().EnsureStyleResolver().PseudoStyleForElement(
           this,
           PseudoStyleRequest(pseudo_element_specifier,
@@ -3477,7 +3487,7 @@ const ComputedStyle* Element::EnsureComputedStyle(
 }
 
 const ComputedStyle* Element::NonLayoutObjectComputedStyle() const {
-  if (GetLayoutObject() || !HasRareData())
+  if (!HasRareData())
     return nullptr;
 
   return GetElementRareData()->GetComputedStyle();
@@ -3493,14 +3503,16 @@ bool Element::ShouldStoreNonLayoutObjectComputedStyle(
     const ComputedStyle& style) const {
 #if DCHECK_IS_ON()
   if (style.Display() == EDisplay::kContents)
-    DCHECK(!GetLayoutObject());
+    DCHECK(!GetLayoutObject() || IsPseudoElement());
 #endif
 
   return style.Display() == EDisplay::kContents ||
-         IsHTMLOptGroupElement(*this) || IsHTMLOptionElement(*this);
+         IsHTMLOptGroupElement(*this) || IsHTMLOptionElement(*this) ||
+         IsSVGStopElement(*this);
 }
 
-void Element::StoreNonLayoutObjectComputedStyle(RefPtr<ComputedStyle> style) {
+void Element::StoreNonLayoutObjectComputedStyle(
+    scoped_refptr<ComputedStyle> style) {
   DCHECK(style);
   DCHECK(ShouldStoreNonLayoutObjectComputedStyle(*style));
   EnsureElementRareData().SetComputedStyle(std::move(style));
@@ -3658,13 +3670,14 @@ ComputedStyle* Element::PseudoStyle(const PseudoStyleRequest& request,
   if (ComputedStyle* cached = style->GetCachedPseudoStyle(request.pseudo_id))
     return cached;
 
-  RefPtr<ComputedStyle> result = GetUncachedPseudoStyle(request, parent_style);
+  scoped_refptr<ComputedStyle> result =
+      GetUncachedPseudoStyle(request, parent_style);
   if (result)
     return style->AddCachedPseudoStyle(std::move(result));
   return nullptr;
 }
 
-RefPtr<ComputedStyle> Element::GetUncachedPseudoStyle(
+scoped_refptr<ComputedStyle> Element::GetUncachedPseudoStyle(
     const PseudoStyleRequest& request,
     const ComputedStyle* parent_style) {
   const ComputedStyle* style = GetComputedStyle();
@@ -3693,7 +3706,7 @@ RefPtr<ComputedStyle> Element::GetUncachedPseudoStyle(
     parent_style = style;
 
   if (request.pseudo_id == kPseudoIdFirstLineInherited) {
-    RefPtr<ComputedStyle> result =
+    scoped_refptr<ComputedStyle> result =
         GetDocument().EnsureStyleResolver().StyleForElement(this, parent_style,
                                                             parent_style);
     result->SetStyleType(kPseudoIdFirstLineInherited);
@@ -4063,7 +4076,7 @@ static bool NeedsURLResolutionForInlineStyle(const Element& element,
     return false;
   if (old_document.BaseURL() == new_document.BaseURL())
     return false;
-  const StylePropertySet* style = element.InlineStyle();
+  const CSSPropertyValueSet* style = element.InlineStyle();
   if (!style)
     return false;
   for (unsigned i = 0; i < style->PropertyCount(); ++i) {
@@ -4074,7 +4087,7 @@ static bool NeedsURLResolutionForInlineStyle(const Element& element,
 }
 
 static void ReResolveURLsInInlineStyle(const Document& document,
-                                       MutableStylePropertySet& style) {
+                                       MutableCSSPropertyValueSet& style) {
   for (unsigned i = 0; i < style.PropertyCount(); ++i) {
     const CSSValue& value = style.PropertyAt(i).Value();
     if (value.MayContainUrl())
@@ -4243,7 +4256,7 @@ void Element::DidRecalcStyle() {
   DCHECK(HasCustomStyleCallbacks());
 }
 
-RefPtr<ComputedStyle> Element::CustomStyleForLayoutObject() {
+scoped_refptr<ComputedStyle> Element::CustomStyleForLayoutObject() {
   DCHECK(HasCustomStyleCallbacks());
   return OriginalStyleForLayoutObject();
 }
@@ -4325,7 +4338,7 @@ void Element::SynchronizeStyleAttributeInternal() const {
   DCHECK(GetElementData());
   DCHECK(GetElementData()->style_attribute_is_dirty_);
   GetElementData()->style_attribute_is_dirty_ = false;
-  const StylePropertySet* inline_style = InlineStyle();
+  const CSSPropertyValueSet* inline_style = InlineStyle();
   const_cast<Element*>(this)->SetSynchronizedLazyAttribute(
       styleAttr,
       inline_style ? AtomicString(inline_style->AsText()) : g_empty_atom);
@@ -4337,25 +4350,25 @@ CSSStyleDeclaration* Element::style() {
   return &EnsureElementRareData().EnsureInlineCSSStyleDeclaration(this);
 }
 
-StylePropertyMap* Element::styleMap() {
+StylePropertyMap* Element::attributeStyleMap() {
   if (!IsStyledElement())
     return nullptr;
   return &EnsureElementRareData().EnsureInlineStylePropertyMap(this);
 }
 
-MutableStylePropertySet& Element::EnsureMutableInlineStyle() {
+MutableCSSPropertyValueSet& Element::EnsureMutableInlineStyle() {
   DCHECK(IsStyledElement());
-  Member<StylePropertySet>& inline_style =
+  Member<CSSPropertyValueSet>& inline_style =
       EnsureUniqueElementData().inline_style_;
   if (!inline_style) {
     CSSParserMode mode = (!IsHTMLElement() || GetDocument().InQuirksMode())
                              ? kHTMLQuirksMode
                              : kHTMLStandardMode;
-    inline_style = MutableStylePropertySet::Create(mode);
+    inline_style = MutableCSSPropertyValueSet::Create(mode);
   } else if (!inline_style->IsMutable()) {
     inline_style = inline_style->MutableCopy();
   }
-  return *ToMutableStylePropertySet(inline_style);
+  return *ToMutableCSSPropertyValueSet(inline_style);
 }
 
 void Element::ClearMutableInlineStyleIfEmpty() {
@@ -4367,7 +4380,7 @@ void Element::ClearMutableInlineStyleIfEmpty() {
 inline void Element::SetInlineStyleFromString(
     const AtomicString& new_style_string) {
   DCHECK(IsStyledElement());
-  Member<StylePropertySet>& inline_style = GetElementData()->inline_style_;
+  Member<CSSPropertyValueSet>& inline_style = GetElementData()->inline_style_;
 
   // Avoid redundant work if we're using shared attribute data with already
   // parsed inline style.
@@ -4384,8 +4397,9 @@ inline void Element::SetInlineStyleFromString(
         CSSParser::ParseInlineStyleDeclaration(new_style_string, this);
   } else {
     DCHECK(inline_style->IsMutable());
-    static_cast<MutableStylePropertySet*>(inline_style.Get())
+    static_cast<MutableCSSPropertyValueSet*>(inline_style.Get())
         ->ParseDeclarationList(new_style_string,
+                               GetDocument().GetSecureContextMode(),
                                GetDocument().ElementSheet().Contents());
   }
 }
@@ -4474,6 +4488,7 @@ bool Element::SetInlineStyleProperty(CSSPropertyID property_id,
   DCHECK(IsStyledElement());
   bool did_change = EnsureMutableInlineStyle()
                         .SetProperty(property_id, value, important,
+                                     GetDocument().GetSecureContextMode(),
                                      GetDocument().ElementSheet().Contents())
                         .did_change;
   if (did_change)
@@ -4510,7 +4525,7 @@ void Element::UpdatePresentationAttributeStyle() {
 }
 
 void Element::AddPropertyToPresentationAttributeStyle(
-    MutableStylePropertySet* style,
+    MutableCSSPropertyValueSet* style,
     CSSPropertyID property_id,
     CSSValueID identifier) {
   DCHECK(IsStyledElement());
@@ -4518,7 +4533,7 @@ void Element::AddPropertyToPresentationAttributeStyle(
 }
 
 void Element::AddPropertyToPresentationAttributeStyle(
-    MutableStylePropertySet* style,
+    MutableCSSPropertyValueSet* style,
     CSSPropertyID property_id,
     double value,
     CSSPrimitiveValue::UnitType unit) {
@@ -4527,15 +4542,16 @@ void Element::AddPropertyToPresentationAttributeStyle(
 }
 
 void Element::AddPropertyToPresentationAttributeStyle(
-    MutableStylePropertySet* style,
+    MutableCSSPropertyValueSet* style,
     CSSPropertyID property_id,
     const String& value) {
   DCHECK(IsStyledElement());
-  style->SetProperty(property_id, value, false);
+  style->SetProperty(property_id, value, false,
+                     GetDocument().GetSecureContextMode());
 }
 
 void Element::AddPropertyToPresentationAttributeStyle(
-    MutableStylePropertySet* style,
+    MutableCSSPropertyValueSet* style,
     CSSPropertyID property_id,
     const CSSValue* value) {
   DCHECK(IsStyledElement());
@@ -4548,7 +4564,7 @@ void Element::LogAddElementIfIsolatedWorldAndInDocument(
   if (!isConnected())
     return;
   V8DOMActivityLogger* activity_logger =
-      V8DOMActivityLogger::CurrentActivityLoggerIfIsolatedWorld();
+      V8DOMActivityLogger::CurrentActivityLoggerIfIsolatedWorldForMainThread();
   if (!activity_logger)
     return;
   Vector<String, 2> argv;
@@ -4564,7 +4580,7 @@ void Element::LogAddElementIfIsolatedWorldAndInDocument(
   if (!isConnected())
     return;
   V8DOMActivityLogger* activity_logger =
-      V8DOMActivityLogger::CurrentActivityLoggerIfIsolatedWorld();
+      V8DOMActivityLogger::CurrentActivityLoggerIfIsolatedWorldForMainThread();
   if (!activity_logger)
     return;
   Vector<String, 3> argv;
@@ -4582,7 +4598,7 @@ void Element::LogAddElementIfIsolatedWorldAndInDocument(
   if (!isConnected())
     return;
   V8DOMActivityLogger* activity_logger =
-      V8DOMActivityLogger::CurrentActivityLoggerIfIsolatedWorld();
+      V8DOMActivityLogger::CurrentActivityLoggerIfIsolatedWorldForMainThread();
   if (!activity_logger)
     return;
   Vector<String, 4> argv;
@@ -4599,7 +4615,7 @@ void Element::LogUpdateAttributeIfIsolatedWorldAndInDocument(
   if (!isConnected())
     return;
   V8DOMActivityLogger* activity_logger =
-      V8DOMActivityLogger::CurrentActivityLoggerIfIsolatedWorld();
+      V8DOMActivityLogger::CurrentActivityLoggerIfIsolatedWorldForMainThread();
   if (!activity_logger)
     return;
   Vector<String, 4> argv;
@@ -4610,14 +4626,14 @@ void Element::LogUpdateAttributeIfIsolatedWorldAndInDocument(
   activity_logger->LogEvent("blinkSetAttribute", argv.size(), argv.data());
 }
 
-DEFINE_TRACE(Element) {
+void Element::Trace(blink::Visitor* visitor) {
   if (HasRareData())
     visitor->Trace(GetElementRareData());
   visitor->Trace(element_data_);
   ContainerNode::Trace(visitor);
 }
 
-DEFINE_TRACE_WRAPPERS(Element) {
+void Element::TraceWrappers(const ScriptWrappableVisitor* visitor) const {
   if (HasRareData()) {
     visitor->TraceWrappersWithManualWriteBarrier(GetElementRareData());
   }

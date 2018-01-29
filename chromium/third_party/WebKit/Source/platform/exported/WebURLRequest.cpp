@@ -35,7 +35,6 @@
 #include "platform/wtf/Allocator.h"
 #include "platform/wtf/Noncopyable.h"
 #include "platform/wtf/PtrUtil.h"
-#include "public/platform/WebCachePolicy.h"
 #include "public/platform/WebHTTPBody.h"
 #include "public/platform/WebHTTPHeaderVisitor.h"
 #include "public/platform/WebSecurityOrigin.h"
@@ -47,9 +46,9 @@ namespace {
 
 class URLRequestExtraDataContainer : public ResourceRequest::ExtraData {
  public:
-  static RefPtr<URLRequestExtraDataContainer> Create(
+  static scoped_refptr<URLRequestExtraDataContainer> Create(
       WebURLRequest::ExtraData* extra_data) {
-    return WTF::AdoptRef(new URLRequestExtraDataContainer(extra_data));
+    return base::AdoptRef(new URLRequestExtraDataContainer(extra_data));
   }
 
   ~URLRequestExtraDataContainer() override {}
@@ -138,12 +137,12 @@ void WebURLRequest::SetAllowStoredCredentials(bool allow_stored_credentials) {
   resource_request_->SetAllowStoredCredentials(allow_stored_credentials);
 }
 
-WebCachePolicy WebURLRequest::GetCachePolicy() const {
-  return resource_request_->GetCachePolicy();
+mojom::FetchCacheMode WebURLRequest::GetCacheMode() const {
+  return resource_request_->GetCacheMode();
 }
 
-void WebURLRequest::SetCachePolicy(WebCachePolicy cache_policy) {
-  resource_request_->SetCachePolicy(cache_policy);
+void WebURLRequest::SetCacheMode(mojom::FetchCacheMode cache_mode) {
+  resource_request_->SetCacheMode(cache_mode);
 }
 
 WebString WebURLRequest::HttpMethod() const {
@@ -191,26 +190,11 @@ void WebURLRequest::VisitHTTPHeaderFields(WebHTTPHeaderVisitor* visitor) const {
 }
 
 WebHTTPBody WebURLRequest::HttpBody() const {
-  // TODO(mkwst): This is wrong, as it means that we're producing the body
-  // before any ServiceWorker has a chance to operate, which means we're
-  // revealing data to the SW that we ought to be hiding. Baby steps.
-  // https://crbug.com/599597
-  if (resource_request_->AttachedCredential())
-    return WebHTTPBody(resource_request_->AttachedCredential());
   return WebHTTPBody(resource_request_->HttpBody());
 }
 
 void WebURLRequest::SetHTTPBody(const WebHTTPBody& http_body) {
   resource_request_->SetHTTPBody(http_body);
-}
-
-WebHTTPBody WebURLRequest::AttachedCredential() const {
-  return WebHTTPBody(resource_request_->AttachedCredential());
-}
-
-void WebURLRequest::SetAttachedCredential(
-    const WebHTTPBody& attached_credential) {
-  resource_request_->SetAttachedCredential(attached_credential);
 }
 
 bool WebURLRequest::ReportUploadProgress() const {
@@ -269,12 +253,12 @@ void WebURLRequest::SetRequestorID(int requestor_id) {
   resource_request_->SetRequestorID(requestor_id);
 }
 
-int WebURLRequest::RequestorProcessID() const {
-  return resource_request_->RequestorProcessID();
+int WebURLRequest::GetPluginChildID() const {
+  return resource_request_->GetPluginChildID();
 }
 
-void WebURLRequest::SetRequestorProcessID(int requestor_process_id) {
-  resource_request_->SetRequestorProcessID(requestor_process_id);
+void WebURLRequest::SetPluginChildID(int plugin_child_id) {
+  resource_request_->SetPluginChildID(plugin_child_id);
 }
 
 int WebURLRequest::AppCacheHostID() const {
@@ -326,21 +310,21 @@ void WebURLRequest::SetShouldResetAppCache(bool set_should_reset_app_cache) {
   resource_request_->SetShouldResetAppCache(set_should_reset_app_cache);
 }
 
-WebURLRequest::FetchRequestMode WebURLRequest::GetFetchRequestMode() const {
+network::mojom::FetchRequestMode WebURLRequest::GetFetchRequestMode() const {
   return resource_request_->GetFetchRequestMode();
 }
 
-void WebURLRequest::SetFetchRequestMode(WebURLRequest::FetchRequestMode mode) {
+void WebURLRequest::SetFetchRequestMode(network::mojom::FetchRequestMode mode) {
   return resource_request_->SetFetchRequestMode(mode);
 }
 
-WebURLRequest::FetchCredentialsMode WebURLRequest::GetFetchCredentialsMode()
+network::mojom::FetchCredentialsMode WebURLRequest::GetFetchCredentialsMode()
     const {
   return resource_request_->GetFetchCredentialsMode();
 }
 
 void WebURLRequest::SetFetchCredentialsMode(
-    WebURLRequest::FetchCredentialsMode mode) {
+    network::mojom::FetchCredentialsMode mode) {
   return resource_request_->SetFetchCredentialsMode(mode);
 }
 
@@ -371,9 +355,10 @@ void WebURLRequest::SetPreviewsState(
 }
 
 WebURLRequest::ExtraData* WebURLRequest::GetExtraData() const {
-  RefPtr<ResourceRequest::ExtraData> data = resource_request_->GetExtraData();
+  scoped_refptr<ResourceRequest::ExtraData> data =
+      resource_request_->GetExtraData();
   if (!data)
-    return 0;
+    return nullptr;
   return static_cast<URLRequestExtraDataContainer*>(data.get())->GetExtraData();
 }
 
@@ -415,6 +400,11 @@ void WebURLRequest::SetUiStartTime(double time_seconds) {
 
 bool WebURLRequest::IsExternalRequest() const {
   return resource_request_->IsExternalRequest();
+}
+
+network::mojom::CORSPreflightPolicy WebURLRequest::GetCORSPreflightPolicy()
+    const {
+  return resource_request_->CORSPreflightPolicy();
 }
 
 WebURLRequest::LoadingIPCType WebURLRequest::GetLoadingIPCType() const {

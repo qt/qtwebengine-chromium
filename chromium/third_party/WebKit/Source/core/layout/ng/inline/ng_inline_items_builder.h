@@ -18,6 +18,7 @@ namespace blink {
 
 class ComputedStyle;
 class LayoutObject;
+class LayoutText;
 class NGInlineItem;
 
 // NGInlineItemsBuilder builds a string and a list of NGInlineItem from inlines.
@@ -62,23 +63,17 @@ class CORE_TEMPLATE_CLASS_EXPORT NGInlineItemsBuilderTemplate {
   // @param style The style for the string.
   // If a nullptr, it should skip shaping. Atomic inlines and bidi controls use
   // this.
-  // @param LayoutObject The LayoutObject for the string.
+  // @param LayoutText The LayoutText for the string.
   // If a nullptr, it does not generate BidiRun. Bidi controls use this.
-  void Append(const String&, const ComputedStyle*, LayoutObject* = nullptr);
+  void Append(const String&, const ComputedStyle*, LayoutText* = nullptr);
 
   // Append a break opportunity; e.g., <wbr> element.
   void AppendBreakOpportunity(const ComputedStyle*, LayoutObject*);
 
-  // Append a character.
-  // Currently this function is for adding control characters such as
-  // objectReplacementCharacter, and does not support all space collapsing logic
-  // as its String version does.
-  // See the String version for using nullptr for ComputedStyle and
-  // LayoutObject.
-  void Append(NGInlineItem::NGInlineItemType,
-              UChar,
-              const ComputedStyle* = nullptr,
-              LayoutObject* = nullptr);
+  // Append a unicode "object replacement character" for an atomic inline,
+  // signaling the presence of a non-text object to the unicode bidi algorithm.
+  void AppendAtomicInline(const ComputedStyle* = nullptr,
+                          LayoutObject* = nullptr);
 
   // Append a character.
   // The character is opaque to space collapsing; i.e., spaces before this
@@ -113,10 +108,6 @@ class CORE_TEMPLATE_CLASS_EXPORT NGInlineItemsBuilderTemplate {
   // white space is collapsed.
   OffsetMappingBuilder mapping_builder_;
 
-  // Indicates whether we are appending a string not, to help updating
-  // |mapping_builder_|.
-  bool is_appending_string_ = false;
-
   typedef struct OnExitNode {
     LayoutObject* node;
     UChar character;
@@ -130,17 +121,28 @@ class CORE_TEMPLATE_CLASS_EXPORT NGInlineItemsBuilderTemplate {
   bool has_bidi_controls_ = false;
   bool is_empty_inline_ = true;
 
+  // Append a character.
+  // Currently this function is for adding control characters such as
+  // objectReplacementCharacter, and does not support all space collapsing logic
+  // as its String version does.
+  // See the String version for using nullptr for ComputedStyle and
+  // LayoutObject.
+  void Append(NGInlineItem::NGInlineItemType,
+              UChar,
+              const ComputedStyle*,
+              LayoutObject*);
+
   void AppendWithWhiteSpaceCollapsing(const String&,
                                       unsigned start,
                                       unsigned end,
                                       const ComputedStyle*,
-                                      LayoutObject*);
+                                      LayoutText*);
   void AppendWithoutWhiteSpaceCollapsing(const String&,
                                          const ComputedStyle*,
-                                         LayoutObject*);
+                                         LayoutText*);
   void AppendWithPreservingNewlines(const String&,
                                     const ComputedStyle*,
-                                    LayoutObject*);
+                                    LayoutText*);
 
   void AppendForcedBreak(const ComputedStyle*, LayoutObject*);
 

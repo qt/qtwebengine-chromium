@@ -41,8 +41,8 @@
 #include "platform/weborigin/SchemeRegistry.h"
 #include "platform/wtf/Assertions.h"
 #include "platform/wtf/CryptographicallyRandomNumber.h"
-#include "platform/wtf/CurrentTime.h"
 #include "platform/wtf/DateMath.h"
+#include "platform/wtf/Time.h"
 #include "platform/wtf/text/Base64.h"
 #include "platform/wtf/text/StringBuilder.h"
 
@@ -78,7 +78,7 @@ static String ConvertToPrintableCharacters(const String& text) {
 MHTMLArchive::MHTMLArchive() {}
 
 MHTMLArchive* MHTMLArchive::Create(const KURL& url,
-                                   RefPtr<const SharedBuffer> data) {
+                                   scoped_refptr<const SharedBuffer> data) {
   // MHTML pages can only be loaded from local URLs, http/https URLs, and
   // content URLs(Android specific).  The latter is now allowed due to full
   // sandboxing enforcement on MHTML pages.
@@ -205,7 +205,7 @@ void MHTMLArchive::GenerateMHTMLPart(const String& boundary,
     string_builder.Append("\r\n");
   }
 
-  const char* content_encoding = 0;
+  const char* content_encoding = nullptr;
   if (encoding_policy == kUseBinaryEncoding)
     content_encoding = kBinary;
   else if (MIMETypeRegistry::IsSupportedJavaScriptMIMEType(
@@ -290,7 +290,7 @@ ArchiveResource* MHTMLArchive::SubresourceForURL(const KURL& url) const {
   return subresources_.at(url.GetString());
 }
 
-DEFINE_TRACE(MHTMLArchive) {
+void MHTMLArchive::Trace(blink::Visitor* visitor) {
   visitor->Trace(main_resource_);
   visitor->Trace(subresources_);
 }

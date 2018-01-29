@@ -51,8 +51,11 @@ GrPathRendererChain::GrPathRendererChain(GrContext* context, const Options& opti
     fChain.push_back(sk_make_sp<GrAAHairLinePathRenderer>());
 
     if (options.fGpuPathRenderers & GpuPathRenderers::kCoverageCounting) {
-        if (auto ccpr = GrCoverageCountingPathRenderer::CreateIfSupported(*context->caps())) {
-            context->contextPriv().addOnFlushCallbackObject(ccpr.get());
+        bool drawCachablePaths = !options.fAllowPathMaskCaching;
+        if (auto ccpr = GrCoverageCountingPathRenderer::CreateIfSupported(*context->caps(),
+                                                                          drawCachablePaths)) {
+            fCoverageCountingPathRenderer = ccpr.get();
+            context->contextPriv().addOnFlushCallbackObject(fCoverageCountingPathRenderer);
             fChain.push_back(std::move(ccpr));
         }
     }

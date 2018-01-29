@@ -28,10 +28,10 @@ add_proto qw/void vp8_dequant_idct_add/, "short *input, short *dq, unsigned char
 specialize qw/vp8_dequant_idct_add mmx neon dspr2 msa mmi/;
 
 add_proto qw/void vp8_dequant_idct_add_y_block/, "short *q, short *dq, unsigned char *dst, int stride, char *eobs";
-specialize qw/vp8_dequant_idct_add_y_block sse2 neon dspr2 msa/;
+specialize qw/vp8_dequant_idct_add_y_block sse2 neon dspr2 msa mmi/;
 
 add_proto qw/void vp8_dequant_idct_add_uv_block/, "short *q, short *dq, unsigned char *dst_u, unsigned char *dst_v, int stride, char *eobs";
-specialize qw/vp8_dequant_idct_add_uv_block sse2 neon dspr2 msa/;
+specialize qw/vp8_dequant_idct_add_uv_block sse2 neon dspr2 msa mmi/;
 
 #
 # Loopfilter
@@ -176,22 +176,22 @@ if ($opts{arch} =~ /x86/) {
 # Forward DCT
 #
 add_proto qw/void vp8_short_fdct4x4/, "short *input, short *output, int pitch";
-specialize qw/vp8_short_fdct4x4 sse2 neon msa/;
+specialize qw/vp8_short_fdct4x4 sse2 neon msa mmi/;
 
 add_proto qw/void vp8_short_fdct8x4/, "short *input, short *output, int pitch";
-specialize qw/vp8_short_fdct8x4 sse2 neon msa/;
+specialize qw/vp8_short_fdct8x4 sse2 neon msa mmi/;
 
 add_proto qw/void vp8_short_walsh4x4/, "short *input, short *output, int pitch";
-specialize qw/vp8_short_walsh4x4 sse2 neon msa/;
+specialize qw/vp8_short_walsh4x4 sse2 neon msa mmi/;
 
 #
 # Quantizer
 #
 add_proto qw/void vp8_regular_quantize_b/, "struct block *, struct blockd *";
-specialize qw/vp8_regular_quantize_b sse2 sse4_1 msa/;
+specialize qw/vp8_regular_quantize_b sse2 sse4_1 msa mmi/;
 
 add_proto qw/void vp8_fast_quantize_b/, "struct block *, struct blockd *";
-specialize qw/vp8_fast_quantize_b sse2 ssse3 neon msa/;
+specialize qw/vp8_fast_quantize_b sse2 ssse3 neon msa mmi/;
 
 #
 # Block subtraction

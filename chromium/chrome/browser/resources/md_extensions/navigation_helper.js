@@ -21,20 +21,23 @@ const Dialog = {
   OPTIONS: 'options',
 };
 
-/** @enum {number} */
-extensions.ShowingType = {
-  EXTENSIONS: 0,
-  APPS: 1,
-};
-
 /** @typedef {{page: Page,
                extensionId: (string|undefined),
-               subpage: (!Dialog|undefined),
-               type: (!extensions.ShowingType|undefined)}} */
+               subpage: (!Dialog|undefined)}} */
 let PageState;
 
 cr.define('extensions', function() {
   'use strict';
+
+  /**
+   * @param {!PageState} a
+   * @param {!PageState} b
+   * @return {boolean} Whether a and b are equal.
+   */
+  function isPageStateEqual(a, b) {
+    return a.page == b.page && a.subpage == b.subpage &&
+        a.extensionId == b.extensionId;
+  }
 
   /**
    * Regular expression that captures the leading slash, the content and the
@@ -50,20 +53,16 @@ cr.define('extensions', function() {
    */
   class NavigationHelper {
     constructor() {
-      // Redirect if route not supported.
-      let validPathnames = ['/'];
-      if (!loadTimeData.getBoolean('isGuest')) {
-        validPathnames.push('/shortcuts', '/apps');
-      }
-      if (!validPathnames.includes(this.currentPath_)) {
-        window.history.replaceState(undefined, '', '/');
-      }
+      this.processRoute_();
 
       /** @private {number} */
       this.nextListenerId_ = 1;
 
       /** @private {!Map<number, function(!PageState)>} */
       this.listeners_ = new Map();
+
+      /** @private {!PageState} */
+      this.previousPage_;
 
       window.addEventListener('popstate', () => {
         this.notifyRouteChanged_(this.getCurrentPage());
@@ -73,6 +72,24 @@ cr.define('extensions', function() {
     /** @private */
     get currentPath_() {
       return location.pathname.replace(CANONICAL_PATH_REGEX, '$1$2');
+    }
+
+    /**
+     * If you're not a guest, going to /configureCommands and /shortcuts should
+     * land you on /shortcuts. These are the only two supported routes, so all
+     * other cases (guest or not) will redirect you to root path if not already
+     * on it.
+     * @private
+     */
+    processRoute_() {
+      if (!loadTimeData.getBoolean('isGuest') &&
+          (this.currentPath_ == '/configureCommands' ||
+           this.currentPath_ == '/shortcuts')) {
+        window.history.replaceState(
+            undefined /* stateObject */, '', '/shortcuts');
+      } else if (this.currentPath_ !== '/') {
+        window.history.replaceState(undefined /* stateObject */, '', '/');
+      }
     }
 
     /**
@@ -94,10 +111,7 @@ cr.define('extensions', function() {
       if (this.currentPath_ == '/shortcuts')
         return {page: Page.SHORTCUTS};
 
-      if (this.currentPath_ == '/apps')
-        return {page: Page.LIST, type: extensions.ShowingType.APPS};
-
-      return {page: Page.LIST, type: extensions.ShowingType.EXTENSIONS};
+      return {page: Page.LIST};
     }
 
     /**
@@ -136,28 +150,36 @@ cr.define('extensions', function() {
      */
     navigateTo(newPage) {
       let currentPage = this.getCurrentPage();
-      if (currentPage && currentPage.page == newPage.page &&
-          currentPage.type == newPage.type &&
-          currentPage.subpage == newPage.subpage &&
-          currentPage.extensionId == newPage.extensionId) {
+      if (currentPage && isPageStateEqual(currentPage, newPage)) {
         return;
       }
 
-      this.updateHistory(newPage);
+      this.updateHistory(newPage, false /* replaceState */);
+      this.notifyRouteChanged_(newPage);
+    }
+
+    /**
+     * @param {!PageState} newPage the page to replace the current page with.
+     */
+    replaceWith(newPage) {
+      this.updateHistory(newPage, true /* replaceState */);
+      if (this.previousPage_ && isPageStateEqual(this.previousPage_, newPage)) {
+        // Skip the duplicate history entry.
+        history.back();
+        return;
+      }
       this.notifyRouteChanged_(newPage);
     }
 
     /**
      * Called when a page changes, and pushes state to history to reflect it.
      * @param {!PageState} entry
+     * @param {boolean} replaceState
      */
-    updateHistory(entry) {
+    updateHistory(entry, replaceState) {
       let path;
       switch (entry.page) {
         case Page.LIST:
-          if (entry.type == extensions.ShowingType.APPS)
-            path = '/apps';
-          else
             path = '/';
           break;
         case Page.DETAILS:
@@ -179,16 +201,17 @@ cr.define('extensions', function() {
       const state = {url: path};
       const currentPage = this.getCurrentPage();
       const isDialogNavigation = currentPage.page == entry.page &&
-          currentPage.extensionId == entry.extensionId &&
-          currentPage.type == entry.type;
+          currentPage.extensionId == entry.extensionId;
       // Navigating to a dialog doesn't visually change pages; it just opens
       // a dialog. As such, we replace state rather than pushing a new state
       // on the stack so that hitting the back button doesn't just toggle the
       // dialog.
-      if (isDialogNavigation)
+      if (replaceState || isDialogNavigation) {
         history.replaceState(state, '', path);
-      else
+      } else {
+        this.previousPage_ = currentPage;
         history.pushState(state, '', path);
+      }
     }
   }
 

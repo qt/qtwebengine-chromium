@@ -38,9 +38,10 @@ DetectedText::DetectedText(String raw_value,
       bounding_box_(bounding_box),
       corner_points_(corner_points) {}
 
-DEFINE_TRACE(DetectedText) {
+void DetectedText::Trace(blink::Visitor* visitor) {
   visitor->Trace(bounding_box_);
   visitor->Trace(corner_points_);
+  ScriptWrappable::Trace(visitor);
 }
 
 }  // namespace blink

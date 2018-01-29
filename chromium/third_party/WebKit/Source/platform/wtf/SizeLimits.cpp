@@ -29,10 +29,10 @@
  */
 
 #include <memory>
+#include "base/memory/scoped_refptr.h"
 #include "platform/wtf/Assertions.h"
 #include "platform/wtf/ContainerAnnotations.h"
 #include "platform/wtf/RefCounted.h"
-#include "platform/wtf/RefPtr.h"
 #include "platform/wtf/ThreadRestrictionVerifier.h"
 #include "platform/wtf/Vector.h"
 #include "platform/wtf/text/AtomicString.h"
@@ -70,7 +70,7 @@ static_assert(sizeof(RefCounted<int>) == sizeof(SameSizeAsRefCounted),
 
 static_assert(sizeof(std::unique_ptr<int>) == sizeof(int*),
               "std::unique_ptr should stay small");
-static_assert(sizeof(RefPtr<RefCounted<int>>) == sizeof(int*),
+static_assert(sizeof(scoped_refptr<RefCounted<int>>) == sizeof(int*),
               "RefPtr should stay small");
 static_assert(sizeof(String) == sizeof(int*), "String should stay small");
 static_assert(sizeof(AtomicString) == sizeof(String),

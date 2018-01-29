@@ -18,6 +18,7 @@
 #include "content/public/browser/vpn_service_proxy.h"
 #include "content/public/common/content_features.h"
 #include "content/public/common/url_loader_throttle.h"
+#include "device/geolocation/public/cpp/location_provider.h"
 #include "media/audio/audio_manager.h"
 #include "media/base/cdm_factory.h"
 #include "media/media_features.h"
@@ -32,6 +33,13 @@
 #include "url/origin.h"
 
 namespace content {
+
+void OverrideOnBindInterface(const service_manager::BindSourceInfo& remote_info,
+                             const std::string& name,
+                             mojo::ScopedMessagePipeHandle* handle) {
+  GetContentClient()->browser()->OverrideOnBindInterface(remote_info, name,
+                                                         handle);
+}
 
 BrowserMainParts* ContentBrowserClient::CreateBrowserMainParts(
     const MainFunctionParams& parameters) {
@@ -56,9 +64,12 @@ WebContentsViewDelegate* ContentBrowserClient::GetWebContentsViewDelegate(
   return nullptr;
 }
 
+bool ContentBrowserClient::AllowGpuLaunchRetryOnIOThread() {
+  return true;
+}
+
 GURL ContentBrowserClient::GetEffectiveURL(BrowserContext* browser_context,
-                                           const GURL& url,
-                                           bool is_isolated_origin) {
+                                           const GURL& url) {
   return url;
 }
 
@@ -106,6 +117,12 @@ bool ContentBrowserClient::CanCommitURL(RenderProcessHost* process_host,
 bool ContentBrowserClient::ShouldAllowOpenURL(SiteInstance* site_instance,
                                               const GURL& url) {
   return true;
+}
+
+bool ContentBrowserClient::IsURLAcceptableForWebUI(
+    BrowserContext* browser_context,
+    const GURL& url) {
+  return false;
 }
 
 bool ContentBrowserClient::
@@ -167,6 +184,13 @@ ContentBrowserClient::GetOriginsRequiringDedicatedProcess() {
   return std::vector<url::Origin>();
 }
 
+bool ContentBrowserClient::IsFileAccessAllowed(
+    const base::FilePath& path,
+    const base::FilePath& absolute_path,
+    const base::FilePath& profile_path) {
+  return true;
+}
+
 std::string ContentBrowserClient::GetApplicationLocale() {
   return "en-US";
 }
@@ -199,6 +223,17 @@ bool ContentBrowserClient::AllowServiceWorker(
   return true;
 }
 
+bool ContentBrowserClient::AllowSharedWorker(
+    const GURL& worker_url,
+    const GURL& main_frame_url,
+    const std::string& name,
+    const url::Origin& constructor_origin,
+    BrowserContext* context,
+    int render_process_id,
+    int render_frame_id) {
+  return true;
+}
+
 bool ContentBrowserClient::IsDataSaverEnabled(BrowserContext* context) {
   return false;
 }
@@ -221,7 +256,7 @@ bool ContentBrowserClient::AllowGetCookie(const GURL& url,
 
 bool ContentBrowserClient::AllowSetCookie(const GURL& url,
                                           const GURL& first_party,
-                                          const std::string& cookie_line,
+                                          const net::CanonicalCookie& cookie,
                                           ResourceContext* context,
                                           int render_process_id,
                                           int render_frame_id,
@@ -289,6 +324,11 @@ void ContentBrowserClient::SelectClientCertificate(
 
 net::URLRequestContext* ContentBrowserClient::OverrideRequestContextForURL(
     const GURL& url, ResourceContext* context) {
+  return nullptr;
+}
+
+std::unique_ptr<device::LocationProvider>
+ContentBrowserClient::OverrideSystemLocationProvider() {
   return nullptr;
 }
 
@@ -378,11 +418,6 @@ base::FilePath ContentBrowserClient::GetShaderDiskCacheDirectory() {
 
 BrowserPpapiHost*
     ContentBrowserClient::GetExternalBrowserPpapiHost(int plugin_process_id) {
-  return nullptr;
-}
-
-gpu::GpuChannelEstablishFactory*
-ContentBrowserClient::GetGpuChannelEstablishFactory() {
   return nullptr;
 }
 
@@ -497,6 +532,11 @@ std::unique_ptr<base::Value> ContentBrowserClient::GetServiceManifestOverlay(
   return nullptr;
 }
 
+bool ContentBrowserClient::ShouldTerminateOnServiceQuit(
+    const service_manager::Identity& id) {
+  return false;
+}
+
 std::vector<ContentBrowserClient::ServiceManifestInfo>
 ContentBrowserClient::GetExtraServiceManifests() {
   return std::vector<ContentBrowserClient::ServiceManifestInfo>();
@@ -521,6 +561,15 @@ ContentBrowserClient::CreateURLLoaderThrottles(
     const base::Callback<WebContents*()>& wc_getter) {
   return std::vector<std::unique_ptr<URLLoaderThrottle>>();
 }
+
+void ContentBrowserClient::RegisterNonNetworkNavigationURLLoaderFactories(
+    RenderFrameHost* frame_host,
+    NonNetworkURLLoaderFactoryMap* factories) {}
+
+void ContentBrowserClient::RegisterNonNetworkSubresourceURLLoaderFactories(
+    RenderFrameHost* frame_host,
+    const GURL& frame_url,
+    NonNetworkURLLoaderFactoryMap* factories) {}
 
 mojom::NetworkContextPtr ContentBrowserClient::CreateNetworkContext(
     BrowserContext* context,

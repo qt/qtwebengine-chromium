@@ -366,8 +366,8 @@
   }
 
 
-  FT_LOCAL_DEF( FT_Error )
-  T1_Set_MM_Blend( T1_Face    face,
+  static FT_Error
+  t1_set_mm_blend( T1_Face    face,
                    FT_UInt    num_coords,
                    FT_Fixed*  coords )
   {
@@ -413,6 +413,27 @@
 
 
   FT_LOCAL_DEF( FT_Error )
+  T1_Set_MM_Blend( T1_Face    face,
+                   FT_UInt    num_coords,
+                   FT_Fixed*  coords )
+  {
+    FT_Error  error;
+
+
+    error = t1_set_mm_blend( face, num_coords, coords );
+    if ( error )
+      return error;
+
+    if ( num_coords )
+      face->root.face_flags |= FT_FACE_FLAG_VARIATION;
+    else
+      face->root.face_flags &= ~FT_FACE_FLAG_VARIATION;
+
+    return FT_Err_Ok;
+  }
+
+
+  FT_LOCAL_DEF( FT_Error )
   T1_Get_MM_Blend( T1_Face    face,
                    FT_UInt    num_coords,
                    FT_Fixed*  coords )
@@ -452,6 +473,7 @@
                     FT_UInt   num_coords,
                     FT_Long*  coords )
   {
+    FT_Error  error;
     PS_Blend  blend = face->blend;
     FT_UInt   n, p;
     FT_Fixed  final_blends[T1_MAX_MM_DESIGNS];
@@ -518,7 +540,28 @@
       final_blends[n] = the_blend;
     }
 
-    return T1_Set_MM_Blend( face, blend->num_axis, final_blends );
+    error = t1_set_mm_blend( face, blend->num_axis, final_blends );
+    if ( error )
+      return error;
+
+    if ( num_coords )
+      face->root.face_flags |= FT_FACE_FLAG_VARIATION;
+    else
+      face->root.face_flags &= ~FT_FACE_FLAG_VARIATION;
+
+    return FT_Err_Ok;
+  }
+
+
+  /* MM fonts don't have named instances, so only the design is reset */
+
+  FT_LOCAL_DEF( FT_Error )
+  T1_Reset_MM_Blend( T1_Face  face,
+                     FT_UInt  instance_index )
+  {
+    FT_UNUSED( instance_index );
+
+    return T1_Set_MM_Blend( face, 0, NULL );
   }
 
 

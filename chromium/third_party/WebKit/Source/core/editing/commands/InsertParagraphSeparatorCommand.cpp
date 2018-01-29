@@ -212,7 +212,7 @@ void InsertParagraphSeparatorCommand::DoApply(EditingState* editing_state) {
       insertion_position.ParentAnchoredEquivalent().ComputeContainerNode());
   HTMLElement* list_child = list_child_node && list_child_node->IsHTMLElement()
                                 ? ToHTMLElement(list_child_node)
-                                : 0;
+                                : nullptr;
   Position canonical_pos =
       CreateVisiblePosition(insertion_position).DeepEquivalent();
   if (!start_block || !start_block->NonShadowBoundaryParentNode() ||
@@ -607,7 +607,7 @@ void InsertParagraphSeparatorCommand::DoApply(EditingState* editing_state) {
   ApplyStyleAfterInsertion(start_block, editing_state);
 }
 
-DEFINE_TRACE(InsertParagraphSeparatorCommand) {
+void InsertParagraphSeparatorCommand::Trace(blink::Visitor* visitor) {
   visitor->Trace(style_);
   CompositeEditCommand::Trace(visitor);
 }

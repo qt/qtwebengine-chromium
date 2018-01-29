@@ -7,7 +7,7 @@
 
 #include <memory>
 #include "modules/ModulesExport.h"
-#include "modules/canvas2d/BaseRenderingContext2D.h"
+#include "modules/canvas/canvas2d/BaseRenderingContext2D.h"
 #include "modules/csspaint/PaintRenderingContext2DSettings.h"
 #include "platform/bindings/ScriptWrappable.h"
 #include "platform/graphics/ImageBuffer.h"
@@ -17,10 +17,8 @@ namespace blink {
 class CanvasImageSource;
 class Color;
 
-class MODULES_EXPORT PaintRenderingContext2D
-    : public BaseRenderingContext2D,
-      public GarbageCollectedFinalized<PaintRenderingContext2D>,
-      public ScriptWrappable {
+class MODULES_EXPORT PaintRenderingContext2D : public ScriptWrappable,
+                                               public BaseRenderingContext2D {
   DEFINE_WRAPPERTYPEINFO();
   USING_GARBAGE_COLLECTED_MIXIN(PaintRenderingContext2D);
   WTF_MAKE_NONCOPYABLE(PaintRenderingContext2D);
@@ -32,6 +30,11 @@ class MODULES_EXPORT PaintRenderingContext2D
       float zoom) {
     return new PaintRenderingContext2D(std::move(image_buffer),
                                        context_settings, zoom);
+  }
+
+  void Trace(blink::Visitor* visitor) override {
+    ScriptWrappable::Trace(visitor);
+    BaseRenderingContext2D::Trace(visitor);
   }
 
   // BaseRenderingContext2D
@@ -56,12 +59,10 @@ class MODULES_EXPORT PaintRenderingContext2D
   PaintCanvas* ExistingDrawingCanvas() const final;
   void DisableDeferral(DisableDeferralReason) final {}
 
-  AffineTransform BaseTransform() const final;
-
   void DidDraw(const SkIRect& dirty_rect) final;
 
   bool StateHasFilter() final;
-  sk_sp<SkImageFilter> StateGetFilter() final;
+  sk_sp<PaintFilter> StateGetFilter() final;
   void SnapshotStateForFilter() final {}
 
   void ValidateStateStack() const final;

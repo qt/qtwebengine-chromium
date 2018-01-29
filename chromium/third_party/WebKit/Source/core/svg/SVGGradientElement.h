@@ -62,7 +62,7 @@ class SVGGradientElement : public SVGElement, public SVGURIReference {
   const SVGGradientElement* ReferencedElement() const;
   void CollectCommonAttributes(GradientAttributes&) const;
 
-  DECLARE_VIRTUAL_TRACE();
+  virtual void Trace(blink::Visitor*);
 
  protected:
   SVGGradientElement(const QualifiedName&, Document&);
@@ -74,9 +74,10 @@ class SVGGradientElement : public SVGElement, public SVGURIReference {
  private:
   bool NeedsPendingResourceHandling() const final { return false; }
 
-  void CollectStyleForPresentationAttribute(const QualifiedName&,
-                                            const AtomicString&,
-                                            MutableStylePropertySet*) override;
+  void CollectStyleForPresentationAttribute(
+      const QualifiedName&,
+      const AtomicString&,
+      MutableCSSPropertyValueSet*) override;
 
   void ChildrenChanged(const ChildrenChange&) final;
 

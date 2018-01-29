@@ -162,10 +162,6 @@ OPENSSL_EXPORT EC_POINT *EC_POINT_new(const EC_GROUP *group);
 // EC_POINT_free frees |point| and the data that it points to.
 OPENSSL_EXPORT void EC_POINT_free(EC_POINT *point);
 
-// EC_POINT_clear_free clears the data that |point| points to, frees it and
-// then frees |point| itself.
-OPENSSL_EXPORT void EC_POINT_clear_free(EC_POINT *point);
-
 // EC_POINT_copy sets |*dest| equal to |*src|. It returns one on success and
 // zero otherwise.
 OPENSSL_EXPORT int EC_POINT_copy(EC_POINT *dest, const EC_POINT *src);
@@ -306,7 +302,7 @@ OPENSSL_EXPORT EC_GROUP *EC_GROUP_new_curve_GFp(const BIGNUM *p,
 // EC_GROUP_set_generator sets the generator for |group| to |generator|, which
 // must have the given order and cofactor. It may only be used with |EC_GROUP|
 // objects returned by |EC_GROUP_new_curve_GFp| and may only be used once on
-// each group.
+// each group. |generator| must have been created using |group|.
 OPENSSL_EXPORT int EC_GROUP_set_generator(EC_GROUP *group,
                                           const EC_POINT *generator,
                                           const BIGNUM *order,
@@ -349,6 +345,9 @@ typedef struct {
 // The |EC_builtin_curve| items describe the supported elliptic curves.
 OPENSSL_EXPORT size_t EC_get_builtin_curves(EC_builtin_curve *out_curves,
                                             size_t max_num_curves);
+
+// EC_POINT_clear_free calls |EC_POINT_free|.
+OPENSSL_EXPORT void EC_POINT_clear_free(EC_POINT *point);
 
 // Old code expects to get EC_KEY from ec.h.
 #include <openssl/ec_key.h>
@@ -403,5 +402,6 @@ BORINGSSL_MAKE_DELETER(EC_GROUP, EC_GROUP_free)
 #define EC_R_GROUP_MISMATCH 130
 #define EC_R_INVALID_COFACTOR 131
 #define EC_R_PUBLIC_KEY_VALIDATION_FAILED 132
+#define EC_R_INVALID_SCALAR 133
 
 #endif  // OPENSSL_HEADER_EC_H

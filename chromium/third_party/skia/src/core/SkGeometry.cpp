@@ -8,6 +8,8 @@
 #include "SkGeometry.h"
 #include "SkMatrix.h"
 #include "SkNx.h"
+#include "SkPoint3.h"
+#include "SkPointPriv.h"
 
 static SkVector to_vector(const Sk2s& x) {
     SkVector vector;
@@ -534,8 +536,8 @@ int SkChopCubicAtInflections(const SkPoint src[], SkPoint dst[10]) {
 // Assumes the third component of points is 1.
 // Calcs p0 . (p1 x p2)
 static double calc_dot_cross_cubic(const SkPoint& p0, const SkPoint& p1, const SkPoint& p2) {
-    const double xComp = (double) p0.fX * (double) (p1.fY - p2.fY);
-    const double yComp = (double) p0.fY * (double) (p2.fX - p1.fX);
+    const double xComp = (double) p0.fX * ((double) p1.fY - (double) p2.fY);
+    const double yComp = (double) p0.fY * ((double) p2.fX - (double) p1.fX);
     const double wComp = (double) p1.fX * (double) p2.fY - (double) p1.fY * (double) p2.fX;
     return (xComp + yComp + wComp);
 }
@@ -563,17 +565,32 @@ static void calc_cubic_inflection_func(const SkPoint p[4], double d[4]) {
 static void normalize_t_s(double t[], double s[], int count) {
     // Keep the exponents at or below zero to avoid overflow down the road.
     for (int i = 0; i < count; ++i) {
-        SkASSERT(0 != s[i]);
-        union { double value; int64_t bits; } tt, ss, norm;
-        tt.value = t[i];
-        ss.value = s[i];
-        int64_t expT = ((tt.bits >> 52) & 0x7ff) - 1023,
-                expS = ((ss.bits >> 52) & 0x7ff) - 1023;
-        int64_t expNorm = -SkTMax(expT, expS) + 1023;
-        SkASSERT(expNorm > 0 && expNorm < 2047); // ensure we have a valid non-zero exponent.
-        norm.bits = expNorm << 52;
-        t[i] *= norm.value;
-        s[i] *= norm.value;
+        SkASSERT(0 != s[i]); // classify_cubic should not call this method when s[i] is 0 or NaN.
+
+        uint64_t bitsT, bitsS;
+        memcpy(&bitsT, &t[i], sizeof(double));
+        memcpy(&bitsS, &s[i], sizeof(double));
+
+        uint64_t maxExponent = SkTMax(bitsT & 0x7ff0000000000000, bitsS & 0x7ff0000000000000);
+
+#ifdef SK_DEBUG
+        uint64_t maxExponentValue = maxExponent >> 52;
+        // Ensure max(absT,absS) is NOT in denormalized form. SkClassifyCubic is given fp32 points,
+        // and does not call this method when s==0, so this should never happen.
+        SkASSERT(0 != maxExponentValue);
+        // Ensure 1/max(absT,absS) will NOT be in denormalized form. SkClassifyCubic is given fp32
+        // points, so this should never happen.
+        SkASSERT(2046 != maxExponentValue);
+#endif
+
+        // Pick a normalizer that scales the larger exponent to 1 (aka 1023 in biased form), but
+        // does NOT change the mantissa (thus preserving accuracy).
+        double normalizer;
+        uint64_t normalizerExponent = (uint64_t(1023 * 2) << 52) - maxExponent;
+        memcpy(&normalizer, &normalizerExponent, sizeof(double));
+
+        t[i] *= normalizer;
+        s[i] *= normalizer;
     }
 }
 
@@ -643,7 +660,6 @@ static SkCubicType classify_cubic(const double d[4], double t[2], double s[2]) {
         }
         return SkCubicType::kLoop;
     } else {
-        SkASSERT(0 == discr); // Detect NaN.
         if (t && s) {
             t[0] = d[2];
             s[0] = 2 * d[1];
@@ -974,18 +990,6 @@ static bool conic_find_extrema(const SkScalar src[], SkScalar w, SkScalar* t) {
     return false;
 }
 
-struct SkP3D {
-    SkScalar fX, fY, fZ;
-
-    void set(SkScalar x, SkScalar y, SkScalar z) {
-        fX = x; fY = y; fZ = z;
-    }
-
-    void projectDown(SkPoint* dst) const {
-        dst->set(fX / fZ, fY / fZ);
-    }
-};
-
 // We only interpolate one dimension at a time (the first, at +0, +3, +6).
 static void p3d_interp(const SkScalar src[7], SkScalar dst[7], SkScalar t) {
     SkScalar ab = SkScalarInterp(src[0], src[3], t);
@@ -995,15 +999,19 @@ static void p3d_interp(const SkScalar src[7], SkScalar dst[7], SkScalar t) {
     dst[6] = bc;
 }
 
-static void ratquad_mapTo3D(const SkPoint src[3], SkScalar w, SkP3D dst[]) {
+static void ratquad_mapTo3D(const SkPoint src[3], SkScalar w, SkPoint3 dst[3]) {
     dst[0].set(src[0].fX * 1, src[0].fY * 1, 1);
     dst[1].set(src[1].fX * w, src[1].fY * w, w);
     dst[2].set(src[2].fX * 1, src[2].fY * 1, 1);
 }
 
+static SkPoint project_down(const SkPoint3& src) {
+    return {src.fX / src.fZ, src.fY / src.fZ};
+}
+
 // return false if infinity or NaN is generated; caller must check
 bool SkConic::chopAt(SkScalar t, SkConic dst[2]) const {
-    SkP3D tmp[3], tmp2[3];
+    SkPoint3 tmp[3], tmp2[3];
 
     ratquad_mapTo3D(fPts, fW, tmp);
 
@@ -1012,9 +1020,9 @@ bool SkConic::chopAt(SkScalar t, SkConic dst[2]) const {
     p3d_interp(&tmp[0].fZ, &tmp2[0].fZ, t);
 
     dst[0].fPts[0] = fPts[0];
-    tmp2[0].projectDown(&dst[0].fPts[1]);
-    tmp2[1].projectDown(&dst[0].fPts[2]); dst[1].fPts[0] = dst[0].fPts[2];
-    tmp2[2].projectDown(&dst[1].fPts[1]);
+    dst[0].fPts[1] = project_down(tmp2[0]);
+    dst[0].fPts[2] = project_down(tmp2[1]); dst[1].fPts[0] = dst[0].fPts[2];
+    dst[1].fPts[1] = project_down(tmp2[2]);
     dst[1].fPts[2] = fPts[2];
 
     // to put in "standard form", where w0 and w2 are both 1, we compute the
@@ -1151,7 +1159,7 @@ bool SkConic::asQuadTol(SkScalar tol) const {
 #define kMaxConicToQuadPOW2     5
 
 int SkConic::computeQuadPOW2(SkScalar tol) const {
-    if (tol < 0 || !SkScalarIsFinite(tol) || !SkPointsAreFinite(fPts, 3)) {
+    if (tol < 0 || !SkScalarIsFinite(tol) || !SkPointPriv::AreFinite(fPts, 3)) {
         return 0;
     }
 
@@ -1240,8 +1248,8 @@ int SkConic::chopIntoQuadsPOW2(SkPoint pts[], int pow2) const {
         SkConic dst[2];
         this->chop(dst);
         // check to see if the first chop generates a pair of lines
-        if (dst[0].fPts[1].equalsWithinTolerance(dst[0].fPts[2])
-                && dst[1].fPts[0].equalsWithinTolerance(dst[1].fPts[1])) {
+        if (SkPointPriv::EqualsWithinTolerance(dst[0].fPts[1], dst[0].fPts[2]) &&
+                SkPointPriv::EqualsWithinTolerance(dst[1].fPts[0], dst[1].fPts[1])) {
             pts[1] = pts[2] = pts[3] = dst[0].fPts[1];  // set ctrl == end to make lines
             pts[4] = dst[1].fPts[2];
             pow2 = 1;
@@ -1254,7 +1262,7 @@ commonFinitePtCheck:
     const int quadCount = 1 << pow2;
     const int ptCount = 2 * quadCount + 1;
     SkASSERT(endPts - pts == ptCount);
-    if (!SkPointsAreFinite(pts, ptCount)) {
+    if (!SkPointPriv::AreFinite(pts, ptCount)) {
         // if we generated a non-finite, pin ourselves to the middle of the hull,
         // as our first and last are already on the first/last pts of the hull.
         for (int i = 1; i < ptCount - 1; ++i) {
@@ -1341,11 +1349,11 @@ SkScalar SkConic::TransformW(const SkPoint pts[], SkScalar w,
         return w;
     }
 
-    SkP3D src[3], dst[3];
+    SkPoint3 src[3], dst[3];
 
     ratquad_mapTo3D(pts, w, src);
 
-    matrix.mapHomogeneousPoints(&dst[0].fX, &src[0].fX, 3);
+    matrix.mapHomogeneousPoints(dst, src, 3);
 
     // w' = sqrt(w1*w1/w0*w2)
     SkScalar w0 = dst[0].fZ;
@@ -1422,7 +1430,7 @@ int SkConic::BuildUnitArc(const SkVector& uStart, const SkVector& uStop, SkRotat
         //
         const SkScalar cosThetaOver2 = SkScalarSqrt((1 + dot) / 2);
         offCurve.setLength(SkScalarInvert(cosThetaOver2));
-        if (!lastQ.equalsWithinTolerance(offCurve)) {
+        if (!SkPointPriv::EqualsWithinTolerance(lastQ, offCurve)) {
             dst[conicCount].set(lastQ, offCurve, finalP, cosThetaOver2);
             conicCount += 1;
         }

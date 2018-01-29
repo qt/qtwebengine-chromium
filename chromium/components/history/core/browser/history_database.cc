@@ -37,7 +37,7 @@ namespace {
 // Current version number. We write databases at the "current" version number,
 // but any previous version that can read the "compatible" one can make do with
 // our database without *too* many bad effects.
-const int kCurrentVersionNumber = 37;
+const int kCurrentVersionNumber = 38;
 const int kCompatibleVersionNumber = 16;
 const char kEarlyExpirationThresholdKey[] = "early_expiration_threshold";
 const int kMaxHostsInMemory = 10000;
@@ -366,13 +366,9 @@ SegmentID HistoryDatabase::GetSegmentID(VisitID visit_id) {
       "SELECT segment_id FROM visits WHERE id = ?"));
   s.BindInt64(0, visit_id);
 
-  if (s.Step()) {
-    if (s.ColumnType(0) == sql::COLUMN_TYPE_NULL)
-      return 0;
-    else
-      return s.ColumnInt64(0);
-  }
-  return 0;
+  if (!s.Step() || s.ColumnType(0) == sql::COLUMN_TYPE_NULL)
+    return 0;
+  return s.ColumnInt64(0);
 }
 
 base::Time HistoryDatabase::GetEarlyExpirationThreshold() {
@@ -586,6 +582,13 @@ sql::InitStatus HistoryDatabase::EnsureCurrentVersion() {
     }
 
     DCHECK(URLTableContainsAutoincrement());
+    cur_version++;
+    meta_table_.SetVersionNumber(cur_version);
+  }
+
+  if (cur_version == 37) {
+    if (!MigrateVisitSegmentNames())
+      return LogMigrationFailure(37);
     cur_version++;
     meta_table_.SetVersionNumber(cur_version);
   }

@@ -36,14 +36,11 @@ class TestSafeBrowsingDatabaseManager : public SafeBrowsingDatabaseManager {
                          Client* client) override;
   bool CheckResourceUrl(const GURL& url, Client* client) override;
   bool CheckUrlForSubresourceFilter(const GURL& url, Client* client) override;
-  bool MatchCsdWhitelistUrl(const GURL& url) override;
   bool MatchDownloadWhitelistString(const std::string& str) override;
   bool MatchDownloadWhitelistUrl(const GURL& url) override;
   bool MatchMalwareIP(const std::string& ip_address) override;
   safe_browsing::ThreatSource GetThreatSource() const override;
-  bool IsCsdWhitelistKillSwitchOn() override;
   bool IsDownloadProtectionEnabled() const override;
-  bool IsMalwareKillSwitchOn() override;
   bool IsSupported() const override;
   void StartOnIOThread(net::URLRequestContextGetter* request_context_getter,
                        const V4ProtocolConfig& config) override;

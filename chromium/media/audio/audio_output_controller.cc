@@ -169,8 +169,8 @@ void AudioOutputController::DoCreate(bool is_for_device_change) {
   DCHECK(message_loop_->BelongsToCurrentThread());
   SCOPED_UMA_HISTOGRAM_TIMER("Media.AudioOutputController.CreateTime");
   TRACE_EVENT0("audio", "AudioOutputController::DoCreate");
-  handler_->OnLog(base::StringPrintf("AOC::DoCreate (for device change: %s)",
-                                     is_for_device_change ? "yes" : "no"));
+  handler_->OnLog(is_for_device_change ? "AOC::DoCreate (for device change)"
+                                       : "AOC::DoCreate");
 
   // Close() can be called before DoCreate() is executed.
   if (state_ == kClosed)
@@ -350,6 +350,10 @@ int AudioOutputController::OnMoreData(base::TimeDelta delay,
   }
 
   if (will_monitor_audio_levels()) {
+    // Note: this code path should never be hit when using bitstream streams.
+    // Scan doesn't expect compressed audio, so it may go out of bounds trying
+    // to read |frames| frames of PCM data.
+    CHECK(!params_.IsBitstreamFormat());
     power_monitor_.Scan(*dest, frames);
 
     const auto now = base::TimeTicks::Now();

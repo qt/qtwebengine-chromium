@@ -18,6 +18,7 @@
     OP(EXT_blend_func_extended)         \
     OP(EXT_draw_buffers)                \
     OP(EXT_frag_depth)                  \
+    OP(EXT_geometry_shader)             \
     OP(EXT_shader_framebuffer_fetch)    \
     OP(EXT_shader_texture_lod)          \
     OP(EXT_YUV_target)                  \
@@ -88,7 +89,8 @@ bool IsExtensionEnabled(const TExtensionBehavior &extBehavior, TExtension extens
 {
     ASSERT(extension != TExtension::UNDEFINED);
     auto iter = extBehavior.find(extension);
-    return iter != extBehavior.end() && (iter->second == EBhEnable || iter->second == EBhRequire);
+    return iter != extBehavior.end() &&
+           (iter->second == EBhEnable || iter->second == EBhRequire || iter->second == EBhWarn);
 }
 
 }  // namespace sh

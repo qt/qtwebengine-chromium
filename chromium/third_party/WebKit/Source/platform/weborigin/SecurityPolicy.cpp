@@ -39,6 +39,7 @@
 #include "platform/wtf/HashSet.h"
 #include "platform/wtf/PtrUtil.h"
 #include "platform/wtf/Threading.h"
+#include "platform/wtf/text/ParsingUtilities.h"
 #include "platform/wtf/text/StringHash.h"
 #include "public/platform/WebReferrerPolicy.h"
 
@@ -116,9 +117,9 @@ Referrer SecurityPolicy::GenerateReferrer(ReferrerPolicy referrer_policy,
       return Referrer(origin + "/", referrer_policy_no_default);
     }
     case kReferrerPolicyOriginWhenCrossOrigin: {
-      RefPtr<SecurityOrigin> referrer_origin =
+      scoped_refptr<SecurityOrigin> referrer_origin =
           SecurityOrigin::Create(referrer_url);
-      RefPtr<SecurityOrigin> url_origin = SecurityOrigin::Create(url);
+      scoped_refptr<SecurityOrigin> url_origin = SecurityOrigin::Create(url);
       if (!url_origin->IsSameSchemeHostPort(referrer_origin.get())) {
         String origin = referrer_origin->ToString();
         return Referrer(origin + "/", referrer_policy_no_default);
@@ -126,9 +127,9 @@ Referrer SecurityPolicy::GenerateReferrer(ReferrerPolicy referrer_policy,
       break;
     }
     case kReferrerPolicySameOrigin: {
-      RefPtr<SecurityOrigin> referrer_origin =
+      scoped_refptr<SecurityOrigin> referrer_origin =
           SecurityOrigin::Create(referrer_url);
-      RefPtr<SecurityOrigin> url_origin = SecurityOrigin::Create(url);
+      scoped_refptr<SecurityOrigin> url_origin = SecurityOrigin::Create(url);
       if (!url_origin->IsSameSchemeHostPort(referrer_origin.get())) {
         return Referrer(Referrer::NoReferrer(), referrer_policy_no_default);
       }
@@ -142,9 +143,9 @@ Referrer SecurityPolicy::GenerateReferrer(ReferrerPolicy referrer_policy,
                       referrer_policy_no_default);
     }
     case kReferrerPolicyNoReferrerWhenDowngradeOriginWhenCrossOrigin: {
-      RefPtr<SecurityOrigin> referrer_origin =
+      scoped_refptr<SecurityOrigin> referrer_origin =
           SecurityOrigin::Create(referrer_url);
-      RefPtr<SecurityOrigin> url_origin = SecurityOrigin::Create(url);
+      scoped_refptr<SecurityOrigin> url_origin = SecurityOrigin::Create(url);
       if (!url_origin->IsSameSchemeHostPort(referrer_origin.get())) {
         String origin = referrer_origin->ToString();
         return Referrer(ShouldHideReferrer(url, referrer_url)
@@ -211,7 +212,7 @@ bool SecurityPolicy::IsAccessWhiteListed(const SecurityOrigin* active_origin,
 bool SecurityPolicy::IsAccessToURLWhiteListed(
     const SecurityOrigin* active_origin,
     const KURL& url) {
-  RefPtr<SecurityOrigin> target_origin = SecurityOrigin::Create(url);
+  scoped_refptr<SecurityOrigin> target_origin = SecurityOrigin::Create(url);
   return IsAccessWhiteListed(active_origin, target_origin.get());
 }
 
@@ -283,7 +284,8 @@ bool SecurityPolicy::ReferrerPolicyFromString(
       (legacy_keywords_support == kSupportReferrerPolicyLegacyKeywords);
 
   if (EqualIgnoringASCIICase(policy, "no-referrer") ||
-      (support_legacy_keywords && EqualIgnoringASCIICase(policy, "never"))) {
+      (support_legacy_keywords && (EqualIgnoringASCIICase(policy, "never") ||
+                                   EqualIgnoringASCIICase(policy, "none")))) {
     *result = kReferrerPolicyNever;
     return true;
   }
@@ -322,6 +324,15 @@ bool SecurityPolicy::ReferrerPolicyFromString(
   return false;
 }
 
+namespace {
+
+template <typename CharType>
+inline bool IsASCIIAlphaOrHyphen(CharType c) {
+  return IsASCIIAlpha(c) || c == '-';
+}
+
+}  // namespace
+
 bool SecurityPolicy::ReferrerPolicyFromHeaderValue(
     const String& header_value,
     ReferrerPolicyLegacyKeywordsSupport legacy_keywords_support,
@@ -332,10 +343,19 @@ bool SecurityPolicy::ReferrerPolicyFromHeaderValue(
   header_value.Split(',', true, tokens);
   for (const auto& token : tokens) {
     ReferrerPolicy current_result;
+    auto stripped_token = token.StripWhiteSpace();
     if (SecurityPolicy::ReferrerPolicyFromString(token.StripWhiteSpace(),
                                                  legacy_keywords_support,
                                                  &current_result)) {
       referrer_policy = current_result;
+    } else {
+      Vector<UChar> characters;
+      stripped_token.AppendTo(characters);
+      const UChar* position = characters.data();
+      UChar* end = characters.data() + characters.size();
+      SkipWhile<UChar, IsASCIIAlphaOrHyphen>(position, end);
+      if (position != end)
+        return false;
     }
   }
 

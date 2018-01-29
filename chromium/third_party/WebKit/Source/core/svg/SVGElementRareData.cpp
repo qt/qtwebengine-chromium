@@ -10,11 +10,12 @@
 
 namespace blink {
 
-MutableStylePropertySet*
+MutableCSSPropertyValueSet*
 SVGElementRareData::EnsureAnimatedSMILStyleProperties() {
-  if (!animated_smil_style_properties_)
+  if (!animated_smil_style_properties_) {
     animated_smil_style_properties_ =
-        MutableStylePropertySet::Create(kSVGAttributeMode);
+        MutableCSSPropertyValueSet::Create(kSVGAttributeMode);
+  }
   return animated_smil_style_properties_.Get();
 }
 
@@ -37,7 +38,7 @@ ComputedStyle* SVGElementRareData::OverrideComputedStyle(
   return override_computed_style_.get();
 }
 
-DEFINE_TRACE(SVGElementRareData) {
+void SVGElementRareData::Trace(blink::Visitor* visitor) {
   visitor->Trace(outgoing_references_);
   visitor->Trace(incoming_references_);
   visitor->Trace(element_proxy_set_);

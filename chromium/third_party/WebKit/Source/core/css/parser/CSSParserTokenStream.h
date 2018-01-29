@@ -5,15 +5,26 @@
 #ifndef CSSParserTokenStream_h
 #define CSSParserTokenStream_h
 
-#include "core/css/parser/CSSParserTokenBuffer.h"
+#include "base/macros.h"
 #include "core/css/parser/CSSParserTokenRange.h"
 #include "core/css/parser/CSSTokenizer.h"
 #include "platform/wtf/Noncopyable.h"
 
 namespace blink {
 
-class CSSParserScopedTokenBuffer;
-class CSSParserObserverWrapper;
+namespace detail {
+
+template <typename...>
+bool IsTokenTypeOneOf(CSSParserTokenType t) {
+  return false;
+}
+
+template <CSSParserTokenType Head, CSSParserTokenType... Tail>
+bool IsTokenTypeOneOf(CSSParserTokenType t) {
+  return t == Head || IsTokenTypeOneOf<Tail...>(t);
+}
+
+}  // namespace detail
 
 // A streaming interface to CSSTokenizer that tokenizes on demand.
 // Abstractly, the stream ends at either EOF or the beginning/end of a block.
@@ -25,7 +36,6 @@ class CSSParserObserverWrapper;
 // such as a consume.
 class CORE_EXPORT CSSParserTokenStream {
   DISALLOW_NEW();
-  WTF_MAKE_NONCOPYABLE(CSSParserTokenStream);
 
  public:
   // Instantiate this to start reading from a block. When the guard is out of
@@ -46,8 +56,16 @@ class CORE_EXPORT CSSParserTokenStream {
     CSSParserTokenStream& stream_;
   };
 
+  // We found that this value works well empirically by printing out the
+  // maximum buffer size for a few top alexa websites. It should be slightly
+  // above the expected number of tokens in the prelude of an at rule and
+  // the number of tokens in a declaration.
+  // TODO(shend): Can we streamify at rule parsing so that this is only needed
+  // for declarations which are easier to think about?
+  static constexpr size_t InitialBufferSize() { return 128; }
+
   explicit CSSParserTokenStream(CSSTokenizer& tokenizer)
-      : buffer_(512), tokenizer_(tokenizer), next_(kEOFToken) {}
+      : buffer_(InitialBufferSize()), tokenizer_(tokenizer), next_(kEOFToken) {}
 
   CSSParserTokenStream(CSSParserTokenStream&&) = default;
 
@@ -113,15 +131,61 @@ class CORE_EXPORT CSSParserTokenStream {
   void ConsumeWhitespace();
   CSSParserToken ConsumeIncludingWhitespace();
   void UncheckedConsumeComponentValue();
-  void UncheckedConsumeComponentValue(CSSParserScopedTokenBuffer&);
-  void UncheckedConsumeComponentValueWithOffsets(CSSParserObserverWrapper&,
-                                                 CSSParserScopedTokenBuffer&);
+
   // Either consumes a comment token and returns true, or peeks at the next
   // token and return false.
   bool ConsumeCommentOrNothing();
 
+  // Invalidates any ranges created by previous calls to this function
+  template <CSSParserTokenType... Types>
+  CSSParserTokenRange ConsumeUntilPeekedTypeIs() {
+    EnsureLookAhead();
+
+    buffer_.clear();
+    while (!UncheckedAtEnd() &&
+           !detail::IsTokenTypeOneOf<Types...>(UncheckedPeek().GetType())) {
+      // Have to use internal consume/peek in here because they can read past
+      // start/end of blocks
+      unsigned nesting_level = 0;
+      do {
+        const CSSParserToken& token = UncheckedConsumeInternal();
+        buffer_.push_back(token);
+
+        if (token.GetBlockType() == CSSParserToken::kBlockStart)
+          nesting_level++;
+        else if (token.GetBlockType() == CSSParserToken::kBlockEnd)
+          nesting_level--;
+      } while (!PeekInternal().IsEOF() && nesting_level);
+    }
+
+    return buffer_.Range();
+  }
+
  private:
-  friend class CSSParserScopedTokenBuffer;
+  // Used to store tokens for CSSParserTokenRanges.
+  // FIXME: Determine if this improves speed at all compared to allocating a
+  // fresh vector each time.
+  class TokenBuffer {
+   public:
+    TokenBuffer(size_t capacity) { tokens_.ReserveInitialCapacity(capacity); }
+
+    void clear() { size_ = 0; }
+    void push_back(const CSSParserToken& token) {
+      if (size_ < tokens_.size())
+        tokens_[size_] = token;
+      else
+        tokens_.push_back(token);
+      ++size_;
+    }
+    CSSParserTokenRange Range() const {
+      return CSSParserTokenRange(tokens_).MakeSubRange(tokens_.begin(),
+                                                       tokens_.begin() + size_);
+    }
+
+   private:
+    Vector<CSSParserToken, 32> tokens_;
+    size_t size_ = 0;
+  };
 
   const CSSParserToken& PeekInternal() {
     EnsureLookAhead();
@@ -147,11 +211,12 @@ class CORE_EXPORT CSSParserTokenStream {
 
   void UncheckedSkipToEndOfBlock();
 
-  CSSParserTokenBuffer buffer_;
+  TokenBuffer buffer_;
   CSSTokenizer& tokenizer_;
   CSSParserToken next_;
   size_t offset_ = 0;
   bool has_look_ahead_ = false;
+  DISALLOW_COPY_AND_ASSIGN(CSSParserTokenStream);
 };
 
 }  // namespace blink

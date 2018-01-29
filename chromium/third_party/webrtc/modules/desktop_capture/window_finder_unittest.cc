@@ -58,6 +58,9 @@ TEST(WindowFinderTest, FindConsoleWindow) {
   // Enlarges current console window.
   system("mode 1000,1000");
   const HWND console_window = GetConsoleWindow();
+  // Ensures that current console window is visible.
+  ShowWindow(console_window, SW_MAXIMIZE);
+  // Moves the window to the top-left of the display.
   MoveWindow(console_window, 0, 0, kMaxSize, kMaxSize, true);
 
   // Brings console window to top.
@@ -90,21 +93,24 @@ TEST(WindowFinderTest, FindDrawerWindow) {
 #endif
   std::unique_ptr<WindowFinder> finder = WindowFinder::Create(options);
   if (!finder) {
-    LOG(LS_WARNING) << "No WindowFinder implementation for current platform.";
+    RTC_LOG(LS_WARNING)
+        << "No WindowFinder implementation for current platform.";
     return;
   }
 
   std::unique_ptr<ScreenDrawer> drawer = ScreenDrawer::Create();
   if (!drawer) {
-    LOG(LS_WARNING) << "No ScreenDrawer implementation for current platform.";
+    RTC_LOG(LS_WARNING)
+        << "No ScreenDrawer implementation for current platform.";
     return;
   }
 
   if (drawer->window_id() == kNullWindowId) {
     // TODO(zijiehe): WindowFinderTest can use a dedicated window without
     // relying on ScreenDrawer.
-    LOG(LS_WARNING) << "ScreenDrawer implementation for current platform does "
-                       "create a window.";
+    RTC_LOG(LS_WARNING)
+        << "ScreenDrawer implementation for current platform does "
+           "create a window.";
     return;
   }
 
@@ -112,8 +118,9 @@ TEST(WindowFinderTest, FindDrawerWindow) {
   // several spots, at least one of them should succeed.
   const DesktopRect region = drawer->DrawableRegion();
   if (region.is_empty()) {
-    LOG(LS_WARNING) << "ScreenDrawer::DrawableRegion() is too small for the "
-                       "WindowFinderTest.";
+    RTC_LOG(LS_WARNING)
+        << "ScreenDrawer::DrawableRegion() is too small for the "
+           "WindowFinderTest.";
     return;
   }
 
@@ -142,7 +149,8 @@ TEST(WindowFinderTest, ShouldReturnNullWindowIfSpotIsOutOfScreen) {
 #endif
   std::unique_ptr<WindowFinder> finder = WindowFinder::Create(options);
   if (!finder) {
-    LOG(LS_WARNING) << "No WindowFinder implementation for current platform.";
+    RTC_LOG(LS_WARNING)
+        << "No WindowFinder implementation for current platform.";
     return;
   }
 

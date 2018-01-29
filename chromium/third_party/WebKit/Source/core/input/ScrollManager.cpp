@@ -23,8 +23,6 @@
 #include "core/page/scrolling/ScrollState.h"
 #include "core/paint/PaintLayer.h"
 #include "platform/Histogram.h"
-#include "platform/scroll/ScrollerSizeMetrics.h"
-#include "platform/wtf/CheckedNumeric.h"
 #include "platform/wtf/PtrUtil.h"
 
 namespace blink {
@@ -41,7 +39,7 @@ void ScrollManager::Clear() {
   ClearGestureScrollState();
 }
 
-DEFINE_TRACE(ScrollManager) {
+void ScrollManager::Trace(blink::Visitor* visitor) {
   visitor->Trace(frame_);
   visitor->Trace(scroll_gesture_handling_node_);
   visitor->Trace(previous_gesture_scrolled_element_);
@@ -90,10 +88,10 @@ static bool CanPropagate(const ScrollState& scroll_state,
 
   return (scroll_state.deltaXHint() == 0 ||
           element.GetComputedStyle()->OverscrollBehaviorX() ==
-              EScrollBoundaryBehavior::kAuto) &&
+              EOverscrollBehavior::kAuto) &&
          (scroll_state.deltaYHint() == 0 ||
           element.GetComputedStyle()->OverscrollBehaviorY() ==
-              EScrollBoundaryBehavior::kAuto);
+              EOverscrollBehavior::kAuto);
 }
 
 void ScrollManager::RecomputeScrollChain(const Node& start_node,
@@ -250,9 +248,7 @@ void ScrollManager::CustomizedScroll(ScrollState& scroll_state) {
 }
 
 void ScrollManager::ComputeScrollRelatedMetrics(
-    uint32_t* non_composited_main_thread_scrolling_reasons,
-    int* scroller_size,
-    bool* scroller_size_updated) {
+    uint32_t* non_composited_main_thread_scrolling_reasons) {
   // When scrolling on the main thread, the scrollableArea may or may not be
   // composited. Either way, we have recorded either the reasons stored in
   // its layer or the reason NonFastScrollableRegion from the compositor
@@ -261,9 +257,6 @@ void ScrollManager::ComputeScrollRelatedMetrics(
   if (!scroll_gesture_handling_node_->GetLayoutObject())
     return;
 
-  // When recording the size of the scroller, we only need to record the
-  // first scrollable area that we find during the walk up.
-  *scroller_size_updated = false;
   for (auto* cur_box =
            scroll_gesture_handling_node_->GetLayoutObject()->EnclosingBox();
        cur_box; cur_box = cur_box->ContainingBlock()) {
@@ -271,13 +264,6 @@ void ScrollManager::ComputeScrollRelatedMetrics(
 
     if (!scrollable_area || !scrollable_area->ScrollsOverflow())
       continue;
-
-    if (!*scroller_size_updated && !cur_box->Layer()->IsRootLayer()) {
-      CheckedNumeric<int> size = scrollable_area->VisibleContentRect().Width();
-      size *= scrollable_area->VisibleContentRect().Height();
-      *scroller_size = size.ValueOrDefault(std::numeric_limits<int>::max());
-      *scroller_size_updated = true;
-    }
 
     DCHECK(!scrollable_area->UsesCompositedScrolling() ||
            !scrollable_area->GetNonCompositedMainThreadScrollingReasons());
@@ -292,23 +278,8 @@ void ScrollManager::RecordScrollRelatedMetrics(const WebGestureDevice device) {
     return;
   }
 
-  int scroller_size = 0;
-  bool scroller_size_updated = false;
   uint32_t non_composited_main_thread_scrolling_reasons = 0;
-  ComputeScrollRelatedMetrics(&non_composited_main_thread_scrolling_reasons,
-                              &scroller_size, &scroller_size_updated);
-  if (scroller_size_updated) {
-    DCHECK_GT(scroller_size, 0);
-    if (device == kWebGestureDeviceTouchpad) {
-      UMA_HISTOGRAM_CUSTOM_COUNTS("Event.Scroll.ScrollerSize.OnScroll_Wheel",
-                                  scroller_size, 1, kScrollerSizeLargestBucket,
-                                  kScrollerSizeBucketCount);
-    } else {
-      UMA_HISTOGRAM_CUSTOM_COUNTS("Event.Scroll.ScrollerSize.OnScroll_Touch",
-                                  scroller_size, 1, kScrollerSizeLargestBucket,
-                                  kScrollerSizeBucketCount);
-    }
-  }
+  ComputeScrollRelatedMetrics(&non_composited_main_thread_scrolling_reasons);
 
   if (non_composited_main_thread_scrolling_reasons) {
     DCHECK(MainThreadScrollingReason::HasNonCompositedScrollReasons(
@@ -364,7 +335,7 @@ WebInputEventResult ScrollManager::HandleGestureScrollBegin(
 
   current_scroll_chain_.clear();
   std::unique_ptr<ScrollStateData> scroll_state_data =
-      WTF::MakeUnique<ScrollStateData>();
+      std::make_unique<ScrollStateData>();
   IntPoint position = FlooredIntPoint(gesture_event.PositionInRootFrame());
   scroll_state_data->position_x = position.X();
   scroll_state_data->position_y = position.Y();
@@ -397,8 +368,22 @@ WebInputEventResult ScrollManager::HandleGestureScrollUpdate(
   DCHECK_EQ(gesture_event.GetType(), WebInputEvent::kGestureScrollUpdate);
 
   Node* node = scroll_gesture_handling_node_.Get();
-  if (!node || !node->GetLayoutObject())
-    return WebInputEventResult::kNotHandled;
+  if (!node || !node->GetLayoutObject()) {
+    if (previous_gesture_scrolled_element_) {
+      // When the scroll_gesture_handling_node_ gets deleted in the middle of
+      // scrolling call HandleGestureScrollEvent to start scrolling a new node
+      // if possible.
+      ClearGestureScrollState();
+      WebGestureEvent scroll_begin =
+          SynthesizeGestureScrollBegin(gesture_event);
+      HandleGestureScrollEvent(scroll_begin);
+      node = scroll_gesture_handling_node_.Get();
+      if (!node || !node->GetLayoutObject())
+        return WebInputEventResult::kNotHandled;
+    } else {
+      return WebInputEventResult::kNotHandled;
+    }
+  }
 
   // Negate the deltas since the gesture event stores finger movement and
   // scrolling occurs in the direction opposite the finger's movement
@@ -428,7 +413,7 @@ WebInputEventResult ScrollManager::HandleGestureScrollUpdate(
     return WebInputEventResult::kNotHandled;
 
   std::unique_ptr<ScrollStateData> scroll_state_data =
-      WTF::MakeUnique<ScrollStateData>();
+      std::make_unique<ScrollStateData>();
   scroll_state_data->delta_x = delta.Width();
   scroll_state_data->delta_y = delta.Height();
   scroll_state_data->delta_granularity = static_cast<double>(
@@ -486,7 +471,7 @@ WebInputEventResult ScrollManager::HandleGestureScrollEnd(
       return WebInputEventResult::kNotHandled;
     }
     std::unique_ptr<ScrollStateData> scroll_state_data =
-        WTF::MakeUnique<ScrollStateData>();
+        std::make_unique<ScrollStateData>();
     scroll_state_data->is_ending = true;
     scroll_state_data->is_in_inertial_phase =
         gesture_event.InertialPhase() == WebGestureEvent::kMomentumPhase;
@@ -708,6 +693,20 @@ bool ScrollManager::CanHandleGestureEvent(
     }
   }
   return false;
+}
+
+WebGestureEvent ScrollManager::SynthesizeGestureScrollBegin(
+    const WebGestureEvent& update_event) {
+  DCHECK_EQ(update_event.GetType(), WebInputEvent::kGestureScrollUpdate);
+  WebGestureEvent scroll_begin(update_event);
+  scroll_begin.SetType(WebInputEvent::kGestureScrollBegin);
+  scroll_begin.data.scroll_begin.delta_x_hint =
+      update_event.data.scroll_update.delta_x;
+  scroll_begin.data.scroll_begin.delta_y_hint =
+      update_event.data.scroll_update.delta_y;
+  scroll_begin.data.scroll_begin.delta_hint_units =
+      update_event.data.scroll_update.delta_units;
+  return scroll_begin;
 }
 
 }  // namespace blink

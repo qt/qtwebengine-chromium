@@ -233,8 +233,8 @@
     {
 #ifdef TT_CONFIG_OPTION_GX_VAR_SUPPORT
       /* no fast retrieval for blended MM fonts without VVAR table */
-      if ( !face->is_default_instance                               &&
-           !( face->variation_support & TT_FACE_FLAG_VAR_VADVANCE ) )
+      if ( ( FT_IS_NAMED_INSTANCE( ttface ) || FT_IS_VARIATION( ttface ) ) &&
+           !( face->variation_support & TT_FACE_FLAG_VAR_VADVANCE )        )
         return FT_THROW( Unimplemented_Feature );
 #endif
 
@@ -253,8 +253,8 @@
     {
 #ifdef TT_CONFIG_OPTION_GX_VAR_SUPPORT
       /* no fast retrieval for blended MM fonts without HVAR table */
-      if ( !face->is_default_instance                               &&
-           !( face->variation_support & TT_FACE_FLAG_VAR_HADVANCE ) )
+      if ( ( FT_IS_NAMED_INSTANCE( ttface ) || FT_IS_VARIATION( ttface ) ) &&
+           !( face->variation_support & TT_FACE_FLAG_VAR_HADVANCE )        )
         return FT_THROW( Unimplemented_Feature );
 #endif
 
@@ -498,6 +498,7 @@
     (FT_Get_MM_Var_Func)    TT_Get_MM_Var,          /* get_mm_var     */
     (FT_Set_Var_Design_Func)TT_Set_Var_Design,      /* set_var_design */
     (FT_Get_Var_Design_Func)TT_Get_Var_Design,      /* get_var_design */
+    (FT_Set_Instance_Func)  TT_Set_Named_Instance,  /* set_instance   */
 
     (FT_Get_Var_Blend_Func) tt_get_var_blend,       /* get_var_blend  */
     (FT_Done_Blend_Func)    tt_done_blend           /* done_blend     */

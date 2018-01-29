@@ -11,7 +11,7 @@
 #include "base/time/time.h"
 #include "base/trace_event/trace_event.h"
 #include "base/unguessable_token.h"
-#include "cc/base/filter_operations.h"
+#include "cc/paint/filter_operations.h"
 #include "components/viz/common/quads/compositor_frame.h"
 #include "components/viz/common/quads/debug_border_draw_quad.h"
 #include "components/viz/common/quads/draw_quad.h"
@@ -68,7 +68,7 @@ void ParamTraits<cc::FilterOperation>::Write(base::Pickle* m,
       WriteParam(m, p.zoom_inset());
       break;
     case cc::FilterOperation::REFERENCE:
-      WriteParam(m, p.image_filter());
+      WriteParam(m, p.image_filter()->cached_sk_filter());
       break;
     case cc::FilterOperation::ALPHA_THRESHOLD:
       WriteParam(m, p.amount());
@@ -151,12 +151,13 @@ bool ParamTraits<cc::FilterOperation>::Read(const base::Pickle* m,
       }
       break;
     case cc::FilterOperation::REFERENCE: {
-      sk_sp<SkImageFilter> filter;
-      if (!ReadParam(m, iter, &filter)) {
+      sk_sp<SkImageFilter> sk_filter;
+      if (!ReadParam(m, iter, &sk_filter)) {
         success = false;
         break;
       }
-      r->set_image_filter(std::move(filter));
+      auto* paint_filter = new cc::ImageFilterPaintFilter(std::move(sk_filter));
+      r->set_image_filter(sk_sp<cc::ImageFilterPaintFilter>(paint_filter));
       success = true;
       break;
     }
@@ -217,7 +218,7 @@ void ParamTraits<cc::FilterOperation>::Log(const param_type& p,
       LogParam(p.zoom_inset(), l);
       break;
     case cc::FilterOperation::REFERENCE:
-      LogParam(p.image_filter(), l);
+      LogParam(p.image_filter()->cached_sk_filter(), l);
       break;
     case cc::FilterOperation::ALPHA_THRESHOLD:
       LogParam(p.amount(), l);
@@ -279,7 +280,7 @@ void ParamTraits<sk_sp<SkImageFilter>>::Write(base::Pickle* m,
     m->WriteData(static_cast<const char*>(data->data()),
                  base::checked_cast<int>(data->size()));
   } else {
-    m->WriteData(0, 0);
+    m->WriteData(nullptr, 0);
   }
 }
 
@@ -288,17 +289,22 @@ bool ParamTraits<sk_sp<SkImageFilter>>::Read(const base::Pickle* m,
                                              param_type* r) {
   TRACE_EVENT0(TRACE_DISABLED_BY_DEFAULT("cc.debug.ipc"),
                "ParamTraits::SkImageFilter::Read");
-  const char* data = 0;
+  const char* data = nullptr;
   int length = 0;
   if (!iter->ReadData(&data, &length))
     return false;
-  if (length > 0) {
-    SkFlattenable* flattenable = SkValidatingDeserializeFlattenable(
-        data, length, SkImageFilter::GetFlattenableType());
-    *r = sk_sp<SkImageFilter>(static_cast<SkImageFilter*>(flattenable));
-  } else {
+
+  if (length <= 0) {
     r->reset();
+    return true;
   }
+
+  SkFlattenable* flattenable = skia::ValidatingDeserializeFlattenable(
+      data, length, SkImageFilter::GetFlattenableType());
+  if (!flattenable)
+    return false;
+
+  *r = sk_sp<SkImageFilter>(static_cast<SkImageFilter*>(flattenable));
   return true;
 }
 
@@ -456,7 +462,6 @@ bool ParamTraits<viz::RenderPass>::Read(const base::Pickle* m,
             cache_render_pass, has_damage_from_contributing_content,
             generate_mipmap);
 
-  viz::DrawQuad* last_draw_quad = nullptr;
   for (uint32_t i = 0; i < quad_list_size; ++i) {
     viz::DrawQuad::Material material;
     base::PickleIterator temp_iter = *iter;
@@ -516,30 +521,6 @@ bool ParamTraits<viz::RenderPass>::Read(const base::Pickle* m,
     }
 
     draw_quad->shared_quad_state = p->shared_quad_state_list.back();
-    // If this quad is a fallback viz::SurfaceDrawQuad then update the previous
-    // primary viz::SurfaceDrawQuad to point to this quad.
-    if (draw_quad->material == viz::DrawQuad::SURFACE_CONTENT) {
-      const viz::SurfaceDrawQuad* surface_draw_quad =
-          viz::SurfaceDrawQuad::MaterialCast(draw_quad);
-      if (surface_draw_quad->surface_draw_quad_type ==
-          viz::SurfaceDrawQuadType::FALLBACK) {
-        // A fallback quad must immediately follow a primary
-        // viz::SurfaceDrawQuad.
-        if (!last_draw_quad ||
-            last_draw_quad->material != viz::DrawQuad::SURFACE_CONTENT) {
-          return false;
-        }
-        viz::SurfaceDrawQuad* last_surface_draw_quad =
-            static_cast<viz::SurfaceDrawQuad*>(last_draw_quad);
-        // Only one fallback quad is currently supported.
-        if (last_surface_draw_quad->surface_draw_quad_type !=
-            viz::SurfaceDrawQuadType::PRIMARY) {
-          return false;
-        }
-        last_surface_draw_quad->fallback_quad = surface_draw_quad;
-      }
-    }
-    last_draw_quad = draw_quad;
   }
 
   return true;
@@ -644,29 +625,29 @@ void ParamTraits<viz::FrameSinkId>::Log(const param_type& p, std::string* l) {
 
 void ParamTraits<viz::LocalSurfaceId>::Write(base::Pickle* m,
                                              const param_type& p) {
-  WriteParam(m, p.local_id());
+  WriteParam(m, p.parent_id());
   WriteParam(m, p.nonce());
 }
 
 bool ParamTraits<viz::LocalSurfaceId>::Read(const base::Pickle* m,
                                             base::PickleIterator* iter,
                                             param_type* p) {
-  uint32_t local_id;
-  if (!ReadParam(m, iter, &local_id))
+  uint32_t parent_id;
+  if (!ReadParam(m, iter, &parent_id))
     return false;
 
   base::UnguessableToken nonce;
   if (!ReadParam(m, iter, &nonce))
     return false;
 
-  *p = viz::LocalSurfaceId(local_id, nonce);
+  *p = viz::LocalSurfaceId(parent_id, nonce);
   return true;
 }
 
 void ParamTraits<viz::LocalSurfaceId>::Log(const param_type& p,
                                            std::string* l) {
   l->append("viz::LocalSurfaceId(");
-  LogParam(p.local_id(), l);
+  LogParam(p.parent_id(), l);
   l->append(", ");
   LogParam(p.nonce(), l);
   l->append(")");
@@ -874,7 +855,6 @@ void ParamTraits<viz::YUVVideoDrawQuad>::Write(base::Pickle* m,
   WriteParam(m, p.uv_tex_coord_rect);
   WriteParam(m, p.ya_tex_size);
   WriteParam(m, p.uv_tex_size);
-  WriteParam(m, p.color_space);
   WriteParam(m, p.video_color_space);
   WriteParam(m, p.resource_offset);
   WriteParam(m, p.resource_multiplier);
@@ -889,7 +869,6 @@ bool ParamTraits<viz::YUVVideoDrawQuad>::Read(const base::Pickle* m,
          ReadParam(m, iter, &p->uv_tex_coord_rect) &&
          ReadParam(m, iter, &p->ya_tex_size) &&
          ReadParam(m, iter, &p->uv_tex_size) &&
-         ReadParam(m, iter, &p->color_space) &&
          ReadParam(m, iter, &p->video_color_space) &&
          ReadParam(m, iter, &p->resource_offset) &&
          ReadParam(m, iter, &p->resource_multiplier) &&
@@ -911,8 +890,6 @@ void ParamTraits<viz::YUVVideoDrawQuad>::Log(const param_type& p,
   l->append(", ");
   LogParam(p.uv_tex_size, l);
   l->append(", ");
-  LogParam(p.color_space, l);
-  l->append(", ");
   LogParam(p.video_color_space, l);
   l->append(", ");
   LogParam(p.resource_offset, l);
@@ -926,7 +903,7 @@ void ParamTraits<viz::YUVVideoDrawQuad>::Log(const param_type& p,
 void ParamTraits<viz::BeginFrameAck>::Write(base::Pickle* m,
                                             const param_type& p) {
   m->WriteUInt64(p.sequence_number);
-  m->WriteUInt32(p.source_id);
+  m->WriteUInt64(p.source_id);
   // |has_damage| is implicit through IPC message name, so not transmitted.
 }
 
@@ -935,7 +912,7 @@ bool ParamTraits<viz::BeginFrameAck>::Read(const base::Pickle* m,
                                            param_type* p) {
   return iter->ReadUInt64(&p->sequence_number) &&
          p->sequence_number >= viz::BeginFrameArgs::kStartingFrameNumber &&
-         iter->ReadUInt32(&p->source_id);
+         iter->ReadUInt64(&p->source_id);
 }
 
 void ParamTraits<viz::BeginFrameAck>::Log(const param_type& p, std::string* l) {

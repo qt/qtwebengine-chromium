@@ -269,7 +269,7 @@ class TracingControllerTest : public ContentBrowserTest {
       scoped_refptr<TracingController::TraceDataEndpoint> trace_data_endpoint =
           TracingController::CreateStringEndpoint(callback);
 
-      metadata_ = base::MakeUnique<base::DictionaryValue>();
+      metadata_ = std::make_unique<base::DictionaryValue>();
       metadata_->SetString("not-whitelisted", "this_not_found");
 
       bool result = controller->StopTracing(trace_data_endpoint);
@@ -379,7 +379,7 @@ IN_PROC_BROWSER_TEST_F(TracingControllerTest, DisableRecordingStoresMetadata) {
   TestStartAndStopTracingString();
   // Check that a number of important keys exist in the metadata dictionary. The
   // values are not checked to ensure the test is robust.
-  EXPECT_TRUE(last_metadata() != NULL);
+  EXPECT_TRUE(last_metadata() != nullptr);
   std::string network_type;
   last_metadata()->GetString("network-type", &network_type);
   EXPECT_TRUE(network_type.length() > 0);
@@ -405,7 +405,7 @@ IN_PROC_BROWSER_TEST_F(TracingControllerTest,
                        DISABLED_NotWhitelistedMetadataStripped) {
   TestStartAndStopTracingStringWithFilter();
   // Check that a number of important keys exist in the metadata dictionary.
-  EXPECT_TRUE(last_metadata() != NULL);
+  EXPECT_TRUE(last_metadata() != nullptr);
   std::string cpu_brand;
   last_metadata()->GetString("cpu-brand", &cpu_brand);
   EXPECT_TRUE(cpu_brand.length() > 0);

@@ -88,7 +88,11 @@ DialogClientView::DialogClientView(Widget* owner, View* contents_view)
   AddChildView(button_row_container_);
 }
 
-DialogClientView::~DialogClientView() {}
+DialogClientView::~DialogClientView() {
+  DialogDelegate* dialog = GetWidget() ? GetDialogDelegate() : nullptr;
+  if (dialog)
+    dialog->RemoveObserver(this);
+}
 
 void DialogClientView::AcceptWindow() {
   // Only notify the delegate once. See |delegate_allowed_close_|'s comment.
@@ -104,11 +108,6 @@ void DialogClientView::CancelWindow() {
     delegate_allowed_close_ = true;
     GetWidget()->Close();
   }
-}
-
-void DialogClientView::UpdateDialogButtons() {
-  SetupLayout();
-  InvalidateLayout();
 }
 
 void DialogClientView::SetButtonRowInsets(const gfx::Insets& insets) {
@@ -196,8 +195,10 @@ void DialogClientView::ViewHierarchyChanged(
   ClientView::ViewHierarchyChanged(details);
 
   if (details.is_add) {
-    if (child == this)
+    if (child == this) {
       UpdateDialogButtons();
+      GetDialogDelegate()->AddObserver(this);
+    }
     return;
   }
 
@@ -264,6 +265,15 @@ void DialogClientView::ChildVisibilityChanged(View* child) {
   if (child == extra_view_)
     UpdateDialogButtons();
   ChildPreferredSizeChanged(child);
+}
+
+void DialogClientView::OnDialogModelChanged() {
+  UpdateDialogButtons();
+}
+
+void DialogClientView::UpdateDialogButtons() {
+  SetupLayout();
+  InvalidateLayout();
 }
 
 void DialogClientView::UpdateDialogButton(LabelButton** member,
@@ -435,7 +445,7 @@ void DialogClientView::SetupViews() {
     return;
 
   extra_view_ = GetDialogDelegate()->CreateExtraView();
-  if (extra_view_)
+  if (extra_view_ && Button::AsButton(extra_view_))
     extra_view_->SetGroup(kButtonGroup);
 }
 

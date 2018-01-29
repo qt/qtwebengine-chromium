@@ -52,7 +52,7 @@ def get_change_details(change_num):
   return json.loads(content[5:])
 
 
-def upload_to_android(work_dir, change_num, debug):
+def init_work_dir(work_dir):
   if not os.path.isdir(work_dir):
     print 'Creating %s' % work_dir
     os.makedirs(work_dir)
@@ -106,23 +106,34 @@ About to run repo init. If it hangs asking you to run glogin then please:
   subprocess.check_call(
       'git config user.email %s@google.com' % getpass.getuser(), shell=True)
 
-  # Create repo branch.
-  subprocess.check_call('%s start %s .' % (repo_binary, REPO_BRANCH_NAME),
-                        shell=True)
-  try:
-    change_details = get_change_details(change_num)
+  return repo_binary
 
+
+class Modifier:
+  def modify(self):
+    raise NotImplementedError
+  def get_user_msg(self):
+    raise NotImplementedError
+
+
+class FetchModifier(Modifier):
+  def __init__(self, change_num, debug):
+    self.change_num = change_num
+    self.debug = debug
+
+  def modify(self):
     # Download and cherry-pick the patch.
+    change_details = get_change_details(self.change_num)
     latest_patchset = len(change_details['revisions'])
-    mod = int(change_num) % 100
+    mod = int(self.change_num) % 100
     download_ref = 'refs/changes/%s/%s/%s' % (
-                       str(mod).zfill(2), change_num, latest_patchset)
+                       str(mod).zfill(2), self.change_num, latest_patchset)
     subprocess.check_call(
         'git fetch https://skia.googlesource.com/skia %s' % download_ref,
         shell=True)
     subprocess.check_call('git cherry-pick FETCH_HEAD', shell=True)
 
-    if debug:
+    if self.debug:
       # Add SK_DEBUG to SkUserConfig.h.
       with open(SK_USER_CONFIG_PATH, 'a') as f:
         f.write('#ifndef SK_DEBUG\n')
@@ -140,17 +151,70 @@ About to run repo init. If it hangs asking you to run glogin then please:
         '[DO ' + 'NOT ' + 'SUBMIT] %s\n\n'
         'Test: Presubmit checks will test this change.' % (
             original_commit_message))
+
     subprocess.check_call('git commit --amend -m "%s"' % new_commit_message,
                           shell=True)
 
-    # Upload to Android Gerrit.
-    subprocess.check_call('%s upload --verify' % repo_binary, shell=True)
-
-    print """
+  def get_user_msg(self):
+    return """
 
 Open the above URL and trigger TH by checking 'Presubmit-Ready'.
 You can download binaries (if required) from the TH link after it completes.
 """
+
+
+# Add a legacy flag if it doesn't exist, or remove it if it exists.
+class AndroidLegacyFlagModifier(Modifier):
+  def __init__(self, flag):
+    self.flag = flag
+    self.verb = "Unknown"
+
+  def modify(self):
+    flag_line = "  #define %s\n" % self.flag
+
+    config_file = os.path.join('include', 'config', 'SkUserConfigManual.h')
+
+    with open(config_file) as f:
+      lines = f.readlines()
+
+    if flag_line not in lines:
+      lines.insert(
+          lines.index("#endif // SkUserConfigManual_DEFINED\n"), flag_line)
+      verb = "Add"
+    else:
+      lines.remove(flag_line)
+      verb = "Remove"
+
+    with open(config_file, 'w') as f:
+      for line in lines:
+        f.write(line)
+
+    subprocess.check_call('git add %s' % config_file, shell=True)
+    message = '%s %s\n\nTest: Presubmit checks will test this change.' % (
+        verb, self.flag)
+
+    subprocess.check_call('git commit -m "%s"' % message, shell=True)
+
+  def get_user_msg(self):
+      return """
+
+  Please open the above URL to review and land the change.
+"""
+
+
+def upload_to_android(work_dir, modifier):
+  repo_binary = init_work_dir(work_dir)
+
+  # Create repo branch.
+  subprocess.check_call('%s start %s .' % (repo_binary, REPO_BRANCH_NAME),
+                        shell=True)
+  try:
+    modifier.modify()
+
+    # Upload to Android Gerrit.
+    subprocess.check_call('%s upload --verify' % repo_binary, shell=True)
+
+    print modifier.get_user_msg()
   finally:
     # Abandon repo branch.
     subprocess.call('%s abandon %s' % (repo_binary, REPO_BRANCH_NAME),
@@ -171,7 +235,7 @@ def main():
       '--debug', '-d', action='store_true', default=False,
       help='Adds SK_DEBUG to SkUserConfig.h.')
   args = parser.parse_args()
-  upload_to_android(args.work_dir, args.change_num, args.debug)
+  upload_to_android(args.work_dir, FetchModifier(args.change_num, args.debug))
 
 
 if __name__ == '__main__':

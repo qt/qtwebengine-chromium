@@ -70,9 +70,8 @@ class WorkerThreadTest : public ::testing::Test {
   WorkerThreadTest() {}
 
   void SetUp() override {
-    reporting_proxy_ = WTF::MakeUnique<MockWorkerReportingProxy>();
-    security_origin_ =
-        SecurityOrigin::Create(KURL(kParsedURLString, "http://fake.url/"));
+    reporting_proxy_ = std::make_unique<MockWorkerReportingProxy>();
+    security_origin_ = SecurityOrigin::Create(KURL("http://fake.url/"));
     worker_thread_ =
         WTF::WrapUnique(new WorkerThreadForTest(nullptr, *reporting_proxy_));
     lifecycle_observer_ = new MockWorkerThreadLifecycleObserver(
@@ -139,7 +138,7 @@ class WorkerThreadTest : public ::testing::Test {
 
   ExitCode GetExitCode() { return worker_thread_->GetExitCodeForTesting(); }
 
-  RefPtr<SecurityOrigin> security_origin_;
+  scoped_refptr<SecurityOrigin> security_origin_;
   std::unique_ptr<MockWorkerReportingProxy> reporting_proxy_;
   std::unique_ptr<WorkerThreadForTest> worker_thread_;
   Persistent<MockWorkerThreadLifecycleObserver> lifecycle_observer_;
@@ -292,25 +291,26 @@ TEST_F(WorkerThreadTest, Terminate_WhileDebuggerTaskIsRunningOnInitialization) {
   EXPECT_CALL(*reporting_proxy_, DidTerminateWorkerThread()).Times(1);
   EXPECT_CALL(*lifecycle_observer_, ContextDestroyed(_)).Times(1);
 
-  std::unique_ptr<Vector<CSPHeaderAndType>> headers =
-      WTF::MakeUnique<Vector<CSPHeaderAndType>>();
+  auto headers = std::make_unique<Vector<CSPHeaderAndType>>();
   CSPHeaderAndType header_and_type("contentSecurityPolicy",
                                    kContentSecurityPolicyHeaderTypeReport);
   headers->push_back(header_and_type);
 
-  // Specify kPauseWorkerGlobalScopeOnStart so that the worker thread can pause
-  // on initialization to run debugger tasks.
   auto global_scope_creation_params =
-      WTF::MakeUnique<GlobalScopeCreationParams>(
-          KURL(kParsedURLString, "http://fake.url/"), "fake user agent",
-          "//fake source code", nullptr, /* cachedMetaData */
-          kPauseWorkerGlobalScopeOnStart, headers.get(), "",
-          security_origin_.get(), nullptr, /* workerClients */
+      std::make_unique<GlobalScopeCreationParams>(
+          KURL("http://fake.url/"), "fake user agent", "// fake source code",
+          nullptr /* cachedMetaData */, headers.get(), kReferrerPolicyDefault,
+          security_origin_.get(), nullptr /* workerClients */,
           kWebAddressSpaceLocal, nullptr /* originTrialToken */,
           std::make_unique<WorkerSettings>(Settings::Create().get()),
           kV8CacheOptionsDefault);
+
+  // Specify PauseOnWorkerStart::kPause so that the worker thread can pause
+  // on initialization to run debugger tasks.
   worker_thread_->Start(std::move(global_scope_creation_params),
                         WorkerBackingThreadStartupData::CreateDefault(),
+                        std::make_unique<GlobalScopeInspectorCreationParams>(
+                            WorkerInspectorProxy::PauseOnWorkerStart::kPause),
                         ParentFrameTaskRunners::Create());
 
   // Used to wait for worker thread termination in a debugger task on the

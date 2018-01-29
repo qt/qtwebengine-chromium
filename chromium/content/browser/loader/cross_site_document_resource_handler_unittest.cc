@@ -495,7 +495,8 @@ class CrossSiteDocumentResourceHandlerTest
                                             true,          // is_main_frame
                                             true,          // allow_download
                                             true,          // is_async
-                                            PREVIEWS_OFF); // previews_state
+                                            PREVIEWS_OFF,  // previews_state
+                                            nullptr);      // navigation_ui_data
     request_->set_initiator(url::Origin::Create(GURL(initiator_origin)));
 
     // Create a sink handler to capture results.

@@ -63,7 +63,7 @@ class PLATFORM_EXPORT RawResource final : public Resource {
     return CreateForTest(request, type);
   }
   static RawResource* CreateForTest(const char* url, Type type) {
-    return CreateForTest(KURL(kParsedURLString, url), type);
+    return CreateForTest(KURL(url), type);
   }
 
   // FIXME: AssociatedURLLoader shouldn't be a DocumentThreadableLoader and
@@ -159,9 +159,6 @@ class PLATFORM_EXPORT RawResourceClient : public ResourceClient {
                                 const ResourceResponse&,
                                 std::unique_ptr<WebDataConsumerHandle>) {}
   virtual void SetSerializedCachedMetadata(Resource*, const char*, size_t) {}
-  virtual void DataReceived(Resource*,
-                            const char* /* data */,
-                            size_t /* length */) {}
   virtual bool RedirectReceived(Resource*,
                                 const ResourceRequest&,
                                 const ResourceResponse&) {

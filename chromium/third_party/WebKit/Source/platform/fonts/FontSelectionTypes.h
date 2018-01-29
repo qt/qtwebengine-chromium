@@ -191,6 +191,18 @@ static inline const FontSelectionValue& BoldThreshold() {
   return boldThreshold;
 }
 
+static inline const FontSelectionValue& MinWeightValue() {
+  DEFINE_THREAD_SAFE_STATIC_LOCAL(const FontSelectionValue, minWeightValue,
+                                  (1));
+  return minWeightValue;
+}
+
+static inline const FontSelectionValue& MaxWeightValue() {
+  DEFINE_THREAD_SAFE_STATIC_LOCAL(const FontSelectionValue, maxWeightValue,
+                                  (1000));
+  return maxWeightValue;
+}
+
 static inline const FontSelectionValue& BoldWeightValue() {
   DEFINE_THREAD_SAFE_STATIC_LOCAL(const FontSelectionValue, boldWeightValue,
                                   (700));
@@ -213,10 +225,16 @@ static inline bool isFontWeightBold(FontSelectionValue fontWeight) {
   return fontWeight >= BoldThreshold();
 }
 
-static inline const FontSelectionValue& WeightSearchThreshold() {
+static inline const FontSelectionValue& UpperWeightSearchThreshold() {
   DEFINE_THREAD_SAFE_STATIC_LOCAL(const FontSelectionValue,
-                                  weightSearchThreshold, (500));
-  return weightSearchThreshold;
+                                  upperWeightSearchThreshold, (500));
+  return upperWeightSearchThreshold;
+}
+
+static inline const FontSelectionValue& LowerWeightSearchThreshold() {
+  DEFINE_THREAD_SAFE_STATIC_LOCAL(const FontSelectionValue,
+                                  lowerWeightSearchThreshold, (400));
+  return lowerWeightSearchThreshold;
 }
 
 static inline const FontSelectionValue& UltraCondensedWidthValue() {

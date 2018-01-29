@@ -1,4 +1,4 @@
-// Copyright 2016 PDFium Authors. All rights reserved.
+// Copyright 2017 PDFium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,27 +7,12 @@
 #ifndef XFA_FXFA_PARSER_CXFA_IMAGE_H_
 #define XFA_FXFA_PARSER_CXFA_IMAGE_H_
 
-#include "core/fxcrt/fx_string.h"
-#include "core/fxcrt/fx_system.h"
-#include "xfa/fxfa/parser/cxfa_data.h"
+#include "xfa/fxfa/parser/cxfa_node.h"
 
-class CXFA_Node;
-
-class CXFA_Image : public CXFA_Data {
+class CXFA_Image : public CXFA_Node {
  public:
-  CXFA_Image(CXFA_Node* pNode, bool bDefValue);
-
-  int32_t GetAspect();
-  bool GetContentType(WideString& wsContentType);
-  bool GetHref(WideString& wsHref);
-  int32_t GetTransferEncoding();
-  bool GetContent(WideString& wsText);
-  bool SetContentType(const WideString& wsContentType);
-  bool SetHref(const WideString& wsHref);
-  bool SetTransferEncoding(int32_t iTransferEncoding);
-
- private:
-  bool m_bDefValue;
+  CXFA_Image(CXFA_Document* doc, XFA_PacketType packet);
+  ~CXFA_Image() override;
 };
 
 #endif  // XFA_FXFA_PARSER_CXFA_IMAGE_H_

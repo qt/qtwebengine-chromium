@@ -49,7 +49,7 @@ class StyleSheetCSSRuleList final : public CSSRuleList {
     return new StyleSheetCSSRuleList(sheet);
   }
 
-  DEFINE_INLINE_VIRTUAL_TRACE() {
+  virtual void Trace(blink::Visitor* visitor) {
     visitor->Trace(style_sheet_);
     CSSRuleList::Trace(visitor);
   }
@@ -138,7 +138,7 @@ CSSStyleSheet::CSSStyleSheet(StyleSheetContents* contents,
   contents_->RegisterClient(this);
 }
 
-CSSStyleSheet::~CSSStyleSheet() {}
+CSSStyleSheet::~CSSStyleSheet() = default;
 
 void CSSStyleSheet::WillMutateRules() {
   // If we are the only client it is safe to mutate.
@@ -203,7 +203,8 @@ void CSSStyleSheet::setDisabled(bool disabled) {
   DidMutate();
 }
 
-void CSSStyleSheet::SetMediaQueries(RefPtr<MediaQuerySet> media_queries) {
+void CSSStyleSheet::SetMediaQueries(
+    scoped_refptr<MediaQuerySet> media_queries) {
   media_queries_ = std::move(media_queries);
   if (media_cssom_wrapper_ && media_queries_)
     media_cssom_wrapper_->Reattach(media_queries_.get());
@@ -265,13 +266,19 @@ bool CSSStyleSheet::CanAccessRules() const {
   return false;
 }
 
-CSSRuleList* CSSStyleSheet::rules() {
-  return cssRules();
+CSSRuleList* CSSStyleSheet::rules(ExceptionState& exception_state) {
+  return cssRules(exception_state);
 }
 
 unsigned CSSStyleSheet::insertRule(const String& rule_string,
                                    unsigned index,
                                    ExceptionState& exception_state) {
+  if (!CanAccessRules()) {
+    exception_state.ThrowSecurityError(
+        "Cannot access StyleSheet to insertRule");
+    return 0;
+  }
+
   DCHECK(child_rule_cssom_wrappers_.IsEmpty() ||
          child_rule_cssom_wrappers_.size() == contents_->RuleCount());
 
@@ -312,6 +319,12 @@ unsigned CSSStyleSheet::insertRule(const String& rule_string,
 
 void CSSStyleSheet::deleteRule(unsigned index,
                                ExceptionState& exception_state) {
+  if (!CanAccessRules()) {
+    exception_state.ThrowSecurityError(
+        "Cannot access StyleSheet to deleteRule");
+    return;
+  }
+
   DCHECK(child_rule_cssom_wrappers_.IsEmpty() ||
          child_rule_cssom_wrappers_.size() == contents_->RuleCount());
 
@@ -333,7 +346,7 @@ void CSSStyleSheet::deleteRule(unsigned index,
 
   if (!child_rule_cssom_wrappers_.IsEmpty()) {
     if (child_rule_cssom_wrappers_[index])
-      child_rule_cssom_wrappers_[index]->SetParentStyleSheet(0);
+      child_rule_cssom_wrappers_[index]->SetParentStyleSheet(nullptr);
     child_rule_cssom_wrappers_.EraseAt(index);
   }
 }
@@ -361,9 +374,11 @@ int CSSStyleSheet::addRule(const String& selector,
   return addRule(selector, style, length(), exception_state);
 }
 
-CSSRuleList* CSSStyleSheet::cssRules() {
-  if (!CanAccessRules())
+CSSRuleList* CSSStyleSheet::cssRules(ExceptionState& exception_state) {
+  if (!CanAccessRules()) {
+    exception_state.ThrowSecurityError("Cannot access rules");
     return nullptr;
+  }
   if (!rule_list_cssom_wrapper_)
     rule_list_cssom_wrapper_ = StyleSheetCSSRuleList::Create(this);
   return rule_list_cssom_wrapper_.Get();
@@ -403,7 +418,7 @@ Document* CSSStyleSheet::OwnerDocument() const {
 }
 
 void CSSStyleSheet::SetAllowRuleAccessFromOrigin(
-    RefPtr<SecurityOrigin> allowed_origin) {
+    scoped_refptr<SecurityOrigin> allowed_origin) {
   allow_rule_access_from_origin_ = std::move(allowed_origin);
 }
 
@@ -438,7 +453,7 @@ void CSSStyleSheet::SetText(const String& text) {
   contents_->ParseString(text);
 }
 
-DEFINE_TRACE(CSSStyleSheet) {
+void CSSStyleSheet::Trace(blink::Visitor* visitor) {
   visitor->Trace(contents_);
   visitor->Trace(owner_node_);
   visitor->Trace(owner_rule_);

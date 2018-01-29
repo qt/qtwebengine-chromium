@@ -95,7 +95,9 @@ class LayoutListMarker final : public LayoutBox {
 
   void UpdateLayout() override;
 
-  void ImageChanged(WrappedImagePtr, const IntRect* = nullptr) override;
+  void ImageChanged(WrappedImagePtr,
+                    CanDeferInvalidation,
+                    const IntRect* = nullptr) override;
 
   InlineBox* CreateInlineBox() override;
 
@@ -110,8 +112,6 @@ class LayoutListMarker final : public LayoutBox {
       LinePositionMode = kPositionOnContainingLine) const override;
 
   bool IsText() const { return !IsImage(); }
-
-  bool CanBeSelectionLeaf() const override { return true; }
 
   LayoutUnit GetWidthOfTextWithSuffix() const;
   void UpdateMargins();

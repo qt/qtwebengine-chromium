@@ -35,10 +35,6 @@ const base::Feature kGoogleBrandedPhishingWarning{
     "PasswordProtectionGoogleBrandedPhishingWarning",
     base::FEATURE_DISABLED_BY_DEFAULT};
 
-const base::Feature kLocalDatabaseManagerEnabled{
-    "SafeBrowsingV4LocalDatabaseManagerEnabled",
-    base::FEATURE_DISABLED_BY_DEFAULT};
-
 // If enabled, SafeBrowsing URL checks don't defer starting requests or
 // following redirects, no matter on desktop or mobile. Instead they only defer
 // response processing.
@@ -48,12 +44,6 @@ const base::Feature kLocalDatabaseManagerEnabled{
 const base::Feature kParallelUrlCheck{"S13nSafeBrowsingParallelUrlCheck",
                                       base::FEATURE_DISABLED_BY_DEFAULT};
 
-const base::Feature kPasswordFieldOnFocusPinging{
-    "PasswordFieldOnFocusPinging", base::FEATURE_ENABLED_BY_DEFAULT};
-
-const base::Feature kProtectedPasswordEntryPinging{
-    "ProtectedPasswordEntryPinging", base::FEATURE_ENABLED_BY_DEFAULT};
-
 const base::Feature kThreatDomDetailsTagAndAttributeFeature{
     "ThreatDomDetailsTagAttributes", base::FEATURE_DISABLED_BY_DEFAULT};
 
@@ -61,8 +51,8 @@ const base::Feature kTriggerThrottlerDailyQuotaFeature{
     "SafeBrowsingTriggerThrottlerDailyQuota",
     base::FEATURE_DISABLED_BY_DEFAULT};
 
-const base::Feature kV4OnlyEnabled{"SafeBrowsingV4OnlyEnabled",
-                                   base::FEATURE_DISABLED_BY_DEFAULT};
+const base::Feature kDispatchSafetyNetCheckOffThread{
+    "DispatchSafetyNetCheckOffThread", base::FEATURE_DISABLED_BY_DEFAULT};
 
 namespace {
 // List of experimental features. Boolean value for each list member should be
@@ -77,13 +67,10 @@ constexpr struct {
     {&kAdSamplerTriggerFeature, false},
     {&kGaiaPasswordReuseReporting, true},
     {&kGoogleBrandedPhishingWarning, true},
-    {&kLocalDatabaseManagerEnabled, true},
     {&kParallelUrlCheck, true},
-    {&kPasswordFieldOnFocusPinging, false},
-    {&kProtectedPasswordEntryPinging, false},
     {&kThreatDomDetailsTagAndAttributeFeature, false},
     {&kTriggerThrottlerDailyQuotaFeature, false},
-    {&kV4OnlyEnabled, true},
+    {&kDispatchSafetyNetCheckOffThread, false},
 };
 
 // Adds the name and the enabled/disabled status of a given feature.

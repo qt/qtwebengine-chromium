@@ -32,6 +32,11 @@ class ByteString {
   using const_iterator = const CharType*;
   using const_reverse_iterator = std::reverse_iterator<const_iterator>;
 
+  static ByteString FormatInteger(int i);
+  static ByteString FormatFloat(float f);
+  static ByteString Format(const char* lpszFormat, ...);
+  static ByteString FormatV(const char* lpszFormat, va_list argList);
+
   ByteString();
   ByteString(const ByteString& other);
   ByteString(ByteString&& other) noexcept;
@@ -110,7 +115,9 @@ class ByteString {
   bool operator!=(const ByteStringView& str) const { return !(*this == str); }
   bool operator!=(const ByteString& other) const { return !(*this == other); }
 
-  bool operator<(const ByteString& str) const;
+  bool operator<(const char* ptr) const;
+  bool operator<(const ByteStringView& str) const;
+  bool operator<(const ByteString& other) const;
 
   const ByteString& operator=(const char* str);
   const ByteString& operator=(const ByteStringView& bstrc);
@@ -136,9 +143,6 @@ class ByteString {
   size_t InsertAtBack(char ch) { return Insert(GetLength(), ch); }
   size_t Delete(size_t index, size_t count = 1);
 
-  void Format(const char* lpszFormat, ...);
-  void FormatV(const char* lpszFormat, va_list argList);
-
   void Reserve(size_t len);
   char* GetBuffer(size_t len);
   void ReleaseBuffer(size_t len);
@@ -163,13 +167,17 @@ class ByteString {
   void MakeLower();
   void MakeUpper();
 
-  void TrimRight();
-  void TrimRight(char chTarget);
-  void TrimRight(const ByteStringView& lpszTargets);
+  void Trim();
+  void Trim(char target);
+  void Trim(const ByteStringView& targets);
 
   void TrimLeft();
-  void TrimLeft(char chTarget);
-  void TrimLeft(const ByteStringView& lpszTargets);
+  void TrimLeft(char target);
+  void TrimLeft(const ByteStringView& targets);
+
+  void TrimRight();
+  void TrimRight(char target);
+  void TrimRight(const ByteStringView& targets);
 
   size_t Replace(const ByteStringView& lpszOld, const ByteStringView& lpszNew);
 
@@ -178,9 +186,6 @@ class ByteString {
   WideString UTF8Decode() const;
 
   uint32_t GetID() const { return AsStringView().GetID(); }
-
-  static ByteString FormatInteger(int i);
-  static ByteString FormatFloat(float f, int precision = 0);
 
  protected:
   using StringData = StringDataTemplate<char>;
@@ -208,6 +213,9 @@ inline bool operator!=(const char* lhs, const ByteString& rhs) {
 }
 inline bool operator!=(const ByteStringView& lhs, const ByteString& rhs) {
   return rhs != lhs;
+}
+inline bool operator<(const char* lhs, const ByteString& rhs) {
+  return rhs.Compare(lhs) > 0;
 }
 
 inline ByteString operator+(const ByteStringView& str1,

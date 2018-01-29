@@ -91,7 +91,6 @@
 <translation id="5941711191222866238">ചെറുതാക്കുക‍</translation>
 <translation id="5943826764092288734">{HOURS,plural, =1{ഒരു മണിക്കൂർ}other{# മണിക്കൂർ}}</translation>
 <translation id="5948410903763073882">Alt+<ph name="KEY_COMBO_NAME" /></translation>
-<translation id="598033046487663418">എല്ലാ ആപ്സും</translation>
 <translation id="6012623610530968780">പേജ് <ph name="SELECTED_PAGE" /> / <ph name="TOTAL_PAGE_NUM" /></translation>
 <translation id="6022924867608035986">തിരയൽ ബോക്‌സ് ടെക്‌സ്‌റ്റ് മായ്‌ക്കുക</translation>
 <translation id="6040143037577758943">അടയ്ക്കുക</translation>
@@ -144,6 +143,7 @@
 <translation id="8352146631962686268">{YEARS,plural, =1{ഒരു വര്‍ഷം}other{# വർഷം}}</translation>
 <translation id="8371695176452482769">ഇപ്പോള്‍ സംസാരിക്കുക</translation>
 <translation id="838869780401515933">പരിശോധിക്കൂ</translation>
+<translation id="8393700583063109961">സന്ദേശം അയയ്ക്കുക</translation>
 <translation id="8394908167088220973">മീഡിയ പ്ലേ ചെയ്യുക/താൽക്കാലികമായി നിർത്തുക</translation>
 <translation id="8400147561352026160">Shift+<ph name="KEY_COMBO_NAME" /></translation>
 <translation id="8458811141851741261">{YEARS,plural, =1{1വർഷം}other{#വർഷം}}</translation>

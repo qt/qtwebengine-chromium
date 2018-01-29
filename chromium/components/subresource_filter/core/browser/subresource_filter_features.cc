@@ -93,11 +93,6 @@ ActivationList ParseActivationList(std::string activation_lists_string) {
   } else if (activation_lists.CaseInsensitiveContains(
                  kActivationListBetterAds)) {
     return ActivationList::BETTER_ADS;
-  } else if (activation_lists.CaseInsensitiveContains(
-                 kActivationListAbusiveAds)) {
-    return ActivationList::ABUSIVE_ADS;
-  } else if (activation_lists.CaseInsensitiveContains(kActivationListAllAds)) {
-    return ActivationList::ALL_ADS;
   }
   return ActivationList::NONE;
 }
@@ -130,12 +125,8 @@ std::vector<Configuration> FillEnabledPresetConfigurations(
        &Configuration::MakePresetForLiveRunOnPhishingSites},
       {kPresetPerformanceTestingDryRunOnAllSites, false,
        &Configuration::MakePresetForPerformanceTestingDryRunOnAllSites},
-      {kPresetLiveRunForAbusiveAds, false,
-       &Configuration::MakePresetForLiveRunForAbusiveAds},
       {kPresetLiveRunForBetterAds, false,
-       &Configuration::MakePresetForLiveRunForBetterAds},
-      {kPresetLiveRunForAllAds, false,
-       &Configuration::MakePresetForLiveRunForAllAds}};
+       &Configuration::MakePresetForLiveRunForBetterAds}};
 
   CommaSeparatedStrings enabled_presets(
       TakeVariationParamOrReturnEmpty(params, kEnablePresetsParameterName));
@@ -184,13 +175,6 @@ Configuration ParseExperimentalConfiguration(
   configuration.activation_options.should_whitelist_site_on_reload =
       ParseBool(TakeVariationParamOrReturnEmpty(
           params, kWhitelistSiteOnReloadParameterName));
-
-  configuration.activation_options.should_strengthen_popup_blocker =
-      ParseBool(TakeVariationParamOrReturnEmpty(
-          params, kStrengthenPopupBlockerParameterName));
-
-  configuration.activation_options.should_disable_ruleset_rules =
-      ParseBool(TakeVariationParamOrReturnEmpty(params, kDisableRulesetRules));
 
   // GeneralSettings:
   configuration.general_settings.ruleset_flavor =
@@ -273,8 +257,6 @@ const char kActivationListSocialEngineeringAdsInterstitial[] =
 const char kActivationListPhishingInterstitial[] = "phishing_interstitial";
 const char kActivationListSubresourceFilter[] = "subresource_filter";
 const char kActivationListBetterAds[] = "better_ads";
-const char kActivationListAbusiveAds[] = "abusive_ads";
-const char kActivationListAllAds[] = "all_ads";
 
 const char kActivationPriorityParameterName[] = "activation_priority";
 
@@ -282,9 +264,6 @@ const char kPerformanceMeasurementRateParameterName[] =
     "performance_measurement_rate";
 const char kSuppressNotificationsParameterName[] = "suppress_notifications";
 const char kWhitelistSiteOnReloadParameterName[] = "whitelist_site_on_reload";
-const char kStrengthenPopupBlockerParameterName[] = "strengthen_popup_blocker";
-const char kDisableRulesetRules[] = "disable_ruleset_rules";
-
 const char kRulesetFlavorParameterName[] = "ruleset_flavor";
 
 const char kEnablePresetsParameterName[] = "enable_presets";
@@ -292,11 +271,8 @@ const char kDisablePresetsParameterName[] = "disable_presets";
 const char kPresetLiveRunOnPhishingSites[] = "liverun_on_phishing_sites";
 const char kPresetPerformanceTestingDryRunOnAllSites[] =
     "performance_testing_dryrun_on_all_sites";
-const char kPresetLiveRunForAbusiveAds[] =
-    "liverun_on_abusive_ad_violating_sites";
 const char kPresetLiveRunForBetterAds[] =
     "liverun_on_better_ads_violating_sites";
-const char kPresetLiveRunForAllAds[] = "liverun_on_all_ads_violating_sites";
 
 // Configuration --------------------------------------------------------------
 
@@ -328,33 +304,11 @@ Configuration Configuration::MakeForForcedActivation() {
 }
 
 // static
-Configuration Configuration::MakePresetForLiveRunForAbusiveAds() {
-  Configuration config(ActivationLevel::ENABLED,
-                       ActivationScope::ACTIVATION_LIST,
-                       ActivationList::ABUSIVE_ADS);
-  config.activation_options.should_disable_ruleset_rules = true;
-  config.activation_options.should_suppress_notifications = true;
-  config.activation_options.should_strengthen_popup_blocker = true;
-  config.activation_conditions.priority = 750;
-  return config;
-}
-
-// static
 Configuration Configuration::MakePresetForLiveRunForBetterAds() {
   Configuration config(ActivationLevel::ENABLED,
                        ActivationScope::ACTIVATION_LIST,
                        ActivationList::BETTER_ADS);
   config.activation_conditions.priority = 800;
-  return config;
-}
-
-// static
-Configuration Configuration::MakePresetForLiveRunForAllAds() {
-  Configuration config(ActivationLevel::ENABLED,
-                       ActivationScope::ACTIVATION_LIST,
-                       ActivationList::ALL_ADS);
-  config.activation_options.should_strengthen_popup_blocker = true;
-  config.activation_conditions.priority = 850;
   return config;
 }
 
@@ -382,8 +336,6 @@ bool Configuration::operator==(const Configuration& rhs) const {
                     config.activation_options.performance_measurement_rate,
                     config.activation_options.should_whitelist_site_on_reload,
                     config.activation_options.should_suppress_notifications,
-                    config.activation_options.should_strengthen_popup_blocker,
-                    config.activation_options.should_disable_ruleset_rules,
                     config.general_settings.ruleset_flavor);
   };
   return tie(*this) == tie(rhs);
@@ -416,10 +368,6 @@ std::unique_ptr<base::trace_event::TracedValue> Configuration::ToTracedValue()
                     activation_options.should_suppress_notifications);
   value->SetBoolean("should_whitelist_site_on_reload",
                     activation_options.should_whitelist_site_on_reload);
-  value->SetBoolean("should_strengthen_popup_blocker",
-                    activation_options.should_strengthen_popup_blocker);
-  value->SetBoolean("should_disable_ruleset_rules",
-                    activation_options.should_disable_ruleset_rules);
   value->SetString("ruleset_flavor",
                    StreamToString(general_settings.ruleset_flavor));
   return value;

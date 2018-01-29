@@ -50,9 +50,14 @@ class TrafficAnnotationAuditor {
   ~TrafficAnnotationAuditor();
 
   // Runs traffic_annotation_extractor clang tool and puts its output in
-  // |clang_tool_raw_output_|.
+  // |clang_tool_raw_output_|. If |filter_files| flag is set, the list of files
+  // will be received from repository and heuristically filtered to only
+  // process the relevant files. If |use_compile_commands| flag is set, the
+  // list of files is extracted from compile_commands.json instead of git and
+  // will not be filtered.
   bool RunClangTool(const std::vector<std::string>& path_filters,
-                    bool full_run);
+                    bool filter_files,
+                    bool use_compile_commands);
 
   // Parses the output of clang tool (|clang_tool_raw_output_|) and populates
   // |extracted_annotations_|, |extracted_calls_|, and |errors_|.
@@ -129,7 +134,7 @@ class TrafficAnnotationAuditor {
     return extracted_calls_;
   }
 
-  const std::vector<AuditorResult>& errors() const { return errors_; }
+  std::vector<AuditorResult> errors() { return errors_; }
 
   void ClearErrorsForTesting() { errors_.clear(); }
 

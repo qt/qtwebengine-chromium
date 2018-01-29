@@ -60,6 +60,10 @@ std::string GetContentType(const base::FilePath& path) {
     return "audio/wav";
   if (path.MatchesExtension(FILE_PATH_LITERAL(".xml")))
     return "text/xml";
+  if (path.MatchesExtension(FILE_PATH_LITERAL(".mhtml")) ||
+      path.MatchesExtension(FILE_PATH_LITERAL(".mht"))) {
+    return "multipart/related";
+  }
   if (path.MatchesExtension(FILE_PATH_LITERAL(".html")) ||
       path.MatchesExtension(FILE_PATH_LITERAL(".htm"))) {
     return "text/html";
@@ -124,7 +128,7 @@ std::unique_ptr<HttpResponse> HandleFileRequest(
     const HttpRequest& request) {
   // This is a test-only server. Ignore I/O thread restrictions.
   // TODO(svaldez): Figure out why thread is I/O restricted in the first place.
-  base::ThreadRestrictions::ScopedAllowIO allow_io;
+  base::ScopedAllowBlockingForTesting allow_blocking;
 
   // A proxy request will have an absolute path. Simulate the proxy by stripping
   // the scheme, host, and port.

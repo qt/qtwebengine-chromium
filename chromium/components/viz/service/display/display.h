@@ -12,6 +12,7 @@
 #include "base/observer_list.h"
 #include "cc/resources/display_resource_provider.h"
 #include "components/viz/common/frame_sinks/begin_frame_source.h"
+#include "components/viz/common/gpu/context_lost_observer.h"
 #include "components/viz/common/resources/returned_resource.h"
 #include "components/viz/common/surfaces/frame_sink_id.h"
 #include "components/viz/common/surfaces/surface_id.h"
@@ -43,7 +44,6 @@ class DisplayClient;
 class OutputSurface;
 class SharedBitmapManager;
 class SoftwareRenderer;
-class TextureMailboxDeleter;
 
 class VIZ_SERVICE_EXPORT DisplayObserver {
  public:
@@ -56,17 +56,20 @@ class VIZ_SERVICE_EXPORT DisplayObserver {
 // (OutputSurface). The client is responsible for creating and sizing the
 // surface IDs used to draw into the display and deciding when to draw.
 class VIZ_SERVICE_EXPORT Display : public DisplaySchedulerClient,
-                                   public OutputSurfaceClient {
+                                   public OutputSurfaceClient,
+                                   public ContextLostObserver {
  public:
   // The |begin_frame_source| and |scheduler| may be null (together). In that
   // case, DrawAndSwap must be called externally when needed.
+  // The |current_task_runner| may be null if the Display is on a thread without
+  // a MessageLoop.
   Display(SharedBitmapManager* bitmap_manager,
           gpu::GpuMemoryBufferManager* gpu_memory_buffer_manager,
           const RendererSettings& settings,
           const FrameSinkId& frame_sink_id,
           std::unique_ptr<OutputSurface> output_surface,
           std::unique_ptr<DisplayScheduler> scheduler,
-          std::unique_ptr<TextureMailboxDeleter> texture_mailbox_deleter);
+          scoped_refptr<base::SingleThreadTaskRunner> current_task_runner);
 
   ~Display() override;
 
@@ -96,9 +99,12 @@ class VIZ_SERVICE_EXPORT Display : public DisplaySchedulerClient,
 
   // OutputSurfaceClient implementation.
   void SetNeedsRedrawRect(const gfx::Rect& damage_rect) override;
-  void DidReceiveSwapBuffersAck() override;
+  void DidReceiveSwapBuffersAck(uint64_t swap_id) override;
   void DidReceiveTextureInUseResponses(
       const gpu::TextureInUseResponses& responses) override;
+  void DidReceivePresentationFeedback(
+      uint64_t swap_id,
+      const gfx::PresentationFeedback& feedback) override;
 
   bool has_scheduler() const { return !!scheduler_; }
   DirectRenderer* renderer_for_testing() const { return renderer_.get(); }
@@ -108,11 +114,14 @@ class VIZ_SERVICE_EXPORT Display : public DisplaySchedulerClient,
 
   void ForceImmediateDrawAndSwapIfPossible();
   void SetNeedsOneBeginFrame();
+  void RemoveOverdrawQuads(CompositorFrame* frame);
 
  private:
   void InitializeRenderer();
   void UpdateRootSurfaceResourcesLocked();
-  void DidLoseContextProvider();
+
+  // ContextLostObserver implementation.
+  void OnContextLost() override;
 
   SharedBitmapManager* const bitmap_manager_;
   gpu::GpuMemoryBufferManager* const gpu_memory_buffer_manager_;
@@ -135,10 +144,18 @@ class VIZ_SERVICE_EXPORT Display : public DisplaySchedulerClient,
   std::unique_ptr<DisplayScheduler> scheduler_;
   std::unique_ptr<cc::DisplayResourceProvider> resource_provider_;
   std::unique_ptr<SurfaceAggregator> aggregator_;
-  std::unique_ptr<TextureMailboxDeleter> texture_mailbox_deleter_;
+  // This may be null if the Display is on a thread without a MessageLoop.
+  scoped_refptr<base::SingleThreadTaskRunner> current_task_runner_;
   std::unique_ptr<DirectRenderer> renderer_;
   SoftwareRenderer* software_renderer_ = nullptr;
   std::vector<ui::LatencyInfo> stored_latency_info_;
+
+  using PresentedCallbacks = std::vector<Surface::PresentedCallback>;
+  PresentedCallbacks presented_callbacks_;
+  PresentedCallbacks active_presented_callbacks_;
+  // TODO(penghuang): Remove it when we can get accurate presentation time from
+  // GPU for every SwapBuffers. https://crbug.com/776877
+  std::vector<PresentedCallbacks> previous_presented_callbacks_;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(Display);

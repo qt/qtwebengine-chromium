@@ -54,7 +54,8 @@ TEST_F(ProtoConversionsTest, NetworkRequirementsConversion) {
 TEST_F(ProtoConversionsTest, BatteryRequirementsConversion) {
   SchedulingParams::BatteryRequirements values[] = {
       SchedulingParams::BatteryRequirements::BATTERY_INSENSITIVE,
-      SchedulingParams::BatteryRequirements::BATTERY_SENSITIVE};
+      SchedulingParams::BatteryRequirements::BATTERY_SENSITIVE,
+      SchedulingParams::BatteryRequirements::BATTERY_CHARGING};
   for (auto value : values) {
     ASSERT_EQ(value,
               BatteryRequirementsFromProto(BatteryRequirementsToProto(value)));
@@ -96,6 +97,7 @@ TEST_F(ProtoConversionsTest, RequestParamsWithHeadersConversion) {
   RequestParams expected;
   expected.url = GURL(TEST_URL);
   expected.method = "GET";
+  expected.fetch_error_body = true;
   expected.request_headers.SetHeader("key1", "value1");
   expected.request_headers.SetHeader("key2", "value2");
 
@@ -105,6 +107,7 @@ TEST_F(ProtoConversionsTest, RequestParamsWithHeadersConversion) {
 
   EXPECT_EQ(expected.url, actual.url);
   EXPECT_EQ(expected.method, actual.method);
+  EXPECT_EQ(expected.fetch_error_body, actual.fetch_error_body);
 
   std::string out;
   actual.request_headers.GetHeader("key1", &out);

@@ -321,6 +321,8 @@ libvpx_srcs_x86 = [
   "//third_party/libvpx/source/libvpx/vpx_dsp/x86/bitdepth_conversion_avx2.h",
   "//third_party/libvpx/source/libvpx/vpx_dsp/x86/bitdepth_conversion_sse2.h",
   "//third_party/libvpx/source/libvpx/vpx_dsp/x86/convolve.h",
+  "//third_party/libvpx/source/libvpx/vpx_dsp/x86/convolve_avx2.h",
+  "//third_party/libvpx/source/libvpx/vpx_dsp/x86/convolve_ssse3.h",
   "//third_party/libvpx/source/libvpx/vpx_dsp/x86/fwd_dct32x32_impl_avx2.h",
   "//third_party/libvpx/source/libvpx/vpx_dsp/x86/fwd_dct32x32_impl_sse2.h",
   "//third_party/libvpx/source/libvpx/vpx_dsp/x86/fwd_txfm_impl_sse2.h",
@@ -329,6 +331,7 @@ libvpx_srcs_x86 = [
   "//third_party/libvpx/source/libvpx/vpx_dsp/x86/highbd_inv_txfm_sse4.h",
   "//third_party/libvpx/source/libvpx/vpx_dsp/x86/inv_txfm_sse2.h",
   "//third_party/libvpx/source/libvpx/vpx_dsp/x86/inv_txfm_ssse3.h",
+  "//third_party/libvpx/source/libvpx/vpx_dsp/x86/mem_sse2.h",
   "//third_party/libvpx/source/libvpx/vpx_dsp/x86/transpose_sse2.h",
   "//third_party/libvpx/source/libvpx/vpx_dsp/x86/txfm_common_sse2.h",
   "//third_party/libvpx/source/libvpx/vpx_dsp/x86/vpx_asm_stubs.c",
@@ -457,6 +460,7 @@ libvpx_srcs_x86_avx = [
 ]
 libvpx_srcs_x86_avx2 = [
   "//third_party/libvpx/source/libvpx/vp9/encoder/x86/vp9_error_avx2.c",
+  "//third_party/libvpx/source/libvpx/vpx_dsp/x86/avg_intrin_avx2.c",
   "//third_party/libvpx/source/libvpx/vpx_dsp/x86/fwd_txfm_avx2.c",
   "//third_party/libvpx/source/libvpx/vpx_dsp/x86/highbd_convolve_avx2.c",
   "//third_party/libvpx/source/libvpx/vpx_dsp/x86/loopfilter_avx2.c",
@@ -465,6 +469,7 @@ libvpx_srcs_x86_avx2 = [
   "//third_party/libvpx/source/libvpx/vpx_dsp/x86/variance_avx2.c",
   "//third_party/libvpx/source/libvpx/vpx_dsp/x86/vpx_subpixel_8t_intrin_avx2.c",
 ]
+libvpx_srcs_x86_avx512 = []
 libvpx_srcs_x86_64 = [
   "//third_party/libvpx/source/libvpx/vp8/common/alloccommon.c",
   "//third_party/libvpx/source/libvpx/vp8/common/alloccommon.h",
@@ -783,6 +788,8 @@ libvpx_srcs_x86_64 = [
   "//third_party/libvpx/source/libvpx/vpx_dsp/x86/bitdepth_conversion_avx2.h",
   "//third_party/libvpx/source/libvpx/vpx_dsp/x86/bitdepth_conversion_sse2.h",
   "//third_party/libvpx/source/libvpx/vpx_dsp/x86/convolve.h",
+  "//third_party/libvpx/source/libvpx/vpx_dsp/x86/convolve_avx2.h",
+  "//third_party/libvpx/source/libvpx/vpx_dsp/x86/convolve_ssse3.h",
   "//third_party/libvpx/source/libvpx/vpx_dsp/x86/fwd_dct32x32_impl_avx2.h",
   "//third_party/libvpx/source/libvpx/vpx_dsp/x86/fwd_dct32x32_impl_sse2.h",
   "//third_party/libvpx/source/libvpx/vpx_dsp/x86/fwd_txfm_impl_sse2.h",
@@ -791,6 +798,7 @@ libvpx_srcs_x86_64 = [
   "//third_party/libvpx/source/libvpx/vpx_dsp/x86/highbd_inv_txfm_sse4.h",
   "//third_party/libvpx/source/libvpx/vpx_dsp/x86/inv_txfm_sse2.h",
   "//third_party/libvpx/source/libvpx/vpx_dsp/x86/inv_txfm_ssse3.h",
+  "//third_party/libvpx/source/libvpx/vpx_dsp/x86/mem_sse2.h",
   "//third_party/libvpx/source/libvpx/vpx_dsp/x86/transpose_sse2.h",
   "//third_party/libvpx/source/libvpx/vpx_dsp/x86/txfm_common_sse2.h",
   "//third_party/libvpx/source/libvpx/vpx_dsp/x86/vpx_asm_stubs.c",
@@ -924,6 +932,7 @@ libvpx_srcs_x86_64_avx = [
 ]
 libvpx_srcs_x86_64_avx2 = [
   "//third_party/libvpx/source/libvpx/vp9/encoder/x86/vp9_error_avx2.c",
+  "//third_party/libvpx/source/libvpx/vpx_dsp/x86/avg_intrin_avx2.c",
   "//third_party/libvpx/source/libvpx/vpx_dsp/x86/fwd_txfm_avx2.c",
   "//third_party/libvpx/source/libvpx/vpx_dsp/x86/highbd_convolve_avx2.c",
   "//third_party/libvpx/source/libvpx/vpx_dsp/x86/loopfilter_avx2.c",
@@ -932,6 +941,7 @@ libvpx_srcs_x86_64_avx2 = [
   "//third_party/libvpx/source/libvpx/vpx_dsp/x86/variance_avx2.c",
   "//third_party/libvpx/source/libvpx/vpx_dsp/x86/vpx_subpixel_8t_intrin_avx2.c",
 ]
+libvpx_srcs_x86_64_avx512 = []
 libvpx_srcs_arm = [
   "//third_party/libvpx/source/libvpx/vp8/common/alloccommon.c",
   "//third_party/libvpx/source/libvpx/vp8/common/alloccommon.h",

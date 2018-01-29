@@ -37,44 +37,36 @@ CanvasRenderingContext::CanvasRenderingContext(
     CanvasRenderingContextHost* host,
     const CanvasContextCreationAttributes& attrs)
     : host_(host),
-      color_params_(kLegacyCanvasColorSpace,
-                    kRGBA8CanvasPixelFormat,
-                    kNonOpaque),
+      color_params_(kSRGBCanvasColorSpace, kRGBA8CanvasPixelFormat, kNonOpaque),
       creation_attributes_(attrs) {
-  color_params_.SetCanvasColorSpace(kLegacyCanvasColorSpace);
-  if (RuntimeEnabledFeatures::ColorCanvasExtensionsEnabled()) {
+  // Supported color spaces: srgb-8888, srgb-f16, p3-f16, rec2020-f16. For wide
+  // gamut color spaces, user must explicitly request for float16 storage.
+  // Otherwise, we fall back to srgb-8888. Invalid requests fall back to
+  // srgb-8888 too.
+  if (creation_attributes_.pixelFormat() == kF16CanvasPixelFormatName) {
+    color_params_.SetCanvasPixelFormat(kF16CanvasPixelFormat);
     if (creation_attributes_.colorSpace() == kRec2020CanvasColorSpaceName)
       color_params_.SetCanvasColorSpace(kRec2020CanvasColorSpace);
     else if (creation_attributes_.colorSpace() == kP3CanvasColorSpaceName)
       color_params_.SetCanvasColorSpace(kP3CanvasColorSpace);
-
-    // For now, we only support RGBA8 (for SRGB) and F16 (for all). Everything
-    // else falls back to SRGB + RGBA8.
-    if (creation_attributes_.pixelFormat() == kF16CanvasPixelFormatName) {
-      color_params_.SetCanvasPixelFormat(kF16CanvasPixelFormat);
-    } else {
-      color_params_.SetCanvasColorSpace(kSRGBCanvasColorSpace);
-      color_params_.SetCanvasPixelFormat(kRGBA8CanvasPixelFormat);
-    }
-
-    // TODO(ccameron): linearPixelMath needs to be propagated here.
   }
 
   if (!creation_attributes_.alpha()) {
     color_params_.SetOpacityMode(kOpaque);
   }
 
-  // Make m_creationAttributes reflect the effective colorSpace, pixelFormat and
-  // linearPixelMath rather than the requested one.
+  if (!RuntimeEnabledFeatures::LowLatencyCanvasEnabled() &&
+      creation_attributes_.hasLowLatency())
+    creation_attributes_.setLowLatency(false);
+
+  // Make m_creationAttributes reflect the effective colorSpace and pixelFormat
+  // rather than the requested one.
   creation_attributes_.setColorSpace(ColorSpaceAsString());
   creation_attributes_.setPixelFormat(PixelFormatAsString());
-  creation_attributes_.setLinearPixelMath(color_params_.LinearPixelMath());
 }
 
 WTF::String CanvasRenderingContext::ColorSpaceAsString() const {
   switch (color_params_.ColorSpace()) {
-    case kLegacyCanvasColorSpace:
-      return kLegacyCanvasColorSpaceName;
     case kSRGBCanvasColorSpace:
       return kSRGBCanvasColorSpaceName;
     case kRec2020CanvasColorSpace:
@@ -196,8 +188,9 @@ bool CanvasRenderingContext::WouldTaintOrigin(
   return taint_origin;
 }
 
-DEFINE_TRACE(CanvasRenderingContext) {
+void CanvasRenderingContext::Trace(blink::Visitor* visitor) {
   visitor->Trace(host_);
+  ScriptWrappable::Trace(visitor);
 }
 
 }  // namespace blink

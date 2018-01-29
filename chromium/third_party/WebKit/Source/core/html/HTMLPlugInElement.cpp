@@ -90,7 +90,7 @@ HTMLPlugInElement::~HTMLPlugInElement() {
   DCHECK(!is_delaying_load_event_);
 }
 
-DEFINE_TRACE(HTMLPlugInElement) {
+void HTMLPlugInElement::Trace(blink::Visitor* visitor) {
   visitor->Trace(image_loader_);
   visitor->Trace(persisted_plugin_);
   HTMLFrameOwnerElement::Trace(visitor);
@@ -268,18 +268,17 @@ bool HTMLPlugInElement::ShouldAccelerate() const {
   return plugin && plugin->PlatformLayer();
 }
 
-Vector<WebParsedFeaturePolicyDeclaration>
-HTMLPlugInElement::ConstructContainerPolicy(Vector<String>*, bool*) const {
+ParsedFeaturePolicy HTMLPlugInElement::ConstructContainerPolicy(Vector<String>*,
+                                                                bool*) const {
   // Plugin elements (<object> and <embed>) are not allowed to enable the
   // fullscreen feature. Add an empty whitelist for the fullscreen feature so
   // that the nested browsing context is unable to use the API, regardless of
   // origin.
   // https://fullscreen.spec.whatwg.org/#model
-  Vector<WebParsedFeaturePolicyDeclaration> container_policy;
-  WebParsedFeaturePolicyDeclaration whitelist;
-  whitelist.feature = WebFeaturePolicyFeature::kFullscreen;
+  ParsedFeaturePolicy container_policy;
+  ParsedFeaturePolicyDeclaration whitelist;
+  whitelist.feature = FeaturePolicyFeature::kFullscreen;
   whitelist.matches_all_origins = false;
-  whitelist.origins = Vector<WebSecurityOrigin>(0UL);
   container_policy.push_back(whitelist);
   return container_policy;
 }
@@ -390,7 +389,7 @@ bool HTMLPlugInElement::IsPresentationAttribute(
 void HTMLPlugInElement::CollectStyleForPresentationAttribute(
     const QualifiedName& name,
     const AtomicString& value,
-    MutableStylePropertySet* style) {
+    MutableCSSPropertyValueSet* style) {
   if (name == widthAttr) {
     AddHTMLLengthToStyle(style, CSSPropertyWidth, value);
   } else if (name == heightAttr) {
@@ -616,8 +615,10 @@ bool HTMLPlugInElement::LoadPlugin(const KURL& url,
   // account.
   if (Page* page = GetDocument().GetFrame()->GetPage()) {
     if (ScrollingCoordinator* scrolling_coordinator =
-            page->GetScrollingCoordinator())
-      scrolling_coordinator->NotifyGeometryChanged();
+            page->GetScrollingCoordinator()) {
+      LocalFrameView* frame_view = GetDocument().GetFrame()->View();
+      scrolling_coordinator->NotifyGeometryChanged(frame_view);
+    }
   }
   return true;
 }

@@ -29,6 +29,12 @@ namespace {
 // degrade accuracy held in the memory.
 static const size_t kMaxRequestsSize = 300;
 
+// Returns true if the request should be discarded because it does not provide
+// meaningful observation.
+bool ShouldDiscardRequest(const URLRequest& request) {
+  return request.method() != "GET";
+}
+
 }  // namespace
 
 namespace nqe {
@@ -136,6 +142,8 @@ void ThroughputAnalyzer::NotifyStartTransaction(const URLRequest& request) {
     EndThroughputObservationWindow();
     DCHECK(!IsCurrentlyTrackingThroughput());
     return;
+  } else if (ShouldDiscardRequest(request)) {
+    return;
   }
 
   EraseHangingRequests(request);
@@ -221,7 +229,7 @@ bool ThroughputAnalyzer::MaybeGetThroughputObservation(
   if (!IsCurrentlyTrackingThroughput())
     return false;
 
-  DCHECK_GT(requests_.size(), 0U);
+  DCHECK_GE(requests_.size(), params_->throughput_min_requests_in_flight());
   DCHECK_EQ(0U, accuracy_degrading_requests_.size());
 
   base::TimeTicks now = tick_clock_->NowTicks();

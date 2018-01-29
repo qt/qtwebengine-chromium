@@ -133,7 +133,7 @@ class MockRemoteSuggestionsProvider : public RemoteSuggestionsProvider {
                     const std::set<std::string>&,
                     FetchDoneCallback*));
   MOCK_METHOD0(ReloadSuggestions, void());
-  MOCK_METHOD1(ClearCachedSuggestions, void(Category));
+  MOCK_METHOD0(ClearCachedSuggestions, void());
   MOCK_METHOD1(ClearDismissedSuggestionsForDebugging, void(Category));
   MOCK_METHOD1(DismissSuggestion, void(const ContentSuggestion::ID&));
   // Gmock cannot mock a method with movable-only type callback
@@ -1029,7 +1029,7 @@ TEST_F(RemoteSuggestionsSchedulerImplTest,
 
   // A trigger after another 16 minutes is performed (more than 30m after
   // clearing the history).
-  EXPECT_CALL(*provider(), RefetchInTheBackground(_));
+  EXPECT_CALL(*provider(), RefetchWhileDisplaying(_));
   test_clock()->Advance(base::TimeDelta::FromMinutes(16));
   scheduler()->OnBrowserForegrounded();
 }
@@ -1051,7 +1051,7 @@ TEST_F(RemoteSuggestionsSchedulerImplTest,
   std::move(signal_fetch_done).Run(Status::Success());
 
   // Clear the suggestions - results in an immediate fetch.
-  EXPECT_CALL(*provider(), ReloadSuggestions());
+  EXPECT_CALL(*provider(), RefetchWhileDisplaying(_));
   scheduler()->OnSuggestionsCleared();
 }
 

@@ -275,12 +275,12 @@ std::unique_ptr<LevelDBLock> LevelDBDatabase::LockForTesting(
     const base::FilePath& file_name) {
   leveldb::Env* env = LevelDBEnv::Get();
   base::FilePath lock_path = file_name.AppendASCII("LOCK");
-  leveldb::FileLock* lock = NULL;
+  leveldb::FileLock* lock = nullptr;
   leveldb::Status status = env->LockFile(lock_path.AsUTF8Unsafe(), &lock);
   if (!status.ok())
     return std::unique_ptr<LevelDBLock>();
   DCHECK(lock);
-  return base::MakeUnique<LockImpl>(env, lock);
+  return std::make_unique<LockImpl>(env, lock);
 }
 
 // static
@@ -293,7 +293,7 @@ leveldb::Status LevelDBDatabase::Open(const base::FilePath& file_name,
   base::TimeTicks begin_time = base::TimeTicks::Now();
 
   std::unique_ptr<ComparatorAdapter> comparator_adapter(
-      base::MakeUnique<ComparatorAdapter>(comparator));
+      std::make_unique<ComparatorAdapter>(comparator));
 
   std::unique_ptr<leveldb::DB> db;
   std::unique_ptr<const leveldb::FilterPolicy> filter_policy;
@@ -332,7 +332,7 @@ leveldb::Status LevelDBDatabase::Open(const base::FilePath& file_name,
 std::unique_ptr<LevelDBDatabase> LevelDBDatabase::OpenInMemory(
     const LevelDBComparator* comparator) {
   std::unique_ptr<ComparatorAdapter> comparator_adapter(
-      base::MakeUnique<ComparatorAdapter>(comparator));
+      std::make_unique<ComparatorAdapter>(comparator));
   std::unique_ptr<leveldb::Env> in_memory_env(
       leveldb_chrome::NewMemEnv(LevelDBEnv::Get()));
 
@@ -397,7 +397,7 @@ leveldb::Status LevelDBDatabase::Get(const StringPiece& key,
   leveldb::ReadOptions read_options;
   read_options.verify_checksums = true;  // TODO(jsbell): Disable this if the
                                          // performance impact is too great.
-  read_options.snapshot = snapshot ? snapshot->snapshot_ : 0;
+  read_options.snapshot = snapshot ? snapshot->snapshot_ : nullptr;
 
   const leveldb::Status s =
       db_->Get(read_options, leveldb_env::MakeSlice(key), value);
@@ -434,7 +434,7 @@ std::unique_ptr<LevelDBIterator> LevelDBDatabase::CreateIterator(
   leveldb::ReadOptions read_options;
   read_options.verify_checksums = true;  // TODO(jsbell): Disable this if the
                                          // performance impact is too great.
-  read_options.snapshot = snapshot ? snapshot->snapshot_ : 0;
+  read_options.snapshot = snapshot ? snapshot->snapshot_ : nullptr;
 
   num_iterators_++;
   max_iterators_ = std::max(max_iterators_, num_iterators_);
@@ -456,29 +456,33 @@ void LevelDBDatabase::Compact(const base::StringPiece& start,
   const leveldb::Slice start_slice = leveldb_env::MakeSlice(start);
   const leveldb::Slice stop_slice = leveldb_env::MakeSlice(stop);
   // NULL batch means just wait for earlier writes to be done
-  db_->Write(leveldb::WriteOptions(), NULL);
+  db_->Write(leveldb::WriteOptions(), nullptr);
   db_->CompactRange(&start_slice, &stop_slice);
 }
 
-void LevelDBDatabase::CompactAll() { db_->CompactRange(NULL, NULL); }
+void LevelDBDatabase::CompactAll() {
+  db_->CompactRange(nullptr, nullptr);
+}
 
 bool LevelDBDatabase::OnMemoryDump(
     const base::trace_event::MemoryDumpArgs& args,
     base::trace_event::ProcessMemoryDump* pmd) {
   if (!db_)
     return false;
-
-  std::string value;
-  uint64_t size;
-  bool res = db_->GetProperty("leveldb.approximate-memory-usage", &value);
-  DCHECK(res);
-  base::StringToUint64(value, &size);
+  // All leveldb databases are already dumped by leveldb_env::DBTracker. Add
+  // an edge to the existing database.
+  auto* tracker_dump =
+      leveldb_env::DBTracker::GetOrCreateAllocatorDump(pmd, db_.get());
+  if (!tracker_dump)
+    return true;
 
   auto* dump = pmd->CreateAllocatorDump(
       base::StringPrintf("site_storage/index_db/0x%" PRIXPTR,
                          reinterpret_cast<uintptr_t>(db_.get())));
   dump->AddScalar(base::trace_event::MemoryAllocatorDump::kNameSize,
-                  base::trace_event::MemoryAllocatorDump::kUnitsBytes, size);
+                  base::trace_event::MemoryAllocatorDump::kUnitsBytes,
+                  tracker_dump->GetSizeInternal());
+  pmd->AddOwnershipEdge(dump->guid(), tracker_dump->guid());
 
   // Dumps in BACKGROUND mode cannot have strings or edges in order to minimize
   // trace size and instrumentation overhead.
@@ -488,14 +492,6 @@ bool LevelDBDatabase::OnMemoryDump(
   }
 
   dump->AddString("file_name", "", file_name_for_tracing);
-
-  // All leveldb databases are already dumped by leveldb_env::DBTracker. Add
-  // an edge to avoid double counting.
-  auto* tracker_dump =
-      leveldb_env::DBTracker::GetOrCreateAllocatorDump(pmd, db_.get());
-  if (tracker_dump)
-    pmd->AddOwnershipEdge(dump->guid(), tracker_dump->guid());
-
   return true;
 }
 

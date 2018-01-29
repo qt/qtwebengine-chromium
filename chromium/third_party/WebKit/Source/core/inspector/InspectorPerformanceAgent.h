@@ -5,6 +5,7 @@
 #ifndef InspectorPerformanceAgent_h
 #define InspectorPerformanceAgent_h
 
+#include "base/macros.h"
 #include "core/CoreExport.h"
 #include "core/inspector/InspectorBaseAgent.h"
 #include "core/inspector/protocol/Performance.h"
@@ -24,10 +25,8 @@ class UpdateLayout;
 class CORE_EXPORT InspectorPerformanceAgent final
     : public InspectorBaseAgent<protocol::Performance::Metainfo>,
       public scheduler::TaskTimeObserver {
-  WTF_MAKE_NONCOPYABLE(InspectorPerformanceAgent);
-
  public:
-  DECLARE_VIRTUAL_TRACE();
+  void Trace(blink::Visitor*) override;
 
   static InspectorPerformanceAgent* Create(InspectedFrames* inspected_frames) {
     return new InspectorPerformanceAgent(inspected_frames);
@@ -73,6 +72,8 @@ class CORE_EXPORT InspectorPerformanceAgent final
   unsigned long long recalc_style_count_ = 0;
   int script_call_depth_ = 0;
   int layout_depth_ = 0;
+
+  DISALLOW_COPY_AND_ASSIGN(InspectorPerformanceAgent);
 };
 
 }  // namespace blink

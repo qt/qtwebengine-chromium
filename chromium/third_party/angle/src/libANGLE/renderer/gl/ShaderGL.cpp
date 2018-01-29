@@ -117,6 +117,16 @@ ShCompileOptions ShaderGL::prepareSourceAndReturnOptions(std::stringstream *sour
         options |= SH_CLAMP_POINT_SIZE;
     }
 
+    if (mWorkarounds.rewriteVectorScalarArithmetic)
+    {
+        options |= SH_REWRITE_VECTOR_SCALAR_ARITHMETIC;
+    }
+
+    if (mWorkarounds.dontUseLoopsToInitializeVariables)
+    {
+        options |= SH_DONT_USE_LOOPS_TO_INITIALIZE_VARIABLES;
+    }
+
     if (mMultiviewImplementationType == MultiviewImplementationTypeGL::NV_VIEWPORT_ARRAY2)
     {
         options |= SH_INITIALIZE_BUILTINS_FOR_INSTANCED_MULTIVIEW;

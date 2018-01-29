@@ -19,7 +19,7 @@ namespace webrtc {
 
 class AudioDeviceDummy : public AudioDeviceGeneric {
  public:
-  AudioDeviceDummy(const int32_t id) {}
+  AudioDeviceDummy() {}
   virtual ~AudioDeviceDummy() {}
 
   // Retrieve the currently utilized audio layer
@@ -109,7 +109,6 @@ class AudioDeviceDummy : public AudioDeviceGeneric {
 
   // Delay information and control
   int32_t PlayoutDelay(uint16_t& delayMS) const override;
-  int32_t RecordingDelay(uint16_t& delayMS) const override;
 
   void AttachAudioBuffer(AudioDeviceBuffer* audioBuffer) override;
 };

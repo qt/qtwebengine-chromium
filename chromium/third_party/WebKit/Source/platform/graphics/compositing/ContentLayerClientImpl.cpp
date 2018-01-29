@@ -7,6 +7,7 @@
 #include <memory>
 #include "cc/paint/paint_op_buffer.h"
 #include "platform/geometry/GeometryAsJSON.h"
+#include "platform/graphics/LoggingCanvas.h"
 #include "platform/graphics/compositing/PaintChunksToCcLayer.h"
 #include "platform/graphics/paint/DrawingDisplayItem.h"
 #include "platform/graphics/paint/PaintArtifact.h"
@@ -73,6 +74,9 @@ std::unique_ptr<JSONObject> ContentLayerClientImpl::LayerAsJSON(
   std::unique_ptr<JSONObject> json = JSONObject::Create();
   json->SetString("name", debug_name_);
 
+  if (context.flags & kLayerTreeIncludesDebugInfo)
+    json->SetString("this", String::Format("%p", cc_picture_layer_.get()));
+
   FloatPoint position(cc_picture_layer_->offset_to_transform_parent().x(),
                       cc_picture_layer_->offset_to_transform_parent().y());
   if (position != FloatPoint())
@@ -98,7 +102,7 @@ std::unique_ptr<JSONObject> ContentLayerClientImpl::LayerAsJSON(
                     background_color.NameForLayoutTreeAsText());
   }
 
-#ifndef NDEBUG
+#if DCHECK_IS_ON()
   if (context.flags & kLayerTreeIncludesDebugInfo)
     json->SetValue("paintChunkContents", paint_chunk_debug_data_->Clone());
 #endif
@@ -110,6 +114,14 @@ std::unique_ptr<JSONObject> ContentLayerClientImpl::LayerAsJSON(
   if (int transform_id = GetTransformId(
           raster_invalidator_.GetLayerState().Transform(), context))
     json->SetInteger("transform", transform_id);
+
+#ifndef NDEBUG
+  if (context.flags & kLayerTreeIncludesPaintRecords) {
+    LoggingCanvas canvas;
+    cc_display_item_list_->Raster(&canvas);
+    json->SetValue("paintRecord", canvas.Log());
+  }
+#endif
 
   return json;
 }
@@ -145,10 +157,11 @@ scoped_refptr<cc::PictureLayer> ContentLayerClientImpl::UpdateCcPictureLayer(
   // TODO(wangxianzhu): Avoid calling DebugName() in official release build.
   debug_name_ = paint_chunks[0]->id.client.DebugName();
 
-#ifndef NDEBUG
+#if DCHECK_IS_ON()
   paint_chunk_debug_data_ = JSONArray::Create();
   for (const auto* chunk : paint_chunks) {
     auto json = JSONObject::Create();
+    json->SetString("data", chunk->ToString());
     json->SetArray("displayItems",
                    paint_artifact.GetDisplayItemList().SubsequenceAsJSON(
                        chunk->begin_index, chunk->end_index,

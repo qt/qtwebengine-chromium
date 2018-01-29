@@ -25,7 +25,7 @@ SourceBufferRange::SourceBufferRange(
   DCHECK(!interbuffer_distance_cb.is_null());
 }
 
-SourceBufferRange::~SourceBufferRange() {}
+SourceBufferRange::~SourceBufferRange() = default;
 
 void SourceBufferRange::SeekToStart() {
   CHECK(!buffers_.empty());
@@ -135,8 +135,9 @@ void SourceBufferRange::UpdateEndTime(
   DCHECK_GE(duration, base::TimeDelta());
 
   if (!highest_frame_) {
-    DVLOG(1) << "Updating range end time from <empty> to " << timestamp << ", "
-             << timestamp + duration;
+    DVLOG(1) << "Updating range end time from <empty> to "
+             << timestamp.InMicroseconds() << "us, "
+             << (timestamp + duration).InMicroseconds() << "us";
     highest_frame_ = new_buffer;
     return;
   }
@@ -144,9 +145,12 @@ void SourceBufferRange::UpdateEndTime(
   if (highest_frame_->timestamp() < timestamp ||
       (highest_frame_->timestamp() == timestamp &&
        highest_frame_->duration() <= duration)) {
-    DVLOG(1) << "Updating range end time from " << highest_frame_->timestamp()
-             << ", " << highest_frame_->timestamp() + highest_frame_->duration()
-             << " to " << timestamp << ", " << timestamp + duration;
+    DVLOG(1) << "Updating range end time from "
+             << highest_frame_->timestamp().InMicroseconds() << "us, "
+             << (highest_frame_->timestamp() + highest_frame_->duration())
+                    .InMicroseconds()
+             << "us to " << timestamp.InMicroseconds() << "us, "
+             << (timestamp + duration).InMicroseconds();
     highest_frame_ = new_buffer;
   }
 }

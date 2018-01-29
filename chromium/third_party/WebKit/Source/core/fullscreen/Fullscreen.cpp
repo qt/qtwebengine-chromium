@@ -32,8 +32,6 @@
 #include "core/css/StyleEngine.h"
 #include "core/dom/Document.h"
 #include "core/dom/ElementTraversal.h"
-#include "core/dom/TaskRunnerHelper.h"
-#include "core/dom/UserGestureIndicator.h"
 #include "core/dom/events/Event.h"
 #include "core/frame/HostsUsingFeatures.h"
 #include "core/frame/LocalFrame.h"
@@ -52,6 +50,7 @@
 #include "platform/ScopedOrientationChangeIndicator.h"
 #include "platform/bindings/Microtask.h"
 #include "platform/feature_policy/FeaturePolicy.h"
+#include "public/platform/TaskType.h"
 
 namespace blink {
 
@@ -66,7 +65,7 @@ bool AllowedToUseFullscreen(const Frame* frame) {
   if (!frame)
     return false;
 
-  if (!IsSupportedInFeaturePolicy(WebFeaturePolicyFeature::kFullscreen)) {
+  if (!IsSupportedInFeaturePolicy(FeaturePolicyFeature::kFullscreen)) {
     // 2. If |document|'s browsing context is a top-level browsing context, then
     // return true.
     if (frame->IsMainFrame())
@@ -85,7 +84,7 @@ bool AllowedToUseFullscreen(const Frame* frame) {
 
   // 2. If Feature Policy is enabled, return the policy for "fullscreen"
   // feature.
-  return frame->IsFeatureEnabled(WebFeaturePolicyFeature::kFullscreen);
+  return frame->IsFeatureEnabled(FeaturePolicyFeature::kFullscreen);
 }
 
 bool AllowedToRequestFullscreen(Document& document) {
@@ -93,7 +92,7 @@ bool AllowedToRequestFullscreen(Document& document) {
   // true:
 
   //  The algorithm is triggered by a user activation.
-  if (UserGestureIndicator::ProcessingUserGesture())
+  if (Frame::HasTransientUserActivation(document.GetFrame()))
     return true;
 
   //  The algorithm is triggered by a user generated orientation change.
@@ -882,7 +881,7 @@ void Fullscreen::FullscreenElementChanged(Element* old_element,
 
     if (new_element != GetDocument()->documentElement()) {
       LayoutFullScreen::WrapLayoutObject(
-          layout_object, layout_object ? layout_object->Parent() : 0,
+          layout_object, layout_object ? layout_object->Parent() : nullptr,
           GetDocument());
     }
   }
@@ -903,9 +902,14 @@ void Fullscreen::FullscreenElementChanged(Element* old_element,
 
   // TODO(foolip): This should not call |UpdateStyleAndLayoutTree()|.
   GetDocument()->UpdateStyleAndLayoutTree();
+
+  // Any element not contained by the fullscreen element is inert (see
+  // |Node::IsInert()|), so changing the fullscreen element will typically
+  // change the inertness of most elements. Clear the entire cache.
+  GetDocument()->ClearAXObjectCache();
 }
 
-DEFINE_TRACE(Fullscreen) {
+void Fullscreen::Trace(blink::Visitor* visitor) {
   visitor->Trace(pending_requests_);
   visitor->Trace(fullscreen_element_stack_);
   Supplement<Document>::Trace(visitor);

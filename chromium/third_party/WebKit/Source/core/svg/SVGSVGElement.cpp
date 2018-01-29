@@ -228,7 +228,7 @@ bool SVGSVGElement::IsPresentationAttributeWithSVGDOM(
 void SVGSVGElement::CollectStyleForPresentationAttribute(
     const QualifiedName& name,
     const AtomicString& value,
-    MutableStylePropertySet* style) {
+    MutableCSSPropertyValueSet* style) {
   SVGAnimatedPropertyBase* property = PropertyFromAttribute(name);
   if (property == x_) {
     AddPropertyToPresentationAttributeStyle(style, property->CssPropertyId(),
@@ -559,7 +559,7 @@ void SVGSVGElement::pauseAnimations() {
 
 void SVGSVGElement::unpauseAnimations() {
   if (time_container_->IsPaused())
-    time_container_->Resume();
+    time_container_->Unpause();
 }
 
 bool SVGSVGElement::animationsPaused() const {
@@ -627,21 +627,19 @@ SVGPreserveAspectRatio* SVGSVGElement::CurrentPreserveAspectRatio() const {
 }
 
 FloatSize SVGSVGElement::CurrentViewportSize() const {
-  if (!GetLayoutObject())
+  const LayoutObject* layout_object = GetLayoutObject();
+  if (!layout_object)
     return FloatSize();
 
-  if (GetLayoutObject()->IsSVGRoot()) {
-    LayoutRect content_box_rect =
-        ToLayoutSVGRoot(GetLayoutObject())->ContentBoxRect();
-    return FloatSize(
-        content_box_rect.Width() / GetLayoutObject()->Style()->EffectiveZoom(),
-        content_box_rect.Height() /
-            GetLayoutObject()->Style()->EffectiveZoom());
+  if (layout_object->IsSVGRoot()) {
+    LayoutSize content_size = ToLayoutSVGRoot(layout_object)->ContentSize();
+    float zoom = layout_object->StyleRef().EffectiveZoom();
+    return FloatSize(content_size.Width() / zoom, content_size.Height() / zoom);
   }
 
   FloatRect viewport_rect =
       ToLayoutSVGViewportContainer(GetLayoutObject())->Viewport();
-  return FloatSize(viewport_rect.Width(), viewport_rect.Height());
+  return viewport_rect.Size();
 }
 
 bool SVGSVGElement::HasIntrinsicWidth() const {
@@ -756,7 +754,7 @@ void SVGSVGElement::FinishParsingChildren() {
   SendSVGLoadEventIfPossible();
 }
 
-DEFINE_TRACE(SVGSVGElement) {
+void SVGSVGElement::Trace(blink::Visitor* visitor) {
   visitor->Trace(x_);
   visitor->Trace(y_);
   visitor->Trace(width_);

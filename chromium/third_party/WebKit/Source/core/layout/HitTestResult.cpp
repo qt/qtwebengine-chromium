@@ -32,9 +32,9 @@
 #include "core/html/HTMLAreaElement.h"
 #include "core/html/HTMLImageElement.h"
 #include "core/html/HTMLMapElement.h"
-#include "core/html/HTMLMediaElement.h"
 #include "core/html/forms/HTMLInputElement.h"
 #include "core/html/forms/HTMLTextAreaElement.h"
+#include "core/html/media/HTMLMediaElement.h"
 #include "core/html/parser/HTMLParserIdioms.h"
 #include "core/html_names.h"
 #include "core/input_type_names.h"
@@ -146,7 +146,7 @@ void HitTestResult::PopulateFromCachedResult(const HitTestResult& other) {
                                 : nullptr;
 }
 
-DEFINE_TRACE(HitTestResult) {
+void HitTestResult::Trace(blink::Visitor* visitor) {
   visitor->Trace(inner_node_);
   visitor->Trace(inner_possibly_pseudo_node_);
   visitor->Trace(inner_url_element_);
@@ -157,7 +157,7 @@ DEFINE_TRACE(HitTestResult) {
 PositionWithAffinity HitTestResult::GetPosition() const {
   if (!inner_possibly_pseudo_node_)
     return PositionWithAffinity();
-  LayoutObject* layout_object = this->GetLayoutObject();
+  LayoutObject* layout_object = GetLayoutObject();
   if (!layout_object)
     return PositionWithAffinity();
   if (inner_possibly_pseudo_node_->IsPseudoElement() &&
@@ -168,7 +168,7 @@ PositionWithAffinity HitTestResult::GetPosition() const {
 }
 
 LayoutObject* HitTestResult::GetLayoutObject() const {
-  return inner_node_ ? inner_node_->GetLayoutObject() : 0;
+  return inner_node_ ? inner_node_->GetLayoutObject() : nullptr;
 }
 
 void HitTestResult::SetToShadowHostIfInRestrictedShadowRoot() {
@@ -275,7 +275,7 @@ String HitTestResult::Title(TextDirection& dir) const {
 }
 
 const AtomicString& HitTestResult::AltDisplayString() const {
-  Node* inner_node_or_image_map_image = this->InnerNodeOrImageMapImage();
+  Node* inner_node_or_image_map_image = InnerNodeOrImageMapImage();
   if (!inner_node_or_image_map_image)
     return g_null_atom;
 
@@ -289,7 +289,7 @@ const AtomicString& HitTestResult::AltDisplayString() const {
 }
 
 Image* HitTestResult::GetImage() const {
-  Node* inner_node_or_image_map_image = this->InnerNodeOrImageMapImage();
+  Node* inner_node_or_image_map_image = InnerNodeOrImageMapImage();
   if (!inner_node_or_image_map_image)
     return nullptr;
 
@@ -314,7 +314,7 @@ IntRect HitTestResult::ImageRect() const {
 }
 
 KURL HitTestResult::AbsoluteImageURL() const {
-  Node* inner_node_or_image_map_image = this->InnerNodeOrImageMapImage();
+  Node* inner_node_or_image_map_image = InnerNodeOrImageMapImage();
   if (!inner_node_or_image_map_image)
     return KURL();
 

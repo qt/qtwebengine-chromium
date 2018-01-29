@@ -66,19 +66,21 @@
 #include "content/browser/loader/upload_data_stream_builder.h"
 #include "content/browser/loader/wake_lock_resource_throttle.h"
 #include "content/browser/resource_context_impl.h"
-#include "content/browser/service_worker/foreign_fetch_request_handler.h"
-#include "content/browser/service_worker/link_header_support.h"
 #include "content/browser/service_worker/service_worker_context_wrapper.h"
 #include "content/browser/service_worker/service_worker_navigation_handle_core.h"
 #include "content/browser/service_worker/service_worker_request_handler.h"
 #include "content/browser/streams/stream.h"
 #include "content/browser/streams/stream_context.h"
 #include "content/browser/streams/stream_registry.h"
+#include "content/common/loader_util.h"
 #include "content/common/net/url_request_service_worker_data.h"
 #include "content/common/resource_messages.h"
 #include "content/common/site_isolation_policy.h"
 #include "content/common/view_messages.h"
+#include "content/public/browser/browser_child_process_host.h"
 #include "content/public/browser/browser_thread.h"
+#include "content/public/browser/child_process_data.h"
+#include "content/public/browser/content_browser_client.h"
 #include "content/public/browser/global_request_id.h"
 #include "content/public/browser/navigation_ui_data.h"
 #include "content/public/browser/plugin_service.h"
@@ -88,10 +90,12 @@
 #include "content/public/browser/stream_handle.h"
 #include "content/public/browser/stream_info.h"
 #include "content/public/common/browser_side_navigation_policy.h"
+#include "content/public/common/child_process_host.h"
+#include "content/public/common/content_client.h"
 #include "content/public/common/content_features.h"
+#include "content/public/common/origin_util.h"
 #include "content/public/common/resource_request.h"
 #include "content/public/common/resource_request_body.h"
-#include "content/public/common/resource_request_completion_status.h"
 #include "ipc/ipc_message_macros.h"
 #include "ipc/ipc_message_start.h"
 #include "net/base/auth.h"
@@ -115,12 +119,14 @@
 #include "net/url_request/url_request_context_getter.h"
 #include "net/url_request/url_request_job_factory.h"
 #include "ppapi/features/features.h"
+#include "services/network/public/cpp/url_loader_completion_status.h"
 #include "storage/browser/blob/blob_data_handle.h"
 #include "storage/browser/blob/blob_storage_context.h"
 #include "storage/browser/blob/blob_url_request_job_factory.h"
 #include "storage/browser/blob/shareable_file_reference.h"
 #include "storage/browser/fileapi/file_permission_policy.h"
 #include "storage/browser/fileapi/file_system_context.h"
+#include "third_party/WebKit/common/page/page_visibility_state.mojom.h"
 #include "url/third_party/mozilla/url_parse.h"
 #include "url/url_constants.h"
 
@@ -132,36 +138,6 @@ using SyncLoadResultCallback =
     content::ResourceDispatcherHostImpl::SyncLoadResultCallback;
 
 // ----------------------------------------------------------------------------
-
-namespace {
-
-constexpr net::NetworkTrafficAnnotationTag kTrafficAnnotation =
-    net::DefineNetworkTrafficAnnotation("resource_dispatcher_host",
-                                        R"(
-        semantics {
-          sender: "Resource Dispatcher Host"
-          description:
-            "Navigation-initiated request or renderer process initiated "
-            "request, which includes all resources for normal page loads, "
-            "chrome URLs, resources for installed extensions, as well as "
-            "downloads."
-          trigger:
-            "Navigating to a URL or downloading a file. A webpage, "
-            "ServiceWorker, chrome:// page, or extension may also initiate "
-            "requests in the background."
-          data: "Anything the initiator wants to send."
-          destination: OTHER
-        }
-        policy {
-          cookies_allowed: YES
-          cookies_store: "user or per-app cookie store"
-          setting: "These requests cannot be disabled."
-          policy_exception_justification:
-            "Not implemented. Without these requests, Chrome will be unable to "
-            "load any webpage."
-        })");
-
-}  // namespace
 
 namespace content {
 
@@ -211,18 +187,17 @@ void AbortRequestBeforeItStarts(
     sync_result_handler.Run(&result);
   } else {
     // Tell the renderer that this request was disallowed.
-    ResourceRequestCompletionStatus request_complete_data;
-    request_complete_data.error_code = net::ERR_ABORTED;
-    request_complete_data.exists_in_cache = false;
+    network::URLLoaderCompletionStatus status;
+    status.error_code = net::ERR_ABORTED;
+    status.exists_in_cache = false;
     // No security info needed, connection not established.
-    request_complete_data.completion_time = base::TimeTicks();
-    request_complete_data.encoded_data_length = 0;
-    request_complete_data.encoded_body_length = 0;
+    status.completion_time = base::TimeTicks();
+    status.encoded_data_length = 0;
+    status.encoded_body_length = 0;
     if (url_loader_client) {
-      url_loader_client->OnComplete(request_complete_data);
+      url_loader_client->OnComplete(status);
     } else {
-      sender->Send(
-          new ResourceMsg_RequestComplete(request_id, request_complete_data));
+      sender->Send(new ResourceMsg_RequestComplete(request_id, status));
     }
   }
 }
@@ -243,11 +218,11 @@ bool IsValidatedSCT(
 // If previews_to_allow is set to anything other than PREVIEWS_UNSPECIFIED,
 // it is either the values passed in for a sub-frame to use, or if this is
 // the main frame, it is a limitation on which previews to allow.
-PreviewsState GetPreviewsState(PreviewsState previews_to_allow,
-                               ResourceDispatcherHostDelegate* delegate,
-                               const net::URLRequest& request,
-                               ResourceContext* resource_context,
-                               bool is_main_frame) {
+PreviewsState DeterminePreviewsState(PreviewsState previews_to_allow,
+                                     ResourceDispatcherHostDelegate* delegate,
+                                     net::URLRequest* request,
+                                     ResourceContext* resource_context,
+                                     bool is_main_frame) {
   // If previews have already been turned off, or we are inheriting values on a
   // sub-frame, don't check any further.
   if (previews_to_allow & PREVIEWS_OFF ||
@@ -257,8 +232,8 @@ PreviewsState GetPreviewsState(PreviewsState previews_to_allow,
   }
 
   // Get the mask of previews we could apply to the current navigation.
-  PreviewsState previews_state =
-      delegate->GetPreviewsState(request, resource_context, previews_to_allow);
+  PreviewsState previews_state = delegate->DeterminePreviewsState(
+      request, resource_context, previews_to_allow);
 
   return previews_state;
 }
@@ -277,6 +252,32 @@ void HandleSyncLoadResult(base::WeakPtr<ResourceMessageFilter> filter,
     sync_result->set_reply_error();
   }
   filter->Send(sync_result.release());
+}
+
+bool ValidatePluginChildId(int plugin_child_id) {
+  if (plugin_child_id == ChildProcessHost::kInvalidUniqueID)
+    return true;
+
+#if BUILDFLAG(ENABLE_PLUGINS)
+  // TODO(nick): These checks could be stricter, since they enforce only that
+  // |plugin_child_id| is a valid plugin process, and not that it has a plugin
+  // instance owned by the renderer process making the resource request. Fix
+  // this by eliminating |plugin_child_id| altogether, and stop proxying plugin
+  // URL requests through the renderer (https://crbug.com/778711).
+  auto* plugin_host = BrowserChildProcessHost::FromID(plugin_child_id);
+  if (plugin_host) {
+    int process_type = plugin_host->GetData().process_type;
+    if (process_type == PROCESS_TYPE_PPAPI_PLUGIN) {
+      return true;
+    } else if (process_type >= PROCESS_TYPE_CONTENT_END) {
+      if (GetContentClient()->browser()->GetExternalBrowserPpapiHost(
+              plugin_child_id) != nullptr) {
+        return true;
+      }
+    }
+  }
+#endif
+  return false;
 }
 
 // Used to log the cache flags for back-forward navigation requests.
@@ -335,9 +336,11 @@ ResourceDispatcherHost* ResourceDispatcherHost::Get() {
 
 ResourceDispatcherHostImpl::ResourceDispatcherHostImpl(
     CreateDownloadHandlerIntercept download_handler_intercept,
-    const scoped_refptr<base::SingleThreadTaskRunner>& io_thread_runner)
+    const scoped_refptr<base::SingleThreadTaskRunner>& io_thread_runner,
+    bool enable_resource_scheduler)
     : request_id_(-1),
       is_shutdown_(false),
+      enable_resource_scheduler_(enable_resource_scheduler),
       num_in_flight_requests_(0),
       max_num_in_flight_requests_(base::SharedMemory::GetHandleLimit()),
       max_num_in_flight_requests_per_process_(static_cast<int>(
@@ -364,7 +367,7 @@ ResourceDispatcherHostImpl::ResourceDispatcherHostImpl(
       FROM_HERE, base::BindOnce(&ResourceDispatcherHostImpl::OnInit,
                                 base::Unretained(this)));
 
-  update_load_states_timer_ = base::MakeUnique<base::RepeatingTimer>();
+  update_load_states_timer_ = std::make_unique<base::RepeatingTimer>();
 
   // Monitor per-tab outstanding requests only if OOPIF is not enabled, because
   // the routing id doesn't represent tabs in OOPIF modes.
@@ -372,7 +375,7 @@ ResourceDispatcherHostImpl::ResourceDispatcherHostImpl(
       !SiteIsolationPolicy::IsTopDocumentIsolationEnabled() &&
       !SiteIsolationPolicy::AreIsolatedOriginsEnabled()) {
     record_outstanding_requests_stats_timer_ =
-        base::MakeUnique<base::RepeatingTimer>();
+        std::make_unique<base::RepeatingTimer>();
   }
 }
 
@@ -380,14 +383,15 @@ ResourceDispatcherHostImpl::ResourceDispatcherHostImpl(
 // the main thread and the IO thread are the same for unittests.
 ResourceDispatcherHostImpl::ResourceDispatcherHostImpl()
     : ResourceDispatcherHostImpl(CreateDownloadHandlerIntercept(),
-                                 base::ThreadTaskRunnerHandle::Get()) {}
+                                 base::ThreadTaskRunnerHandle::Get(),
+                                 /* enable_resource_scheduler */ true) {}
 
 ResourceDispatcherHostImpl::~ResourceDispatcherHostImpl() {
   DCHECK(outstanding_requests_stats_map_.empty());
   DCHECK(outstanding_requests_per_tab_map_.empty());
   DCHECK(g_resource_dispatcher_host);
   DCHECK(main_thread_task_runner_->BelongsToCurrentThread());
-  g_resource_dispatcher_host = NULL;
+  g_resource_dispatcher_host = nullptr;
 }
 
 // static
@@ -579,7 +583,7 @@ ResourceDispatcherHostImpl::CreateLoginDelegate(
     ResourceLoader* loader,
     net::AuthChallengeInfo* auth_info) {
   if (!delegate_)
-    return NULL;
+    return nullptr;
 
   return delegate_->CreateLoginDelegate(auth_info, loader->request());
 }
@@ -628,21 +632,6 @@ void ResourceDispatcherHostImpl::DidReceiveRedirect(
     delegate_->OnRequestRedirected(
         new_url, loader->request(), info->GetContext(), response);
   }
-
-  // Don't notify WebContents observers for requests known to be
-  // downloads; they aren't really associated with the Webcontents.
-  // Note that not all downloads are known before content sniffing.
-  if (info->IsDownload())
-    return;
-
-  // Notify the observers on the UI thread.
-  net::URLRequest* request = loader->request();
-  std::unique_ptr<ResourceRedirectDetails> detail(new ResourceRedirectDetails(
-      loader->request(),
-      !!request->ssl_info().cert,
-      new_url));
-  loader_delegate_->DidGetRedirectForResourceRequest(
-      info->GetWebContentsGetterForRequest(), std::move(detail));
 }
 
 void ResourceDispatcherHostImpl::DidReceiveResponse(
@@ -656,8 +645,6 @@ void ResourceDispatcherHostImpl::DidReceiveResponse(
     scheduler_->OnReceivedSpdyProxiedHttpResponse(
         info->GetChildID(), info->GetRouteID());
   }
-
-  ProcessRequestForLinkHeaders(request);
 
   if (delegate_)
     delegate_->OnResponseStarted(request, info->GetContext(), response);
@@ -678,6 +665,9 @@ void ResourceDispatcherHostImpl::DidReceiveResponse(
 void ResourceDispatcherHostImpl::DidFinishLoading(ResourceLoader* loader) {
   ResourceRequestInfoImpl* info = loader->GetRequestInfo();
 
+  base::TimeDelta request_loading_time(base::TimeTicks::Now() -
+                                       loader->request()->creation_time());
+
   // Record final result of all resource loads.
   if (info->GetResourceType() == RESOURCE_TYPE_MAIN_FRAME) {
     // This enumeration has "3" appended to its name to distinguish it from
@@ -685,6 +675,10 @@ void ResourceDispatcherHostImpl::DidFinishLoading(ResourceLoader* loader) {
     UMA_HISTOGRAM_SPARSE_SLOWLY(
         "Net.ErrorCodesForMainFrame3",
         -loader->request()->status().error());
+    if (loader->request()->status().error() == net::OK) {
+      UMA_HISTOGRAM_LONG_TIMES("Net.RequestTime2Success.MainFrame",
+                               request_loading_time);
+    }
     if (loader->request()->status().error() == net::ERR_ABORTED) {
       UMA_HISTOGRAM_CUSTOM_COUNTS("Net.ErrAborted.SentBytes",
                                   loader->request()->GetTotalSentBytes(), 1,
@@ -713,6 +707,10 @@ void ResourceDispatcherHostImpl::DidFinishLoading(ResourceLoader* loader) {
           "Net.CertificateTransparency.MainFrameValidSCTCount", num_valid_scts);
     }
   } else {
+    if (loader->request()->status().error() == net::OK) {
+      UMA_HISTOGRAM_LONG_TIMES("Net.RequestTime2Success.Subresource",
+                               request_loading_time);
+    }
     if (info->GetResourceType() == RESOURCE_TYPE_IMAGE) {
       UMA_HISTOGRAM_SPARSE_SLOWLY(
           "Net.ErrorCodesForImages",
@@ -738,11 +736,7 @@ std::unique_ptr<net::ClientCertStore>
 }
 
 void ResourceDispatcherHostImpl::OnInit() {
-  // In some tests |delegate_| does not get set, when that happens assume the
-  // scheduler is enabled.
-  bool enable_resource_scheduler =
-      delegate_ ? delegate_->ShouldUseResourceScheduler() : true;
-  scheduler_.reset(new ResourceScheduler(enable_resource_scheduler));
+  scheduler_.reset(new ResourceScheduler(enable_resource_scheduler_));
 }
 
 void ResourceDispatcherHostImpl::OnShutdown() {
@@ -874,7 +868,7 @@ void ResourceDispatcherHostImpl::OnSyncLoad(
                  base::Passed(WrapUnique(sync_result)));
   BeginRequest(requester_info, request_id, request_data,
                true /* is_sync_load */, callback, sync_result->routing_id(),
-               nullptr, nullptr, kTrafficAnnotation);
+               nullptr, nullptr, GetTrafficAnnotation());
 }
 
 bool ResourceDispatcherHostImpl::IsRequestIDInUse(
@@ -926,9 +920,8 @@ void ResourceDispatcherHostImpl::UpdateRequestForTransfer(
   // ResourceHandlers should always get state related to the request from the
   // ResourceRequestInfo rather than caching it locally.  This lets us update
   // the info object when a transfer occurs.
-  info->UpdateForTransfer(route_id, request_data.render_frame_id,
-                          request_data.origin_pid, request_id, requester_info,
-                          std::move(mojo_request),
+  info->UpdateForTransfer(route_id, request_data.render_frame_id, request_id,
+                          requester_info, std::move(mojo_request),
                           std::move(url_loader_client));
 
   // Update maps that used the old IDs, if necessary.  Some transfers in tests
@@ -1015,7 +1008,6 @@ void ResourceDispatcherHostImpl::CompleteTransfer(
     // Renderer sent transferred_request_request_id and/or
     // transferred_request_child_id that doesn't correspond to an actually
     // transferring loader on the browser side.
-    base::debug::Alias(pending_loader);
     bad_message::ReceivedBadMessage(requester_info->filter(),
                                     bad_message::RDH_REQUEST_NOT_TRANSFERRING);
     return;
@@ -1091,8 +1083,8 @@ void ResourceDispatcherHostImpl::BeginRequest(
     return;
   }
 
-  ResourceContext* resource_context = NULL;
-  net::URLRequestContext* request_context = NULL;
+  ResourceContext* resource_context = nullptr;
+  net::URLRequestContext* request_context = nullptr;
   requester_info->GetContexts(request_data.resource_type, &resource_context,
                               &request_context);
 
@@ -1208,8 +1200,8 @@ void ResourceDispatcherHostImpl::ContinuePendingBeginRequest(
       IsBrowserSideNavigationEnabled() &&
       IsResourceTypeFrame(request_data.resource_type);
 
-  ResourceContext* resource_context = NULL;
-  net::URLRequestContext* request_context = NULL;
+  ResourceContext* resource_context = nullptr;
+  net::URLRequestContext* request_context = nullptr;
   requester_info->GetContexts(request_data.resource_type, &resource_context,
                               &request_context);
 
@@ -1258,7 +1250,7 @@ void ResourceDispatcherHostImpl::ContinuePendingBeginRequest(
 
     if (request_data.originated_from_service_worker) {
       new_request->SetUserData(URLRequestServiceWorkerData::kUserDataKey,
-                               base::MakeUnique<URLRequestServiceWorkerData>());
+                               std::make_unique<URLRequestServiceWorkerData>());
     }
 
     // If the request is a MAIN_FRAME request, the first-party URL gets updated
@@ -1312,6 +1304,17 @@ void ResourceDispatcherHostImpl::ContinuePendingBeginRequest(
       report_raw_headers = false;
     }
 
+    // Do not report raw headers if the request's site needs to be isolated
+    // from the current process.
+    if (report_raw_headers) {
+      bool is_isolated =
+          SiteIsolationPolicy::UseDedicatedProcessesForAllSites() ||
+          policy->IsIsolatedOrigin(url::Origin::Create(request_data.url));
+      if (is_isolated &&
+          !policy->CanAccessDataForOrigin(child_id, request_data.url))
+        report_raw_headers = false;
+    }
+
     if (request_data.resource_type == RESOURCE_TYPE_PREFETCH ||
         request_data.resource_type == RESOURCE_TYPE_FAVICON) {
       do_not_prompt_for_login = true;
@@ -1347,8 +1350,9 @@ void ResourceDispatcherHostImpl::ContinuePendingBeginRequest(
   // Update the previews state, but only if this is not using PlzNavigate.
   PreviewsState previews_state = request_data.previews_state;
   if (!IsBrowserSideNavigationEnabled()) {
-    previews_state = GetPreviewsState(
-        request_data.previews_state, delegate_, *new_request, resource_context,
+    previews_state = DeterminePreviewsState(
+        request_data.previews_state, delegate_, new_request.get(),
+        resource_context,
         request_data.resource_type == RESOURCE_TYPE_MAIN_FRAME);
   }
 
@@ -1356,7 +1360,7 @@ void ResourceDispatcherHostImpl::ContinuePendingBeginRequest(
   ResourceRequestInfoImpl* extra_info = new ResourceRequestInfoImpl(
       requester_info, route_id,
       -1,  // frame_tree_node_id
-      request_data.origin_pid, request_id, request_data.render_frame_id,
+      request_data.plugin_child_id, request_id, request_data.render_frame_id,
       request_data.is_main_frame, request_data.resource_type,
       request_data.transition_type, request_data.should_replace_current_entry,
       false,  // is download
@@ -1401,17 +1405,9 @@ void ResourceDispatcherHostImpl::ContinuePendingBeginRequest(
         service_worker_mode != ServiceWorkerMode::ALL,
         request_data.fetch_request_mode, request_data.fetch_credentials_mode,
         request_data.fetch_redirect_mode, request_data.fetch_integrity,
-        request_data.resource_type, request_data.fetch_request_context_type,
-        request_data.fetch_frame_type, request_data.request_body);
-
-    ForeignFetchRequestHandler::InitializeHandler(
-        new_request.get(), requester_info->service_worker_context(),
-        blob_context, child_id, request_data.service_worker_provider_id,
-        service_worker_mode, request_data.fetch_request_mode,
-        request_data.fetch_credentials_mode, request_data.fetch_redirect_mode,
-        request_data.fetch_integrity, request_data.resource_type,
+        request_data.keepalive, request_data.resource_type,
         request_data.fetch_request_context_type, request_data.fetch_frame_type,
-        request_data.request_body, request_data.initiated_in_secure_context);
+        request_data.request_body);
 
     // Have the appcache associate its extra info with the request.
     AppCacheInterceptor::SetExtraRequestInfo(
@@ -1482,7 +1478,7 @@ ResourceDispatcherHostImpl::CreateResourceHandler(
     }
 
     std::unique_ptr<DetachableResourceHandler> detachable_handler =
-        base::MakeUnique<DetachableResourceHandler>(request, timeout,
+        std::make_unique<DetachableResourceHandler>(request, timeout,
                                                     std::move(handler));
     if (start_detached)
       detachable_handler->Detach();
@@ -1519,7 +1515,7 @@ ResourceDispatcherHostImpl::AddStandardHandlers(
     net::URLRequest* request,
     ResourceType resource_type,
     ResourceContext* resource_context,
-    FetchRequestMode fetch_request_mode,
+    network::mojom::FetchRequestMode fetch_request_mode,
     RequestContextType fetch_request_context_type,
     blink::WebMixedContentContextType fetch_mixed_content_context_type,
     AppCacheService* appcache_service,
@@ -1541,7 +1537,7 @@ ResourceDispatcherHostImpl::AddStandardHandlers(
   // PlzNavigate: the throttle is unnecessary as communication with the UI
   // thread is handled by the NavigationResourceHandler below.
   if (!IsBrowserSideNavigationEnabled() && IsResourceTypeFrame(resource_type)) {
-    throttles.push_back(base::MakeUnique<NavigationResourceThrottle>(
+    throttles.push_back(std::make_unique<NavigationResourceThrottle>(
         request, delegate_, fetch_request_context_type,
         fetch_mixed_content_context_type));
   }
@@ -1557,7 +1553,7 @@ ResourceDispatcherHostImpl::AddStandardHandlers(
   if (request->has_upload()) {
     // Request wake lock while uploading data.
     throttles.push_back(
-        base::MakeUnique<WakeLockResourceThrottle>(request->url().host()));
+        std::make_unique<WakeLockResourceThrottle>(request->url().host()));
   }
 
   // The Clear-Site-Data throttle.
@@ -1624,7 +1620,7 @@ ResourceDispatcherHostImpl::AddStandardHandlers(
     // will be read, and since it looks at the original mime type.
     bool is_nocors_plugin_request =
         resource_type == RESOURCE_TYPE_PLUGIN_RESOURCE &&
-        fetch_request_mode == FETCH_REQUEST_MODE_NO_CORS;
+        fetch_request_mode == network::mojom::FetchRequestMode::kNoCORS;
     handler.reset(new CrossSiteDocumentResourceHandler(
         std::move(handler), request, is_nocors_plugin_request));
   }
@@ -1711,8 +1707,9 @@ ResourceRequestInfoImpl* ResourceDispatcherHostImpl::CreateRequestInfo(
   return new ResourceRequestInfoImpl(
       ResourceRequesterInfo::CreateForDownloadOrPageSave(child_id),
       render_view_route_id,
-      -1,  // frame_tree_node_id
-      0, MakeRequestID(), render_frame_route_id,
+      -1,                                  // frame_tree_node_id
+      ChildProcessHost::kInvalidUniqueID,  // plugin_child_id
+      MakeRequestID(), render_frame_route_id,
       false,  // is_main_frame
       RESOURCE_TYPE_SUB_RESOURCE, ui::PAGE_TRANSITION_LINK,
       false,     // should_replace_current_entry
@@ -1724,8 +1721,8 @@ ResourceRequestInfoImpl* ResourceDispatcherHostImpl::CreateRequestInfo(
       false,     // enable_upload_progress
       false,     // do_not_prompt_for_login
       false,     // keepalive
-      blink::kWebReferrerPolicyDefault, blink::kWebPageVisibilityStateVisible,
-      context,
+      blink::kWebReferrerPolicyDefault,
+      blink::mojom::PageVisibilityState::kVisible, context,
       false,           // report_raw_headers
       true,            // is_async
       previews_state,  // previews_state
@@ -1794,11 +1791,7 @@ void ResourceDispatcherHostImpl::CancelRequestsForRoute(
     if (loader.first.child_id != child_id)
       continue;
 
-    // Added for http://crbug.com/754704; remove when that bug is resolved.
-    loader.second->AssertURLRequestPresent();
-
     ResourceRequestInfoImpl* info = loader.second->GetRequestInfo();
-    CHECK(info);
 
     GlobalRequestID id(child_id, loader.first.request_id);
     DCHECK(id == loader.first);
@@ -2080,7 +2073,7 @@ void ResourceDispatcherHostImpl::BeginNavigationRequest(
 
   std::unique_ptr<net::URLRequest> new_request;
   new_request = request_context->CreateRequest(
-      info.common_params.url, net::HIGHEST, nullptr, kTrafficAnnotation);
+      info.common_params.url, net::HIGHEST, nullptr, GetTrafficAnnotation());
 
   new_request->set_method(info.common_params.method);
   new_request->set_site_for_cookies(info.site_for_cookies);
@@ -2119,9 +2112,9 @@ void ResourceDispatcherHostImpl::BeginNavigationRequest(
             .get()));
   }
 
-  PreviewsState previews_state =
-      GetPreviewsState(info.common_params.previews_state, delegate_,
-                       *new_request, resource_context, info.is_main_frame);
+  PreviewsState previews_state = DeterminePreviewsState(
+      info.common_params.previews_state, delegate_, new_request.get(),
+      resource_context, info.is_main_frame);
 
   // Make extra info and read footer (contains request ID).
   //
@@ -2134,7 +2127,7 @@ void ResourceDispatcherHostImpl::BeginNavigationRequest(
               : scoped_refptr<ServiceWorkerContextWrapper>()),
       -1,  // route_id
       info.frame_tree_node_id,
-      -1,  // request_data.origin_pid,
+      ChildProcessHost::kInvalidUniqueID,  // plugin_child_id
       MakeRequestID(),
       -1,  // request_data.render_frame_id,
       info.is_main_frame, resource_type, info.common_params.transition,
@@ -2143,7 +2136,7 @@ void ResourceDispatcherHostImpl::BeginNavigationRequest(
       false,
       false,  // is download
       false,  // is stream
-      info.common_params.allow_download, info.begin_params.has_user_gesture,
+      info.common_params.allow_download, info.common_params.has_user_gesture,
       true,   // enable_load_timing
       false,  // enable_upload_progress
       false,  // do_not_prompt_for_login
@@ -2201,12 +2194,13 @@ void ResourceDispatcherHostImpl::BeginNavigationRequest(
           ->stream()
           ->CreateHandle();
 
-  // Safe to consider navigations as NO_CORS.
+  // Safe to consider navigations as kNoCORS.
   // TODO(davidben): Fix the dependency on child_id/route_id. Those are used
   // by the ResourceScheduler. currently it's a no-op.
   handler = AddStandardHandlers(
       new_request.get(), resource_type, resource_context,
-      FETCH_REQUEST_MODE_NO_CORS, info.begin_params.request_context_type,
+      network::mojom::FetchRequestMode::kNoCORS,
+      info.begin_params.request_context_type,
       info.begin_params.mixed_content_context_type,
       appcache_handle_core ? appcache_handle_core->GetAppCacheService()
                            : nullptr,
@@ -2301,7 +2295,7 @@ void ResourceDispatcherHostImpl::BeginRequestInternal(
     // reasonable.
     handler->OnResponseCompleted(
         request->status(),
-        base::MakeUnique<NullResourceController>(&was_resumed));
+        std::make_unique<NullResourceController>(&was_resumed));
     // TODO(darin): The handler is not ready for us to kill the request. Oops!
     DCHECK(was_resumed);
 
@@ -2427,7 +2421,7 @@ net::URLRequest* ResourceDispatcherHostImpl::GetURLRequest(
     const GlobalRequestID& id) {
   ResourceLoader* loader = GetLoader(id);
   if (!loader)
-    return NULL;
+    return nullptr;
 
   return loader->request();
 }
@@ -2552,7 +2546,7 @@ void ResourceDispatcherHostImpl::BlockRequestsForRoute(
          blocked_loaders_map_.end())
       << "BlockRequestsForRoute called  multiple time for the same RFH";
   blocked_loaders_map_[global_routing_id] =
-      base::MakeUnique<BlockedLoadersList>();
+      std::make_unique<BlockedLoadersList>();
 }
 
 void ResourceDispatcherHostImpl::ResumeBlockedRequestsForRoute(
@@ -2601,8 +2595,15 @@ ResourceDispatcherHostImpl::HttpAuthRelationTypeOf(
 
   if (net::registry_controlled_domains::SameDomainOrHost(
           first_party, request_url,
-          net::registry_controlled_domains::INCLUDE_PRIVATE_REGISTRIES))
+          net::registry_controlled_domains::INCLUDE_PRIVATE_REGISTRIES)) {
+    // If the first party is secure but the subresource is not, this is
+    // mixed-content. Do not allow the image.
+    if (!allow_cross_origin_auth_prompt() && IsOriginSecure(first_party) &&
+        !IsOriginSecure(request_url)) {
+      return HTTP_AUTH_RELATION_BLOCKED_CROSS;
+    }
     return HTTP_AUTH_RELATION_SAME_DOMAIN;
+  }
 
   if (allow_cross_origin_auth_prompt())
     return HTTP_AUTH_RELATION_ALLOWED_CROSS;
@@ -2626,7 +2627,7 @@ ResourceLoader* ResourceDispatcherHostImpl::GetLoader(
 
   LoaderMap::const_iterator i = pending_loaders_.find(id);
   if (i == pending_loaders_.end())
-    return NULL;
+    return nullptr;
 
   return i->second.get();
 }
@@ -2659,28 +2660,6 @@ void ResourceDispatcherHostImpl::UnregisterResourceMessageDelegate(
     delete it->second;
     delegate_map_.erase(it);
   }
-}
-
-int ResourceDispatcherHostImpl::BuildLoadFlagsForRequest(
-    const ResourceRequest& request_data,
-    bool is_sync_load) {
-  int load_flags = request_data.load_flags;
-
-  // Although EV status is irrelevant to sub-frames and sub-resources, we have
-  // to perform EV certificate verification on all resources because an HTTP
-  // keep-alive connection created to load a sub-frame or a sub-resource could
-  // be reused to load a main frame.
-  load_flags |= net::LOAD_VERIFY_EV_CERT;
-  if (request_data.resource_type == RESOURCE_TYPE_MAIN_FRAME) {
-    load_flags |= net::LOAD_MAIN_FRAME_DEPRECATED;
-  } else if (request_data.resource_type == RESOURCE_TYPE_PREFETCH) {
-    load_flags |= net::LOAD_PREFETCH;
-  }
-
-  if (is_sync_load)
-    load_flags |= net::LOAD_IGNORE_LIMITS;
-
-  return load_flags;
 }
 
 bool ResourceDispatcherHostImpl::ShouldServiceRequest(
@@ -2729,6 +2708,14 @@ bool ResourceDispatcherHostImpl::ShouldServiceRequest(
     return false;
   }
 
+  // Check that |plugin_child_id|, if present, is actually a plugin process.
+  if (!ValidatePluginChildId(request_data.plugin_child_id)) {
+    NOTREACHED() << "Invalid request_data.plugin_child_id: "
+                 << request_data.plugin_child_id << " (" << child_id << ", "
+                 << request_data.render_frame_id << ")";
+    return false;
+  }
+
   return true;
 }
 
@@ -2768,6 +2755,37 @@ bool ResourceDispatcherHostImpl::HasRequestsFromMultipleActiveTabs() {
     }
   }
   return false;
+}
+
+// static
+// We have this function at the bottom of this file because it confuses
+// syntax highliting.
+net::NetworkTrafficAnnotationTag
+ResourceDispatcherHostImpl::GetTrafficAnnotation() {
+  return net::DefineNetworkTrafficAnnotation("resource_dispatcher_host",
+                                             R"(
+        semantics {
+          sender: "Resource Dispatcher Host"
+          description:
+            "Navigation-initiated request or renderer process initiated "
+            "request, which includes all resources for normal page loads, "
+            "chrome URLs, resources for installed extensions, as well as "
+            "downloads."
+          trigger:
+            "Navigating to a URL or downloading a file. A webpage, "
+            "ServiceWorker, chrome:// page, or extension may also initiate "
+            "requests in the background."
+          data: "Anything the initiator wants to send."
+          destination: OTHER
+        }
+        policy {
+          cookies_allowed: YES
+          cookies_store: "user or per-app cookie store"
+          setting: "These requests cannot be disabled."
+          policy_exception_justification:
+            "Not implemented. Without these requests, Chrome will be unable to "
+            "load any webpage."
+        })");
 }
 
 }  // namespace content

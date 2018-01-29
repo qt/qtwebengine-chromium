@@ -178,15 +178,15 @@ void ServiceWorkerRegistration::UnsetVersionInternal(
     ChangedVersionAttributesMask* mask) {
   DCHECK(version);
   if (installing_version_.get() == version) {
-    installing_version_ = NULL;
+    installing_version_ = nullptr;
     mask->add(ChangedVersionAttributesMask::INSTALLING_VERSION);
   } else if (waiting_version_.get() == version) {
-    waiting_version_ = NULL;
+    waiting_version_ = nullptr;
     should_activate_when_ready_ = false;
     mask->add(ChangedVersionAttributesMask::WAITING_VERSION);
   } else if (active_version_.get() == version) {
     active_version_->RemoveListener(this);
-    active_version_ = NULL;
+    active_version_ = nullptr;
     mask->add(ChangedVersionAttributesMask::ACTIVE_VERSION);
   }
 }
@@ -229,9 +229,9 @@ void ServiceWorkerRegistration::ClearWhenReady() {
 
   context_->storage()->NotifyUninstallingRegistration(this);
   context_->storage()->DeleteRegistration(
-      id(),
-      pattern().GetOrigin(),
-      base::Bind(&ServiceWorkerUtils::NoOpStatusCallback));
+      id(), pattern().GetOrigin(),
+      AdaptCallbackForRepeating(
+          base::BindOnce(&ServiceWorkerRegistration::OnDeleteFinished, this)));
 
   if (!active_version() || !active_version()->HasControllee())
     Clear();
@@ -512,8 +512,8 @@ void ServiceWorkerRegistration::OnActivateEventFinished(
 
 void ServiceWorkerRegistration::OnDeleteFinished(
     ServiceWorkerStatusCode status) {
-  // Intentionally empty completion callback, used to prevent
-  // |this| from being deleted until the storage method completes.
+  for (auto& listener : listeners_)
+    listener.OnRegistrationDeleted(this);
 }
 
 void ServiceWorkerRegistration::Clear() {

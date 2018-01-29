@@ -32,6 +32,8 @@ enum class Format::ID
 {angle_format_enum}
 }};
 
+constexpr uint32_t kNumANGLEFormats = {num_angle_formats};
+
 }}  // namespace angle
 """
 
@@ -70,9 +72,7 @@ Format::ID Format::InternalFormatToID(GLenum internalFormat)
 {{
     switch (internalFormat)
     {{
-        // clang-format off
 {angle_format_switch}
-        // clang-format on
     }}
 }}
 
@@ -231,8 +231,9 @@ def gen_map_switch_string(gl_to_angle):
     switch_data = '';
     for gl_format in gl_to_angle:
         angle_format = gl_to_angle[gl_format]
-        switch_data += "        case " + gl_format + ": return Format::ID::" + angle_format + ";\n"
-    switch_data += "        default: return Format::ID::NONE;"
+        switch_data += "        case " + gl_format + ":\nreturn Format::ID::" + angle_format + ";\n"
+    switch_data += "        default:\n"
+    switch_data += "            return Format::ID::NONE;"
     return switch_data;
 
 gl_to_angle = angle_format.load_forward_table('angle_format_map.json')
@@ -255,11 +256,13 @@ with open('Format_table_autogen.cpp', 'wt') as out_file:
     out_file.close()
 
 enum_data = gen_enum_string(all_angle)
+num_angle_formats = len(all_angle)
 output_h = template_autogen_h.format(
     script_name = sys.argv[0],
     copyright_year = date.today().year,
     angle_format_enum = enum_data,
-    data_source_name = data_source_name)
+    data_source_name = data_source_name,
+    num_angle_formats = num_angle_formats)
 with open('Format_ID_autogen.inl', 'wt') as out_file:
     out_file.write(output_h)
     out_file.close()

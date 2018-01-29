@@ -24,6 +24,10 @@
 #include "ui/gfx/geometry/vector2d_f.h"
 #include "ui/gfx/native_widget_types.h"
 
+namespace base {
+class UnguessableToken;
+}
+
 namespace content {
 class BrowserPluginGuest;
 class RenderWidgetHost;
@@ -53,6 +57,9 @@ class CONTENT_EXPORT RenderWidgetHostViewGuest
   bool OnMessageReceivedFromEmbedder(const IPC::Message& message,
                                      RenderWidgetHostImpl* embedder);
 
+  // Called when this RenderWidgetHostViewGuest is attached.
+  void OnAttached();
+
   // RenderWidgetHostView implementation.
   bool OnMessageReceived(const IPC::Message& msg) override;
   void InitAsChild(gfx::NativeView parent_view) override;
@@ -71,6 +78,13 @@ class CONTENT_EXPORT RenderWidgetHostViewGuest
   void SetNeedsBeginFrames(bool needs_begin_frames) override;
   TouchSelectionControllerClientManager*
   GetTouchSelectionControllerClientManager() override;
+  gfx::PointF TransformPointToRootCoordSpaceF(
+      const gfx::PointF& point) override;
+  bool TransformPointToLocalCoordSpace(const gfx::PointF& point,
+                                       const viz::SurfaceId& original_surface,
+                                       gfx::PointF* transformed_point) override;
+  gfx::PointF TransformRootPointToViewCoordSpace(
+      const gfx::PointF& point) override;
 
   // RenderWidgetHostViewBase implementation.
   void InitAsPopup(RenderWidgetHostView* parent_host_view,
@@ -94,8 +108,10 @@ class CONTENT_EXPORT RenderWidgetHostViewGuest
                         const gfx::Range& range) override;
   void SelectionBoundsChanged(
       const ViewHostMsg_SelectionBounds_Params& params) override;
-  void SubmitCompositorFrame(const viz::LocalSurfaceId& local_surface_id,
-                             viz::CompositorFrame frame) override;
+  void SubmitCompositorFrame(
+      const viz::LocalSurfaceId& local_surface_id,
+      viz::CompositorFrame frame,
+      viz::mojom::HitTestRegionListPtr hit_test_region_list) override;
 #if defined(USE_AURA)
   void ProcessAckedTouchEvent(const TouchEventWithLatencyInfo& touch,
                               InputEventAckState ack_result) override;
@@ -135,6 +151,11 @@ class CONTENT_EXPORT RenderWidgetHostViewGuest
   bool IsRenderWidgetHostViewGuest() override;
   RenderWidgetHostViewBase* GetOwnerRenderWidgetHostView() const;
 
+  void GetScreenInfo(ScreenInfo* screen_info) override;
+
+  void ResizeDueToAutoResize(const gfx::Size& new_size,
+                             uint64_t sequence_number) override;
+
  private:
   friend class RenderWidgetHostView;
 
@@ -163,10 +184,14 @@ class CONTENT_EXPORT RenderWidgetHostViewGuest
 
   bool HasEmbedderChanged() override;
 
+#if defined(USE_AURA)
+  void OnGotEmbedToken(const base::UnguessableToken& token);
+#endif
+
   // BrowserPluginGuest and RenderWidgetHostViewGuest's lifetimes are not tied
   // to one another, therefore we access |guest_| through WeakPtr.
   base::WeakPtr<BrowserPluginGuest> guest_;
-  gfx::Size size_;
+
   // The platform view for this RenderWidgetHostView.
   // RenderWidgetHostViewGuest mostly only cares about stuff related to
   // compositing, the rest are directly forwarded to this |platform_view_|.
@@ -175,7 +200,9 @@ class CONTENT_EXPORT RenderWidgetHostViewGuest
   // When true the guest will forward its selection updates to the owner RWHV.
   // The guest may forward its updates only when there is an ongoing IME
   // session.
-  bool should_forward_text_selection_;
+  bool should_forward_text_selection_ = false;
+
+  base::WeakPtrFactory<RenderWidgetHostViewGuest> weak_ptr_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(RenderWidgetHostViewGuest);
 };

@@ -27,7 +27,6 @@
 
 #include "core/dom/Document.h"
 #include "core/dom/Node.h"
-#include "core/dom/TaskRunnerHelper.h"
 #include "core/editing/EditingUtilities.h"
 #include "core/editing/EphemeralRange.h"
 #include "core/editing/markers/DocumentMarkerController.h"
@@ -36,9 +35,47 @@
 #include "core/frame/Settings.h"
 #include "core/html/forms/TextControlElement.h"
 #include "platform/Histogram.h"
-#include "platform/text/TextCheckerClient.h"
+#include "public/platform/TaskType.h"
+#include "public/web/WebTextCheckClient.h"
+#include "public/web/WebTextCheckingCompletion.h"
+#include "public/web/WebTextCheckingResult.h"
 
 namespace blink {
+
+namespace {
+
+static Vector<TextCheckingResult> ToCoreResults(
+    const WebVector<WebTextCheckingResult>& results) {
+  Vector<TextCheckingResult> core_results;
+  for (size_t i = 0; i < results.size(); ++i)
+    core_results.push_back(results[i]);
+  return core_results;
+}
+
+class WebTextCheckingCompletionImpl : public WebTextCheckingCompletion {
+ public:
+  explicit WebTextCheckingCompletionImpl(SpellCheckRequest* request)
+      : request_(request) {}
+
+  void DidFinishCheckingText(
+      const WebVector<WebTextCheckingResult>& results) override {
+    request_->DidSucceed(ToCoreResults(results));
+    delete this;
+  }
+
+  void DidCancelCheckingText() override {
+    request_->DidCancel();
+    // TODO(dgozman): use std::unique_ptr.
+    delete this;
+  }
+
+ private:
+  virtual ~WebTextCheckingCompletionImpl() {}
+
+  Persistent<SpellCheckRequest> request_;
+};
+
+}  // namespace
 
 SpellCheckRequest::SpellCheckRequest(Range* checking_range,
                                      const String& text,
@@ -47,7 +84,7 @@ SpellCheckRequest::SpellCheckRequest(Range* checking_range,
       checking_range_(checking_range),
       root_editable_element_(
           blink::RootEditableElement(*checking_range_->startContainer())),
-      request_data_(text),
+      text_(text),
       request_number_(request_number) {
   DCHECK(checking_range_);
   DCHECK(checking_range_->IsConnected());
@@ -56,11 +93,10 @@ SpellCheckRequest::SpellCheckRequest(Range* checking_range,
 
 SpellCheckRequest::~SpellCheckRequest() {}
 
-DEFINE_TRACE(SpellCheckRequest) {
+void SpellCheckRequest::Trace(blink::Visitor* visitor) {
   visitor->Trace(requester_);
   visitor->Trace(checking_range_);
   visitor->Trace(root_editable_element_);
-  TextCheckingRequest::Trace(visitor);
 }
 
 void SpellCheckRequest::Dispose() {
@@ -90,10 +126,6 @@ SpellCheckRequest* SpellCheckRequest::Create(
   return new SpellCheckRequest(checking_range_object, text, request_number);
 }
 
-const TextCheckingRequestData& SpellCheckRequest::Data() const {
-  return request_data_;
-}
-
 bool SpellCheckRequest::IsValid() const {
   return checking_range_->IsConnected() &&
          root_editable_element_->isConnected();
@@ -104,7 +136,7 @@ void SpellCheckRequest::DidSucceed(const Vector<TextCheckingResult>& results) {
     return;
   SpellCheckRequester* requester = requester_;
   requester_ = nullptr;
-  requester->DidCheckSucceed(request_data_.Sequence(), results);
+  requester->DidCheckSucceed(sequence_, results);
 }
 
 void SpellCheckRequest::DidCancel() {
@@ -112,15 +144,15 @@ void SpellCheckRequest::DidCancel() {
     return;
   SpellCheckRequester* requester = requester_;
   requester_ = nullptr;
-  requester->DidCheckCancel(request_data_.Sequence());
+  requester->DidCheckCancel(sequence_);
 }
 
 void SpellCheckRequest::SetCheckerAndSequence(SpellCheckRequester* requester,
                                               int sequence) {
   DCHECK(!requester_);
-  DCHECK_EQ(request_data_.Sequence(), kUnrequestedTextCheckingSequence);
+  DCHECK_EQ(sequence_, kUnrequestedTextCheckingSequence);
   requester_ = requester;
-  request_data_.SetSequence(sequence);
+  sequence_ = sequence;
 }
 
 SpellCheckRequester::SpellCheckRequester(LocalFrame& frame)
@@ -129,14 +161,14 @@ SpellCheckRequester::SpellCheckRequester(LocalFrame& frame)
       last_processed_sequence_(0),
       last_request_time_(0.0),
       timer_to_process_queued_request_(
-          TaskRunnerHelper::Get(TaskType::kUnspecedTimer, &frame),
+          frame.GetTaskRunner(TaskType::kUnspecedTimer),
           this,
           &SpellCheckRequester::TimerFiredToProcessQueuedRequest) {}
 
 SpellCheckRequester::~SpellCheckRequester() {}
 
-TextCheckerClient& SpellCheckRequester::Client() const {
-  return GetFrame().GetSpellChecker().TextChecker();
+WebTextCheckClient* SpellCheckRequester::GetTextCheckerClient() const {
+  return GetFrame().GetSpellChecker().GetTextCheckerClient();
 }
 
 void SpellCheckRequester::TimerFiredToProcessQueuedRequest(TimerBase*) {
@@ -168,9 +200,10 @@ void SpellCheckRequester::RequestCheckingFor(const EphemeralRange& range,
   }
   last_request_time_ = current_request_time;
 
-  DCHECK_EQ(request->Data().Sequence(), kUnrequestedTextCheckingSequence);
+  DCHECK_EQ(request->Sequence(),
+            SpellCheckRequest::kUnrequestedTextCheckingSequence);
   int sequence = ++last_request_sequence_;
-  if (sequence == kUnrequestedTextCheckingSequence)
+  if (sequence == SpellCheckRequest::kUnrequestedTextCheckingSequence)
     sequence = ++last_request_sequence_;
 
   request->SetCheckerAndSequence(this, sequence);
@@ -198,16 +231,21 @@ void SpellCheckRequester::PrepareForLeakDetection() {
   // the leak detector, they're all cancelled to prevent flaky leaks being
   // reported.
   request_queue_.clear();
-  // TextCheckerClient stores a set of WebTextCheckingCompletion objects,
+  // WebTextCheckClient stores a set of WebTextCheckingCompletion objects,
   // which may store references to already invoked requests. We should clear
   // these references to prevent them from being a leak source.
-  Client().CancelAllPendingRequests();
+  if (WebTextCheckClient* text_checker_client = GetTextCheckerClient())
+    text_checker_client->CancelAllPendingRequests();
 }
 
 void SpellCheckRequester::InvokeRequest(SpellCheckRequest* request) {
   DCHECK(!processing_request_);
   processing_request_ = request;
-  Client().RequestCheckingOfString(processing_request_);
+  if (WebTextCheckClient* text_checker_client = GetTextCheckerClient()) {
+    text_checker_client->RequestCheckingOfText(
+        processing_request_->GetText(),
+        new WebTextCheckingCompletionImpl(request));
+  }
 }
 
 void SpellCheckRequester::ClearProcessingRequest() {
@@ -248,7 +286,7 @@ void SpellCheckRequester::EnqueueRequest(SpellCheckRequest* request) {
 
 bool SpellCheckRequester::EnsureValidRequestQueueFor(int sequence) {
   DCHECK(processing_request_);
-  if (processing_request_->Data().Sequence() == sequence)
+  if (processing_request_->Sequence() == sequence)
     return true;
   NOTREACHED();
   request_queue_.clear();
@@ -261,7 +299,7 @@ void SpellCheckRequester::DidCheck(int sequence) {
 
   ClearProcessingRequest();
   if (!request_queue_.IsEmpty())
-    timer_to_process_queued_request_.StartOneShot(0, BLINK_FROM_HERE);
+    timer_to_process_queued_request_.StartOneShot(TimeDelta(), BLINK_FROM_HERE);
 }
 
 void SpellCheckRequester::DidCheckSucceed(
@@ -279,7 +317,7 @@ void SpellCheckRequester::DidCheckCancel(int sequence) {
   DidCheck(sequence);
 }
 
-DEFINE_TRACE(SpellCheckRequester) {
+void SpellCheckRequester::Trace(blink::Visitor* visitor) {
   visitor->Trace(frame_);
   visitor->Trace(processing_request_);
   visitor->Trace(request_queue_);

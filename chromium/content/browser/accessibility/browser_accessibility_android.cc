@@ -21,11 +21,6 @@
 #include "ui/accessibility/platform/ax_platform_unique_id.h"
 #include "ui/accessibility/platform/ax_snapshot_node_android_platform.h"
 
-namespace aria_strings {
-const char kAriaLivePolite[] = "polite";
-const char kAriaLiveAssertive[] = "assertive";
-}
-
 namespace {
 
 // These are enums from android.text.InputType in Java:
@@ -84,7 +79,6 @@ BrowserAccessibilityAndroid* BrowserAccessibilityAndroid::GetFromUniqueId(
 BrowserAccessibilityAndroid::BrowserAccessibilityAndroid()
     : unique_id_(ui::GetNextAXPlatformNodeUniqueId()) {
   g_unique_id_map.Get()[unique_id_] = this;
-  first_time_ = true;
 }
 
 BrowserAccessibilityAndroid::~BrowserAccessibilityAndroid() {
@@ -97,10 +91,9 @@ bool BrowserAccessibilityAndroid::IsNative() const {
 }
 
 void BrowserAccessibilityAndroid::OnLocationChanged() {
-  manager()->NotifyAccessibilityEvent(
-      BrowserAccessibilityEvent::FromTreeChange,
-      ui::AX_EVENT_LOCATION_CHANGED,
-      this);
+  auto* manager =
+      static_cast<BrowserAccessibilityManagerAndroid*>(this->manager());
+  manager->FireLocationChanged(this);
 }
 
 base::string16 BrowserAccessibilityAndroid::GetValue() const {
@@ -224,11 +217,7 @@ bool BrowserAccessibilityAndroid::IsDismissable() const {
 }
 
 bool BrowserAccessibilityAndroid::IsEditableText() const {
-  // TODO(dmazzoni): Use utility function in ax_role_properties, and
-  // handle different types of combo boxes correctly.
-  return GetRole() == ui::AX_ROLE_TEXT_FIELD ||
-         GetRole() == ui::AX_ROLE_SEARCH_BOX ||
-         GetRole() == ui::AX_ROLE_COMBO_BOX;
+  return IsPlainTextField() || IsRichTextField();
 }
 
 bool BrowserAccessibilityAndroid::IsEnabled() const {
@@ -310,10 +299,8 @@ bool BrowserAccessibilityAndroid::IsVisibleToUser() const {
 }
 
 bool BrowserAccessibilityAndroid::IsInterestingOnAndroid() const {
-  // The root is not interesting if it doesn't have a title, even
-  // though it's focusable.
   if (GetRole() == ui::AX_ROLE_ROOT_WEB_AREA && GetText().empty())
-    return false;
+    return true;
 
   // Focusable nodes are always interesting. Note that IsFocusable()
   // already skips over things like iframes and child frames that are
@@ -532,8 +519,11 @@ base::string16 BrowserAccessibilityAndroid::GetRoleDescription() const {
     case ui::AX_ROLE_COLUMN:
       // No role description.
       break;
-    case ui::AX_ROLE_COMBO_BOX:
-      message_id = IDS_AX_ROLE_COMBO_BOX;
+    case ui::AX_ROLE_COMBO_BOX_GROUPING:
+      // No role descripotion.
+      break;
+    case ui::AX_ROLE_COMBO_BOX_MENU_BUTTON:
+      // No role descripotion.
       break;
     case ui::AX_ROLE_COMPLEMENTARY:
       message_id = IDS_AX_ROLE_COMPLEMENTARY;
@@ -802,6 +792,9 @@ base::string16 BrowserAccessibilityAndroid::GetRoleDescription() const {
       message_id = IDS_AX_ROLE_DESCRIPTION_TERM;
       break;
     case ui::AX_ROLE_TEXT_FIELD:
+      // No role description.
+      break;
+    case ui::AX_ROLE_TEXT_FIELD_WITH_COMBO_BOX:
       // No role description.
       break;
     case ui::AX_ROLE_TIME:
@@ -1407,9 +1400,9 @@ bool BrowserAccessibilityAndroid::ShouldExposeValueAsName() const {
     return true;
 
   switch (GetRole()) {
-    case ui::AX_ROLE_COMBO_BOX:
     case ui::AX_ROLE_POP_UP_BUTTON:
     case ui::AX_ROLE_TEXT_FIELD:
+    case ui::AX_ROLE_TEXT_FIELD_WITH_COMBO_BOX:
       return true;
     default:
       break;
@@ -1427,39 +1420,6 @@ void BrowserAccessibilityAndroid::OnDataChanged() {
       old_value_ = new_value_;
       new_value_ = value;
     }
-  }
-
-  if (GetRole() == ui::AX_ROLE_ALERT && first_time_) {
-    manager()->NotifyAccessibilityEvent(
-        BrowserAccessibilityEvent::FromTreeChange,
-        ui::AX_EVENT_ALERT,
-        this);
-  }
-
-  base::string16 live;
-  if (GetString16Attribute(
-      ui::AX_ATTR_CONTAINER_LIVE_STATUS, &live)) {
-    NotifyLiveRegionUpdate(live);
-  }
-
-  first_time_ = false;
-}
-
-void BrowserAccessibilityAndroid::NotifyLiveRegionUpdate(
-    base::string16& aria_live) {
-  if (!base::EqualsASCII(aria_live, aria_strings::kAriaLivePolite) &&
-      !base::EqualsASCII(aria_live, aria_strings::kAriaLiveAssertive))
-    return;
-
-  base::string16 text = GetText();
-  if (cached_text_ != text) {
-    if (!text.empty()) {
-      manager()->NotifyAccessibilityEvent(
-          BrowserAccessibilityEvent::FromTreeChange,
-          ui::AX_EVENT_SHOW,
-          this);
-    }
-    cached_text_ = text;
   }
 }
 

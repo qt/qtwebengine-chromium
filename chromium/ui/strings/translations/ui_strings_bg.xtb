@@ -91,7 +91,6 @@
 <translation id="5941711191222866238">Намаляване</translation>
 <translation id="5943826764092288734">{HOURS,plural, =1{1 час}other{# часа}}</translation>
 <translation id="5948410903763073882">Alt+<ph name="KEY_COMBO_NAME" /></translation>
-<translation id="598033046487663418">Всички приложения</translation>
 <translation id="6012623610530968780">Страница <ph name="SELECTED_PAGE" /> от <ph name="TOTAL_PAGE_NUM" /></translation>
 <translation id="6022924867608035986">Изчистване на текста от полето за търсене</translation>
 <translation id="6040143037577758943">Затваряне</translation>
@@ -144,6 +143,7 @@
 <translation id="8352146631962686268">{YEARS,plural, =1{1 година}other{# години}}</translation>
 <translation id="8371695176452482769">Говорете сега</translation>
 <translation id="838869780401515933">отмятане</translation>
+<translation id="8393700583063109961">Изпратете съобщение</translation>
 <translation id="8394908167088220973">Мултимедия, пускане/пауза</translation>
 <translation id="8400147561352026160">Shift+<ph name="KEY_COMBO_NAME" /></translation>
 <translation id="8458811141851741261">{YEARS,plural, =1{1 г.}other{# г.}}</translation>

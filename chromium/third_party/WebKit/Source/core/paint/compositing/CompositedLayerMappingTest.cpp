@@ -187,10 +187,11 @@ TEST_P(CompositedLayerMappingTest, TallLayerWholeDocumentInterestRect) {
 }
 
 TEST_P(CompositedLayerMappingTest, VerticalRightLeftWritingModeDocument) {
-  SetBodyInnerHTML(
-      "<style>html,body { margin: 0px } html { -webkit-writing-mode: "
-      "vertical-rl}</style> <div id='target' style='width: 10000px; height: "
-      "200px;'></div>");
+  SetBodyInnerHTML(R"HTML(
+    <style>html,body { margin: 0px } html { -webkit-writing-mode:
+    vertical-rl}</style> <div id='target' style='width: 10000px; height:
+    200px;'></div>
+  )HTML");
 
   GetDocument().View()->UpdateAllLifecyclePhases();
   GetDocument().View()->LayoutViewportScrollableArea()->SetScrollOffset(
@@ -243,34 +244,35 @@ TEST_P(CompositedLayerMappingTest, LargeScaleInterestRect) {
   // It's rotated 90 degrees about the X axis, which means its visual content
   // rect is empty, and so the interest rect is the default (0, 0, 4000, 4000)
   // intersected with the layer bounds.
-  SetBodyInnerHTML(
-      "<style>"
-      "  .container {"
-      "    height: 1080px;"
-      "    width: 1920px;"
-      "    transform: scale(0.0859375);"
-      "    transform-origin: 0 0 0;"
-      "    background:blue;"
-      "  }"
-      "  .wrapper {"
-      "      height: 92px;"
-      "      width: 165px;"
-      "      overflow: hidden;"
-      "  }"
-      "  .posabs {"
-      "      position: absolute;"
-      "      width: 300px;"
-      "      height: 300px;"
-      "      top: 5000px;"
-      "  }"
-      "</style>"
-      "<div class='wrapper'>"
-      "  <div id='target' class='container'>"
-      "    <div class='posabs'></div>"
-      "    <div id='target' style='will-change: transform' "
-      "class='posabs'></div>"
-      "  </div>"
-      "</div>");
+  SetBodyInnerHTML(R"HTML(
+    <style>
+      .container {
+        height: 1080px;
+        width: 1920px;
+        transform: scale(0.0859375);
+        transform-origin: 0 0 0;
+        background:blue;
+      }
+      .wrapper {
+          height: 92px;
+          width: 165px;
+          overflow: hidden;
+      }
+      .posabs {
+          position: absolute;
+          width: 300px;
+          height: 300px;
+          top: 5000px;
+      }
+    </style>
+    <div class='wrapper'>
+      <div id='target' class='container'>
+        <div class='posabs'></div>
+        <div id='target' style='will-change: transform'
+    class='posabs'></div>
+      </div>
+    </div>
+  )HTML");
 
   GetDocument().View()->UpdateAllLifecyclePhases();
   Element* element = GetDocument().getElementById("target");
@@ -375,10 +377,11 @@ TEST_P(CompositedLayerMappingTest, FixedPositionInterestRect) {
 }
 
 TEST_P(CompositedLayerMappingTest, LayerOffscreenInterestRect) {
-  SetBodyInnerHTML(
-      "<div id='target' style='width: 200px; height: 200px; will-change: "
-      "transform; position: absolute; top: 9000px; left: 0px;'>"
-      "</div>");
+  SetBodyInnerHTML(R"HTML(
+    <div id='target' style='width: 200px; height: 200px; will-change:
+    transform; position: absolute; top: 9000px; left: 0px;'>
+    </div>
+  )HTML");
 
   GetDocument().View()->UpdateAllLifecyclePhases();
   Element* element = GetDocument().getElementById("target");
@@ -391,11 +394,12 @@ TEST_P(CompositedLayerMappingTest, LayerOffscreenInterestRect) {
 }
 
 TEST_P(CompositedLayerMappingTest, ScrollingLayerInterestRect) {
-  SetBodyInnerHTML(
-      "<style>div::-webkit-scrollbar{ width: 5px; }</style>"
-      "<div id='target' style='width: 200px; height: 200px; will-change: "
-      "transform; overflow: scroll'>"
-      "<div style='width: 100px; height: 10000px'></div></div>");
+  SetBodyInnerHTML(R"HTML(
+    <style>div::-webkit-scrollbar{ width: 5px; }</style>
+    <div id='target' style='width: 200px; height: 200px; will-change:
+    transform; overflow: scroll'>
+    <div style='width: 100px; height: 10000px'></div></div>
+  )HTML");
 
   GetDocument().View()->UpdateAllLifecyclePhases();
   Element* element = GetDocument().getElementById("target");
@@ -409,10 +413,11 @@ TEST_P(CompositedLayerMappingTest, ScrollingLayerInterestRect) {
 }
 
 TEST_P(CompositedLayerMappingTest, ClippedBigLayer) {
-  SetBodyInnerHTML(
-      "<div style='width: 1px; height: 1px; overflow: hidden'>"
-      "<div id='target' style='width: 10000px; height: 10000px; will-change: "
-      "transform'></div></div>");
+  SetBodyInnerHTML(R"HTML(
+    <div style='width: 1px; height: 1px; overflow: hidden'>
+    <div id='target' style='width: 10000px; height: 10000px; will-change:
+    transform'></div></div>
+  )HTML");
 
   GetDocument().View()->UpdateAllLifecyclePhases();
   Element* element = GetDocument().getElementById("target");
@@ -464,11 +469,12 @@ TEST_P(CompositedLayerMappingTest, ClippingMaskLayer) {
 }
 
 TEST_P(CompositedLayerMappingTest, ScrollContentsFlattenForScroller) {
-  SetBodyInnerHTML(
-      "<style>div::-webkit-scrollbar{ width: 5px; }</style>"
-      "<div id='scroller' style='width: 100px; height: 100px; overflow: "
-      "scroll; will-change: transform'>"
-      "<div style='width: 1000px; height: 1000px;'>Foo</div>Foo</div>");
+  SetBodyInnerHTML(R"HTML(
+    <style>div::-webkit-scrollbar{ width: 5px; }</style>
+    <div id='scroller' style='width: 100px; height: 100px; overflow:
+    scroll; will-change: transform'>
+    <div style='width: 1000px; height: 1000px;'>Foo</div>Foo</div>
+  )HTML");
 
   GetDocument().View()->UpdateAllLifecyclePhases();
   Element* element = GetDocument().getElementById("scroller");
@@ -571,12 +577,13 @@ TEST_P(CompositedLayerMappingTest,
 }
 
 TEST_P(CompositedLayerMappingTest, InterestRectChangeOnViewportScroll) {
-  SetBodyInnerHTML(
-      "<style>"
-      "  ::-webkit-scrollbar { width: 0; height: 0; }"
-      "  body { margin: 0; }"
-      "</style>"
-      "<div id='div' style='width: 100px; height: 10000px'>Text</div>");
+  SetBodyInnerHTML(R"HTML(
+    <style>
+      ::-webkit-scrollbar { width: 0; height: 0; }
+      body { margin: 0; }
+    </style>
+    <div id='div' style='width: 100px; height: 10000px'>Text</div>
+  )HTML");
 
   GetDocument().View()->UpdateAllLifecyclePhases();
   GraphicsLayer* root_scrolling_layer =
@@ -632,12 +639,13 @@ TEST_P(CompositedLayerMappingTest, InterestRectChangeOnViewportScroll) {
 }
 
 TEST_P(CompositedLayerMappingTest, InterestRectChangeOnShrunkenViewport) {
-  SetBodyInnerHTML(
-      "<style>"
-      "  ::-webkit-scrollbar { width: 0; height: 0; }"
-      "  body { margin: 0; }"
-      "</style>"
-      "<div id='div' style='width: 100px; height: 10000px'>Text</div>");
+  SetBodyInnerHTML(R"HTML(
+    <style>
+      ::-webkit-scrollbar { width: 0; height: 0; }
+      body { margin: 0; }
+    </style>
+    <div id='div' style='width: 100px; height: 10000px'>Text</div>
+  )HTML");
 
   GetDocument().View()->UpdateAllLifecyclePhases();
   GraphicsLayer* root_scrolling_layer =
@@ -658,15 +666,16 @@ TEST_P(CompositedLayerMappingTest, InterestRectChangeOnScroll) {
   GetDocument().GetFrame()->GetSettings()->SetPreferCompositingToLCDTextEnabled(
       true);
 
-  SetBodyInnerHTML(
-      "<style>"
-      "  ::-webkit-scrollbar { width: 0; height: 0; }"
-      "  body { margin: 0; }"
-      "</style>"
-      "<div id='scroller' style='width: 400px; height: 400px; overflow: "
-      "scroll'>"
-      "  <div id='content' style='width: 100px; height: 10000px'>Text</div>"
-      "</div");
+  SetBodyInnerHTML(R"HTML(
+    <style>
+      ::-webkit-scrollbar { width: 0; height: 0; }
+      body { margin: 0; }
+    </style>
+    <div id='scroller' style='width: 400px; height: 400px; overflow:
+    scroll'>
+      <div id='content' style='width: 100px; height: 10000px'>Text</div>
+    </div
+  )HTML");
 
   GetDocument().View()->UpdateAllLifecyclePhases();
   Element* scroller = GetDocument().getElementById("scroller");
@@ -713,15 +722,16 @@ TEST_P(CompositedLayerMappingTest,
   GetDocument().GetFrame()->GetSettings()->SetPreferCompositingToLCDTextEnabled(
       true);
 
-  SetBodyInnerHTML(
-      "<style>"
-      "  ::-webkit-scrollbar { width: 0; height: 0; }"
-      "  body { margin: 0; }"
-      "</style>"
-      "<div id='scroller' style='width: 400px; height: 400px; overflow: "
-      "scroll'>"
-      "  <div id='content' style='width: 100px; height: 10000px'>Text</div>"
-      "</div");
+  SetBodyInnerHTML(R"HTML(
+    <style>
+      ::-webkit-scrollbar { width: 0; height: 0; }
+      body { margin: 0; }
+    </style>
+    <div id='scroller' style='width: 400px; height: 400px; overflow:
+    scroll'>
+      <div id='content' style='width: 100px; height: 10000px'>Text</div>
+    </div
+  )HTML");
 
   GetDocument().View()->UpdateAllLifecyclePhases();
   Element* scroller = GetDocument().getElementById("scroller");
@@ -748,14 +758,15 @@ TEST_P(CompositedLayerMappingTest,
 
 TEST_P(CompositedLayerMappingTest,
        InterestRectOfSquashingLayerWithNegativeOverflow) {
-  SetBodyInnerHTML(
-      "<style>body { margin: 0; font-size: 16px; }</style>"
-      "<div style='position: absolute; top: -500px; width: 200px; height: "
-      "700px; will-change: transform'></div>"
-      "<div id='squashed' style='position: absolute; top: 190px;'>"
-      "  <div id='inside' style='width: 100px; height: 100px; text-indent: "
-      "-10000px'>text</div>"
-      "</div>");
+  SetBodyInnerHTML(R"HTML(
+    <style>body { margin: 0; font-size: 16px; }</style>
+    <div style='position: absolute; top: -500px; width: 200px; height:
+    700px; will-change: transform'></div>
+    <div id='squashed' style='position: absolute; top: 190px;'>
+      <div id='inside' style='width: 100px; height: 100px; text-indent:
+    -10000px'>text</div>
+    </div>
+  )HTML");
 
   EXPECT_EQ(GetDocument()
                 .getElementById("inside")
@@ -806,13 +817,14 @@ TEST_P(CompositedLayerMappingTest,
 }
 
 TEST_P(CompositedLayerMappingTest, InterestRectOfIframeInScrolledDiv) {
-  GetDocument().SetBaseURLOverride(KURL(kParsedURLString, "http://test.com"));
-  SetBodyInnerHTML(
-      "<style>body { margin: 0; }</style>"
-      "<div style='width: 200; height: 8000px'></div>"
-      "<iframe src='http://test.com' width='500' height='500' "
-      "frameBorder='0'>"
-      "</iframe>");
+  GetDocument().SetBaseURLOverride(KURL("http://test.com"));
+  SetBodyInnerHTML(R"HTML(
+    <style>body { margin: 0; }</style>
+    <div style='width: 200; height: 8000px'></div>
+    <iframe src='http://test.com' width='500' height='500'
+    frameBorder='0'>
+    </iframe>
+  )HTML");
   SetChildFrameHTML(
       "<style>body { margin: 0; } #target { width: 200px; height: 200px; "
       "will-change: transform}</style><div id=target></div>");
@@ -832,15 +844,16 @@ TEST_P(CompositedLayerMappingTest, InterestRectOfIframeInScrolledDiv) {
 }
 
 TEST_P(CompositedLayerMappingTest, InterestRectOfScrolledIframe) {
-  GetDocument().SetBaseURLOverride(KURL(kParsedURLString, "http://test.com"));
+  GetDocument().SetBaseURLOverride(KURL("http://test.com"));
   GetDocument().GetFrame()->GetSettings()->SetPreferCompositingToLCDTextEnabled(
       true);
-  SetBodyInnerHTML(
-      "<style>body { margin: 0; } ::-webkit-scrollbar { display: none; "
-      "}</style>"
-      "<iframe src='http://test.com' width='500' height='500' "
-      "frameBorder='0'>"
-      "</iframe>");
+  SetBodyInnerHTML(R"HTML(
+    <style>body { margin: 0; } ::-webkit-scrollbar { display: none;
+    }</style>
+    <iframe src='http://test.com' width='500' height='500'
+    frameBorder='0'>
+    </iframe>
+  )HTML");
   SetChildFrameHTML(
       "<style>body { margin: 0; } #target { width: 200px; "
       "height: 8000px;}</style><div id=target></div>");
@@ -862,17 +875,18 @@ TEST_P(CompositedLayerMappingTest, InterestRectOfScrolledIframe) {
 }
 
 TEST_P(CompositedLayerMappingTest, InterestRectOfIframeWithContentBoxOffset) {
-  GetDocument().SetBaseURLOverride(KURL(kParsedURLString, "http://test.com"));
+  GetDocument().SetBaseURLOverride(KURL("http://test.com"));
   GetDocument().GetFrame()->GetSettings()->SetPreferCompositingToLCDTextEnabled(
       true);
   // Set a 10px border in order to have a contentBoxOffset for the iframe
   // element.
-  SetBodyInnerHTML(
-      "<style>body { margin: 0; } #frame { border: 10px solid black; } "
-      "::-webkit-scrollbar { display: none; }</style>"
-      "<iframe src='http://test.com' width='500' height='500' "
-      "frameBorder='0'>"
-      "</iframe>");
+  SetBodyInnerHTML(R"HTML(
+    <style>body { margin: 0; } #frame { border: 10px solid black; }
+    ::-webkit-scrollbar { display: none; }</style>
+    <iframe src='http://test.com' width='500' height='500'
+    frameBorder='0'>
+    </iframe>
+  )HTML");
   SetChildFrameHTML(
       "<style>body { margin: 0; } #target { width: 200px; "
       "height: 8000px;}</style> <div id=target></div>");
@@ -899,15 +913,16 @@ TEST_P(CompositedLayerMappingTest,
        ScrollingContentsAndForegroundLayerPaintingPhase) {
   GetDocument().GetFrame()->GetSettings()->SetPreferCompositingToLCDTextEnabled(
       true);
-  SetBodyInnerHTML(
-      "<div id='container' style='position: relative; z-index: 1; overflow: "
-      "scroll; width: 300px; height: 300px'>"
-      "    <div id='negative-composited-child' style='background-color: red; "
-      "width: 1px; height: 1px; position: absolute; backface-visibility: "
-      "hidden; z-index: -1'></div>"
-      "    <div style='background-color: blue; width: 2000px; height: 2000px; "
-      "position: relative; top: 10px'></div>"
-      "</div>");
+  SetBodyInnerHTML(R"HTML(
+    <div id='container' style='position: relative; z-index: 1; overflow:
+    scroll; width: 300px; height: 300px'>
+        <div id='negative-composited-child' style='background-color: red;
+    width: 1px; height: 1px; position: absolute; backface-visibility:
+    hidden; z-index: -1'></div>
+        <div style='background-color: blue; width: 2000px; height: 2000px;
+    position: relative; top: 10px'></div>
+    </div>
+  )HTML");
 
   CompositedLayerMapping* mapping =
       ToLayoutBlock(GetLayoutObjectByElementId("container"))
@@ -948,16 +963,17 @@ TEST_P(CompositedLayerMappingTest,
 
 TEST_P(CompositedLayerMappingTest,
        DecorationOutlineLayerOnlyCreatedInCompositedScrolling) {
-  SetBodyInnerHTML(
-      "<style>"
-      "#target { overflow: scroll; height: 200px; width: 200px; will-change: "
-      "transform; background: white local content-box; "
-      "outline: 1px solid blue; outline-offset: -2px;}"
-      "#scrolled { height: 300px; }"
-      "</style>"
-      "<div id=\"parent\">"
-      "  <div id=\"target\"><div id=\"scrolled\"></div></div>"
-      "</div>");
+  SetBodyInnerHTML(R"HTML(
+    <style>
+    #target { overflow: scroll; height: 200px; width: 200px; will-change:
+    transform; background: white local content-box;
+    outline: 1px solid blue; outline-offset: -2px;}
+    #scrolled { height: 300px; }
+    </style>
+    <div id="parent">
+      <div id="target"><div id="scrolled"></div></div>
+    </div>
+  )HTML");
   GetDocument().View()->UpdateAllLifecyclePhases();
 
   Element* element = GetDocument().getElementById("target");
@@ -985,15 +1001,16 @@ TEST_P(CompositedLayerMappingTest,
 
 TEST_P(CompositedLayerMappingTest,
        DecorationOutlineLayerCreatedAndDestroyedInCompositedScrolling) {
-  SetBodyInnerHTML(
-      "<style>"
-      "#scroller { overflow: scroll; height: 200px; width: 200px; background: "
-      "white local content-box; outline: 1px solid blue; contain: paint; }"
-      "#scrolled { height: 300px; }"
-      "</style>"
-      "<div id=\"parent\">"
-      "  <div id=\"scroller\"><div id=\"scrolled\"></div></div>"
-      "</div>");
+  SetBodyInnerHTML(R"HTML(
+    <style>
+    #scroller { overflow: scroll; height: 200px; width: 200px; background:
+    white local content-box; outline: 1px solid blue; contain: paint; }
+    #scrolled { height: 300px; }
+    </style>
+    <div id="parent">
+      <div id="scroller"><div id="scrolled"></div></div>
+    </div>
+  )HTML");
   GetDocument().View()->UpdateAllLifecyclePhases();
 
   Element* scroller = GetDocument().getElementById("scroller");
@@ -1030,12 +1047,13 @@ TEST_P(CompositedLayerMappingTest,
        BackgroundPaintedIntoGraphicsLayerIfNotCompositedScrolling) {
   GetDocument().GetFrame()->GetSettings()->SetPreferCompositingToLCDTextEnabled(
       true);
-  SetBodyInnerHTML(
-      "<div id='container' style='overflow: scroll; width: 300px; height: "
-      "300px; border-radius: 5px; background: white; will-change: transform;'>"
-      "    <div style='background-color: blue; width: 2000px; height: "
-      "2000px;'></div>"
-      "</div>");
+  SetBodyInnerHTML(R"HTML(
+    <div id='container' style='overflow: scroll; width: 300px; height:
+    300px; border-radius: 5px; background: white; will-change: transform;'>
+        <div style='background-color: blue; width: 2000px; height:
+    2000px;'></div>
+    </div>
+  )HTML");
 
   PaintLayer* layer =
       ToLayoutBlock(GetLayoutObjectByElementId("container"))->Layer();
@@ -1137,14 +1155,15 @@ TEST_P(CompositedLayerMappingTest,
 }
 
 TEST_P(CompositedLayerMappingTest, AncestorClippingMaskLayerUpdates) {
-  SetBodyInnerHTML(
-      "<style>"
-      "  #ancestor { width: 100px; height: 100px; overflow: hidden; }"
-      "  #child { width: 120px; height: 120px; background-color: green; }"
-      "</style>"
-      "<div id='ancestor'>"
-      "  <div id='child'></div>"
-      "</div>");
+  SetBodyInnerHTML(R"HTML(
+    <style>
+      #ancestor { width: 100px; height: 100px; overflow: hidden; }
+      #child { width: 120px; height: 120px; background-color: green; }
+    </style>
+    <div id='ancestor'>
+      <div id='child'></div>
+    </div>
+  )HTML");
   GetDocument().View()->UpdateAllLifecyclePhases();
 
   Element* ancestor = GetDocument().getElementById("ancestor");
@@ -1216,18 +1235,19 @@ TEST_P(CompositedLayerMappingTest, AncestorClippingMaskLayerUpdates) {
 }
 
 TEST_P(CompositedLayerMappingTest, AncestorClippingMaskLayerSiblingUpdates) {
-  SetBodyInnerHTML(
-      "<style>"
-      "  #ancestor { width: 200px; height: 200px; overflow: hidden; }"
-      "  #child1 { width: 10px;; height: 260px; position: relative; "
-      "            left: 0px; top: -30px; background-color: green; }"
-      "  #child2 { width: 10px;; height: 260px; position: relative; "
-      "            left: 190px; top: -260px; background-color: green; }"
-      "</style>"
-      "<div id='ancestor'>"
-      "  <div id='child1'></div>"
-      "  <div id='child2'></div>"
-      "</div>");
+  SetBodyInnerHTML(R"HTML(
+    <style>
+      #ancestor { width: 200px; height: 200px; overflow: hidden; }
+      #child1 { width: 10px;; height: 260px; position: relative;
+                left: 0px; top: -30px; background-color: green; }
+      #child2 { width: 10px;; height: 260px; position: relative;
+                left: 190px; top: -260px; background-color: green; }
+    </style>
+    <div id='ancestor'>
+      <div id='child1'></div>
+      <div id='child2'></div>
+    </div>
+  )HTML");
   GetDocument().View()->UpdateAllLifecyclePhases();
 
   Element* ancestor = GetDocument().getElementById("ancestor");
@@ -1351,19 +1371,20 @@ TEST_P(CompositedLayerMappingTest, AncestorClippingMaskLayerSiblingUpdates) {
 }
 
 TEST_P(CompositedLayerMappingTest, AncestorClippingMaskLayerGrandchildUpdates) {
-  SetBodyInnerHTML(
-      "<style>"
-      "  #ancestor { width: 200px; height: 200px; overflow: hidden; }"
-      "  #child { width: 10px;; height: 260px; position: relative; "
-      "           left: 0px; top: -30px; background-color: green; }"
-      "  #grandchild { width: 10px;; height: 260px; position: relative; "
-      "                left: 190px; top: -30px; background-color: green; }"
-      "</style>"
-      "<div id='ancestor'>"
-      "  <div id='child'>"
-      "    <div id='grandchild'></div>"
-      "  </div>"
-      "</div>");
+  SetBodyInnerHTML(R"HTML(
+    <style>
+      #ancestor { width: 200px; height: 200px; overflow: hidden; }
+      #child { width: 10px;; height: 260px; position: relative;
+               left: 0px; top: -30px; background-color: green; }
+      #grandchild { width: 10px;; height: 260px; position: relative;
+                    left: 190px; top: -30px; background-color: green; }
+    </style>
+    <div id='ancestor'>
+      <div id='child'>
+        <div id='grandchild'></div>
+      </div>
+    </div>
+  )HTML");
   GetDocument().View()->UpdateAllLifecyclePhases();
 
   Element* ancestor = GetDocument().getElementById("ancestor");
@@ -1465,19 +1486,20 @@ TEST_P(CompositedLayerMappingTest, AncestorClippingMaskLayerGrandchildUpdates) {
 TEST_P(CompositedLayerMappingTest, AncestorClipMaskRequiredByBorderRadius) {
   // Verify that we create the mask layer when the child is contained within
   // the rectangular clip but not contained within the rounded rect clip.
-  SetBodyInnerHTML(
-      "<style>"
-      "  #ancestor {"
-      "    width: 100px; height: 100px; overflow: hidden; border-radius: 20px;"
-      "  }"
-      "  #child { position: relative; left: 2px; top: 2px; width: 96px;"
-      "           height: 96px; background-color: green;"
-      "           will-change: transform;"
-      "  }"
-      "</style>"
-      "<div id='ancestor'>"
-      "  <div id='child'></div>"
-      "</div>");
+  SetBodyInnerHTML(R"HTML(
+    <style>
+      #ancestor {
+        width: 100px; height: 100px; overflow: hidden; border-radius: 20px;
+      }
+      #child { position: relative; left: 2px; top: 2px; width: 96px;
+               height: 96px; background-color: green;
+               will-change: transform;
+      }
+    </style>
+    <div id='ancestor'>
+      <div id='child'></div>
+    </div>
+  )HTML");
   GetDocument().View()->UpdateAllLifecyclePhases();
 
   Element* ancestor = GetDocument().getElementById("ancestor");
@@ -1507,24 +1529,25 @@ TEST_P(CompositedLayerMappingTest,
        AncestorClipMaskNotRequiredByNestedBorderRadius) {
   // This case has the child within all ancestors and does not require a
   // mask.
-  SetBodyInnerHTML(
-      "<style>"
-      "  #grandparent {"
-      "    width: 200px; height: 200px; overflow: hidden; border-radius: 25px;"
-      "  }"
-      "  #parent { position: relative; left: 40px; top: 40px; width: 120px;"
-      "           height: 120px; border-radius: 10px; overflow: hidden;"
-      "  }"
-      "  #child { position: relative; left: 10px; top: 10px; width: 100px;"
-      "           height: 100px; background-color: green;"
-      "           will-change: transform;"
-      "  }"
-      "</style>"
-      "<div id='grandparent'>"
-      "  <div id='parent'>"
-      "    <div id='child'></div>"
-      "  </div>"
-      "</div>");
+  SetBodyInnerHTML(R"HTML(
+    <style>
+      #grandparent {
+        width: 200px; height: 200px; overflow: hidden; border-radius: 25px;
+      }
+      #parent { position: relative; left: 40px; top: 40px; width: 120px;
+               height: 120px; border-radius: 10px; overflow: hidden;
+      }
+      #child { position: relative; left: 10px; top: 10px; width: 100px;
+               height: 100px; background-color: green;
+               will-change: transform;
+      }
+    </style>
+    <div id='grandparent'>
+      <div id='parent'>
+        <div id='child'></div>
+      </div>
+    </div>
+  )HTML");
   GetDocument().View()->UpdateAllLifecyclePhases();
 
   Element* child = GetDocument().getElementById("child");
@@ -1544,24 +1567,25 @@ TEST_P(CompositedLayerMappingTest,
        AncestorClipMaskRequiredByParentBorderRadius) {
   // This case has the child within the grandparent but not the parent, and does
   // require a mask so that the parent will clip the corners.
-  SetBodyInnerHTML(
-      "<style>"
-      "  #grandparent {"
-      "    width: 200px; height: 200px; overflow: hidden; border-radius: 25px;"
-      "  }"
-      "  #parent { position: relative; left: 40px; top: 40px; width: 120px;"
-      "           height: 120px; border-radius: 10px; overflow: hidden;"
-      "  }"
-      "  #child { position: relative; left: 1px; top: 1px; width: 118px;"
-      "           height: 118px; background-color: green;"
-      "           will-change: transform;"
-      "  }"
-      "</style>"
-      "<div id='grandparent'>"
-      "  <div id='parent'>"
-      "    <div id='child'></div>"
-      "  </div>"
-      "</div>");
+  SetBodyInnerHTML(R"HTML(
+    <style>
+      #grandparent {
+        width: 200px; height: 200px; overflow: hidden; border-radius: 25px;
+      }
+      #parent { position: relative; left: 40px; top: 40px; width: 120px;
+               height: 120px; border-radius: 10px; overflow: hidden;
+      }
+      #child { position: relative; left: 1px; top: 1px; width: 118px;
+               height: 118px; background-color: green;
+               will-change: transform;
+      }
+    </style>
+    <div id='grandparent'>
+      <div id='parent'>
+        <div id='child'></div>
+      </div>
+    </div>
+  )HTML");
   GetDocument().View()->UpdateAllLifecyclePhases();
 
   Element* child = GetDocument().getElementById("child");
@@ -1585,24 +1609,25 @@ TEST_P(CompositedLayerMappingTest,
        AncestorClipMaskNotRequiredByParentBorderRadius) {
   // This case has the child within the grandparent but not the parent, and does
   // not require a mask because the parent does not have border radius
-  SetBodyInnerHTML(
-      "<style>"
-      "  #grandparent {"
-      "    width: 200px; height: 200px; overflow: hidden; border-radius: 25px;"
-      "  }"
-      "  #parent { position: relative; left: 40px; top: 40px; width: 120px;"
-      "           height: 120px; overflow: hidden;"
-      "  }"
-      "  #child { position: relative; left: -10px; top: -10px; width: 140px;"
-      "           height: 140px; background-color: green;"
-      "           will-change: transform;"
-      "  }"
-      "</style>"
-      "<div id='grandparent'>"
-      "  <div id='parent'>"
-      "    <div id='child'></div>"
-      "  </div>"
-      "</div>");
+  SetBodyInnerHTML(R"HTML(
+    <style>
+      #grandparent {
+        width: 200px; height: 200px; overflow: hidden; border-radius: 25px;
+      }
+      #parent { position: relative; left: 40px; top: 40px; width: 120px;
+               height: 120px; overflow: hidden;
+      }
+      #child { position: relative; left: -10px; top: -10px; width: 140px;
+               height: 140px; background-color: green;
+               will-change: transform;
+      }
+    </style>
+    <div id='grandparent'>
+      <div id='parent'>
+        <div id='child'></div>
+      </div>
+    </div>
+  )HTML");
   GetDocument().View()->UpdateAllLifecyclePhases();
 
   Element* child = GetDocument().getElementById("child");
@@ -1624,24 +1649,25 @@ TEST_P(CompositedLayerMappingTest,
   // the parent, and requires a mask to clip to the grandparent. Although in
   // an optimized world we would not need this because the parent clips out
   // the child before it is clipped by the grandparent.
-  SetBodyInnerHTML(
-      "<style>"
-      "  #grandparent {"
-      "    width: 200px; height: 200px; overflow: hidden; border-radius: 25px;"
-      "  }"
-      "  #parent { position: relative; left: 40px; top: 40px; width: 120px;"
-      "           height: 120px; overflow: hidden;"
-      "  }"
-      "  #child { position: relative; left: -10px; top: -10px; width: 180px;"
-      "           height: 180px; background-color: green;"
-      "           will-change: transform;"
-      "  }"
-      "</style>"
-      "<div id='grandparent'>"
-      "  <div id='parent'>"
-      "    <div id='child'></div>"
-      "  </div>"
-      "</div>");
+  SetBodyInnerHTML(R"HTML(
+    <style>
+      #grandparent {
+        width: 200px; height: 200px; overflow: hidden; border-radius: 25px;
+      }
+      #parent { position: relative; left: 40px; top: 40px; width: 120px;
+               height: 120px; overflow: hidden;
+      }
+      #child { position: relative; left: -10px; top: -10px; width: 180px;
+               height: 180px; background-color: green;
+               will-change: transform;
+      }
+    </style>
+    <div id='grandparent'>
+      <div id='parent'>
+        <div id='child'></div>
+      </div>
+    </div>
+  )HTML");
   GetDocument().View()->UpdateAllLifecyclePhases();
 
   Element* child = GetDocument().getElementById("child");
@@ -1664,24 +1690,25 @@ TEST_P(CompositedLayerMappingTest,
 TEST_P(CompositedLayerMappingTest,
        AncestorClipMaskRequiredByGrandparentBorderRadius2) {
   // Similar to the previous case, but here we really do need the mask.
-  SetBodyInnerHTML(
-      "<style>"
-      "  #grandparent {"
-      "    width: 200px; height: 200px; overflow: hidden; border-radius: 25px;"
-      "  }"
-      "  #parent { position: relative; left: 40px; top: 40px; width: 180px;"
-      "           height: 180px; overflow: hidden;"
-      "  }"
-      "  #child { position: relative; left: -10px; top: -10px; width: 180px;"
-      "           height: 180px; background-color: green;"
-      "           will-change: transform;"
-      "  }"
-      "</style>"
-      "<div id='grandparent'>"
-      "  <div id='parent'>"
-      "    <div id='child'></div>"
-      "  </div>"
-      "</div>");
+  SetBodyInnerHTML(R"HTML(
+    <style>
+      #grandparent {
+        width: 200px; height: 200px; overflow: hidden; border-radius: 25px;
+      }
+      #parent { position: relative; left: 40px; top: 40px; width: 180px;
+               height: 180px; overflow: hidden;
+      }
+      #child { position: relative; left: -10px; top: -10px; width: 180px;
+               height: 180px; background-color: green;
+               will-change: transform;
+      }
+    </style>
+    <div id='grandparent'>
+      <div id='parent'>
+        <div id='child'></div>
+      </div>
+    </div>
+  )HTML");
   GetDocument().View()->UpdateAllLifecyclePhases();
 
   Element* child = GetDocument().getElementById("child");
@@ -1705,19 +1732,20 @@ TEST_P(CompositedLayerMappingTest,
        AncestorClipMaskNotRequiredByBorderRadiusInside) {
   // Verify that we do not create the mask layer when the child is contained
   // within the rounded rect clip.
-  SetBodyInnerHTML(
-      "<style>"
-      "  #ancestor {"
-      "    width: 100px; height: 100px; overflow: hidden; border-radius: 5px;"
-      "  }"
-      "  #child { position: relative; left: 10px; top: 10px; width: 80px;"
-      "           height: 80px; background-color: green;"
-      "           will-change: transform;"
-      "  }"
-      "</style>"
-      "<div id='ancestor'>"
-      "  <div id='child'></div>"
-      "</div>");
+  SetBodyInnerHTML(R"HTML(
+    <style>
+      #ancestor {
+        width: 100px; height: 100px; overflow: hidden; border-radius: 5px;
+      }
+      #child { position: relative; left: 10px; top: 10px; width: 80px;
+               height: 80px; background-color: green;
+               will-change: transform;
+      }
+    </style>
+    <div id='ancestor'>
+      <div id='child'></div>
+    </div>
+  )HTML");
   GetDocument().View()->UpdateAllLifecyclePhases();
 
   Element* ancestor = GetDocument().getElementById("ancestor");
@@ -1747,19 +1775,20 @@ TEST_P(CompositedLayerMappingTest,
        AncestorClipMaskNotRequiredByBorderRadiusOutside) {
   // Verify that we do not create the mask layer when the child is outside
   // the ancestors rectangular clip.
-  SetBodyInnerHTML(
-      "<style>"
-      "  #ancestor {"
-      "    width: 100px; height: 100px; overflow: hidden; border-radius: 5px;"
-      "  }"
-      "  #child { position: relative; left: 110px; top: 10px; width: 80px;"
-      "           height: 80px; background-color: green;"
-      "           will-change: transform;"
-      "}"
-      "</style>"
-      "<div id='ancestor'>"
-      "  <div id='child'></div>"
-      "</div>");
+  SetBodyInnerHTML(R"HTML(
+    <style>
+      #ancestor {
+        width: 100px; height: 100px; overflow: hidden; border-radius: 5px;
+      }
+      #child { position: relative; left: 110px; top: 10px; width: 80px;
+               height: 80px; background-color: green;
+               will-change: transform;
+    }
+    </style>
+    <div id='ancestor'>
+      <div id='child'></div>
+    </div>
+  )HTML");
   GetDocument().View()->UpdateAllLifecyclePhases();
 
   Element* ancestor = GetDocument().getElementById("ancestor");
@@ -1789,20 +1818,21 @@ TEST_P(CompositedLayerMappingTest, AncestorClipMaskRequiredDueToScaleUp) {
   // Verify that we include the mask when the untransformed child does not
   // intersect the border radius but the transformed child does. Here the
   // child is inside the parent and scaled to expand to be clipped.
-  SetBodyInnerHTML(
-      "<style>"
-      "  #parent { position: relative; left: 40px; top: 40px; width: 120px;"
-      "           height: 120px; overflow: hidden; border-radius: 10px"
-      "  }"
-      "  #child { position: relative; left: 32px; top: 32px; width: 56px;"
-      "           height: 56px; background-color: green;"
-      "           transform: scale3d(2, 2, 1);"
-      "           will-change: transform;"
-      "  }"
-      "</style>"
-      "<div id='parent'>"
-      "  <div id='child'></div>"
-      "</div>");
+  SetBodyInnerHTML(R"HTML(
+    <style>
+      #parent { position: relative; left: 40px; top: 40px; width: 120px;
+               height: 120px; overflow: hidden; border-radius: 10px
+      }
+      #child { position: relative; left: 32px; top: 32px; width: 56px;
+               height: 56px; background-color: green;
+               transform: scale3d(2, 2, 1);
+               will-change: transform;
+      }
+    </style>
+    <div id='parent'>
+      <div id='child'></div>
+    </div>
+  )HTML");
   GetDocument().View()->UpdateAllLifecyclePhases();
 
   Element* child = GetDocument().getElementById("child");
@@ -1823,20 +1853,21 @@ TEST_P(CompositedLayerMappingTest, AncestorClipMaskNotRequiredDueToScaleDown) {
   // intersect the border radius but the transformed child does not. Here the
   // child is bigger than the parent and scaled down such that it does not
   // need a mask.
-  SetBodyInnerHTML(
-      "<style>"
-      "  #parent { position: relative; left: 40px; top: 40px; width: 120px;"
-      "           height: 120px; overflow: hidden; border-radius: 10px"
-      "  }"
-      "  #child { position: relative; left: -10px; top: -10px; width: 140px;"
-      "           height: 140px; background-color: green;"
-      "           transform: scale3d(0.5, 0.5, 1);"
-      "           will-change: transform;"
-      "  }"
-      "</style>"
-      "<div id='parent'>"
-      "  <div id='child'></div>"
-      "</div>");
+  SetBodyInnerHTML(R"HTML(
+    <style>
+      #parent { position: relative; left: 40px; top: 40px; width: 120px;
+               height: 120px; overflow: hidden; border-radius: 10px
+      }
+      #child { position: relative; left: -10px; top: -10px; width: 140px;
+               height: 140px; background-color: green;
+               transform: scale3d(0.5, 0.5, 1);
+               will-change: transform;
+      }
+    </style>
+    <div id='parent'>
+      <div id='child'></div>
+    </div>
+  )HTML");
   GetDocument().View()->UpdateAllLifecyclePhases();
 
   Element* child = GetDocument().getElementById("child");
@@ -1856,20 +1887,21 @@ TEST_P(CompositedLayerMappingTest, AncestorClipMaskRequiredDueToTranslateInto) {
   // Verify that we include the mask when the untransformed child does not
   // intersect the border radius but the transformed child does. Here the
   // child is outside the parent and translated to be clipped.
-  SetBodyInnerHTML(
-      "<style>"
-      "  #parent { position: relative; left: 40px; top: 40px; width: 120px;"
-      "           height: 120px; overflow: hidden; border-radius: 10px"
-      "  }"
-      "  #child { position: relative; left: 140px; top: 140px; width: 100px;"
-      "           height: 100px; background-color: green;"
-      "           transform: translate(-120px, -120px);"
-      "           will-change: transform;"
-      "  }"
-      "</style>"
-      "<div id='parent'>"
-      "  <div id='child'></div>"
-      "</div>");
+  SetBodyInnerHTML(R"HTML(
+    <style>
+      #parent { position: relative; left: 40px; top: 40px; width: 120px;
+               height: 120px; overflow: hidden; border-radius: 10px
+      }
+      #child { position: relative; left: 140px; top: 140px; width: 100px;
+               height: 100px; background-color: green;
+               transform: translate(-120px, -120px);
+               will-change: transform;
+      }
+    </style>
+    <div id='parent'>
+      <div id='child'></div>
+    </div>
+  )HTML");
   GetDocument().View()->UpdateAllLifecyclePhases();
 
   Element* child = GetDocument().getElementById("child");
@@ -1890,20 +1922,21 @@ TEST_P(CompositedLayerMappingTest,
   // Verify that we exclude the mask when the untransformed child does
   // intersect the border radius but the transformed child does not. Here the
   // child is inside the parent and translated outside.
-  SetBodyInnerHTML(
-      "<style>"
-      "  #parent { position: relative; left: 40px; top: 40px; width: 120px;"
-      "           height: 120px; overflow: hidden; border-radius: 10px"
-      "  }"
-      "  #child { position: relative; left: 15px; top: 15px; width: 100px;"
-      "           height: 100px; background-color: green;"
-      "           transform: translate(110px, 110px);"
-      "           will-change: transform;"
-      "  }"
-      "</style>"
-      "<div id='parent'>"
-      "  <div id='child'></div>"
-      "</div>");
+  SetBodyInnerHTML(R"HTML(
+    <style>
+      #parent { position: relative; left: 40px; top: 40px; width: 120px;
+               height: 120px; overflow: hidden; border-radius: 10px
+      }
+      #child { position: relative; left: 15px; top: 15px; width: 100px;
+               height: 100px; background-color: green;
+               transform: translate(110px, 110px);
+               will-change: transform;
+      }
+    </style>
+    <div id='parent'>
+      <div id='child'></div>
+    </div>
+  )HTML");
   GetDocument().View()->UpdateAllLifecyclePhases();
 
   Element* child = GetDocument().getElementById("child");
@@ -1924,20 +1957,21 @@ TEST_P(CompositedLayerMappingTest, AncestorClipMaskRequiredDueToRotation) {
   // intersect the border radius but the transformed child does. Here the
   // child is just within the mask-not-required area but when rotated requires
   // a mask.
-  SetBodyInnerHTML(
-      "<style>"
-      "  #parent { position: relative; left: 40px; top: 40px; width: 120px;"
-      "           height: 120px; overflow: hidden; border-radius: 10px"
-      "  }"
-      "  #child { position: relative; left: 11px; top: 11px; width: 98px;"
-      "           height: 98px; background-color: green;"
-      "           transform: rotate3d(0, 0, 1, 5deg);"
-      "           will-change: transform;"
-      "  }"
-      "</style>"
-      "<div id='parent'>"
-      "  <div id='child'></div>"
-      "</div>");
+  SetBodyInnerHTML(R"HTML(
+    <style>
+      #parent { position: relative; left: 40px; top: 40px; width: 120px;
+               height: 120px; overflow: hidden; border-radius: 10px
+      }
+      #child { position: relative; left: 11px; top: 11px; width: 98px;
+               height: 98px; background-color: green;
+               transform: rotate3d(0, 0, 1, 5deg);
+               will-change: transform;
+      }
+    </style>
+    <div id='parent'>
+      <div id='child'></div>
+    </div>
+  )HTML");
   GetDocument().View()->UpdateAllLifecyclePhases();
 
   Element* child = GetDocument().getElementById("child");
@@ -1959,23 +1993,24 @@ TEST_P(CompositedLayerMappingTest,
   // in principle not need a mask, but does because we cannot efficiently
   // check the bounds of the composited descendant for intersection with the
   // border.
-  SetBodyInnerHTML(
-      "<style>"
-      "  #grandparent {"
-      "    width: 200px; height: 200px; overflow: hidden; border-radius: 25px;"
-      "  }"
-      "  #parent { position: relative; left: 30px; top: 30px; width: 140px;"
-      "           height: 140px; overflow: hidden; will-change: transform;"
-      "  }"
-      "  #child { position: relative; left: 10px; top: 10px; width: 120px;"
-      "           height: 120px; will-change: transform;"
-      "  }"
-      "</style>"
-      "<div id='grandparent'>"
-      "  <div id='parent'>"
-      "    <div id='child'></div>"
-      "  </div>"
-      "</div>");
+  SetBodyInnerHTML(R"HTML(
+    <style>
+      #grandparent {
+        width: 200px; height: 200px; overflow: hidden; border-radius: 25px;
+      }
+      #parent { position: relative; left: 30px; top: 30px; width: 140px;
+               height: 140px; overflow: hidden; will-change: transform;
+      }
+      #child { position: relative; left: 10px; top: 10px; width: 120px;
+               height: 120px; will-change: transform;
+      }
+    </style>
+    <div id='grandparent'>
+      <div id='parent'>
+        <div id='child'></div>
+      </div>
+    </div>
+  )HTML");
   GetDocument().View()->UpdateAllLifecyclePhases();
 
   Element* parent = GetDocument().getElementById("parent");
@@ -1997,28 +2032,29 @@ TEST_P(CompositedLayerMappingTest,
   // the parent, and does not itself require a mask to clip to the grandparent.
   // But the child has it's own composited child, so we force the mask in case
   // the child's child needs it.
-  SetBodyInnerHTML(
-      "<style>"
-      "  #grandparent {"
-      "    width: 200px; height: 200px; overflow: hidden; border-radius: 25px;"
-      "  }"
-      "  #parent { position: relative; left: 30px; top: 30px; width: 140px;"
-      "           height: 140px; overflow: hidden;"
-      "  }"
-      "  #child { position: relative; left: 10px; top: 10px; width: 120px;"
-      "           height: 120px; will-change: transform;"
-      "  }"
-      "  #grandchild { position: relative; left: 10px; top: 10px; width: 200px;"
-      "           height: 200px; will-change: transform;"
-      "  }"
-      "</style>"
-      "<div id='grandparent'>"
-      "  <div id='parent'>"
-      "    <div id='child'>"
-      "      <div id='grandchild'></div>"
-      "    </div>"
-      "  </div>"
-      "</div>");
+  SetBodyInnerHTML(R"HTML(
+    <style>
+      #grandparent {
+        width: 200px; height: 200px; overflow: hidden; border-radius: 25px;
+      }
+      #parent { position: relative; left: 30px; top: 30px; width: 140px;
+               height: 140px; overflow: hidden;
+      }
+      #child { position: relative; left: 10px; top: 10px; width: 120px;
+               height: 120px; will-change: transform;
+      }
+      #grandchild { position: relative; left: 10px; top: 10px; width: 200px;
+               height: 200px; will-change: transform;
+      }
+    </style>
+    <div id='grandparent'>
+      <div id='parent'>
+        <div id='child'>
+          <div id='grandchild'></div>
+        </div>
+      </div>
+    </div>
+  )HTML");
   GetDocument().View()->UpdateAllLifecyclePhases();
 
   Element* child = GetDocument().getElementById("child");
@@ -2035,18 +2071,19 @@ TEST_P(CompositedLayerMappingTest,
 }
 
 TEST_P(CompositedLayerMappingTest, StickyPositionMainThreadOffset) {
-  SetBodyInnerHTML(
-      "<style>.composited { backface-visibility: hidden; }"
-      "#scroller { overflow: auto; height: 200px; width: 200px; }"
-      ".container { height: 500px; }"
-      ".innerPadding { height: 10px; }"
-      "#sticky { position: sticky; top: 25px; height: 50px; }</style>"
-      "<div id='scroller' class='composited'>"
-      "  <div class='composited container'>"
-      "    <div class='composited container'>"
-      "      <div class='innerPadding'></div>"
-      "      <div id='sticky' class='composited'></div>"
-      "  </div></div></div>");
+  SetBodyInnerHTML(R"HTML(
+    <style>.composited { backface-visibility: hidden; }
+    #scroller { overflow: auto; height: 200px; width: 200px; }
+    .container { height: 500px; }
+    .innerPadding { height: 10px; }
+    #sticky { position: sticky; top: 25px; height: 50px; }</style>
+    <div id='scroller' class='composited'>
+      <div class='composited container'>
+        <div class='composited container'>
+          <div class='innerPadding'></div>
+          <div id='sticky' class='composited'></div>
+      </div></div></div>
+  )HTML");
 
   PaintLayer* sticky_layer =
       ToLayoutBox(GetLayoutObjectByElementId("sticky"))->Layer();
@@ -2069,20 +2106,21 @@ TEST_P(CompositedLayerMappingTest, StickyPositionMainThreadOffset) {
 }
 
 TEST_P(CompositedLayerMappingTest, StickyPositionNotSquashed) {
-  SetBodyInnerHTML(
-      "<style>"
-      "#scroller { overflow: auto; height: 200px; }"
-      "#sticky1, #sticky2, #sticky3 {position: sticky; top: 0; width: 50px;"
-      "    height: 50px; background: rgba(0, 128, 0, 0.5);}"
-      "#sticky1 {backface-visibility: hidden;}"
-      ".spacer {height: 2000px;}"
-      "</style>"
-      "<div id='scroller'>"
-      "  <div id='sticky1'></div>"
-      "  <div id='sticky2'></div>"
-      "  <div id='sticky3'></div>"
-      "  <div class='spacer'></div>"
-      "</div>");
+  SetBodyInnerHTML(R"HTML(
+    <style>
+    #scroller { overflow: auto; height: 200px; }
+    #sticky1, #sticky2, #sticky3 {position: sticky; top: 0; width: 50px;
+        height: 50px; background: rgba(0, 128, 0, 0.5);}
+    #sticky1 {backface-visibility: hidden;}
+    .spacer {height: 2000px;}
+    </style>
+    <div id='scroller'>
+      <div id='sticky1'></div>
+      <div id='sticky2'></div>
+      <div id='sticky3'></div>
+      <div class='spacer'></div>
+    </div>
+  )HTML");
 
   PaintLayer* sticky1 =
       ToLayoutBlock(GetLayoutObjectByElementId("sticky1"))->Layer();
@@ -2111,19 +2149,20 @@ TEST_P(CompositedLayerMappingTest, StickyPositionNotSquashed) {
 
 TEST_P(CompositedLayerMappingTest,
        LayerPositionForStickyElementInCompositedScroller) {
-  SetBodyInnerHTML(
-      "<style>"
-      " .scroller { overflow: scroll; width: 200px; height: 600px; }"
-      " .composited { will-change:transform; }"
-      " .perspective { perspective: 150px; }"
-      " .box { position: sticky; width: 185px; height: 50px; top: 0px; }"
-      " .container { width: 100%; height: 1000px; }"
-      "</style>"
-      "<div id='scroller' class='composited scroller'>"
-      " <div class='composited container'>"
-      "  <div id='sticky' class='perspective box'></div>"
-      " </div>"
-      "</div>");
+  SetBodyInnerHTML(R"HTML(
+    <style>
+     .scroller { overflow: scroll; width: 200px; height: 600px; }
+     .composited { will-change:transform; }
+     .perspective { perspective: 150px; }
+     .box { position: sticky; width: 185px; height: 50px; top: 0px; }
+     .container { width: 100%; height: 1000px; }
+    </style>
+    <div id='scroller' class='composited scroller'>
+     <div class='composited container'>
+      <div id='sticky' class='perspective box'></div>
+     </div>
+    </div>
+  )HTML");
 
   LayoutBoxModelObject* sticky =
       ToLayoutBoxModelObject(GetLayoutObjectByElementId("sticky"));
@@ -2162,18 +2201,19 @@ TEST_P(CompositedLayerMappingTest,
 
 TEST_P(CompositedLayerMappingTest,
        LayerPositionForStickyElementInNonCompositedScroller) {
-  SetBodyInnerHTML(
-      "<style>"
-      " .scroller { overflow: scroll; width: 200px; height: 600px; }"
-      " .composited { will-change:transform; }"
-      " .box { position: sticky; width: 185px; height: 50px; top: 0px; }"
-      " .container { width: 100%; height: 1000px; }"
-      "</style>"
-      "<div id='scroller' class='scroller'>"
-      " <div class='composited container'>"
-      "  <div id='sticky' class='box'></div>"
-      " </div>"
-      "</div>");
+  SetBodyInnerHTML(R"HTML(
+    <style>
+     .scroller { overflow: scroll; width: 200px; height: 600px; }
+     .composited { will-change:transform; }
+     .box { position: sticky; width: 185px; height: 50px; top: 0px; }
+     .container { width: 100%; height: 1000px; }
+    </style>
+    <div id='scroller' class='scroller'>
+     <div class='composited container'>
+      <div id='sticky' class='box'></div>
+     </div>
+    </div>
+  )HTML");
 
   CompositedLayerMapping* mapping =
       ToLayoutBlock(GetLayoutObjectByElementId("sticky"))
@@ -2198,10 +2238,11 @@ TEST_P(CompositedLayerMappingTest,
        TransformedRasterizationDisallowedForDirectReasons) {
   // This test verifies layers with direct compositing reasons won't have
   // transformed rasterization, i.e. should raster in local space.
-  SetBodyInnerHTML(
-      "<div id='target1' style='transform:translateZ(0);'>foo</div>"
-      "<div id='target2' style='will-change:opacity;'>bar</div>"
-      "<div id='target3' style='backface-visibility:hidden;'>ham</div>");
+  SetBodyInnerHTML(R"HTML(
+    <div id='target1' style='transform:translateZ(0);'>foo</div>
+    <div id='target2' style='will-change:opacity;'>bar</div>
+    <div id='target3' style='backface-visibility:hidden;'>ham</div>
+  )HTML");
 
   {
     LayoutObject* target = GetLayoutObjectByElementId("target1");
@@ -2239,12 +2280,13 @@ TEST_P(CompositedLayerMappingTest, TransformedRasterizationForInlineTransform) {
   // This test verifies we allow layers that are indirectly composited due to
   // an inline transform (but no direct reason otherwise) to raster in the
   // device space for higher quality.
-  SetBodyInnerHTML(
-      "<div style='will-change:transform; width:500px; "
-      "height:20px;'>composited</div>"
-      "<div id='target' style='transform:translate(1.5px,-10.5px); "
-      "width:500px; height:20px;'>indirectly composited due to inline "
-      "transform</div>");
+  SetBodyInnerHTML(R"HTML(
+    <div style='will-change:transform; width:500px;
+    height:20px;'>composited</div>
+    <div id='target' style='transform:translate(1.5px,-10.5px);
+    width:500px; height:20px;'>indirectly composited due to inline
+    transform</div>
+  )HTML");
 
   LayoutObject* target = GetLayoutObjectByElementId("target");
   ASSERT_TRUE(target && target->IsBox());
@@ -2260,16 +2302,17 @@ TEST_P(CompositedLayerMappingTest, TransformedRasterizationForInlineTransform) {
 // element is promoted for another reason we do remove its composited sticky
 // constraint as it doesn't need to move on the compositor.
 TEST_P(CompositedLayerMappingTest, CompositedStickyConstraintRemovedAndAdded) {
-  SetBodyInnerHTML(
-      "<style>"
-      ".scroller { overflow: auto; height: 200px; }"
-      ".sticky { position: sticky; top: 0; width: 10px; height: 10px; }"
-      ".composited { will-change: transform; }"
-      "</style>"
-      "<div class='composited scroller'>"
-      "  <div id='sticky' class='composited sticky'></div>"
-      "  <div id='spacer' style='height: 2000px;'></div>"
-      "</div>");
+  SetBodyInnerHTML(R"HTML(
+    <style>
+    .scroller { overflow: auto; height: 200px; }
+    .sticky { position: sticky; top: 0; width: 10px; height: 10px; }
+    .composited { will-change: transform; }
+    </style>
+    <div class='composited scroller'>
+      <div id='sticky' class='composited sticky'></div>
+      <div id='spacer' style='height: 2000px;'></div>
+    </div>
+  )HTML");
   GetDocument().View()->UpdateAllLifecyclePhases();
   PaintLayer* sticky_layer =
       ToLayoutBoxModelObject(GetLayoutObjectByElementId("sticky"))->Layer();
@@ -2308,21 +2351,22 @@ TEST_P(CompositedLayerMappingTest, CompositedStickyConstraintRemovedAndAdded) {
 TEST_P(CompositedLayerMappingTest, ScrollingContainerBoundsChange) {
   GetDocument().GetFrame()->GetSettings()->SetPreferCompositingToLCDTextEnabled(
       true);
-  SetBodyInnerHTML(
-      "<style>"
-      "  ::-webkit-scrollbar { width: 0; height: 0; }"
-      "  body { margin: 0; }"
-      "  #scroller { overflow-y: scroll; }"
-      "  #content {"
-      "    width: 100px;"
-      "    height: 100px;"
-      "    margin-top: 50px;"
-      "    margin-bottom: -50px;"
-      "  }"
-      "</style>"
-      "<div id='scroller'>"
-      "  <div id='content'></div>"
-      "</div");
+  SetBodyInnerHTML(R"HTML(
+    <style>
+      ::-webkit-scrollbar { width: 0; height: 0; }
+      body { margin: 0; }
+      #scroller { overflow-y: scroll; }
+      #content {
+        width: 100px;
+        height: 100px;
+        margin-top: 50px;
+        margin-bottom: -50px;
+      }
+    </style>
+    <div id='scroller'>
+      <div id='content'></div>
+    </div
+  )HTML");
 
   GetDocument().View()->UpdateAllLifecyclePhases();
   Element* scrollerElement = GetDocument().getElementById("scroller");
@@ -2367,12 +2411,13 @@ TEST_P(CompositedLayerMappingTest, MainFrameLayerBackgroundColor) {
 }
 
 TEST_P(CompositedLayerMappingTest, ScrollingLayerBackgroundColor) {
-  SetBodyInnerHTML(
-      "<style>.color {background-color: blue}</style>"
-      "<div id='target' style='width: 100px; height: 100px;"
-      "     overflow: scroll; will-change: transform'>"
-      "  <div style='height: 200px'></div>"
-      "</div>");
+  SetBodyInnerHTML(R"HTML(
+    <style>.color {background-color: blue}</style>
+    <div id='target' style='width: 100px; height: 100px;
+         overflow: scroll; will-change: transform'>
+      <div style='height: 200px'></div>
+    </div>
+  )HTML");
 
   auto* target = GetDocument().getElementById("target");
   auto* mapping = ToLayoutBoxModelObject(target->GetLayoutObject())
@@ -2394,10 +2439,11 @@ TEST_P(CompositedLayerMappingTest, ScrollingLayerBackgroundColor) {
 TEST_P(CompositedLayerMappingTest, ClipPathNoChildContainmentLayer) {
   // This test verifies only the presence of clip path does not induce child
   // containment layer.
-  SetBodyInnerHTML(
-      "<div id='target' style='width:100px; height:100px; clip-path:circle();'>"
-      "  <div style='will-change:transform; width:200px; height:200px;'></div>"
-      "</div>");
+  SetBodyInnerHTML(R"HTML(
+    <div id='target' style='width:100px; height:100px; clip-path:circle();'>
+      <div style='will-change:transform; width:200px; height:200px;'></div>
+    </div>
+  )HTML");
   auto* mapping = ToLayoutBoxModelObject(GetLayoutObjectByElementId("target"))
                       ->Layer()
                       ->GetCompositedLayerMapping();
@@ -2407,13 +2453,14 @@ TEST_P(CompositedLayerMappingTest, ClipPathNoChildContainmentLayer) {
 
 TEST_P(CompositedLayerMappingTest, ForegroundLayerSizing) {
   // This test verifies the foreground layer is sized to the clip rect.
-  SetBodyInnerHTML(
-      "<div id='target' style='position:relative; z-index:0; width:100px; "
-      "height:100px; border:10px solid black; overflow:hidden;'>"
-      "  <div style='width:200px; height:200px; background:green;'></div>"
-      "  <div style='position:relative; z-index:-1; "
-      "will-change:transform;'></div>"
-      "</div>");
+  SetBodyInnerHTML(R"HTML(
+    <div id='target' style='position:relative; z-index:0; width:100px;
+    height:100px; border:10px solid black; overflow:hidden;'>
+      <div style='width:200px; height:200px; background:green;'></div>
+      <div style='position:relative; z-index:-1;
+    will-change:transform;'></div>
+    </div>
+  )HTML");
   auto* mapping = ToLayoutBoxModelObject(GetLayoutObjectByElementId("target"))
                       ->Layer()
                       ->GetCompositedLayerMapping();

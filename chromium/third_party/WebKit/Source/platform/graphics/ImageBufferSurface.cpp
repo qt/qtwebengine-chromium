@@ -69,7 +69,7 @@ void ImageBufferSurface::Draw(GraphicsContext& context,
                               const FloatRect& dest_rect,
                               const FloatRect& src_rect,
                               SkBlendMode op) {
-  RefPtr<StaticBitmapImage> snapshot =
+  scoped_refptr<StaticBitmapImage> snapshot =
       NewImageSnapshot(kPreferAcceleration, kSnapshotReasonPaint);
   if (!snapshot)
     return;
@@ -80,10 +80,6 @@ void ImageBufferSurface::Draw(GraphicsContext& context,
   DCHECK(!snapshot->IsTextureBacked());
   context.DrawImage(snapshot.get(), Image::kSyncDecode, dest_rect, &src_rect,
                     op);
-}
-
-void ImageBufferSurface::Flush(FlushReason) {
-  Canvas()->flush();
 }
 
 }  // namespace blink

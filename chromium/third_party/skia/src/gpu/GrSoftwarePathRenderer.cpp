@@ -52,6 +52,11 @@ static bool get_unclipped_shape_dev_bounds(const GrShape& shape, const SkMatrix&
     if (!shapeDevBounds.intersect(SkRect::MakeLTRB(INT32_MIN, INT32_MIN, kMaxInt, kMaxInt))) {
         return false;
     }
+    // Make sure that the resulting SkIRect can have representable width and height
+    if (SkScalarRoundToInt(shapeDevBounds.width()) > kMaxInt ||
+        SkScalarRoundToInt(shapeDevBounds.height()) > kMaxInt) {
+        return false;
+    }
     shapeDevBounds.roundOut(devBounds);
     return true;
 }
@@ -157,7 +162,7 @@ void GrSoftwarePathRenderer::DrawToTargetWithShapeMask(
                                               SkIntToScalar(-textureOriginInDeviceSpace.fY));
     maskMatrix.preConcat(viewMatrix);
     paint.addCoverageFragmentProcessor(GrSimpleTextureEffect::Make(
-            std::move(proxy), nullptr, maskMatrix, GrSamplerState::Filter::kNearest));
+            std::move(proxy), maskMatrix, GrSamplerState::Filter::kNearest));
     DrawNonAARect(renderTargetContext, std::move(paint), userStencilSettings, clip, SkMatrix::I(),
                   dstRect, invert);
 }

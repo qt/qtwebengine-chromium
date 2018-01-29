@@ -14,13 +14,13 @@
 #include "base/logging.h"
 #include "base/memory/ptr_util.h"
 #include "base/trace_event/trace_event.h"
-#include "cc/base/filter_operation.h"
-#include "cc/base/filter_operations.h"
 #include "cc/layers/nine_patch_layer.h"
 #include "cc/layers/picture_layer.h"
 #include "cc/layers/solid_color_layer.h"
 #include "cc/layers/surface_layer.h"
 #include "cc/layers/texture_layer.h"
+#include "cc/paint/filter_operation.h"
+#include "cc/paint/filter_operations.h"
 #include "cc/trees/layer_tree_settings.h"
 #include "components/viz/common/frame_sinks/copy_output_request.h"
 #include "components/viz/common/resources/transferable_resource.h"
@@ -73,7 +73,6 @@ class Layer::LayerMirror : public LayerDelegate, LayerObserver {
     if (auto* delegate = source_->delegate())
       delegate->OnPaintLayer(context);
   }
-  void OnDelegatedFrameDamage(const gfx::Rect& damage_rect_in_dip) override {}
   void OnDeviceScaleFactorChanged(float old_device_scale_factor,
                                   float new_device_scale_factor) override {}
 
@@ -170,12 +169,12 @@ Layer::~Layer() {
     child->parent_ = nullptr;
 
   cc_layer_->RemoveFromParent();
-  if (mailbox_release_callback_)
-    mailbox_release_callback_->Run(gpu::SyncToken(), false);
+  if (transfer_release_callback_)
+    transfer_release_callback_->Run(gpu::SyncToken(), false);
 }
 
 std::unique_ptr<Layer> Layer::Clone() const {
-  auto clone = base::MakeUnique<Layer>(type_);
+  auto clone = std::make_unique<Layer>(type_);
 
   // Background filters.
   clone->SetBackgroundBlur(background_blur_sigma_);
@@ -189,16 +188,17 @@ std::unique_ptr<Layer> Layer::Clone() const {
   clone->SetLayerInverted(layer_inverted_);
   clone->SetLayerBlur(layer_blur_sigma_);
   if (alpha_shape_)
-    clone->SetAlphaShape(base::MakeUnique<ShapeRects>(*alpha_shape_));
+    clone->SetAlphaShape(std::make_unique<ShapeRects>(*alpha_shape_));
 
   // cc::Layer state.
   if (surface_layer_) {
-    if (surface_layer_->primary_surface_info().is_valid()) {
-      clone->SetShowPrimarySurface(surface_layer_->primary_surface_info(),
+    if (surface_layer_->primary_surface_id().is_valid()) {
+      clone->SetShowPrimarySurface(surface_layer_->primary_surface_id(),
+                                   frame_size_in_dip_,
                                    surface_layer_->surface_reference_factory());
     }
-    if (surface_layer_->fallback_surface_info().is_valid())
-      clone->SetFallbackSurface(surface_layer_->fallback_surface_info());
+    if (surface_layer_->fallback_surface_id().is_valid())
+      clone->SetFallbackSurfaceId(surface_layer_->fallback_surface_id());
   } else if (type_ == LAYER_SOLID_COLOR) {
     clone->SetColor(GetTargetColor());
   }
@@ -218,7 +218,7 @@ std::unique_ptr<Layer> Layer::Clone() const {
 
 std::unique_ptr<Layer> Layer::Mirror() {
   auto mirror = Clone();
-  mirrors_.emplace_back(base::MakeUnique<LayerMirror>(this, mirror.get()));
+  mirrors_.emplace_back(std::make_unique<LayerMirror>(this, mirror.get()));
   return mirror;
 }
 
@@ -575,7 +575,7 @@ bool Layer::ShouldDraw() const {
 // static
 void Layer::ConvertPointToLayer(const Layer* source,
                                 const Layer* target,
-                                gfx::Point* point) {
+                                gfx::PointF* point) {
   if (source == target)
     return;
 
@@ -729,12 +729,12 @@ void Layer::RemoveTrilinearFilteringRequest() {
     cc_layer_->SetTrilinearFiltering(false);
 }
 
-void Layer::SetTextureMailbox(
-    const viz::TextureMailbox& mailbox,
+void Layer::SetTransferableResource(
+    const viz::TransferableResource& resource,
     std::unique_ptr<viz::SingleReleaseCallback> release_callback,
     gfx::Size texture_size_in_dip) {
   DCHECK(type_ == LAYER_TEXTURED || type_ == LAYER_SOLID_COLOR);
-  DCHECK(mailbox.IsValid());
+  DCHECK(!resource.mailbox_holder.mailbox.IsZero());
   DCHECK(release_callback);
   if (!texture_layer_.get()) {
     scoped_refptr<cc::TextureLayer> new_layer =
@@ -746,10 +746,10 @@ void Layer::SetTextureMailbox(
     // the frame_size_in_dip_ was for a previous (different) |texture_layer_|.
     frame_size_in_dip_ = gfx::Size();
   }
-  if (mailbox_release_callback_)
-    mailbox_release_callback_->Run(gpu::SyncToken(), false);
-  mailbox_release_callback_ = std::move(release_callback);
-  mailbox_ = mailbox;
+  if (transfer_release_callback_)
+    transfer_release_callback_->Run(gpu::SyncToken(), false);
+  transfer_release_callback_ = std::move(release_callback);
+  transfer_resource_ = resource;
   SetTextureSize(texture_size_in_dip);
 }
 
@@ -773,7 +773,8 @@ bool Layer::TextureFlipped() const {
 }
 
 void Layer::SetShowPrimarySurface(
-    const viz::SurfaceInfo& surface_info,
+    const viz::SurfaceId& surface_id,
+    const gfx::Size& frame_size_in_dip,
     scoped_refptr<viz::SurfaceReferenceFactory> ref_factory) {
   DCHECK(type_ == LAYER_TEXTURED || type_ == LAYER_SOLID_COLOR);
 
@@ -784,36 +785,35 @@ void Layer::SetShowPrimarySurface(
     surface_layer_ = new_layer;
   }
 
-  surface_layer_->SetPrimarySurfaceInfo(surface_info);
+  surface_layer_->SetPrimarySurfaceId(surface_id);
 
-  frame_size_in_dip_ = gfx::ConvertSizeToDIP(surface_info.device_scale_factor(),
-                                             surface_info.size_in_pixels());
+  frame_size_in_dip_ = frame_size_in_dip;
   RecomputeDrawsContentAndUVRect();
 
   for (const auto& mirror : mirrors_)
-    mirror->dest()->SetShowPrimarySurface(surface_info, ref_factory);
+    mirror->dest()->SetShowPrimarySurface(surface_id, frame_size_in_dip,
+                                          ref_factory);
 }
 
-void Layer::SetFallbackSurface(const viz::SurfaceInfo& surface_info) {
+void Layer::SetFallbackSurfaceId(const viz::SurfaceId& surface_id) {
   DCHECK(type_ == LAYER_TEXTURED || type_ == LAYER_SOLID_COLOR);
   DCHECK(surface_layer_);
 
-  // TODO(fsamuel): We should compute the gutter in the display compositor.
-  surface_layer_->SetFallbackSurfaceInfo(surface_info);
+  surface_layer_->SetFallbackSurfaceId(surface_id);
 
   for (const auto& mirror : mirrors_)
-    mirror->dest()->SetFallbackSurface(surface_info);
+    mirror->dest()->SetFallbackSurfaceId(surface_id);
 }
 
-const viz::SurfaceInfo* Layer::GetPrimarySurfaceInfo() const {
+const viz::SurfaceId* Layer::GetPrimarySurfaceId() const {
   if (surface_layer_)
-    return &surface_layer_->primary_surface_info();
+    return &surface_layer_->primary_surface_id();
   return nullptr;
 }
 
-const viz::SurfaceInfo* Layer::GetFallbackSurfaceInfo() const {
+const viz::SurfaceId* Layer::GetFallbackSurfaceId() const {
   if (surface_layer_)
-    return &surface_layer_->fallback_surface_info();
+    return &surface_layer_->fallback_surface_id();
   return nullptr;
 }
 
@@ -827,10 +827,10 @@ void Layer::SetShowSolidColorContent() {
   SwitchToLayer(new_layer);
   solid_color_layer_ = new_layer;
 
-  mailbox_ = viz::TextureMailbox();
-  if (mailbox_release_callback_) {
-    mailbox_release_callback_->Run(gpu::SyncToken(), false);
-    mailbox_release_callback_.reset();
+  transfer_resource_ = viz::TransferableResource();
+  if (transfer_release_callback_) {
+    transfer_release_callback_->Run(gpu::SyncToken(), false);
+    transfer_release_callback_.reset();
   }
   RecomputeDrawsContentAndUVRect();
 }
@@ -882,10 +882,12 @@ SkColor Layer::background_color() const {
 }
 
 bool Layer::SchedulePaint(const gfx::Rect& invalid_rect) {
-  if ((type_ == LAYER_SOLID_COLOR && !texture_layer_.get()) ||
-      type_ == LAYER_NINE_PATCH || (!delegate_ && !mailbox_.IsValid())) {
+  if (type_ == LAYER_SOLID_COLOR && !texture_layer_)
     return false;
-  }
+  if (type_ == LAYER_NINE_PATCH)
+    return false;
+  if (!delegate_ && transfer_resource_.mailbox_holder.mailbox.IsZero())
+    return false;
 
   damaged_region_.Union(invalid_rect);
   if (layer_mask_)
@@ -905,7 +907,7 @@ void Layer::ScheduleDraw() {
 void Layer::SendDamagedRects() {
   if (damaged_region_.IsEmpty())
     return;
-  if (!delegate_ && !mailbox_.IsValid())
+  if (!delegate_ && transfer_resource_.mailbox_holder.mailbox.IsZero())
     return;
   if (content_layer_ && deferred_paint_requests_)
     return;
@@ -962,12 +964,6 @@ void Layer::OnDeviceScaleFactorChanged(float device_scale_factor) {
     child->OnDeviceScaleFactorChanged(device_scale_factor);
   if (layer_mask_)
     layer_mask_->OnDeviceScaleFactorChanged(device_scale_factor);
-}
-
-void Layer::OnDelegatedFrameDamage(const gfx::Rect& damage_rect_in_dip) {
-  DCHECK(surface_layer_.get());
-  if (delegate_)
-    delegate_->OnDelegatedFrameDamage(damage_rect_in_dip);
 }
 
 void Layer::SetDidScrollCallback(
@@ -1039,13 +1035,13 @@ size_t Layer::GetApproximateUnsharedMemoryUsage() const {
   return 0;
 }
 
-bool Layer::PrepareTextureMailbox(
-    viz::TextureMailbox* mailbox,
+bool Layer::PrepareTransferableResource(
+    viz::TransferableResource* resource,
     std::unique_ptr<viz::SingleReleaseCallback>* release_callback) {
-  if (!mailbox_release_callback_)
+  if (!transfer_release_callback_)
     return false;
-  *mailbox = mailbox_;
-  *release_callback = std::move(mailbox_release_callback_);
+  *resource = transfer_resource_;
+  *release_callback = std::move(transfer_release_callback_);
   return true;
 }
 
@@ -1072,12 +1068,6 @@ Layer::TakeDebugInfo(cc::Layer* layer) {
 
 void Layer::didUpdateMainThreadScrollingReasons() {}
 void Layer::didChangeScrollbarsHidden(bool) {}
-
-void Layer::DidChangeLayerOpacity(float old_opacity, float new_opacity) {
-  DCHECK_NE(old_opacity, new_opacity);
-  if (delegate_)
-    delegate_->OnLayerOpacityChanged(old_opacity, new_opacity);
-}
 
 void Layer::CollectAnimators(
     std::vector<scoped_refptr<LayerAnimator>>* animators) {
@@ -1112,30 +1102,30 @@ void Layer::StackRelativeTo(Layer* child, Layer* other, bool above) {
 }
 
 bool Layer::ConvertPointForAncestor(const Layer* ancestor,
-                                    gfx::Point* point) const {
+                                    gfx::PointF* point) const {
   gfx::Transform transform;
   bool result = GetTargetTransformRelativeTo(ancestor, &transform);
-  auto p = gfx::Point3F(gfx::PointF(*point));
+  auto p = gfx::Point3F(*point);
   transform.TransformPoint(&p);
-  *point = gfx::ToFlooredPoint(p.AsPointF());
+  *point = p.AsPointF();
   return result;
 }
 
 bool Layer::ConvertPointFromAncestor(const Layer* ancestor,
-                                     gfx::Point* point) const {
+                                     gfx::PointF* point) const {
   gfx::Transform transform;
   bool result = GetTargetTransformRelativeTo(ancestor, &transform);
-  auto p = gfx::Point3F(gfx::PointF(*point));
+  auto p = gfx::Point3F(*point);
   transform.TransformPointReverse(&p);
-  *point = gfx::ToFlooredPoint(p.AsPointF());
+  *point = p.AsPointF();
   return result;
 }
 
-void Layer::SetBoundsFromAnimation(const gfx::Rect& bounds) {
+void Layer::SetBoundsFromAnimation(const gfx::Rect& bounds,
+                                   PropertyChangeReason reason) {
   if (bounds == bounds_)
     return;
 
-  base::Closure closure;
   const gfx::Rect old_bounds = bounds_;
   bounds_ = bounds;
 
@@ -1143,7 +1133,7 @@ void Layer::SetBoundsFromAnimation(const gfx::Rect& bounds) {
   RecomputePosition();
 
   if (delegate_)
-    delegate_->OnLayerBoundsChanged(old_bounds);
+    delegate_->OnLayerBoundsChanged(old_bounds, reason);
 
   if (bounds.size() == old_bounds.size()) {
     // Don't schedule a draw if we're invisible. We'll schedule one
@@ -1161,16 +1151,23 @@ void Layer::SetBoundsFromAnimation(const gfx::Rect& bounds) {
   }
 }
 
-void Layer::SetTransformFromAnimation(const gfx::Transform& transform) {
+void Layer::SetTransformFromAnimation(const gfx::Transform& transform,
+                                      PropertyChangeReason reason) {
   cc_layer_->SetTransform(transform);
+  if (delegate_)
+    delegate_->OnLayerTransformed(reason);
 }
 
-void Layer::SetOpacityFromAnimation(float opacity) {
+void Layer::SetOpacityFromAnimation(float opacity,
+                                    PropertyChangeReason reason) {
   cc_layer_->SetOpacity(opacity);
+  if (delegate_)
+    delegate_->OnLayerOpacityChanged(reason);
   ScheduleDraw();
 }
 
-void Layer::SetVisibilityFromAnimation(bool visible) {
+void Layer::SetVisibilityFromAnimation(bool visible,
+                                       PropertyChangeReason reason) {
   if (visible_ == visible)
     return;
 
@@ -1178,23 +1175,26 @@ void Layer::SetVisibilityFromAnimation(bool visible) {
   cc_layer_->SetHideLayerAndSubtree(!visible_);
 }
 
-void Layer::SetBrightnessFromAnimation(float brightness) {
+void Layer::SetBrightnessFromAnimation(float brightness,
+                                       PropertyChangeReason reason) {
   layer_brightness_ = brightness;
   SetLayerFilters();
 }
 
-void Layer::SetGrayscaleFromAnimation(float grayscale) {
+void Layer::SetGrayscaleFromAnimation(float grayscale,
+                                      PropertyChangeReason reason) {
   layer_grayscale_ = grayscale;
   SetLayerFilters();
 }
 
-void Layer::SetColorFromAnimation(SkColor color) {
+void Layer::SetColorFromAnimation(SkColor color, PropertyChangeReason reason) {
   DCHECK_EQ(type_, LAYER_SOLID_COLOR);
   cc_layer_->SetBackgroundColor(color);
   SetFillsBoundsOpaquely(SkColorGetA(color) == 0xFF);
 }
 
-void Layer::SetTemperatureFromAnimation(float temperature) {
+void Layer::SetTemperatureFromAnimation(float temperature,
+                                        PropertyChangeReason reason) {
   layer_temperature_ = temperature;
 
   // If we only tone down the blue scale, the screen will look very green so we
@@ -1294,10 +1294,6 @@ void Layer::CreateCcLayer() {
   cc_layer_->SetLayerClient(this);
   cc_layer_->SetElementId(cc::ElementId(cc_layer_->id()));
   RecomputePosition();
-}
-
-gfx::Transform Layer::transform() const {
-  return cc_layer_->transform();
 }
 
 void Layer::RecomputeDrawsContentAndUVRect() {

@@ -146,7 +146,6 @@
 
 #include <openssl/bio.h>
 #include <openssl/buf.h>
-#include <openssl/lhash.h>
 #include <openssl/pem.h>
 #include <openssl/span.h>
 #include <openssl/ssl3.h>
@@ -157,6 +156,11 @@
 #if !defined(OPENSSL_WINDOWS)
 #include <sys/time.h>
 #endif
+
+// NGINX needs this #include. Consider revisiting this after NGINX 1.14.0 has
+// been out for a year or so (assuming that they fix it in that release.) See
+// https://boringssl-review.googlesource.com/c/boringssl/+/21664.
+#include <openssl/hmac.h>
 
 // Forward-declare struct timeval. On Windows, it is defined in winsock2.h and
 // Windows headers define too many macros to be included in public headers.
@@ -588,6 +592,8 @@ OPENSSL_EXPORT int DTLSv1_handle_timeout(SSL *ssl);
 #define DTLS1_2_VERSION 0xfefd
 
 #define TLS1_3_DRAFT_VERSION 0x7f12
+#define TLS1_3_DRAFT21_VERSION 0x7f15
+#define TLS1_3_DRAFT22_VERSION 0x7e04
 #define TLS1_3_EXPERIMENT_VERSION 0x7e01
 #define TLS1_3_EXPERIMENT2_VERSION 0x7e02
 #define TLS1_3_EXPERIMENT3_VERSION 0x7e03
@@ -973,6 +979,25 @@ OPENSSL_EXPORT int SSL_set_ocsp_response(SSL *ssl,
 // before TLS 1.2.
 #define SSL_SIGN_RSA_PKCS1_MD5_SHA1 0xff01
 
+// SSL_get_signature_algorithm_name returns a human-readable name for |sigalg|,
+// or NULL if unknown. If |include_curve| is one, the curve for ECDSA algorithms
+// is included as in TLS 1.3. Otherwise, it is excluded as in TLS 1.2.
+OPENSSL_EXPORT const char *SSL_get_signature_algorithm_name(uint16_t sigalg,
+                                                            int include_curve);
+
+// SSL_get_signature_algorithm_key_type returns the key type associated with
+// |sigalg| as an |EVP_PKEY_*| constant or |EVP_PKEY_NONE| if unknown.
+OPENSSL_EXPORT int SSL_get_signature_algorithm_key_type(uint16_t sigalg);
+
+// SSL_get_signature_algorithm_digest returns the digest function associated
+// with |sigalg| or |NULL| if |sigalg| has no prehash (Ed25519) or is unknown.
+OPENSSL_EXPORT const EVP_MD *SSL_get_signature_algorithm_digest(
+    uint16_t sigalg);
+
+// SSL_is_signature_algorithm_rsa_pss returns one if |sigalg| is an RSA-PSS
+// signature algorithm and zero otherwise.
+OPENSSL_EXPORT int SSL_is_signature_algorithm_rsa_pss(uint16_t sigalg);
+
 // SSL_CTX_set_signing_algorithm_prefs configures |ctx| to use |prefs| as the
 // preference list when signing with |ctx|'s private key. It returns one on
 // success and zero on error. |prefs| should not include the internal-only value
@@ -1042,8 +1067,8 @@ OPENSSL_EXPORT int SSL_use_RSAPrivateKey_ASN1(SSL *ssl, const uint8_t *der,
 // |type| parameter is one of the |SSL_FILETYPE_*| values and determines whether
 // the file's contents are read as PEM or DER.
 
-#define SSL_FILETYPE_ASN1 X509_FILETYPE_ASN1
-#define SSL_FILETYPE_PEM X509_FILETYPE_PEM
+#define SSL_FILETYPE_PEM 1
+#define SSL_FILETYPE_ASN1 2
 
 OPENSSL_EXPORT int SSL_CTX_use_RSAPrivateKey_file(SSL_CTX *ctx,
                                                   const char *file,
@@ -1100,16 +1125,7 @@ enum ssl_private_key_result_t {
 // key hooks. This is used to off-load signing operations to a custom,
 // potentially asynchronous, backend. Metadata about the key such as the type
 // and size are parsed out of the certificate.
-//
-// TODO(davidben): This API has a number of legacy hooks. Remove the last
-// consumer of |sign_digest| and trim it.
 struct ssl_private_key_method_st {
-  // type is ignored and should be NULL.
-  int (*type)(SSL *ssl);
-
-  // max_signature_len is ignored and should be NULL.
-  size_t (*max_signature_len)(SSL *ssl);
-
   // sign signs the message |in| in using the specified signature algorithm. On
   // success, it returns |ssl_private_key_success| and writes at most |max_out|
   // bytes of signature data to |out| and sets |*out_len| to the number of bytes
@@ -1130,30 +1146,6 @@ struct ssl_private_key_method_st {
                                         size_t max_out,
                                         uint16_t signature_algorithm,
                                         const uint8_t *in, size_t in_len);
-
-  // sign_digest signs |in_len| bytes of digest from |in|. |md| is the hash
-  // function used to calculate |in|. On success, it returns
-  // |ssl_private_key_success| and writes at most |max_out| bytes of signature
-  // data to |out|. On failure, it returns |ssl_private_key_failure|. If the
-  // operation has not completed, it returns |ssl_private_key_retry|. |sign|
-  // should arrange for the high-level operation on |ssl| to be retried when the
-  // operation is completed. This will result in a call to |complete|.
-  //
-  // If the key is an RSA key, implementations must use PKCS#1 padding. |in| is
-  // the digest itself, so the DigestInfo prefix, if any, must be prepended by
-  // |sign|. If |md| is |EVP_md5_sha1|, there is no prefix.
-  //
-  // It is an error to call |sign_digest| while another private key operation is
-  // in progress on |ssl|.
-  //
-  // This function is deprecated. Implement |sign| instead.
-  //
-  // TODO(davidben): Remove this function.
-  enum ssl_private_key_result_t (*sign_digest)(SSL *ssl, uint8_t *out,
-                                               size_t *out_len, size_t max_out,
-                                               const EVP_MD *md,
-                                               const uint8_t *in,
-                                               size_t in_len);
 
   // decrypt decrypts |in_len| bytes of encrypted data from |in|. On success it
   // returns |ssl_private_key_success|, writes at most |max_out| bytes of
@@ -1635,7 +1627,6 @@ OPENSSL_EXPORT int SSL_CTX_add_server_custom_ext(
 // established, an |SSL_SESSION| may be shared by multiple |SSL| objects on
 // different threads and must not be modified.
 
-DECLARE_LHASH_OF(SSL_SESSION)
 DECLARE_PEM_rw(SSL_SESSION, SSL_SESSION)
 
 // SSL_SESSION_new returns a newly-allocated blank |SSL_SESSION| or NULL on
@@ -2023,7 +2014,7 @@ OPENSSL_EXPORT SSL_SESSION *SSL_magic_pending_session_ptr(void);
 // 1) One can simply set the keys with |SSL_CTX_set_tlsext_ticket_keys|.
 // 2) One can configure an |EVP_CIPHER_CTX| and |HMAC_CTX| directly for
 //    encryption and authentication.
-// 3) One can configure an |SSL_TICKET_ENCRYPTION_METHOD| to have more control
+// 3) One can configure an |SSL_TICKET_AEAD_METHOD| to have more control
 //    and the option of asynchronous decryption.
 //
 // An attacker that compromises a server's session ticket key can impersonate
@@ -2100,8 +2091,8 @@ enum ssl_ticket_aead_result_t {
   ssl_ticket_aead_error,
 };
 
-// ssl_ticket_aead_method_st (aka |SSL_TICKET_ENCRYPTION_METHOD|) contains
-// methods for encrypting and decrypting session tickets.
+// ssl_ticket_aead_method_st (aka |SSL_TICKET_AEAD_METHOD|) contains methods
+// for encrypting and decrypting session tickets.
 struct ssl_ticket_aead_method_st {
   // max_overhead returns the maximum number of bytes of overhead that |seal|
   // may add.
@@ -3231,6 +3222,8 @@ enum tls13_variant_t {
   tls13_experiment = 1,
   tls13_experiment2 = 2,
   tls13_experiment3 = 3,
+  tls13_draft21 = 4,
+  tls13_draft22 = 5,
 };
 
 // SSL_CTX_set_tls13_variant sets which variant of TLS 1.3 we negotiate. On the
@@ -3952,18 +3945,6 @@ OPENSSL_EXPORT int SSL_set_tmp_ecdh(SSL *ssl, const EC_KEY *ec_key);
 OPENSSL_EXPORT int SSL_add_dir_cert_subjects_to_stack(STACK_OF(X509_NAME) *out,
                                                       const char *dir);
 
-// SSL_set_private_key_digest_prefs copies |num_digests| NIDs from |digest_nids|
-// into |ssl|. These digests will be used, in decreasing order of preference,
-// when signing with |ssl|'s private key. It returns one on success and zero on
-// error.
-//
-// Use |SSL_set_signing_algorithm_prefs| instead.
-//
-// TODO(davidben): Remove this API when callers have been updated.
-OPENSSL_EXPORT int SSL_set_private_key_digest_prefs(SSL *ssl,
-                                                    const int *digest_nids,
-                                                    size_t num_digests);
-
 // SSL_set_verify_result calls |abort| unless |result| is |X509_V_OK|.
 //
 // TODO(davidben): Remove this function once it has been removed from
@@ -4042,8 +4023,7 @@ extern "C++" OPENSSL_EXPORT void SSL_CTX_sess_set_get_cb(
 // This structures are exposed for historical reasons, but access to them is
 // deprecated.
 
-// TODO(davidben): Remove this forward declaration when is |SSL_SESSION| is
-// opaque.
+// TODO(davidben): Remove this forward declaration when |SSL_SESSION| is opaque.
 typedef struct ssl_x509_method_st SSL_X509_METHOD;
 
 #define SSL_MAX_SSL_SESSION_ID_LENGTH 32
@@ -4574,6 +4554,7 @@ OPENSSL_EXPORT bool SealRecord(SSL *ssl, Span<uint8_t> out_prefix,
 #define SSL_R_UNEXPECTED_EXTENSION_ON_EARLY_DATA 279
 #define SSL_R_NO_SUPPORTED_VERSIONS_ENABLED 280
 #define SSL_R_APPLICATION_DATA_INSTEAD_OF_HANDSHAKE 281
+#define SSL_R_EMPTY_HELLO_RETRY_REQUEST 282
 #define SSL_R_SSLV3_ALERT_CLOSE_NOTIFY 1000
 #define SSL_R_SSLV3_ALERT_UNEXPECTED_MESSAGE 1010
 #define SSL_R_SSLV3_ALERT_BAD_RECORD_MAC 1020

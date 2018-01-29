@@ -65,12 +65,8 @@ class FakeWebRtcVoiceEngine : public webrtc::VoEBase {
     inited_ = true;
     return 0;
   }
-  WEBRTC_FUNC(Terminate, ()) {
+  void Terminate() override {
     inited_ = false;
-    return 0;
-  }
-  webrtc::AudioDeviceModule* audio_device_module() override {
-    return nullptr;
   }
   webrtc::voe::TransmitMixer* transmit_mixer() override {
     return transmit_mixer_;
@@ -99,6 +95,8 @@ class FakeWebRtcVoiceEngine : public webrtc::VoEBase {
   WEBRTC_STUB(StartSend, (int channel));
   WEBRTC_STUB(StopPlayout, (int channel));
   WEBRTC_STUB(StopSend, (int channel));
+  WEBRTC_STUB(SetPlayout, (bool enable));
+  WEBRTC_STUB(SetRecording, (bool enable));
 
   size_t GetNetEqCapacity() const {
     auto ch = channels_.find(last_channel_);

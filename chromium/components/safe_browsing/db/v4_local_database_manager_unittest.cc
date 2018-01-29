@@ -355,7 +355,7 @@ class V4LocalDatabaseManagerTest : public PlatformTest {
   }
 
   void StartLocalDatabaseManager() {
-    v4_local_database_manager_->StartOnIOThread(NULL,
+    v4_local_database_manager_->StartOnIOThread(nullptr,
                                                 GetTestV4ProtocolConfig());
   }
 
@@ -765,34 +765,11 @@ TEST_F(V4LocalDatabaseManagerTest, UsingWeakPtrDropsCallback) {
   WaitForTasksOnTaskRunner();
 }
 
-TEST_F(V4LocalDatabaseManagerTest, TestMatchCsdWhitelistUrl) {
-  SetupFakeManager();
-  GURL good_url("http://safe.com");
-  GURL other_url("http://iffy.com");
-
-  StoreAndHashPrefixes store_and_hash_prefixes;
-  store_and_hash_prefixes.emplace_back(GetUrlCsdWhitelistId(),
-                                       HashForUrl(good_url));
-
-  ReplaceV4Database(store_and_hash_prefixes, false /* not available */);
-  // No match, but since we never loaded the whitelist (not available),
-  // it defaults to true.
-  EXPECT_TRUE(v4_local_database_manager_->MatchCsdWhitelistUrl(good_url));
-
-  ReplaceV4Database(store_and_hash_prefixes, true /* available */);
-  // Not whitelisted.
-  EXPECT_FALSE(v4_local_database_manager_->MatchCsdWhitelistUrl(other_url));
-  // Whitelisted.
-  EXPECT_TRUE(v4_local_database_manager_->MatchCsdWhitelistUrl(good_url));
-
-  EXPECT_FALSE(FakeV4LocalDatabaseManager::PerformFullHashCheckCalled(
-      v4_local_database_manager_));
-}
-
 TEST_F(V4LocalDatabaseManagerTest, TestMatchDownloadWhitelistString) {
   SetupFakeManager();
-  FullHash good_hash(crypto::SHA256HashString("Good .exe contents"));
-  FullHash other_hash(crypto::SHA256HashString("Other .exe contents"));
+  const std::string good_cert = "Good Cert";
+  const std::string other_cert = "Other Cert";
+  FullHash good_hash(crypto::SHA256HashString(good_cert));
 
   StoreAndHashPrefixes store_and_hash_prefixes;
   store_and_hash_prefixes.emplace_back(GetCertCsdDownloadWhitelistId(),
@@ -801,15 +778,15 @@ TEST_F(V4LocalDatabaseManagerTest, TestMatchDownloadWhitelistString) {
   ReplaceV4Database(store_and_hash_prefixes, false /* not available */);
   // Verify it defaults to false when DB is not available.
   EXPECT_FALSE(
-      v4_local_database_manager_->MatchDownloadWhitelistString(good_hash));
+      v4_local_database_manager_->MatchDownloadWhitelistString(good_cert));
 
   ReplaceV4Database(store_and_hash_prefixes, true /* available */);
   // Not whitelisted.
   EXPECT_FALSE(
-      v4_local_database_manager_->MatchDownloadWhitelistString(other_hash));
+      v4_local_database_manager_->MatchDownloadWhitelistString(other_cert));
   // Whitelisted.
   EXPECT_TRUE(
-      v4_local_database_manager_->MatchDownloadWhitelistString(good_hash));
+      v4_local_database_manager_->MatchDownloadWhitelistString(good_cert));
 
   EXPECT_FALSE(FakeV4LocalDatabaseManager::PerformFullHashCheckCalled(
       v4_local_database_manager_));

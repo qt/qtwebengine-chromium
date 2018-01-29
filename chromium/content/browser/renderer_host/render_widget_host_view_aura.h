@@ -94,9 +94,11 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   //
   // TODO(lazyboy): Remove |is_guest_view_hack| once BrowserPlugin has migrated
   // to use RWHVChildFrame (http://crbug.com/330264).
+  // |is_mus_browser_plugin_guest| can be removed at the same time.
   RenderWidgetHostViewAura(RenderWidgetHost* host,
                            bool is_guest_view_hack,
-                           bool enable_surface_synchronization);
+                           bool enable_surface_synchronization,
+                           bool is_mus_browser_plugin_guest);
 
   // RenderWidgetHostView implementation.
   void InitAsChild(gfx::NativeView parent_view) override;
@@ -138,6 +140,7 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
                          int error_code) override;
   void Destroy() override;
   void SetTooltipText(const base::string16& tooltip_text) override;
+  void UpdateScreenInfo(gfx::NativeView view) override;
   gfx::Size GetRequestedRendererSize() const override;
   bool IsSurfaceAvailableForCopy() const override;
   void CopyFromSurface(const gfx::Rect& src_rect,
@@ -175,8 +178,10 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   void DidCreateNewRendererCompositorFrameSink(
       viz::mojom::CompositorFrameSinkClient* renderer_compositor_frame_sink)
       override;
-  void SubmitCompositorFrame(const viz::LocalSurfaceId& local_surface_id,
-                             viz::CompositorFrame frame) override;
+  void SubmitCompositorFrame(
+      const viz::LocalSurfaceId& local_surface_id,
+      viz::CompositorFrame frame,
+      viz::mojom::HitTestRegionListPtr hit_test_region_list) override;
   void OnDidNotProduceFrame(const viz::BeginFrameAck& ack) override;
   void ClearCompositorFrame() override;
   void DidStopFlinging() override;
@@ -184,8 +189,8 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   viz::FrameSinkId GetFrameSinkId() override;
   viz::LocalSurfaceId GetLocalSurfaceId() const override;
   viz::FrameSinkId FrameSinkIdAtPoint(viz::SurfaceHittestDelegate* delegate,
-                                      const gfx::Point& point,
-                                      gfx::Point* transformed_point) override;
+                                      const gfx::PointF& point,
+                                      gfx::PointF* transformed_point) override;
   void ProcessMouseEvent(const blink::WebMouseEvent& event,
                          const ui::LatencyInfo& latency) override;
   void ProcessMouseWheelEvent(const blink::WebMouseWheelEvent& event,
@@ -194,13 +199,13 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
                          const ui::LatencyInfo& latency) override;
   void ProcessGestureEvent(const blink::WebGestureEvent& event,
                            const ui::LatencyInfo& latency) override;
-  bool TransformPointToLocalCoordSpace(const gfx::Point& point,
+  bool TransformPointToLocalCoordSpace(const gfx::PointF& point,
                                        const viz::SurfaceId& original_surface,
-                                       gfx::Point* transformed_point) override;
+                                       gfx::PointF* transformed_point) override;
   bool TransformPointToCoordSpaceForView(
-      const gfx::Point& point,
+      const gfx::PointF& point,
       RenderWidgetHostViewBase* target_view,
-      gfx::Point* transformed_point) override;
+      gfx::PointF* transformed_point) override;
 
   void FocusedNodeChanged(bool is_editable_node,
                           const gfx::Rect& node_bounds_in_screen) override;
@@ -237,6 +242,7 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   void EnsureCaretNotInRect(const gfx::Rect& rect) override;
   bool IsTextEditCommandEnabled(ui::TextEditCommand command) const override;
   void SetTextEditCommandForNextKeyEvent(ui::TextEditCommand command) override;
+  const std::string& GetClientSourceInfo() const override;
 
   // Overridden from display::DisplayObserver:
   void OnDisplayAdded(const display::Display& new_display) override;
@@ -332,7 +338,7 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   void ForwardKeyboardEventWithLatencyInfo(const NativeWebKeyboardEvent& event,
                                            const ui::LatencyInfo& latency,
                                            bool* update_event) override;
-  RenderFrameHostImpl* GetFocusedFrame();
+  RenderFrameHostImpl* GetFocusedFrame() const;
   bool NeedsMouseCapture() override;
   void SetTooltipsEnabled(bool enable) override;
   void ShowContextMenu(const ContextMenuParams& params) override;
@@ -365,6 +371,7 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   FRIEND_TEST_ALL_PREFIXES(RenderWidgetHostViewAuraTest,
                            PopupRetainsCaptureAfterMouseRelease);
   FRIEND_TEST_ALL_PREFIXES(RenderWidgetHostViewAuraTest, SetCompositionText);
+  FRIEND_TEST_ALL_PREFIXES(RenderWidgetHostViewAuraTest, FocusedNodeChanged);
   FRIEND_TEST_ALL_PREFIXES(RenderWidgetHostViewAuraTest, TouchEventState);
   FRIEND_TEST_ALL_PREFIXES(RenderWidgetHostViewAuraTest,
                            TouchEventPositionsArentRounded);
@@ -395,10 +402,14 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
                            ForwardsBeginFrameAcks);
   FRIEND_TEST_ALL_PREFIXES(RenderWidgetHostViewAuraTest,
                            VirtualKeyboardFocusEnsureCaretInRect);
+  FRIEND_TEST_ALL_PREFIXES(RenderWidgetHostViewAuraTest,
+                           HitTestRegionListSubmitted);
   FRIEND_TEST_ALL_PREFIXES(RenderWidgetHostViewAuraSurfaceSynchronizationTest,
                            CompositorFrameSinkChange);
   FRIEND_TEST_ALL_PREFIXES(RenderWidgetHostViewAuraSurfaceSynchronizationTest,
                            SurfaceChanges);
+  FRIEND_TEST_ALL_PREFIXES(RenderWidgetHostViewAuraSurfaceSynchronizationTest,
+                           DeviceScaleFactorChanges);
   FRIEND_TEST_ALL_PREFIXES(SitePerProcessBrowserTest, PopupMenuTest);
   FRIEND_TEST_ALL_PREFIXES(WebContentsViewAuraTest,
                            WebContentsViewReparent);
@@ -489,9 +500,6 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   // and to notify the |event_handler_|.
   void SetPopupChild(RenderWidgetHostViewAura* popup_child_host_view);
 
-  // Forwards a mouse event to this view's parent window delegate.
-  void ForwardMouseEventToParent(ui::MouseEvent* event);
-
   // Tells DelegatedFrameHost whether we need to receive BeginFrames.
   void UpdateNeedsBeginFramesInternal();
 
@@ -504,6 +512,9 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
 
   const bool enable_surface_synchronization_;
 
+  const bool is_mus_browser_plugin_guest_;
+
+  // NOTE: this is null if |is_mus_browser_plugin_guest_| is true.
   aura::Window* window_;
 
   std::unique_ptr<DelegatedFrameHostClient> delegated_frame_host_client_;
@@ -602,8 +613,6 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   gfx::SelectionBound selection_end_;
 
   gfx::Insets insets_;
-
-  std::vector<ui::LatencyInfo> software_latency_info_;
 
   std::unique_ptr<wm::ScopedTooltipDisabler> tooltip_disabler_;
 

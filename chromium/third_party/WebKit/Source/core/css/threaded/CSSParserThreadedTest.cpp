@@ -6,7 +6,7 @@
 #include "core/css/parser/CSSParserContext.h"
 
 #include "core/CSSPropertyNames.h"
-#include "core/css/StylePropertySet.h"
+#include "core/css/CSSPropertyValueSet.h"
 #include "core/css/threaded/MultiThreadedTestUtil.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -15,16 +15,19 @@ namespace blink {
 class CSSParserThreadedTest : public MultiThreadedTest {
  public:
   static void TestSingle(CSSPropertyID prop, const String& text) {
-    const CSSValue* value = CSSParser::ParseSingleValue(prop, text);
+    const CSSValue* value = CSSParser::ParseSingleValue(
+        prop, text,
+        StrictCSSParserContext(SecureContextMode::kInsecureContext));
     ASSERT_TRUE(value);
     EXPECT_EQ(text, value->CssText());
   }
 
-  static MutableStylePropertySet* TestValue(CSSPropertyID prop,
-                                            const String& text) {
-    MutableStylePropertySet* style =
-        MutableStylePropertySet::Create(kHTMLStandardMode);
-    CSSParser::ParseValue(style, prop, text, true);
+  static MutableCSSPropertyValueSet* TestValue(CSSPropertyID prop,
+                                               const String& text) {
+    MutableCSSPropertyValueSet* style =
+        MutableCSSPropertyValueSet::Create(kHTMLStandardMode);
+    CSSParser::ParseValue(style, prop, text, true,
+                          SecureContextMode::kInsecureContext);
     return style;
   }
 };
@@ -54,7 +57,7 @@ TSAN_TEST_F(CSSParserThreadedTest, SinglePropertyFont) {
 
 TSAN_TEST_F(CSSParserThreadedTest, ValuePropertyFont) {
   RunOnThreads([]() {
-    MutableStylePropertySet* v = TestValue(CSSPropertyFont, "15px arial");
+    MutableCSSPropertyValueSet* v = TestValue(CSSPropertyFont, "15px arial");
     EXPECT_EQ(v->GetPropertyValue(CSSPropertyFontFamily), "arial");
     EXPECT_EQ(v->GetPropertyValue(CSSPropertyFontSize), "15px");
   });
@@ -62,7 +65,8 @@ TSAN_TEST_F(CSSParserThreadedTest, ValuePropertyFont) {
 
 TSAN_TEST_F(CSSParserThreadedTest, FontFaceDescriptor) {
   RunOnThreads([]() {
-    CSSParserContext* ctx = CSSParserContext::Create(kCSSFontFaceRuleMode);
+    CSSParserContext* ctx = CSSParserContext::Create(
+        kCSSFontFaceRuleMode, SecureContextMode::kInsecureContext);
     const CSSValue* v = CSSParser::ParseFontFaceDescriptor(
         CSSPropertySrc, "url(myfont.ttf)", ctx);
     ASSERT_TRUE(v);

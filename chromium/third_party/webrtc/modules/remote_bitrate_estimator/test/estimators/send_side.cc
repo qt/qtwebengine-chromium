@@ -33,7 +33,7 @@ SendSideBweSender::SendSideBweSender(int kbps,
       acknowledged_bitrate_estimator_(
           rtc::MakeUnique<AcknowledgedBitrateEstimator>()),
       bwe_(new DelayBasedBwe(nullptr, clock)),
-      feedback_observer_(bitrate_controller_->CreateRtcpBandwidthObserver()),
+      feedback_observer_(bitrate_controller_.get()),
       clock_(clock),
       send_time_history_(clock_, 10000),
       has_received_ack_(false),
@@ -64,7 +64,7 @@ void SendSideBweSender::GiveFeedback(const FeedbackPacket& feedback) {
     if (!send_time_history_.GetFeedback(&packet_feedback, true)) {
       int64_t now_ms = clock_->TimeInMilliseconds();
       if (now_ms - last_log_time_ms_ > 5000) {
-        LOG(LS_WARNING) << "Ack arrived too late.";
+        RTC_LOG(LS_WARNING) << "Ack arrived too late.";
         last_log_time_ms_ = now_ms;
       }
     }

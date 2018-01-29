@@ -92,8 +92,8 @@ interface Element : Node {
 
     // CSSOM View Module
     // https://drafts.csswg.org/cssom-view/#extension-to-the-element-interface
-    DOMRectList getClientRects();
-    [RuntimeCallStatsCounter=ElementGetBoundingClientRect] DOMRect getBoundingClientRect();
+    [Measure] DOMRectList getClientRects();
+    [Measure, RuntimeCallStatsCounter=ElementGetBoundingClientRect] DOMRect getBoundingClientRect();
 
     // TODO(sunyunjia): Add default value for scrollIntoView() once
     // crbug.com/734599 is fixed.
@@ -119,7 +119,7 @@ interface Element : Node {
 
     // Typed OM
     // https://drafts.css-houdini.org/css-typed-om/#inline-stylepropertymap-objects
-    [RuntimeEnabled=CSSTypedOM, SameObject] readonly attribute StylePropertyMap styleMap;
+    [RuntimeEnabled=CSSTypedOM, SameObject] readonly attribute StylePropertyMap attributeStyleMap;
 
     // Non-standard API
     [MeasureAs=ElementScrollIntoViewIfNeeded] void scrollIntoViewIfNeeded(optional boolean centerIfNeeded);

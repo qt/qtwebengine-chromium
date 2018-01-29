@@ -859,7 +859,8 @@ void WebContentsAccessibilityAndroid::SetSelection(
     jint unique_id,
     jint start,
     jint end) {
-  using AXPlatformPositionInstance = AXPlatformPosition::AXPositionInstance;
+  using AXPlatformPositionInstance =
+      BrowserAccessibilityPosition::AXPositionInstance;
   using AXPlatformRange = ui::AXRange<AXPlatformPositionInstance::element_type>;
 
   BrowserAccessibilityAndroid* node = GetAXFromUniqueID(unique_id);
@@ -899,8 +900,7 @@ jboolean WebContentsAccessibilityAndroid::AdjustSlider(
   value += (increment ? delta : -delta);
   value = std::max(std::min(value, max), min);
   if (value != original_value) {
-    node->manager()->SetValue(*node,
-                              base::UTF8ToUTF16(base::DoubleToString(value)));
+    node->manager()->SetValue(*node, base::NumberToString16(value));
     return true;
   }
   return false;
@@ -942,6 +942,9 @@ jint WebContentsAccessibilityAndroid::FindElementType(
                                : OneShotAccessibilityTreeSearch::BACKWARDS);
   tree_search.SetResultLimit(1);
   tree_search.SetImmediateDescendantsOnly(false);
+  // SetCanWrapToLastElement needs to be set as true after talkback pushes its
+  // corresponding change for b/29103330.
+  tree_search.SetCanWrapToLastElement(false);
   tree_search.SetVisibleOnly(false);
   tree_search.AddPredicate(predicate);
 
@@ -993,6 +996,17 @@ jboolean WebContentsAccessibilityAndroid::NextAtGranularity(
     return true;
   }
   return false;
+}
+
+jint WebContentsAccessibilityAndroid::GetTextLength(
+    JNIEnv* env,
+    const JavaParamRef<jobject>& obj,
+    jint unique_id) {
+  BrowserAccessibilityAndroid* node = GetAXFromUniqueID(unique_id);
+  if (!node)
+    return -1;
+  base::string16 text = node->GetText();
+  return text.size();
 }
 
 jboolean WebContentsAccessibilityAndroid::PreviousAtGranularity(
@@ -1256,9 +1270,10 @@ void WebContentsAccessibilityAndroid::CollectStats() {
   CAPABILITY_TYPE_HISTOGRAM(capabilities_mask, CAN_PERFORM_GESTURES);
 }
 
-jlong Init(JNIEnv* env,
-           const JavaParamRef<jobject>& obj,
-           const JavaParamRef<jobject>& jweb_contents) {
+jlong JNI_WebContentsAccessibility_Init(
+    JNIEnv* env,
+    const JavaParamRef<jobject>& obj,
+    const JavaParamRef<jobject>& jweb_contents) {
   WebContents* web_contents = WebContents::FromJavaWebContents(jweb_contents);
   DCHECK(web_contents);
 

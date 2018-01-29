@@ -1,4 +1,4 @@
-// Copyright 2016 PDFium Authors. All rights reserved.
+// Copyright 2017 PDFium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,23 +7,12 @@
 #ifndef XFA_FXFA_PARSER_CXFA_CAPTION_H_
 #define XFA_FXFA_PARSER_CXFA_CAPTION_H_
 
-#include "xfa/fxfa/parser/cxfa_data.h"
-#include "xfa/fxfa/parser/cxfa_font.h"
-#include "xfa/fxfa/parser/cxfa_margin.h"
-#include "xfa/fxfa/parser/cxfa_value.h"
+#include "xfa/fxfa/parser/cxfa_node.h"
 
-class CXFA_Node;
-
-class CXFA_Caption : public CXFA_Data {
+class CXFA_Caption : public CXFA_Node {
  public:
-  explicit CXFA_Caption(CXFA_Node* pNode);
-
-  int32_t GetPresence();
-  int32_t GetPlacementType();
-  float GetReserve();
-  CXFA_Margin GetMargin();
-  CXFA_Font GetFont();
-  CXFA_Value GetValue();
+  CXFA_Caption(CXFA_Document* doc, XFA_PacketType packet);
+  ~CXFA_Caption() override;
 };
 
 #endif  // XFA_FXFA_PARSER_CXFA_CAPTION_H_

@@ -13,8 +13,8 @@
 #include "base/optional.h"
 #include "base/threading/thread_checker.h"
 #include "platform/PlatformExport.h"
-#include "platform/scheduler/base/cancelable_closure_holder.h"
 #include "platform/scheduler/base/time_domain.h"
+#include "platform/scheduler/child/cancelable_closure_holder.h"
 #include "platform/scheduler/renderer/budget_pool.h"
 #include "platform/scheduler/renderer/cpu_time_budget_pool.h"
 #include "platform/scheduler/renderer/wake_up_budget_pool.h"
@@ -120,7 +120,7 @@ class PLATFORM_EXPORT TaskQueueThrottler : public TaskQueue::Observer,
   void DecreaseThrottleRefCount(TaskQueue* task_queue);
 
   // Removes |task_queue| from |queue_details| and from appropriate budget pool.
-  void UnregisterTaskQueue(TaskQueue* task_queue);
+  void ShutdownTaskQueue(TaskQueue* task_queue);
 
   // Disable throttling for all queues, this setting takes precedence over
   // all other throttling settings. Designed to be used when a global event
@@ -175,7 +175,12 @@ class PLATFORM_EXPORT TaskQueueThrottler : public TaskQueue::Observer,
   base::TimeTicks GetNextAllowedRunTime(TaskQueue* queue,
                                         base::TimeTicks desired_run_time);
 
-  bool CanRunTasksAt(TaskQueue* queue, base::TimeTicks moment, bool is_wakeup);
+  bool CanRunTasksAt(TaskQueue* queue, base::TimeTicks moment, bool is_wake_up);
+
+  base::Optional<base::TimeTicks> GetTimeTasksCanRunUntil(
+      TaskQueue* queue,
+      base::TimeTicks now,
+      bool is_wake_up) const;
 
   void MaybeDeleteQueueMetadata(TaskQueueMap::iterator it);
 

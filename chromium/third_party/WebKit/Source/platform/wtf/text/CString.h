@@ -28,10 +28,11 @@
 #define CString_h
 
 #include <string.h>
+
+#include "base/macros.h"
+#include "base/memory/scoped_refptr.h"
 #include "platform/wtf/Allocator.h"
-#include "platform/wtf/Noncopyable.h"
 #include "platform/wtf/RefCounted.h"
-#include "platform/wtf/RefPtr.h"
 #include "platform/wtf/WTFExport.h"
 #include "platform/wtf/allocator/PartitionAllocator.h"
 
@@ -42,14 +43,13 @@ namespace WTF {
 // sequence of bytes. The data is always allocated 1 longer than length() and is
 // null terminated.
 class WTF_EXPORT CStringImpl : public RefCounted<CStringImpl> {
-  WTF_MAKE_NONCOPYABLE(CStringImpl);
-
  public:
   // CStringImpls are allocated out of the WTF buffer partition.
   void* operator new(size_t, void* ptr) { return ptr; }
   void operator delete(void*);
 
-  static RefPtr<CStringImpl> CreateUninitialized(size_t length, char*& data);
+  static scoped_refptr<CStringImpl> CreateUninitialized(size_t length,
+                                                        char*& data);
 
   const char* data() const { return reinterpret_cast<const char*>(this + 1); }
   size_t length() const { return length_; }
@@ -58,6 +58,8 @@ class WTF_EXPORT CStringImpl : public RefCounted<CStringImpl> {
   explicit CStringImpl(size_t length) : length_(length) {}
 
   const unsigned length_;
+
+  DISALLOW_COPY_AND_ASSIGN(CStringImpl);
 };
 
 // A container for an immutable ref-counted null-terminated char array. This is
@@ -76,14 +78,14 @@ class WTF_EXPORT CString {
 
   // Construct a string referencing an existing buffer.
   CString(CStringImpl* buffer) : buffer_(buffer) {}
-  CString(RefPtr<CStringImpl> buffer) : buffer_(std::move(buffer)) {}
+  CString(scoped_refptr<CStringImpl> buffer) : buffer_(std::move(buffer)) {}
 
   static CString CreateUninitialized(size_t length, char*& data) {
     return CStringImpl::CreateUninitialized(length, data);
   }
 
   // The bytes of the string, always NUL terminated. May be null.
-  const char* data() const { return buffer_ ? buffer_->data() : 0; }
+  const char* data() const { return buffer_ ? buffer_->data() : nullptr; }
 
   // The length of the data(), *not* including the NUL terminator.
   size_t length() const { return buffer_ ? buffer_->length() : 0; }
@@ -95,7 +97,7 @@ class WTF_EXPORT CString {
   CStringImpl* Impl() const { return buffer_.get(); }
 
  private:
-  RefPtr<CStringImpl> buffer_;
+  scoped_refptr<CStringImpl> buffer_;
 };
 
 WTF_EXPORT bool operator==(const CString& a, const CString& b);

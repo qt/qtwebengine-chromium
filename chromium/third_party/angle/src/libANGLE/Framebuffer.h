@@ -89,7 +89,7 @@ class FramebufferState final : angle::NonCopyable
     GLint getDefaultWidth() const { return mDefaultWidth; };
     GLint getDefaultHeight() const { return mDefaultHeight; };
     GLint getDefaultSamples() const { return mDefaultSamples; };
-    GLboolean getDefaultFixedSampleLocations() const { return mDefaultFixedSampleLocations; };
+    bool getDefaultFixedSampleLocations() const { return mDefaultFixedSampleLocations; };
 
     bool hasDepth() const;
     bool hasStencil() const;
@@ -115,7 +115,7 @@ class FramebufferState final : angle::NonCopyable
     GLint mDefaultWidth;
     GLint mDefaultHeight;
     GLint mDefaultSamples;
-    GLboolean mDefaultFixedSampleLocations;
+    bool mDefaultFixedSampleLocations;
 
     // It's necessary to store all this extra state so we can restore attachments
     // when DEPTH_STENCIL/DEPTH/STENCIL is unbound in WebGL 1.
@@ -138,7 +138,7 @@ class Framebuffer final : public LabeledObject, public OnAttachmentDirtyReceiver
     // Constructor to build a fake default framebuffer when surfaceless
     Framebuffer(rx::GLImplFactory *factory);
 
-    virtual ~Framebuffer();
+    ~Framebuffer() override;
     void onDestroy(const Context *context);
     void destroyDefault(const egl::Display *display);
 
@@ -215,11 +215,11 @@ class Framebuffer final : public LabeledObject, public OnAttachmentDirtyReceiver
     GLint getDefaultWidth() const;
     GLint getDefaultHeight() const;
     GLint getDefaultSamples() const;
-    GLboolean getDefaultFixedSampleLocations() const;
+    bool getDefaultFixedSampleLocations() const;
     void setDefaultWidth(GLint defaultWidth);
     void setDefaultHeight(GLint defaultHeight);
     void setDefaultSamples(GLint defaultSamples);
-    void setDefaultFixedSampleLocations(GLboolean defaultFixedSampleLocations);
+    void setDefaultFixedSampleLocations(bool defaultFixedSampleLocations);
 
     void invalidateCompletenessCache();
 
@@ -312,6 +312,8 @@ class Framebuffer final : public LabeledObject, public OnAttachmentDirtyReceiver
     Error ensureReadAttachmentInitialized(const Context *context, GLbitfield blitMask);
     Box getDimensions() const;
 
+    bool hasTextureAttachment(const Texture *texture) const;
+
   private:
     bool detachResourceById(const Context *context, GLenum resourceType, GLuint resourceId);
     bool detachMatchingAttachment(const Context *context,
@@ -377,6 +379,9 @@ class Framebuffer final : public LabeledObject, public OnAttachmentDirtyReceiver
     OnAttachmentDirtyBinding mDirtyStencilAttachmentBinding;
 
     DirtyBits mDirtyBits;
+
+    // A cache of attached textures for quick validation of feedback loops.
+    mutable Optional<std::set<const FramebufferAttachmentObject *>> mAttachedTextures;
 };
 
 }  // namespace gl

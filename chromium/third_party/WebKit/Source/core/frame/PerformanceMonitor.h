@@ -67,7 +67,7 @@ class CORE_EXPORT PerformanceMonitor final
                                         const String& text,
                                         double time,
                                         SourceLocation*) {}
-    DEFINE_INLINE_VIRTUAL_TRACE() {}
+    virtual void Trace(blink::Visitor* visitor) {}
   };
 
   static void ReportGenericViolation(ExecutionContext*,
@@ -110,7 +110,7 @@ class CORE_EXPORT PerformanceMonitor final
   explicit PerformanceMonitor(LocalFrame*);
   ~PerformanceMonitor();
 
-  DECLARE_VIRTUAL_TRACE();
+  virtual void Trace(blink::Visitor*);
 
  private:
   friend class PerformanceMonitorTest;
@@ -134,6 +134,9 @@ class CORE_EXPORT PerformanceMonitor final
   void WillExecuteScript(ExecutionContext*);
   void DidExecuteScript();
 
+  void UpdateTaskAttribution(ExecutionContext*);
+  void UpdateTaskShouldBeReported(LocalFrame*);
+
   std::pair<String, DOMWindow*> SanitizedAttribution(
       const HeapHashSet<Member<Frame>>& frame_contexts,
       Frame* observer_frame);
@@ -153,6 +156,7 @@ class CORE_EXPORT PerformanceMonitor final
   Member<LocalFrame> local_root_;
   Member<ExecutionContext> task_execution_context_;
   bool task_has_multiple_contexts_ = false;
+  bool task_should_be_reported_ = false;
   using ClientThresholds = HeapHashMap<WeakMember<Client>, double>;
   HeapHashMap<Violation,
               Member<ClientThresholds>,

@@ -52,13 +52,6 @@ rtc_source_set("rtc_h264_profile_id") {
 }
 
 rtc_static_library("rtc_media_base") {
-  # TODO(kjellander): Remove (bugs.webrtc.org/6828)
-  # Enabling GN check triggers cyclic dependency error:
-  #   :rtc_media_base ->
-  #   ../pc:rtc_pc_base ->
-  #   :rtc_data ->
-  #   :rtc_media_base
-  check_includes = false
   defines = []
   libs = []
   deps = []
@@ -119,9 +112,18 @@ rtc_static_library("rtc_media_base") {
   deps += [
     "..:webrtc_common",
     "../api:libjingle_peerconnection_api",
+    "../api:optional",
+    "../api:video_frame_api",
+    "../api:video_frame_api_i420",
+    "../api/audio_codecs:audio_codecs_api",
+    "../api/video_codecs:video_codecs_api",
+    "../call:call_interfaces",
+    "../call:video_stream_api",
+    "../modules/audio_processing:audio_processing_statistics",
     "../p2p",
     "../rtc_base:rtc_base",
     "../rtc_base:rtc_base_approved",
+    "../system_wrappers:field_trial_api",
   ]
 
   public_deps += [ ":rtc_h264_profile_id" ]
@@ -135,6 +137,7 @@ rtc_static_library("rtc_audio_video") {
   defines = []
   libs = []
   deps = [
+    "../api:video_frame_api_i420",
     "../modules/video_coding:video_coding_utility",
   ]
   sources = [
@@ -142,7 +145,10 @@ rtc_static_library("rtc_audio_video") {
     "engine/adm_helpers.h",
     "engine/apm_helpers.cc",
     "engine/apm_helpers.h",
+    "engine/constants.cc",
     "engine/constants.h",
+    "engine/convert_legacy_video_factory.cc",
+    "engine/convert_legacy_video_factory.h",
     "engine/internaldecoderfactory.cc",
     "engine/internaldecoderfactory.h",
     "engine/internalencoderfactory.cc",
@@ -162,6 +168,8 @@ rtc_static_library("rtc_audio_video") {
     "engine/videodecodersoftwarefallbackwrapper.h",
     "engine/videoencodersoftwarefallbackwrapper.cc",
     "engine/videoencodersoftwarefallbackwrapper.h",
+    "engine/vp8_encoder_simulcast_proxy.cc",
+    "engine/vp8_encoder_simulcast_proxy.h",
     "engine/webrtcmediaengine.cc",
     "engine/webrtcmediaengine.h",
     "engine/webrtcvideocapturer.cc",
@@ -238,8 +246,6 @@ rtc_static_library("rtc_audio_video") {
     "../api:transport_api",
     "../api:video_frame_api",
     "../api/audio_codecs:audio_codecs_api",
-    "../api/audio_codecs:builtin_audio_decoder_factory",
-    "../api/audio_codecs:builtin_audio_encoder_factory",
     "../api/video_codecs:video_codecs_api",
     "../call",
     "../call:video_stream_api",
@@ -337,6 +343,7 @@ if (rtc_include_tests) {
     include_dirs = []
     public_deps = []
     deps = [
+      "../api:video_frame_api_i420",
       "../call:video_stream_api",
       "../modules/audio_coding:rent_a_codec",
       "../modules/audio_processing:audio_processing",
@@ -438,6 +445,7 @@ if (rtc_include_tests) {
 
     defines = []
     deps = [
+      "../api:video_frame_api_i420",
       "../pc:rtc_pc",
       "../test:field_trial",
     ]
@@ -460,6 +468,7 @@ if (rtc_include_tests) {
       "engine/simulcast_unittest.cc",
       "engine/videodecodersoftwarefallbackwrapper_unittest.cc",
       "engine/videoencodersoftwarefallbackwrapper_unittest.cc",
+      "engine/vp8_encoder_simulcast_proxy_unittest.cc",
       "engine/webrtcmediaengine_unittest.cc",
       "engine/webrtcvideocapturer_unittest.cc",
       "engine/webrtcvideoencoderfactory_unittest.cc",
@@ -520,6 +529,7 @@ if (rtc_include_tests) {
       ":rtc_media",
       ":rtc_media_base",
       ":rtc_media_tests_utils",
+      "../api:mock_video_codec_factory",
       "../api:video_frame_api",
       "../api/audio_codecs:builtin_audio_decoder_factory",
       "../api/audio_codecs:builtin_audio_encoder_factory",
@@ -541,6 +551,7 @@ if (rtc_include_tests) {
       "../system_wrappers:metrics_default",
       "../test:audio_codec_mocks",
       "../test:test_support",
+      "../test:video_test_common",
       "../voice_engine:voice_engine",
     ]
   }

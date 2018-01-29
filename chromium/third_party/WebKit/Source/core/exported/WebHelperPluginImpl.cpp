@@ -30,11 +30,11 @@
 
 #include "core/exported/WebHelperPluginImpl.h"
 
-#include "core/dom/TaskRunnerHelper.h"
 #include "core/exported/WebPluginContainerImpl.h"
 #include "core/frame/LocalFrameClient.h"
 #include "core/frame/WebLocalFrameImpl.h"
 #include "core/html/HTMLObjectElement.h"
+#include "public/platform/TaskType.h"
 #include "public/web/WebPlugin.h"
 
 namespace blink {
@@ -46,7 +46,7 @@ WebHelperPlugin* WebHelperPlugin::Create(const WebString& plugin_type,
   WebHelperPluginUniquePtr plugin(new WebHelperPluginImpl());
   if (!ToWebHelperPluginImpl(plugin.get())
            ->Initialize(plugin_type, ToWebLocalFrameImpl(frame)))
-    return 0;
+    return nullptr;
   return plugin.release();
 }
 
@@ -83,13 +83,13 @@ void WebHelperPluginImpl::ReallyDestroy() {
 
 void WebHelperPluginImpl::Destroy() {
   // Defer deletion so we don't do too much work when called via
-  // stopSuspendableObjects().
+  // stopPausableObjects().
   // FIXME: It's not clear why we still need this. The original code held a
   // Page and a WebFrame, and destroying it would cause JavaScript triggered by
-  // frame detach to run, which isn't allowed inside stopSuspendableObjects().
+  // frame detach to run, which isn't allowed inside stopPausableObjects().
   // Removing this causes one Chrome test to fail with a timeout.
-  TaskRunnerHelper::Get(TaskType::kUnspecedTimer,
-                        &object_element_->GetDocument())
+  object_element_->GetDocument()
+      .GetTaskRunner(TaskType::kUnspecedTimer)
       ->PostTask(BLINK_FROM_HERE, WTF::Bind(&WebHelperPluginImpl::ReallyDestroy,
                                             WTF::Unretained(this)));
 }

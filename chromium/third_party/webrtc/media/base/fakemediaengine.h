@@ -16,6 +16,8 @@
 #include <memory>
 #include <set>
 #include <string>
+#include <tuple>
+#include <utility>
 #include <vector>
 
 #include "api/call/audio_sink.h"
@@ -271,14 +273,12 @@ template <class Base> class RtpHelper : public Base {
   virtual void OnReadyToSend(bool ready) {
     ready_to_send_ = ready;
   }
-  virtual void OnTransportOverheadChanged(int transport_overhead_per_packet) {
-    transport_overhead_per_packet_ = transport_overhead_per_packet;
-  }
 
   virtual void OnNetworkRouteChanged(const std::string& transport_name,
                                      const rtc::NetworkRoute& network_route) {
     last_network_route_ = network_route;
     ++num_network_route_changes_;
+    transport_overhead_per_packet_ = network_route.packet_overhead;
   }
   bool fail_set_send_codecs() const { return fail_set_send_codecs_; }
   bool fail_set_recv_codecs() const { return fail_set_recv_codecs_; }
@@ -382,7 +382,7 @@ class FakeVoiceMediaChannel : public RtpHelper<VoiceMediaChannel> {
     return true;
   }
 
-  virtual bool GetActiveStreams(AudioInfo::StreamList* streams) { return true; }
+  virtual bool GetActiveStreams(StreamList* streams) { return true; }
   virtual int GetOutputLevel() { return 0; }
 
   virtual bool CanInsertDtmf() {
@@ -488,12 +488,11 @@ class FakeVoiceMediaChannel : public RtpHelper<VoiceMediaChannel> {
       if (it != local_sinks_.end()) {
         RTC_CHECK(it->second->source() == source);
       } else {
-        local_sinks_.insert(
-            std::make_pair(ssrc, new VoiceChannelAudioSink(source)));
+        local_sinks_.insert(std::make_pair(
+            ssrc, rtc::MakeUnique<VoiceChannelAudioSink>(source)));
       }
     } else {
       if (it != local_sinks_.end()) {
-        delete it->second;
         local_sinks_.erase(it);
       }
     }
@@ -506,7 +505,7 @@ class FakeVoiceMediaChannel : public RtpHelper<VoiceMediaChannel> {
   std::map<uint32_t, double> output_scalings_;
   std::vector<DtmfInfo> dtmf_info_queue_;
   AudioOptions options_;
-  std::map<uint32_t, VoiceChannelAudioSink*> local_sinks_;
+  std::map<uint32_t, std::unique_ptr<VoiceChannelAudioSink>> local_sinks_;
   std::unique_ptr<webrtc::AudioSinkInterface> sink_;
   int max_bps_;
 };
@@ -949,8 +948,6 @@ inline FakeVideoMediaChannel::~FakeVideoMediaChannel() {
 
 class FakeDataEngine : public DataEngineInterface {
  public:
-  FakeDataEngine(){};
-
   virtual DataMediaChannel* CreateChannel(const MediaConfig& config) {
     FakeDataMediaChannel* ch = new FakeDataMediaChannel(this, DataOptions());
     channels_.push_back(ch);

@@ -36,7 +36,8 @@ class StyleRuleImport : public StyleRuleBase {
   USING_PRE_FINALIZER(StyleRuleImport, Dispose);
 
  public:
-  static StyleRuleImport* Create(const String& href, RefPtr<MediaQuerySet>);
+  static StyleRuleImport* Create(const String& href,
+                                 scoped_refptr<MediaQuerySet>);
 
   ~StyleRuleImport();
 
@@ -55,7 +56,7 @@ class StyleRuleImport : public StyleRuleBase {
 
   void RequestStyleSheet();
 
-  DECLARE_TRACE_AFTER_DISPATCH();
+  void TraceAfterDispatch(blink::Visitor*);
 
  private:
   // FIXME: inherit from StyleSheetResourceClient directly to eliminate back
@@ -70,7 +71,7 @@ class StyleRuleImport : public StyleRuleBase {
    public:
     ImportedStyleSheetClient(StyleRuleImport* owner_rule)
         : owner_rule_(owner_rule) {}
-    ~ImportedStyleSheetClient() override {}
+    ~ImportedStyleSheetClient() override = default;
     void SetCSSStyleSheet(const String& href,
                           const KURL& base_url,
                           ReferrerPolicy referrer_policy,
@@ -81,7 +82,7 @@ class StyleRuleImport : public StyleRuleBase {
     }
     String DebugName() const override { return "ImportedStyleSheetClient"; }
 
-    DEFINE_INLINE_TRACE() {
+    void Trace(blink::Visitor* visitor) {
       visitor->Trace(owner_rule_);
       StyleSheetResourceClient::Trace(visitor);
     }
@@ -96,7 +97,7 @@ class StyleRuleImport : public StyleRuleBase {
                         const WTF::TextEncoding&,
                         const CSSStyleSheetResource*);
 
-  StyleRuleImport(const String& href, RefPtr<MediaQuerySet>);
+  StyleRuleImport(const String& href, scoped_refptr<MediaQuerySet>);
 
   void Dispose();
 
@@ -104,7 +105,7 @@ class StyleRuleImport : public StyleRuleBase {
 
   Member<ImportedStyleSheetClient> style_sheet_client_;
   String str_href_;
-  RefPtr<MediaQuerySet> media_queries_;
+  scoped_refptr<MediaQuerySet> media_queries_;
   Member<StyleSheetContents> style_sheet_;
   Member<CSSStyleSheetResource> resource_;
   bool loading_;

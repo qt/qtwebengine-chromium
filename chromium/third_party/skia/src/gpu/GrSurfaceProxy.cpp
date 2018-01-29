@@ -42,8 +42,8 @@ GrSurfaceProxy::~GrSurfaceProxy() {
     SkASSERT(!fLastOpList);
 }
 
-static bool attach_stencil_if_needed(GrResourceProvider* resourceProvider,
-                                     GrSurface* surface, bool needsStencil) {
+bool GrSurfaceProxyPriv::AttachStencilIfNeeded(GrResourceProvider* resourceProvider,
+                                               GrSurface* surface, bool needsStencil) {
     if (needsStencil) {
         GrRenderTarget* rt = surface->asRenderTarget();
         if (!rt) {
@@ -62,9 +62,9 @@ static bool attach_stencil_if_needed(GrResourceProvider* resourceProvider,
 sk_sp<GrSurface> GrSurfaceProxy::createSurfaceImpl(
                                                 GrResourceProvider* resourceProvider,
                                                 int sampleCnt, bool needsStencil,
-                                                GrSurfaceFlags flags, bool isMipMapped,
+                                                GrSurfaceFlags flags, GrMipMapped mipMapped,
                                                 SkDestinationSurfaceColorMode mipColorMode) const {
-    SkASSERT(!isMipMapped);
+    SkASSERT(GrMipMapped::kNo == mipMapped);
     GrSurfaceDesc desc;
     desc.fFlags = flags;
     if (fNeedsClear) {
@@ -88,7 +88,7 @@ sk_sp<GrSurface> GrSurfaceProxy::createSurfaceImpl(
 
     surface->asTexture()->texturePriv().setMipColorMode(mipColorMode);
 
-    if (!attach_stencil_if_needed(resourceProvider, surface.get(), needsStencil)) {
+    if (!GrSurfaceProxyPriv::AttachStencilIfNeeded(resourceProvider, surface.get(), needsStencil)) {
         return nullptr;
     }
 
@@ -108,18 +108,18 @@ void GrSurfaceProxy::assign(sk_sp<GrSurface> surface) {
 }
 
 bool GrSurfaceProxy::instantiateImpl(GrResourceProvider* resourceProvider, int sampleCnt,
-                                     bool needsStencil, GrSurfaceFlags flags, bool isMipMapped,
+                                     bool needsStencil, GrSurfaceFlags flags, GrMipMapped mipMapped,
                                      SkDestinationSurfaceColorMode mipColorMode,
                                      const GrUniqueKey* uniqueKey) {
     if (fTarget) {
         if (uniqueKey) {
             SkASSERT(fTarget->getUniqueKey() == *uniqueKey);
         }
-        return attach_stencil_if_needed(resourceProvider, fTarget, needsStencil);
+        return GrSurfaceProxyPriv::AttachStencilIfNeeded(resourceProvider, fTarget, needsStencil);
     }
 
     sk_sp<GrSurface> surface = this->createSurfaceImpl(resourceProvider, sampleCnt, needsStencil,
-                                                       flags, isMipMapped, mipColorMode);
+                                                       flags, mipMapped, mipColorMode);
     if (!surface) {
         return false;
     }
@@ -142,16 +142,16 @@ void GrSurfaceProxy::computeScratchKey(GrScratchKey* key) const {
     }
 
     const GrTextureProxy* tp = this->asTextureProxy();
-    bool hasMipMaps = false;
+    GrMipMapped mipMapped = GrMipMapped::kNo;
     if (tp) {
-        hasMipMaps = tp->isMipMapped();
+        mipMapped = tp->mipMapped();
     }
 
     int width = this->worstCaseWidth();
     int height = this->worstCaseHeight();
 
     GrTexturePriv::ComputeScratchKey(this->config(), width, height, SkToBool(rtp), sampleCount,
-                                     hasMipMaps, key);
+                                     mipMapped, key);
 }
 
 void GrSurfaceProxy::setLastOpList(GrOpList* opList) {
@@ -411,6 +411,7 @@ void GrSurfaceProxy::validate(GrContext* context) const {
 
 sk_sp<GrTextureProxy> GrSurfaceProxy::Copy(GrContext* context,
                                            GrSurfaceProxy* src,
+                                           GrMipMapped mipMapped,
                                            SkIRect srcRect,
                                            SkBudgeted budgeted) {
     if (!srcRect.intersect(SkIRect::MakeWH(src->width(), src->height()))) {
@@ -425,6 +426,7 @@ sk_sp<GrTextureProxy> GrSurfaceProxy::Copy(GrContext* context,
 
     sk_sp<GrSurfaceContext> dstContext(context->contextPriv().makeDeferredSurfaceContext(
                                                                             dstDesc,
+                                                                            mipMapped,
                                                                             SkBackingFit::kExact,
                                                                             budgeted));
     if (!dstContext) {
@@ -439,8 +441,8 @@ sk_sp<GrTextureProxy> GrSurfaceProxy::Copy(GrContext* context,
 }
 
 sk_sp<GrTextureProxy> GrSurfaceProxy::Copy(GrContext* context, GrSurfaceProxy* src,
-                                           SkBudgeted budgeted) {
-    return Copy(context, src, SkIRect::MakeWH(src->width(), src->height()), budgeted);
+                                           GrMipMapped mipMapped, SkBudgeted budgeted) {
+    return Copy(context, src, mipMapped, SkIRect::MakeWH(src->width(), src->height()), budgeted);
 }
 
 sk_sp<GrSurfaceContext> GrSurfaceProxy::TestCopy(GrContext* context, const GrSurfaceDesc& dstDesc,
@@ -448,6 +450,7 @@ sk_sp<GrSurfaceContext> GrSurfaceProxy::TestCopy(GrContext* context, const GrSur
 
     sk_sp<GrSurfaceContext> dstContext(context->contextPriv().makeDeferredSurfaceContext(
                                                                             dstDesc,
+                                                                            GrMipMapped::kNo,
                                                                             SkBackingFit::kExact,
                                                                             SkBudgeted::kYes));
     if (!dstContext) {

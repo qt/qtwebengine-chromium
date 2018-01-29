@@ -15,7 +15,7 @@ class ScriptState;
 class MessageCallback : public GarbageCollectedFinalized<MessageCallback> {
  public:
   virtual ~MessageCallback() {}
-  DEFINE_INLINE_VIRTUAL_TRACE() {}
+  virtual void Trace(blink::Visitor* visitor) {}
   virtual void handleMessage(const NFCMessage&) = 0;
 
   void SetScriptState(ScriptState* script_state) {
@@ -24,7 +24,7 @@ class MessageCallback : public GarbageCollectedFinalized<MessageCallback> {
   ScriptState* GetScriptState() const { return script_state_.get(); }
 
  private:
-  RefPtr<ScriptState> script_state_;
+  scoped_refptr<ScriptState> script_state_;
 };
 
 }  // namespace blink

@@ -9,12 +9,14 @@
 
 #include "base/bind.h"
 #include "base/callback_helpers.h"
+#include "base/command_line.h"
 #include "base/memory/weak_ptr.h"
 #include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
 #include "base/sequenced_task_runner.h"
 #include "base/threading/thread_checker.h"
 #include "build/build_config.h"
+#include "components/viz/common/switches.h"
 #include "content/child/child_process.h"
 #include "content/gpu/gpu_service_factory.h"
 #include "content/public/common/connection_filter.h"
@@ -43,11 +45,6 @@
 
 namespace content {
 namespace {
-
-bool IsVizEnabled() {
-  // TODO(crbug.com/770833): Look at the --enable-viz flag instead.
-  return false;
-}
 
 ChildThreadImpl::Options GetOptions() {
   ChildThreadImpl::Options::Builder builder;
@@ -106,7 +103,7 @@ class QueueingConnectionFilter : public ConnectionFilter {
         registry_->BindInterface(interface_name, std::move(*interface_pipe));
       } else {
         std::unique_ptr<PendingRequest> request =
-            base::MakeUnique<PendingRequest>();
+            std::make_unique<PendingRequest>();
         request->interface_name = interface_name;
         request->interface_pipe = std::move(*interface_pipe);
         pending_requests_.push_back(std::move(request));
@@ -134,23 +131,26 @@ class QueueingConnectionFilter : public ConnectionFilter {
   DISALLOW_COPY_AND_ASSIGN(QueueingConnectionFilter);
 };
 
-ui::GpuMain::ExternalDependencies CreateGpuMainDependencies() {
-  ui::GpuMain::ExternalDependencies deps;
-  deps.create_display_compositor = IsVizEnabled();
+viz::VizMainImpl::ExternalDependencies CreateVizMainDependencies(
+    service_manager::Connector* connector) {
+  viz::VizMainImpl::ExternalDependencies deps;
+  deps.create_display_compositor =
+      base::CommandLine::ForCurrentProcess()->HasSwitch(switches::kEnableViz);
   if (GetContentClient()->gpu())
     deps.sync_point_manager = GetContentClient()->gpu()->GetSyncPointManager();
   auto* process = ChildProcess::current();
   deps.shutdown_event = process->GetShutDownEvent();
   deps.io_thread_task_runner = process->io_task_runner();
+  deps.connector = connector;
   return deps;
 }
 
 }  // namespace
 
 GpuChildThread::GpuChildThread(std::unique_ptr<gpu::GpuInit> gpu_init,
-                               ui::GpuMain::LogMessages log_messages)
+                               viz::VizMainImpl::LogMessages log_messages)
     : GpuChildThread(GetOptions(), std::move(gpu_init)) {
-  gpu_main_.SetLogMessagesForHost(std::move(log_messages));
+  viz_main_.SetLogMessagesForHost(std::move(log_messages));
 }
 
 GpuChildThread::GpuChildThread(const InProcessChildThreadParams& params,
@@ -165,7 +165,9 @@ GpuChildThread::GpuChildThread(const InProcessChildThreadParams& params,
 GpuChildThread::GpuChildThread(const ChildThreadImpl::Options& options,
                                std::unique_ptr<gpu::GpuInit> gpu_init)
     : ChildThreadImpl(options),
-      gpu_main_(this, CreateGpuMainDependencies(), std::move(gpu_init)),
+      viz_main_(this,
+                CreateVizMainDependencies(GetConnector()),
+                std::move(gpu_init)),
       weak_factory_(this) {
   if (in_process_gpu()) {
     DCHECK(base::CommandLine::ForCurrentProcess()->HasSwitch(
@@ -178,7 +180,7 @@ GpuChildThread::GpuChildThread(const ChildThreadImpl::Options& options,
 GpuChildThread::~GpuChildThread() {}
 
 void GpuChildThread::Init(const base::Time& process_start_time) {
-  gpu_main_.gpu_service()->set_start_time(process_start_time);
+  viz_main_.gpu_service()->set_start_time(process_start_time);
 
   // When running in in-process mode, this has been set in the browser at
   // ChromeBrowserMainPartsAndroid::PreMainMessageLoopRun().
@@ -189,11 +191,12 @@ void GpuChildThread::Init(const base::Time& process_start_time) {
   }
 #endif
 
-  AssociatedInterfaceRegistry* associated_registry = &associated_interfaces_;
+  blink::AssociatedInterfaceRegistry* associated_registry =
+      &associated_interfaces_;
   associated_registry->AddInterface(base::Bind(
-      &GpuChildThread::CreateGpuMainService, base::Unretained(this)));
+      &GpuChildThread::CreateVizMainService, base::Unretained(this)));
 
-  auto registry = base::MakeUnique<service_manager::BinderRegistry>();
+  auto registry = std::make_unique<service_manager::BinderRegistry>();
   registry->AddInterface(base::Bind(&GpuChildThread::BindServiceFactoryRequest,
                                     weak_factory_.GetWeakPtr()),
                          base::ThreadTaskRunnerHandle::Get());
@@ -201,7 +204,7 @@ void GpuChildThread::Init(const base::Time& process_start_time) {
     GetContentClient()->gpu()->InitializeRegistry(registry.get());
 
   std::unique_ptr<QueueingConnectionFilter> filter =
-      base::MakeUnique<QueueingConnectionFilter>(GetIOTaskRunner(),
+      std::make_unique<QueueingConnectionFilter>(GetIOTaskRunner(),
                                                  std::move(registry));
   release_pending_requests_closure_ = filter->GetReleaseCallback();
   GetServiceManagerConnection()->AddConnectionFilter(std::move(filter));
@@ -209,13 +212,13 @@ void GpuChildThread::Init(const base::Time& process_start_time) {
   StartServiceManagerConnection();
 }
 
-void GpuChildThread::CreateGpuMainService(
-    ui::mojom::GpuMainAssociatedRequest request) {
-  gpu_main_.BindAssociated(std::move(request));
+void GpuChildThread::CreateVizMainService(
+    viz::mojom::VizMainAssociatedRequest request) {
+  viz_main_.BindAssociated(std::move(request));
 }
 
 bool GpuChildThread::in_process_gpu() const {
-  return gpu_main_.gpu_service()->gpu_info().in_process_gpu;
+  return viz_main_.gpu_service()->gpu_info().in_process_gpu;
 }
 
 bool GpuChildThread::Send(IPC::Message* msg) {
@@ -296,7 +299,7 @@ std::unique_ptr<media::AndroidOverlay> GpuChildThread::CreateAndroidOverlay(
         FROM_HERE, base::BindOnce(bind_connector_request, std::move(request)));
   }
 
-  return base::MakeUnique<media::MojoAndroidOverlay>(
+  return std::make_unique<media::MojoAndroidOverlay>(
       std::move(overlay_provider), std::move(config), routing_token,
       std::move(context_ref));
 }

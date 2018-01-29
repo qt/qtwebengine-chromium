@@ -57,7 +57,11 @@ class CORE_EXPORT RenderedPosition {
   bool IsEquivalent(const RenderedPosition&) const;
 
   bool IsNull() const { return !layout_object_; }
-  RootInlineBox* RootBox() { return inline_box_ ? &inline_box_->Root() : 0; }
+  // TODO(crbug.com/766448): Change return type to |const RootInlineBox*|.
+  RootInlineBox* RootBox() const {
+    return const_cast<RootInlineBox*>(inline_box_ ? &inline_box_->Root()
+                                                  : nullptr);
+  }
 
   unsigned char BidiLevelOnLeft() const;
   unsigned char BidiLevelOnRight() const;
@@ -83,7 +87,7 @@ class CORE_EXPORT RenderedPosition {
   Position PositionAtLeftBoundaryOfBiDiRun() const;
   Position PositionAtRightBoundaryOfBiDiRun() const;
 
-  IntRect AbsoluteRect(LayoutUnit* extra_width_to_end_of_line = 0) const;
+  IntRect AbsoluteRect(LayoutUnit* extra_width_to_end_of_line = nullptr) const;
 
   void PositionInGraphicsLayerBacking(CompositedSelectionBound&,
                                       bool selection_start) const;
@@ -94,10 +98,10 @@ class CORE_EXPORT RenderedPosition {
 
  private:
   bool operator==(const RenderedPosition&) const { return false; }
-  explicit RenderedPosition(LayoutObject*, InlineBox*, int offset);
+  explicit RenderedPosition(const LayoutObject*, const InlineBox*, int offset);
 
-  InlineBox* PrevLeafChild() const;
-  InlineBox* NextLeafChild() const;
+  const InlineBox* PrevLeafChild() const;
+  const InlineBox* NextLeafChild() const;
   bool AtLeftmostOffsetInBox() const {
     return inline_box_ && offset_ == inline_box_->CaretLeftmostOffset();
   }
@@ -122,12 +126,12 @@ class CORE_EXPORT RenderedPosition {
       const LayoutPoint& edge_top_in_layer,
       const LayoutPoint& edge_bottom_in_layer);
 
-  LayoutObject* layout_object_;
-  InlineBox* inline_box_;
+  const LayoutObject* layout_object_;
+  const InlineBox* inline_box_;
   int offset_;
 
-  mutable Optional<InlineBox*> prev_leaf_child_;
-  mutable Optional<InlineBox*> next_leaf_child_;
+  mutable Optional<const InlineBox*> prev_leaf_child_;
+  mutable Optional<const InlineBox*> next_leaf_child_;
 
   FRIEND_TEST_ALL_PREFIXES(RenderedPositionTest, GetSamplePointForVisibility);
 };
@@ -135,8 +139,8 @@ class CORE_EXPORT RenderedPosition {
 inline RenderedPosition::RenderedPosition()
     : layout_object_(nullptr), inline_box_(nullptr), offset_(0) {}
 
-inline RenderedPosition::RenderedPosition(LayoutObject* layout_object,
-                                          InlineBox* box,
+inline RenderedPosition::RenderedPosition(const LayoutObject* layout_object,
+                                          const InlineBox* box,
                                           int offset)
     : layout_object_(layout_object), inline_box_(box), offset_(offset) {}
 

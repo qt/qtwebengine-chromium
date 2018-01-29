@@ -1,4 +1,4 @@
-// Copyright 2016 PDFium Authors. All rights reserved.
+// Copyright 2017 PDFium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,49 +6,33 @@
 
 #include "xfa/fxfa/parser/cxfa_image.h"
 
-#include "xfa/fxfa/parser/cxfa_node.h"
+namespace {
 
-CXFA_Image::CXFA_Image(CXFA_Node* pNode, bool bDefValue)
-    : CXFA_Data(pNode), m_bDefValue(bDefValue) {}
+const CXFA_Node::AttributeData kAttributeData[] = {
+    {XFA_Attribute::Id, XFA_AttributeType::CData, nullptr},
+    {XFA_Attribute::Name, XFA_AttributeType::CData, nullptr},
+    {XFA_Attribute::Use, XFA_AttributeType::CData, nullptr},
+    {XFA_Attribute::ContentType, XFA_AttributeType::CData, nullptr},
+    {XFA_Attribute::TransferEncoding, XFA_AttributeType::Enum,
+     (void*)XFA_AttributeEnum::Base64},
+    {XFA_Attribute::Usehref, XFA_AttributeType::CData, nullptr},
+    {XFA_Attribute::Aspect, XFA_AttributeType::Enum,
+     (void*)XFA_AttributeEnum::Fit},
+    {XFA_Attribute::Href, XFA_AttributeType::CData, nullptr},
+    {XFA_Attribute::Unknown, XFA_AttributeType::Integer, nullptr}};
 
-int32_t CXFA_Image::GetAspect() {
-  return m_pNode->GetEnum(XFA_ATTRIBUTE_Aspect);
-}
+constexpr wchar_t kName[] = L"image";
 
-bool CXFA_Image::GetContentType(WideString& wsContentType) {
-  return m_pNode->TryCData(XFA_ATTRIBUTE_ContentType, wsContentType);
-}
+}  // namespace
 
-bool CXFA_Image::GetHref(WideString& wsHref) {
-  if (m_bDefValue)
-    return m_pNode->TryCData(XFA_ATTRIBUTE_Href, wsHref);
-  return m_pNode->GetAttribute(L"href", wsHref);
-}
+CXFA_Image::CXFA_Image(CXFA_Document* doc, XFA_PacketType packet)
+    : CXFA_Node(doc,
+                packet,
+                (XFA_XDPPACKET_Template | XFA_XDPPACKET_Form),
+                XFA_ObjectType::ContentNode,
+                XFA_Element::Image,
+                nullptr,
+                kAttributeData,
+                kName) {}
 
-int32_t CXFA_Image::GetTransferEncoding() {
-  if (m_bDefValue)
-    return m_pNode->GetEnum(XFA_ATTRIBUTE_TransferEncoding);
-  return XFA_ATTRIBUTEENUM_Base64;
-}
-
-bool CXFA_Image::GetContent(WideString& wsText) {
-  return m_pNode->TryContent(wsText);
-}
-
-bool CXFA_Image::SetContentType(const WideString& wsContentType) {
-  return m_pNode->SetCData(XFA_ATTRIBUTE_ContentType, wsContentType);
-}
-
-bool CXFA_Image::SetHref(const WideString& wsHref) {
-  if (m_bDefValue)
-    return m_pNode->SetCData(XFA_ATTRIBUTE_Href, wsHref);
-  return m_pNode->SetAttribute(XFA_ATTRIBUTE_Href, wsHref.AsStringView());
-}
-
-bool CXFA_Image::SetTransferEncoding(int32_t iTransferEncoding) {
-  if (m_bDefValue) {
-    return m_pNode->SetEnum(XFA_ATTRIBUTE_TransferEncoding,
-                            (XFA_ATTRIBUTEENUM)iTransferEncoding);
-  }
-  return true;
-}
+CXFA_Image::~CXFA_Image() {}

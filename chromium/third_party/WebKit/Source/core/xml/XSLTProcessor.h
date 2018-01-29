@@ -39,8 +39,7 @@ class LocalFrame;
 class Document;
 class DocumentFragment;
 
-class XSLTProcessor final : public GarbageCollectedFinalized<XSLTProcessor>,
-                            public ScriptWrappable {
+class XSLTProcessor final : public ScriptWrappable {
   DEFINE_WRAPPERTYPEINFO();
 
  public:
@@ -86,7 +85,7 @@ class XSLTProcessor final : public GarbageCollectedFinalized<XSLTProcessor>,
 
   typedef HashMap<String, String> ParameterMap;
 
-  DECLARE_TRACE();
+  void Trace(blink::Visitor*);
 
  private:
   XSLTProcessor(Document& document) : document_(&document) {}

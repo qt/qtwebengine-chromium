@@ -1,17 +1,17 @@
 <link rel="import" href="chrome://resources/html/polymer.html">
 
 <link rel="import" href="chrome://resources/cr_elements/cr_container_shadow_behavior.html">
-<link rel="import" href="chrome://resources/cr_elements/cr_expand_button/cr_expand_button.html">
 <link rel="import" href="chrome://resources/cr_elements/cr_icons_css.html">
 <link rel="import" href="chrome://resources/cr_elements/shared_style_css.html">
 <link rel="import" href="chrome://resources/cr_elements/paper_button_style_css.html">
 <link rel="import" href="chrome://resources/html/cr.html">
+<link rel="import" href="chrome://resources/html/cr/ui/focus_outline_manager.html">
 <link rel="import" href="chrome://resources/polymer/v1_0/iron-collapse/iron-collapse.html">
 <link rel="import" href="chrome://resources/polymer/v1_0/iron-icons/iron-icons.html">
-<link rel="import" href="chrome://resources/polymer/v1_0/iron-list/iron-list.html">
 <link rel="import" href="chrome://resources/polymer/v1_0/paper-button/paper-button.html">
 <link rel="import" href="chrome://resources/polymer/v1_0/paper-icon-button/paper-icon-button-light.html">
 <link rel="import" href="chrome://resources/polymer/v1_0/paper-styles/color.html">
+<link rel="import" href="chrome://resources/polymer/v1_0/paper-styles/shadow.html">
 <link rel="import" href="code_section.html">
 <link rel="import" href="item_util.html">
 <link rel="import" href="navigation_helper.html">
@@ -29,7 +29,24 @@
         overflow: overlay;
       }
 
+      iron-icon {
+        --iron-icon-fill-color: var(--paper-grey-500);
+        @apply(--cr-icon-height-width);
+      }
+
+      iron-icon[icon=warning] {
+        --iron-icon-fill-color: var(--paper-orange-500);
+      }
+
+      iron-icon[icon=error] {
+        --iron-icon-fill-color: var(--paper-red-700);
+      }
+
+      /* TODO(dpapad): There is a lot of duplicated styling between
+       * detail_view.html and error_page.html. Refactor such that no duplication
+       * happens.*/
       #main {
+        @apply(--shadow-elevation-2dp);
         background-color: white;
         margin: auto;
         min-height: 100%;
@@ -77,19 +94,6 @@
         flex-grow: 1;
       }
 
-      .icon-severity-info {
-        /* TODO(devlin): 1x/2x versions? */
-        content: url(error_severity_info.png);
-      }
-
-      .icon-severity-warning {
-        content: url(error_severity_warning.png);
-      }
-
-      .icon-severity-fatal {
-        content: url(error_severity_fatal.png);
-      }
-
       #devtools-controls {
         padding: 0 var(--cr-section-padding);
       }
@@ -130,25 +134,32 @@
 
       /* TODO(scottchen): extract to shared location from settings. */
       .separator {
+        --separator-gaps: 9px;
         -webkit-border-start: var(--cr-separator-line);
         -webkit-margin-end: var(--cr-section-padding);
-        -webkit-margin-start: var(--cr-section-padding);
-        flex-shrink: 0;
-        --separator-gaps: 9px;
-        height: calc(var(--cr-section-min-height) -
-            var(--separator-gaps));
-
         /**
          * Makes the tappable area fill its parent.
          * TODO(scottchen): This is an explicit reminder to override once
          * .separator styling is extracted from settings.
          */
         -webkit-margin-start: 0;
+        flex-shrink: 0;
+        height: calc(var(--cr-section-min-height) -
+            var(--separator-gaps));
+
       }
 
       /* TODO(scottchen): extract to shared location from settings. */
       .separator + button[is='paper-icon-button-light'] {
         -webkit-margin-start: var(--cr-icon-ripple-margin);
+      }
+
+      :host-context(.focus-outline-visible) .start:focus {
+        outline: -webkit-focus-ring-color auto 5px;
+      }
+
+      .start:focus {
+        outline: none;
       }
     </style>
     <div id="container">
@@ -164,17 +175,17 @@
               could-not-display-code="$i18n{noErrorsToShow}">
           </extensions-code-section>
           <div id="errors-list">
-            <template is="dom-repeat" items="[[calculateShownItems_(data.*)]]">
+            <template is="dom-repeat" items="[[entries_]]">
               <div class="item-container">
-                <div class$="error-item [[computeErrorClass_(selectedError_, item)]]">
-                  <div class="start" on-tap="onErrorItemAction_"
+                <div class$="error-item
+                    [[computeErrorClass_(item, selectedEntry_)]]">
+                  <div actionable class=" start" on-tap="onErrorItemAction_"
                       on-keydown="onErrorItemAction_" tabindex="0">
-                    <img class$="[[computeErrorIconClass_(item)]]">
+                    <iron-icon icon$="[[computeErrorIcon_(item)]]"></iron-icon>
                     <div class="error-message">[[item.message]]</div>
-                    <cr-expand-button hidden="[[!computeIsRuntimeError_(item)]]"
-                        expanded="[[isEqual_(selectedError_, item)]]"
-                        tab-index="-1">
-                    </cr-expand-button>
+                    <div class$="cr-icon [[iconName_(index, selectedEntry_)]]"
+                        hidden="[[!computeIsRuntimeError_(item)]]">
+                    </div>
                   </div>
                   <div class="separator"></div>
                   <button is="paper-icon-button-light" class="icon-delete-gray"
@@ -183,7 +194,7 @@
                   </button>
                 </div>
                 <template is="dom-if" if="[[computeIsRuntimeError_(item)]]">
-                  <iron-collapse opened="[[isEqual_(selectedError_, item)]]">
+                  <iron-collapse opened="[[isOpened_(index, selectedEntry_)]]">
                     <div id="devtools-controls">
                       <div id="stack-trace-heading">
                         $i18n{stackTrace}
@@ -192,7 +203,8 @@
                         <template is="dom-repeat" items="[[item.stackTrace]]">
                           <li on-tap="onStackFrameTap_"
                               hidden="[[!shouldDisplayFrame_(item.url)]]"
-                              class$="[[getStackFrameClass_(item, selectedStackFrame_)]]">
+                              class$="[[getStackFrameClass_(item,
+                                  selectedStackFrame_)]]">
                             [[getStackTraceLabel_(item)]]
                           </li>
                         </template>
@@ -207,7 +219,7 @@
                 </template>
               </div>
             </template>
-          </iron-list>
+          </div>
         </div>
       </div>
     </div>

@@ -149,13 +149,14 @@ std::unique_ptr<ThrottlingURLLoader> ThrottlingURLLoader::CreateLoaderAndStart(
 std::unique_ptr<ThrottlingURLLoader> ThrottlingURLLoader::CreateLoaderAndStart(
     StartLoaderCallback start_loader_callback,
     std::vector<std::unique_ptr<URLLoaderThrottle>> throttles,
+    int32_t routing_id,
     const ResourceRequest& url_request,
     mojom::URLLoaderClient* client,
     const net::NetworkTrafficAnnotationTag& traffic_annotation,
     scoped_refptr<base::SingleThreadTaskRunner> task_runner) {
   std::unique_ptr<ThrottlingURLLoader> loader(new ThrottlingURLLoader(
       std::move(throttles), client, traffic_annotation));
-  loader->Start(nullptr, 0, 0, mojom::kURLLoadOptionNone,
+  loader->Start(nullptr, routing_id, 0, mojom::kURLLoadOptionNone,
                 std::move(start_loader_callback), url_request,
                 std::move(task_runner));
   return loader;
@@ -187,7 +188,7 @@ void ThrottlingURLLoader::SetPriority(net::RequestPriority priority,
     if (!loader_cancelled_) {
       DCHECK_EQ(DEFERRED_START, deferred_stage_);
       priority_info_ =
-          base::MakeUnique<PriorityInfo>(priority, intra_priority_value);
+          std::make_unique<PriorityInfo>(priority, intra_priority_value);
     }
     return;
   }
@@ -241,7 +242,7 @@ void ThrottlingURLLoader::Start(
     if (deferred) {
       deferred_stage_ = DEFERRED_START;
       start_info_ =
-          base::MakeUnique<StartInfo>(factory, routing_id, request_id, options,
+          std::make_unique<StartInfo>(factory, routing_id, request_id, options,
                                       std::move(start_loader_callback),
                                       url_request, std::move(task_runner));
       return;
@@ -286,6 +287,9 @@ void ThrottlingURLLoader::StartNow(
     url_loader_->SetPriority(priority_info->priority,
                              priority_info->intra_priority_value);
   }
+
+  // Initialize with the request URL, may be updated when on redirects
+  response_url_ = url_request.url;
 }
 
 bool ThrottlingURLLoader::HandleThrottleResult(URLLoaderThrottle* throttle,
@@ -323,14 +327,15 @@ void ThrottlingURLLoader::OnReceiveResponse(
     for (auto& entry : throttles_) {
       auto* throttle = entry.throttle.get();
       bool throttle_deferred = false;
-      throttle->WillProcessResponse(&throttle_deferred);
+      throttle->WillProcessResponse(response_url_, response_head,
+                                    &throttle_deferred);
       if (!HandleThrottleResult(throttle, throttle_deferred, &deferred))
         return;
     }
 
     if (deferred) {
       deferred_stage_ = DEFERRED_RESPONSE;
-      response_info_ = base::MakeUnique<ResponseInfo>(
+      response_info_ = std::make_unique<ResponseInfo>(
           response_head, ssl_info, std::move(downloaded_file));
       client_binding_.PauseIncomingMethodCallProcessing();
       return;
@@ -361,12 +366,16 @@ void ThrottlingURLLoader::OnReceiveRedirect(
     if (deferred) {
       deferred_stage_ = DEFERRED_REDIRECT;
       redirect_info_ =
-          base::MakeUnique<RedirectInfo>(redirect_info, response_head);
+          std::make_unique<RedirectInfo>(redirect_info, response_head);
       client_binding_.PauseIncomingMethodCallProcessing();
       return;
     }
   }
 
+  // TODO(dhausknecht) at this point we do not actually know if we commit to the
+  // redirect or if it will be cancelled. FollowRedirect would be a more
+  // suitable place to set this URL but there we do not have the data.
+  response_url_ = redirect_info.new_url;
   forwarding_client_->OnReceiveRedirect(redirect_info, response_head);
 }
 
@@ -413,7 +422,7 @@ void ThrottlingURLLoader::OnStartLoadingResponseBody(
 }
 
 void ThrottlingURLLoader::OnComplete(
-    const ResourceRequestCompletionStatus& status) {
+    const network::URLLoaderCompletionStatus& status) {
   DCHECK_EQ(DEFERRED_NONE, deferred_stage_);
   DCHECK(!loader_cancelled_);
 
@@ -436,13 +445,13 @@ void ThrottlingURLLoader::CancelWithError(int error_code) {
   if (loader_cancelled_)
     return;
 
-  ResourceRequestCompletionStatus request_complete_data;
-  request_complete_data.error_code = error_code;
-  request_complete_data.completion_time = base::TimeTicks::Now();
+  network::URLLoaderCompletionStatus status;
+  status.error_code = error_code;
+  status.completion_time = base::TimeTicks::Now();
 
   deferred_stage_ = DEFERRED_NONE;
   DisconnectClient();
-  forwarding_client_->OnComplete(request_complete_data);
+  forwarding_client_->OnComplete(status);
 }
 
 void ThrottlingURLLoader::Resume() {
@@ -463,6 +472,10 @@ void ThrottlingURLLoader::Resume() {
       client_binding_.ResumeIncomingMethodCallProcessing();
       forwarding_client_->OnReceiveRedirect(redirect_info_->redirect_info,
                                             redirect_info_->response_head);
+      // TODO(dhausknecht) at this point we do not actually know if we commit to
+      // the redirect or if it will be cancelled. FollowRedirect would be a more
+      // suitable place to set this URL but there we do not have the data.
+      response_url_ = redirect_info_->redirect_info.new_url;
       break;
     }
     case DEFERRED_RESPONSE: {
@@ -500,7 +513,7 @@ ThrottlingURLLoader::ThrottleEntry::ThrottleEntry(
     ThrottlingURLLoader* loader,
     std::unique_ptr<URLLoaderThrottle> the_throttle)
     : delegate(
-          base::MakeUnique<ForwardingThrottleDelegate>(loader,
+          std::make_unique<ForwardingThrottleDelegate>(loader,
                                                        the_throttle.get())),
       throttle(std::move(the_throttle)) {
   throttle->set_delegate(delegate.get());

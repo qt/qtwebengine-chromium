@@ -35,7 +35,6 @@
 #include "platform/audio/AudioUtilities.h"
 #include "platform/audio/PushPullFIFO.h"
 #include "platform/instrumentation/tracing/TraceEvent.h"
-#include "platform/runtime_enabled_features.h"
 #include "platform/weborigin/SecurityOrigin.h"
 #include "platform/wtf/PtrUtil.h"
 #include "public/platform/Platform.h"
@@ -58,20 +57,21 @@ namespace blink {
 // value and not a buffer size in the latencyHint. See: crbug.com/737047
 const size_t kFIFOSize = 8192;
 
-RefPtr<AudioDestination> AudioDestination::Create(
+scoped_refptr<AudioDestination> AudioDestination::Create(
     AudioIOCallback& callback,
     unsigned number_of_output_channels,
     const WebAudioLatencyHint& latency_hint,
-    RefPtr<SecurityOrigin> security_origin) {
-  return WTF::AdoptRef(new AudioDestination(callback, number_of_output_channels,
-                                            latency_hint,
-                                            std::move(security_origin)));
+    scoped_refptr<SecurityOrigin> security_origin) {
+  return base::AdoptRef(
+      new AudioDestination(callback, number_of_output_channels, latency_hint,
+                           std::move(security_origin)));
 }
 
-AudioDestination::AudioDestination(AudioIOCallback& callback,
-                                   unsigned number_of_output_channels,
-                                   const WebAudioLatencyHint& latency_hint,
-                                   RefPtr<SecurityOrigin> security_origin)
+AudioDestination::AudioDestination(
+    AudioIOCallback& callback,
+    unsigned number_of_output_channels,
+    const WebAudioLatencyHint& latency_hint,
+    scoped_refptr<SecurityOrigin> security_origin)
     : number_of_output_channels_(number_of_output_channels),
       is_playing_(false),
       fifo_(WTF::WrapUnique(
@@ -134,7 +134,7 @@ void AudioDestination::Render(const WebVector<float*>& destination_data,
   if (worklet_backing_thread_) {
     worklet_backing_thread_->GetWebTaskRunner()->PostTask(
         BLINK_FROM_HERE,
-        CrossThreadBind(&AudioDestination::RequestRender, WrapRefPtr(this),
+        CrossThreadBind(&AudioDestination::RequestRender, WrapRefCounted(this),
                         number_of_frames, frames_to_render, delay,
                         delay_timestamp, prior_frames_skipped));
   } else {
@@ -202,7 +202,6 @@ void AudioDestination::Start() {
 void AudioDestination::StartWithWorkletThread(
     WebThread* worklet_backing_thread) {
   DCHECK(IsMainThread());
-  DCHECK(RuntimeEnabledFeatures::AudioWorkletEnabled());
 
   if (web_audio_device_ && !is_playing_) {
     TRACE_EVENT0("webaudio", "AudioDestination::Start");

@@ -10,6 +10,7 @@
 
 namespace blink {
 
+class Element;
 class MediaControlsImpl;
 class ResizeObserver;
 
@@ -19,7 +20,7 @@ class MODULES_EXPORT MediaControlSliderElement
   USING_GARBAGE_COLLECTED_MIXIN(MediaControlSliderElement);
 
  public:
-  DECLARE_VIRTUAL_TRACE();
+  virtual void Trace(blink::Visitor*);
 
   // Stores the position of the segment in proportion from 0.0 to 1.0.
   struct Position {
@@ -42,6 +43,8 @@ class MODULES_EXPORT MediaControlSliderElement
   // Width in CSS pixels * pageZoomFactor (ignores CSS transforms for
   // simplicity; deliberately ignores pinch zoom's pageScaleFactor).
   int Width();
+
+  Element& GetTrackElement();
 
  private:
   float ZoomFactor() const;

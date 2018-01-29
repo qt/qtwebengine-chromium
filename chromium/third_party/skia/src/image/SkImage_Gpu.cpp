@@ -22,8 +22,10 @@
 #include "GrRenderTargetContext.h"
 #include "GrResourceProvider.h"
 #include "GrSemaphore.h"
+#include "GrSurfacePriv.h"
 #include "GrTextureAdjuster.h"
 #include "GrTexture.h"
+#include "GrTexturePriv.h"
 #include "GrTextureProxy.h"
 #include "effects/GrNonlinearColorSpaceXformEffect.h"
 #include "effects/GrYUVEffect.h"
@@ -123,8 +125,8 @@ sk_sp<GrTextureProxy> SkImage_Gpu::asTextureProxyRef(GrContext* context,
         *texColorSpace = this->fColorSpace;
     }
 
-    GrTextureAdjuster adjuster(fContext, fProxy, this->alphaType(), this->bounds(),
-                               this->uniqueID(), this->fColorSpace.get());
+    GrTextureAdjuster adjuster(fContext, fProxy, this->alphaType(), this->uniqueID(),
+                               this->fColorSpace.get());
     return adjuster.refTextureProxySafeForParams(params, scaleAdjust);
 }
 
@@ -247,6 +249,7 @@ sk_sp<SkImage> SkImage_Gpu::onMakeSubset(const SkIRect& subset) const {
 
     sk_sp<GrSurfaceContext> sContext(fContext->contextPriv().makeDeferredSurfaceContext(
                                                                         desc,
+                                                                        GrMipMapped::kNo,
                                                                         SkBackingFit::kExact,
                                                                         fBudgeted));
     if (!sContext) {
@@ -387,7 +390,7 @@ static sk_sp<SkImage> make_from_yuv_textures_copy(GrContext* ctx, SkYUVColorSpac
                                                                          kRGBA_8888_GrPixelConfig,
                                                                          std::move(imageColorSpace),
                                                                          0,
-                                                                         false,
+                                                                         GrMipMapped::kNo,
                                                                          origin));
     if (!renderTargetContext) {
         return nullptr;
@@ -408,9 +411,9 @@ static sk_sp<SkImage> make_from_yuv_textures_copy(GrContext* ctx, SkYUVColorSpac
     ctx->contextPriv().flushSurfaceWrites(renderTargetContext->asSurfaceProxy());
 
     // MDB: this call is okay bc we know 'renderTargetContext' was exact
-    return sk_make_sp<SkImage_Gpu>(ctx, kNeedNewImageUniqueID,
-                                   kOpaque_SkAlphaType, renderTargetContext->asTextureProxyRef(),
-                                   renderTargetContext->refColorSpace(), budgeted);
+    return sk_make_sp<SkImage_Gpu>(ctx, kNeedNewImageUniqueID, kOpaque_SkAlphaType,
+                                   renderTargetContext->asTextureProxyRef(),
+                                   renderTargetContext->colorSpaceInfo().refColorSpace(), budgeted);
 }
 
 sk_sp<SkImage> SkImage::MakeFromYUVTexturesCopy(GrContext* ctx, SkYUVColorSpace colorSpace,
@@ -502,6 +505,41 @@ sk_sp<SkImage> SkImage::MakeCrossContextFromEncoded(GrContext* context, sk_sp<Sk
     auto gen = GrBackendTextureImageGenerator::Make(std::move(texture), proxy->origin(),
                                                     std::move(sema), codecImage->alphaType(),
                                                     std::move(texColorSpace));
+    return SkImage::MakeFromGenerator(std::move(gen));
+}
+
+sk_sp<SkImage> SkImage::MakeCrossContextFromPixmap(GrContext* context, const SkPixmap& pixmap,
+                                                   bool buildMips, SkColorSpace* dstColorSpace) {
+    // Some backends or drivers don't support (safely) moving resources between contexts
+    if (!context || !context->caps()->crossContextTextureSupport()) {
+        return SkImage::MakeRasterCopy(pixmap);
+    }
+
+    // Turn the pixmap into a GrTextureProxy
+    sk_sp<GrTextureProxy> proxy;
+    if (buildMips) {
+        SkBitmap bmp;
+        bmp.installPixels(pixmap);
+        proxy = GrGenerateMipMapsAndUploadToTextureProxy(context, bmp, dstColorSpace);
+    } else {
+        proxy = GrUploadPixmapToTextureProxy(context->resourceProvider(), pixmap, SkBudgeted::kYes,
+                                             dstColorSpace);
+    }
+
+    if (!proxy) {
+        return SkImage::MakeRasterCopy(pixmap);
+    }
+
+    sk_sp<GrTexture> texture = sk_ref_sp(proxy->priv().peekTexture());
+
+    // Flush any writes or uploads
+    context->contextPriv().prepareSurfaceForExternalIO(proxy.get());
+
+    sk_sp<GrSemaphore> sema = context->getGpu()->prepareTextureForCrossContextUsage(texture.get());
+
+    auto gen = GrBackendTextureImageGenerator::Make(std::move(texture), proxy->origin(),
+                                                    std::move(sema), pixmap.alphaType(),
+                                                    pixmap.info().refColorSpace());
     return SkImage::MakeFromGenerator(std::move(gen));
 }
 
@@ -912,6 +950,65 @@ sk_sp<SkImage> SkImage::MakeFromDeferredTextureImageData(GrContext* context, con
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
+bool SkImage::MakeBackendTextureFromSkImage(GrContext* ctx,
+                                            sk_sp<SkImage> image,
+                                            GrBackendTexture* backendTexture,
+                                            BackendTextureReleaseProc* releaseProc) {
+    if (!image || !ctx || !backendTexture || !releaseProc) {
+        return false;
+    }
+
+    // Ensure we have a texture backed image.
+    if (!image->isTextureBacked()) {
+        image = image->makeTextureImage(ctx, nullptr);
+        if (!image) {
+            return false;
+        }
+    }
+    GrTexture* texture = image->getTexture();
+    SkASSERT(texture);
+
+    // If the image's context doesn't match the provided context, fail.
+    if (texture->getContext() != ctx) {
+        return false;
+    }
+
+    // Flush any pending IO on the texture.
+    ctx->contextPriv().prepareSurfaceForExternalIO(as_IB(image)->peekProxy());
+    SkASSERT(!texture->surfacePriv().hasPendingIO());
+
+    // We must make a copy of the image if the image is not unique, if the GrTexture owned by the
+    // image is not unique, or if the texture wraps an external object.
+    if (!image->unique() || !texture->surfacePriv().hasUniqueRef() ||
+        texture->resourcePriv().refsWrappedObjects()) {
+        // onMakeSubset will always copy the image.
+        image = as_IB(image)->onMakeSubset(image->bounds());
+        if (!image) {
+            return false;
+        }
+
+        texture = image->getTexture();
+        SkASSERT(texture);
+
+        // Flush to ensure that the copy is completed before we return the texture.
+        ctx->contextPriv().prepareSurfaceForExternalIO(as_IB(image)->peekProxy());
+        SkASSERT(!texture->surfacePriv().hasPendingIO());
+    }
+
+    SkASSERT(!texture->resourcePriv().refsWrappedObjects());
+    SkASSERT(texture->surfacePriv().hasUniqueRef());
+    SkASSERT(image->unique());
+
+    // Take a reference to the GrTexture and release the image.
+    sk_sp<GrTexture> textureRef(SkSafeRef(texture));
+    image = nullptr;
+
+    // Steal the backend texture from the GrTexture, releasing the GrTexture in the process.
+    return GrTexture::StealBackendTexture(std::move(textureRef), backendTexture, releaseProc);
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
 sk_sp<SkImage> SkImage::MakeTextureFromMipMap(GrContext* ctx, const SkImageInfo& info,
                                               const GrMipLevel texels[], int mipLevelCount,
                                               SkBudgeted budgeted,
@@ -968,7 +1065,7 @@ sk_sp<SkImage> SkImage_Gpu::onMakeColorSpace(sk_sp<SkColorSpace> target, SkColor
 
     GrPaint paint;
     paint.setPorterDuffXPFactory(SkBlendMode::kSrc);
-    paint.addColorTextureProcessor(fProxy, nullptr, SkMatrix::I());
+    paint.addColorTextureProcessor(fProxy, SkMatrix::I());
     paint.addColorFragmentProcessor(std::move(xform));
 
     const SkRect rect = SkRect::MakeIWH(this->width(), this->height());

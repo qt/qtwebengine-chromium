@@ -48,8 +48,8 @@
 #include "platform/graphics/paint/DrawingRecorder.h"
 #include "platform/graphics/paint/PaintCanvas.h"
 #include "platform/graphics/paint/PaintRecorder.h"
-#include "platform/wtf/CurrentTime.h"
 #include "platform/wtf/PtrUtil.h"
+#include "platform/wtf/Time.h"
 #include "platform/wtf/Vector.h"
 #include "public/platform/Platform.h"
 #include "public/platform/WebCompositorSupport.h"
@@ -74,7 +74,7 @@ std::unique_ptr<LinkHighlightImpl> LinkHighlightImpl::Create(
 LinkHighlightImpl::LinkHighlightImpl(Node* node, WebViewImpl* owning_web_view)
     : node_(node),
       owning_web_view_(owning_web_view),
-      current_graphics_layer_(0),
+      current_graphics_layer_(nullptr),
       is_scrolling_graphics_layer_(false),
       geometry_needs_update_(false),
       is_animating_(false),
@@ -339,7 +339,7 @@ void LinkHighlightImpl::StartHighlightAnimationIfNeeded() {
 void LinkHighlightImpl::ClearGraphicsLayerLinkHighlightPointer() {
   if (current_graphics_layer_) {
     current_graphics_layer_->RemoveLinkHighlight(this);
-    current_graphics_layer_ = 0;
+    current_graphics_layer_ = nullptr;
   }
 }
 
@@ -392,7 +392,7 @@ void LinkHighlightImpl::UpdateGeometry() {
 }
 
 void LinkHighlightImpl::ClearCurrentGraphicsLayer() {
-  current_graphics_layer_ = 0;
+  current_graphics_layer_ = nullptr;
   geometry_needs_update_ = true;
 }
 

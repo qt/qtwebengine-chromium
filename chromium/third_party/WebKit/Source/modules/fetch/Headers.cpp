@@ -37,10 +37,6 @@ class HeadersIterationSource final
     return true;
   }
 
-  DEFINE_INLINE_VIRTUAL_TRACE() {
-    PairIterable<String, String>::IterationSource::Trace(visitor);
-  }
-
  private:
   Vector<std::pair<String, String>> headers_;
   size_t current_;
@@ -273,8 +269,9 @@ Headers::Headers()
 Headers::Headers(FetchHeaderList* header_list)
     : header_list_(header_list), guard_(kNoneGuard) {}
 
-DEFINE_TRACE(Headers) {
+void Headers::Trace(blink::Visitor* visitor) {
   visitor->Trace(header_list_);
+  ScriptWrappable::Trace(visitor);
 }
 
 PairIterable<String, String>::IterationSource* Headers::StartIteration(

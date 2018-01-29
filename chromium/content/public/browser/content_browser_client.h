@@ -19,7 +19,6 @@
 #include "build/build_config.h"
 #include "content/public/browser/certificate_request_result_type.h"
 #include "content/public/browser/navigation_throttle.h"
-#include "content/public/common/associated_interface_registry.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/media_stream_request.h"
 #include "content/public/common/network_service.mojom.h"
@@ -35,7 +34,8 @@
 #include "services/service_manager/sandbox/sandbox_type.h"
 #include "storage/browser/fileapi/file_system_context.h"
 #include "storage/browser/quota/quota_manager.h"
-#include "third_party/WebKit/public/platform/WebPageVisibilityState.h"
+#include "third_party/WebKit/common/associated_interfaces/associated_interface_registry.h"
+#include "third_party/WebKit/common/page/page_visibility_state.mojom.h"
 #include "third_party/WebKit/public/web/window_features.mojom.h"
 #include "ui/base/page_transition_types.h"
 #include "ui/base/window_open_disposition.h"
@@ -55,12 +55,12 @@ class CommandLine;
 class FilePath;
 }
 
-namespace gfx {
-class ImageSkia;
+namespace device {
+class LocationProvider;
 }
 
-namespace gpu {
-class GpuChannelEstablishFactory;
+namespace gfx {
+class ImageSkia;
 }
 
 namespace media {
@@ -151,6 +151,11 @@ namespace mojom {
 class NetworkContext;
 }
 
+CONTENT_EXPORT void OverrideOnBindInterface(
+    const service_manager::BindSourceInfo& remote_info,
+    const std::string& name,
+    mojo::ScopedMessagePipeHandle* handle);
+
 // Embedder API (or SPI) for participating in browser logic, to be implemented
 // by the client of the content browser. See ChromeContentBrowserClient for the
 // principal implementation. The methods are assumed to be called on the UI
@@ -196,6 +201,9 @@ class CONTENT_EXPORT ContentBrowserClient {
   virtual WebContentsViewDelegate* GetWebContentsViewDelegate(
       WebContents* web_contents);
 
+  // Allow embedder control GPU process launch retry on failure behavior.
+  virtual bool AllowGpuLaunchRetryOnIOThread();
+
   // Notifies that a render process will be created. This is called before
   // the content layer adds its own BrowserMessageFilters, so that the
   // embedder's IPC filters have priority.
@@ -206,12 +214,8 @@ class CONTENT_EXPORT ContentBrowserClient {
 
   // Get the effective URL for the given actual URL, to allow an embedder to
   // group different url schemes in the same SiteInstance.
-  // |is_isolated_origin| specifies whether |url| corresponds to an origin that
-  // requires process isolation.  Certain kinds of effective URLs should be
-  // ignored for such origins.
   virtual GURL GetEffectiveURL(BrowserContext* browser_context,
-                               const GURL& url,
-                               bool is_isolated_origin);
+                               const GURL& url);
 
   // Returns whether all instances of the specified effective URL should be
   // rendered by the same process, rather than using process-per-site-instance.
@@ -277,6 +281,12 @@ class CONTENT_EXPORT ContentBrowserClient {
   // Returns whether a URL should be allowed to open from a specific context.
   // This also applies in cases where the new URL will open in another process.
   virtual bool ShouldAllowOpenURL(SiteInstance* site_instance, const GURL& url);
+
+  // Returns whether a URL can be displayed within a WebUI for a given
+  // BrowserContext. Temporary workaround while crbug.com/768526 is resolved.
+  // Note: This is used by an internal Cast implementation of this class.
+  virtual bool IsURLAcceptableForWebUI(BrowserContext* browser_context,
+                                       const GURL& url);
 
   // Allows the embedder to override parameters when navigating. Called for both
   // opening new URLs and when transferring URLs across processes.
@@ -344,6 +354,12 @@ class CONTENT_EXPORT ContentBrowserClient {
   // process.
   virtual std::vector<url::Origin> GetOriginsRequiringDedicatedProcess();
 
+  // Indicates whether a file path should be accessible via file URL given a
+  // request from a browser context which lives within |profile_path|.
+  virtual bool IsFileAccessAllowed(const base::FilePath& path,
+                                   const base::FilePath& absolute_path,
+                                   const base::FilePath& profile_path);
+
   // Allows the embedder to pass extra command line flags.
   // switches::kProcessType will already be set at this point.
   virtual void AppendExtraCommandLineSwitches(base::CommandLine* command_line,
@@ -389,6 +405,17 @@ class CONTENT_EXPORT ContentBrowserClient {
       ResourceContext* context,
       const base::Callback<WebContents*(void)>& wc_getter);
 
+  // Allow the embedder to control if a Shared Worker can be connected from a
+  // given tab.
+  // This is called on the UI thread.
+  virtual bool AllowSharedWorker(const GURL& worker_url,
+                                 const GURL& main_frame_url,
+                                 const std::string& name,
+                                 const url::Origin& constructor_origin,
+                                 BrowserContext* context,
+                                 int render_process_id,
+                                 int render_frame_id);
+
   virtual bool IsDataSaverEnabled(BrowserContext* context);
 
   // Allow the embedder to return additional headers that should be sent when
@@ -410,7 +437,7 @@ class CONTENT_EXPORT ContentBrowserClient {
   // This is called on the IO thread.
   virtual bool AllowSetCookie(const GURL& url,
                               const GURL& first_party,
-                              const std::string& cookie_line,
+                              const net::CanonicalCookie& cookie,
                               ResourceContext* context,
                               int render_process_id,
                               int render_frame_id,
@@ -467,6 +494,12 @@ class CONTENT_EXPORT ContentBrowserClient {
   // This is called on the IO thread.
   virtual net::URLRequestContext* OverrideRequestContextForURL(
       const GURL& url, ResourceContext* context);
+
+  // Allows the embedder to override the LocationProvider implementation.
+  // Return nullptr to indicate the default one for the platform should be
+  // created.
+  virtual std::unique_ptr<device::LocationProvider>
+  OverrideSystemLocationProvider();
 
   // Allows the embedder to provide a URLRequestContextGetter to use for network
   // geolocation queries.
@@ -623,9 +656,6 @@ class CONTENT_EXPORT ContentBrowserClient {
   virtual BrowserPpapiHost* GetExternalBrowserPpapiHost(
       int plugin_child_id);
 
-  // Gets the factory to use to establish a connection to the GPU process.
-  virtual gpu::GpuChannelEstablishFactory* GetGpuChannelEstablishFactory();
-
   // Returns true if the socket operation specified by |params| is allowed from
   // the given |browser_context| and |url|. If |params| is nullptr, this method
   // checks the basic "socket" permission, which is for those operations that
@@ -706,7 +736,7 @@ class CONTENT_EXPORT ContentBrowserClient {
   // task runner is provided.
   virtual void ExposeInterfacesToRenderer(
       service_manager::BinderRegistry* registry,
-      AssociatedInterfaceRegistry* associated_registry,
+      blink::AssociatedInterfaceRegistry* associated_registry,
       RenderProcessHost* render_process_host) {}
 
   // Called when RenderFrameHostImpl connects to the Media service. Expose
@@ -730,6 +760,15 @@ class CONTENT_EXPORT ContentBrowserClient {
       const std::string& interface_name,
       mojo::ScopedInterfaceEndpointHandle* handle);
 
+  // Content was unable to bind a request for this interface, so the embedder
+  // should try. This is called for interface requests from dedicated, shared
+  // and service workers.
+  virtual void BindInterfaceRequestFromWorker(
+      RenderProcessHost* render_process_host,
+      const url::Origin& origin,
+      const std::string& interface_name,
+      mojo::ScopedMessagePipeHandle interface_pipe) {}
+
   // (Currently called only from GPUProcessHost, move somewhere more central).
   // Called when a request to bind |interface_name| on |interface_pipe| is
   // received from |source_info.identity|. If the request is bound,
@@ -746,12 +785,22 @@ class CONTENT_EXPORT ContentBrowserClient {
   // Manager.
   virtual void RegisterInProcessServices(StaticServiceMap* services) {}
 
+  virtual void OverrideOnBindInterface(
+      const service_manager::BindSourceInfo& remote_info,
+      const std::string& name,
+      mojo::ScopedMessagePipeHandle* handle) {}
+
   using OutOfProcessServiceMap = std::map<std::string, base::string16>;
 
   // Registers services to be loaded out of the browser process in an
   // utility process. The value of each map entry should be a process name,
   // to use for the service's host process when launched.
   virtual void RegisterOutOfProcessServices(OutOfProcessServiceMap* services) {}
+
+  // Allows the embedder to terminate the browser if a specific service instance
+  // quits or crashes.
+  virtual bool ShouldTerminateOnServiceQuit(
+      const service_manager::Identity& id);
 
   // Allow the embedder to provide a dictionary loaded from a JSON file
   // resembling a service manifest whose capabilities section will be merged
@@ -776,7 +825,7 @@ class CONTENT_EXPORT ContentBrowserClient {
   // |visibility_state| should not be null. It will only be set if needed.
   virtual void OverridePageVisibilityState(
       RenderFrameHost* render_frame_host,
-      blink::WebPageVisibilityState* visibility_state) {}
+      blink::mojom::PageVisibilityState* visibility_state) {}
 
   // Allows an embedder to provide its own ControllerPresentationServiceDelegate
   // implementation. Returns nullptr if unavailable.
@@ -877,6 +926,25 @@ class CONTENT_EXPORT ContentBrowserClient {
   // This is called on the IO thread.
   virtual std::vector<std::unique_ptr<URLLoaderThrottle>>
   CreateURLLoaderThrottles(const base::Callback<WebContents*()>& wc_getter);
+
+  // Allows the embedder to register per-scheme URLLoaderFactory implementations
+  // to handle navigation URL requests for schemes not handled by the Network
+  // Service. Only called when the Network Service is enabled.
+  using NonNetworkURLLoaderFactoryMap =
+      std::map<std::string, std::unique_ptr<mojom::URLLoaderFactory>>;
+  virtual void RegisterNonNetworkNavigationURLLoaderFactories(
+      RenderFrameHost* frame_host,
+      NonNetworkURLLoaderFactoryMap* factories);
+
+  // Allows the embedder to register per-scheme URLLoaderFactory implementations
+  // to handle subresource URL requests for schemes not handled by the Network
+  // Service. The factories added to this map will only be used to service
+  // subresource requests from |frame_host| as long as it's navigated to
+  // |frame_url|. Only called when the Network Service is enabled.
+  virtual void RegisterNonNetworkSubresourceURLLoaderFactories(
+      RenderFrameHost* frame_host,
+      const GURL& frame_url,
+      NonNetworkURLLoaderFactoryMap* factories);
 
   // Creates a NetworkContext for a BrowserContext's StoragePartition. If the
   // network service is enabled, it must return a NetworkContext using the

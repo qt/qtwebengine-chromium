@@ -25,8 +25,8 @@
 #ifndef LabelsNodeList_h
 #define LabelsNodeList_h
 
+#include "base/memory/scoped_refptr.h"
 #include "core/dom/LiveNodeList.h"
-#include "platform/wtf/RefPtr.h"
 
 namespace blink {
 
@@ -38,7 +38,7 @@ class LabelsNodeList final : public LiveNodeList {
     return new LabelsNodeList(owner_node);
   }
 
-  virtual ~LabelsNodeList();
+  ~LabelsNodeList() override;
 
  protected:
   explicit LabelsNodeList(ContainerNode&);

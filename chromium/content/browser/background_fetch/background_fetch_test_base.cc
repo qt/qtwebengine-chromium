@@ -67,7 +67,7 @@ BackgroundFetchTestBase::BackgroundFetchTestBase()
     // at time of writing EmbeddedWorkerTestHelper didn't seem to support that.
     : thread_bundle_(TestBrowserThreadBundle::IO_MAINLOOP),
       delegate_(browser_context_.GetBackgroundFetchDelegate()),
-      origin_(GURL(kTestOrigin)) {}
+      origin_(url::Origin::Create(GURL(kTestOrigin))) {}
 
 BackgroundFetchTestBase::~BackgroundFetchTestBase() {
   DCHECK(set_up_called_);
@@ -138,13 +138,11 @@ BackgroundFetchTestBase::CreateRequestWithProvidedResponse(
     const std::string& method,
     const GURL& url,
     std::unique_ptr<TestResponse> response) {
-  GURL gurl(url);
-
   // Register the |response| with the faked delegate.
   delegate_->RegisterResponse(url, std::move(response));
 
   // Create a ServiceWorkerFetchRequest request with the same information.
-  return ServiceWorkerFetchRequest(gurl, method, ServiceWorkerHeaderMap(),
+  return ServiceWorkerFetchRequest(url, method, ServiceWorkerHeaderMap(),
                                    Referrer(), false /* is_reload */);
 }
 

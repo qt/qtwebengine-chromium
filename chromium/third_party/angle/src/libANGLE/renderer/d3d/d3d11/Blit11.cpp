@@ -27,6 +27,7 @@ namespace
 
 // Include inline shaders in the anonymous namespace to make sure no symbols are exported
 #include "libANGLE/renderer/d3d/d3d11/shaders/compiled/passthrough2d11vs.h"
+#include "libANGLE/renderer/d3d/d3d11/shaders/compiled/passthrougha2d11ps.h"
 #include "libANGLE/renderer/d3d/d3d11/shaders/compiled/passthroughdepth2d11ps.h"
 #include "libANGLE/renderer/d3d/d3d11/shaders/compiled/passthroughlum2d11ps.h"
 #include "libANGLE/renderer/d3d/d3d11/shaders/compiled/passthroughlumalpha2d11ps.h"
@@ -557,6 +558,14 @@ DXGI_FORMAT GetStencilSRVFormat(const d3d11::Format &formatSet)
 
 }  // namespace
 
+Blit11::Shader::Shader() = default;
+
+Blit11::Shader::Shader(Shader &&other) = default;
+
+Blit11::Shader::~Shader() = default;
+
+Blit11::Shader &Blit11::Shader::operator=(Blit11::Shader &&other) = default;
+
 Blit11::Blit11(Renderer11 *renderer)
     : mRenderer(renderer),
       mResourcesInitialized(false),
@@ -1078,7 +1087,7 @@ gl::Error Blit11::swizzleTexture(const gl::Context *context,
 
     deviceContext->Unmap(mSwizzleCB.get(), 0);
 
-    auto stateManager = mRenderer->getStateManager();
+    StateManager11 *stateManager = mRenderer->getStateManager();
 
     // Apply vertex buffer
     stateManager->setSingleVertexBuffer(&mVertexBuffer, stride, 0);
@@ -1173,7 +1182,7 @@ gl::Error Blit11::copyTexture(const gl::Context *context,
 
     deviceContext->Unmap(mVertexBuffer.get(), 0);
 
-    auto stateManager = mRenderer->getStateManager();
+    StateManager11 *stateManager = mRenderer->getStateManager();
 
     // Apply vertex buffer
     stateManager->setSingleVertexBuffer(&mVertexBuffer, stride, 0);
@@ -1282,7 +1291,7 @@ gl::Error Blit11::copyDepth(const gl::Context *context,
 
     deviceContext->Unmap(mVertexBuffer.get(), 0);
 
-    auto stateManager = mRenderer->getStateManager();
+    StateManager11 *stateManager = mRenderer->getStateManager();
 
     // Apply vertex buffer
     stateManager->setSingleVertexBuffer(&mVertexBuffer, stride, 0);
@@ -1616,8 +1625,7 @@ gl::Error Blit11::getBlitShader(GLenum destFormat,
                                          "Blit11 2D R pixel shader"));
             break;
         case BLITSHADER_2D_ALPHA:
-            ANGLE_TRY(addBlitShaderToMap(blitShaderType, SHADER_2D,
-                                         ShaderData(g_PS_PassthroughRGBA2D),
+            ANGLE_TRY(addBlitShaderToMap(blitShaderType, SHADER_2D, ShaderData(g_PS_PassthroughA2D),
                                          "Blit11 2D alpha pixel shader"));
             break;
         case BLITSHADER_2D_LUMA:
@@ -1995,7 +2003,7 @@ gl::Error Blit11::initResolveDepthOnly(const d3d11::Format &format, const gl::Ex
 
     // Possibly D3D11 bug or undefined behaviour: Clear the DSV so that our first render
     // works as expected. Otherwise the results of the first use seem to be incorrect.
-    auto context = mRenderer->getDeviceContext();
+    ID3D11DeviceContext *context = mRenderer->getDeviceContext();
     context->ClearDepthStencilView(mResolvedDepthDSView.get(), D3D11_CLEAR_DEPTH, 1.0f, 0);
 
     return gl::NoError();

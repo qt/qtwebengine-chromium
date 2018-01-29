@@ -87,19 +87,28 @@ TEST_F(NetworkSessionConfiguratorTest, EnableQuicFromFieldTrialGroup) {
   EXPECT_TRUE(params_.enable_quic);
   EXPECT_FALSE(params_.mark_quic_broken_when_network_blackholes);
   EXPECT_FALSE(params_.retry_without_alt_svc_on_quic_errors);
+  EXPECT_FALSE(params_.support_ietf_format_quic_altsvc);
   EXPECT_EQ(1350u, params_.quic_max_packet_length);
   EXPECT_EQ(net::QuicTagVector(), params_.quic_connection_options);
   EXPECT_EQ(net::QuicTagVector(), params_.quic_client_connection_options);
   EXPECT_FALSE(params_.enable_server_push_cancellation);
+  EXPECT_FALSE(params_.quic_close_sessions_on_ip_change);
   EXPECT_EQ(net::kIdleConnectionTimeoutSeconds,
             params_.quic_idle_connection_timeout_seconds);
   EXPECT_EQ(net::kPingTimeoutSecs, params_.quic_reduced_ping_timeout_seconds);
+  EXPECT_EQ(net::kMaxTimeForCryptoHandshakeSecs,
+            params_.quic_max_time_before_crypto_handshake_seconds);
+  EXPECT_EQ(net::kInitialIdleTimeoutSecs,
+            params_.quic_max_idle_time_before_crypto_handshake_seconds);
   EXPECT_FALSE(params_.quic_race_cert_verification);
   EXPECT_FALSE(params_.quic_estimate_initial_rtt);
   EXPECT_FALSE(params_.quic_connect_using_default_network);
   EXPECT_FALSE(params_.quic_migrate_sessions_on_network_change);
   EXPECT_FALSE(params_.quic_migrate_sessions_early);
+  EXPECT_FALSE(params_.quic_migrate_sessions_on_network_change_v2);
+  EXPECT_FALSE(params_.quic_migrate_sessions_early_v2);
   EXPECT_FALSE(params_.quic_allow_server_migration);
+  EXPECT_TRUE(params_.quic_host_whitelist.empty());
 
   net::HttpNetworkSession::Params default_params;
   EXPECT_EQ(default_params.quic_supported_versions,
@@ -150,6 +159,29 @@ TEST_F(NetworkSessionConfiguratorTest, RetryWithoutAltSvcOnQuicErrors) {
   EXPECT_TRUE(params_.retry_without_alt_svc_on_quic_errors);
 }
 
+TEST_F(NetworkSessionConfiguratorTest, SupportIetfFormatQuicAltSvc) {
+  std::map<std::string, std::string> field_trial_params;
+  field_trial_params["support_ietf_format_quic_altsvc"] = "true";
+  variations::AssociateVariationParams("QUIC", "Enabled", field_trial_params);
+  base::FieldTrialList::CreateFieldTrial("QUIC", "Enabled");
+
+  ParseFieldTrials();
+
+  EXPECT_TRUE(params_.support_ietf_format_quic_altsvc);
+}
+
+TEST_F(NetworkSessionConfiguratorTest,
+       QuicCloseSessionsOnIpChangeFromFieldTrialParams) {
+  std::map<std::string, std::string> field_trial_params;
+  field_trial_params["close_sessions_on_ip_change"] = "true";
+  variations::AssociateVariationParams("QUIC", "Enabled", field_trial_params);
+  base::FieldTrialList::CreateFieldTrial("QUIC", "Enabled");
+
+  ParseFieldTrials();
+
+  EXPECT_TRUE(params_.quic_close_sessions_on_ip_change);
+}
+
 TEST_F(NetworkSessionConfiguratorTest,
        QuicIdleConnectionTimeoutSecondsFieldTrialParams) {
   std::map<std::string, std::string> field_trial_params;
@@ -190,6 +222,48 @@ TEST_F(NetworkSessionConfiguratorTest,
   base::FieldTrialList::CreateFieldTrial("QUIC", "Enabled");
   ParseFieldTrials();
   EXPECT_EQ(10, params_.quic_reduced_ping_timeout_seconds);
+}
+
+TEST_F(NetworkSessionConfiguratorTest,
+       QuicMaxTimeBeforeCryptoHandshakeSeconds) {
+  std::map<std::string, std::string> field_trial_params;
+  field_trial_params["max_time_before_crypto_handshake_seconds"] = "7";
+  variations::AssociateVariationParams("QUIC", "Enabled", field_trial_params);
+  base::FieldTrialList::CreateFieldTrial("QUIC", "Enabled");
+  ParseFieldTrials();
+  EXPECT_EQ(7, params_.quic_max_time_before_crypto_handshake_seconds);
+}
+
+TEST_F(NetworkSessionConfiguratorTest,
+       NegativeQuicMaxTimeBeforeCryptoHandshakeSeconds) {
+  std::map<std::string, std::string> field_trial_params;
+  field_trial_params["max_time_before_crypto_handshake_seconds"] = "-1";
+  variations::AssociateVariationParams("QUIC", "Enabled", field_trial_params);
+  base::FieldTrialList::CreateFieldTrial("QUIC", "Enabled");
+  ParseFieldTrials();
+  EXPECT_EQ(net::kMaxTimeForCryptoHandshakeSecs,
+            params_.quic_max_time_before_crypto_handshake_seconds);
+}
+
+TEST_F(NetworkSessionConfiguratorTest,
+       QuicMaxIdleTimeBeforeCryptoHandshakeSeconds) {
+  std::map<std::string, std::string> field_trial_params;
+  field_trial_params["max_idle_time_before_crypto_handshake_seconds"] = "11";
+  variations::AssociateVariationParams("QUIC", "Enabled", field_trial_params);
+  base::FieldTrialList::CreateFieldTrial("QUIC", "Enabled");
+  ParseFieldTrials();
+  EXPECT_EQ(11, params_.quic_max_idle_time_before_crypto_handshake_seconds);
+}
+
+TEST_F(NetworkSessionConfiguratorTest,
+       NegativeQuicMaxIdleTimeBeforeCryptoHandshakeSeconds) {
+  std::map<std::string, std::string> field_trial_params;
+  field_trial_params["max_idle_time_before_crypto_handshake_seconds"] = "-1";
+  variations::AssociateVariationParams("QUIC", "Enabled", field_trial_params);
+  base::FieldTrialList::CreateFieldTrial("QUIC", "Enabled");
+  ParseFieldTrials();
+  EXPECT_EQ(net::kInitialIdleTimeoutSecs,
+            params_.quic_max_idle_time_before_crypto_handshake_seconds);
 }
 
 TEST_F(NetworkSessionConfiguratorTest, QuicRaceCertVerification) {
@@ -250,6 +324,18 @@ TEST_F(NetworkSessionConfiguratorTest,
 }
 
 TEST_F(NetworkSessionConfiguratorTest,
+       QuicMigrateSessionsOnNetworkChangeV2FromFieldTrialParams) {
+  std::map<std::string, std::string> field_trial_params;
+  field_trial_params["migrate_sessions_on_network_change_v2"] = "true";
+  variations::AssociateVariationParams("QUIC", "Enabled", field_trial_params);
+  base::FieldTrialList::CreateFieldTrial("QUIC", "Enabled");
+
+  ParseFieldTrials();
+
+  EXPECT_TRUE(params_.quic_migrate_sessions_on_network_change_v2);
+}
+
+TEST_F(NetworkSessionConfiguratorTest,
        QuicMigrateSessionsEarlyFromFieldTrialParams) {
   std::map<std::string, std::string> field_trial_params;
   field_trial_params["migrate_sessions_early"] = "true";
@@ -259,6 +345,18 @@ TEST_F(NetworkSessionConfiguratorTest,
   ParseFieldTrials();
 
   EXPECT_TRUE(params_.quic_migrate_sessions_early);
+}
+
+TEST_F(NetworkSessionConfiguratorTest,
+       QuicMigrateSessionsEarlyV2FromFieldTrialParams) {
+  std::map<std::string, std::string> field_trial_params;
+  field_trial_params["migrate_sessions_early_v2"] = "true";
+  variations::AssociateVariationParams("QUIC", "Enabled", field_trial_params);
+  base::FieldTrialList::CreateFieldTrial("QUIC", "Enabled");
+
+  ParseFieldTrials();
+
+  EXPECT_TRUE(params_.quic_migrate_sessions_early_v2);
 }
 
 TEST_F(NetworkSessionConfiguratorTest,
@@ -365,6 +463,32 @@ TEST_F(NetworkSessionConfiguratorTest,
   options.push_back(net::kTBBR);
   options.push_back(net::k1RTT);
   EXPECT_EQ(options, params_.quic_client_connection_options);
+}
+
+TEST_F(NetworkSessionConfiguratorTest, QuicHostWhitelist) {
+  std::map<std::string, std::string> field_trial_params;
+  field_trial_params["host_whitelist"] = "www.example.org, www.example.com";
+  variations::AssociateVariationParams("QUIC", "Enabled", field_trial_params);
+  base::FieldTrialList::CreateFieldTrial("QUIC", "Enabled");
+
+  ParseFieldTrials();
+
+  EXPECT_EQ(2u, params_.quic_host_whitelist.size());
+  EXPECT_TRUE(
+      base::ContainsKey(params_.quic_host_whitelist, "www.example.com"));
+  EXPECT_TRUE(
+      base::ContainsKey(params_.quic_host_whitelist, "www.example.org"));
+}
+
+TEST_F(NetworkSessionConfiguratorTest, QuicHostWhitelistEmpty) {
+  std::map<std::string, std::string> field_trial_params;
+  field_trial_params["host_whitelist"] = "";
+  variations::AssociateVariationParams("QUIC", "Enabled", field_trial_params);
+  base::FieldTrialList::CreateFieldTrial("QUIC", "Enabled");
+
+  ParseFieldTrials();
+
+  EXPECT_TRUE(params_.quic_host_whitelist.empty());
 }
 
 TEST_F(NetworkSessionConfiguratorTest, Http2SettingsFromFieldTrialParams) {

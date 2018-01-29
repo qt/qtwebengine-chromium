@@ -80,7 +80,7 @@ class VideoRendererAlgorithmTest : public testing::Test {
     tick_clock_->Advance(base::TimeDelta::FromMicroseconds(10000));
     time_source_.set_tick_clock_for_testing(tick_clock_.get());
   }
-  ~VideoRendererAlgorithmTest() override {}
+  ~VideoRendererAlgorithmTest() override = default;
 
   scoped_refptr<VideoFrame> CreateFrame(base::TimeDelta timestamp) {
     const gfx::Size natural_size(8, 8);
@@ -1216,6 +1216,34 @@ TEST_F(VideoRendererAlgorithmTest, CadenceCalculations) {
   ASSERT_EQ("[60]", GetCadence(1, NTSC(60)));
 }
 
+TEST_F(VideoRendererAlgorithmTest, RemoveExpiredFramesWithoutRendering) {
+  TickGenerator tg(tick_clock_->NowTicks(), 50);
+
+  // Removing expired frames before anything is enqueued should do nothing.
+  ASSERT_EQ(0u, algorithm_.RemoveExpiredFrames(tg.current()));
+
+  // First verify that frames without a duration are always effective when only
+  // one frame is present in the queue.
+  algorithm_.EnqueueFrame(CreateFrame(tg.interval(0)));
+  ASSERT_EQ(0u, algorithm_.RemoveExpiredFrames(tg.current()));
+  EXPECT_EQ(1u, EffectiveFramesQueued());
+
+  ASSERT_EQ(0u, algorithm_.RemoveExpiredFrames(tg.current() + tg.interval(3)));
+  EXPECT_EQ(1u, EffectiveFramesQueued());
+
+  algorithm_.Reset();
+
+  // Now try a frame with duration information, this frame should not be counted
+  // as effective since we know the duration of it. It is not removed since we
+  // only have one frame in the queue though.
+  auto frame = CreateFrame(tg.interval(0));
+  frame->metadata()->SetTimeDelta(VideoFrameMetadata::FRAME_DURATION,
+                                  tg.interval(1));
+  algorithm_.EnqueueFrame(frame);
+  ASSERT_EQ(0u, algorithm_.RemoveExpiredFrames(tg.current() + tg.interval(3)));
+  EXPECT_EQ(0u, EffectiveFramesQueued());
+}
+
 TEST_F(VideoRendererAlgorithmTest, RemoveExpiredFrames) {
   TickGenerator tg(tick_clock_->NowTicks(), 50);
 
@@ -1575,6 +1603,20 @@ TEST_F(VideoRendererAlgorithmTest, CadenceForFutureFrames) {
   EXPECT_EQ(1u, frames_queued());
   EXPECT_EQ(tg.interval(12), rendered_frame->timestamp());
   ASSERT_TRUE(is_using_cadence());
+}
+
+TEST_F(VideoRendererAlgorithmTest, InfiniteDurationMetadata) {
+  TickGenerator tg(tick_clock_->NowTicks(), 50);
+
+  auto frame = CreateFrame(kInfiniteDuration);
+  frame->metadata()->SetTimeDelta(VideoFrameMetadata::FRAME_DURATION,
+                                  tg.interval(1));
+  algorithm_.EnqueueFrame(frame);
+
+  // This should not crash or fail.
+  size_t frames_dropped = 0;
+  frame = RenderAndStep(&tg, &frames_dropped);
+  EXPECT_TRUE(algorithm_.average_frame_duration().is_zero());
 }
 
 }  // namespace media

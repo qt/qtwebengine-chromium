@@ -70,9 +70,6 @@ class AudioDeviceIOS : public AudioDeviceGeneric,
   int32_t StopRecording() override;
   bool Recording() const override { return recording_; }
 
-  int32_t SetLoudspeakerStatus(bool enable) override;
-  int32_t GetLoudspeakerStatus(bool& enabled) const override;
-
   // These methods returns hard-coded delay values and not dynamic delay
   // estimates. The reason is that iOS supports a built-in AEC and the WebRTC
   // AEC will always be disabled in the Libjingle layer to avoid running two
@@ -83,7 +80,6 @@ class AudioDeviceIOS : public AudioDeviceGeneric,
   // A/V-sync is not supported on iOS. However, we avoid adding error messages
   // the log by using these dummy implementations instead.
   int32_t PlayoutDelay(uint16_t& delayMS) const override;
-  int32_t RecordingDelay(uint16_t& delayMS) const override;
 
   // Native audio parameters stored during construction.
   // These methods are unique for the iOS implementation.

@@ -41,7 +41,7 @@ using cssvalue::ToCSSRadialGradientValue;
 CSSImageGeneratorValue::CSSImageGeneratorValue(ClassType class_type)
     : CSSValue(class_type) {}
 
-CSSImageGeneratorValue::~CSSImageGeneratorValue() {}
+CSSImageGeneratorValue::~CSSImageGeneratorValue() = default;
 
 void CSSImageGeneratorValue::AddClient(const ImageResourceObserver* client,
                                        const IntSize& size) {
@@ -115,16 +115,15 @@ Image* CSSImageGeneratorValue::GetImage(const ImageResourceObserver* client,
 }
 
 void CSSImageGeneratorValue::PutImage(const IntSize& size,
-                                      RefPtr<Image> image) {
+                                      scoped_refptr<Image> image) {
   images_.insert(size, std::move(image));
 }
 
-RefPtr<Image> CSSImageGeneratorValue::GetImage(
+scoped_refptr<Image> CSSImageGeneratorValue::GetImage(
     const ImageResourceObserver& client,
     const Document& document,
     const ComputedStyle& style,
-    const IntSize& container_size,
-    const LayoutSize* logical_size) {
+    const IntSize& container_size) {
   switch (GetClassType()) {
     case kCrossfadeClass:
       return ToCSSCrossfadeValue(this)->GetImage(client, document, style,
@@ -134,7 +133,7 @@ RefPtr<Image> CSSImageGeneratorValue::GetImage(
                                                       container_size);
     case kPaintClass:
       return ToCSSPaintValue(this)->GetImage(client, document, style,
-                                             container_size, logical_size);
+                                             container_size);
     case kRadialGradientClass:
       return ToCSSRadialGradientValue(this)->GetImage(client, document, style,
                                                       container_size);

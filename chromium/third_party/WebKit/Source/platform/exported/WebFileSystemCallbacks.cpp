@@ -31,11 +31,11 @@
 #include "public/platform/WebFileSystemCallbacks.h"
 
 #include <memory>
+#include "base/memory/scoped_refptr.h"
 #include "platform/AsyncFileSystemCallbacks.h"
 #include "platform/FileMetadata.h"
 #include "platform/wtf/PtrUtil.h"
 #include "platform/wtf/RefCounted.h"
-#include "platform/wtf/RefPtr.h"
 #include "public/platform/WebFileInfo.h"
 #include "public/platform/WebFileSystem.h"
 #include "public/platform/WebFileSystemEntry.h"
@@ -47,9 +47,9 @@ namespace blink {
 class WebFileSystemCallbacksPrivate
     : public RefCounted<WebFileSystemCallbacksPrivate> {
  public:
-  static RefPtr<WebFileSystemCallbacksPrivate> Create(
+  static scoped_refptr<WebFileSystemCallbacksPrivate> Create(
       std::unique_ptr<AsyncFileSystemCallbacks> callbacks) {
-    return WTF::AdoptRef(
+    return base::AdoptRef(
         new WebFileSystemCallbacksPrivate(std::move(callbacks)));
   }
 
@@ -101,7 +101,7 @@ void WebFileSystemCallbacks::DidCreateSnapshotFile(
   std::unique_ptr<BlobData> blob_data = BlobData::Create();
   blob_data->AppendFile(web_file_info.platform_path, 0, web_file_info.length,
                         InvalidFileTime());
-  RefPtr<BlobDataHandle> snapshot_blob =
+  scoped_refptr<BlobDataHandle> snapshot_blob =
       BlobDataHandle::Create(std::move(blob_data), web_file_info.length);
 
   FileMetadata file_metadata;

@@ -63,11 +63,6 @@ class CONTENT_EXPORT DevToolsAgentHost
   // does exist.
   static bool HasFor(WebContents* web_contents);
 
-  // Returns DevToolsAgentHost that can be used for inspecting shared worker
-  // with given worker process host id and routing id.
-  static scoped_refptr<DevToolsAgentHost> GetForWorker(int worker_process_id,
-                                                       int worker_route_id);
-
   // Creates DevToolsAgentHost that communicates to the target by means of
   // provided |delegate|. |delegate| ownership is passed to the created agent
   // host.
@@ -110,6 +105,10 @@ class CONTENT_EXPORT DevToolsAgentHost
 
   // Stops remote debugging.
   static void StopRemoteDebuggingServer();
+
+  // Starts remote debugging for browser target for the given fd=3
+  // for reading and fd=4 for writing remote debugging messages.
+  static void StartRemoteDebuggingPipeHandler();
 
   // Observer is notified about changes in DevToolsAgentHosts.
   static void AddObserver(DevToolsAgentHostObserver*);

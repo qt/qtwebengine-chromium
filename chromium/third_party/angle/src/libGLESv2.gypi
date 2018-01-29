@@ -169,11 +169,16 @@
             'libANGLE/LoggingAnnotator.h',
             'libANGLE/MemoryProgramCache.cpp',
             'libANGLE/MemoryProgramCache.h',
+            'libANGLE/PackedGLEnums.h',
+            'libANGLE/PackedGLEnums_autogen.cpp',
+            'libANGLE/PackedGLEnums_autogen.h',
             'libANGLE/Path.h',
             'libANGLE/Path.cpp',
             'libANGLE/Platform.cpp',
             'libANGLE/Program.cpp',
             'libANGLE/Program.h',
+            'libANGLE/ProgramLinkedResources.cpp',
+            'libANGLE/ProgramLinkedResources.h',
             'libANGLE/ProgramPipeline.cpp',
             'libANGLE/ProgramPipeline.h',
             'libANGLE/Query.cpp',
@@ -203,8 +208,6 @@
             'libANGLE/TransformFeedback.h',
             'libANGLE/Uniform.cpp',
             'libANGLE/Uniform.h',
-            'libANGLE/UniformLinker.cpp',
-            'libANGLE/UniformLinker.h',
             'libANGLE/VaryingPacking.cpp',
             'libANGLE/VaryingPacking.h',
             'libANGLE/Version.h',
@@ -571,6 +574,8 @@
             'libANGLE/renderer/gl/CompilerGL.h',
             'libANGLE/renderer/gl/ContextGL.cpp',
             'libANGLE/renderer/gl/ContextGL.h',
+            'libANGLE/renderer/gl/DispatchTableGL_autogen.cpp',
+            'libANGLE/renderer/gl/DispatchTableGL_autogen.h',
             'libANGLE/renderer/gl/DisplayGL.cpp',
             'libANGLE/renderer/gl/DisplayGL.h',
             'libANGLE/renderer/gl/FenceNVGL.cpp',
@@ -614,6 +619,11 @@
             'libANGLE/renderer/gl/functionsgl_typedefs.h',
             'libANGLE/renderer/gl/renderergl_utils.cpp',
             'libANGLE/renderer/gl/renderergl_utils.h',
+        ],
+        'libangle_gl_null_sources':
+        [
+            'libANGLE/renderer/gl/null_functions.cpp',
+            'libANGLE/renderer/gl/null_functions.h',
         ],
         'libangle_gl_wgl_sources':
         [
@@ -814,13 +824,15 @@
             'libGLESv2/entry_points_gles_2_0_ext.h',
             'libGLESv2/entry_points_gles_3_0_autogen.cpp',
             'libGLESv2/entry_points_gles_3_0_autogen.h',
-            'libGLESv2/entry_points_gles_3_1.cpp',
-            'libGLESv2/entry_points_gles_3_1.h',
+            'libGLESv2/entry_points_gles_3_1_autogen.cpp',
+            'libGLESv2/entry_points_gles_3_1_autogen.h',
             'libGLESv2/global_state.cpp',
             'libGLESv2/global_state.h',
             'libGLESv2/libGLESv2.cpp',
             'libGLESv2/libGLESv2.def',
             'libGLESv2/libGLESv2.rc',
+            'libGLESv2/proc_table.h',
+            'libGLESv2/proc_table_autogen.cpp',
             'libGLESv2/resource.h',
         ],
         'libegl_sources':
@@ -905,6 +917,13 @@
                             'ANGLE_ENABLE_OPENGL',
                         ],
                     }],
+                    ['angle_enable_gl_null==1',
+                    {
+                        'defines':
+                        [
+                            'ANGLE_ENABLE_OPENGL_NULL',
+                        ],
+                    }],
                     ['angle_enable_vulkan==1',
                     {
                         'defines':
@@ -951,6 +970,10 @@
             'defines':
             [
                 'LIBANGLE_IMPLEMENTATION',
+            ],
+            'msvs_disabled_warnings':
+            [
+                4577, # 'noexcept' used with no exception handling mode specified; termination on exception is not guaranteed.
             ],
             'export_dependent_settings':
             [
@@ -1066,6 +1089,13 @@
                     ],
                     'conditions':
                     [
+                        ['angle_enable_gl_null==1',
+                        {
+                            'sources':
+                            [
+                                '<@(libangle_gl_null_sources)',
+                            ],
+                        }],
                         ['OS=="win"',
                         {
                             'sources':

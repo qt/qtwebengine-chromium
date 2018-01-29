@@ -13,6 +13,7 @@
 #include "SkOpEdgeBuilder.h"
 // #include "SkPathOpsSimplifyAA.h"
 // #include "SkPathStroker.h"
+#include "SkPointPriv.h"
 #include "SkView.h"
 
 #if 0
@@ -815,7 +816,7 @@ class AAGeometryView : public SampleView {
     bool fHandlePathMove;
     bool fShowLegend;
     bool fHideAll;
-    const int kHitToleranace = 5;
+    const int kHitToleranace = 25;
 
 public:
 
@@ -882,7 +883,6 @@ public:
 
     bool constructPath() {
         construct_path(fPath);
-        this->inval(nullptr);
         return true;
     }
 
@@ -908,7 +908,6 @@ public:
         PathUndo* next = fUndo->fNext;
         delete fUndo;
         fUndo = next;
-        this->inval(nullptr);
         return true;
     }
 
@@ -931,7 +930,6 @@ public:
 
     bool hideAll() {
         fHideAll ^= true;
-        this->inval(nullptr);
         return true;
     }
 
@@ -990,7 +988,6 @@ public:
         matrix.setScale(1.f / 1.5f, 1.f / 1.5f, bounds.centerX(), bounds.centerY());
         fPath.transform(matrix);
         validatePath();
-        this->inval(nullptr);
         return true;
     }
 
@@ -1006,7 +1003,6 @@ public:
         SkScalar offsetY = (this->height() - bounds.height()) / 2 - bounds.fTop;
         fPath.offset(offsetX, offsetY);
         validatePath();
-        this->inval(nullptr);
         return true;
     }
 
@@ -1016,7 +1012,6 @@ public:
         matrix.setScale(1.5f, 1.5f, bounds.centerX(), bounds.centerY());
         fPath.transform(matrix);
         validatePath();
-        this->inval(nullptr);
         return true;
     }
 
@@ -1037,7 +1032,6 @@ public:
 
     bool showLegend() {
         fShowLegend ^= true;
-        this->inval(nullptr);
         return true;
     }
 
@@ -1299,7 +1293,7 @@ public:
     SkScalar pt_to_line(SkPoint s, SkPoint e, int x, int y) {
         SkScalar radius = fWidthControl.fValLo;
         SkVector adjOpp = e - s;
-        SkScalar lenSq = adjOpp.lengthSqd();
+        SkScalar lenSq = SkPointPriv::LengthSqd(adjOpp);
         SkPoint rotated = {
                 (y - s.fY) * adjOpp.fY + (x - s.fX) * adjOpp.fX,
                 (y - s.fY) * adjOpp.fX - (x - s.fX) * adjOpp.fY,
@@ -1669,7 +1663,6 @@ public:
                         SkIntToScalar(click->fICurr.fY - click->fIPrev.fY));
                 set_path_pt(fActivePt, pt, &fPath);
                 validatePath();
-                this->inval(nullptr);
                 return true;
                 }
             case MyClick::kPathType:
@@ -1677,7 +1670,6 @@ public:
                 fPath.offset(SkIntToScalar(click->fICurr.fX - click->fIPrev.fX),
                         SkIntToScalar(click->fICurr.fY - click->fIPrev.fY));
                 validatePath();
-                this->inval(nullptr);
                 return true;
             case MyClick::kVerbType: {
                 fActiveVerb = myClick->verbHit();
@@ -1789,7 +1781,6 @@ public:
                 break;
         }
         setControlButtonsPos();
-        this->inval(nullptr);
         return true;
     }
 
@@ -1807,10 +1798,10 @@ static struct KeyCommand {
     { ' ',  0,  "space",   "center path", &AAGeometryView::scaleToFit },
     { '-',  0,  "-",          "zoom out", &AAGeometryView::scaleDown },
     { '+', '=', "+/=",         "zoom in", &AAGeometryView::scaleUp },
-    { 'd',  0,  "d",   "dump to console", &AAGeometryView::pathDump },
-    { 'h',  0,  "h",     "hide controls", &AAGeometryView::hideAll },
-    { 'r',  0,  "r",        "reset path", &AAGeometryView::constructPath },
-    { 'z',  0,  "z",              "undo", &AAGeometryView::undo },
+    { 'D',  0,  "D",   "dump to console", &AAGeometryView::pathDump },
+    { 'H',  0,  "H",     "hide controls", &AAGeometryView::hideAll },
+    { 'R',  0,  "R",        "reset path", &AAGeometryView::constructPath },
+    { 'Z',  0,  "Z",              "undo", &AAGeometryView::undo },
     { '?',  0,  "?",       "show legend", &AAGeometryView::showLegend },
 };
 

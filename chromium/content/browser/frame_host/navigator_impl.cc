@@ -45,6 +45,7 @@
 #include "content/public/common/content_constants.h"
 #include "content/public/common/resource_response.h"
 #include "content/public/common/url_loader_factory.mojom.h"
+#include "content/public/common/url_utils.h"
 #include "net/base/net_errors.h"
 #include "url/gurl.h"
 #include "url/url_util.h"
@@ -594,8 +595,7 @@ void NavigatorImpl::DidNavigate(
   // <meta> elements - we need to reset CSP and Feature Policy.
   if (!is_same_document_navigation) {
     render_frame_host->ResetContentSecurityPolicies();
-    frame_tree_node->ResetCspHeaders();
-    frame_tree_node->ResetFeaturePolicyHeader();
+    frame_tree_node->ResetForNavigation();
   }
 
   frame_tree_node->render_manager()->DidNavigateFrame(
@@ -644,27 +644,7 @@ void NavigatorImpl::DidNavigate(
         site_instance);
   }
 
-  // Keep track of the last committed URL and origin in the RenderFrameHost
-  // itself.  These allow GetLastCommittedURL and GetLastCommittedOrigin to
-  // stay correct even if the render_frame_host later becomes pending deletion.
-  // The URL is set regardless of whether it's for a net error or not.
-  frame_tree_node->SetCurrentURL(params.url);
-  render_frame_host->SetLastCommittedOrigin(params.origin);
-
-  // Separately, update the frame's last successful URL except for net error
-  // pages, since those do not end up in the correct process after transfers
-  // (see https://crbug.com/560511).  Instead, the next cross-process navigation
-  // or transfer should decide whether to swap as if the net error had not
-  // occurred.
-  // TODO(creis): Remove this block and always set the URL once transfers handle
-  // network errors or PlzNavigate is enabled.  See https://crbug.com/588314.
-  if (!params.url_is_unreachable)
-    render_frame_host->set_last_successful_url(params.url);
-
-  // After setting the last committed origin, reset the feature policy in the
-  // RenderFrameHost to a blank policy based on the parent frame.
-  if (!is_same_document_navigation)
-    render_frame_host->ResetFeaturePolicy();
+  render_frame_host->DidNavigate(params, is_same_document_navigation);
 
   // Send notification about committed provisional loads. This notification is
   // different from the NAV_ENTRY_COMMITTED notification which doesn't include
@@ -710,7 +690,6 @@ void NavigatorImpl::RequestOpenURL(
     const std::string& extra_headers,
     const Referrer& referrer,
     WindowOpenDisposition disposition,
-    bool force_new_process_for_new_contents,
     bool should_replace_current_entry,
     bool user_gesture,
     blink::WebTriggeringEventInfo triggering_event_info) {
@@ -754,8 +733,6 @@ void NavigatorImpl::RequestOpenURL(
   OpenURLParams params(dest_url, referrer, frame_tree_node_id, disposition,
                        ui::PAGE_TRANSITION_LINK,
                        true /* is_renderer_initiated */);
-  params.force_new_process_for_new_contents =
-      force_new_process_for_new_contents;
   params.uses_post = uses_post;
   params.post_data = body;
   params.extra_headers = extra_headers;
@@ -891,6 +868,7 @@ void NavigatorImpl::RequestTransferURL(
             extra_headers, controller_->GetBrowserContext()));
     entry->root_node()->frame_entry->set_source_site_instance(
         static_cast<SiteInstanceImpl*>(source_site_instance));
+    entry->root_node()->frame_entry->set_method(method);
     entry->SetRedirectChain(redirect_chain);
   }
 
@@ -915,7 +893,7 @@ void NavigatorImpl::RequestTransferURL(
     frame_entry = new FrameNavigationEntry(
         node->unique_name(), -1, -1, nullptr,
         static_cast<SiteInstanceImpl*>(source_site_instance), dest_url,
-        referrer_to_use, method, -1);
+        referrer_to_use, redirect_chain, PageState(), method, -1);
   }
   NavigateToEntry(node, *frame_entry, *entry.get(), ReloadType::NONE, false,
                   false, false, post_body);
@@ -999,7 +977,7 @@ void NavigatorImpl::OnBeginNavigation(
   // is not user-initiated.
   if (ongoing_navigation_request &&
       ongoing_navigation_request->browser_initiated() &&
-      !begin_params.has_user_gesture) {
+      !common_params.has_user_gesture) {
     RenderFrameHost* current_frame_host =
         frame_tree_node->render_manager()->current_frame_host();
     current_frame_host->Send(
@@ -1188,7 +1166,7 @@ void NavigatorImpl::RequestNavigation(
         nullptr,  // body
         mojo::ScopedDataPipeConsumerHandle(), scoped_request->common_params(),
         scoped_request->request_params(), scoped_request->is_view_source(),
-        mojom::URLLoaderFactoryPtrInfo());
+        base::nullopt, scoped_request->devtools_navigation_token());
     return;
   }
 

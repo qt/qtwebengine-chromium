@@ -47,29 +47,9 @@ namespace sk_tool_utils {
     const char* emoji_sample_text();
 
     /**
-     * If the platform supports color emoji, return the type (i.e. "CBDT", "SBIX", "").
+     * Returns a string describing the platform font manager, if we're using one, otherwise "".
      */
-    const char* platform_os_emoji();
-
-    /**
-     * Return the platform name with the version number ("Mac10.9", "Win8", etc.) if available.
-     */
-    const char* platform_os_name();
-
-    /**
-     * Return the platform name without the version number ("Mac", "Win", etc.) if available.
-     */
-    SkString major_platform_os_name();
-
-    /**
-     * Return the platform extra config (e.g. "GDI") if available.
-     */
-    const char* platform_extra_config(const char* config);
-
-    /**
-     * Map serif, san-serif, and monospace to the platform-specific font name.
-     */
-    const char* platform_font_name(const char* name);
+    const char* platform_font_manager();
 
     /**
      * Sets the paint to use a platform-independent text renderer
@@ -134,6 +114,18 @@ namespace sk_tool_utils {
 
     void add_to_text_blob(SkTextBlobBuilder* builder, const char* text,
                           const SkPaint& origPaint, SkScalar x, SkScalar y);
+
+    // Constructs a star by walking a 'numPts'-sided regular polygon with even/odd fill:
+    //
+    //   moveTo(pts[0]);
+    //   lineTo(pts[step % numPts]);
+    //   ...
+    //   lineTo(pts[(step * (N - 1)) % numPts]);
+    //
+    // numPts=5, step=2 will produce a classic five-point star.
+    //
+    // numPts and step must be co-prime.
+    SkPath make_star(const SkRect& bounds, int numPts = 5, int step = 2);
 
     void make_big_path(SkPath& path);
 

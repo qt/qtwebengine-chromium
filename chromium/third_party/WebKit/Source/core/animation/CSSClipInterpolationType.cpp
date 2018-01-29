@@ -83,9 +83,9 @@ class CSSClipNonInterpolableValue : public NonInterpolableValue {
  public:
   ~CSSClipNonInterpolableValue() final {}
 
-  static RefPtr<CSSClipNonInterpolableValue> Create(
+  static scoped_refptr<CSSClipNonInterpolableValue> Create(
       const ClipAutos& clip_autos) {
-    return WTF::AdoptRef(new CSSClipNonInterpolableValue(clip_autos));
+    return base::AdoptRef(new CSSClipNonInterpolableValue(clip_autos));
   }
 
   const ClipAutos& GetClipAutos() const { return clip_autos_; }

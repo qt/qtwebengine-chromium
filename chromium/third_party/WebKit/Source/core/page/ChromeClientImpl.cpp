@@ -281,12 +281,11 @@ Page* ChromeClientImpl::CreateWindow(LocalFrame* frame,
   return new_view->GetPage();
 }
 
-void ChromeClientImpl::DidOverscroll(
-    const FloatSize& overscroll_delta,
-    const FloatSize& accumulated_overscroll,
-    const FloatPoint& position_in_viewport,
-    const FloatSize& velocity_in_viewport,
-    const WebScrollBoundaryBehavior& behavior) {
+void ChromeClientImpl::DidOverscroll(const FloatSize& overscroll_delta,
+                                     const FloatSize& accumulated_overscroll,
+                                     const FloatPoint& position_in_viewport,
+                                     const FloatSize& velocity_in_viewport,
+                                     const WebOverscrollBehavior& behavior) {
   if (!web_view_->Client())
     return;
 
@@ -351,7 +350,8 @@ bool ChromeClientImpl::OpenJavaScriptAlertDelegate(LocalFrame* frame,
   NotifyPopupOpeningObservers();
   WebLocalFrameImpl* webframe = WebLocalFrameImpl::FromFrame(frame);
   if (webframe->Client()) {
-    if (WebUserGestureIndicator::IsProcessingUserGesture())
+    // (TODO(mustaq): why is it going through the web layer? crbug.com/781328
+    if (WebUserGestureIndicator::IsProcessingUserGesture(webframe))
       WebUserGestureIndicator::DisableTimeout();
     webframe->Client()->RunModalAlertDialog(message);
     return true;
@@ -365,7 +365,8 @@ bool ChromeClientImpl::OpenJavaScriptConfirmDelegate(LocalFrame* frame,
   NotifyPopupOpeningObservers();
   WebLocalFrameImpl* webframe = WebLocalFrameImpl::FromFrame(frame);
   if (webframe->Client()) {
-    if (WebUserGestureIndicator::IsProcessingUserGesture())
+    // (TODO(mustaq): why is it going through the web layer? crbug.com/781328
+    if (WebUserGestureIndicator::IsProcessingUserGesture(webframe))
       WebUserGestureIndicator::DisableTimeout();
     return webframe->Client()->RunModalConfirmDialog(message);
   }
@@ -380,7 +381,8 @@ bool ChromeClientImpl::OpenJavaScriptPromptDelegate(LocalFrame* frame,
   NotifyPopupOpeningObservers();
   WebLocalFrameImpl* webframe = WebLocalFrameImpl::FromFrame(frame);
   if (webframe->Client()) {
-    if (WebUserGestureIndicator::IsProcessingUserGesture())
+    // (TODO(mustaq): why is it going through the web layer?
+    if (WebUserGestureIndicator::IsProcessingUserGesture(webframe))
       WebUserGestureIndicator::DisableTimeout();
     WebString actual_value;
     bool ok = webframe->Client()->RunModalPromptDialog(message, default_value,
@@ -578,8 +580,9 @@ DateTimeChooser* ChromeClientImpl::OpenDateTimeChooser(
                                          picker_client, parameters);
 }
 
-void ChromeClientImpl::OpenFileChooser(LocalFrame* frame,
-                                       RefPtr<FileChooser> file_chooser) {
+void ChromeClientImpl::OpenFileChooser(
+    LocalFrame* frame,
+    scoped_refptr<FileChooser> file_chooser) {
   NotifyPopupOpeningObservers();
   WebFrameClient* client = WebLocalFrameImpl::FromFrame(frame)->Client();
   if (!client)
@@ -942,6 +945,17 @@ void ChromeClientImpl::SetNeedsLowLatencyInput(LocalFrame* frame,
     client->SetNeedsLowLatencyInput(needs_low_latency);
 }
 
+void ChromeClientImpl::RequestUnbufferedInputEvents(LocalFrame* frame) {
+  DCHECK(frame);
+  WebLocalFrameImpl* web_frame = WebLocalFrameImpl::FromFrame(frame);
+  WebFrameWidgetBase* widget = web_frame->LocalRoot()->FrameWidget();
+  if (!widget)
+    return;
+
+  if (WebWidgetClient* client = widget->Client())
+    client->RequestUnbufferedInputEvents();
+}
+
 void ChromeClientImpl::SetTouchAction(LocalFrame* frame,
                                       TouchAction touch_action) {
   DCHECK(frame);
@@ -1063,9 +1077,9 @@ void ChromeClientImpl::DidUpdateBrowserControls() const {
   web_view_->DidUpdateBrowserControls();
 }
 
-void ChromeClientImpl::SetScrollBoundaryBehavior(
-    const WebScrollBoundaryBehavior& scroll_boundary_behavior) {
-  web_view_->SetScrollBoundaryBehavior(scroll_boundary_behavior);
+void ChromeClientImpl::SetOverscrollBehavior(
+    const WebOverscrollBehavior& overscroll_behavior) {
+  web_view_->SetOverscrollBehavior(overscroll_behavior);
 }
 
 void ChromeClientImpl::RegisterPopupOpeningObserver(
@@ -1096,10 +1110,6 @@ std::unique_ptr<WebFrameScheduler> ChromeClientImpl::CreateFrameScheduler(
     WebFrameScheduler::FrameType frame_type) {
   return web_view_->Scheduler()->CreateFrameScheduler(blame_context,
                                                       frame_type);
-}
-
-double ChromeClientImpl::LastFrameTimeMonotonic() const {
-  return web_view_->LastFrameTimeMonotonic();
 }
 
 WebAutofillClient* ChromeClientImpl::AutofillClientFromFrame(

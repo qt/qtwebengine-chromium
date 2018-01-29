@@ -58,12 +58,7 @@ class CORE_EXPORT CompositeEditCommand : public EditCommand {
   }
 
   void SetStartingSelection(const SelectionForUndoStep&);
-  void SetStartingSelection(const VisibleSelection&);
-  void SetEndingSelection(const SelectionInDOMTree&);
   void SetEndingSelection(const SelectionForUndoStep&);
-  // TODO(yosin): |SetEndingVisibleSelection()| will take |SelectionForUndoStep|
-  // You should not use this function other than copying existing selection.
-  void SetEndingVisibleSelection(const VisibleSelection&);
 
   void SetParent(CompositeEditCommand*) override;
 
@@ -84,7 +79,7 @@ class CORE_EXPORT CompositeEditCommand : public EditCommand {
   virtual bool PreservesTypingStyle() const;
   virtual void SetShouldRetainAutocorrectionIndicator(bool);
 
-  DECLARE_VIRTUAL_TRACE();
+  virtual void Trace(blink::Visitor*);
 
  protected:
   explicit CompositeEditCommand(Document&);
@@ -96,9 +91,6 @@ class CORE_EXPORT CompositeEditCommand : public EditCommand {
   //
   void AppendNode(Node*, ContainerNode* parent, EditingState*);
   void ApplyCommandToComposite(EditCommand*, EditingState*);
-  void ApplyCommandToComposite(CompositeEditCommand*,
-                               const SelectionForUndoStep&,
-                               EditingState*);
   void ApplyStyle(const EditingStyle*, EditingState*);
   void ApplyStyle(const EditingStyle*,
                   const Position& start,
@@ -226,7 +218,7 @@ class CORE_EXPORT CompositeEditCommand : public EditCommand {
 
   Node* SplitTreeToNode(Node*, Node*, bool split_ancestor = false);
 
-  static bool IsNodeVisiblyContainedWithin(Node&, const Range&);
+  static bool IsNodeVisiblyContainedWithin(Node&, const EphemeralRange&);
 
   HeapVector<Member<EditCommand>> commands_;
 

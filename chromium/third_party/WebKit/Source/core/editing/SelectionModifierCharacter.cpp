@@ -248,9 +248,9 @@ static PositionTemplate<Strategy> TraverseInternalAlgorithm(
   const TextAffinity affinity = visible_position.Affinity();
 
   while (true) {
-    InlineBoxPosition box_position =
-        ComputeInlineBoxPosition(p, affinity, primary_direction);
-    InlineBox* box = box_position.inline_box;
+    InlineBoxPosition box_position = ComputeInlineBoxPosition(
+        PositionWithAffinityTemplate<Strategy>(p, affinity), primary_direction);
+    const InlineBox* box = box_position.inline_box;
     int offset = box_position.offset_in_box;
     if (!box) {
       return Traversal::ForwardVisuallyDistinctCandidateOf(primary_direction,
@@ -295,8 +295,9 @@ static PositionTemplate<Strategy> TraverseInternalAlgorithm(
           if (position_on_left.IsNull())
             return PositionTemplate<Strategy>();
 
-          InlineBox* box_on_left =
-              ComputeInlineBoxPosition(position_on_left, affinity,
+          const InlineBox* box_on_left =
+              ComputeInlineBoxPosition(PositionWithAffinityTemplate<Strategy>(
+                                           position_on_left, affinity),
                                        primary_direction)
                   .inline_box;
           if (box_on_left && box_on_left->Root() == box->Root())

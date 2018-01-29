@@ -140,7 +140,7 @@ WebViewAPITest::WebViewAPITest() {
 }
 
 void WebViewAPITest::LaunchApp(const std::string& app_location) {
-  base::ThreadRestrictions::ScopedAllowIO allow_io;
+  base::ScopedAllowBlockingForTesting allow_blocking;
   base::FilePath test_data_dir;
   PathService::Get(DIR_TEST_DATA, &test_data_dir);
   test_data_dir = test_data_dir.AppendASCII(app_location.c_str());
@@ -196,7 +196,7 @@ void WebViewAPITest::StartTestServer(const std::string& app_location) {
 
   test_config_.SetInteger(kTestServerPort, embedded_test_server()->port());
 
-  base::ThreadRestrictions::ScopedAllowIO allow_io;
+  base::ScopedAllowBlockingForTesting allow_blocking;
   base::FilePath test_data_dir;
   PathService::Get(DIR_TEST_DATA, &test_data_dir);
   test_data_dir = test_data_dir.AppendASCII(app_location.c_str());
@@ -516,7 +516,9 @@ IN_PROC_BROWSER_TEST_F(WebViewAPITest, TestDisplayNoneWebviewLoad) {
   RunTest("testDisplayNoneWebviewLoad", "web_view/apitest");
 }
 
-IN_PROC_BROWSER_TEST_F(WebViewAPITest, TestDisplayNoneWebviewRemoveChild) {
+// Flaky. See http://crbug.com/769467.
+IN_PROC_BROWSER_TEST_F(WebViewAPITest,
+                       DISABLED_TestDisplayNoneWebviewRemoveChild) {
   RunTest("testDisplayNoneWebviewRemoveChild", "web_view/apitest");
 }
 
@@ -599,6 +601,10 @@ IN_PROC_BROWSER_TEST_F(WebViewAPITest, TestLoadAbortNonWebSafeScheme) {
 
 IN_PROC_BROWSER_TEST_F(WebViewAPITest, TestLoadProgressEvent) {
   RunTest("testLoadProgressEvent", "web_view/apitest");
+}
+
+IN_PROC_BROWSER_TEST_F(WebViewAPITest, TestCanGoBack) {
+  RunTest("testCanGoBack", "web_view/apitest");
 }
 
 IN_PROC_BROWSER_TEST_F(WebViewAPITest, TestLoadStartLoadRedirect) {

@@ -40,7 +40,7 @@ class FormAttributeTargetObserver : public IdTargetObserver {
  public:
   static FormAttributeTargetObserver* Create(const AtomicString& id,
                                              ListedElement*);
-  DECLARE_VIRTUAL_TRACE();
+  void Trace(blink::Visitor*) override;
   void IdTargetChanged() override;
 
  private:
@@ -55,7 +55,7 @@ ListedElement::~ListedElement() {
   // We can't call setForm here because it contains virtual calls.
 }
 
-DEFINE_TRACE(ListedElement) {
+void ListedElement::Trace(blink::Visitor* visitor) {
   visitor->Trace(form_attribute_target_observer_);
   visitor->Trace(form_);
   visitor->Trace(validity_state_);
@@ -103,8 +103,10 @@ void ListedElement::RemovedFrom(ContainerNode* insertion_point) {
     ResetFormOwner();
 }
 
-HTMLFormElement* ListedElement::FindAssociatedForm(const HTMLElement* element) {
-  const AtomicString& form_id(element->FastGetAttribute(formAttr));
+HTMLFormElement* ListedElement::FindAssociatedForm(
+    const HTMLElement* element,
+    const AtomicString& form_id,
+    HTMLFormElement* form_ancestor) {
   // 3. If the element is reassociateable, has a form content attribute, and
   // is itself in a Document, then run these substeps:
   if (!form_id.IsNull() && element->isConnected()) {
@@ -120,7 +122,7 @@ HTMLFormElement* ListedElement::FindAssociatedForm(const HTMLElement* element) {
   // 4. Otherwise, if the form-associated element in question has an ancestor
   // form element, then associate the form-associated element with the nearest
   // such ancestor form element.
-  return element->FindFormAncestor();
+  return form_ancestor;
 }
 
 void ListedElement::FormRemovedFromTree(const Node& form_root) {
@@ -174,7 +176,7 @@ void ListedElement::ResetFormOwner() {
   if (form_ && form_id.IsNull() && form_.Get() == nearest_form)
     return;
 
-  SetForm(FindAssociatedForm(element));
+  SetForm(FindAssociatedForm(element, form_id, nearest_form));
 }
 
 void ListedElement::FormAttributeChanged() {
@@ -312,7 +314,7 @@ FormAttributeTargetObserver::FormAttributeTargetObserver(const AtomicString& id,
           id),
       element_(element) {}
 
-DEFINE_TRACE(FormAttributeTargetObserver) {
+void FormAttributeTargetObserver::Trace(blink::Visitor* visitor) {
   visitor->Trace(element_);
   IdTargetObserver::Trace(visitor);
 }

@@ -29,7 +29,6 @@
 #include "components/discardable_memory/client/client_discardable_shared_memory_manager.h"
 #include "content/child/browser_font_resource_trusted.h"
 #include "content/child/child_process.h"
-#include "content/common/child_process_messages.h"
 #include "content/ppapi_plugin/broker_process_dispatcher.h"
 #include "content/ppapi_plugin/plugin_process_dispatcher.h"
 #include "content/ppapi_plugin/ppapi_blink_platform_impl.h"
@@ -61,8 +60,6 @@
 #include "base/win/win_util.h"
 #include "content/child/font_warmup_win.h"
 #include "sandbox/win/src/sandbox.h"
-#elif defined(OS_MACOSX)
-#include "content/common/sandbox_init_mac.h"
 #endif
 
 #if BUILDFLAG(ENABLE_CDM_HOST_VERIFICATION)
@@ -94,9 +91,13 @@ static void WarmupWindowsLocales(const ppapi::PpapiPermissions& permissions) {
 
 #endif
 
-static bool IsRunningInMash() {
+static bool IsRunningWithMus() {
+#if BUILDFLAG(ENABLE_MUS)
   const base::CommandLine* cmdline = base::CommandLine::ForCurrentProcess();
-  return cmdline->HasSwitch(switches::kIsRunningInMash);
+  return cmdline->HasSwitch(switches::kMus);
+#else
+  return false;
+#endif
 }
 
 namespace content {
@@ -107,7 +108,7 @@ typedef int32_t (*InitializeBrokerFunc)
 PpapiThread::PpapiThread(const base::CommandLine& command_line, bool is_broker)
     : is_broker_(is_broker),
       plugin_globals_(GetIOTaskRunner()),
-      connect_instance_func_(NULL),
+      connect_instance_func_(nullptr),
       local_pp_module_(base::RandInt(0, std::numeric_limits<PP_Module>::max())),
       next_plugin_dispatcher_id_(1) {
   plugin_globals_.SetPluginProxyDelegate(this);
@@ -120,7 +121,7 @@ PpapiThread::PpapiThread(const base::CommandLine& command_line, bool is_broker)
   if (!is_broker_) {
     scoped_refptr<ppapi::proxy::PluginMessageFilter> plugin_filter(
         new ppapi::proxy::PluginMessageFilter(
-            NULL, plugin_globals_.resource_reply_thread_registrar()));
+            nullptr, plugin_globals_.resource_reply_thread_registrar()));
     channel()->AddFilter(plugin_filter.get());
     plugin_globals_.RegisterResourceMessageFilters(plugin_filter.get());
   }
@@ -129,7 +130,7 @@ PpapiThread::PpapiThread(const base::CommandLine& command_line, bool is_broker)
   // allocator.
   if (!command_line.HasSwitch(switches::kSingleProcess)) {
     discardable_memory::mojom::DiscardableSharedMemoryManagerPtr manager_ptr;
-    if (IsRunningInMash()) {
+    if (IsRunningWithMus()) {
 #if defined(USE_AURA)
       GetServiceManagerConnection()->GetConnector()->BindInterface(
           ui::mojom::kServiceName, &manager_ptr);
@@ -140,7 +141,7 @@ PpapiThread::PpapiThread(const base::CommandLine& command_line, bool is_broker)
       ChildThread::Get()->GetConnector()->BindInterface(
           mojom::kBrowserServiceName, mojo::MakeRequest(&manager_ptr));
     }
-    discardable_shared_memory_manager_ = base::MakeUnique<
+    discardable_shared_memory_manager_ = std::make_unique<
         discardable_memory::ClientDiscardableSharedMemoryManager>(
         std::move(manager_ptr), GetIOTaskRunner());
     base::DiscardableMemoryAllocator::SetInstance(
@@ -297,7 +298,7 @@ void PpapiThread::OnLoadPlugin(const base::FilePath& path,
 
   // If the plugin isn't internal then load it from |path|.
   base::ScopedNativeLibrary library;
-  if (plugin_entry_points_.initialize_module == NULL) {
+  if (plugin_entry_points_.initialize_module == nullptr) {
     // Load the plugin from the specified library.
     base::NativeLibraryLoadError error;
     base::TimeDelta load_time;
@@ -544,10 +545,10 @@ bool PpapiThread::SetupChannel(base::ProcessId renderer_pid,
                                int renderer_child_id,
                                bool incognito,
                                IPC::ChannelHandle* handle) {
-  DCHECK(is_broker_ == (connect_instance_func_ != NULL));
+  DCHECK(is_broker_ == (connect_instance_func_ != nullptr));
   mojo::MessagePipe pipe;
 
-  ppapi::proxy::ProxyChannel* dispatcher = NULL;
+  ppapi::proxy::ProxyChannel* dispatcher = nullptr;
   bool init_result = false;
   if (is_broker_) {
     bool peer_is_browser = renderer_pid == base::kNullProcessId;

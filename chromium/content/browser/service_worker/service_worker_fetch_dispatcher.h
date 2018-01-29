@@ -23,7 +23,7 @@
 #include "content/public/common/url_loader_factory.mojom.h"
 #include "mojo/public/cpp/system/data_pipe.h"
 #include "net/log/net_log_with_source.h"
-#include "storage/public/interfaces/blobs.mojom.h"
+#include "third_party/WebKit/common/blob/blob.mojom.h"
 #include "third_party/WebKit/public/platform/modules/serviceworker/service_worker_event_status.mojom.h"
 
 namespace net {
@@ -38,22 +38,38 @@ class URLLoaderFactoryGetter;
 // A helper class to dispatch fetch event to a service worker.
 class CONTENT_EXPORT ServiceWorkerFetchDispatcher {
  public:
-  using FetchCallback =
-      base::Callback<void(ServiceWorkerStatusCode,
-                          ServiceWorkerFetchEventResult,
-                          const ServiceWorkerResponse&,
-                          blink::mojom::ServiceWorkerStreamHandlePtr,
-                          storage::mojom::BlobPtr,
-                          const scoped_refptr<ServiceWorkerVersion>&)>;
+  // Indicates how the service worker handled a fetch event.
+  enum class FetchEventResult {
+    // Browser should fallback to native fetch.
+    kShouldFallback,
+    // Service worker provided a ServiceWorkerResponse.
+    kGotResponse
+  };
 
+  using FetchCallback =
+      base::OnceCallback<void(ServiceWorkerStatusCode,
+                              FetchEventResult,
+                              const ServiceWorkerResponse&,
+                              blink::mojom::ServiceWorkerStreamHandlePtr,
+                              blink::mojom::BlobPtr,
+                              scoped_refptr<ServiceWorkerVersion>)>;
+
+  // S13nServiceWorker
+  ServiceWorkerFetchDispatcher(std::unique_ptr<ResourceRequest> request,
+                               scoped_refptr<ServiceWorkerVersion> version,
+                               const base::Optional<base::TimeDelta>& timeout,
+                               const net::NetLogWithSource& net_log,
+                               base::OnceClosure prepare_callback,
+                               FetchCallback fetch_callback);
+  // Non-S13nServiceWorker
   ServiceWorkerFetchDispatcher(
       std::unique_ptr<ServiceWorkerFetchRequest> request,
-      ServiceWorkerVersion* version,
+      scoped_refptr<ServiceWorkerVersion> version,
       ResourceType resource_type,
       const base::Optional<base::TimeDelta>& timeout,
       const net::NetLogWithSource& net_log,
-      const base::Closure& prepare_callback,
-      const FetchCallback& fetch_callback);
+      base::OnceClosure prepare_callback,
+      FetchCallback fetch_callback);
   ~ServiceWorkerFetchDispatcher();
 
   // If appropriate, starts the navigation preload request and creates
@@ -87,15 +103,15 @@ class CONTENT_EXPORT ServiceWorkerFetchDispatcher {
                          ServiceWorkerStatusCode status);
   void DidFail(ServiceWorkerStatusCode status);
   void DidFinish(int request_id,
-                 ServiceWorkerFetchEventResult fetch_result,
+                 FetchEventResult fetch_result,
                  const ServiceWorkerResponse& response,
                  blink::mojom::ServiceWorkerStreamHandlePtr body_as_stream,
-                 storage::mojom::BlobPtr body_as_blob);
+                 blink::mojom::BlobPtr body_as_blob);
   void Complete(ServiceWorkerStatusCode status,
-                ServiceWorkerFetchEventResult fetch_result,
+                FetchEventResult fetch_result,
                 const ServiceWorkerResponse& response,
                 blink::mojom::ServiceWorkerStreamHandlePtr body_as_stream,
-                storage::mojom::BlobPtr body_as_blob);
+                blink::mojom::BlobPtr body_as_blob);
 
   static void OnFetchEventFinished(
       ServiceWorkerVersion* version,
@@ -104,14 +120,19 @@ class CONTENT_EXPORT ServiceWorkerFetchDispatcher {
       blink::mojom::ServiceWorkerEventStatus status,
       base::Time dispatch_event_time);
 
+  ServiceWorkerFetchType GetFetchType() const;
   ServiceWorkerMetrics::EventType GetEventType() const;
 
+  // S13nServiceWorker
+  std::unique_ptr<ResourceRequest> request_;
+  // Non-S13nServiceWorker
+  std::unique_ptr<ServiceWorkerFetchRequest> legacy_request_;
+
   scoped_refptr<ServiceWorkerVersion> version_;
-  net::NetLogWithSource net_log_;
-  base::Closure prepare_callback_;
-  FetchCallback fetch_callback_;
-  std::unique_ptr<ServiceWorkerFetchRequest> request_;
   ResourceType resource_type_;
+  net::NetLogWithSource net_log_;
+  base::OnceClosure prepare_callback_;
+  FetchCallback fetch_callback_;
   base::Optional<base::TimeDelta> timeout_;
   bool did_complete_;
 

@@ -53,6 +53,20 @@ function getPrologue(inputExpectationsPath, bodyText) {
       return line;
     }
   }
+  return '';
+}
+
+function appendBugLink(prologue, text) {
+  var match;
+  if (match = text.match(/crbug.com\/\d+/)) {
+    if (!prologue.includes(match[0]))
+      return prologue + ' ' + match[0];
+  }
+  if (match = text.match(/https:\/\/bugs.webkit.org\/show_bug.cgi\?id=\d+/)) {
+    if (!prologue.includes(match[0]))
+      return prologue + ' ' + match[0];
+  }
+  return prologue;
 }
 
 function escapeRegExp(str) {
@@ -68,7 +82,8 @@ function migrateTest(inputPath, identifierMap) {
   const inputFilename = path.basename(inputPath);
   const inputExpectationsPath = inputPath.replace('.js', '-expected.txt').replace('.html', '-expected.txt');
   const bodyText = $('body').text().trim();
-  const prologue = getPrologue(inputExpectationsPath, bodyText);
+
+  const prologue = appendBugLink(getPrologue(inputExpectationsPath, bodyText), htmlTestFile);
 
   const stylesheetPaths = $('link').toArray().filter(l => l.attribs.rel === 'stylesheet').map(l => l.attribs.href);
   const onloadFunctionName = $('body')[0].attribs.onload ? $('body')[0].attribs.onload.slice(0, -2) : '';
@@ -82,7 +97,7 @@ function migrateTest(inputPath, identifierMap) {
   const helperScripts = [];
   const resourceScripts = [];
   $('script[src]').toArray().map((n) => n.attribs.src).forEach(src => {
-    if (src.indexOf('resources/') !== -1) {
+    if (src.indexOf('resources/') !== -1 && src.indexOf('-test.js') === -1) {
       resourceScripts.push(src);
       return;
     }
@@ -114,11 +129,15 @@ function migrateTest(inputPath, identifierMap) {
                          .replace(/<script.*?>([\S\s]*?)<\/script>/g, '')
                          .trim();
     const docType = htmlTestFile.match(/<!DOCTYPE.*>/) ? htmlTestFile.match(/<!DOCTYPE.*>/)[0] : '';
+    const inlineStylesheets =
+        $('style').toArray().map(n => n.children[0].data).map(text => `<style>${text}</style>`).join('\n');
+    if (inlineStylesheets)
+      domFixture = inlineStylesheets + (domFixture.length ? '\n' : '') + domFixture;
     if (docType)
       domFixture = docType + (domFixture.length ? '\n' : '') + domFixture;
     outputCode = transformTestScript(
-        inputCode, prologue, identifierMap, testHelpers, javascriptFixtures, getPanel(inputPath), domFixture,
-        onloadFunctionName, relativeResourcePaths, stylesheetPaths, inputFilename);
+        inputCode, prologue, identifierMap, testHelpers, javascriptFixtures, getPanels(inputPath, inputCode),
+        domFixture, onloadFunctionName, relativeResourcePaths, stylesheetPaths, inputFilename);
   } catch (err) {
     console.log('Unable to migrate: ', inputPath);
     console.log('ERROR: ', err);
@@ -139,7 +158,7 @@ function migrateTest(inputPath, identifierMap) {
 }
 
 function transformTestScript(
-    inputCode, prologue, identifierMap, explicitTestHelpers, javascriptFixtures, panel, domFixture, onloadFunctionName,
+    inputCode, prologue, identifierMap, explicitTestHelpers, javascriptFixtures, panels, domFixture, onloadFunctionName,
     relativeResourcePaths, stylesheetPaths, inputFilename) {
   const ast = recast.parse(inputCode);
 
@@ -179,7 +198,8 @@ function transformTestScript(
           path.parentPath.value.object.name === 'InspectorTest' && path.value.name !== 'InspectorTest') {
         const newParentIdentifier = identifierMap.get(path.value.name);
         if (!newParentIdentifier) {
-          throw new Error('Could not find identifier for: ' + path.value.name);
+          console.log('ERROR: Could not find identifier for: ' + path.value.name);
+          return false;
         }
         path.parentPath.value.object.name = newParentIdentifier;
         namespacesUsed.add(newParentIdentifier.split('.')[0]);
@@ -227,7 +247,7 @@ function transformTestScript(
   for (const helper of allTestHelpers) {
     headerLines.push(createAwaitExpressionNode(`await TestRunner.loadModule('${helper}');`));
   }
-  if (panel)
+  for (const panel of panels)
     headerLines.push(createAwaitExpressionNode(`await TestRunner.showPanel('${panel}');`));
 
   if (domFixture) {
@@ -358,11 +378,17 @@ function print(ast) {
   return copyrightedCode;
 }
 
-function getPanel(inputPath) {
+function getPanels(inputPath, inputCode) {
+  const panels = new Set();
+  if (inputCode.includes('SourcesTestRunner.waitForScriptSource'))
+    panels.add('sources');
   const panelByFolder = {
     'animation': 'elements',
+    'appcache': 'resources',
+    'application-panel': 'resources',
     'audits': 'audits',
     'console': 'console',
+    'cache-storage': 'resources',
     'elements': 'elements',
     'editor': 'sources',
     'layers': 'layers',
@@ -380,8 +406,11 @@ function getPanel(inputPath) {
   const components = inputPath.slice(inputPath.indexOf('LayoutTests/')).split('/');
   const folder = inputPath.indexOf('LayoutTests/inspector') === -1 ? components[4] : components[2];
   if (folder.endsWith('.html'))
-    return;
-  return panelByFolder[folder];
+    return [];
+  const panel = panelByFolder[folder];
+  if (panel)
+    panels.add(panel);
+  return Array.from(panels);
 }
 
 function mapTestHelpers(testHelpers, includeConsole) {
@@ -396,9 +425,12 @@ function mapTestHelpers(testHelpers, includeConsole) {
     if (!mappedHelper) {
       throw Error('Could not map helper ' + helper);
     }
-    if (mappedHelper !== 'inspector_test_runner') {
-      mappedHelpers.add(mappedHelper);
-    }
+    if (mappedHelper === 'inspector_test_runner')
+      continue;
+    // Some tests reference tracing-test.js which doesn't exist
+    if (mappedHelper === 'tracing_test_runner')
+      continue;
+    mappedHelpers.add(mappedHelper);
   }
   if (includeConsole)
     mappedHelpers.add('console_test_runner');

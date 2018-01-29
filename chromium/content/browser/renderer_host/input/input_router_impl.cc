@@ -16,13 +16,11 @@
 #include "content/browser/renderer_host/input/gesture_event_queue.h"
 #include "content/browser/renderer_host/input/input_disposition_handler.h"
 #include "content/browser/renderer_host/input/input_router_client.h"
-#include "content/browser/renderer_host/input/legacy_touch_event_queue.h"
 #include "content/browser/renderer_host/input/passthrough_touch_event_queue.h"
 #include "content/browser/renderer_host/input/touch_event_queue.h"
 #include "content/browser/renderer_host/input/touchpad_tap_suppression_controller.h"
 #include "content/common/content_constants_internal.h"
 #include "content/common/edit_command.h"
-#include "content/common/input/input_event_ack_state.h"
 #include "content/common/input/input_handler.mojom.h"
 #include "content/common/input/web_touch_event_traits.h"
 #include "content/common/input_messages.h"
@@ -31,6 +29,7 @@
 #include "content/public/browser/notification_types.h"
 #include "content/public/common/content_features.h"
 #include "content/public/common/content_switches.h"
+#include "content/public/common/input_event_ack_state.h"
 #include "ipc/ipc_sender.h"
 #include "ui/events/blink/blink_event_util.h"
 #include "ui/events/blink/web_input_event_traits.h"
@@ -50,29 +49,6 @@ using ui::WebInputEventTraits;
 
 namespace content {
 namespace {
-
-const char* GetEventAckName(InputEventAckState ack_result) {
-  switch (ack_result) {
-    case INPUT_EVENT_ACK_STATE_UNKNOWN:
-      return "UNKNOWN";
-    case INPUT_EVENT_ACK_STATE_CONSUMED:
-      return "CONSUMED";
-    case INPUT_EVENT_ACK_STATE_NOT_CONSUMED:
-      return "NOT_CONSUMED";
-    case INPUT_EVENT_ACK_STATE_CONSUMED_SHOULD_BUBBLE:
-      return "CONSUMED_SHOULD_BUBBLE";
-    case INPUT_EVENT_ACK_STATE_NO_CONSUMER_EXISTS:
-      return "NO_CONSUMER_EXISTS";
-    case INPUT_EVENT_ACK_STATE_IGNORED:
-      return "IGNORED";
-    case INPUT_EVENT_ACK_STATE_SET_NON_BLOCKING:
-      return "SET_NON_BLOCKING";
-    case INPUT_EVENT_ACK_STATE_SET_NON_BLOCKING_DUE_TO_FLING:
-      return "SET_NON_BLOCKING_DUE_TO_FLING";
-  }
-  DLOG(WARNING) << "Unhandled InputEventAckState in GetEventAckName.";
-  return "";
-}
 
 bool WasHandled(InputEventAckState state) {
   switch (state) {
@@ -105,22 +81,16 @@ InputRouterImpl::InputRouterImpl(InputRouterImplClient* client,
       touch_scroll_started_sent_(false),
       wheel_scroll_latching_enabled_(base::FeatureList::IsEnabled(
           features::kTouchpadAndWheelScrollLatching)),
-      raf_aligned_touch_enabled_(
-          base::FeatureList::IsEnabled(features::kRafAlignedTouchInputEvents)),
       wheel_event_queue_(this, wheel_scroll_latching_enabled_),
       gesture_event_queue_(this, this, config.gesture_config),
       device_scale_factor_(1.f),
       host_binding_(this),
+      frame_host_binding_(this),
       weak_ptr_factory_(this) {
   weak_this_ = weak_ptr_factory_.GetWeakPtr();
 
-  if (raf_aligned_touch_enabled_) {
-    touch_event_queue_.reset(
-        new PassthroughTouchEventQueue(this, config.touch_config));
-  } else {
-    touch_event_queue_.reset(
-        new LegacyTouchEventQueue(this, config.touch_config));
-  }
+  touch_event_queue_.reset(
+      new PassthroughTouchEventQueue(this, config.touch_config));
 
   DCHECK(client);
   DCHECK(disposition_handler);
@@ -222,9 +192,15 @@ cc::TouchAction InputRouterImpl::AllowedTouchAction() {
   return touch_action_filter_.allowed_touch_action();
 }
 
-void InputRouterImpl::BindHost(mojom::WidgetInputHandlerHostRequest request) {
-  host_binding_.Close();
-  host_binding_.Bind(std::move(request));
+void InputRouterImpl::BindHost(mojom::WidgetInputHandlerHostRequest request,
+                               bool frame_handler) {
+  if (frame_handler) {
+    frame_host_binding_.Close();
+    frame_host_binding_.Bind(std::move(request));
+  } else {
+    host_binding_.Close();
+    host_binding_.Bind(std::move(request));
+  }
 }
 
 void InputRouterImpl::CancelTouchTimeout() {
@@ -323,6 +299,7 @@ void InputRouterImpl::SendTouchEventImmediately(
 }
 
 void InputRouterImpl::OnTouchEventAck(const TouchEventWithLatencyInfo& event,
+                                      InputEventAckSource ack_source,
                                       InputEventAckState ack_result) {
   // Touchstart events sent to the renderer indicate a new touch sequence, but
   // in some cases we may filter out sending the touchstart - catch those here.
@@ -331,7 +308,7 @@ void InputRouterImpl::OnTouchEventAck(const TouchEventWithLatencyInfo& event,
     touch_action_filter_.ResetTouchAction();
     UpdateTouchAckTimeoutEnabled();
   }
-  disposition_handler_->OnTouchEventAck(event, ack_result);
+  disposition_handler_->OnTouchEventAck(event, ack_source, ack_result);
 
   // Reset the touch action at the end of a touch-action sequence.
   if (WebTouchEventTraits::IsTouchSequenceEnd(event.event)) {
@@ -361,9 +338,10 @@ void InputRouterImpl::SendGestureEventImmediately(
 
 void InputRouterImpl::OnGestureEventAck(
     const GestureEventWithLatencyInfo& event,
+    InputEventAckSource ack_source,
     InputEventAckState ack_result) {
   touch_event_queue_->OnGestureEventAck(event, ack_result);
-  disposition_handler_->OnGestureEventAck(event, ack_result);
+  disposition_handler_->OnGestureEventAck(event, ack_source, ack_result);
 }
 
 void InputRouterImpl::SendMouseWheelEventImmediately(
@@ -376,8 +354,10 @@ void InputRouterImpl::SendMouseWheelEventImmediately(
 
 void InputRouterImpl::OnMouseWheelEventAck(
     const MouseWheelEventWithLatencyInfo& event,
+    InputEventAckSource ack_source,
+
     InputEventAckState ack_result) {
-  disposition_handler_->OnWheelEventAck(event, ack_result);
+  disposition_handler_->OnWheelEventAck(event, ack_source, ack_result);
 }
 
 void InputRouterImpl::ForwardGestureEventWithLatencyInfo(
@@ -409,11 +389,10 @@ void InputRouterImpl::FilterAndSendWebInputEvent(
     return;
   }
 
-  std::unique_ptr<InputEvent> event = base::MakeUnique<InputEvent>(
+  std::unique_ptr<InputEvent> event = std::make_unique<InputEvent>(
       ScaleEvent(input_event, device_scale_factor_), latency_info);
   if (WebInputEventTraits::ShouldBlockEventStream(
-          input_event, raf_aligned_touch_enabled_,
-          wheel_scroll_latching_enabled_)) {
+          input_event, wheel_scroll_latching_enabled_)) {
     client_->IncrementInFlightEventCount(input_event.GetType());
     client_->GetWidgetInputHandler()->DispatchEvent(std::move(event),
                                                     std::move(callback));
@@ -435,12 +414,12 @@ void InputRouterImpl::KeyboardEventHandled(
     const base::Optional<cc::TouchAction>& touch_action) {
   TRACE_EVENT2("input", "InputRouterImpl::KeboardEventHandled", "type",
                WebInputEvent::GetName(event.event.GetType()), "ack",
-               GetEventAckName(state));
+               InputEventAckStateToString(state));
 
   if (source != InputEventAckSource::BROWSER)
     client_->DecrementInFlightEventCount(source);
   event.latency.AddNewLatencyFrom(latency);
-  disposition_handler_->OnKeyboardEventAck(event, state);
+  disposition_handler_->OnKeyboardEventAck(event, source, state);
 
   // WARNING: This InputRouterImpl can be deallocated at this point
   // (i.e.  in the case of Ctrl+W, where the call to
@@ -457,12 +436,12 @@ void InputRouterImpl::MouseEventHandled(
     const base::Optional<cc::TouchAction>& touch_action) {
   TRACE_EVENT2("input", "InputRouterImpl::MouseEventHandled", "type",
                WebInputEvent::GetName(event.event.GetType()), "ack",
-               GetEventAckName(state));
+               InputEventAckStateToString(state));
 
   if (source != InputEventAckSource::BROWSER)
     client_->DecrementInFlightEventCount(source);
   event.latency.AddNewLatencyFrom(latency);
-  disposition_handler_->OnMouseEventAck(event, state);
+  disposition_handler_->OnMouseEventAck(event, source, state);
 }
 
 void InputRouterImpl::TouchEventHandled(
@@ -474,7 +453,7 @@ void InputRouterImpl::TouchEventHandled(
     const base::Optional<cc::TouchAction>& touch_action) {
   TRACE_EVENT2("input", "InputRouterImpl::TouchEventHandled", "type",
                WebInputEvent::GetName(touch_event.event.GetType()), "ack",
-               GetEventAckName(state));
+               InputEventAckStateToString(state));
   if (source != InputEventAckSource::BROWSER)
     client_->DecrementInFlightEventCount(source);
   touch_event.latency.AddNewLatencyFrom(latency);
@@ -486,7 +465,7 @@ void InputRouterImpl::TouchEventHandled(
     OnSetTouchAction(touch_action.value());
 
   // |touch_event_queue_| will forward to OnTouchEventAck when appropriate.
-  touch_event_queue_->ProcessTouchAck(state, latency,
+  touch_event_queue_->ProcessTouchAck(source, state, latency,
                                       touch_event.event.unique_touch_event_id);
 }
 
@@ -499,7 +478,7 @@ void InputRouterImpl::GestureEventHandled(
     const base::Optional<cc::TouchAction>& touch_action) {
   TRACE_EVENT2("input", "InputRouterImpl::GestureEventHandled", "type",
                WebInputEvent::GetName(gesture_event.event.GetType()), "ack",
-               GetEventAckName(state));
+               InputEventAckStateToString(state));
   if (source != InputEventAckSource::BROWSER)
     client_->DecrementInFlightEventCount(source);
   if (gesture_event.event.GetType() ==
@@ -515,8 +494,8 @@ void InputRouterImpl::GestureEventHandled(
   }
 
   // |gesture_event_queue_| will forward to OnGestureEventAck when appropriate.
-  gesture_event_queue_.ProcessGestureAck(state, gesture_event.event.GetType(),
-                                         latency);
+  gesture_event_queue_.ProcessGestureAck(
+      source, state, gesture_event.event.GetType(), latency);
 }
 
 void InputRouterImpl::MouseWheelEventHandled(
@@ -528,7 +507,7 @@ void InputRouterImpl::MouseWheelEventHandled(
     const base::Optional<cc::TouchAction>& touch_action) {
   TRACE_EVENT2("input", "InputRouterImpl::MouseWheelEventHandled", "type",
                WebInputEvent::GetName(event.event.GetType()), "ack",
-               GetEventAckName(state));
+               InputEventAckStateToString(state));
   if (source != InputEventAckSource::BROWSER)
     client_->DecrementInFlightEventCount(source);
   event.latency.AddNewLatencyFrom(latency);
@@ -536,7 +515,7 @@ void InputRouterImpl::MouseWheelEventHandled(
   if (overscroll)
     DidOverscroll(overscroll.value());
 
-  wheel_event_queue_.ProcessMouseWheelAck(state, event.latency);
+  wheel_event_queue_.ProcessMouseWheelAck(source, state, event.latency);
 }
 
 void InputRouterImpl::OnHasTouchEventHandlers(bool has_handlers) {

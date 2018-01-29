@@ -27,7 +27,6 @@
 #include "components/user_manager/user.h"
 #include "media/audio/sounds/sounds_manager.h"
 #include "net/base/data_url.h"
-#include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "url/gurl.h"
 
@@ -94,8 +93,12 @@ void UserImageScreenHandler::DeclareLocalizedValues(
   builder->Add("userImageScreenDescription",
                IDS_USER_IMAGE_SCREEN_DESCRIPTION);
   builder->Add("takePhoto", IDS_OPTIONS_CHANGE_PICTURE_TAKE_PHOTO);
+  builder->Add("captureVideo", IDS_OPTIONS_CHANGE_PICTURE_CAPTURE_VIDEO);
   builder->Add("discardPhoto", IDS_OPTIONS_CHANGE_PICTURE_DISCARD_PHOTO);
-  builder->Add("switchMode", IDS_OPTIONS_CHANGE_PICTURE_SWITCH_MODE);
+  builder->Add("switchModeToCamera",
+               IDS_OPTIONS_CHANGE_PICTURE_SWITCH_MODE_TO_CAMERA);
+  builder->Add("switchModeToVideo",
+               IDS_OPTIONS_CHANGE_PICTURE_SWITCH_MODE_TO_VIDEO);
   builder->Add("profilePhoto", IDS_IMAGE_SCREEN_PROFILE_PHOTO);
   builder->Add("profilePhotoLoading",
                IDS_IMAGE_SCREEN_PROFILE_LOADING_PHOTO);

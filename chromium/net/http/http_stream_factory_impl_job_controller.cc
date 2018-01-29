@@ -559,17 +559,19 @@ void HttpStreamFactoryImpl::JobController::ResumeMainJobLater(
     const base::TimeDelta& delay) {
   net_log_.AddEvent(NetLogEventType::HTTP_STREAM_JOB_DELAYED,
                     NetLog::Int64Callback("delay", delay.InMilliseconds()));
+  resume_main_job_callback_.Reset(
+      base::BindOnce(&HttpStreamFactoryImpl::JobController::ResumeMainJob,
+                     ptr_factory_.GetWeakPtr()));
   base::ThreadTaskRunnerHandle::Get()->PostDelayedTask(
-      FROM_HERE,
-      base::Bind(&HttpStreamFactoryImpl::JobController::ResumeMainJob,
-                 ptr_factory_.GetWeakPtr()),
-      delay);
+      FROM_HERE, resume_main_job_callback_.callback(), delay);
 }
 
 void HttpStreamFactoryImpl::JobController::ResumeMainJob() {
-  if (main_job_is_resumed_)
-    return;
+  DCHECK(main_job_);
 
+  if (main_job_is_resumed_) {
+    return;
+  }
   main_job_is_resumed_ = true;
   main_job_->net_log().AddEvent(
       NetLogEventType::HTTP_STREAM_JOB_RESUMED,
@@ -1163,6 +1165,9 @@ HttpStreamFactoryImpl::JobController::GetAlternativeServiceInfoInternal(
                                                                destination))
       return alternative_service_info;
 
+    if (!IsQuicWhitelistedForHost(destination.host()))
+      continue;
+
     // Cache this entry if we don't have a non-broken Alt-Svc yet.
     if (first_alternative_service_info.protocol() == kProtoUnknown)
       first_alternative_service_info = alternative_service_info;
@@ -1315,6 +1320,13 @@ int HttpStreamFactoryImpl::JobController::ReconsiderProxyAfterError(Job* job,
     bound_job_ = nullptr;
     alternative_job_.reset();
     main_job_.reset();
+    // Also resets states that related to the old main job. In particular,
+    // cancels |resume_main_job_callback_| so there won't be any delayed
+    // ResumeMainJob() left in the task queue.
+    resume_main_job_callback_.Cancel();
+    main_job_is_resumed_ = false;
+    main_job_is_blocked_ = false;
+
     next_state_ = STATE_RESOLVE_PROXY_COMPLETE;
   } else {
     // If ReconsiderProxyAfterError() failed synchronously, it means
@@ -1324,6 +1336,17 @@ int HttpStreamFactoryImpl::JobController::ReconsiderProxyAfterError(Job* job,
     rv = error;
   }
   return rv;
+}
+
+bool HttpStreamFactoryImpl::JobController::IsQuicWhitelistedForHost(
+    const std::string& host) {
+  const base::flat_set<std::string>& host_whitelist =
+      session_->params().quic_host_whitelist;
+  if (host_whitelist.empty())
+    return true;
+
+  std::string lowered_host = base::ToLowerASCII(host);
+  return base::ContainsKey(host_whitelist, lowered_host);
 }
 
 }  // namespace net

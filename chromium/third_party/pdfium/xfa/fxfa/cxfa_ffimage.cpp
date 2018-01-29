@@ -49,22 +49,22 @@ void CXFA_FFImage::RenderWidget(CXFA_Graphics* pGS,
     return;
 
   CFX_RectF rtImage = GetRectWithoutRotate();
-  if (CXFA_Margin mgWidget = m_pDataAcc->GetMargin())
-    XFA_RectWidthoutMargin(rtImage, mgWidget);
+  CXFA_MarginData marginData = m_pDataAcc->GetMarginData();
+  if (marginData.HasValidNode())
+    XFA_RectWidthoutMargin(rtImage, marginData);
 
-  int32_t iHorzAlign = XFA_ATTRIBUTEENUM_Left;
-  int32_t iVertAlign = XFA_ATTRIBUTEENUM_Top;
-  if (CXFA_Para para = m_pDataAcc->GetPara()) {
-    iHorzAlign = para.GetHorizontalAlign();
-    iVertAlign = para.GetVerticalAlign();
+  XFA_AttributeEnum iHorzAlign = XFA_AttributeEnum::Left;
+  XFA_AttributeEnum iVertAlign = XFA_AttributeEnum::Top;
+  CXFA_ParaData paraData = m_pDataAcc->GetParaData();
+  if (paraData.HasValidNode()) {
+    iHorzAlign = paraData.GetHorizontalAlign();
+    iVertAlign = paraData.GetVerticalAlign();
   }
 
-  CXFA_Value value = m_pDataAcc->GetFormValue();
-  CXFA_Image imageObj = value.GetImage();
-  int32_t iAspect = imageObj.GetAspect();
   int32_t iImageXDpi = 0;
   int32_t iImageYDpi = 0;
   m_pDataAcc->GetImageDpi(iImageXDpi, iImageYDpi);
-  XFA_DrawImage(pGS, rtImage, mtRotate, pDIBitmap, iAspect, iImageXDpi,
-                iImageYDpi, iHorzAlign, iVertAlign);
+  XFA_DrawImage(pGS, rtImage, mtRotate, pDIBitmap,
+                m_pDataAcc->GetFormValueData().GetImageData().GetAspect(),
+                iImageXDpi, iImageYDpi, iHorzAlign, iVertAlign);
 }

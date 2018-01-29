@@ -8,9 +8,10 @@
 
 #include "base/memory/ptr_util.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/notifications/notification.h"
 #include "chrome/browser/notifications/notification_display_service.h"
 #include "chrome/browser/notifications/notification_display_service_factory.h"
+#include "chrome/browser/notifications/notification_handler.h"
+#include "ui/message_center/notification.h"
 #include "url/gurl.h"
 
 namespace extensions {
@@ -22,18 +23,20 @@ ExtensionNotificationDisplayHelper::ExtensionNotificationDisplayHelper(
 ExtensionNotificationDisplayHelper::~ExtensionNotificationDisplayHelper() {}
 
 void ExtensionNotificationDisplayHelper::Display(
-    const Notification& notification) {
+    const message_center::Notification& notification) {
   // Remove the previous version of this notification if the |notification| is
   // updating another notification.
   EraseDataForNotificationId(notification.id());
 
-  notifications_.push_back(base::MakeUnique<Notification>(notification));
+  notifications_.push_back(
+      std::make_unique<message_center::Notification>(notification));
 
-  GetDisplayService()->Display(NotificationCommon::EXTENSION, notification.id(),
+  GetDisplayService()->Display(NotificationHandler::Type::EXTENSION,
                                notification);
 }
 
-Notification* ExtensionNotificationDisplayHelper::GetByNotificationId(
+message_center::Notification*
+ExtensionNotificationDisplayHelper::GetByNotificationId(
     const std::string& notification_id) {
   for (const auto& notification : notifications_) {
     if (notification->id() == notification_id)
@@ -59,7 +62,8 @@ bool ExtensionNotificationDisplayHelper::EraseDataForNotificationId(
     const std::string& notification_id) {
   auto iter = std::find_if(
       notifications_.begin(), notifications_.end(),
-      [notification_id](const std::unique_ptr<Notification>& notification) {
+      [notification_id](
+          const std::unique_ptr<message_center::Notification>& notification) {
         return notification->id() == notification_id;
       });
 
@@ -75,7 +79,8 @@ bool ExtensionNotificationDisplayHelper::Close(
   if (!EraseDataForNotificationId(notification_id))
     return false;
 
-  GetDisplayService()->Close(NotificationCommon::EXTENSION, notification_id);
+  GetDisplayService()->Close(NotificationHandler::Type::EXTENSION,
+                             notification_id);
   return true;
 }
 

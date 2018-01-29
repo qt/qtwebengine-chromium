@@ -19,6 +19,7 @@
 #include "ui/android/window_android.h"
 #include "ui/base/layout.h"
 #include "ui/events/android/drag_event_android.h"
+#include "ui/events/android/gesture_event_android.h"
 #include "ui/events/android/motion_event_android.h"
 #include "ui/gfx/android/java_bitmap.h"
 #include "url/gurl.h"
@@ -200,18 +201,23 @@ ViewAndroid::ScopedAnchorView ViewAndroid::AcquireAnchorView() {
 }
 
 void ViewAndroid::SetAnchorRect(const JavaRef<jobject>& anchor,
-                                const gfx::RectF& bounds) {
+                                const gfx::RectF& bounds_dip) {
   ScopedJavaLocalRef<jobject> delegate(GetViewAndroidDelegate());
   if (delegate.is_null())
     return;
 
   float dip_scale = GetDipScale();
-  int left_margin = std::round(bounds.x() * dip_scale);
-  int top_margin = std::round((content_offset() + bounds.y()) * dip_scale);
+  int left_margin = std::round(bounds_dip.x() * dip_scale);
+  // Note that content_offset() is in CSS scale and bounds_dip is in DIP scale
+  // (i.e., CSS pixels * page scale factor), but the height of browser control
+  // is not affected by page scale factor. Thus, content_offset() in CSS scale
+  // is also in DIP scale.
+  int top_margin = std::round((content_offset() + bounds_dip.y()) * dip_scale);
+  const gfx::RectF bounds_px = gfx::ScaleRect(bounds_dip, dip_scale);
   JNIEnv* env = base::android::AttachCurrentThread();
   Java_ViewAndroidDelegate_setViewPosition(
-      env, delegate, anchor, bounds.x(), bounds.y(), bounds.width(),
-      bounds.height(), dip_scale, left_margin, top_margin);
+      env, delegate, anchor, bounds_px.x(), bounds_px.y(), bounds_px.width(),
+      bounds_px.height(), left_margin, top_margin);
 }
 
 ScopedJavaLocalRef<jobject> ViewAndroid::GetContainerView() {
@@ -236,6 +242,17 @@ gfx::Point ViewAndroid::GetLocationOfContainerViewInWindow() {
                                                                    delegate));
 
   return result;
+}
+
+gfx::PointF ViewAndroid::GetLocationOnScreen(float x, float y) {
+  ScopedJavaLocalRef<jobject> delegate(GetViewAndroidDelegate());
+  if (delegate.is_null())
+    return gfx::PointF();
+
+  JNIEnv* env = base::android::AttachCurrentThread();
+  float loc_x = Java_ViewAndroidDelegate_getXLocationOnScreen(env, delegate);
+  float loc_y = Java_ViewAndroidDelegate_getYLocationOnScreen(env, delegate);
+  return gfx::PointF(x + loc_x, y + loc_y);
 }
 
 void ViewAndroid::RemoveChild(ViewAndroid* child) {
@@ -420,8 +437,12 @@ void ViewAndroid::OnPhysicalBackingSizeChanged(const gfx::Size& size) {
     child->OnPhysicalBackingSizeChanged(size);
 }
 
-gfx::Size ViewAndroid::GetPhysicalBackingSize() {
+gfx::Size ViewAndroid::GetPhysicalBackingSize() const {
   return physical_size_;
+}
+
+gfx::Size ViewAndroid::GetSize() const {
+  return view_rect_.size();
 }
 
 bool ViewAndroid::OnDragEvent(const DragEventAndroid& event) {
@@ -466,6 +487,17 @@ bool ViewAndroid::OnMouseWheelEvent(const MotionEventAndroid& event) {
 bool ViewAndroid::SendMouseWheelEventToClient(ViewClient* client,
                                               const MotionEventAndroid& event) {
   return client->OnMouseWheelEvent(event);
+}
+
+bool ViewAndroid::OnGestureEvent(const GestureEventAndroid& event) {
+  return HitTest(base::Bind(&ViewAndroid::SendGestureEventToClient), event,
+                 event.location());
+}
+
+// static
+bool ViewAndroid::SendGestureEventToClient(ViewClient* client,
+                                           const GestureEventAndroid& event) {
+  return client->OnGestureEvent(event);
 }
 
 template <typename E>

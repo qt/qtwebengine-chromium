@@ -11,9 +11,15 @@ assert(is_android)
 cast_shell_android_manifest =
     "$root_gen_dir/cast_shell_manifest/AndroidManifest.xml"
 
+manifest_variables = [
+  "cast_build_enable_background_activities=$enable_background_activities",
+]
+
 jinja_template("cast_shell_manifest") {
   input = "apk/AndroidManifest.xml.jinja2"
   output = cast_shell_android_manifest
+
+  variables = manifest_variables
 }
 
 java_cpp_template("cast_shell_build_config_gen") {
@@ -26,6 +32,9 @@ java_cpp_template("cast_shell_build_config_gen") {
   if (display_web_contents_in_service) {
     defines += [ "_DISPLAY_WEB_CONTENTS_IN_SERVICE" ]
   }
+
+  # Set the logcat extractor size in lines.
+  defines += [ "_LOGCAT_EXTRACTOR_SIZE=${logcat_extractor_size}" ]
 }
 
 android_resources("cast_shell_android_resources") {

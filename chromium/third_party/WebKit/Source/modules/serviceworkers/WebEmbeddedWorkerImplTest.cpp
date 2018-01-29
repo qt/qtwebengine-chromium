@@ -7,6 +7,7 @@
 #include <memory>
 #include "platform/WaitableEvent.h"
 #include "platform/WebTaskRunner.h"
+#include "platform/loader/fetch/ResourceError.h"
 #include "platform/runtime_enabled_features.h"
 #include "platform/testing/URLTestHelpers.h"
 #include "platform/testing/UnitTestHelpers.h"
@@ -92,13 +93,6 @@ class MockServiceWorkerContextClient : public WebServiceWorkerContextClient {
                 std::unique_ptr<WebServiceWorkerClientCallbacks>) override {
     NOTREACHED();
   }
-  void RegisterForeignFetchScopes(
-      int install_event_id,
-      const WebVector<WebURL>& sub_scopes,
-      const WebVector<WebSecurityOrigin>& origins) override {
-    NOTREACHED();
-  }
-
   void WorkerContextDestroyed() override { termination_event_.Signal(); }
 
   void WaitUntilScriptEvaluated() { script_evaluated_event_.Wait(); }
@@ -120,18 +114,18 @@ class MockServiceWorkerInstalledScriptsManager
 class WebEmbeddedWorkerImplTest : public ::testing::Test {
  protected:
   void SetUp() override {
-    auto client = WTF::MakeUnique<MockServiceWorkerContextClient>();
+    auto client = std::make_unique<MockServiceWorkerContextClient>();
     auto installed_scripts_manager =
-        WTF::MakeUnique<MockServiceWorkerInstalledScriptsManager>();
+        std::make_unique<MockServiceWorkerInstalledScriptsManager>();
     mock_client_ = client.get();
     if (RuntimeEnabledFeatures::ServiceWorkerScriptStreamingEnabled()) {
       mock_installed_scripts_manager_ = installed_scripts_manager.get();
     } else {
       mock_installed_scripts_manager_ = nullptr;
     }
-    worker_ = WebEmbeddedWorker::Create(std::move(client),
-                                        std::move(installed_scripts_manager),
-                                        mojo::ScopedMessagePipeHandle());
+    worker_ = WebEmbeddedWorker::Create(
+        std::move(client), std::move(installed_scripts_manager),
+        mojo::ScopedMessagePipeHandle(), mojo::ScopedMessagePipeHandle());
 
     WebURL script_url = URLTestHelpers::ToKURL("https://www.example.com/sw.js");
     WebURLResponse response;
@@ -254,9 +248,7 @@ TEST_F(WebEmbeddedWorkerImplTest, ScriptNotFound) {
   WebURLResponse response;
   response.SetMIMEType("text/javascript");
   response.SetHTTPStatusCode(404);
-  WebURLError error;
-  error.reason = 1010;
-  error.domain = WebURLError::Domain::kTest;
+  ResourceError error = ResourceError::Failure(script_url);
   Platform::Current()->GetURLLoaderMockFactory()->RegisterErrorURL(
       script_url, response, error);
   start_data_.script_url = script_url;

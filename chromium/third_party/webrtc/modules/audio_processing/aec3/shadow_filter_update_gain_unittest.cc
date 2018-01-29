@@ -19,8 +19,8 @@
 #include "modules/audio_processing/aec3/aec3_common.h"
 #include "modules/audio_processing/aec3/aec_state.h"
 #include "modules/audio_processing/test/echo_canceller_test_tools.h"
+#include "rtc_base/numerics/safe_minmax.h"
 #include "rtc_base/random.h"
-#include "rtc_base/safe_minmax.h"
 #include "test/gtest.h"
 
 namespace webrtc {
@@ -47,7 +47,7 @@ void RunFilterUpdateTest(int num_blocks_to_process,
   Random random_generator(42U);
   std::vector<std::vector<float>> x(3, std::vector<float>(kBlockSize, 0.f));
   std::vector<float> y(kBlockSize, 0.f);
-  AecState aec_state(AudioProcessing::Config::EchoCanceller3{});
+  AecState aec_state(EchoCanceller3Config{});
   RenderSignalAnalyzer render_signal_analyzer;
   std::array<float, kFftLength> s;
   FftData S;
@@ -68,8 +68,7 @@ void RunFilterUpdateTest(int num_blocks_to_process,
     RandomizeSampleVector(&random_generator, x[0]);
     delay_buffer.Delay(x[0], y);
     render_buffer.Insert(x);
-    render_signal_analyzer.Update(
-        render_buffer, rtc::Optional<size_t>(delay_samples / kBlockSize));
+    render_signal_analyzer.Update(render_buffer, delay_samples / kBlockSize);
 
     shadow_filter.Filter(render_buffer, &S);
     fft.Ifft(S, &s);

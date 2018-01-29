@@ -251,7 +251,7 @@ SkScalerContext* DWriteFontTypeface::onCreateScalerContext(const SkScalerContext
     return new SkScalerContext_DW(sk_ref_sp(const_cast<DWriteFontTypeface*>(this)), effects, desc);
 }
 
-void DWriteFontTypeface::onFilterRec(SkScalerContext::Rec* rec) const {
+void DWriteFontTypeface::onFilterRec(SkScalerContextRec* rec) const {
     if (rec->fFlags & SkScalerContext::kLCD_Vertical_Flag) {
         rec->fMaskFormat = SkMask::kA8_Format;
         rec->fFlags |= SkScalerContext::kGenA8FromLCD_Flag;
@@ -371,6 +371,8 @@ std::unique_ptr<SkAdvancedTypefaceMetrics> DWriteFontTypeface::onGetAdvancedMetr
     if (!headTable.fExists || !postTable.fExists || !hheaTable.fExists || !os2Table.fExists) {
         return info;
     }
+
+    SkOTUtils::SetAdvancedTypefaceFlags(os2Table->version.v4.fsType, info.get());
 
     // There are versions of DirectWrite which support named instances for system variation fonts,
     // but no means to indicate that such a typeface is a variation.

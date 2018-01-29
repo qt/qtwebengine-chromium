@@ -22,6 +22,7 @@
 #include "base/timer/hi_res_timer_manager.h"
 #include "base/trace_event/trace_event.h"
 #include "build/build_config.h"
+#include "components/viz/service/main/viz_main_impl.h"
 #include "content/common/content_constants_internal.h"
 #include "content/common/content_switches_internal.h"
 #include "content/gpu/gpu_child_thread.h"
@@ -36,11 +37,12 @@
 #include "gpu/config/gpu_switches.h"
 #include "gpu/config/gpu_util.h"
 #include "gpu/ipc/common/gpu_memory_buffer_support.h"
+#include "gpu/ipc/common/gpu_preferences_util.h"
 #include "gpu/ipc/service/gpu_config.h"
 #include "gpu/ipc/service/gpu_init.h"
 #include "gpu/ipc/service/gpu_watchdog_thread.h"
 #include "media/gpu/features.h"
-#include "services/ui/gpu/gpu_main.h"
+#include "third_party/angle/src/gpu_info_util/SystemInfo.h"
 #include "third_party/skia/include/core/SkGraphics.h"
 #include "ui/events/platform/platform_event_source.h"
 #include "ui/gfx/switches.h"
@@ -76,8 +78,10 @@
 
 #if defined(OS_LINUX)
 #include "content/common/font_config_ipc_linux.h"
-#include "content/common/sandbox_linux/sandbox_linux.h"
+#include "content/gpu/gpu_sandbox_hook_linux.h"
+#include "content/public/common/common_sandbox_support_linux.h"
 #include "content/public/common/sandbox_init.h"
+#include "services/service_manager/sandbox/linux/sandbox_linux.h"
 #include "third_party/skia/include/ports/SkFontConfigInterface.h"
 #endif
 
@@ -99,19 +103,21 @@ namespace content {
 namespace {
 
 #if defined(OS_LINUX)
-bool StartSandboxLinux(gpu::GpuWatchdogThread*, const gpu::GPUInfo*);
+bool StartSandboxLinux(gpu::GpuWatchdogThread*,
+                       const gpu::GPUInfo*,
+                       const gpu::GpuPreferences&);
 #elif defined(OS_WIN)
 bool StartSandboxWindows(const sandbox::SandboxInterfaceInfo*);
 #endif
 
-base::LazyInstance<ui::GpuMain::LogMessages>::DestructorAtExit
+base::LazyInstance<viz::VizMainImpl::LogMessages>::DestructorAtExit
     deferred_messages = LAZY_INSTANCE_INITIALIZER;
 
 bool GpuProcessLogMessageHandler(int severity,
                                  const char* file, int line,
                                  size_t message_start,
                                  const std::string& str) {
-  ui::GpuMain::LogMessage log;
+  viz::VizMainImpl::LogMessage log;
   log.severity = severity;
   log.header = str.substr(0, message_start);
   log.message = str.substr(message_start);
@@ -155,13 +161,14 @@ class ContentSandboxHelper : public gpu::GpuSandboxHelper {
   }
 
   bool EnsureSandboxInitialized(gpu::GpuWatchdogThread* watchdog_thread,
-                                const gpu::GPUInfo* gpu_info) override {
+                                const gpu::GPUInfo* gpu_info,
+                                const gpu::GpuPreferences& gpu_prefs) override {
 #if defined(OS_LINUX)
-    return StartSandboxLinux(watchdog_thread, gpu_info);
+    return StartSandboxLinux(watchdog_thread, gpu_info, gpu_prefs);
 #elif defined(OS_WIN)
     return StartSandboxWindows(sandbox_info_);
 #elif defined(OS_MACOSX)
-    return service_manager::Sandbox::SandboxIsCurrentlyActive();
+    return service_manager::SandboxMac::IsCurrentlyActive();
 #else
     return false;
 #endif
@@ -179,12 +186,21 @@ class ContentSandboxHelper : public gpu::GpuSandboxHelper {
 // Main function for starting the Gpu process.
 int GpuMain(const MainFunctionParams& parameters) {
   TRACE_EVENT0("gpu", "GpuMain");
-  base::trace_event::TraceLog::GetInstance()->SetProcessName("GPU Process");
+  base::trace_event::TraceLog::GetInstance()->set_process_name("GPU Process");
   base::trace_event::TraceLog::GetInstance()->SetProcessSortIndex(
       kTraceEventGpuProcessSortIndex);
 
   const base::CommandLine& command_line = parameters.command_line;
-  if (command_line.HasSwitch(switches::kGpuStartupDialog))
+
+  gpu::GpuPreferences gpu_preferences;
+  if (command_line.HasSwitch(switches::kGpuPreferences)) {
+    std::string value =
+        command_line.GetSwitchValueASCII(switches::kGpuPreferences);
+    bool success = gpu::SwitchValueToGpuPreferences(value, &gpu_preferences);
+    CHECK(success);
+  }
+
+  if (gpu_preferences.gpu_startup_dialog)
     WaitForDebugger("Gpu");
 
   base::Time start_time = base::Time::Now();
@@ -239,9 +255,10 @@ int GpuMain(const MainFunctionParams& parameters) {
 #elif defined(OS_LINUX)
 #error "Unsupported Linux platform."
 #elif defined(OS_MACOSX)
-    // This is necessary for CoreAnimation layers hosted in the GPU process to
-    // be drawn. See http://crbug.com/312462.
-    std::unique_ptr<base::MessagePump> pump(new base::MessagePumpCFRunLoop());
+    // Cross-process CoreAnimation requires a CFRunLoop to function at all, and
+    // requires a NSRunLoop to not starve under heavy load. See:
+    // https://crbug.com/312462#c51 and https://crbug.com/783298
+    std::unique_ptr<base::MessagePump> pump(new base::MessagePumpNSRunLoop());
     main_message_loop.reset(new base::MessageLoop(std::move(pump)));
 #else
     main_message_loop.reset(
@@ -274,12 +291,12 @@ int GpuMain(const MainFunctionParams& parameters) {
   // set up between the browser and GPU process, and the GPU process crashes or
   // exits early, the browser process will never detect it.  For this reason we
   // defer tearing down the GPU process until receiving the initialization
-  // message from the browser (through mojom::GpuMain::CreateGpuService()).
+  // message from the browser (through mojom::VizMain::CreateGpuService()).
   const bool init_success = gpu_init->InitializeAndStartSandbox(
-      const_cast<base::CommandLine*>(&command_line));
+      const_cast<base::CommandLine*>(&command_line), gpu_preferences);
   const bool dead_on_arrival = !init_success;
 
-  logging::SetLogMessageHandler(NULL);
+  logging::SetLogMessageHandler(nullptr);
   GetContentClient()->SetGpuInfo(gpu_init->gpu_info());
 
   base::ThreadPriority io_thread_priority = base::ThreadPriority::NORMAL;
@@ -325,24 +342,38 @@ namespace {
 
 #if defined(OS_LINUX)
 bool StartSandboxLinux(gpu::GpuWatchdogThread* watchdog_thread,
-                       const gpu::GPUInfo* gpu_info) {
+                       const gpu::GPUInfo* gpu_info,
+                       const gpu::GpuPreferences& gpu_prefs) {
   TRACE_EVENT0("gpu,startup", "Initialize sandbox");
 
-  bool res = false;
-
   if (watchdog_thread) {
-    // LinuxSandbox needs to be able to ensure that the thread
+    // SandboxLinux needs to be able to ensure that the thread
     // has really been stopped.
-    LinuxSandbox::StopThread(watchdog_thread);
+    service_manager::SandboxLinux::GetInstance()->StopThread(watchdog_thread);
   }
 
-  // LinuxSandbox::InitializeSandbox() must always be called
+  // SandboxLinux::InitializeSandbox() must always be called
   // with only one thread.
-  res = LinuxSandbox::InitializeSandbox(gpu_info);
+  service_manager::SandboxLinux::Options sandbox_options;
+  sandbox_options.use_amd_specific_policies =
+      gpu_info && angle::IsAMD(gpu_info->active_gpu().vendor_id);
+  sandbox_options.accelerated_video_decode_enabled =
+      !gpu_prefs.disable_accelerated_video_decode;
+
+#if defined(OS_CHROMEOS)
+  sandbox_options.vaapi_accelerated_video_encode_enabled =
+      !gpu_prefs.disable_vaapi_accelerated_video_encode;
+#endif
+
+  bool res = service_manager::SandboxLinux::GetInstance()->InitializeSandbox(
+      service_manager::SandboxTypeFromCommandLine(
+          *base::CommandLine::ForCurrentProcess()),
+      base::BindOnce(GpuProcessPreSandboxHook), sandbox_options);
+
   if (watchdog_thread) {
-    base::Thread::Options options;
-    options.timer_slack = base::TIMER_SLACK_MAXIMUM;
-    watchdog_thread->StartWithOptions(options);
+    base::Thread::Options thread_options;
+    thread_options.timer_slack = base::TIMER_SLACK_MAXIMUM;
+    watchdog_thread->StartWithOptions(thread_options);
   }
 
   return res;

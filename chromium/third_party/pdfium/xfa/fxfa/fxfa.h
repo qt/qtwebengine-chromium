@@ -40,8 +40,13 @@ class IXFA_WidgetIterator;
 #define XFA_IDNo 3
 #define XFA_IDYes 4
 
-// Note, values match fpdf_formfill.h DOCTYPE_* flags.
-enum class XFA_DocType { PDF = 0, Dynamic = 1, Static = 2 };
+// Note, values must match fpdf_formfill.h FORMTYPE_* flags.
+enum class FormType {
+  kNone = 0,
+  kAcroForm = 1,
+  kXFAFull = 2,
+  kXFAForeground = 3,
+};
 
 #define XFA_PARSESTATUS_StatusErr -3
 #define XFA_PARSESTATUS_StreamErr -2
@@ -252,7 +257,7 @@ class IXFA_DocEnvironment {
                      uint32_t dwOptions) = 0;
   virtual FX_ARGB GetHighlightColor(CXFA_FFDoc* hDoc) = 0;
 
-  virtual bool SubmitData(CXFA_FFDoc* hDoc, CXFA_Submit submit) = 0;
+  virtual bool SubmitData(CXFA_FFDoc* hDoc, CXFA_SubmitData submitData) = 0;
   virtual bool GetGlobalProperty(CXFA_FFDoc* hDoc,
                                  const ByteStringView& szPropName,
                                  CFXJSE_Value* pValue) = 0;

@@ -35,6 +35,7 @@
 #include "core/html/parser/HTMLParserIdioms.h"
 #include "core/html_names.h"
 #include "core/input_type_names.h"
+#include "core/layout/AdjustForAbsoluteZoom.h"
 #include "core/layout/LayoutBlockFlow.h"
 #include "core/layout/LayoutImage.h"
 #include "platform/wtf/text/StringBuilder.h"
@@ -154,7 +155,7 @@ void ImageInputType::StartResourceLoading() {
 
   LayoutImageResource* image_resource =
       ToLayoutImage(layout_object)->ImageResource();
-  image_resource->SetImageResource(image_loader.GetImage());
+  image_resource->SetImageResource(image_loader.GetContent());
 }
 
 bool ImageInputType::ShouldRespectAlignAttribute() {
@@ -183,17 +184,19 @@ unsigned ImageInputType::Height() const {
 
     // If the image is available, use its height.
     HTMLImageLoader* image_loader = GetElement().ImageLoader();
-    if (image_loader && image_loader->GetImage())
-      return image_loader->GetImage()
-          ->ImageSize(LayoutObject::ShouldRespectImageOrientation(nullptr), 1)
-          .Height()
-          .ToUnsigned();
+    if (image_loader && image_loader->GetContent()) {
+      return image_loader->GetContent()
+          ->IntrinsicSize(LayoutObject::ShouldRespectImageOrientation(nullptr))
+          .Height();
+    }
   }
 
   GetElement().GetDocument().UpdateStyleAndLayout();
 
   LayoutBox* box = GetElement().GetLayoutBox();
-  return box ? AdjustForAbsoluteZoom(box->ContentHeight().ToInt(), box) : 0;
+  return box ? AdjustForAbsoluteZoom::AdjustInt(box->ContentHeight().ToInt(),
+                                                box)
+             : 0;
 }
 
 unsigned ImageInputType::Width() const {
@@ -206,17 +209,19 @@ unsigned ImageInputType::Width() const {
 
     // If the image is available, use its width.
     HTMLImageLoader* image_loader = GetElement().ImageLoader();
-    if (image_loader && image_loader->GetImage())
-      return image_loader->GetImage()
-          ->ImageSize(LayoutObject::ShouldRespectImageOrientation(nullptr), 1)
-          .Width()
-          .ToUnsigned();
+    if (image_loader && image_loader->GetContent()) {
+      return image_loader->GetContent()
+          ->IntrinsicSize(LayoutObject::ShouldRespectImageOrientation(nullptr))
+          .Width();
+    }
   }
 
   GetElement().GetDocument().UpdateStyleAndLayout();
 
   LayoutBox* box = GetElement().GetLayoutBox();
-  return box ? AdjustForAbsoluteZoom(box->ContentWidth().ToInt(), box) : 0;
+  return box ? AdjustForAbsoluteZoom::AdjustInt(box->ContentWidth().ToInt(),
+                                                box)
+             : 0;
 }
 
 bool ImageInputType::HasLegalLinkAttribute(const QualifiedName& name) const {
@@ -274,8 +279,8 @@ void ImageInputType::CreateShadowSubtree() {
   HTMLImageFallbackHelper::CreateAltTextShadowTree(GetElement());
 }
 
-RefPtr<ComputedStyle> ImageInputType::CustomStyleForLayoutObject(
-    RefPtr<ComputedStyle> new_style) {
+scoped_refptr<ComputedStyle> ImageInputType::CustomStyleForLayoutObject(
+    scoped_refptr<ComputedStyle> new_style) {
   if (!use_fallback_content_)
     return new_style;
 

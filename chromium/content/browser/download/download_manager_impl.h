@@ -30,10 +30,6 @@
 #include "content/public/browser/download_url_parameters.h"
 #include "content/public/browser/ssl_status.h"
 
-namespace net {
-class NetLog;
-}
-
 namespace content {
 class DownloadFileFactory;
 class DownloadItemFactory;
@@ -51,7 +47,7 @@ class CONTENT_EXPORT DownloadManagerImpl : public DownloadManager,
 
   // Caller guarantees that |net_log| will remain valid
   // for the lifetime of DownloadManagerImpl (until Shutdown() is called).
-  DownloadManagerImpl(net::NetLog* net_log, BrowserContext* browser_context);
+  explicit DownloadManagerImpl(BrowserContext* browser_context);
   ~DownloadManagerImpl() override;
 
   // Implementation functions (not part of the DownloadManager interface).
@@ -151,7 +147,17 @@ class CONTENT_EXPORT DownloadManagerImpl : public DownloadManager,
   NavigationURLLoader::NavigationInterceptionCB GetNavigationInterceptionCB(
       const scoped_refptr<ResourceResponse>& response,
       mojo::ScopedDataPipeConsumerHandle consumer_handle,
-      const SSLStatus& ssl_status);
+      net::CertStatus cert_status,
+      int frame_tree_node_id);
+
+  // Checks if a download is allowed, |on_download_allowed_cb| is called if
+  // the download is allowed.
+  void CheckDownloadAllowed(
+      const ResourceRequestInfo::WebContentsGetter& web_contents_getter,
+      const GURL& url,
+      const std::string& request_method,
+      UniqueUrlDownloadHandlerPtr downloader,
+      base::OnceClosure on_download_allowed_cb);
 
  private:
   using DownloadSet = std::set<DownloadItem*>;
@@ -206,10 +212,21 @@ class CONTENT_EXPORT DownloadManagerImpl : public DownloadManager,
       std::unique_ptr<content::DownloadUrlParameters> params,
       uint32_t id) override;
   void OpenDownload(DownloadItemImpl* download) override;
+  bool IsMostRecentDownloadItemAtFilePath(DownloadItemImpl* download) override;
   void ShowDownloadInShell(DownloadItemImpl* download) override;
   void DownloadRemoved(DownloadItemImpl* download) override;
 
   void AddUrlDownloadHandler(UniqueUrlDownloadHandlerPtr downloader);
+
+  // Helper method to start or resume a download.
+  void BeginDownloadInternal(
+      std::unique_ptr<content::DownloadUrlParameters> params,
+      uint32_t id);
+
+  // Called when download permission check is complete.
+  void OnDownloadAllowedCheckComplete(UniqueUrlDownloadHandlerPtr downloader,
+                                      base::OnceClosure callback,
+                                      bool allow);
 
   // Factory for creation of downloads items.
   std::unique_ptr<DownloadItemFactory> item_factory_;
@@ -240,13 +257,14 @@ class CONTENT_EXPORT DownloadManagerImpl : public DownloadManager,
   // Observers that want to be notified of changes to the set of downloads.
   base::ObserverList<Observer> observers_;
 
+  // Stores information about in-progress download items.
+  std::unique_ptr<DownloadItem::Observer> in_progress_download_observer_;
+
   // The current active browser context.
   BrowserContext* browser_context_;
 
   // Allows an embedder to control behavior. Guaranteed to outlive this object.
   DownloadManagerDelegate* delegate_;
-
-  net::NetLog* net_log_;
 
   std::vector<UniqueUrlDownloadHandlerPtr> url_download_handlers_;
 

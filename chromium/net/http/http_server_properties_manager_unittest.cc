@@ -39,8 +39,8 @@ using ::testing::StrictMock;
 
 class MockPrefDelegate : public net::HttpServerPropertiesManager::PrefDelegate {
  public:
-  MockPrefDelegate() {}
-  ~MockPrefDelegate() override {}
+  MockPrefDelegate() = default;
+  ~MockPrefDelegate() override = default;
 
   // HttpServerPropertiesManager::PrefDelegate implementation.
   const base::DictionaryValue* GetServerProperties() const override {
@@ -946,18 +946,24 @@ TEST_P(HttpServerPropertiesManagerTest, UpdatePrefsWithCache) {
   http_server_props_manager_->MarkAlternativeServiceRecentlyBroken(
       mail_alternative_service);
 
-  // #5: Set ServerNetworkStats.
+  // #3: Set SPDY server map
+  http_server_props_manager_->SetSupportsSpdy(server_www, false);
+  http_server_props_manager_->SetSupportsSpdy(server_mail, true);
+  http_server_props_manager_->SetSupportsSpdy(
+      url::SchemeHostPort("http", "not_persisted.com", 80), false);
+
+  // #4: Set ServerNetworkStats.
   ServerNetworkStats stats;
   stats.srtt = base::TimeDelta::FromInternalValue(42);
   http_server_props_manager_->SetServerNetworkStats(server_mail, stats);
 
-  // #6: Set quic_server_info string.
+  // #5: Set quic_server_info string.
   QuicServerId mail_quic_server_id("mail.google.com", 80);
   std::string quic_server_info1("quic_server_info1");
   http_server_props_manager_->SetQuicServerInfo(mail_quic_server_id,
                                                 quic_server_info1);
 
-  // #7: Set SupportsQuic.
+  // #6: Set SupportsQuic.
   IPAddress actual_address(127, 0, 0, 1);
   http_server_props_manager_->SetSupportsQuic(true, actual_address);
 
@@ -1043,7 +1049,8 @@ TEST_P(HttpServerPropertiesManagerTest, UpdatePrefsWithCache) {
       "\"alternative_service\":[{\"advertised_versions\":[],"
       "\"expiration\":\"9223372036854775807\",\"host\":\"foo.google.com\","
       "\"port\":444,\"protocol_str\":\"h2\"}],"
-      "\"network_stats\":{\"srtt\":42}}}],"
+      "\"network_stats\":{\"srtt\":42},"
+      "\"supports_spdy\":true}}],"
       "\"supports_quic\":{\"address\":\"127.0.0.1\",\"used_quic\":true},"
       "\"version\":5}";
 
@@ -1096,7 +1103,7 @@ TEST_P(HttpServerPropertiesManagerTest, AddToAlternativeServiceMap) {
   ASSERT_TRUE(server_value->GetAsDictionary(&server_dict));
 
   const url::SchemeHostPort server("https", "example.com", 443);
-  AlternativeServiceMap alternative_service_map(/*max_size=*/5);
+  AlternativeServiceMap alternative_service_map;
   EXPECT_TRUE(http_server_props_manager_->AddToAlternativeServiceMap(
       server, *server_dict, &alternative_service_map));
 
@@ -1145,7 +1152,7 @@ TEST_P(HttpServerPropertiesManagerTest, DoNotLoadAltSvcForInsecureOrigins) {
   ASSERT_TRUE(server_value->GetAsDictionary(&server_dict));
 
   const url::SchemeHostPort server("http", "example.com", 80);
-  AlternativeServiceMap alternative_service_map(/*max_size=*/5);
+  AlternativeServiceMap alternative_service_map;
   EXPECT_FALSE(http_server_props_manager_->AddToAlternativeServiceMap(
       server, *server_dict, &alternative_service_map));
 
@@ -1255,7 +1262,7 @@ TEST_P(HttpServerPropertiesManagerTest, DoNotLoadExpiredAlternativeService) {
                                            std::move(alternative_service_list));
 
   const url::SchemeHostPort server("https", "example.com", 443);
-  AlternativeServiceMap alternative_service_map(/*max_size=*/5);
+  AlternativeServiceMap alternative_service_map;
   ASSERT_TRUE(http_server_props_manager_->AddToAlternativeServiceMap(
       server, server_pref_dict, &alternative_service_map));
 
@@ -1370,7 +1377,7 @@ TEST_P(HttpServerPropertiesManagerTest, ReadAdvertisedVersionsFromPref) {
   ASSERT_TRUE(server_value->GetAsDictionary(&server_dict));
 
   const url::SchemeHostPort server("https", "example.com", 443);
-  AlternativeServiceMap alternative_service_map(/*max_size=*/5);
+  AlternativeServiceMap alternative_service_map;
   EXPECT_TRUE(http_server_props_manager_->AddToAlternativeServiceMap(
       server, *server_dict, &alternative_service_map));
 

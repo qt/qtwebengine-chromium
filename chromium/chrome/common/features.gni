@@ -38,25 +38,12 @@ declare_args() {
   # It is enableable separately to facilitate testing.
   enable_hangout_services_extension = is_chrome_branded
 
-  # 'Ok Google' hotwording is disabled to prepare for its removal.
-  # http://crbug.com/755579
-  enable_hotwording = false
-
   # Enables usage of the system-provided notification center.
-  enable_native_notifications =
-      is_android || is_mac || is_win || (is_desktop_linux && use_dbus)
-
-  # Whether we should draw the minimize, maximize/restore, and close
-  # buttons using the system theme.  Only used on Linux with GTK3.
-  enable_native_window_nav_buttons =
-      use_aura && !use_ozone && is_desktop_linux && use_gtk3
+  enable_native_notifications = is_android || is_mac || is_win ||
+                                (is_desktop_linux && use_dbus) || is_chromeos
 
   enable_one_click_signin =
       is_win || is_mac || (is_linux && !is_chromeos && !is_chromecast)
-
-  # Set to true to bundle all the mash related mojo services into chrome.
-  # Specify --mash to chrome to have chrome start the mash environment.
-  enable_package_mash_services = is_chromeos
 
   enable_service_discovery = enable_mdns || is_mac
 
@@ -76,6 +63,10 @@ declare_args() {
   # for runtime performance purposes. This does more work at compile time for
   # speed benefits at runtime (so we skip in debug builds).
   optimize_webui = !is_debug
+
+  # Enable donwloadable language PAK files to reduce the size of the main
+  # Chrome APK. TODO(digit): Restrict this to official builds.
+  enable_downloadable_strings = is_android
 }
 
 # Use brlapi from brltty for braille display support.
@@ -91,7 +82,6 @@ chrome_grit_defines = [
   "enable_extensions=$enable_extensions",
   "enable_google_now=$enable_google_now",
   "enable_hangout_services_extension=$enable_hangout_services_extension",
-  "enable_hotwording=$enable_hotwording",
   "enable_plugins=$enable_plugins",
   "enable_print_preview=$enable_print_preview",
   "enable_printing=$_enable_printing",

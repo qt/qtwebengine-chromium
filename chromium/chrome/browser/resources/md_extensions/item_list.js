@@ -6,11 +6,14 @@ cr.define('extensions', function() {
   const ItemList = Polymer({
     is: 'extensions-item-list',
 
-    behaviors: [CrContainerShadowBehavior],
+    behaviors: [CrContainerShadowBehavior, I18nBehavior],
 
     properties: {
-      /** @type {Array<!chrome.developerPrivate.ExtensionInfo>} */
-      items: Array,
+      /** @type {!Array<!chrome.developerPrivate.ExtensionInfo>} */
+      apps: Array,
+
+      /** @type {!Array<!chrome.developerPrivate.ExtensionInfo>} */
+      extensions: Array,
 
       /** @type {extensions.ItemDelegate} */
       delegate: Object,
@@ -22,37 +25,90 @@ cr.define('extensions', function() {
 
       isGuest: Boolean,
 
-      filter: String,
+      filter: {
+        type: String,
+      },
 
-      /** @private {Array<!chrome.developerPrivate.ExtensionInfo>} */
-      shownItems_: {
-        type: Array,
-        computed: 'computeShownItems_(items.*, filter)',
-      }
+      /** @private */
+      computedFilter_: {
+        type: String,
+        computed: 'computeFilter_(filter)',
+        observer: 'announceSearchResults_',
+      },
+
+      /** @private */
+      shownExtensionsCount_: {
+        type: Number,
+        value: 0,
+      },
+
+      /** @private */
+      shownAppsCount_: {
+        type: Number,
+        value: 0,
+      },
     },
 
     /**
-     * Computes the list of items to be shown.
-     * @param {Object} changeRecord The changeRecord for |items|.
-     * @param {string} filter The updated filter string.
-     * @return {Array<!chrome.developerPrivate.ExtensionInfo>}
+     * @param {string} id
+     * @return {?Element}
+     */
+    getDetailsButton: function(id) {
+      return this.$$(`#${id} /deep/ #details-button`);
+    },
+
+    /**
+     * @param {string} id
+     * @return {?Element}
+     */
+    getErrorsButton: function(id) {
+      return this.$$(`#${id} /deep/ #errors-button`);
+    },
+
+    /**
+     * Computes the filter function to be used for determining which items
+     * should be shown. A |null| value indicates that everything should be
+     * shown.
+     * return {?Function}
      * @private
      */
-    computeShownItems_: function(changeRecord, filter) {
+    computeFilter_: function() {
       const formattedFilter = this.filter.trim().toLowerCase();
-      return this.items.filter(
-          item => item.name.toLowerCase().includes(formattedFilter));
+      return formattedFilter ?
+          i => i.name.toLowerCase().includes(formattedFilter) :
+          null;
     },
 
     /** @private */
     shouldShowEmptyItemsMessage_: function() {
-      return !this.isGuest && this.items.length === 0;
+      return !this.isGuest && this.apps.length === 0 &&
+          this.extensions.length === 0;
     },
 
     /** @private */
     shouldShowEmptySearchMessage_: function() {
       return !this.isGuest && !this.shouldShowEmptyItemsMessage_() &&
-          this.shownItems_.length === 0;
+          this.shownAppsCount_ === 0 && this.shownExtensionsCount_ === 0;
+    },
+
+    /** @private */
+    onNoExtensionsTap_: function(e) {
+      if (e.target.tagName == 'A')
+        chrome.metricsPrivate.recordUserAction('Options_GetMoreExtensions');
+    },
+
+    /** @private */
+    announceSearchResults_: function() {
+      if (this.computedFilter_) {
+        Polymer.IronA11yAnnouncer.requestAvailability();
+        this.async(() => {  // Async to allow list to update.
+          this.fire('iron-announce', {
+            text: this.shouldShowEmptySearchMessage_() ?
+                this.i18n('noSearchResults') :
+                this.i18n('searchResults', this.filter),
+          });
+        });
+      }
     },
   });
 

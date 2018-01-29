@@ -437,6 +437,33 @@ _BANNED_CPP_FUNCTIONS = (
       True,
       (),
     ),
+    (
+      r'/\bbase::Bind\(',
+      (
+          'Please consider using base::Bind{Once,Repeating} instead '
+          'of base::Bind. (crbug/714018)',
+      ),
+      False,
+      (),
+    ),
+    (
+      r'/\bbase::Callback<',
+      (
+          'Please consider using base::{Once,Repeating}Callback instead '
+          'of base::Callback. (crbug/714018)',
+      ),
+      False,
+      (),
+    ),
+    (
+      r'/\bbase::Closure\b',
+      (
+          'Please consider using base::{Once,Repeating}Closure instead '
+          'of base::Closure. (crbug/714018)',
+      ),
+      False,
+      (),
+    ),
 )
 
 
@@ -444,12 +471,17 @@ _IPC_ENUM_TRAITS_DEPRECATED = (
     'You are using IPC_ENUM_TRAITS() in your code. It has been deprecated.\n'
     'See http://www.chromium.org/Home/chromium-security/education/security-tips-for-ipc')
 
+_JAVA_MULTIPLE_DEFINITION_EXCLUDED_PATHS = [
+    r".*[\\\/]BuildHooksAndroidImpl\.java",
+    r".*[\\\/]LicenseContentProvider\.java",
+]
 
 # These paths contain test data and other known invalid JSON files.
 _KNOWN_INVALID_JSON_FILE_PATTERNS = [
     r'test[\\\/]data[\\\/]',
     r'^components[\\\/]policy[\\\/]resources[\\\/]policy_templates\.json$',
     r'^third_party[\\\/]protobuf[\\\/]',
+    r'^third_party[\\\/]WebKit[\\\/]LayoutTests[\\\/]external[\\\/]wpt[\\\/]',
 ]
 
 
@@ -841,6 +873,7 @@ def _CheckUnwantedDependencies(input_api, output_api):
         input_api.PresubmitLocalPath(), 'buildtools', 'checkdeps')]
     import checkdeps
     from cpp_checker import CppChecker
+    from java_checker import JavaChecker
     from proto_checker import ProtoChecker
     from rules import Rule
   finally:
@@ -849,13 +882,17 @@ def _CheckUnwantedDependencies(input_api, output_api):
 
   added_includes = []
   added_imports = []
+  added_java_imports = []
   for f in input_api.AffectedFiles():
     if CppChecker.IsCppFile(f.LocalPath()):
       changed_lines = [line for line_num, line in f.ChangedContents()]
-      added_includes.append([f.LocalPath(), changed_lines])
+      added_includes.append([f.AbsoluteLocalPath(), changed_lines])
     elif ProtoChecker.IsProtoFile(f.LocalPath()):
       changed_lines = [line for line_num, line in f.ChangedContents()]
-      added_imports.append([f.LocalPath(), changed_lines])
+      added_imports.append([f.AbsoluteLocalPath(), changed_lines])
+    elif JavaChecker.IsJavaFile(f.LocalPath()):
+      changed_lines = [line for line_num, line in f.ChangedContents()]
+      added_java_imports.append([f.AbsoluteLocalPath(), changed_lines])
 
   deps_checker = checkdeps.DepsChecker(input_api.PresubmitLocalPath())
 
@@ -865,6 +902,7 @@ def _CheckUnwantedDependencies(input_api, output_api):
   warning_subjects = set()
   for path, rule_type, rule_description in deps_checker.CheckAddedCppIncludes(
       added_includes):
+    path = input_api.os_path.relpath(path, input_api.PresubmitLocalPath())
     description_with_path = '%s\n    %s' % (path, rule_description)
     if rule_type == Rule.DISALLOW:
       error_descriptions.append(description_with_path)
@@ -875,6 +913,18 @@ def _CheckUnwantedDependencies(input_api, output_api):
 
   for path, rule_type, rule_description in deps_checker.CheckAddedProtoImports(
       added_imports):
+    path = input_api.os_path.relpath(path, input_api.PresubmitLocalPath())
+    description_with_path = '%s\n    %s' % (path, rule_description)
+    if rule_type == Rule.DISALLOW:
+      error_descriptions.append(description_with_path)
+      error_subjects.add("imports")
+    else:
+      warning_descriptions.append(description_with_path)
+      warning_subjects.add("imports")
+
+  for path, rule_type, rule_description in deps_checker.CheckAddedJavaImports(
+      added_java_imports, _JAVA_MULTIPLE_DEFINITION_EXCLUDED_PATHS):
+    path = input_api.os_path.relpath(path, input_api.PresubmitLocalPath())
     description_with_path = '%s\n    %s' % (path, rule_description)
     if rule_type == Rule.DISALLOW:
       error_descriptions.append(description_with_path)
@@ -908,15 +958,20 @@ def _CheckFilePermissions(input_api, output_api):
       'tools', 'checkperms', 'checkperms.py')
   args = [input_api.python_executable, checkperms_tool,
           '--root', input_api.change.RepositoryRoot()]
-  for f in input_api.AffectedFiles():
-    args += ['--file', f.LocalPath()]
-  try:
-    input_api.subprocess.check_output(args)
-    return []
-  except input_api.subprocess.CalledProcessError as error:
-    return [output_api.PresubmitError(
-        'checkperms.py failed:',
-        long_text=error.output)]
+  with input_api.CreateTemporaryFile() as file_list:
+    for f in input_api.AffectedFiles():
+      # checkperms.py file/directory arguments must be relative to the
+      # repository.
+      file_list.write(f.LocalPath() + '\n')
+    file_list.close()
+    args += ['--file-list', file_list.name]
+    try:
+      input_api.subprocess.check_output(args)
+      return []
+    except input_api.subprocess.CalledProcessError as error:
+      return [output_api.PresubmitError(
+          'checkperms.py failed:',
+          long_text=error.output)]
 
 
 def _CheckTeamTags(input_api, output_api):
@@ -1480,11 +1535,15 @@ def _MatchesFile(input_api, patterns, path):
   return False
 
 
-def _CheckIpcOwners(input_api, output_api):
-  """Checks that affected files involving IPC have an IPC OWNERS rule.
+def _GetOwnersFilesToCheckForIpcOwners(input_api):
+  """Gets a list of OWNERS files to check for correct security owners.
 
-  Whether or not a file affects IPC is determined by a simple whitelist of
-  filename patterns."""
+  Returns:
+    A dictionary mapping an OWNER file to the list of OWNERS rules it must
+    contain to cover IPC-related files with noparent reviewer rules.
+  """
+  # Whether or not a file affects IPC is (mostly) determined by a simple list
+  # of filename patterns.
   file_patterns = [
       # Legacy IPC:
       '*_messages.cc',
@@ -1582,8 +1641,20 @@ def _CheckIpcOwners(input_api, output_api):
         AddPatternToCheck(f, pattern)
         break
 
-  # Now go through the OWNERS files we collected, filtering out rules that are
-  # already present in that OWNERS file.
+  return to_check
+
+
+def _CheckIpcOwners(input_api, output_api):
+  """Checks that affected files involving IPC have an IPC OWNERS rule."""
+  to_check = _GetOwnersFilesToCheckForIpcOwners(input_api)
+
+  if to_check:
+    # If there are any OWNERS files to check, there are IPC-related changes in
+    # this CL. Auto-CC the review list.
+    output_api.AppendCC('ipc-security-reviews@chromium.org')
+
+  # Go through the OWNERS files to check, filtering out rules that are already
+  # present in that OWNERS file.
   for owners_file, patterns in to_check.iteritems():
     try:
       with file(owners_file) as f:
@@ -2453,6 +2524,8 @@ def _CommonChecks(input_api, output_api):
   results.extend(_CheckForRiskyJsFeatures(input_api, output_api))
   results.extend(_CheckForRelativeIncludes(input_api, output_api))
   results.extend(_CheckWATCHLISTS(input_api, output_api))
+  results.extend(input_api.RunTests(
+    input_api.canned_checks.CheckVPythonSpec(input_api, output_api)))
 
   if any('PRESUBMIT.py' == f.LocalPath() for f in input_api.AffectedFiles()):
     results.extend(input_api.canned_checks.RunUnitTestsInDirectory(
@@ -2654,20 +2727,13 @@ def _CheckForWindowsLineEndings(input_api, output_api):
     r'.+%s' % _IMPLEMENTATION_EXTENSIONS
   )
 
-  filter = lambda f: input_api.FilterSourceFile(
-    f, white_list=file_inclusion_pattern, black_list=None)
-  files = [f.LocalPath() for f in
-           input_api.AffectedSourceFiles(filter)]
-
   problems = []
-
-  for file in files:
-    fp = open(file, 'r')
-    for line in fp:
+  source_file_filter = lambda f: input_api.FilterSourceFile(
+      f, white_list=file_inclusion_pattern, black_list=None)
+  for f in input_api.AffectedSourceFiles(source_file_filter):
+    for line_number, line in f.ChangedContents():
       if line.endswith('\r\n'):
-        problems.append(file)
-        break
-    fp.close()
+        problems.append(f.LocalPath())
 
   if problems:
     return [output_api.PresubmitPromptWarning('Are you sure that you want '

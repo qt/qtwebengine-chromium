@@ -24,9 +24,9 @@
 #include "url/url_constants.h"
 #include "url/url_util.h"
 
-namespace {
+namespace content {
 
-using namespace content;
+namespace {
 
 // Should return the same value as SchemeRegistry::shouldTreatURLSchemeAsSecure.
 bool IsSecureScheme(const std::string& scheme) {
@@ -39,32 +39,15 @@ bool ShouldTreatURLSchemeAsCORSEnabled(const GURL& url) {
   return base::ContainsValue(url::GetCORSEnabledSchemes(), url.scheme());
 }
 
-// Should return the same value as SecurityOrigin::isSecure.
-// TODO(carlosk): secure origin checks don't match between content and Blink
-// hence this implementation here instead of a direct call to IsOriginSecure (in
-// origin_util.cc). See https://crbug.com/629059.
-bool IsOriginSecure(const GURL& url) {
-  if (IsSecureScheme(url.scheme()))
-    return true;
-
-  if (url.SchemeIsFileSystem() || url.SchemeIsBlob()) {
-    // Should use inner URL.
-    url::Origin origin(url);
-    if (IsSecureScheme(origin.scheme()))
-      return true;
-  }
-
-  return IsOriginWhiteListedTrustworthy(url::Origin(url));
-}
-
 // Should return the same value as the resource URL checks assigned to
 // |isAllowed| made inside MixedContentChecker::isMixedContent.
 bool IsUrlPotentiallySecure(const GURL& url) {
   // blob: and filesystem: URLs never hit the network, and access is restricted
   // to same-origin contexts, so they are not blocked.
-  bool is_secure =
-      url.SchemeIs(url::kBlobScheme) || url.SchemeIs(url::kFileSystemScheme) ||
-      IsOriginSecure(url) || IsPotentiallyTrustworthyOrigin(url::Origin(url));
+  bool is_secure = url.SchemeIs(url::kBlobScheme) ||
+                   url.SchemeIs(url::kFileSystemScheme) ||
+                   IsOriginSecure(url) ||
+                   IsPotentiallyTrustworthyOrigin(url::Origin::Create(url));
 
   // TODO(mkwst): Remove this once the following draft is implemented:
   // https://tools.ietf.org/html/draft-west-let-localhost-be-localhost-03. See:
@@ -106,8 +89,6 @@ void UpdateRendererOnMixedContentFound(NavigationHandleImpl* navigation_handle,
 }
 
 }  // namespace
-
-namespace content {
 
 // static
 std::unique_ptr<NavigationThrottle>
@@ -360,7 +341,7 @@ void MixedContentNavigationThrottle::ReportBasicMixedContentFeatures(
 bool MixedContentNavigationThrottle::IsMixedContentForTesting(
     const GURL& origin_url,
     const GURL& url) {
-  const url::Origin origin(origin_url);
+  const url::Origin origin = url::Origin::Create(origin_url);
   return !IsUrlPotentiallySecure(url) &&
          DoesOriginSchemeRestrictMixedContent(origin);
 }

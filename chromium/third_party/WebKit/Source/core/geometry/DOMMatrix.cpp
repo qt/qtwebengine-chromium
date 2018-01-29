@@ -5,6 +5,7 @@
 #include "core/geometry/DOMMatrix.h"
 
 #include "core/dom/ExecutionContext.h"
+#include "platform/transforms/AffineTransform.h"
 
 namespace blink {
 
@@ -28,7 +29,8 @@ DOMMatrix* DOMMatrix::Create(ExecutionContext* execution_context,
     }
 
     DOMMatrix* matrix = new DOMMatrix(TransformationMatrix());
-    matrix->SetMatrixValueFromString(init.GetAsString(), exception_state);
+    matrix->SetMatrixValueFromString(execution_context, init.GetAsString(),
+                                     exception_state);
     return matrix;
   }
 
@@ -296,18 +298,27 @@ DOMMatrix* DOMMatrix::perspectiveSelf(double p) {
 }
 
 DOMMatrix* DOMMatrix::invertSelf() {
-  if (matrix_->IsInvertible()) {
-    matrix_ = TransformationMatrix::Create(matrix_->Inverse());
+  if (is2d_) {
+    AffineTransform affine_transform = matrix_->ToAffineTransform();
+    if (affine_transform.IsInvertible()) {
+      *matrix_ = affine_transform.Inverse();
+      return this;
+    }
   } else {
-    SetNAN();
-    SetIs2D(false);
+    if (matrix_->IsInvertible()) {
+      *matrix_ = matrix_->Inverse();
+      return this;
+    }
   }
+  SetNAN();
+  SetIs2D(false);
   return this;
 }
 
-DOMMatrix* DOMMatrix::setMatrixValue(const String& input_string,
+DOMMatrix* DOMMatrix::setMatrixValue(const ExecutionContext* execution_context,
+                                     const String& input_string,
                                      ExceptionState& exception_state) {
-  SetMatrixValueFromString(input_string, exception_state);
+  SetMatrixValueFromString(execution_context, input_string, exception_state);
   return this;
 }
 

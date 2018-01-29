@@ -272,6 +272,10 @@ TEST(MediaPerceptionConversionUtilsTest, StateProtoToIdl) {
   state.set_status(mri::State::RESTARTING);
   state_result = media_perception::StateProtoToIdl(state);
   EXPECT_EQ(state_result.status, media_perception::STATUS_RESTARTING);
+
+  state.set_status(mri::State::STOPPED);
+  state_result = media_perception::StateProtoToIdl(state);
+  EXPECT_EQ(state_result.status, media_perception::STATUS_STOPPED);
 }
 
 TEST(MediaPerceptionConversionUtilsTest, StateIdlToProto) {
@@ -290,6 +294,10 @@ TEST(MediaPerceptionConversionUtilsTest, StateIdlToProto) {
   state.status = media_perception::STATUS_RESTARTING;
   state_proto = StateIdlToProto(state);
   EXPECT_EQ(state_proto.status(), mri::State::RESTARTING);
+
+  state.status = media_perception::STATUS_STOPPED;
+  state_proto = StateIdlToProto(state);
+  EXPECT_EQ(mri::State::STOPPED, state_proto.status());
 }
 
 TEST(MediaPerceptionConversionUtilsTest, StateIdlToProtoWithVideoStreamParam) {

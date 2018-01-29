@@ -209,21 +209,6 @@ void ChildFrameCompositingHelper::UpdateWebLayer(
   web_layer_ = std::move(layer);
 }
 
-void ChildFrameCompositingHelper::CheckSizeAndAdjustLayerProperties(
-    const viz::SurfaceInfo& surface_info,
-    cc::Layer* layer) {
-  if (last_surface_size_in_pixels_ == surface_info.size_in_pixels())
-    return;
-
-  last_surface_size_in_pixels_ = surface_info.size_in_pixels();
-  // The container size is in DIP, so is the layer size.
-  // Buffer size is in physical pixels, so we need to adjust
-  // it by the device scale factor.
-  gfx::Size device_scale_adjusted_size = gfx::ScaleToFlooredSize(
-      surface_info.size_in_pixels(), 1.0f / surface_info.device_scale_factor());
-  layer->SetBounds(device_scale_adjusted_size);
-}
-
 void ChildFrameCompositingHelper::OnContainerDestroy() {
   UpdateWebLayer(nullptr);
 }
@@ -261,24 +246,20 @@ void ChildFrameCompositingHelper::ChildFrameGone() {
   UpdateWebLayer(std::move(layer));
 }
 
-void ChildFrameCompositingHelper::SetPrimarySurfaceInfo(
-    const viz::SurfaceInfo& surface_info) {
-  last_primary_surface_id_ = surface_info.id();
-  float scale_factor = surface_info.device_scale_factor();
-  // TODO(oshima): This is a stopgap fix so that the compositor does not
-  // scaledown the content when 2x frame data is added to 1x parent frame data.
-  // Fix this in cc/.
-  if (IsUseZoomForDSFEnabled())
-    scale_factor = 1.0f;
+void ChildFrameCompositingHelper::SetPrimarySurfaceId(
+    const viz::SurfaceId& surface_id,
+    const gfx::Size& frame_size_in_dip) {
+  if (last_primary_surface_id_ == surface_id)
+    return;
+
+  last_primary_surface_id_ = surface_id;
 
   surface_layer_ = cc::SurfaceLayer::Create(surface_reference_factory_);
   surface_layer_->SetMasksToBounds(true);
   surface_layer_->SetDefaultBackgroundColor(SK_ColorTRANSPARENT);
 
-  viz::SurfaceInfo modified_surface_info(surface_info.id(), scale_factor,
-                                         surface_info.size_in_pixels());
-  surface_layer_->SetPrimarySurfaceInfo(modified_surface_info);
-  surface_layer_->SetFallbackSurfaceInfo(fallback_surface_info_);
+  surface_layer_->SetPrimarySurfaceId(surface_id);
+  surface_layer_->SetFallbackSurfaceId(fallback_surface_id_);
 
   std::unique_ptr<cc_blink::WebLayerImpl> layer(
       new cc_blink::WebLayerImpl(surface_layer_));
@@ -290,22 +271,19 @@ void ChildFrameCompositingHelper::SetPrimarySurfaceInfo(
 
   UpdateVisibility(true);
 
-  CheckSizeAndAdjustLayerProperties(
-      surface_info,
-      static_cast<cc_blink::WebLayerImpl*>(web_layer_.get())->layer());
+  static_cast<cc_blink::WebLayerImpl*>(web_layer_.get())
+      ->layer()
+      ->SetBounds(frame_size_in_dip);
 }
 
-void ChildFrameCompositingHelper::SetFallbackSurfaceInfo(
-    const viz::SurfaceInfo& surface_info,
+void ChildFrameCompositingHelper::SetFallbackSurfaceId(
+    const viz::SurfaceId& surface_id,
+    const gfx::Size& frame_size_in_dip,
     const viz::SurfaceSequence& sequence) {
-  fallback_surface_info_ = surface_info;
-  float scale_factor = surface_info.device_scale_factor();
-  // TODO(oshima): This is a stopgap fix so that the compositor does not
-  // scaledown the content when 2x frame data is added to 1x parent frame data.
-  // Fix this in cc/.
-  if (IsUseZoomForDSFEnabled())
-    scale_factor = 1.0f;
+  if (fallback_surface_id_ == surface_id)
+    return;
 
+  fallback_surface_id_ = surface_id;
   // The RWHV creates a destruction dependency on the surface that needs to be
   // satisfied. The reference factory will satisfy it when a new reference has
   // been created.
@@ -321,9 +299,12 @@ void ChildFrameCompositingHelper::SetFallbackSurfaceInfo(
     }
   }
 
-  viz::SurfaceInfo modified_surface_info(surface_info.id(), scale_factor,
-                                         surface_info.size_in_pixels());
-  surface_layer_->SetFallbackSurfaceInfo(modified_surface_info);
+  if (!surface_layer_) {
+    SetPrimarySurfaceId(surface_id, frame_size_in_dip);
+    return;
+  }
+
+  surface_layer_->SetFallbackSurfaceId(surface_id);
 }
 
 void ChildFrameCompositingHelper::UpdateVisibility(bool visible) {

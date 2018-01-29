@@ -76,12 +76,8 @@ void WorkerBackingThread::InitializeOnBackingThread(
   backing_thread_->InitializeOnThread();
 
   DCHECK(!isolate_);
-  // Use nullptr for |external_reference_table|, since it's used for the context
-  // snapshot feature which workers don't use.
-  intptr_t* external_reference_table = nullptr;
   isolate_ = V8PerIsolateData::Initialize(
       backing_thread_->PlatformThread().GetWebTaskRunner(),
-      external_reference_table,
       V8PerIsolateData::V8ContextSnapshotMode::kDontUseSnapshot);
   AddWorkerIsolate(isolate_);
   V8Initializer::InitializeWorker(isolate_);
@@ -98,7 +94,7 @@ void WorkerBackingThread::InitializeOnBackingThread(
     Platform::Current()->DidStartWorkerThread();
 
   V8PerIsolateData::From(isolate_)->SetThreadDebugger(
-      WTF::MakeUnique<WorkerThreadDebugger>(isolate_));
+      std::make_unique<WorkerThreadDebugger>(isolate_));
 
   // Optimize for memory usage instead of latency for the worker isolate.
   isolate_->IsolateInBackgroundNotification();

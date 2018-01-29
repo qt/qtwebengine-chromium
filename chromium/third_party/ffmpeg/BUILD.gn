@@ -6,6 +6,7 @@ import("ffmpeg_options.gni")
 import("ffmpeg_generated.gni")
 
 import("//build/buildflag_header.gni")
+import("//build/config/sanitizers/sanitizers.gni")
 
 # Path to platform configuration files.
 platform_config_root =
@@ -78,7 +79,6 @@ if (is_win) {
       "$target_gen_dir/ffmpeg.def",
     ]
     args = [
-             # TODO(ajwong): This was -i <(INTERMEDIATE_DIR). What next?
              "-i",
              rebase_path(target_out_dir, root_build_dir),
              "-o",
@@ -152,9 +152,7 @@ config("ffmpegsumo_warnings") {
 
 buildflag_header("ffmpeg_features") {
   header = "ffmpeg_features.h"
-  flags = [
-    "USE_SYSTEM_FFMPEG=false",
-  ]
+  flags = [ "USE_SYSTEM_FFMPEG=false" ]
 }
 
 if (is_component_ffmpeg) {
@@ -178,21 +176,6 @@ target(link_target_type, "ffmpeg_internal") {
     "_POSIX_C_SOURCE=200112",
     "_XOPEN_SOURCE=600",
     "PIC",
-
-    # Disable deprecated features that generate spammy warnings.
-    # media/ffmpeg/ffmpeg_common.h defines these as well and must be kept
-    # in sync with this file.
-    "FF_API_CONVERGENCE_DURATION=0",
-
-    # Upstream libavcodec/utils.c still uses the deprecated
-    # av_dup_packet(), avcodec_encode_{audio,video}2(), and
-    # libavformat/utils.c still accesses the deprecated AVStream.codec,
-    # causing deprecation warnings.
-    # The normal fix for such things is to disable the features like setting
-    # "FF_API_AVPACKET_OLD_API=0", but the upstream code does not yet compile
-    # with it disabled (in the case of av_dup_packet()), and has no FF_API*
-    # gate for avcodec_encode_{audio,video}2() or AVStream.codec.  In the
-    # meantime, we directly disable those warnings locally in the C files.
   ]
 
   # Disable internal ffmpeg logs in the official build; this saves ~158kb.
@@ -261,6 +244,16 @@ target(link_target_type, "ffmpeg_internal") {
       "-Wno-deprecated-declarations",
     ]
 
+    # On POSIX x86, sanitizers will fail to compiler the H264 CABAC code due to
+    # insufficient registers unless we disable EBP usage. crbug.com/786760
+    if (target_cpu == "x86") {
+      if (using_sanitizer) {
+        defines += [ "HAVE_EBP_AVAILABLE=0" ]
+      } else {
+        defines += [ "HAVE_EBP_AVAILABLE=1" ]
+      }
+    }
+
     if (!is_clang) {
       # gcc doesn't have flags for specific warnings, so disable them
       # all.
@@ -274,18 +267,6 @@ target(link_target_type, "ffmpeg_internal") {
       } else {
         asmflags += [ "-DHAVE_VFP_ARGS=0" ]
       }
-      if (is_clang) {
-        # TODO(hans) Enable integrated-as (crbug.com/124610).
-        asmflags += [ "-fno-integrated-as" ]
-        if (is_android) {
-          import("//build/config/android/config.gni")
-          rebased_android_toolchain_root =
-              rebase_path(android_toolchain_root, root_build_dir)
-
-          # Else /usr/bin/as gets picked up.
-          asmflags += [ "-B${rebased_android_toolchain_root}/bin" ]
-        }
-      }
     }
   }
 
@@ -293,14 +274,6 @@ target(link_target_type, "ffmpeg_internal") {
     defines += [
       "_ISOC99_SOURCE",
       "_LARGEFILE_SOURCE",
-
-      # BUG(ihf): ffmpeg compiles with this define. But according to
-      # ajwong: I wouldn't change _FILE_OFFSET_BITS.  That's a scary change
-      # cause it affects the default length of off_t, and fpos_t,
-      # which can cause strange problems if the loading code doesn't
-      # have it set and you start passing FILE*s or file descriptors
-      # between symbol contexts.
-      # "_FILE_OFFSET_BITS=64",
     ]
     cflags += [
       "-std=c99",
@@ -308,7 +281,6 @@ target(link_target_type, "ffmpeg_internal") {
       "-fno-math-errno",
       "-fno-signed-zeros",
       "-fno-tree-vectorize",
-      "-fomit-frame-pointer",
     ]
     ldflags = [
       "-L",
@@ -340,12 +312,6 @@ target(link_target_type, "ffmpeg_internal") {
       configs -= [ "//build/config/gcc:symbol_visibility_hidden" ]
       configs += [ "//build/config/gcc:symbol_visibility_default" ]
     }
-
-    # TODO(ajwong): How to handle openbsd? Especially w/o the is_posix?
-    #      if (is_openbsd) {
-    #       # OpenBSD's gcc (4.2.1) does not support this flag
-    #       cflags -= [ "-fno-signed-zeros" ]
-    #      }
   }
   if (is_mac) {
     if (is_component_ffmpeg) {
@@ -361,6 +327,13 @@ target(link_target_type, "ffmpeg_internal") {
       "_LARGEFILE_SOURCE",
       "HAVE_AV_CONFIG_H",
     ]
+
+    # Clang allows inline assembly where MSVC does not.
+    if (is_clang) {
+      defines += [ "HAVE_INLINE_ASM=1" ]
+    } else {
+      defines += [ "HAVE_INLINE_ASM=0" ]
+    }
 
     if (is_component_ffmpeg) {
       # Required to avoid 4049 and 4217 errors around redundant imports.

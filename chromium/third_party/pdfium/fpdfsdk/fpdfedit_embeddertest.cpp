@@ -223,7 +223,7 @@ TEST_F(FPDFEditEmbeddertest, RasterizePDF) {
   // Get the generated content. Make sure it is at least as big as the original
   // PDF.
   EXPECT_GT(GetString().size(), 923U);
-  TestAndCloseSaved(612, 792, kAllBlackMd5sum);
+  VerifySavedDocument(612, 792, kAllBlackMd5sum);
 }
 
 TEST_F(FPDFEditEmbeddertest, AddPaths) {
@@ -366,7 +366,7 @@ TEST_F(FPDFEditEmbeddertest, AddPaths) {
   FPDF_ClosePage(page);
 
   // Render the saved result
-  TestAndCloseSaved(612, 792, last_md5);
+  VerifySavedDocument(612, 792, last_md5);
 }
 
 TEST_F(FPDFEditEmbeddertest, PathsPoints) {
@@ -422,7 +422,7 @@ TEST_F(FPDFEditEmbeddertest, PathOnTopOfText) {
 #if _FX_PLATFORM_ == _FX_PLATFORM_APPLE_
   const char md5[] = "f9e6fa74230f234286bfcada9f7606d8";
 #else
-  const char md5[] = "bc6e6eb50dda4695ba0fb4d04ed82ada";
+  const char md5[] = "aa71b09b93b55f467f1290e5111babee";
 #endif
   CompareBitmap(bitmap, 200, 200, md5);
   FPDFBitmap_Destroy(bitmap);
@@ -456,33 +456,36 @@ TEST_F(FPDFEditEmbeddertest, EditOverExistingContent) {
   EXPECT_TRUE(FPDF_SaveAsCopy(document(), this, 0));
   UnloadPage(page);
 
-  // Render the saved result without closing the page and document
-  TestSaved(612, 792, "ad04e5bd0f471a9a564fb034bd0fb073");
+  OpenSavedDocument();
+  page = LoadSavedPage(0);
+  VerifySavedRendering(page, 612, 792, "ad04e5bd0f471a9a564fb034bd0fb073");
 
   ClearString();
   // Add another opaque rectangle on top of the existing content
   FPDF_PAGEOBJECT green_rect = FPDFPageObj_CreateNewRect(150, 700, 25, 50);
   EXPECT_TRUE(FPDFPath_SetFillColor(green_rect, 0, 255, 0, 255));
   EXPECT_TRUE(FPDFPath_SetDrawMode(green_rect, FPDF_FILLMODE_ALTERNATE, 0));
-  FPDFPage_InsertObject(m_SavedPage, green_rect);
+  FPDFPage_InsertObject(page, green_rect);
 
   // Add another transparent rectangle on top of existing content
   FPDF_PAGEOBJECT green_rect2 = FPDFPageObj_CreateNewRect(175, 700, 25, 50);
   EXPECT_TRUE(FPDFPath_SetFillColor(green_rect2, 0, 255, 0, 100));
   EXPECT_TRUE(FPDFPath_SetDrawMode(green_rect2, FPDF_FILLMODE_ALTERNATE, 0));
-  FPDFPage_InsertObject(m_SavedPage, green_rect2);
-  FPDF_BITMAP new_bitmap = RenderPageWithFlags(m_SavedPage, m_SavedForm, 0);
+  FPDFPage_InsertObject(page, green_rect2);
+  FPDF_BITMAP new_bitmap = RenderPageWithFlags(page, m_SavedForm, 0);
   const char last_md5[] = "4b5b00f824620f8c9b8801ebb98e1cdd";
   CompareBitmap(new_bitmap, 612, 792, last_md5);
   FPDFBitmap_Destroy(new_bitmap);
-  EXPECT_TRUE(FPDFPage_GenerateContent(m_SavedPage));
+  EXPECT_TRUE(FPDFPage_GenerateContent(page));
 
   // Now save the result, closing the page and document
   EXPECT_TRUE(FPDF_SaveAsCopy(m_SavedDocument, this, 0));
-  CloseSaved();
+
+  CloseSavedPage(page);
+  CloseSavedDocument();
 
   // Render the saved result
-  TestAndCloseSaved(612, 792, last_md5);
+  VerifySavedDocument(612, 792, last_md5);
 }
 
 TEST_F(FPDFEditEmbeddertest, AddStrokedPaths) {
@@ -548,7 +551,7 @@ TEST_F(FPDFEditEmbeddertest, AddStandardFontText) {
 #if _FX_PLATFORM_ == _FX_PLATFORM_APPLE_
   const char md5[] = "a4dddc1a3930fa694bbff9789dab4161";
 #else
-  const char md5[] = "7a35771853a1cbba38f6775807878625";
+  const char md5[] = "eacaa24573b8ce997b3882595f096f00";
 #endif
   CompareBitmap(page_bitmap, 612, 792, md5);
   FPDFBitmap_Destroy(page_bitmap);
@@ -566,9 +569,9 @@ TEST_F(FPDFEditEmbeddertest, AddStandardFontText) {
 #if _FX_PLATFORM_ == _FX_PLATFORM_APPLE_
   const char md5_2[] = "a5c4ace4c6f27644094813fe1441a21c";
 #elif _FX_PLATFORM_ == _FX_PLATFORM_WINDOWS_
-  const char md5_2[] = "b231b329a4b566fb9b42bfc15fe59bb7";
+  const char md5_2[] = "2587eac9a787e97a37636d54d11bd28d";
 #else
-  const char md5_2[] = "f85fae151851436072b7b3c6703e506a";
+  const char md5_2[] = "76fcc7d08aa15445efd2e2ceb7c6cc3b";
 #endif
   CompareBitmap(page_bitmap, 612, 792, md5_2);
   FPDFBitmap_Destroy(page_bitmap);
@@ -586,9 +589,9 @@ TEST_F(FPDFEditEmbeddertest, AddStandardFontText) {
 #if _FX_PLATFORM_ == _FX_PLATFORM_APPLE_
   const char md5_3[] = "40b3ef04f915ff4c4208948001763544";
 #elif _FX_PLATFORM_ == _FX_PLATFORM_WINDOWS_
-  const char md5_3[] = "ba874b3b137f984510c4e287ed4ba7ae";
+  const char md5_3[] = "7cb61ec112cf400b489360d443ffc9d2";
 #else
-  const char md5_3[] = "c5aed6a8ef05558c8c47d58c87cbcb46";
+  const char md5_3[] = "b8a21668f1dab625af7c072e07fcefc4";
 #endif
   CompareBitmap(page_bitmap, 612, 792, md5_3);
   FPDFBitmap_Destroy(page_bitmap);
@@ -889,7 +892,7 @@ TEST_F(FPDFEditEmbeddertest, AddTrueTypeFontText) {
 #if _FX_PLATFORM_ == _FX_PLATFORM_APPLE_
     const char md5[] = "17d2b6cd574cf66170b09c8927529a94";
 #else
-    const char md5[] = "1722c6a9deed953d730de9cd13dcbd55";
+    const char md5[] = "70592859010ffbf532a2237b8118bcc4";
 #endif  // _FX_PLATFORM_ == _FX_PLATFORM_APPLE_
     CompareBitmap(page_bitmap, 612, 792, md5);
     FPDFBitmap_Destroy(page_bitmap);
@@ -907,7 +910,7 @@ TEST_F(FPDFEditEmbeddertest, AddTrueTypeFontText) {
 #if _FX_PLATFORM_ == _FX_PLATFORM_APPLE_
   const char md5_2[] = "8eded4193ff1f0f77b8b600a825e97ea";
 #else
-  const char md5_2[] = "9d7885072058f6c3e68ecaf32e917f30";
+  const char md5_2[] = "c1d10cce1761c4a998a16b2562030568";
 #endif  // _FX_PLATFORM_ == _FX_PLATFORM_APPLE_
   CompareBitmap(page_bitmap2, 612, 792, md5_2);
   FPDFBitmap_Destroy(page_bitmap2);
@@ -915,7 +918,8 @@ TEST_F(FPDFEditEmbeddertest, AddTrueTypeFontText) {
   EXPECT_TRUE(FPDFPage_GenerateContent(page));
   EXPECT_TRUE(FPDF_SaveAsCopy(document(), this, 0));
   FPDF_ClosePage(page);
-  TestAndCloseSaved(612, 792, md5_2);
+
+  VerifySavedDocument(612, 792, md5_2);
 }
 
 TEST_F(FPDFEditEmbeddertest, TransformAnnot) {
@@ -981,7 +985,7 @@ TEST_F(FPDFEditEmbeddertest, AddCIDFontText) {
 
   // Check that the text renders properly.
   FPDF_BITMAP page_bitmap = RenderPage(page);
-  const char md5[] = "2bc6c1aaa2252e73246a75775ccf38c2";
+  const char md5[] = "c68cd79aa72bf83a7b25271370d46b21";
   CompareBitmap(page_bitmap, 612, 792, md5);
   FPDFBitmap_Destroy(page_bitmap);
 
@@ -989,7 +993,8 @@ TEST_F(FPDFEditEmbeddertest, AddCIDFontText) {
   EXPECT_TRUE(FPDFPage_GenerateContent(page));
   EXPECT_TRUE(FPDF_SaveAsCopy(document(), this, 0));
   FPDF_ClosePage(page);
-  TestAndCloseSaved(612, 792, md5);
+
+  VerifySavedDocument(612, 792, md5);
 }
 #endif  // _FX_PLATFORM_ == _FX_PLATFORM_LINUX_
 
@@ -1021,7 +1026,8 @@ TEST_F(FPDFEditEmbeddertest, SaveAndRender) {
     EXPECT_TRUE(FPDF_SaveAsCopy(document(), this, 0));
     UnloadPage(page);
   }
-  TestAndCloseSaved(612, 792, md5);
+
+  VerifySavedDocument(612, 792, md5);
 }
 
 TEST_F(FPDFEditEmbeddertest, ExtractImageBitmap) {

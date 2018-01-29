@@ -115,7 +115,7 @@ class WebFrameSerializerSanitizationTest : public ::testing::Test {
   void LoadFrame(const String& url,
                  const String& file_name,
                  const String& mime_type) {
-    KURL parsed_url(kParsedURLString, url);
+    KURL parsed_url(url);
     String file_path("frameserialization/" + file_name);
     RegisterMockedFileURLLoad(parsed_url, file_path, mime_type);
     FrameTestHelpers::LoadFrame(MainFrameImpl(), url.Utf8().data());
@@ -139,7 +139,7 @@ class WebFrameSerializerSanitizationTest : public ::testing::Test {
     mhtml.Append(body_result.Data(), body_result.size());
 
     if (!only_body_parts) {
-      RefPtr<RawData> footer_data = RawData::Create();
+      scoped_refptr<RawData> footer_data = RawData::Create();
       MHTMLArchive::GenerateMHTMLFooterForTesting(boundary,
                                                   *footer_data->MutableData());
       mhtml.Append(footer_data->data(), footer_data->length());
@@ -283,12 +283,10 @@ TEST_F(WebFrameSerializerSanitizationTest, FromBrokenImageDocument) {
 }
 
 TEST_F(WebFrameSerializerSanitizationTest, ImageLoadedFromSrcsetForHiDPI) {
-  RegisterMockedFileURLLoad(
-      KURL(kParsedURLString, "http://www.test.com/1x.png"),
-      "frameserialization/1x.png");
-  RegisterMockedFileURLLoad(
-      KURL(kParsedURLString, "http://www.test.com/2x.png"),
-      "frameserialization/2x.png");
+  RegisterMockedFileURLLoad(KURL("http://www.test.com/1x.png"),
+                            "frameserialization/1x.png");
+  RegisterMockedFileURLLoad(KURL("http://www.test.com/2x.png"),
+                            "frameserialization/2x.png");
 
   // Set high DPR in order to load image from srcset, instead of src.
   WebView()->SetDeviceScaleFactor(2.0f);
@@ -309,12 +307,10 @@ TEST_F(WebFrameSerializerSanitizationTest, ImageLoadedFromSrcsetForHiDPI) {
 }
 
 TEST_F(WebFrameSerializerSanitizationTest, ImageLoadedFromSrcForNormalDPI) {
-  RegisterMockedFileURLLoad(
-      KURL(kParsedURLString, "http://www.test.com/1x.png"),
-      "frameserialization/1x.png");
-  RegisterMockedFileURLLoad(
-      KURL(kParsedURLString, "http://www.test.com/2x.png"),
-      "frameserialization/2x.png");
+  RegisterMockedFileURLLoad(KURL("http://www.test.com/1x.png"),
+                            "frameserialization/1x.png");
+  RegisterMockedFileURLLoad(KURL("http://www.test.com/2x.png"),
+                            "frameserialization/2x.png");
 
   String mhtml =
       GenerateMHTMLFromHtml("http://www.test.com", "img_srcset.html");

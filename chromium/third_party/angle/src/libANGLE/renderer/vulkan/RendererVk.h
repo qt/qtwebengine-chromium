@@ -15,6 +15,7 @@
 
 #include "common/angleutils.h"
 #include "libANGLE/Caps.h"
+#include "libANGLE/renderer/vulkan/formatutilsvk.h"
 #include "libANGLE/renderer/vulkan/renderervk_utils.h"
 
 namespace egl
@@ -24,6 +25,7 @@ class AttributeMap;
 
 namespace rx
 {
+class FramebufferVk;
 class GlslangWrapper;
 
 namespace vk
@@ -50,10 +52,10 @@ class RendererVk : angle::NonCopyable
     vk::ErrorOrResult<uint32_t> selectPresentQueueForSurface(VkSurfaceKHR surface);
 
     // TODO(jmadill): Use ContextImpl for command buffers to enable threaded contexts.
-    vk::Error getStartedCommandBuffer(vk::CommandBuffer **commandBufferOut);
-    vk::Error submitCommandBuffer(vk::CommandBuffer *commandBuffer);
-    vk::Error submitAndFinishCommandBuffer(vk::CommandBuffer *commandBuffer);
-    vk::Error submitCommandsWithSync(vk::CommandBuffer *commandBuffer,
+    vk::Error getStartedCommandBuffer(vk::CommandBufferAndState **commandBufferOut);
+    vk::Error submitCommandBuffer(vk::CommandBufferAndState *commandBuffer);
+    vk::Error submitAndFinishCommandBuffer(vk::CommandBufferAndState *commandBuffer);
+    vk::Error submitCommandsWithSync(vk::CommandBufferAndState *commandBuffer,
                                      const vk::Semaphore &waitSemaphore,
                                      const vk::Semaphore &signalSemaphore);
     vk::Error finish();
@@ -73,29 +75,45 @@ class RendererVk : angle::NonCopyable
 
     Serial getCurrentQueueSerial() const;
 
+    bool isResourceInUse(const ResourceVk &resource);
+    bool isSerialInUse(Serial serial);
+
     template <typename T>
-    void enqueueGarbage(Serial serial, T &&object)
+    void releaseResource(const ResourceVk &resource, T *object)
     {
-        mGarbage.emplace_back(std::unique_ptr<vk::GarbageObject<T>>(
-            new vk::GarbageObject<T>(serial, std::move(object))));
+        Serial resourceSerial = resource.getQueueSerial();
+        releaseObject(resourceSerial, object);
     }
 
     template <typename T>
-    void enqueueGarbageOrDeleteNow(const ResourceVk &resource, T &&object)
+    void releaseObject(Serial resourceSerial, T *object)
     {
-        if (resource.getDeleteSchedule(mLastCompletedQueueSerial) == DeleteSchedule::NOW)
+        if (!isSerialInUse(resourceSerial))
         {
-            object.destroy(mDevice);
+            object->destroy(mDevice);
         }
         else
         {
-            enqueueGarbage(resource.getStoredQueueSerial(), std::move(object));
+            object->dumpResources(resourceSerial, &mGarbage);
         }
     }
 
     uint32_t getQueueFamilyIndex() const { return mCurrentQueueFamilyIndex; }
 
     const vk::MemoryProperties &getMemoryProperties() const { return mMemoryProperties; }
+
+    // TODO(jmadill): Don't keep a single renderpass in the Renderer.
+    gl::Error ensureInRenderPass(const gl::Context *context, FramebufferVk *framebufferVk);
+    void endRenderPass();
+
+    // This is necessary to update the cached current RenderPass Framebuffer.
+    void onReleaseRenderPass(const FramebufferVk *framebufferVk);
+
+    // TODO(jmadill): We could pass angle::Format::ID here.
+    const vk::Format &getFormat(GLenum internalFormat) const
+    {
+        return mFormatTable[internalFormat];
+    }
 
   private:
     void ensureCapsInitialized() const;
@@ -126,15 +144,19 @@ class RendererVk : angle::NonCopyable
     uint32_t mCurrentQueueFamilyIndex;
     VkDevice mDevice;
     vk::CommandPool mCommandPool;
-    vk::CommandBuffer mCommandBuffer;
+    vk::CommandBufferAndState mCommandBuffer;
     GlslangWrapper *mGlslangWrapper;
     SerialFactory mQueueSerialFactory;
     Serial mLastCompletedQueueSerial;
     Serial mCurrentQueueSerial;
     std::vector<vk::CommandBufferAndSerial> mInFlightCommands;
     std::vector<vk::FenceAndSerial> mInFlightFences;
-    std::vector<std::unique_ptr<vk::IGarbageObject>> mGarbage;
+    std::vector<vk::GarbageObject> mGarbage;
     vk::MemoryProperties mMemoryProperties;
+    vk::FormatTable mFormatTable;
+
+    // TODO(jmadill): Don't keep a single renderpass in the Renderer.
+    FramebufferVk *mCurrentRenderPassFramebuffer;
 };
 
 }  // namespace rx

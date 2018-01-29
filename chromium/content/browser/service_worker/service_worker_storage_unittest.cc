@@ -40,6 +40,7 @@
 #include "net/test/cert_test_util.h"
 #include "net/test/test_data_directory.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "third_party/WebKit/public/platform/modules/serviceworker/service_worker_object.mojom.h"
 #include "third_party/WebKit/public/platform/modules/serviceworker/service_worker_registration.mojom.h"
 
 using net::IOBuffer;
@@ -269,7 +270,7 @@ int WriteResponseMetadata(ServiceWorkerStorage* storage,
 int WriteMetadata(ServiceWorkerVersion* version,
                   const GURL& url,
                   const std::string& metadata) {
-  const std::vector<char> data(metadata.begin(), metadata.end());
+  const std::vector<uint8_t> data(metadata.begin(), metadata.end());
   EXPECT_TRUE(version);
   TestCompletionCallback cb;
   version->script_cache_map()->WriteMetadata(url, data, cb.callback());
@@ -678,13 +679,11 @@ TEST_F(ServiceWorkerStorageTest, DisabledStorage) {
   EXPECT_EQ(SERVICE_WORKER_ERROR_ABORT,
             GetUserDataForAllRegistrations(kUserDataKey, &data_list_out));
 
-  EXPECT_FALSE(
-      storage()->OriginHasForeignFetchRegistrations(kScope.GetOrigin()));
-
   // Next available ids should be invalid.
   EXPECT_EQ(blink::mojom::kInvalidServiceWorkerRegistrationId,
             storage()->NewRegistrationId());
-  EXPECT_EQ(kInvalidServiceWorkerVersionId, storage()->NewVersionId());
+  EXPECT_EQ(blink::mojom::kInvalidServiceWorkerVersionId,
+            storage()->NewVersionId());
   EXPECT_EQ(kInvalidServiceWorkerResourceId, storage()->NewRegistrationId());
 }
 
@@ -697,8 +696,6 @@ TEST_F(ServiceWorkerStorageTest, StoreFindUpdateDeleteRegistration) {
   const int64_t kResource2Size = 51;
   const int64_t kRegistrationId = 0;
   const int64_t kVersionId = 0;
-  const GURL kForeignFetchScope("http://www.test.not/scope/ff/");
-  const url::Origin kForeignFetchOrigin(GURL("https://example.com/"));
   const base::Time kToday = base::Time::Now();
   const base::Time kYesterday = kToday - base::TimeDelta::FromDays(1);
   std::set<uint32_t> used_features = {124, 901, 1019};
@@ -734,10 +731,6 @@ TEST_F(ServiceWorkerStorageTest, StoreFindUpdateDeleteRegistration) {
       ServiceWorkerVersion::FetchHandlerExistence::EXISTS);
   live_version->SetStatus(ServiceWorkerVersion::INSTALLED);
   live_version->script_cache_map()->SetResources(resources);
-  live_version->set_foreign_fetch_scopes(
-      std::vector<GURL>(1, kForeignFetchScope));
-  live_version->set_foreign_fetch_origins(
-      std::vector<url::Origin>(1, kForeignFetchOrigin));
   live_version->set_used_features(used_features);
   live_registration->SetWaitingVersion(live_version);
   live_registration->set_last_update_check(kYesterday);
@@ -754,13 +747,13 @@ TEST_F(ServiceWorkerStorageTest, StoreFindUpdateDeleteRegistration) {
             found_registration->resources_total_size_bytes());
   EXPECT_EQ(used_features,
             found_registration->waiting_version()->used_features());
-  found_registration = NULL;
+  found_registration = nullptr;
 
   // But FindRegistrationForPattern is always async.
   EXPECT_EQ(SERVICE_WORKER_OK,
             FindRegistrationForPattern(kScope, &found_registration));
   EXPECT_EQ(live_registration, found_registration);
-  found_registration = NULL;
+  found_registration = nullptr;
 
   // Can be found by id too.
   EXPECT_EQ(SERVICE_WORKER_OK,
@@ -769,7 +762,7 @@ TEST_F(ServiceWorkerStorageTest, StoreFindUpdateDeleteRegistration) {
   ASSERT_TRUE(found_registration.get());
   EXPECT_EQ(kRegistrationId, found_registration->id());
   EXPECT_EQ(live_registration, found_registration);
-  found_registration = NULL;
+  found_registration = nullptr;
 
   // Can be found by just the id too.
   EXPECT_EQ(SERVICE_WORKER_OK,
@@ -777,10 +770,10 @@ TEST_F(ServiceWorkerStorageTest, StoreFindUpdateDeleteRegistration) {
   ASSERT_TRUE(found_registration.get());
   EXPECT_EQ(kRegistrationId, found_registration->id());
   EXPECT_EQ(live_registration, found_registration);
-  found_registration = NULL;
+  found_registration = nullptr;
 
   // Drop the live registration, but keep the version live.
-  live_registration = NULL;
+  live_registration = nullptr;
 
   // Now FindRegistrationForDocument should be async.
   EXPECT_EQ(SERVICE_WORKER_OK,
@@ -814,10 +807,10 @@ TEST_F(ServiceWorkerStorageTest, StoreFindUpdateDeleteRegistration) {
                                       &registrations_for_origin));
   EXPECT_TRUE(registrations_for_origin.empty());
 
-  found_registration = NULL;
+  found_registration = nullptr;
 
   // Drop the live version too.
-  live_version = NULL;
+  live_version = nullptr;
 
   // And FindRegistrationForPattern is always async.
   EXPECT_EQ(SERVICE_WORKER_OK,
@@ -830,27 +823,18 @@ TEST_F(ServiceWorkerStorageTest, StoreFindUpdateDeleteRegistration) {
   EXPECT_EQ(kYesterday, found_registration->last_update_check());
   EXPECT_EQ(ServiceWorkerVersion::INSTALLED,
             found_registration->waiting_version()->status());
-  EXPECT_EQ(
-      1u, found_registration->waiting_version()->foreign_fetch_scopes().size());
-  EXPECT_EQ(kForeignFetchScope,
-            found_registration->waiting_version()->foreign_fetch_scopes()[0]);
-  EXPECT_EQ(
-      1u,
-      found_registration->waiting_version()->foreign_fetch_origins().size());
-  EXPECT_EQ(kForeignFetchOrigin,
-            found_registration->waiting_version()->foreign_fetch_origins()[0]);
 
   // Update to active and update the last check time.
   scoped_refptr<ServiceWorkerVersion> temp_version =
       found_registration->waiting_version();
   temp_version->SetStatus(ServiceWorkerVersion::ACTIVATED);
   found_registration->SetActiveVersion(temp_version);
-  temp_version = NULL;
+  temp_version = nullptr;
   EXPECT_EQ(SERVICE_WORKER_OK, UpdateToActiveState(found_registration));
   found_registration->set_last_update_check(kToday);
   UpdateLastUpdateCheckTime(found_registration.get());
 
-  found_registration = NULL;
+  found_registration = nullptr;
 
   // Trying to update a unstored registration to active should fail.
   scoped_refptr<ServiceWorkerRegistration> unstored_registration =
@@ -859,7 +843,7 @@ TEST_F(ServiceWorkerStorageTest, StoreFindUpdateDeleteRegistration) {
           kRegistrationId + 1, context()->AsWeakPtr());
   EXPECT_EQ(SERVICE_WORKER_ERROR_NOT_FOUND,
             UpdateToActiveState(unstored_registration));
-  unstored_registration = NULL;
+  unstored_registration = nullptr;
 
   // The Find methods should return a registration with an active version
   // and the expected update time.
@@ -955,22 +939,22 @@ TEST_F(ServiceWorkerStorageTest, InstallingRegistrationsAreFindable) {
             FindRegistrationForId(
                 kRegistrationId, kScope.GetOrigin(), &found_registration));
   EXPECT_EQ(live_registration, found_registration);
-  found_registration = NULL;
+  found_registration = nullptr;
 
   EXPECT_EQ(SERVICE_WORKER_OK,
             FindRegistrationForIdOnly(kRegistrationId, &found_registration));
   EXPECT_EQ(live_registration, found_registration);
-  found_registration = NULL;
+  found_registration = nullptr;
 
   EXPECT_EQ(SERVICE_WORKER_OK,
             FindRegistrationForDocument(kDocumentUrl, &found_registration));
   EXPECT_EQ(live_registration, found_registration);
-  found_registration = NULL;
+  found_registration = nullptr;
 
   EXPECT_EQ(SERVICE_WORKER_OK,
             FindRegistrationForPattern(kScope, &found_registration));
   EXPECT_EQ(live_registration, found_registration);
-  found_registration = NULL;
+  found_registration = nullptr;
 
   EXPECT_EQ(SERVICE_WORKER_OK, GetAllRegistrationsInfos(&all_registrations));
   EXPECT_EQ(1u, all_registrations.size());
@@ -989,8 +973,8 @@ TEST_F(ServiceWorkerStorageTest, InstallingRegistrationsAreFindable) {
   EXPECT_TRUE(registrations_for_origin.empty());
 
   // Notify storage of installation no longer happening.
-  storage()->NotifyDoneInstallingRegistration(
-      live_registration.get(), NULL, SERVICE_WORKER_OK);
+  storage()->NotifyDoneInstallingRegistration(live_registration.get(), nullptr,
+                                              SERVICE_WORKER_OK);
 
   // Once again, should not be findable.
   EXPECT_EQ(SERVICE_WORKER_ERROR_NOT_FOUND,
@@ -1364,8 +1348,8 @@ TEST_F(ServiceWorkerResourceStorageTest, DeleteRegistration_NoLiveVersion) {
   ServiceWorkerStatusCode result = SERVICE_WORKER_ERROR_FAILED;
   std::set<int64_t> verify_ids;
 
-  registration_->SetWaitingVersion(NULL);
-  registration_ = NULL;
+  registration_->SetWaitingVersion(nullptr);
+  registration_ = nullptr;
 
   // Deleting the registration should result in the resources being added to the
   // purgeable list and then doomed in the disk cache and removed from that
@@ -1475,7 +1459,7 @@ TEST_F(ServiceWorkerResourceStorageTest, DeleteRegistration_ActiveVersion) {
 TEST_F(ServiceWorkerResourceStorageDiskTest, CleanupOnRestart) {
   // Promote the worker to active and add a controllee.
   registration_->SetActiveVersion(registration_->waiting_version());
-  registration_->SetWaitingVersion(NULL);
+  registration_->SetWaitingVersion(nullptr);
   storage()->UpdateToActiveState(
       registration_.get(), base::Bind(&ServiceWorkerUtils::NoOpStatusCallback));
   ServiceWorkerRemoteProviderEndpoint remote_endpoint;
@@ -1722,7 +1706,7 @@ TEST_F(ServiceWorkerStorageTest, FindRegistration_LongestScopeMatch) {
   EXPECT_EQ(SERVICE_WORKER_OK,
             FindRegistrationForDocument(kDocumentUrl, &found_registration));
   EXPECT_EQ(live_registration2, found_registration);
-  found_registration = NULL;
+  found_registration = nullptr;
 
   // Store registrations.
   EXPECT_EQ(SERVICE_WORKER_OK,
@@ -1736,12 +1720,12 @@ TEST_F(ServiceWorkerStorageTest, FindRegistration_LongestScopeMatch) {
                               live_registration3->waiting_version()));
 
   // Notify storage of installations no longer happening.
-  storage()->NotifyDoneInstallingRegistration(
-      live_registration1.get(), NULL, SERVICE_WORKER_OK);
-  storage()->NotifyDoneInstallingRegistration(
-      live_registration2.get(), NULL, SERVICE_WORKER_OK);
-  storage()->NotifyDoneInstallingRegistration(
-      live_registration3.get(), NULL, SERVICE_WORKER_OK);
+  storage()->NotifyDoneInstallingRegistration(live_registration1.get(), nullptr,
+                                              SERVICE_WORKER_OK);
+  storage()->NotifyDoneInstallingRegistration(live_registration2.get(), nullptr,
+                                              SERVICE_WORKER_OK);
+  storage()->NotifyDoneInstallingRegistration(live_registration3.get(), nullptr,
+                                              SERVICE_WORKER_OK);
 
   // Find a registration among installed ones.
   EXPECT_EQ(SERVICE_WORKER_OK,
@@ -1758,83 +1742,6 @@ class ServiceWorkerStorageDiskTest : public ServiceWorkerStorageTest {
     ServiceWorkerStorageTest::SetUp();
   }
 };
-
-TEST_F(ServiceWorkerStorageDiskTest, OriginHasForeignFetchRegistrations) {
-  LazyInitialize();
-
-  // Registration 1 for http://www.example.com
-  const GURL kScope1("http://www.example.com/scope/");
-  const GURL kScript1("http://www.example.com/script1.js");
-  scoped_refptr<ServiceWorkerRegistration> live_registration1 =
-      CreateLiveRegistrationAndVersion(kScope1, kScript1);
-  const int64_t kRegistrationId1 = live_registration1->id();
-  ServiceWorkerVersion* live_version1 = live_registration1->waiting_version();
-  live_version1->set_foreign_fetch_scopes(std::vector<GURL>(1, kScope1));
-
-  // Registration 2 for http://www.example.com
-  const GURL kScope2("http://www.example.com/scope/foo");
-  const GURL kScript2("http://www.example.com/script2.js");
-  scoped_refptr<ServiceWorkerRegistration> live_registration2 =
-      CreateLiveRegistrationAndVersion(kScope2, kScript2);
-  const int64_t kRegistrationId2 = live_registration2->id();
-  ServiceWorkerVersion* live_version2 = live_registration2->waiting_version();
-  live_version2->set_foreign_fetch_scopes(std::vector<GURL>(1, kScope2));
-
-  // Registration for http://www.test.com
-  const GURL kScope3("http://www.test.com/scope/foobar");
-  const GURL kScript3("http://www.test.com/script3.js");
-  scoped_refptr<ServiceWorkerRegistration> live_registration3 =
-      CreateLiveRegistrationAndVersion(kScope3, kScript3);
-  ServiceWorkerVersion* live_version3 = live_registration3->waiting_version();
-
-  // Neither origin should have registrations before they are stored.
-  const GURL kOrigin1 = kScope1.GetOrigin();
-  const GURL kOrigin2 = kScope3.GetOrigin();
-  EXPECT_FALSE(storage()->OriginHasForeignFetchRegistrations(kOrigin1));
-  EXPECT_FALSE(storage()->OriginHasForeignFetchRegistrations(kOrigin2));
-
-  // Store all registrations.
-  EXPECT_EQ(SERVICE_WORKER_OK,
-            StoreRegistration(live_registration1, live_version1));
-  EXPECT_EQ(SERVICE_WORKER_OK,
-            StoreRegistration(live_registration2, live_version2));
-  EXPECT_EQ(SERVICE_WORKER_OK,
-            StoreRegistration(live_registration3, live_version3));
-
-  // Now first origin should have foreign fetch registrations, second doesn't.
-  EXPECT_TRUE(storage()->OriginHasForeignFetchRegistrations(kOrigin1));
-  EXPECT_FALSE(storage()->OriginHasForeignFetchRegistrations(kOrigin2));
-
-  // Remove one registration at first origin.
-  EXPECT_EQ(SERVICE_WORKER_OK,
-            DeleteRegistration(kRegistrationId1, kScope1.GetOrigin()));
-
-  // First origin should still have a registration left.
-  EXPECT_TRUE(storage()->OriginHasForeignFetchRegistrations(kOrigin1));
-  EXPECT_FALSE(storage()->OriginHasForeignFetchRegistrations(kOrigin2));
-
-  // Simulate browser shutdown and restart.
-  live_registration1 = nullptr;
-  live_version1 = nullptr;
-  live_registration2 = nullptr;
-  live_version2 = nullptr;
-  live_registration3 = nullptr;
-  live_version3 = nullptr;
-  InitializeTestHelper();
-  LazyInitialize();
-
-  // First origin should still have a registration left.
-  EXPECT_TRUE(storage()->OriginHasForeignFetchRegistrations(kOrigin1));
-  EXPECT_FALSE(storage()->OriginHasForeignFetchRegistrations(kOrigin2));
-
-  // Remove other registration at first origin.
-  EXPECT_EQ(SERVICE_WORKER_OK,
-            DeleteRegistration(kRegistrationId2, kScope2.GetOrigin()));
-
-  // No foreign fetch registrations remain.
-  EXPECT_FALSE(storage()->OriginHasForeignFetchRegistrations(kOrigin1));
-  EXPECT_FALSE(storage()->OriginHasForeignFetchRegistrations(kOrigin2));
-}
 
 TEST_F(ServiceWorkerStorageTest, OriginTrialsAbsentEntryAndEmptyEntry) {
   const GURL origin1("http://www1.example.com");
@@ -2033,12 +1940,12 @@ TEST_F(ServiceWorkerStorageTest, AbsentNavigationPreloadState) {
   scoped_refptr<ServiceWorkerRegistration> found_registration;
   EXPECT_EQ(SERVICE_WORKER_OK,
             FindRegistrationForDocument(scope1, &found_registration));
-  const NavigationPreloadState& registration_state =
+  const blink::mojom::NavigationPreloadState& registration_state =
       found_registration->navigation_preload_state();
   EXPECT_FALSE(registration_state.enabled);
   EXPECT_EQ("true", registration_state.header);
   ASSERT_TRUE(found_registration->active_version());
-  const NavigationPreloadState& state =
+  const blink::mojom::NavigationPreloadState& state =
       found_registration->active_version()->navigation_preload_state();
   EXPECT_FALSE(state.enabled);
   EXPECT_EQ("true", state.header);
@@ -2119,12 +2026,12 @@ TEST_F(ServiceWorkerStorageDiskTest, DisabledNavigationPreloadState) {
   scoped_refptr<ServiceWorkerRegistration> found_registration;
   EXPECT_EQ(SERVICE_WORKER_OK,
             FindRegistrationForDocument(kScope, &found_registration));
-  const NavigationPreloadState& registration_state =
+  const blink::mojom::NavigationPreloadState& registration_state =
       found_registration->navigation_preload_state();
   EXPECT_FALSE(registration_state.enabled);
   EXPECT_EQ("true", registration_state.header);
   ASSERT_TRUE(found_registration->active_version());
-  const NavigationPreloadState& state =
+  const blink::mojom::NavigationPreloadState& state =
       found_registration->active_version()->navigation_preload_state();
   EXPECT_FALSE(state.enabled);
   EXPECT_EQ("true", state.header);
@@ -2156,12 +2063,12 @@ TEST_F(ServiceWorkerStorageDiskTest, EnabledNavigationPreloadState) {
   scoped_refptr<ServiceWorkerRegistration> found_registration;
   EXPECT_EQ(SERVICE_WORKER_OK,
             FindRegistrationForDocument(kScope, &found_registration));
-  const NavigationPreloadState& registration_state =
+  const blink::mojom::NavigationPreloadState& registration_state =
       found_registration->navigation_preload_state();
   EXPECT_TRUE(registration_state.enabled);
   EXPECT_EQ(kHeaderValue, registration_state.header);
   ASSERT_TRUE(found_registration->active_version());
-  const NavigationPreloadState& state =
+  const blink::mojom::NavigationPreloadState& state =
       found_registration->active_version()->navigation_preload_state();
   EXPECT_TRUE(state.enabled);
   EXPECT_EQ(kHeaderValue, state.header);

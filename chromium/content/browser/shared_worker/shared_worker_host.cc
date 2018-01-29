@@ -8,6 +8,8 @@
 
 #include "base/metrics/histogram_macros.h"
 #include "content/browser/devtools/shared_worker_devtools_manager.h"
+#include "content/browser/interface_provider_filtering.h"
+#include "content/browser/renderer_interface_binders.h"
 #include "content/browser/shared_worker/shared_worker_content_settings_proxy_impl.h"
 #include "content/browser/shared_worker/shared_worker_instance.h"
 #include "content/browser/shared_worker/shared_worker_service_impl.h"
@@ -60,6 +62,7 @@ SharedWorkerHost::SharedWorkerHost(
       route_id_(route_id),
       next_connection_request_id_(1),
       creation_time_(base::TimeTicks::Now()),
+      interface_provider_binding_(this),
       weak_factory_(this) {
   DCHECK(instance_);
 }
@@ -82,14 +85,20 @@ void SharedWorkerHost::Start(mojom::SharedWorkerFactoryPtr factory,
   mojom::SharedWorkerHostPtr host;
   binding_.Bind(mojo::MakeRequest(&host));
 
+  service_manager::mojom::InterfaceProviderPtr interface_provider;
+  interface_provider_binding_.Bind(FilterRendererExposedInterfaces(
+      mojom::kNavigation_SharedWorkerSpec, process_id_,
+      mojo::MakeRequest(&interface_provider)));
+
   mojom::SharedWorkerInfoPtr info(mojom::SharedWorkerInfo::New(
       instance_->url(), instance_->name(), instance_->content_security_policy(),
       instance_->content_security_policy_type(),
-      instance_->creation_address_space(), instance_->data_saver_enabled()));
+      instance_->creation_address_space()));
 
-  factory->CreateSharedWorker(std::move(info), pause_on_start, route_id_,
-                              std::move(content_settings), std::move(host),
-                              mojo::MakeRequest(&worker_));
+  factory->CreateSharedWorker(
+      std::move(info), pause_on_start, instance_->devtools_worker_token(),
+      route_id_, std::move(content_settings), std::move(host),
+      mojo::MakeRequest(&worker_), std::move(interface_provider));
 
   // Monitor the lifetime of the worker.
   worker_.set_connection_error_handler(base::BindOnce(
@@ -242,7 +251,21 @@ void SharedWorkerHost::OnClientConnectionLost() {
 void SharedWorkerHost::OnWorkerConnectionLost() {
   // This will destroy |this| resulting in client's observing their mojo
   // connection being dropped.
-  SharedWorkerServiceImpl::GetInstance()->DestroyHost(process_id_, route_id_);
+  static_cast<SharedWorkerServiceImpl*>(SharedWorkerService::GetInstance())
+      ->DestroyHost(process_id_, route_id_);
+}
+
+void SharedWorkerHost::GetInterface(
+    const std::string& interface_name,
+    mojo::ScopedMessagePipeHandle interface_pipe) {
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
+
+  auto* process = RenderProcessHost::FromID(process_id_);
+  if (!process)
+    return;
+
+  BindWorkerInterface(interface_name, std::move(interface_pipe), process,
+                      url::Origin::Create(instance()->url()));
 }
 
 }  // namespace content

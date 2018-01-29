@@ -2,23 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-cr.exportPath('print_preview.ticket_items');
-
-/**
- * Enumeration of the orientations of margins.
- * @enum {string}
- */
-print_preview.ticket_items.CustomMarginsOrientation = {
-  TOP: 'top',
-  RIGHT: 'right',
-  BOTTOM: 'bottom',
-  LEFT: 'left'
-};
-
 cr.define('print_preview.ticket_items', function() {
   'use strict';
 
-  var CustomMarginsOrientation =
+  const CustomMarginsOrientation =
       print_preview.ticket_items.CustomMarginsOrientation;
 
   class CustomMargins extends print_preview.ticket_items.TicketItem {
@@ -38,10 +25,10 @@ cr.define('print_preview.ticket_items', function() {
 
     /** @override */
     wouldValueBeValid(value) {
-      var margins = /** @type {!print_preview.Margins} */ (value);
-      for (var key in CustomMarginsOrientation) {
-        var o = CustomMarginsOrientation[key];
-        var max = this.getMarginMax_(
+      const margins = /** @type {!print_preview.Margins} */ (value);
+      for (const key in CustomMarginsOrientation) {
+        const o = CustomMarginsOrientation[key];
+        const max = this.getMarginMax_(
             o, margins.get(CustomMargins.OppositeOrientation_[o]));
         if (margins.get(o) > max || margins.get(o) < 0) {
           return false;
@@ -66,14 +53,14 @@ cr.define('print_preview.ticket_items', function() {
      * @return {number} Maximum value in points of the specified margin.
      */
     getMarginMax(orientation) {
-      var oppositeOrient = CustomMargins.OppositeOrientation_[orientation];
-      var margins = /** @type {!print_preview.Margins} */ (this.getValue());
+      const oppositeOrient = CustomMargins.OppositeOrientation_[orientation];
+      const margins = /** @type {!print_preview.Margins} */ (this.getValue());
       return this.getMarginMax_(orientation, margins.get(oppositeOrient));
     }
 
     /** @override */
     updateValue(value) {
-      var margins = /** @type {!print_preview.Margins} */ (value);
+      let margins = /** @type {!print_preview.Margins} */ (value);
       if (margins != null) {
         margins = new print_preview.Margins(
             Math.round(margins.get(CustomMarginsOrientation.TOP)),
@@ -93,9 +80,10 @@ cr.define('print_preview.ticket_items', function() {
      * @param {number} value Updated margin value in points.
      */
     updateMargin(orientation, value) {
-      var margins = /** @type {!print_preview.Margins} */ (this.getValue());
-      var oppositeOrientation = CustomMargins.OppositeOrientation_[orientation];
-      var max =
+      const margins = /** @type {!print_preview.Margins} */ (this.getValue());
+      const oppositeOrientation =
+          CustomMargins.OppositeOrientation_[orientation];
+      const max =
           this.getMarginMax_(orientation, margins.get(oppositeOrientation));
       value = Math.max(0, Math.min(max, value));
       this.updateValue(margins.set(orientation, value));
@@ -122,12 +110,12 @@ cr.define('print_preview.ticket_items', function() {
      * @private
      */
     getMarginMax_(orientation, oppositeMargin) {
-      var dimensionLength = (orientation == CustomMarginsOrientation.TOP ||
-                             orientation == CustomMarginsOrientation.BOTTOM) ?
+      const dimensionLength = (orientation == CustomMarginsOrientation.TOP ||
+                               orientation == CustomMarginsOrientation.BOTTOM) ?
           this.getDocumentInfoInternal().pageSize.height :
           this.getDocumentInfoInternal().pageSize.width;
 
-      var totalMargin =
+      const totalMargin =
           dimensionLength - CustomMargins.MINIMUM_MARGINS_DISTANCE_;
       return Math.round(totalMargin > 0 ? totalMargin - oppositeMargin : 0);
     }

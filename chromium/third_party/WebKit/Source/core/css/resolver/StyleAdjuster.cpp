@@ -54,6 +54,7 @@
 #include "core/svg/SVGSVGElement.h"
 #include "core/svg_names.h"
 #include "platform/Length.h"
+#include "platform/runtime_enabled_features.h"
 #include "platform/transforms/TransformOperations.h"
 #include "platform/wtf/Assertions.h"
 
@@ -507,7 +508,7 @@ void StyleAdjuster::AdjustComputedStyle(StyleResolverState& state,
     AdjustStyleForFirstLetter(style);
 
     AdjustStyleForDisplay(style, layout_parent_style,
-                          element ? &element->GetDocument() : 0);
+                          element ? &element->GetDocument() : nullptr);
 
     // Paint containment forces a block formatting context, so we must coerce
     // from inline.  https://drafts.csswg.org/css-containment/#containment-paint
@@ -576,7 +577,7 @@ void StyleAdjuster::AdjustComputedStyle(StyleResolverState& state,
     // position.
     if (!(IsSVGSVGElement(*element) && element->parentNode() &&
           !element->parentNode()->IsSVGElement()))
-      style.SetPosition(ComputedStyle::InitialPosition());
+      style.SetPosition(ComputedStyleInitialValues::InitialPosition());
 
     // SVG text layout code expects us to be a block-level style element.
     if ((IsSVGForeignObjectElement(*element) || IsSVGTextElement(*element)) &&
@@ -615,6 +616,15 @@ void StyleAdjuster::AdjustComputedStyle(StyleResolverState& state,
     if (!StyleResolver::HasAuthorBackground(state)) {
       style.MutableBackgroundInternal().ClearImage();
     }
+  }
+
+  // TODO(layout-dev): Once LayoutnG handles inline content editable, we should
+  // get rid of following code fragment.
+  if (RuntimeEnabledFeatures::LayoutNGEnabled() &&
+      style.UserModify() != EUserModify::kReadOnly &&
+      style.Display() == EDisplay::kInline &&
+      parent_style.UserModify() == EUserModify::kReadOnly) {
+    style.SetDisplay(EDisplay::kInlineBlock);
   }
 }
 }  // namespace blink

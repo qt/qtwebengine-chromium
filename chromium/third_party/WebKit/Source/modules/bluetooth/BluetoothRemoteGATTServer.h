@@ -24,8 +24,7 @@ class ScriptState;
 // BluetoothRemoteGATTServer provides a way to interact with a connected
 // bluetooth peripheral.
 class BluetoothRemoteGATTServer
-    : public GarbageCollectedFinalized<BluetoothRemoteGATTServer>,
-      public ScriptWrappable,
+    : public ScriptWrappable,
       public ContextLifecycleObserver,
       public mojom::blink::WebBluetoothServerClient {
   USING_PRE_FINALIZER(BluetoothRemoteGATTServer, Dispose);
@@ -76,7 +75,7 @@ class BluetoothRemoteGATTServer
   void Dispose();
 
   // Interface required by Garbage Collectoin:
-  DECLARE_VIRTUAL_TRACE();
+  void Trace(blink::Visitor*) override;
 
   // IDL exposed interface:
   BluetoothDevice* device() { return device_; }

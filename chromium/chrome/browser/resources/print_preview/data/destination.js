@@ -56,39 +56,54 @@ print_preview.DestinationProvisionalType = {
 };
 
 /**
+ * Capabilities of a print destination represented in a CDD.
+ *
+ * @typedef {{
+ *   vendor_capability: !Array<{Object}>,
+ *   collate: ({default: (boolean|undefined)}|undefined),
+ *   color: ({
+ *     option: !Array<{
+ *       type: (string|undefined),
+ *       vendor_id: (string|undefined),
+ *       custom_display_name: (string|undefined),
+ *       is_default: (boolean|undefined)
+ *     }>
+ *   }|undefined),
+ *   copies: ({default: (number|undefined),
+ *             max: (number|undefined)}|undefined),
+ *   duplex: ({option: !Array<{type: (string|undefined),
+ *                             is_default: (boolean|undefined)}>}|undefined),
+ *   page_orientation: ({
+ *     option: !Array<{type: (string|undefined),
+ *                      is_default: (boolean|undefined)}>
+ *   }|undefined),
+ *   media_size: ({
+ *     option: !Array<{
+ *       type: (string|undefined),
+ *       vendor_id: (string|undefined),
+ *       custom_display_name: (string|undefined),
+ *       is_default: (boolean|undefined)
+ *     }>
+ *   }|undefined),
+ *   dpi: ({
+ *     option: !Array<{
+ *       vendor_id: (string|undefined),
+ *       height_microns: number,
+ *       width_microns: number,
+ *       is_default: (boolean|undefined)
+ *     }>
+ *   }|undefined)
+ * }}
+ */
+print_preview.CddCapabilities;
+
+/**
  * The CDD (Cloud Device Description) describes the capabilities of a print
  * destination.
  *
  * @typedef {{
  *   version: string,
- *   printer: {
- *     vendor_capability: !Array<{Object}>,
- *     collate: ({default: (boolean|undefined)}|undefined),
- *     color: ({
- *       option: !Array<{
- *         type: (string|undefined),
- *         vendor_id: (string|undefined),
- *         custom_display_name: (string|undefined),
- *         is_default: (boolean|undefined)
- *       }>
- *     }|undefined),
- *     copies: ({default: (number|undefined),
- *               max: (number|undefined)}|undefined),
- *     duplex: ({option: !Array<{type: (string|undefined),
- *                               is_default: (boolean|undefined)}>}|undefined),
- *     page_orientation: ({
- *       option: !Array<{type: (string|undefined),
- *                        is_default: (boolean|undefined)}>
- *     }|undefined),
- *     media_size: ({
- *       option: !Array<{
- *         type: (string|undefined),
- *         vendor_id: (string|undefined),
- *         custom_display_name: (string|undefined),
- *         is_default: (boolean|undefined)
- *       }>
- *     }|undefined)
- *   }
+ *   printer: !print_preview.CddCapabilities,
  * }}
  */
 print_preview.Cdd;
@@ -430,8 +445,8 @@ cr.define('print_preview', function() {
       if (!this.isOffline) {
         return '';
       }
-      var offlineDurationMs = Date.now() - this.lastAccessTime_;
-      var offlineMessageId;
+      const offlineDurationMs = Date.now() - this.lastAccessTime_;
+      let offlineMessageId;
       if (offlineDurationMs > 31622400000.0) {  // One year.
         offlineMessageId = 'offlineForYear';
       } else if (offlineDurationMs > 2678400000.0) {  // One month.

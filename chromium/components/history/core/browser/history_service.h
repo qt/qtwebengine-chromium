@@ -668,7 +668,7 @@ class HistoryService : public syncer::SyncableService, public KeyedService {
   // will be fewer results.
   base::CancelableTaskTracker::TaskId GetFaviconsForURL(
       const GURL& page_url,
-      int icon_types,
+      const favicon_base::IconTypeSet& icon_types,
       const std::vector<int>& desired_sizes,
       const favicon_base::FaviconResultsCallback& callback,
       base::CancelableTaskTracker* tracker);
@@ -686,7 +686,7 @@ class HistoryService : public syncer::SyncableService, public KeyedService {
   // long as its size is larger than a specific value.
   base::CancelableTaskTracker::TaskId GetLargestFaviconForURL(
       const GURL& page_url,
-      const std::vector<int>& icon_types,
+      const std::vector<favicon_base::IconTypeSet>& icon_types,
       int minimum_size_in_pixels,
       const favicon_base::FaviconRawBitmapCallback& callback,
       base::CancelableTaskTracker* tracker);
@@ -714,6 +714,10 @@ class HistoryService : public syncer::SyncableService, public KeyedService {
       const std::vector<int>& desired_sizes,
       const favicon_base::FaviconResultsCallback& callback,
       base::CancelableTaskTracker* tracker);
+
+  // Deletes favicon mappings for each URL in |page_urls| and their redirects.
+  void DeleteFaviconMappings(const base::flat_set<GURL>& page_urls,
+                             favicon_base::IconType icon_type);
 
   // Used by FaviconService to set a favicon for |page_url| and |icon_url| with
   // |pixel_size|.
@@ -752,6 +756,14 @@ class HistoryService : public syncer::SyncableService, public KeyedService {
                    favicon_base::IconType icon_type,
                    const GURL& icon_url,
                    const std::vector<SkBitmap>& bitmaps);
+
+  // Causes each page in |page_urls_to_write| to be associated to the same
+  // icon as the page |page_url_to_read| for icon types matching |icon_types|.
+  // No-op if |page_url_to_read| has no mappings for |icon_types|.
+  void CloneFaviconMappingsForPages(
+      const GURL& page_url_to_read,
+      const favicon_base::IconTypeSet& icon_types,
+      const base::flat_set<GURL>& page_urls_to_write);
 
   // Same as SetFavicons with three differences:
   // 1) It will be a no-op if there is an existing cached favicon for *any* type

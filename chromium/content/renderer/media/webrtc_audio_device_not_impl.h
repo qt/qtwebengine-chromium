@@ -31,7 +31,6 @@ class CONTENT_EXPORT WebRtcAudioDeviceNotImpl
   // implementation in WebRtcAudioDeviceImpl when needed.
 
   int32_t ActiveAudioLayer(AudioLayer* audio_layer) const override;
-  webrtc::AudioDeviceModule::ErrorCode LastError() const override;
   int16_t PlayoutDevices() override;
   int16_t RecordingDevices() override;
   int32_t PlayoutDeviceName(uint16_t index,
@@ -66,12 +65,6 @@ class CONTENT_EXPORT WebRtcAudioDeviceNotImpl
   int32_t StereoPlayout(bool* enabled) const override;
   int32_t SetStereoRecording(bool enable) override;
   int32_t StereoRecording(bool* enabled) const override;
-  int32_t SetRecordingChannel(const ChannelType channel) override;
-  int32_t RecordingChannel(ChannelType* channel) const override;
-  int32_t SetRecordingSampleRate(const uint32_t samples_per_sec) override;
-  int32_t SetPlayoutSampleRate(const uint32_t samples_per_sec) override;
-  int32_t SetLoudspeakerStatus(bool enable) override;
-  int32_t GetLoudspeakerStatus(bool* enabled) const override;
   int32_t SetAGC(bool enable) override;
   bool AGC() const override;
   bool BuiltInAECIsAvailable() const override;

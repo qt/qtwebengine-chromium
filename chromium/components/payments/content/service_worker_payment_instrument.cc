@@ -6,6 +6,7 @@
 
 #include "base/stl_util.h"
 #include "base/strings/utf_string_conversions.h"
+#include "components/payments/content/payment_request_converter.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/payment_app_provider.h"
 #include "ui/gfx/image/image_skia.h"
@@ -26,6 +27,8 @@ ServiceWorkerPaymentInstrument::ServiceWorkerPaymentInstrument(
       frame_origin_(frame_origin),
       spec_(spec),
       stored_payment_app_info_(std::move(stored_payment_app_info)),
+      delegate_(nullptr),
+      can_make_payment_result_(false),
       weak_ptr_factory_(this) {
   DCHECK(browser_context_);
   DCHECK(top_level_origin_.is_valid());
@@ -36,6 +39,9 @@ ServiceWorkerPaymentInstrument::ServiceWorkerPaymentInstrument(
     icon_image_ =
         gfx::ImageSkia::CreateFrom1xBitmap(*(stored_payment_app_info_->icon))
             .DeepCopy();
+  } else {
+    // Create an empty icon image to avoid using invalid icon resource id.
+    icon_image_ = gfx::ImageSkia::CreateFrom1xBitmap(SkBitmap()).DeepCopy();
   }
 }
 
@@ -48,6 +54,89 @@ ServiceWorkerPaymentInstrument::~ServiceWorkerPaymentInstrument() {
         browser_context_, stored_payment_app_info_->registration_id,
         base::Bind([](bool) {}));
   }
+}
+
+void ServiceWorkerPaymentInstrument::ValidateCanMakePayment(
+    ValidateCanMakePaymentCallback callback) {
+  mojom::CanMakePaymentEventDataPtr event_data =
+      CreateCanMakePaymentEventData();
+  if (event_data.is_null()) {
+    // This could only happen if this instrument only supports non-url based
+    // payment methods of the payment request, then return true
+    // and do not send CanMakePaymentEvent to the payment handler.
+    OnCanMakePayment(std::move(callback), true);
+    return;
+  }
+
+  content::PaymentAppProvider::GetInstance()->CanMakePayment(
+      browser_context_, stored_payment_app_info_->registration_id,
+      std::move(event_data),
+      base::BindOnce(&ServiceWorkerPaymentInstrument::OnCanMakePayment,
+                     weak_ptr_factory_.GetWeakPtr(), std::move(callback)));
+}
+
+mojom::CanMakePaymentEventDataPtr
+ServiceWorkerPaymentInstrument::CreateCanMakePaymentEventData() {
+  std::set<std::string> requested_url_methods;
+  for (const auto& method : spec_->payment_method_identifiers_set()) {
+    GURL url_method(method);
+    if (url_method.is_valid()) {
+      requested_url_methods.insert(method);
+    }
+  }
+  std::set<std::string> supported_methods;
+  supported_methods.insert(stored_payment_app_info_->enabled_methods.begin(),
+                           stored_payment_app_info_->enabled_methods.end());
+  std::set<std::string> supported_url_methods =
+      base::STLSetIntersection<std::set<std::string>>(requested_url_methods,
+                                                      supported_methods);
+  // Only fire CanMakePaymentEvent if this instrument supports non-url based
+  // payment methods of the payment request.
+  if (supported_url_methods.empty())
+    return nullptr;
+
+  mojom::CanMakePaymentEventDataPtr event_data =
+      mojom::CanMakePaymentEventData::New();
+
+  event_data->top_level_origin = top_level_origin_;
+  event_data->payment_request_origin = frame_origin_;
+
+  for (const auto& modifier : spec_->details().modifiers) {
+    std::vector<std::string>::const_iterator it =
+        modifier->method_data->supported_methods.begin();
+    for (; it != modifier->method_data->supported_methods.end(); it++) {
+      if (supported_url_methods.find(*it) != supported_url_methods.end())
+        break;
+    }
+    if (it == modifier->method_data->supported_methods.end())
+      continue;
+
+    event_data->modifiers.emplace_back(modifier.Clone());
+  }
+
+  for (const auto& data : spec_->method_data()) {
+    std::vector<std::string>::const_iterator it =
+        data->supported_methods.begin();
+    for (; it != data->supported_methods.end(); it++) {
+      if (supported_url_methods.find(*it) != supported_url_methods.end())
+        break;
+    }
+    if (it == data->supported_methods.end())
+      continue;
+
+    event_data->method_data.push_back(data.Clone());
+  }
+
+  return event_data;
+}
+
+void ServiceWorkerPaymentInstrument::OnCanMakePayment(
+    ValidateCanMakePaymentCallback callback,
+    bool result) {
+  can_make_payment_result_ = result;
+
+  base::ThreadTaskRunnerHandle::Get()->PostTask(
+      FROM_HERE, base::BindOnce(std::move(callback), this, result));
 }
 
 void ServiceWorkerPaymentInstrument::InvokePaymentApp(Delegate* delegate) {
@@ -130,6 +219,10 @@ base::string16 ServiceWorkerPaymentInstrument::GetMissingInfoLabel() const {
 }
 
 bool ServiceWorkerPaymentInstrument::IsValidForCanMakePayment() const {
+  // This instrument should not be used when can_make_payment_result_ is false
+  // , so this interface should not be invoked.
+  DCHECK(can_make_payment_result_);
+
   return true;
 }
 
@@ -146,17 +239,73 @@ base::string16 ServiceWorkerPaymentInstrument::GetSublabel() const {
 }
 
 bool ServiceWorkerPaymentInstrument::IsValidForModifier(
-    const std::vector<std::string>& method,
-    const std::vector<std::string>& supported_networks,
-    const std::set<autofill::CreditCard::CardType>& supported_types,
-    bool supported_types_specified) const {
-  for (const auto& modifier_supported_method : method) {
+    const std::vector<std::string>& methods,
+    bool supported_networks_specified,
+    const std::set<std::string>& supported_networks,
+    bool supported_types_specified,
+    const std::set<autofill::CreditCard::CardType>& supported_types) const {
+  std::vector<std::string> matched_methods;
+  for (const auto& modifier_supported_method : methods) {
     if (base::ContainsValue(stored_payment_app_info_->enabled_methods,
                             modifier_supported_method)) {
-      return true;
+      matched_methods.emplace_back(modifier_supported_method);
     }
   }
-  return false;
+
+  if (matched_methods.empty())
+    return false;
+
+  if (matched_methods.size() > 1U || matched_methods[0] != "basic-card")
+    return true;
+
+  // Checking the capabilities of this instrument against the modifier.
+  // Return true if both card networks and types are not specified in the
+  // modifier.
+  if (!supported_networks_specified && !supported_types_specified)
+    return true;
+
+  // Return false if no capabilities for this instrument.
+  if (stored_payment_app_info_->capabilities.empty())
+    return false;
+
+  uint32_t i = 0;
+  for (; i < stored_payment_app_info_->capabilities.size(); i++) {
+    if (supported_networks_specified) {
+      std::set<std::string> app_supported_networks;
+      for (const auto& network :
+           stored_payment_app_info_->capabilities[i].supported_card_networks) {
+        app_supported_networks.insert(GetBasicCardNetworkName(
+            static_cast<mojom::BasicCardNetwork>(network)));
+      }
+
+      if (base::STLSetIntersection<std::set<std::string>>(
+              app_supported_networks, supported_networks)
+              .empty()) {
+        continue;
+      }
+    }
+
+    if (supported_types_specified) {
+      std::set<autofill::CreditCard::CardType> app_supported_types;
+      for (const auto& type :
+           stored_payment_app_info_->capabilities[i].supported_card_types) {
+        app_supported_types.insert(
+            GetBasicCardType(static_cast<mojom::BasicCardType>(type)));
+      }
+
+      if (base::STLSetIntersection<std::set<autofill::CreditCard::CardType>>(
+              app_supported_types, supported_types)
+              .empty()) {
+        continue;
+      }
+    }
+
+    break;
+  }
+
+  // i >= stored_payment_app_info_->capabilities.size() indicates no matched
+  // capabilities.
+  return i < stored_payment_app_info_->capabilities.size();
 }
 
 const gfx::ImageSkia* ServiceWorkerPaymentInstrument::icon_image_skia() const {

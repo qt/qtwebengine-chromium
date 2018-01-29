@@ -99,37 +99,43 @@ gl::Error StreamInIndexBuffer(IndexBufferInterface *buffer,
     }
 
     unsigned int bufferSizeRequired = count << dstTypeInfo.bytesShift;
-    gl::Error error                 = buffer->reserveBufferSpace(bufferSizeRequired, dstType);
-    if (error.isError())
-    {
-        return error;
-    }
+    ANGLE_TRY(buffer->reserveBufferSpace(bufferSizeRequired, dstType));
 
     void *output = nullptr;
-    error        = buffer->mapBuffer(bufferSizeRequired, &output, offset);
-    if (error.isError())
-    {
-        return error;
-    }
+    ANGLE_TRY(buffer->mapBuffer(bufferSizeRequired, &output, offset));
 
     ConvertIndices(srcType, dstType, data, count, output, usePrimitiveRestartFixedIndex);
 
-    error = buffer->unmapBuffer();
-    if (error.isError())
-    {
-        return error;
-    }
-
+    ANGLE_TRY(buffer->unmapBuffer());
     return gl::NoError();
+}
+
+unsigned int ElementTypeSize(GLenum elementType)
+{
+    switch (elementType)
+    {
+        case GL_UNSIGNED_BYTE:
+            return sizeof(GLubyte);
+        case GL_UNSIGNED_SHORT:
+            return sizeof(GLushort);
+        case GL_UNSIGNED_INT:
+            return sizeof(GLuint);
+        default:
+            UNREACHABLE();
+            return 0;
+    }
 }
 
 }  // anonymous namespace
 
-IndexDataManager::IndexDataManager(BufferFactoryD3D *factory, RendererClass rendererClass)
-    : mFactory(factory),
-      mRendererClass(rendererClass),
-      mStreamingBufferShort(),
-      mStreamingBufferInt()
+bool IsOffsetAligned(GLenum elementType, unsigned int offset)
+{
+    return (offset % ElementTypeSize(elementType) == 0);
+}
+
+// IndexDataManager implementation.
+IndexDataManager::IndexDataManager(BufferFactoryD3D *factory)
+    : mFactory(factory), mStreamingBufferShort(), mStreamingBufferInt()
 {
 }
 
@@ -143,59 +149,6 @@ void IndexDataManager::deinitialize()
     mStreamingBufferInt.reset();
 }
 
-// static
-bool IndexDataManager::UsePrimitiveRestartWorkaround(bool primitiveRestartFixedIndexEnabled,
-                                                     GLenum type,
-                                                     RendererClass rendererClass)
-{
-    // We should never have to deal with primitive restart workaround issue with GL_UNSIGNED_INT
-    // indices, since we restrict it via MAX_ELEMENT_INDEX.
-    return (!primitiveRestartFixedIndexEnabled && type == GL_UNSIGNED_SHORT &&
-            rendererClass == RENDERER_D3D11);
-}
-
-// static
-bool IndexDataManager::IsStreamingIndexData(const gl::Context *context,
-                                            GLenum srcType,
-                                            RendererClass rendererClass)
-{
-    const auto &glState = context->getGLState();
-    bool primitiveRestartWorkaround =
-        UsePrimitiveRestartWorkaround(glState.isPrimitiveRestartEnabled(), srcType, rendererClass);
-    gl::Buffer *glBuffer = glState.getVertexArray()->getElementArrayBuffer().get();
-
-    // Case 1: the indices are passed by pointer, which forces the streaming of index data
-    if (glBuffer == nullptr)
-    {
-        return true;
-    }
-
-    BufferD3D *buffer    = GetImplAs<BufferD3D>(glBuffer);
-    const GLenum dstType = (srcType == GL_UNSIGNED_INT || primitiveRestartWorkaround)
-                               ? GL_UNSIGNED_INT
-                               : GL_UNSIGNED_SHORT;
-
-    // Case 2a: the buffer can be used directly
-    if (buffer->supportsDirectBinding() && dstType == srcType)
-    {
-        return false;
-    }
-
-    // Case 2b: use a static translated copy or fall back to streaming
-    StaticIndexBufferInterface *staticBuffer = buffer->getStaticIndexBuffer();
-    if (staticBuffer == nullptr)
-    {
-        return true;
-    }
-
-    if ((staticBuffer->getBufferSize() == 0) || (staticBuffer->getIndexType() != dstType))
-    {
-        return true;
-    }
-
-    return false;
-}
-
 // This function translates a GL-style indices into DX-style indices, with their description
 // returned in translated.
 // GL can specify vertex data in immediate mode (pointer to CPU array of indices), which is not
@@ -206,30 +159,12 @@ bool IndexDataManager::IsStreamingIndexData(const gl::Context *context,
 // translated copy of the index buffer.
 gl::Error IndexDataManager::prepareIndexData(const gl::Context *context,
                                              GLenum srcType,
+                                             GLenum dstType,
                                              GLsizei count,
                                              gl::Buffer *glBuffer,
                                              const void *indices,
-                                             TranslatedIndexData *translated,
-                                             bool primitiveRestartFixedIndexEnabled)
+                                             TranslatedIndexData *translated)
 {
-    // Avoid D3D11's primitive restart index value
-    // see http://msdn.microsoft.com/en-us/library/windows/desktop/bb205124(v=vs.85).aspx
-    bool hasPrimitiveRestartIndex =
-        translated->indexRange.vertexIndexCount < static_cast<size_t>(count) ||
-        translated->indexRange.end == gl::GetPrimitiveRestartIndex(srcType);
-    bool primitiveRestartWorkaround =
-        UsePrimitiveRestartWorkaround(primitiveRestartFixedIndexEnabled, srcType, mRendererClass) &&
-        hasPrimitiveRestartIndex;
-
-    // We should never have to deal with MAX_UINT indices, since we restrict it via
-    // MAX_ELEMENT_INDEX.
-    ASSERT(!(mRendererClass == RENDERER_D3D11 && !primitiveRestartFixedIndexEnabled &&
-             hasPrimitiveRestartIndex && srcType == GL_UNSIGNED_INT));
-
-    const GLenum dstType = (srcType == GL_UNSIGNED_INT || primitiveRestartWorkaround)
-                               ? GL_UNSIGNED_INT
-                               : GL_UNSIGNED_SHORT;
-
     const gl::Type &srcTypeInfo = gl::GetTypeInfo(srcType);
     const gl::Type &dstTypeInfo = gl::GetTypeInfo(dstType);
 
@@ -240,6 +175,10 @@ gl::Error IndexDataManager::prepareIndexData(const gl::Context *context,
     translated->srcIndexData.srcIndices   = indices;
     translated->srcIndexData.srcIndexType = srcType;
     translated->srcIndexData.srcCount     = count;
+
+    // Context can be nullptr in perf tests.
+    bool primitiveRestartFixedIndexEnabled =
+        context ? context->getGLState().isPrimitiveRestartEnabled() : false;
 
     // Case 1: the indices are passed by pointer, which forces the streaming of index data
     if (glBuffer == nullptr)
@@ -253,22 +192,7 @@ gl::Error IndexDataManager::prepareIndexData(const gl::Context *context,
     unsigned int offset = static_cast<unsigned int>(reinterpret_cast<uintptr_t>(indices));
     ASSERT(srcTypeInfo.bytes * static_cast<unsigned int>(count) + offset <= buffer->getSize());
 
-    bool offsetAligned;
-    switch (srcType)
-    {
-        case GL_UNSIGNED_BYTE:
-            offsetAligned = (offset % sizeof(GLubyte) == 0);
-            break;
-        case GL_UNSIGNED_SHORT:
-            offsetAligned = (offset % sizeof(GLushort) == 0);
-            break;
-        case GL_UNSIGNED_INT:
-            offsetAligned = (offset % sizeof(GLuint) == 0);
-            break;
-        default:
-            UNREACHABLE();
-            offsetAligned = false;
-    }
+    bool offsetAligned = IsOffsetAligned(srcType, offset);
 
     // Case 2a: the buffer can be used directly
     if (offsetAligned && buffer->supportsDirectBinding() && dstType == srcType)
@@ -280,10 +204,8 @@ gl::Error IndexDataManager::prepareIndexData(const gl::Context *context,
         translated->startOffset = offset;
         return gl::NoError();
     }
-    else
-    {
-        translated->storage = nullptr;
-    }
+
+    translated->storage = nullptr;
 
     // Case 2b: use a static translated copy or fall back to streaming
     StaticIndexBufferInterface *staticBuffer = buffer->getStaticIndexBuffer();
@@ -301,19 +223,11 @@ gl::Error IndexDataManager::prepareIndexData(const gl::Context *context,
     if (staticBuffer == nullptr || !offsetAligned)
     {
         const uint8_t *bufferData = nullptr;
-        gl::Error error           = buffer->getData(context, &bufferData);
-        if (error.isError())
-        {
-            return error;
-        }
+        ANGLE_TRY(buffer->getData(context, &bufferData));
         ASSERT(bufferData != nullptr);
 
-        error = streamIndexData(bufferData + offset, count, srcType, dstType,
-                                primitiveRestartFixedIndexEnabled, translated);
-        if (error.isError())
-        {
-            return error;
-        }
+        ANGLE_TRY(streamIndexData(bufferData + offset, count, srcType, dstType,
+                                  primitiveRestartFixedIndexEnabled, translated));
         buffer->promoteStaticUsage(context, count << srcTypeInfo.bytesShift);
     }
     else
@@ -321,21 +235,13 @@ gl::Error IndexDataManager::prepareIndexData(const gl::Context *context,
         if (!staticBufferInitialized)
         {
             const uint8_t *bufferData = nullptr;
-            gl::Error error           = buffer->getData(context, &bufferData);
-            if (error.isError())
-            {
-                return error;
-            }
+            ANGLE_TRY(buffer->getData(context, &bufferData));
             ASSERT(bufferData != nullptr);
 
             unsigned int convertCount =
                 static_cast<unsigned int>(buffer->getSize()) >> srcTypeInfo.bytesShift;
-            error = StreamInIndexBuffer(staticBuffer, bufferData, convertCount, srcType, dstType,
-                                        primitiveRestartFixedIndexEnabled, nullptr);
-            if (error.isError())
-            {
-                return error;
-            }
+            ANGLE_TRY(StreamInIndexBuffer(staticBuffer, bufferData, convertCount, srcType, dstType,
+                                          primitiveRestartFixedIndexEnabled, nullptr));
         }
         ASSERT(offsetAligned && staticBuffer->getIndexType() == dstType);
 
@@ -358,11 +264,7 @@ gl::Error IndexDataManager::streamIndexData(const void *data,
     const gl::Type &dstTypeInfo = gl::GetTypeInfo(dstType);
 
     IndexBufferInterface *indexBuffer = nullptr;
-    gl::Error error                   = getStreamingIndexBuffer(dstType, &indexBuffer);
-    if (error.isError())
-    {
-        return error;
-    }
+    ANGLE_TRY(getStreamingIndexBuffer(dstType, &indexBuffer));
     ASSERT(indexBuffer != nullptr);
 
     unsigned int offset;
@@ -396,4 +298,23 @@ gl::Error IndexDataManager::getStreamingIndexBuffer(GLenum destinationIndexType,
     *outBuffer = streamingBuffer.get();
     return gl::NoError();
 }
+
+GLenum GetIndexTranslationDestType(GLenum srcType,
+                                   const gl::HasIndexRange &lazyIndexRange,
+                                   bool usePrimitiveRestartWorkaround)
+{
+    // Avoid D3D11's primitive restart index value
+    // see http://msdn.microsoft.com/en-us/library/windows/desktop/bb205124(v=vs.85).aspx
+    if (usePrimitiveRestartWorkaround)
+    {
+        const gl::IndexRange &indexRange = lazyIndexRange.getIndexRange().value();
+        if (indexRange.end == gl::GetPrimitiveRestartIndex(srcType))
+        {
+            return GL_UNSIGNED_INT;
+        }
+    }
+
+    return (srcType == GL_UNSIGNED_INT) ? GL_UNSIGNED_INT : GL_UNSIGNED_SHORT;
+}
+
 }  // namespace rx

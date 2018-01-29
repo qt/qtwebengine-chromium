@@ -47,7 +47,7 @@ const char kArcSetNotificationsEnabledDeferred[] =
 const char kArcSignedIn[] = "arc.signedin";
 // A preference that indicates an ARC comaptible filesystem was chosen for
 // the user directory (i.e., the user finished required migration.)
-extern const char kArcCompatibleFilesystemChosen[] =
+const char kArcCompatibleFilesystemChosen[] =
     "arc.compatible_filesystem.chosen";
 // A preference that indicates that user accepted Voice Interaction Value Prop.
 const char kArcVoiceInteractionValuePropAccepted[] =
@@ -64,11 +64,6 @@ const char kVoiceInteractionEnabled[] = "settings.voice_interaction.enabled";
 // screen).
 const char kVoiceInteractionContextEnabled[] =
     "settings.voice_interaction.context.enabled";
-// A preference indicating whether voice interaction settings have been read
-// from ARC. This synchronization only happens when user goes through the flow
-// to set up voice interaction.
-const char kVoiceInteractionPrefSynced[] =
-    "settings.voice_interaction.context.synced";
 
 void RegisterProfilePrefs(PrefRegistrySimple* registry) {
   // TODO(dspaid): Implement a mechanism to allow this to sync on first boot
@@ -99,7 +94,6 @@ void RegisterProfilePrefs(PrefRegistrySimple* registry) {
   registry->RegisterBooleanPref(kSmsConnectEnabled, true);
   registry->RegisterBooleanPref(kVoiceInteractionContextEnabled, false);
   registry->RegisterBooleanPref(kVoiceInteractionEnabled, false);
-  registry->RegisterBooleanPref(kVoiceInteractionPrefSynced, false);
 }
 
 }  // namespace prefs

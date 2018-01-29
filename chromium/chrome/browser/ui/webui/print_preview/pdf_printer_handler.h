@@ -9,6 +9,7 @@
 #include <string>
 
 #include "base/callback.h"
+#include "base/files/file_path.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
 #include "base/strings/string16.h"
@@ -31,6 +32,7 @@ namespace printing {
 class StickySettings;
 }
 
+class GURL;
 class Profile;
 
 class PdfPrinterHandler : public PrinterHandler,
@@ -46,16 +48,16 @@ class PdfPrinterHandler : public PrinterHandler,
   void Reset() override;
   // Required by PrinterHandler implementation but should never be called.
   void StartGetPrinters(const AddedPrintersCallback& added_printers_callback,
-                        const GetPrintersDoneCallback& done_callback) override;
+                        GetPrintersDoneCallback done_callback) override;
   void StartGetCapability(const std::string& destination_id,
-                          const GetCapabilityCallback& callback) override;
+                          GetCapabilityCallback callback) override;
   void StartPrint(const std::string& destination_id,
                   const std::string& capability,
                   const base::string16& job_title,
                   const std::string& ticket_json,
                   const gfx::Size& page_size,
                   const scoped_refptr<base::RefCountedBytes>& print_data,
-                  const PrintCallback& callback) override;
+                  PrintCallback callback) override;
 
   // SelectFileDialog::Listener implementation.
   void FileSelected(const base::FilePath& path,
@@ -66,12 +68,21 @@ class PdfPrinterHandler : public PrinterHandler,
   // Sets |pdf_file_saved_closure_| to |closure|.
   void SetPdfSavedClosureForTesting(const base::Closure& closure);
 
+  // Exposed for testing.
+  static base::FilePath GetFileNameForPrintJobTitle(
+      const base::string16& job_title);
+  static base::FilePath GetFileNameForURL(const GURL& url);
+  static base::FilePath GetFileName(const GURL& url,
+                                    const base::string16& job_title,
+                                    bool is_savable);
+
  protected:
   virtual void SelectFile(const base::FilePath& default_filename,
+                          content::WebContents* initiator,
                           bool prompt_user);
 
   // The print preview web contents. Protected so unit tests can access it.
-  content::WebContents* preview_web_contents_;
+  content::WebContents* const preview_web_contents_;
 
   // The underlying dialog object. Protected so unit tests can access it.
   scoped_refptr<ui::SelectFileDialog> select_file_dialog_;
@@ -81,8 +92,8 @@ class PdfPrinterHandler : public PrinterHandler,
   void OnGotUniqueFileName(const base::FilePath& path);
   void OnDirectoryCreated(const base::FilePath& path);
 
-  Profile* profile_;
-  printing::StickySettings* sticky_settings_;
+  Profile* const profile_;
+  printing::StickySettings* const sticky_settings_;
 
   // Holds the path to the print to pdf request. It is empty if no such request
   // exists.

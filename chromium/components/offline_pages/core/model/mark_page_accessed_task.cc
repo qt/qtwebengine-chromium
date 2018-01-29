@@ -17,6 +17,9 @@ namespace {
 bool MarkPageAccessedSync(const base::Time& last_access_time,
                           int64_t offline_id,
                           sql::Connection* db) {
+  if (!db)
+    return false;
+
   const char kSql[] =
       "UPDATE OR IGNORE offlinepages_v1"
       " SET last_access_time = ?, access_count = access_count + 1"
@@ -35,7 +38,9 @@ MarkPageAccessedTask::MarkPageAccessedTask(OfflinePageMetadataStoreSQL* store,
     : store_(store),
       offline_id_(offline_id),
       access_time_(access_time),
-      weak_ptr_factory_(this) {}
+      weak_ptr_factory_(this) {
+  DCHECK(store_);
+}
 
 MarkPageAccessedTask::~MarkPageAccessedTask(){};
 

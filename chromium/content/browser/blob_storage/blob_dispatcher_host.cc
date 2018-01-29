@@ -81,16 +81,29 @@ void BlobDispatcherHost::OnChannelClosing() {
 bool BlobDispatcherHost::OnMessageReceived(const IPC::Message& message) {
   bool handled = true;
   // Note: The only time a renderer sends a blob status message is to cancel.
-  IPC_BEGIN_MESSAGE_MAP(BlobDispatcherHost, message)
-    IPC_MESSAGE_HANDLER(BlobStorageMsg_RegisterBlob, OnRegisterBlob)
-    IPC_MESSAGE_HANDLER(BlobStorageMsg_MemoryItemResponse, OnMemoryItemResponse)
-    IPC_MESSAGE_HANDLER(BlobStorageMsg_SendBlobStatus, OnCancelBuildingBlob)
-    IPC_MESSAGE_HANDLER(BlobHostMsg_IncrementRefCount, OnIncrementBlobRefCount)
-    IPC_MESSAGE_HANDLER(BlobHostMsg_DecrementRefCount, OnDecrementBlobRefCount)
-    IPC_MESSAGE_HANDLER(BlobHostMsg_RegisterPublicURL, OnRegisterPublicBlobURL)
-    IPC_MESSAGE_HANDLER(BlobHostMsg_RevokePublicURL, OnRevokePublicBlobURL)
-    IPC_MESSAGE_UNHANDLED(handled = false)
-  IPC_END_MESSAGE_MAP()
+  if (features::IsMojoBlobsEnabled()) {
+    IPC_BEGIN_MESSAGE_MAP(BlobDispatcherHost, message)
+      IPC_MESSAGE_HANDLER(BlobHostMsg_RegisterPublicURL,
+                          OnRegisterPublicBlobURL)
+      IPC_MESSAGE_HANDLER(BlobHostMsg_RevokePublicURL, OnRevokePublicBlobURL)
+      IPC_MESSAGE_UNHANDLED(handled = false)
+    IPC_END_MESSAGE_MAP()
+  } else {
+    IPC_BEGIN_MESSAGE_MAP(BlobDispatcherHost, message)
+      IPC_MESSAGE_HANDLER(BlobStorageMsg_RegisterBlob, OnRegisterBlob)
+      IPC_MESSAGE_HANDLER(BlobStorageMsg_MemoryItemResponse,
+                          OnMemoryItemResponse)
+      IPC_MESSAGE_HANDLER(BlobStorageMsg_SendBlobStatus, OnCancelBuildingBlob)
+      IPC_MESSAGE_HANDLER(BlobHostMsg_IncrementRefCount,
+                          OnIncrementBlobRefCount)
+      IPC_MESSAGE_HANDLER(BlobHostMsg_DecrementRefCount,
+                          OnDecrementBlobRefCount)
+      IPC_MESSAGE_HANDLER(BlobHostMsg_RegisterPublicURL,
+                          OnRegisterPublicBlobURL)
+      IPC_MESSAGE_HANDLER(BlobHostMsg_RevokePublicURL, OnRevokePublicBlobURL)
+      IPC_MESSAGE_UNHANDLED(handled = false)
+    IPC_END_MESSAGE_MAP()
+  }
   return handled;
 }
 
@@ -157,7 +170,9 @@ void BlobDispatcherHost::OnRegisterBlob(
         // originally created by other processes? If so, is that cool?
         break;
       }
+      case storage::DataElement::TYPE_RAW_FILE:
       case storage::DataElement::TYPE_UNKNOWN:
+      case storage::DataElement::TYPE_DATA_PIPE:
       case storage::DataElement::TYPE_DISK_CACHE_ENTRY: {
         NOTREACHED();  // Should have been caught by IPC deserialization.
         break;
@@ -167,6 +182,7 @@ void BlobDispatcherHost::OnRegisterBlob(
 
   HostedBlobState hosted_state(transport_host_.StartBuildingBlob(
       uuid, content_type, content_disposition, descriptions, context,
+      file_system_context_,
       base::Bind(&BlobDispatcherHost::SendMemoryRequest, base::Unretained(this),
                  uuid),
       base::Bind(&BlobDispatcherHost::SendFinalBlobStatus,

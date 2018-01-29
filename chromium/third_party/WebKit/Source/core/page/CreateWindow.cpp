@@ -28,7 +28,6 @@
 
 #include "bindings/core/v8/ExceptionState.h"
 #include "core/dom/Document.h"
-#include "core/dom/UserGestureIndicator.h"
 #include "core/events/UIEventWithKeyState.h"
 #include "core/exported/WebViewImpl.h"
 #include "core/frame/FrameClient.h"
@@ -352,7 +351,9 @@ static Frame* CreateWindowHelper(LocalFrame& opener_frame,
          opener_frame.GetDocument()->Url().IsEmpty());
   DCHECK_EQ(request.GetResourceRequest().GetFrameType(),
             WebURLRequest::kFrameTypeAuxiliary);
-
+  probe::windowOpen(opener_frame.GetDocument(),
+                    request.GetResourceRequest().Url(), request.FrameName(),
+                    features, Frame::HasTransientUserActivation(&opener_frame));
   created = false;
 
   Frame* window =
@@ -400,7 +401,7 @@ DOMWindow* CreateWindow(const String& url_string,
   DCHECK(active_frame);
 
   KURL completed_url = url_string.IsEmpty()
-                           ? KURL(kParsedURLString, g_empty_string)
+                           ? KURL(g_empty_string)
                            : first_frame.GetDocument()->CompleteURL(url_string);
   if (!completed_url.IsEmpty() && !completed_url.IsValid()) {
     UseCounter::Count(active_frame, WebFeature::kWindowOpenWithInvalidURL);
@@ -453,7 +454,7 @@ DOMWindow* CreateWindow(const String& url_string,
   // Records HasUserGesture before the value is invalidated inside
   // createWindow(LocalFrame& openerFrame, ...).
   // This value will be set in ResourceRequest loaded in a new LocalFrame.
-  bool has_user_gesture = UserGestureIndicator::ProcessingUserGesture();
+  bool has_user_gesture = Frame::HasTransientUserActivation(&opener_frame);
 
   // We pass the opener frame for the lookupFrame in case the active frame is
   // different from the opener frame, and the name references a frame relative
@@ -524,7 +525,7 @@ void CreateWindowForRequest(const FrameLoadRequest& request,
   }
 
   // TODO(japhet): Form submissions on RemoteFrames don't work yet.
-  FrameLoadRequest new_request(0, request.GetResourceRequest());
+  FrameLoadRequest new_request(nullptr, request.GetResourceRequest());
   new_request.SetForm(request.Form());
   if (new_frame->IsLocalFrame())
     ToLocalFrame(new_frame)->Loader().Load(new_request);

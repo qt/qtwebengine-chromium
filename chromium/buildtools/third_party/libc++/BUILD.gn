@@ -70,19 +70,33 @@ target(link_target_type, "libc++") {
     "trunk/src/utility.cpp",
     "trunk/src/valarray.cpp",
     "trunk/src/variant.cpp",
+    "trunk/src/vector.cpp",
   ]
   configs -= [
     "//build/config/compiler:chromium_code",
+    "//build/config/compiler:no_exceptions",
     "//build/config/compiler:no_rtti",
-    "//build/config/gcc:no_exceptions",
+    "//build/config/coverage:default_coverage",
   ]
+  if (is_android && !libcpp_is_static) {
+    configs -= [ "//build/config/android:hide_all_but_jni_onload" ]
+  }
   configs += [
     ":config",
     "//build/config/compiler:no_chromium_code",
+    "//build/config/compiler:exceptions",
     "//build/config/compiler:rtti",
     "//build/config/sanitizers:sanitizer_options_link_helper",
   ]
+
   defines = [ "_LIBCPP_BUILDING_LIBRARY" ]
+  if (!is_clang && !libcpp_is_static) {
+    # This is a temporary workaround to get libc++ builds working with
+    # gcc.  It can be removed with either
+    # https://reviews.llvm.org/D35326 or
+    # https://reviews.llvm.org/D35388 lands.
+    defines += [ "_LIBCPP_EXTERN_TEMPLATE_TYPE_VIS=__attribute__((__visibility__(\"default\")))" ]
+  }
 
   deps = [
     "//buildtools/third_party/libc++abi",

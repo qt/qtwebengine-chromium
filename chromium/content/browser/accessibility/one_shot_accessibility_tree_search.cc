@@ -39,9 +39,9 @@ OneShotAccessibilityTreeSearch::OneShotAccessibilityTreeSearch(
       direction_(OneShotAccessibilityTreeSearch::FORWARDS),
       result_limit_(UNLIMITED_RESULTS),
       immediate_descendants_only_(false),
+      can_wrap_to_last_element_(false),
       visible_only_(false),
-      did_search_(false) {
-}
+      did_search_(false) {}
 
 OneShotAccessibilityTreeSearch::~OneShotAccessibilityTreeSearch() {
 }
@@ -71,6 +71,12 @@ void OneShotAccessibilityTreeSearch::SetImmediateDescendantsOnly(
     bool immediate_descendants_only) {
   DCHECK(!did_search_);
   immediate_descendants_only_ = immediate_descendants_only;
+}
+
+void OneShotAccessibilityTreeSearch::SetCanWrapToLastElement(
+    bool can_wrap_to_last_element) {
+  DCHECK(!did_search_);
+  can_wrap_to_last_element_ = can_wrap_to_last_element;
 }
 
 void OneShotAccessibilityTreeSearch::SetVisibleOnly(bool visible_only) {
@@ -159,7 +165,7 @@ void OneShotAccessibilityTreeSearch::SearchByWalkingTree() {
     if (direction_ == FORWARDS)
       node = tree_->NextInTreeOrder(start_node_);
     else
-      node = tree_->PreviousInTreeOrder(start_node_);
+      node = tree_->PreviousInTreeOrder(start_node_, can_wrap_to_last_element_);
   }
 
   BrowserAccessibility* stop_node = scope_node_->PlatformGetParent();
@@ -173,7 +179,7 @@ void OneShotAccessibilityTreeSearch::SearchByWalkingTree() {
     if (direction_ == FORWARDS)
       node = tree_->NextInTreeOrder(node);
     else
-      node = tree_->PreviousInTreeOrder(node);
+      node = tree_->PreviousInTreeOrder(node, can_wrap_to_last_element_);
   }
 }
 
@@ -247,7 +253,9 @@ bool AccessibilityCheckboxPredicate(
 
 bool AccessibilityComboboxPredicate(
     BrowserAccessibility* start, BrowserAccessibility* node) {
-  return (node->GetRole() == ui::AX_ROLE_COMBO_BOX ||
+  return (node->GetRole() == ui::AX_ROLE_COMBO_BOX_GROUPING ||
+          node->GetRole() == ui::AX_ROLE_COMBO_BOX_MENU_BUTTON ||
+          node->GetRole() == ui::AX_ROLE_TEXT_FIELD_WITH_COMBO_BOX ||
           node->GetRole() == ui::AX_ROLE_POP_UP_BUTTON);
 }
 
@@ -413,7 +421,7 @@ bool AccessibilityTablePredicate(
 
 bool AccessibilityTextfieldPredicate(
     BrowserAccessibility* start, BrowserAccessibility* node) {
-  return (node->IsSimpleTextControl() || node->IsRichTextControl());
+  return (node->IsPlainTextField() || node->IsRichTextField());
 }
 
 bool AccessibilityTextStyleBoldPredicate(
@@ -436,7 +444,7 @@ bool AccessibilityTextStyleUnderlinePredicate(
 
 bool AccessibilityTreePredicate(
     BrowserAccessibility* start, BrowserAccessibility* node) {
-  return (node->IsSimpleTextControl() || node->IsRichTextControl());
+  return (node->IsPlainTextField() || node->IsRichTextField());
 }
 
 bool AccessibilityUnvisitedLinkPredicate(

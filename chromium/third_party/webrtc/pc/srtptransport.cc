@@ -11,6 +11,7 @@
 #include "pc/srtptransport.h"
 
 #include <string>
+#include <vector>
 
 #include "media/base/rtputils.h"
 #include "pc/rtptransport.h"
@@ -25,14 +26,21 @@ namespace webrtc {
 
 SrtpTransport::SrtpTransport(bool rtcp_mux_enabled,
                              const std::string& content_name)
-    : content_name_(content_name),
-      rtp_transport_(rtc::MakeUnique<RtpTransport>(rtcp_mux_enabled)) {
+    : RtpTransportInternalAdapter(new RtpTransport(rtcp_mux_enabled)),
+      content_name_(content_name) {
+  // Own the raw pointer |transport| from the base class.
+  rtp_transport_.reset(transport_);
+  RTC_DCHECK(rtp_transport_);
   ConnectToRtpTransport();
 }
 
-SrtpTransport::SrtpTransport(std::unique_ptr<RtpTransportInternal> transport,
-                             const std::string& content_name)
-    : content_name_(content_name), rtp_transport_(std::move(transport)) {
+SrtpTransport::SrtpTransport(
+    std::unique_ptr<RtpTransportInternal> rtp_transport,
+    const std::string& content_name)
+    : RtpTransportInternalAdapter(rtp_transport.get()),
+      content_name_(content_name),
+      rtp_transport_(std::move(rtp_transport)) {
+  RTC_DCHECK(rtp_transport_);
   ConnectToRtpTransport();
 }
 
@@ -41,6 +49,8 @@ void SrtpTransport::ConnectToRtpTransport() {
       this, &SrtpTransport::OnPacketReceived);
   rtp_transport_->SignalReadyToSend.connect(this,
                                             &SrtpTransport::OnReadyToSend);
+  rtp_transport_->SignalNetworkRouteChanged.connect(
+      this, &SrtpTransport::OnNetworkRouteChanged);
 }
 
 bool SrtpTransport::SendRtpPacket(rtc::CopyOnWriteBuffer* packet,
@@ -60,7 +70,7 @@ bool SrtpTransport::SendPacket(bool rtcp,
                                const rtc::PacketOptions& options,
                                int flags) {
   if (!IsActive()) {
-    LOG(LS_ERROR)
+    RTC_LOG(LS_ERROR)
         << "Failed to send the packet because SRTP transport is inactive.";
     return false;
   }
@@ -107,9 +117,9 @@ bool SrtpTransport::SendPacket(bool rtcp,
       uint32_t ssrc = 0;
       cricket::GetRtpSeqNum(data, len, &seq_num);
       cricket::GetRtpSsrc(data, len, &ssrc);
-      LOG(LS_ERROR) << "Failed to protect " << content_name_
-                    << " RTP packet: size=" << len << ", seqnum=" << seq_num
-                    << ", SSRC=" << ssrc;
+      RTC_LOG(LS_ERROR) << "Failed to protect " << content_name_
+                        << " RTP packet: size=" << len << ", seqnum=" << seq_num
+                        << ", SSRC=" << ssrc;
       return false;
     }
   } else {
@@ -117,8 +127,8 @@ bool SrtpTransport::SendPacket(bool rtcp,
     if (!res) {
       int type = -1;
       cricket::GetRtcpType(data, len, &type);
-      LOG(LS_ERROR) << "Failed to protect " << content_name_
-                    << " RTCP packet: size=" << len << ", type=" << type;
+      RTC_LOG(LS_ERROR) << "Failed to protect " << content_name_
+                        << " RTCP packet: size=" << len << ", type=" << type;
       return false;
     }
   }
@@ -133,7 +143,8 @@ void SrtpTransport::OnPacketReceived(bool rtcp,
                                      rtc::CopyOnWriteBuffer* packet,
                                      const rtc::PacketTime& packet_time) {
   if (!IsActive()) {
-    LOG(LS_WARNING) << "Inactive SRTP transport received a packet. Drop it.";
+    RTC_LOG(LS_WARNING)
+        << "Inactive SRTP transport received a packet. Drop it.";
     return;
   }
 
@@ -148,9 +159,9 @@ void SrtpTransport::OnPacketReceived(bool rtcp,
       uint32_t ssrc = 0;
       cricket::GetRtpSeqNum(data, len, &seq_num);
       cricket::GetRtpSsrc(data, len, &ssrc);
-      LOG(LS_ERROR) << "Failed to unprotect " << content_name_
-                    << " RTP packet: size=" << len << ", seqnum=" << seq_num
-                    << ", SSRC=" << ssrc;
+      RTC_LOG(LS_ERROR) << "Failed to unprotect " << content_name_
+                        << " RTP packet: size=" << len << ", seqnum=" << seq_num
+                        << ", SSRC=" << ssrc;
       return;
     }
   } else {
@@ -158,8 +169,8 @@ void SrtpTransport::OnPacketReceived(bool rtcp,
     if (!res) {
       int type = -1;
       cricket::GetRtcpType(data, len, &type);
-      LOG(LS_ERROR) << "Failed to unprotect " << content_name_
-                    << " RTCP packet: size=" << len << ", type=" << type;
+      RTC_LOG(LS_ERROR) << "Failed to unprotect " << content_name_
+                        << " RTCP packet: size=" << len << ", type=" << type;
       return;
     }
   }
@@ -168,12 +179,28 @@ void SrtpTransport::OnPacketReceived(bool rtcp,
   SignalPacketReceived(rtcp, packet, packet_time);
 }
 
+void SrtpTransport::OnNetworkRouteChanged(
+
+    rtc::Optional<rtc::NetworkRoute> network_route) {
+  // Only append the SRTP overhead when there is a selected network route.
+  if (network_route) {
+    int srtp_overhead = 0;
+    if (IsActive()) {
+      GetSrtpOverhead(&srtp_overhead);
+    }
+    network_route->packet_overhead += srtp_overhead;
+  }
+  SignalNetworkRouteChanged(network_route);
+}
+
 bool SrtpTransport::SetRtpParams(int send_cs,
                                  const uint8_t* send_key,
                                  int send_key_len,
+                                 const std::vector<int>& send_extension_ids,
                                  int recv_cs,
                                  const uint8_t* recv_key,
-                                 int recv_key_len) {
+                                 int recv_key_len,
+                                 const std::vector<int>& recv_extension_ids) {
   // If parameters are being set for the first time, we should create new SRTP
   // sessions and call "SetSend/SetRecv". Otherwise we should call
   // "UpdateSend"/"UpdateRecv" on the existing sessions, which will internally
@@ -184,59 +211,62 @@ bool SrtpTransport::SetRtpParams(int send_cs,
     CreateSrtpSessions();
     new_sessions = true;
   }
-  send_session_->SetEncryptedHeaderExtensionIds(
-      send_encrypted_header_extension_ids_);
   bool ret = new_sessions
-                 ? send_session_->SetSend(send_cs, send_key, send_key_len)
-                 : send_session_->UpdateSend(send_cs, send_key, send_key_len);
+                 ? send_session_->SetSend(send_cs, send_key, send_key_len,
+                                          send_extension_ids)
+                 : send_session_->UpdateSend(send_cs, send_key, send_key_len,
+                                             send_extension_ids);
   if (!ret) {
     ResetParams();
     return false;
   }
 
-  recv_session_->SetEncryptedHeaderExtensionIds(
-      recv_encrypted_header_extension_ids_);
-  ret = new_sessions
-            ? recv_session_->SetRecv(recv_cs, recv_key, recv_key_len)
-            : recv_session_->UpdateRecv(recv_cs, recv_key, recv_key_len);
+  ret = new_sessions ? recv_session_->SetRecv(recv_cs, recv_key, recv_key_len,
+                                              recv_extension_ids)
+                     : recv_session_->UpdateRecv(
+                           recv_cs, recv_key, recv_key_len, recv_extension_ids);
   if (!ret) {
     ResetParams();
     return false;
   }
 
-  LOG(LS_INFO) << "SRTP " << (new_sessions ? "updated" : "activated")
-               << " with negotiated parameters:"
-               << " send cipher_suite " << send_cs << " recv cipher_suite "
-               << recv_cs;
+  RTC_LOG(LS_INFO) << "SRTP " << (new_sessions ? "activated" : "updated")
+                   << " with negotiated parameters:"
+                   << " send cipher_suite " << send_cs << " recv cipher_suite "
+                   << recv_cs;
   return true;
 }
 
 bool SrtpTransport::SetRtcpParams(int send_cs,
                                   const uint8_t* send_key,
                                   int send_key_len,
+                                  const std::vector<int>& send_extension_ids,
                                   int recv_cs,
                                   const uint8_t* recv_key,
-                                  int recv_key_len) {
+                                  int recv_key_len,
+                                  const std::vector<int>& recv_extension_ids) {
   // This can only be called once, but can be safely called after
   // SetRtpParams
   if (send_rtcp_session_ || recv_rtcp_session_) {
-    LOG(LS_ERROR) << "Tried to set SRTCP Params when filter already active";
+    RTC_LOG(LS_ERROR) << "Tried to set SRTCP Params when filter already active";
     return false;
   }
 
   send_rtcp_session_.reset(new cricket::SrtpSession());
-  if (!send_rtcp_session_->SetRecv(send_cs, send_key, send_key_len)) {
+  if (!send_rtcp_session_->SetSend(send_cs, send_key, send_key_len,
+                                   send_extension_ids)) {
     return false;
   }
 
   recv_rtcp_session_.reset(new cricket::SrtpSession());
-  if (!recv_rtcp_session_->SetRecv(recv_cs, recv_key, recv_key_len)) {
+  if (!recv_rtcp_session_->SetRecv(recv_cs, recv_key, recv_key_len,
+                                   recv_extension_ids)) {
     return false;
   }
 
-  LOG(LS_INFO) << "SRTCP activated with negotiated parameters:"
-               << " send cipher_suite " << send_cs << " recv cipher_suite "
-               << recv_cs;
+  RTC_LOG(LS_INFO) << "SRTCP activated with negotiated parameters:"
+                   << " send cipher_suite " << send_cs << " recv cipher_suite "
+                   << recv_cs;
 
   return true;
 }
@@ -250,17 +280,7 @@ void SrtpTransport::ResetParams() {
   recv_session_ = nullptr;
   send_rtcp_session_ = nullptr;
   recv_rtcp_session_ = nullptr;
-  LOG(LS_INFO) << "The params in SRTP transport are reset.";
-}
-
-void SrtpTransport::SetEncryptedHeaderExtensionIds(
-    cricket::ContentSource source,
-    const std::vector<int>& extension_ids) {
-  if (source == cricket::CS_LOCAL) {
-    recv_encrypted_header_extension_ids_ = extension_ids;
-  } else {
-    send_encrypted_header_extension_ids_ = extension_ids;
-  }
+  RTC_LOG(LS_INFO) << "The params in SRTP transport are reset.";
 }
 
 void SrtpTransport::CreateSrtpSessions() {
@@ -274,7 +294,7 @@ void SrtpTransport::CreateSrtpSessions() {
 
 bool SrtpTransport::ProtectRtp(void* p, int in_len, int max_len, int* out_len) {
   if (!IsActive()) {
-    LOG(LS_WARNING) << "Failed to ProtectRtp: SRTP not active";
+    RTC_LOG(LS_WARNING) << "Failed to ProtectRtp: SRTP not active";
     return false;
   }
   RTC_CHECK(send_session_);
@@ -287,7 +307,7 @@ bool SrtpTransport::ProtectRtp(void* p,
                                int* out_len,
                                int64_t* index) {
   if (!IsActive()) {
-    LOG(LS_WARNING) << "Failed to ProtectRtp: SRTP not active";
+    RTC_LOG(LS_WARNING) << "Failed to ProtectRtp: SRTP not active";
     return false;
   }
   RTC_CHECK(send_session_);
@@ -299,7 +319,7 @@ bool SrtpTransport::ProtectRtcp(void* p,
                                 int max_len,
                                 int* out_len) {
   if (!IsActive()) {
-    LOG(LS_WARNING) << "Failed to ProtectRtcp: SRTP not active";
+    RTC_LOG(LS_WARNING) << "Failed to ProtectRtcp: SRTP not active";
     return false;
   }
   if (send_rtcp_session_) {
@@ -312,7 +332,7 @@ bool SrtpTransport::ProtectRtcp(void* p,
 
 bool SrtpTransport::UnprotectRtp(void* p, int in_len, int* out_len) {
   if (!IsActive()) {
-    LOG(LS_WARNING) << "Failed to UnprotectRtp: SRTP not active";
+    RTC_LOG(LS_WARNING) << "Failed to UnprotectRtp: SRTP not active";
     return false;
   }
   RTC_CHECK(recv_session_);
@@ -321,7 +341,7 @@ bool SrtpTransport::UnprotectRtp(void* p, int in_len, int* out_len) {
 
 bool SrtpTransport::UnprotectRtcp(void* p, int in_len, int* out_len) {
   if (!IsActive()) {
-    LOG(LS_WARNING) << "Failed to UnprotectRtcp: SRTP not active";
+    RTC_LOG(LS_WARNING) << "Failed to UnprotectRtcp: SRTP not active";
     return false;
   }
   if (recv_rtcp_session_) {
@@ -336,7 +356,7 @@ bool SrtpTransport::GetRtpAuthParams(uint8_t** key,
                                      int* key_len,
                                      int* tag_len) {
   if (!IsActive()) {
-    LOG(LS_WARNING) << "Failed to GetRtpAuthParams: SRTP not active";
+    RTC_LOG(LS_WARNING) << "Failed to GetRtpAuthParams: SRTP not active";
     return false;
   }
 
@@ -346,7 +366,7 @@ bool SrtpTransport::GetRtpAuthParams(uint8_t** key,
 
 bool SrtpTransport::GetSrtpOverhead(int* srtp_overhead) const {
   if (!IsActive()) {
-    LOG(LS_WARNING) << "Failed to GetSrtpOverhead: SRTP not active";
+    RTC_LOG(LS_WARNING) << "Failed to GetSrtpOverhead: SRTP not active";
     return false;
   }
 
@@ -366,7 +386,8 @@ bool SrtpTransport::IsExternalAuthEnabled() const {
 
 bool SrtpTransport::IsExternalAuthActive() const {
   if (!IsActive()) {
-    LOG(LS_WARNING) << "Failed to check IsExternalAuthActive: SRTP not active";
+    RTC_LOG(LS_WARNING)
+        << "Failed to check IsExternalAuthActive: SRTP not active";
     return false;
   }
 

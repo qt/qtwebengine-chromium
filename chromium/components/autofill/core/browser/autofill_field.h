@@ -47,6 +47,7 @@ class AutofillField : public FormFieldData {
   PhonePart phone_part() const { return phone_part_; }
   bool previously_autofilled() const { return previously_autofilled_; }
   const base::string16& parseable_name() const { return parseable_name_; }
+  bool only_fill_when_focused() const { return only_fill_when_focused_; }
 
   // Setters for the detected type and section for this field.
   void set_section(const std::string& section) { section_ = section; }
@@ -66,6 +67,10 @@ class AutofillField : public FormFieldData {
   }
   void set_parseable_name(const base::string16& parseable_name) {
     parseable_name_ = parseable_name;
+  }
+
+  void set_only_fill_when_focused(bool fill_when_focused) {
+    only_fill_when_focused_ = fill_when_focused;
   }
 
   // Set the heuristic or server type, depending on whichever is currently
@@ -133,29 +138,6 @@ class AutofillField : public FormFieldData {
     return username_vote_type_;
   }
 
-  // Set |field_data|'s value to |value|. Uses |field|, |address_language_code|,
-  // and |app_locale| as hints when filling exceptional cases like phone number
-  // values and <select> fields. Returns |true| if the field has been filled,
-  // |false| otherwise.
-  static bool FillFormField(const AutofillField& field,
-                            const base::string16& value,
-                            const std::string& address_language_code,
-                            const std::string& app_locale,
-                            FormFieldData* field_data);
-
-  // Returns the phone number value for the given |field|. The returned value
-  // might be |number|, or could possibly be a meaningful subset |number|, if
-  // that's appropriate for the field.
-  static base::string16 GetPhoneNumberValue(const AutofillField& field,
-                                            const base::string16& number,
-                                            const FormFieldData& field_data);
-
-  // Returns the index of the shortest entry in the given select field of which
-  // |value| is a substring. Returns -1 if no such entry exists.
-  static int FindShortestSubstringMatchInSelect(const base::string16& value,
-                                                bool ignore_whitespace,
-                                                const FormFieldData* field);
-
  private:
   // Whether the heuristics or server predict a credit card field.
   bool IsCreditCardPrediction() const;
@@ -200,6 +182,9 @@ class AutofillField : public FormFieldData {
 
   // Whether the field was autofilled then later edited.
   bool previously_autofilled_;
+
+  // Whether the field should be filled when it is not the highlighted field.
+  bool only_fill_when_focused_;
 
   // The parseable name attribute, with unnecessary information removed (such as
   // a common prefix shared with other fields). Will be used for heuristics

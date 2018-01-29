@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "platform/wtf/RefPtr.h"
+#include "base/memory/scoped_refptr.h"
 
 #include "platform/wtf/RefCounted.h"
 #include "platform/wtf/ThreadSafeRefCounted.h"
@@ -13,7 +13,7 @@ namespace WTF {
 namespace {
 
 TEST(RefPtrTest, Basic) {
-  RefPtr<StringImpl> string;
+  scoped_refptr<StringImpl> string;
   EXPECT_TRUE(!string);
   string = StringImpl::Create("test");
   EXPECT_TRUE(!!string);
@@ -22,8 +22,8 @@ TEST(RefPtrTest, Basic) {
 }
 
 TEST(RefPtrTest, MoveAssignmentOperator) {
-  RefPtr<StringImpl> a = StringImpl::Create("a");
-  RefPtr<StringImpl> b = StringImpl::Create("b");
+  scoped_refptr<StringImpl> a = StringImpl::Create("a");
+  scoped_refptr<StringImpl> b = StringImpl::Create("b");
   b = std::move(a);
   EXPECT_TRUE(!!b);
   EXPECT_TRUE(!a);
@@ -34,8 +34,8 @@ class RefCountedClass : public RefCounted<RefCountedClass> {};
 TEST(RefPtrTest, ConstObject) {
   // This test is only to ensure we force the compilation of a const RefCounted
   // object to ensure the generated code compiles.
-  RefPtr<const RefCountedClass> ptr_to_const =
-      WTF::AdoptRef(new RefCountedClass());
+  scoped_refptr<const RefCountedClass> ptr_to_const =
+      base::AdoptRef(new RefCountedClass());
 }
 
 class CustomDeleter;
@@ -63,7 +63,8 @@ void Deleter::Destruct(const CustomDeleter* obj) {
 
 TEST(RefPtrTest, CustomDeleter) {
   bool deleted = false;
-  RefPtr<CustomDeleter> obj = WTF::AdoptRef(new CustomDeleter(&deleted));
+  scoped_refptr<CustomDeleter> obj =
+      base::AdoptRef(new CustomDeleter(&deleted));
   EXPECT_FALSE(deleted);
   obj = nullptr;
   EXPECT_TRUE(deleted);
@@ -95,8 +96,8 @@ void DeleterThreadSafe::Destruct(const CustomDeleterThreadSafe* obj) {
 
 TEST(RefPtrTest, CustomDeleterThreadSafe) {
   bool deleted = false;
-  RefPtr<CustomDeleterThreadSafe> obj =
-      WTF::AdoptRef(new CustomDeleterThreadSafe(&deleted));
+  scoped_refptr<CustomDeleterThreadSafe> obj =
+      base::AdoptRef(new CustomDeleterThreadSafe(&deleted));
   EXPECT_FALSE(deleted);
   obj = nullptr;
   EXPECT_TRUE(deleted);

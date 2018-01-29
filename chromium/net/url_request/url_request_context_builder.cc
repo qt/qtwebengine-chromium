@@ -59,8 +59,10 @@
 #endif
 
 #if BUILDFLAG(ENABLE_REPORTING)
+#include "net/network_error_logging/network_error_logging_service.h"
 #include "net/reporting/reporting_policy.h"
 #include "net/reporting/reporting_service.h"
+#include "net/url_request/network_error_logging_delegate.h"
 #endif  // BUILDFLAG(ENABLE_REPORTING)
 
 namespace net {
@@ -69,8 +71,8 @@ namespace {
 
 class BasicNetworkDelegate : public NetworkDelegateImpl {
  public:
-  BasicNetworkDelegate() {}
-  ~BasicNetworkDelegate() override {}
+  BasicNetworkDelegate() = default;
+  ~BasicNetworkDelegate() override = default;
 
  private:
   int OnBeforeURLRequest(URLRequest* request,
@@ -123,7 +125,7 @@ class BasicNetworkDelegate : public NetworkDelegateImpl {
   }
 
   bool OnCanSetCookie(const URLRequest& request,
-                      const std::string& cookie_line,
+                      const net::CanonicalCookie& cookie,
                       CookieOptions* options) override {
     return true;
   }
@@ -184,7 +186,7 @@ class ContainerURLRequestContext final : public URLRequestContext {
 URLRequestContextBuilder::HttpCacheParams::HttpCacheParams()
     : type(IN_MEMORY),
       max_size(0) {}
-URLRequestContextBuilder::HttpCacheParams::~HttpCacheParams() {}
+URLRequestContextBuilder::HttpCacheParams::~HttpCacheParams() = default;
 
 URLRequestContextBuilder::URLRequestContextBuilder()
     : enable_brotli_(false),
@@ -200,17 +202,20 @@ URLRequestContextBuilder::URLRequestContextBuilder()
       http_cache_enabled_(true),
       throttling_enabled_(false),
       cookie_store_set_by_client_(false),
-      transport_security_persister_readonly_(false),
       net_log_(nullptr),
       shared_host_resolver_(nullptr),
       pac_quick_check_enabled_(true),
       pac_sanitize_url_policy_(ProxyService::SanitizeUrlPolicy::SAFE),
       shared_proxy_delegate_(nullptr),
+#if BUILDFLAG(ENABLE_REPORTING)
       shared_http_auth_handler_factory_(nullptr),
-      shared_cert_verifier_(nullptr) {
+      network_error_logging_enabled_(false) {
+#else   // !BUILDFLAG(ENABLE_REPORTING)
+      shared_http_auth_handler_factory_(nullptr){
+#endif  // !BUILDFLAG(ENABLE_REPORTING)
 }
 
-URLRequestContextBuilder::~URLRequestContextBuilder() {}
+URLRequestContextBuilder::~URLRequestContextBuilder() = default;
 
 void URLRequestContextBuilder::SetHttpNetworkSessionComponents(
     const URLRequestContext* request_context,
@@ -283,14 +288,7 @@ void URLRequestContextBuilder::set_ct_policy_enforcer(
 
 void URLRequestContextBuilder::SetCertVerifier(
     std::unique_ptr<CertVerifier> cert_verifier) {
-  DCHECK(!shared_cert_verifier_);
   cert_verifier_ = std::move(cert_verifier);
-}
-
-void URLRequestContextBuilder::set_shared_cert_verifier(
-    CertVerifier* shared_cert_verifier) {
-  DCHECK(!cert_verifier_);
-  shared_cert_verifier_ = shared_cert_verifier;
 }
 
 #if BUILDFLAG(ENABLE_REPORTING)
@@ -466,8 +464,7 @@ std::unique_ptr<URLRequestContext> URLRequestContextBuilder::Build() {
     context->set_transport_security_persister(
         std::make_unique<TransportSecurityPersister>(
             context->transport_security_state(),
-            transport_security_persister_path_, task_runner,
-            transport_security_persister_readonly_));
+            transport_security_persister_path_, task_runner));
   }
 
   if (http_server_properties_) {
@@ -478,10 +475,7 @@ std::unique_ptr<URLRequestContext> URLRequestContextBuilder::Build() {
   }
 
   if (cert_verifier_) {
-    DCHECK(!shared_cert_verifier_);
     storage->set_cert_verifier(std::move(cert_verifier_));
-  } else if (shared_cert_verifier_) {
-    context->set_cert_verifier(shared_cert_verifier_);
   } else {
     storage->set_cert_verifier(CertVerifier::CreateDefault());
   }
@@ -629,9 +623,26 @@ std::unique_ptr<URLRequestContext> URLRequestContextBuilder::Build() {
   storage->set_job_factory(std::move(top_job_factory));
 
 #if BUILDFLAG(ENABLE_REPORTING)
+  // Note: ReportingService::Create and NetworkErrorLoggingService::Create can
+  // both return nullptr if the corresponding base::Feature is disabled.
+
   if (reporting_policy_) {
     storage->set_reporting_service(
         ReportingService::Create(*reporting_policy_, context.get()));
+  }
+
+  if (network_error_logging_enabled_) {
+    storage->set_network_error_logging_delegate(
+        NetworkErrorLoggingService::Create());
+  }
+
+  // If both Reporting and Network Error Logging are actually enabled, then
+  // connect them so Network Error Logging can use Reporting to deliver error
+  // reports.
+  if (context->reporting_service() &&
+      context->network_error_logging_delegate()) {
+    context->network_error_logging_delegate()->SetReportingService(
+        context->reporting_service());
   }
 #endif  // BUILDFLAG(ENABLE_REPORTING)
 

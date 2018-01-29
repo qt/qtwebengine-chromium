@@ -15,9 +15,8 @@ GlobalScopeCreationParams::GlobalScopeCreationParams(
     const String& user_agent,
     const String& source_code,
     std::unique_ptr<Vector<char>> cached_meta_data,
-    WorkerThreadStartMode start_mode,
     const Vector<CSPHeaderAndType>* content_security_policy_parsed_headers,
-    const String& referrer_policy,
+    ReferrerPolicy referrer_policy,
     const SecurityOrigin* starter_origin,
     WorkerClients* worker_clients,
     WebAddressSpace address_space,
@@ -30,17 +29,15 @@ GlobalScopeCreationParams::GlobalScopeCreationParams(
       user_agent(user_agent.IsolatedCopy()),
       source_code(source_code.IsolatedCopy()),
       cached_meta_data(std::move(cached_meta_data)),
-      start_mode(start_mode),
-      referrer_policy(referrer_policy.IsolatedCopy()),
-      starter_origin_privilege_data(
-          starter_origin ? starter_origin->CreatePrivilegeData() : nullptr),
+      referrer_policy(referrer_policy),
+      starter_origin(starter_origin ? starter_origin->IsolatedCopy() : nullptr),
       worker_clients(worker_clients),
       address_space(address_space),
       worker_settings(std::move(worker_settings)),
       v8_cache_options(v8_cache_options),
       interface_provider(std::move(interface_provider_info)) {
   this->content_security_policy_parsed_headers =
-      WTF::MakeUnique<Vector<CSPHeaderAndType>>();
+      std::make_unique<Vector<CSPHeaderAndType>>();
   if (content_security_policy_parsed_headers) {
     for (const auto& header : *content_security_policy_parsed_headers) {
       CSPHeaderAndType copied_header(header.first.IsolatedCopy(),
@@ -49,7 +46,7 @@ GlobalScopeCreationParams::GlobalScopeCreationParams(
     }
   }
 
-  this->origin_trial_tokens = WTF::MakeUnique<Vector<String>>();
+  this->origin_trial_tokens = std::make_unique<Vector<String>>();
   if (origin_trial_tokens) {
     for (const String& token : *origin_trial_tokens)
       this->origin_trial_tokens->push_back(token.IsolatedCopy());

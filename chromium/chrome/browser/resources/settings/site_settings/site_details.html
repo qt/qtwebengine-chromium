@@ -107,6 +107,12 @@
           icon="cr:open-in-new" id="popups" label="$i18n{siteSettingsPopups}">
       </site-details-permission>
       <site-details-permission
+          category="{{ContentSettingsTypes.ADS}}"
+          icon="settings:ads" id="ads"
+          label="$i18n{siteSettingsAds}"
+          hidden$="[[!enableSafeBrowsingSubresourceFilter_]]">
+      </site-details-permission>
+      <site-details-permission
           category="{{ContentSettingsTypes.BACKGROUND_SYNC}}"
           icon="settings:sync" id="backgroundSync"
           label="$i18n{siteSettingsBackgroundSync}">
@@ -124,6 +130,12 @@
       <site-details-permission
           category="{{ContentSettingsTypes.MIDI_DEVICES}}" icon="settings:midi"
           id="midiDevices" label="$i18n{siteSettingsMidiDevices}">
+      </site-details-permission>
+      <site-details-permission
+          category="{{ContentSettingsTypes.CLIPBOARD}}"
+          icon="settings:clipboard" id="clipboard"
+          label="$i18n{siteSettingsClipboard}"
+          hidden$="[[!enableClipboardContentSetting_]]">
       </site-details-permission>
       <site-details-permission
           category="{{ContentSettingsTypes.UNSANDBOXED_PLUGINS}}"

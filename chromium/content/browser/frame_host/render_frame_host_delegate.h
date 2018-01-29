@@ -18,6 +18,7 @@
 #include "content/public/browser/site_instance.h"
 #include "content/public/common/javascript_dialog_type.h"
 #include "content/public/common/media_stream_request.h"
+#include "device/geolocation/public/interfaces/geolocation_context.mojom.h"
 #include "mojo/public/cpp/bindings/scoped_interface_endpoint_handle.h"
 #include "net/http/http_response_headers.h"
 #include "services/device/public/interfaces/wake_lock.mojom.h"
@@ -36,10 +37,6 @@ class GURL;
 
 namespace IPC {
 class Message;
-}
-
-namespace device {
-class GeolocationContext;
 }
 
 namespace gfx {
@@ -130,6 +127,9 @@ class CONTENT_EXPORT RenderFrameHostDelegate {
   virtual void RunFileChooser(RenderFrameHost* render_frame_host,
                               const FileChooserParams& params) {}
 
+  // The pending page load was canceled, so the address bar should be updated.
+  virtual void DidCancelLoading() {}
+
   // Another page accessed the top-level initial empty document, which means it
   // is no longer safe to display a pending URL without risking a URL spoof.
   virtual void DidAccessInitialDocument() {}
@@ -201,7 +201,7 @@ class CONTENT_EXPORT RenderFrameHostDelegate {
       int browser_plugin_instance_id);
 
   // Gets the GeolocationContext associated with this delegate.
-  virtual device::GeolocationContext* GetGeolocationContext();
+  virtual device::mojom::GeolocationContext* GetGeolocationContext();
 
   // Gets the WakeLock that serves wake lock requests from the renderer.
   virtual device::mojom::WakeLock* GetRendererWakeLock();
@@ -324,6 +324,9 @@ class CONTENT_EXPORT RenderFrameHostDelegate {
                                                  bool allowed_per_prefs,
                                                  const url::Origin& origin,
                                                  const GURL& resource_url);
+
+  // Opens a new view-source tab for the last committed document in |frame|.
+  virtual void ViewSource(RenderFrameHostImpl* frame) {}
 
 #if defined(OS_ANDROID)
   virtual base::android::ScopedJavaLocalRef<jobject>

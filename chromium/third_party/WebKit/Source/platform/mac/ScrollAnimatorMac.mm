@@ -68,15 +68,16 @@ bool SupportsContentAreaScrolledInDirection() {
   return global_supports_content_area_scrolled_in_direction;
 }
 
-blink::ScrollbarThemeMac* MacOverlayScrollbarTheme() {
-  blink::ScrollbarTheme& scrollbar_theme = blink::ScrollbarTheme::GetTheme();
+blink::ScrollbarThemeMac* MacOverlayScrollbarTheme(
+    blink::ScrollbarTheme& scrollbar_theme) {
   return !scrollbar_theme.IsMockTheme()
              ? static_cast<blink::ScrollbarThemeMac*>(&scrollbar_theme)
              : nil;
 }
 
 ScrollbarPainter ScrollbarPainterForScrollbar(blink::Scrollbar& scrollbar) {
-  if (blink::ScrollbarThemeMac* scrollbar_theme = MacOverlayScrollbarTheme())
+  if (blink::ScrollbarThemeMac* scrollbar_theme =
+          MacOverlayScrollbarTheme(scrollbar.GetTheme()))
     return scrollbar_theme->PainterForScrollbar(scrollbar);
 
   return nil;
@@ -311,7 +312,7 @@ class BlinkScrollbarPartAnimationTimer {
     start_time_ = WTF::CurrentTime();
     // Set the framerate of the animation. NSAnimation uses a default
     // framerate of 60 Hz, so use that here.
-    timer_.StartRepeating(1.0 / 60.0, BLINK_FROM_HERE);
+    timer_.StartRepeating(TimeDelta::FromSecondsD(1.0 / 60.0), BLINK_FROM_HERE);
   }
 
   void Stop() { timer_.Stop(); }
@@ -336,7 +337,7 @@ class BlinkScrollbarPartAnimationTimer {
   double start_time_;                       // In seconds.
   double duration_;                         // In seconds.
   BlinkScrollbarPartAnimation* animation_;  // Weak, owns this.
-  RefPtr<CubicBezierTimingFunction> timing_function_;
+  scoped_refptr<CubicBezierTimingFunction> timing_function_;
 };
 
 }  // namespace blink
@@ -962,7 +963,8 @@ void ScrollAnimatorMac::UpdateScrollerStyle() {
     return;
   }
 
-  blink::ScrollbarThemeMac* mac_theme = MacOverlayScrollbarTheme();
+  blink::ScrollbarThemeMac* mac_theme =
+      MacOverlayScrollbarTheme(scrollable_area_->GetPageScrollbarTheme());
   if (!mac_theme) {
     needs_scroller_style_update_ = false;
     return;

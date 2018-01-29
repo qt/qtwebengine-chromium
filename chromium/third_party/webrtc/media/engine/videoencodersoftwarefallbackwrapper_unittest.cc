@@ -13,6 +13,7 @@
 #include <utility>
 
 #include "api/video/i420_buffer.h"
+#include "modules/video_coding/codecs/vp8/include/vp8.h"
 #include "modules/video_coding/codecs/vp8/simulcast_rate_allocator.h"
 #include "modules/video_coding/codecs/vp8/temporal_layers.h"
 #include "modules/video_coding/include/video_codec_interface.h"
@@ -30,6 +31,8 @@ const int kNumCores = 2;
 const uint32_t kFramerate = 30;
 const size_t kMaxPayloadSize = 800;
 const int kDefaultMinPixelsPerFrame = 320 * 180;
+const int kLowThreshold = 10;
+const int kHighThreshold = 20;
 }  // namespace
 
 class VideoEncoderSoftwareFallbackWrapperTest : public ::testing::Test {
@@ -40,7 +43,7 @@ class VideoEncoderSoftwareFallbackWrapperTest : public ::testing::Test {
       const std::string& field_trials)
       : override_field_trials_(field_trials),
         fake_encoder_(new CountingFakeEncoder()),
-        fallback_wrapper_(cricket::VideoCodec("VP8"),
+        fallback_wrapper_(std::unique_ptr<VideoEncoder>(VP8Encoder::Create()),
                           std::unique_ptr<VideoEncoder>(fake_encoder_)) {}
 
   class CountingFakeEncoder : public VideoEncoder {
@@ -97,7 +100,7 @@ class VideoEncoderSoftwareFallbackWrapperTest : public ::testing::Test {
     }
 
     VideoEncoder::ScalingSettings GetScalingSettings() const override {
-      return VideoEncoder::ScalingSettings(true);
+      return VideoEncoder::ScalingSettings(true, kLowThreshold, kHighThreshold);
     }
 
     int init_encode_count_ = 0;
@@ -325,17 +328,14 @@ TEST_F(VideoEncoderSoftwareFallbackWrapperTest,
 }
 
 namespace {
-const int kLowKbps = 220;
-const int kHighKbps = 300;
-const int kMinLowDurationMs = 4000;
+const int kBitrateKbps = 200;
 const int kMinPixelsPerFrame = 1;
-const int kMinPixelsStop = 320 * 180;
-const std::string kFieldTrial = "WebRTC-VP8-Forced-Fallback-Encoder";
+const char kFieldTrial[] = "WebRTC-VP8-Forced-Fallback-Encoder-v2";
 }  // namespace
 
 class ForcedFallbackTest : public VideoEncoderSoftwareFallbackWrapperTest {
  public:
-  ForcedFallbackTest(const std::string& field_trials)
+  explicit ForcedFallbackTest(const std::string& field_trials)
       : VideoEncoderSoftwareFallbackWrapperTest(field_trials) {}
 
   ~ForcedFallbackTest() override {}
@@ -344,9 +344,6 @@ class ForcedFallbackTest : public VideoEncoderSoftwareFallbackWrapperTest {
   void SetUp() override {
     clock_.SetTimeMicros(1234);
     ConfigureVp8Codec();
-    EXPECT_EQ(WEBRTC_VIDEO_CODEC_OK, fallback_wrapper_.InitEncode(
-                                         &codec_, kNumCores, kMaxPayloadSize));
-    EXPECT_EQ(1, fake_encoder_->init_encode_count_);
   }
 
   void TearDown() override {
@@ -367,6 +364,14 @@ class ForcedFallbackTest : public VideoEncoderSoftwareFallbackWrapperTest {
     codec_.VP8()->tl_factory = tl_factory.get();
     rate_allocator_.reset(
         new SimulcastRateAllocator(codec_, std::move(tl_factory)));
+  }
+
+  void InitEncode(int width, int height) {
+    codec_.width = width;
+    codec_.height = height;
+    EXPECT_EQ(WEBRTC_VIDEO_CODEC_OK, fallback_wrapper_.InitEncode(
+                                         &codec_, kNumCores, kMaxPayloadSize));
+    SetRateAllocation(kBitrateKbps);
   }
 
   void SetRateAllocation(uint32_t bitrate_kbps) {
@@ -392,256 +397,148 @@ class ForcedFallbackTest : public VideoEncoderSoftwareFallbackWrapperTest {
 class ForcedFallbackTestEnabled : public ForcedFallbackTest {
  public:
   ForcedFallbackTestEnabled()
-      : ForcedFallbackTest(kFieldTrial + "/Enabled-" +
-                           std::to_string(kLowKbps) + "," +
-                           std::to_string(kHighKbps) + "," +
-                           std::to_string(kMinLowDurationMs) + "," +
-                           std::to_string(kMinPixelsPerFrame) + "/") {}
+      : ForcedFallbackTest(std::string(kFieldTrial) + "/Enabled-" +
+                           std::to_string(kMinPixelsPerFrame) + "," +
+                           std::to_string(kWidth * kHeight) + ",30000/") {}
 };
 
 class ForcedFallbackTestDisabled : public ForcedFallbackTest {
  public:
   ForcedFallbackTestDisabled()
-      : ForcedFallbackTest(kFieldTrial + "/Disabled/") {}
+      : ForcedFallbackTest(std::string(kFieldTrial) + "/Disabled/") {}
 };
 
 TEST_F(ForcedFallbackTestDisabled, NoFallbackWithoutFieldTrial) {
-  // Bitrate at low threshold.
-  SetRateAllocation(kLowKbps);
+  // Resolution above max threshold.
+  InitEncode(kWidth + 1, kHeight);
+  EXPECT_EQ(1, fake_encoder_->init_encode_count_);
   EncodeFrameAndVerifyLastName("fake-encoder");
-  // Duration passed, expect no fallback.
-  clock_.AdvanceTime(rtc::TimeDelta::FromMilliseconds(kMinLowDurationMs));
+
+  // Resolution at max threshold.
+  InitEncode(kWidth, kHeight);
   EncodeFrameAndVerifyLastName("fake-encoder");
 }
 
-TEST_F(ForcedFallbackTestEnabled, FallbackIfAtLowLimit) {
-  // Bitrate at low threshold.
-  SetRateAllocation(kLowKbps);
+TEST_F(ForcedFallbackTestEnabled, FallbackIfAtMaxResolutionLimit) {
+  // Resolution above max threshold.
+  InitEncode(kWidth + 1, kHeight);
+  EXPECT_EQ(1, fake_encoder_->init_encode_count_);
   EncodeFrameAndVerifyLastName("fake-encoder");
-  // Duration passed, expect fallback.
-  clock_.AdvanceTime(rtc::TimeDelta::FromMilliseconds(kMinLowDurationMs));
+
+  // Resolution at max threshold.
+  InitEncode(kWidth, kHeight);
   EncodeFrameAndVerifyLastName("libvpx");
 }
 
-TEST_F(ForcedFallbackTestEnabled, NoFallbackIfNotAtLowLimit) {
-  // Bitrate above low threshold.
-  SetRateAllocation(kLowKbps + 1);
+TEST_F(ForcedFallbackTestEnabled, FallbackIsKeptWhenInitEncodeIsCalled) {
+  // Resolution above max threshold.
+  InitEncode(kWidth + 1, kHeight);
+  EXPECT_EQ(1, fake_encoder_->init_encode_count_);
   EncodeFrameAndVerifyLastName("fake-encoder");
-  // Duration passed, expect no fallback.
-  clock_.AdvanceTime(rtc::TimeDelta::FromMilliseconds(kMinLowDurationMs));
-  EncodeFrameAndVerifyLastName("fake-encoder");
-}
 
-TEST_F(ForcedFallbackTestEnabled, NoFallbackIfResolutionIsTooLarge) {
-  // Resolution above max pixels.
-  codec_.width += 1;
-  EXPECT_EQ(WEBRTC_VIDEO_CODEC_OK,
-            fallback_wrapper_.InitEncode(&codec_, kNumCores, kMaxPayloadSize));
-  // Bitrate at low threshold.
-  SetRateAllocation(kLowKbps);
-  EncodeFrameAndVerifyLastName("fake-encoder");
-  // Duration passed, expect no fallback.
-  clock_.AdvanceTime(rtc::TimeDelta::FromMilliseconds(kMinLowDurationMs));
-  EncodeFrameAndVerifyLastName("fake-encoder");
-}
+  // Resolution at max threshold.
+  InitEncode(kWidth, kHeight);
+  EncodeFrameAndVerifyLastName("libvpx");
 
-TEST_F(ForcedFallbackTestEnabled, FallbackIfMinDurationPassed) {
-  // Bitrate at low threshold.
-  SetRateAllocation(kLowKbps);
-  EncodeFrameAndVerifyLastName("fake-encoder");
-  // Duration not passed, expect no fallback.
-  clock_.AdvanceTime(rtc::TimeDelta::FromMilliseconds(kMinLowDurationMs - 1));
-  EncodeFrameAndVerifyLastName("fake-encoder");
-  // Duration passed, expect fallback.
-  clock_.AdvanceTime(rtc::TimeDelta::FromMilliseconds(1));
+  // Re-initialize encoder, still expect fallback.
+  InitEncode(kWidth / 2, kHeight / 2);
+  EXPECT_EQ(1, fake_encoder_->init_encode_count_);  // No change.
   EncodeFrameAndVerifyLastName("libvpx");
 }
 
-TEST_F(ForcedFallbackTestEnabled, FallbackStartTimeResetIfAboveLowLimit) {
-  // Bitrate at low threshold, start time set.
-  SetRateAllocation(kLowKbps);
-  EncodeFrameAndVerifyLastName("fake-encoder");
-  // Duration not passed, expect no fallback.
-  clock_.AdvanceTime(rtc::TimeDelta::FromMilliseconds(kMinLowDurationMs - 1));
+TEST_F(ForcedFallbackTestEnabled, FallbackIsEndedWhenResolutionIsTooLarge) {
+  // Resolution above max threshold.
+  InitEncode(kWidth + 1, kHeight);
+  EXPECT_EQ(1, fake_encoder_->init_encode_count_);
   EncodeFrameAndVerifyLastName("fake-encoder");
 
-  // Bitrate above low threshold, start time reset.
-  SetRateAllocation(kLowKbps + 1);
-  clock_.AdvanceTime(rtc::TimeDelta::FromMilliseconds(1));
-  EncodeFrameAndVerifyLastName("fake-encoder");
-
-  // Bitrate at low threshold, start time set.
-  SetRateAllocation(kLowKbps);
-  EncodeFrameAndVerifyLastName("fake-encoder");
-  // Duration not passed, expect no fallback.
-  clock_.AdvanceTime(rtc::TimeDelta::FromMilliseconds(kMinLowDurationMs - 1));
-  EncodeFrameAndVerifyLastName("fake-encoder");
-  // Duration passed, expect fallback.
-  clock_.AdvanceTime(rtc::TimeDelta::FromMilliseconds(1));
+  // Resolution at max threshold.
+  InitEncode(kWidth, kHeight);
   EncodeFrameAndVerifyLastName("libvpx");
+
+  // Re-initialize encoder with a larger resolution, expect no fallback.
+  InitEncode(kWidth + 1, kHeight);
+  EXPECT_EQ(2, fake_encoder_->init_encode_count_);
+  EncodeFrameAndVerifyLastName("fake-encoder");
 }
 
-TEST_F(ForcedFallbackTestEnabled, FallbackEndsIfAtHighLimit) {
-  // Bitrate at low threshold.
-  SetRateAllocation(kLowKbps);
+TEST_F(ForcedFallbackTestEnabled, FallbackIsEndedForNonValidSettings) {
+  // Resolution at max threshold.
+  InitEncode(kWidth, kHeight);
+  EncodeFrameAndVerifyLastName("libvpx");
+
+  // Re-initialize encoder with invalid setting, expect no fallback.
+  codec_.VP8()->numberOfTemporalLayers = 2;
+  InitEncode(kWidth, kHeight);
+  EXPECT_EQ(1, fake_encoder_->init_encode_count_);
   EncodeFrameAndVerifyLastName("fake-encoder");
-  // Duration passed, expect fallback.
-  clock_.AdvanceTime(rtc::TimeDelta::FromMilliseconds(kMinLowDurationMs));
-  EncodeFrameAndVerifyLastName("libvpx");
-  // Bitrate below high threshold, expect fallback.
-  SetRateAllocation(kHighKbps - 1);
-  EncodeFrameAndVerifyLastName("libvpx");
-  // Bitrate at high threshold, expect fallback ended.
-  SetRateAllocation(kHighKbps);
+
+  // Re-initialize encoder with valid setting but fallback disabled from now on.
+  codec_.VP8()->numberOfTemporalLayers = 1;
+  InitEncode(kWidth, kHeight);
+  EXPECT_EQ(2, fake_encoder_->init_encode_count_);
   EncodeFrameAndVerifyLastName("fake-encoder");
 }
 
 TEST_F(ForcedFallbackTestEnabled, MultipleStartEndFallback) {
   const int kNumRuns = 5;
-  for (int i = 0; i < kNumRuns; ++i) {
-    // Bitrate at low threshold.
-    SetRateAllocation(kLowKbps);
-    EncodeFrameAndVerifyLastName("fake-encoder");
-    // Duration passed, expect fallback.
-    clock_.AdvanceTime(rtc::TimeDelta::FromMilliseconds(kMinLowDurationMs));
+  for (int i = 1; i <= kNumRuns; ++i) {
+    // Resolution at max threshold.
+    InitEncode(kWidth, kHeight);
     EncodeFrameAndVerifyLastName("libvpx");
-    // Bitrate at high threshold, expect fallback ended.
-    SetRateAllocation(kHighKbps);
+    // Resolution above max threshold.
+    InitEncode(kWidth + 1, kHeight);
+    EXPECT_EQ(i, fake_encoder_->init_encode_count_);
     EncodeFrameAndVerifyLastName("fake-encoder");
   }
 }
 
-TEST_F(ForcedFallbackTestEnabled, DropsFirstNonNativeFrameAfterFallbackEnds) {
-  fake_encoder_->supports_native_handle_ = true;
-
-  // Bitrate at low threshold.
-  SetRateAllocation(kLowKbps);
-  EncodeFrameAndVerifyLastName("fake-encoder");
-  // Duration passed, expect fallback.
-  clock_.AdvanceTime(rtc::TimeDelta::FromMilliseconds(kMinLowDurationMs));
-  EncodeFrameAndVerifyLastName("libvpx");
-  // Bitrate at high threshold, fallback should be ended but first non-native
-  // frame dropped (i.e. frame not encoded).
-  SetRateAllocation(kHighKbps);
-  EncodeFrameAndVerifyLastName("libvpx", WEBRTC_VIDEO_CODEC_ERROR);
-  // Next frame should be encoded.
-  EncodeFrameAndVerifyLastName("fake-encoder");
-}
-
-TEST_F(ForcedFallbackTestEnabled, FallbackIsKeptWhenInitEncodeIsCalled) {
-  // Bitrate below low threshold.
-  SetRateAllocation(kLowKbps - 1);
-  EncodeFrameAndVerifyLastName("fake-encoder");
-  // Duration passed, expect fallback.
-  clock_.AdvanceTime(rtc::TimeDelta::FromMilliseconds(kMinLowDurationMs));
-  EncodeFrameAndVerifyLastName("libvpx");
-
-  // Re-initialize encoder, still expect fallback.
-  EXPECT_EQ(WEBRTC_VIDEO_CODEC_OK,
-            fallback_wrapper_.InitEncode(&codec_, kNumCores, kMaxPayloadSize));
-  EXPECT_EQ(1, fake_encoder_->init_encode_count_);  // No change.
-  SetRateAllocation(kLowKbps);
-  EncodeFrameAndVerifyLastName("libvpx");
-}
-
-TEST_F(ForcedFallbackTestEnabled, FallbackIsEndedWhenResolutionIsTooLarge) {
-  // Bitrate below low threshold.
-  SetRateAllocation(kLowKbps - 1);
-  EncodeFrameAndVerifyLastName("fake-encoder");
-  // Duration passed, expect fallback.
-  clock_.AdvanceTime(rtc::TimeDelta::FromMilliseconds(kMinLowDurationMs));
-  EncodeFrameAndVerifyLastName("libvpx");
-
-  // Re-initialize encoder with a larger resolution, expect no fallback.
-  codec_.width += 1;
-  EXPECT_EQ(WEBRTC_VIDEO_CODEC_OK,
-            fallback_wrapper_.InitEncode(&codec_, kNumCores, kMaxPayloadSize));
-  EXPECT_EQ(2, fake_encoder_->init_encode_count_);
-  SetRateAllocation(kLowKbps);
-  EncodeFrameAndVerifyLastName("fake-encoder");
-}
-
-TEST_F(ForcedFallbackTestEnabled, FallbackIsEndedForNonValidSettings) {
-  // Bitrate below low threshold.
-  SetRateAllocation(kLowKbps - 1);
-  EncodeFrameAndVerifyLastName("fake-encoder");
-  // Duration passed, expect fallback.
-  clock_.AdvanceTime(rtc::TimeDelta::FromMilliseconds(kMinLowDurationMs));
-  EncodeFrameAndVerifyLastName("libvpx");
-
-  // Re-initialize encoder with invalid setting, expect no fallback.
-  codec_.VP8()->numberOfTemporalLayers = 2;
-  EXPECT_EQ(WEBRTC_VIDEO_CODEC_OK,
-            fallback_wrapper_.InitEncode(&codec_, kNumCores, kMaxPayloadSize));
-  EXPECT_EQ(2, fake_encoder_->init_encode_count_);
-  SetRateAllocation(kLowKbps);
+TEST_F(ForcedFallbackTestDisabled, GetScaleSettings) {
+  // Resolution above max threshold.
+  InitEncode(kWidth + 1, kHeight);
+  EXPECT_EQ(1, fake_encoder_->init_encode_count_);
   EncodeFrameAndVerifyLastName("fake-encoder");
 
-  // Re-initialize encoder with valid setting but fallback disabled from now on.
-  codec_.VP8()->numberOfTemporalLayers = 1;
-  EXPECT_EQ(WEBRTC_VIDEO_CODEC_OK,
-            fallback_wrapper_.InitEncode(&codec_, kNumCores, kMaxPayloadSize));
-  EXPECT_EQ(3, fake_encoder_->init_encode_count_);
-  // Bitrate at low threshold.
-  SetRateAllocation(kLowKbps);
-  EncodeFrameAndVerifyLastName("fake-encoder");
-  // Duration passed, expect no fallback.
-  clock_.AdvanceTime(rtc::TimeDelta::FromMilliseconds(kMinLowDurationMs));
-  EncodeFrameAndVerifyLastName("fake-encoder");
-}
-
-TEST_F(ForcedFallbackTestEnabled, GetScaleSettingsWithoutFallback) {
-  // Bitrate at low threshold.
-  SetRateAllocation(kLowKbps);
-  EncodeFrameAndVerifyLastName("fake-encoder");
   // Default min pixels per frame should be used.
   const auto settings = fallback_wrapper_.GetScalingSettings();
   EXPECT_TRUE(settings.enabled);
   EXPECT_EQ(kDefaultMinPixelsPerFrame, settings.min_pixels_per_frame);
 }
 
-TEST_F(ForcedFallbackTestEnabled, GetScaleSettingsWithFallback) {
-  // Bitrate at low threshold.
-  SetRateAllocation(kLowKbps);
+TEST_F(ForcedFallbackTestEnabled, GetScaleSettingsWithNoFallback) {
+  // Resolution above max threshold.
+  InitEncode(kWidth + 1, kHeight);
   EncodeFrameAndVerifyLastName("fake-encoder");
-  // Duration passed, expect fallback.
-  clock_.AdvanceTime(rtc::TimeDelta::FromMilliseconds(kMinLowDurationMs));
+
+  // Configured min pixels per frame should be used.
+  const auto settings = fallback_wrapper_.GetScalingSettings();
+  EXPECT_TRUE(settings.enabled);
+  EXPECT_EQ(kMinPixelsPerFrame, settings.min_pixels_per_frame);
+  ASSERT_TRUE(settings.thresholds);
+  EXPECT_EQ(kLowThreshold, settings.thresholds->low);
+  EXPECT_EQ(kHighThreshold, settings.thresholds->high);
+}
+
+TEST_F(ForcedFallbackTestEnabled, GetScaleSettingsWithFallback) {
+  // Resolution at max threshold.
+  InitEncode(kWidth, kHeight);
   EncodeFrameAndVerifyLastName("libvpx");
+
   // Configured min pixels per frame should be used.
   const auto settings = fallback_wrapper_.GetScalingSettings();
   EXPECT_TRUE(settings.enabled);
   EXPECT_EQ(kMinPixelsPerFrame, settings.min_pixels_per_frame);
 }
 
-TEST_F(ForcedFallbackTestEnabled, FallbackIsKeptIfResolutionIsTooSmall) {
-  // Bitrate at low threshold.
-  SetRateAllocation(kLowKbps);
-  EncodeFrameAndVerifyLastName("fake-encoder");
-  // Duration passed, expect fallback.
-  clock_.AdvanceTime(rtc::TimeDelta::FromMilliseconds(kMinLowDurationMs));
+TEST_F(ForcedFallbackTestEnabled, ScalingDisabledIfResizeOff) {
+  // Resolution at max threshold.
+  codec_.VP8()->automaticResizeOn = false;
+  InitEncode(kWidth, kHeight);
   EncodeFrameAndVerifyLastName("libvpx");
 
-  // Re-initialize encoder with a resolution less than |kMinPixelsStop|.
-  codec_.height = kMinPixelsStop / codec_.width - 1;
-  EXPECT_EQ(WEBRTC_VIDEO_CODEC_OK,
-            fallback_wrapper_.InitEncode(&codec_, kNumCores, kMaxPayloadSize));
-  EXPECT_EQ(1, fake_encoder_->init_encode_count_);  // No change
-  SetRateAllocation(kHighKbps - 1);
-  EncodeFrameAndVerifyLastName("libvpx");
-  // Bitrate at high threshold but resolution too small for fallback to end.
-  SetRateAllocation(kHighKbps);
-  EncodeFrameAndVerifyLastName("libvpx");
-
-  // Re-initialize encoder with a resolution equal to |kMinPixelsStop|.
-  codec_.height++;
-  EXPECT_EQ(WEBRTC_VIDEO_CODEC_OK,
-            fallback_wrapper_.InitEncode(&codec_, kNumCores, kMaxPayloadSize));
-  EXPECT_EQ(1, fake_encoder_->init_encode_count_);  // No change
-  SetRateAllocation(kHighKbps - 1);
-  EncodeFrameAndVerifyLastName("libvpx");
-  // Bitrate at high threshold and resolution large enough for fallback to end.
-  SetRateAllocation(kHighKbps);
-  EncodeFrameAndVerifyLastName("fake-encoder");
+  // Should be disabled for automatic resize off.
+  const auto settings = fallback_wrapper_.GetScalingSettings();
+  EXPECT_FALSE(settings.enabled);
 }
 
 }  // namespace webrtc

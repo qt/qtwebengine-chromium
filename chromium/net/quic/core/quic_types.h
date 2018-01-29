@@ -17,6 +17,7 @@
 namespace net {
 
 typedef uint16_t QuicPacketLength;
+typedef uint32_t QuicControlFrameId;
 typedef uint32_t QuicHeaderId;
 typedef uint32_t QuicStreamId;
 typedef uint64_t QuicByteCount;
@@ -86,7 +87,8 @@ enum TransmissionType : int8_t {
   LOSS_RETRANSMISSION,         // Retransmits due to loss detection.
   RTO_RETRANSMISSION,          // Retransmits due to retransmit time out.
   TLP_RETRANSMISSION,          // Tail loss probes.
-  LAST_TRANSMISSION_TYPE = TLP_RETRANSMISSION,
+  PROBING_RETRANSMISSION,      // Retransmission in order to probe bandwidth.
+  LAST_TRANSMISSION_TYPE = PROBING_RETRANSMISSION,
 };
 
 enum HasRetransmittableData : int8_t {
@@ -163,7 +165,7 @@ enum QuicPacketPublicFlags {
   // Bit 1: Is this packet a public reset packet?
   PACKET_PUBLIC_FLAGS_RST = 1 << 1,
 
-  // Bit 2: indicates the that public header includes a nonce.
+  // Bit 2: indicates the header includes a nonce.
   PACKET_PUBLIC_FLAGS_NONCE = 1 << 2,
 
   // Bit 3: indicates whether a ConnectionID is included.
@@ -208,14 +210,7 @@ enum QuicPacketPrivateFlags {
 // QUIC. Note that this is separate from the congestion feedback type -
 // some congestion control algorithms may use the same feedback type
 // (Reno and Cubic are the classic example for that).
-enum CongestionControlType {
-  kCubic,
-  kCubicBytes,
-  kReno,
-  kRenoBytes,
-  kBBR,
-  kPCC
-};
+enum CongestionControlType { kCubicBytes, kRenoBytes, kBBR, kPCC };
 
 enum LossDetectionType {
   kNack,          // Used to mimic TCP's loss detection.

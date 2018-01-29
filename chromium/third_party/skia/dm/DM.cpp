@@ -5,6 +5,7 @@
  * found in the LICENSE file.
  */
 
+#include "DMFontMgr.h"
 #include "DMJsonWriter.h"
 #include "DMSrcSink.h"
 #include "ProcStats.h"
@@ -38,7 +39,7 @@
 #include "SkSpinlock.h"
 #include "SkTHash.h"
 #include "SkTaskGroup.h"
-#include "SkThreadUtils.h"
+#include "SkTypeface_win.h"
 #include "Test.h"
 #include "Timer.h"
 #include "ios_utils.h"
@@ -101,6 +102,10 @@ DEFINE_pathrenderer_flag;
 DEFINE_bool(ignoreSigInt, false, "ignore SIGINT signals during test execution");
 
 DEFINE_string(dont_write, "", "File extensions to skip writing to --writePath.");  // See skia:6821
+
+DEFINE_bool(nativeFonts, true, "If true, use native font manager and rendering. "
+                               "If false, fonts will draw as portably as possible.");
+DEFINE_bool(gdi, false, "On Windows, use GDI instead of DirectWrite for font rendering.");
 
 using namespace DM;
 using sk_gpu_test::GrContextFactory;
@@ -914,19 +919,7 @@ static sk_sp<SkColorSpace> adobe_rgb() {
 }
 
 static sk_sp<SkColorSpace> rgb_to_gbr() {
-    float gbr[9];
-    gbr[0] = gSRGB_toXYZD50[1];
-    gbr[1] = gSRGB_toXYZD50[2];
-    gbr[2] = gSRGB_toXYZD50[0];
-    gbr[3] = gSRGB_toXYZD50[4];
-    gbr[4] = gSRGB_toXYZD50[5];
-    gbr[5] = gSRGB_toXYZD50[3];
-    gbr[6] = gSRGB_toXYZD50[7];
-    gbr[7] = gSRGB_toXYZD50[8];
-    gbr[8] = gSRGB_toXYZD50[6];
-    SkMatrix44 toXYZD50(SkMatrix44::kUninitialized_Constructor);
-    toXYZD50.set3x3RowMajorf(gbr);
-    return SkColorSpace::MakeRGB(SkColorSpace::kSRGB_RenderTargetGamma, toXYZD50);
+    return as_CSB(SkColorSpace::MakeSRGB())->makeColorSpin();
 }
 
 static Sink* create_via(const SkString& tag, Sink* wrapped) {
@@ -943,7 +936,6 @@ static Sink* create_via(const SkString& tag, Sink* wrapped) {
     VIA("pic",       ViaPicture,           wrapped);
     VIA("2ndpic",    ViaSecondPicture,     wrapped);
     VIA("sp",        ViaSingletonPictures, wrapped);
-    VIA("defer",     ViaDefer,             wrapped);
     VIA("tiles",     ViaTiles, 256, 256, nullptr,            wrapped);
     VIA("tiles_rt",  ViaTiles, 256, 256, new SkRTreeFactory, wrapped);
 
@@ -1282,9 +1274,11 @@ static void run_test(skiatest::Test test, const GrContextOptions& grCtxOptions) 
     } reporter;
 
     if (!FLAGS_dryRun && !is_blacklisted("_", "tests", "_", test.name)) {
+        GrContextOptions options = grCtxOptions;
+        test.modifyGrContextOptions(&options);
+
         start("unit", "test", "", test.name);
-        GrContextFactory factory(grCtxOptions);
-        test.run(&reporter, &factory);
+        test.run(&reporter, options);
     }
     done("unit", "test", "", test.name);
 }
@@ -1305,8 +1299,21 @@ static sk_sp<SkTypeface> create_from_name(const char familyName[], SkFontStyle s
 
 extern sk_sp<SkTypeface> (*gCreateTypefaceDelegate)(const char [], SkFontStyle );
 
+extern sk_sp<SkFontMgr> (*gSkFontMgr_DefaultFactory)();
+
+
 int main(int argc, char** argv) {
     SkCommandLineFlags::Parse(argc, argv);
+
+    if (!FLAGS_nativeFonts) {
+        gSkFontMgr_DefaultFactory = &DM::MakeFontMgr;
+    }
+
+#if defined(SK_BUILD_FOR_WIN)
+    if (FLAGS_gdi) {
+        gSkFontMgr_DefaultFactory = &SkFontMgr_New_GDI;
+    }
+#endif
 
     initializeEventTracingForTools();
 
@@ -1341,6 +1348,7 @@ int main(int argc, char** argv) {
     GrContextOptions grCtxOptions;
 #if SK_SUPPORT_GPU
     grCtxOptions.fGpuPathRenderers = CollectGpuPathRenderersFromFlags();
+    grCtxOptions.fAllowPathMaskCaching = FLAGS_cachePathMasks;
     grCtxOptions.fExecutor = GpuExecutorForTools();
 #endif
 

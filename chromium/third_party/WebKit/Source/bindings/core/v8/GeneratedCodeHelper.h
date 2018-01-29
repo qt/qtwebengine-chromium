@@ -11,10 +11,10 @@
 #ifndef GeneratedCodeHelper_h
 #define GeneratedCodeHelper_h
 
+#include "base/memory/scoped_refptr.h"
 #include "bindings/core/v8/ExceptionState.h"
 #include "bindings/core/v8/V8BindingForCore.h"
 #include "core/CoreExport.h"
-#include "platform/wtf/RefPtr.h"
 #include "v8/include/v8.h"
 
 namespace blink {
@@ -27,8 +27,9 @@ CORE_EXPORT void V8ConstructorAttributeGetter(
     const v8::PropertyCallbackInfo<v8::Value>&,
     const WrapperTypeInfo*);
 
-CORE_EXPORT v8::Local<v8::Value> V8Deserialize(v8::Isolate*,
-                                               RefPtr<SerializedScriptValue>);
+CORE_EXPORT v8::Local<v8::Value> V8Deserialize(
+    v8::Isolate*,
+    scoped_refptr<SerializedScriptValue>);
 
 // ExceptionToRejectPromiseScope converts a possible exception to a reject
 // promise and returns the promise instead of throwing the exception.
@@ -58,6 +59,9 @@ class CORE_EXPORT ExceptionToRejectPromiseScope {
   const v8::FunctionCallbackInfo<v8::Value>& info_;
   ExceptionState& exception_state_;
 };
+
+CORE_EXPORT bool IsCallbackFunctionRunnable(
+    const ScriptState* callback_relevant_script_state);
 
 using InstallTemplateFunction =
     void (*)(v8::Isolate* isolate,

@@ -182,7 +182,7 @@ class TestVideoSender : public ::testing::Test {
   TestVideoSender() : clock_(1000), encoded_frame_callback_(&clock_) {}
 
   void SetUp() override {
-    sender_.reset(new VideoSender(&clock_, &encoded_frame_callback_, nullptr));
+    sender_.reset(new VideoSender(&clock_, &encoded_frame_callback_));
   }
 
   void AddFrame() {
@@ -418,7 +418,7 @@ class TestVideoSenderWithVp8 : public TestVideoSender {
         codec_, std::unique_ptr<TemporalLayersFactory>(tl_factory)));
     codec_.VP8()->tl_factory = tl_factory;
 
-    encoder_.reset(VP8Encoder::Create());
+    encoder_ = VP8Encoder::Create();
     sender_->RegisterExternalEncoder(encoder_.get(), codec_.plType, false);
     EXPECT_EQ(0, sender_->RegisterSendCodec(&codec_, 1, 1200));
   }

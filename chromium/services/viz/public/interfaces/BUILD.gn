@@ -7,6 +7,7 @@ import("//mojo/public/tools/bindings/mojom.gni")
 mojom("interfaces") {
   sources = [
     "compositing/begin_frame_args.mojom",
+    "compositing/compositing_mode_watcher.mojom",
     "compositing/compositor_frame.mojom",
     "compositing/compositor_frame_metadata.mojom",
     "compositing/compositor_frame_sink.mojom",
@@ -26,9 +27,10 @@ mojom("interfaces") {
     "compositing/surface_id.mojom",
     "compositing/surface_info.mojom",
     "compositing/surface_sequence.mojom",
-    "compositing/texture_mailbox.mojom",
-    "compositing/texture_mailbox_releaser.mojom",
+    "compositing/texture_releaser.mojom",
     "compositing/transferable_resource.mojom",
+    "compositing/video_detector_observer.mojom",
+    "constants.mojom",
     "hit_test/hit_test_region_list.mojom",
   ]
 

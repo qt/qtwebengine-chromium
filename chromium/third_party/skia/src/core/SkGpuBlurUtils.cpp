@@ -79,7 +79,7 @@ static void convolve_gaussian_1d(GrRenderTargetContext* renderTargetContext,
                                  GrTextureDomain::Mode mode,
                                  int bounds[2]) {
     GrPaint paint;
-    paint.setGammaCorrect(renderTargetContext->isGammaCorrect());
+    paint.setGammaCorrect(renderTargetContext->colorSpaceInfo().isGammaCorrect());
 
     std::unique_ptr<GrFragmentProcessor> conv(GrGaussianConvolutionFragmentProcessor::Make(
             std::move(proxy), direction, radius, sigma, mode, bounds));
@@ -107,7 +107,7 @@ static void convolve_gaussian_2d(GrRenderTargetContext* renderTargetContext,
     SkISize size = SkISize::Make(2 * radiusX + 1,  2 * radiusY + 1);
     SkIPoint kernelOffset = SkIPoint::Make(radiusX, radiusY);
     GrPaint paint;
-    paint.setGammaCorrect(renderTargetContext->isGammaCorrect());
+    paint.setGammaCorrect(renderTargetContext->colorSpaceInfo().isGammaCorrect());
 
     auto conv = GrMatrixConvolutionEffect::MakeGaussian(std::move(proxy), srcBounds, size, 1.0, 0.0,
                                                         kernelOffset, mode, true, sigmaX, sigmaY);
@@ -222,7 +222,15 @@ sk_sp<GrRenderTargetContext> GaussianBlur(GrContext* context,
     // setup new clip
     GrFixedClip clip(localDstBounds);
 
-    const GrPixelConfig config = srcProxy->config();
+    GrPixelConfig config = srcProxy->config();
+
+    if (GrPixelConfigIsSRGB(config) && !colorSpace) {
+        // If the context doesn't have sRGB write control, and we make an sRGB RTC, we won't be
+        // able to suppress the linear -> sRGB conversion out of the shader. Not all GL drivers
+        // have that feature, and Vulkan is missing it entirely. To keep things simple, switch to
+        // a non-sRGB destination, to ensure correct blurring behavior.
+        config = kRGBA_8888_GrPixelConfig;
+    }
 
     SkASSERT(kBGRA_8888_GrPixelConfig == config || kRGBA_8888_GrPixelConfig == config ||
              kRGBA_4444_GrPixelConfig == config || kRGB_565_GrPixelConfig == config ||
@@ -273,14 +281,13 @@ sk_sp<GrRenderTargetContext> GaussianBlur(GrContext* context,
         }
 
         GrPaint paint;
-        paint.setGammaCorrect(dstRenderTargetContext->isGammaCorrect());
+        paint.setGammaCorrect(dstRenderTargetContext->colorSpaceInfo().isGammaCorrect());
 
         if (GrTextureDomain::kIgnore_Mode != mode && i == 1) {
             SkRect domain = SkRect::Make(localSrcBounds);
             domain.inset((i < scaleFactorX) ? SK_ScalarHalf : 0.0f,
                          (i < scaleFactorY) ? SK_ScalarHalf : 0.0f);
             auto fp = GrTextureDomainEffect::Make(std::move(srcProxy),
-                                                  nullptr,
                                                   SkMatrix::I(),
                                                   domain,
                                                   modeForScaling,
@@ -289,7 +296,7 @@ sk_sp<GrRenderTargetContext> GaussianBlur(GrContext* context,
             srcRect.offset(-srcOffset);
             srcOffset.set(0, 0);
         } else {
-            paint.addColorTextureProcessor(std::move(srcProxy), nullptr, SkMatrix::I(),
+            paint.addColorTextureProcessor(std::move(srcProxy), SkMatrix::I(),
                                            GrSamplerState::ClampBilerp());
         }
         paint.setPorterDuffXPFactory(SkBlendMode::kSrc);
@@ -395,12 +402,11 @@ sk_sp<GrRenderTargetContext> GaussianBlur(GrContext* context,
         }
 
         GrPaint paint;
-        paint.setGammaCorrect(dstRenderTargetContext->isGammaCorrect());
+        paint.setGammaCorrect(dstRenderTargetContext->colorSpaceInfo().isGammaCorrect());
 
         if (GrTextureDomain::kIgnore_Mode != mode) {
             SkRect domain = SkRect::Make(localSrcBounds);
             auto fp = GrTextureDomainEffect::Make(std::move(srcProxy),
-                                                  nullptr,
                                                   SkMatrix::I(),
                                                   domain,
                                                   modeForScaling,
@@ -408,7 +414,7 @@ sk_sp<GrRenderTargetContext> GaussianBlur(GrContext* context,
             paint.addColorFragmentProcessor(std::move(fp));
         } else {
             // FIXME:  this should be mitchell, not bilinear.
-            paint.addColorTextureProcessor(std::move(srcProxy), nullptr, SkMatrix::I(),
+            paint.addColorTextureProcessor(std::move(srcProxy), SkMatrix::I(),
                                            GrSamplerState::ClampBilerp());
         }
         paint.setPorterDuffXPFactory(SkBlendMode::kSrc);

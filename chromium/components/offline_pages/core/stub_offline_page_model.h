@@ -41,9 +41,6 @@ class StubOfflinePageModel : public OfflinePageModel, public KeyedService {
   void DeleteCachedPagesByURLPredicate(
       const UrlPredicate& predicate,
       const DeletePageCallback& callback) override;
-  void CheckPagesExistOffline(
-      const std::set<GURL>& urls,
-      const CheckPagesExistOfflineCallback& callback) override;
   void GetAllPages(const MultipleOfflinePageItemCallback& callback) override;
   void GetOfflineIdsForClientId(
       const ClientId& client_id,
@@ -68,7 +65,6 @@ class StubOfflinePageModel : public OfflinePageModel, public KeyedService {
   const base::FilePath& GetArchiveDirectory(
       const std::string& name_space) const override;
   ClientPolicyController* GetPolicyController() override;
-  bool is_loaded() const override;
   OfflineEventLogger* GetLogger() override;
 
  private:

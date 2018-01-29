@@ -13,6 +13,7 @@
 #include "core/css/CSSImageValue.h"
 #include "core/css/CSSInitialValue.h"
 #include "core/css/CSSPaintValue.h"
+#include "core/css/CSSPropertyValue.h"
 #include "core/css/CSSShadowValue.h"
 #include "core/css/CSSStringValue.h"
 #include "core/css/CSSURIValue.h"
@@ -22,9 +23,9 @@
 #include "core/css/parser/CSSParserContext.h"
 #include "core/css/parser/CSSParserFastPaths.h"
 #include "core/css/parser/CSSParserLocalContext.h"
-#include "core/css/properties/CSSPropertyAPI.h"
-#include "core/css/properties/CSSPropertyBoxShadowUtils.h"
-#include "core/css/properties/CSSPropertyTransformUtils.h"
+#include "core/css/properties/CSSParsingUtils.h"
+#include "core/css/properties/CSSProperty.h"
+#include "core/css/properties/Longhand.h"
 #include "core/frame/UseCounter.h"
 #include "platform/runtime_enabled_features.h"
 
@@ -37,11 +38,12 @@ namespace CSSPropertyParserHelpers {
 namespace {
 
 // Add CSSVariableData to variableData vector.
-bool AddCSSPaintArgument(const Vector<CSSParserToken>& tokens,
-                         Vector<RefPtr<CSSVariableData>>* const variable_data) {
+bool AddCSSPaintArgument(
+    const Vector<CSSParserToken>& tokens,
+    Vector<scoped_refptr<CSSVariableData>>* const variable_data) {
   CSSParserTokenRange token_range(tokens);
   if (!token_range.AtEnd()) {
-    RefPtr<CSSVariableData> unparsed_css_variable_data =
+    scoped_refptr<CSSVariableData> unparsed_css_variable_data =
         CSSVariableData::Create(token_range, false, false);
     if (unparsed_css_variable_data.get()) {
       variable_data->push_back(std::move(unparsed_css_variable_data));
@@ -86,8 +88,8 @@ CSSFunctionValue* ConsumeFilterFunction(CSSParserTokenRange& range,
   CSSValue* parsed_value = nullptr;
 
   if (filter_type == CSSValueDropShadow) {
-    parsed_value = CSSPropertyBoxShadowUtils::ParseSingleShadow(
-        args, context.Mode(), AllowInsetAndSpread::kForbid);
+    parsed_value = CSSParsingUtils::ParseSingleShadow(
+        args, context.Mode(), CSSParsingUtils::AllowInsetAndSpread::kForbid);
   } else {
     if (args.AtEnd()) {
       context.Count(WebFeature::kCSSFilterFunctionNoArguments);
@@ -100,6 +102,11 @@ CSSFunctionValue* ConsumeFilterFunction(CSSParserTokenRange& range,
       if (!parsed_value) {
         parsed_value =
             CSSPropertyParserHelpers::ConsumeNumber(args, kValueRangeAll);
+      }
+      if (parsed_value &&
+          ToCSSPrimitiveValue(parsed_value)->GetDoubleValue() < 0) {
+        // crbug.com/776208: Negative values are not allowed by spec.
+        context.Count(WebFeature::kCSSFilterFunctionNegativeBrightness);
       }
     } else if (filter_type == CSSValueHueRotate) {
       parsed_value = CSSPropertyParserHelpers::ConsumeAngle(
@@ -182,8 +189,10 @@ class CalcParser {
       : source_range_(range), range_(range) {
     const CSSParserToken& token = range.Peek();
     if (token.FunctionId() == CSSValueCalc ||
-        token.FunctionId() == CSSValueWebkitCalc)
-      calc_value_ = CSSCalcValue::Create(ConsumeFunction(range_), value_range);
+        token.FunctionId() == CSSValueWebkitCalc) {
+      calc_value_ =
+          CSSCalcValue::CreateSimplified(ConsumeFunction(range_), value_range);
+    }
   }
 
   const CSSCalcValue* Value() const { return calc_value_.Get(); }
@@ -1376,7 +1385,7 @@ static CSSValue* ConsumePaint(CSSParserTokenRange& args,
   // TODO(renjieliu): We may want to optimize the implementation by resolve
   // variables early if paint function is registered.
   Vector<CSSParserToken> argument_tokens;
-  Vector<RefPtr<CSSVariableData>> variable_data;
+  Vector<scoped_refptr<CSSVariableData>> variable_data;
   while (!args.AtEnd()) {
     if (args.Peek().GetType() != kCommaToken) {
       argument_tokens.AppendVector(ConsumeFunctionArgsOrNot(args));
@@ -1434,7 +1443,8 @@ static CSSValue* ConsumeGeneratedImage(CSSParserTokenRange& range,
   } else if (id == CSSValueWebkitCrossFade) {
     result = ConsumeCrossFade(args, context);
   } else if (id == CSSValuePaint) {
-    result = RuntimeEnabledFeatures::CSSPaintAPIEnabled()
+    result = context->IsSecureContext() &&
+                     RuntimeEnabledFeatures::CSSPaintAPIEnabled()
                  ? ConsumePaint(args, context)
                  : nullptr;
   }
@@ -1532,7 +1542,7 @@ void AddProperty(CSSPropertyID resolved_property,
                  const CSSValue& value,
                  bool important,
                  IsImplicitProperty implicit,
-                 HeapVector<CSSProperty, 256>& properties) {
+                 HeapVector<CSSPropertyValue, 256>& properties) {
   DCHECK(!isPropertyAlias(resolved_property));
   DCHECK(implicit == IsImplicitProperty::kNotImplicit ||
          implicit == IsImplicitProperty::kImplicit);
@@ -1550,15 +1560,15 @@ void AddProperty(CSSPropertyID resolved_property,
     }
   }
 
-  properties.push_back(CSSProperty(resolved_property, value, important,
-                                   set_from_shorthand, shorthand_index,
-                                   implicit == IsImplicitProperty::kImplicit));
+  properties.push_back(CSSPropertyValue(
+      CSSProperty::Get(resolved_property), value, important, set_from_shorthand,
+      shorthand_index, implicit == IsImplicitProperty::kImplicit));
 }
 
 CSSValue* ConsumeTransformList(CSSParserTokenRange& range,
                                const CSSParserContext& context) {
-  return CSSPropertyTransformUtils::ConsumeTransformList(
-      range, context, CSSParserLocalContext());
+  return CSSParsingUtils::ConsumeTransformList(range, context,
+                                               CSSParserLocalContext());
 }
 
 CSSValue* ConsumeFilterFunctionList(CSSParserTokenRange& range,
@@ -1638,79 +1648,82 @@ void CountKeywordOnlyPropertyUsage(CSSPropertyID property,
   }
 }
 
-const CSSValue* ParseLonghandViaAPI(CSSPropertyID unresolved_property,
-                                    CSSPropertyID current_shorthand,
-                                    const CSSParserContext& context,
-                                    CSSParserTokenRange& range) {
-  DCHECK(!isShorthandProperty(unresolved_property));
-  CSSPropertyID property = resolveCSSPropertyID(unresolved_property);
-  if (CSSParserFastPaths::IsKeywordPropertyID(property)) {
+const CSSValue* ParseLonghand(CSSPropertyID unresolved_property,
+                              CSSPropertyID current_shorthand,
+                              const CSSParserContext& context,
+                              CSSParserTokenRange& range) {
+  CSSPropertyID property_id = resolveCSSPropertyID(unresolved_property);
+  DCHECK(!CSSProperty::Get(property_id).IsShorthand());
+  if (CSSParserFastPaths::IsKeywordPropertyID(property_id)) {
     if (!CSSParserFastPaths::IsValidKeywordPropertyAndValue(
-            property, range.Peek().Id(), context.Mode()))
+            property_id, range.Peek().Id(), context.Mode()))
       return nullptr;
-    CountKeywordOnlyPropertyUsage(property, context, range.Peek().Id());
+    CountKeywordOnlyPropertyUsage(property_id, context, range.Peek().Id());
     return ConsumeIdent(range);
   }
 
-  const CSSPropertyAPI& api = CSSPropertyAPI::Get(property);
-  const CSSValue* result = api.ParseSingleValue(
-      range, context,
-      CSSParserLocalContext(isPropertyAlias(unresolved_property),
-                            current_shorthand));
+  const CSSValue* result =
+      ToLonghand(CSSProperty::Get(property_id))
+          .ParseSingleValue(
+              range, context,
+              CSSParserLocalContext(isPropertyAlias(unresolved_property),
+                                    current_shorthand));
   return result;
 }
 
-bool ConsumeShorthandVia2LonghandAPIs(
+bool ConsumeShorthandVia2Longhands(
     const StylePropertyShorthand& shorthand,
     bool important,
     const CSSParserContext& context,
     CSSParserTokenRange& range,
-    HeapVector<CSSProperty, 256>& properties) {
+    HeapVector<CSSPropertyValue, 256>& properties) {
   DCHECK_EQ(shorthand.length(), 2u);
-  const CSSPropertyID* longhands = shorthand.properties();
+  const CSSProperty** longhands = shorthand.properties();
 
   const CSSValue* start =
-      ParseLonghandViaAPI(longhands[0], shorthand.id(), context, range);
+      ParseLonghand(longhands[0]->PropertyID(), shorthand.id(), context, range);
 
   if (!start)
     return false;
 
   const CSSValue* end =
-      ParseLonghandViaAPI(longhands[1], shorthand.id(), context, range);
+      ParseLonghand(longhands[1]->PropertyID(), shorthand.id(), context, range);
 
   if (!end)
     end = start;
-  AddProperty(longhands[0], shorthand.id(), *start, important,
+  AddProperty(longhands[0]->PropertyID(), shorthand.id(), *start, important,
               IsImplicitProperty::kNotImplicit, properties);
-  AddProperty(longhands[1], shorthand.id(), *end, important,
+  AddProperty(longhands[1]->PropertyID(), shorthand.id(), *end, important,
               IsImplicitProperty::kNotImplicit, properties);
 
   return range.AtEnd();
 }
 
-bool ConsumeShorthandVia4LonghandAPIs(
+bool ConsumeShorthandVia4Longhands(
     const StylePropertyShorthand& shorthand,
     bool important,
     const CSSParserContext& context,
     CSSParserTokenRange& range,
-    HeapVector<CSSProperty, 256>& properties) {
+    HeapVector<CSSPropertyValue, 256>& properties) {
   DCHECK_EQ(shorthand.length(), 4u);
-  const CSSPropertyID* longhands = shorthand.properties();
+  const CSSProperty** longhands = shorthand.properties();
   const CSSValue* top =
-      ParseLonghandViaAPI(longhands[0], shorthand.id(), context, range);
+      ParseLonghand(longhands[0]->PropertyID(), shorthand.id(), context, range);
 
   if (!top)
     return false;
 
   const CSSValue* right =
-      ParseLonghandViaAPI(longhands[1], shorthand.id(), context, range);
+      ParseLonghand(longhands[1]->PropertyID(), shorthand.id(), context, range);
 
   const CSSValue* bottom = nullptr;
   const CSSValue* left = nullptr;
   if (right) {
-    bottom = ParseLonghandViaAPI(longhands[2], shorthand.id(), context, range);
+    bottom = ParseLonghand(longhands[2]->PropertyID(), shorthand.id(), context,
+                           range);
     if (bottom) {
-      left = ParseLonghandViaAPI(longhands[3], shorthand.id(), context, range);
+      left = ParseLonghand(longhands[3]->PropertyID(), shorthand.id(), context,
+                           range);
     }
   }
 
@@ -1721,36 +1734,36 @@ bool ConsumeShorthandVia4LonghandAPIs(
   if (!left)
     left = right;
 
-  AddProperty(longhands[0], shorthand.id(), *top, important,
+  AddProperty(longhands[0]->PropertyID(), shorthand.id(), *top, important,
               IsImplicitProperty::kNotImplicit, properties);
-  AddProperty(longhands[1], shorthand.id(), *right, important,
+  AddProperty(longhands[1]->PropertyID(), shorthand.id(), *right, important,
               IsImplicitProperty::kNotImplicit, properties);
-  AddProperty(longhands[2], shorthand.id(), *bottom, important,
+  AddProperty(longhands[2]->PropertyID(), shorthand.id(), *bottom, important,
               IsImplicitProperty::kNotImplicit, properties);
-  AddProperty(longhands[3], shorthand.id(), *left, important,
+  AddProperty(longhands[3]->PropertyID(), shorthand.id(), *left, important,
               IsImplicitProperty::kNotImplicit, properties);
 
   return range.AtEnd();
 }
 
-bool ConsumeShorthandGreedilyViaLonghandAPIs(
+bool ConsumeShorthandGreedilyViaLonghands(
     const StylePropertyShorthand& shorthand,
     bool important,
     const CSSParserContext& context,
     CSSParserTokenRange& range,
-    HeapVector<CSSProperty, 256>& properties) {
+    HeapVector<CSSPropertyValue, 256>& properties) {
   // Existing shorthands have at most 6 longhands.
   DCHECK_LE(shorthand.length(), 6u);
   const CSSValue* longhands[6] = {nullptr, nullptr, nullptr,
                                   nullptr, nullptr, nullptr};
-  const CSSPropertyID* shorthand_properties = shorthand.properties();
+  const CSSProperty** shorthand_properties = shorthand.properties();
   do {
     bool found_longhand = false;
     for (size_t i = 0; !found_longhand && i < shorthand.length(); ++i) {
       if (longhands[i])
         continue;
-      longhands[i] = ParseLonghandViaAPI(shorthand_properties[i],
-                                         shorthand.id(), context, range);
+      longhands[i] = ParseLonghand(shorthand_properties[i]->PropertyID(),
+                                   shorthand.id(), context, range);
 
       if (longhands[i])
         found_longhand = true;
@@ -1761,10 +1774,11 @@ bool ConsumeShorthandGreedilyViaLonghandAPIs(
 
   for (size_t i = 0; i < shorthand.length(); ++i) {
     if (longhands[i]) {
-      AddProperty(shorthand_properties[i], shorthand.id(), *longhands[i],
-                  important, IsImplicitProperty::kNotImplicit, properties);
+      AddProperty(shorthand_properties[i]->PropertyID(), shorthand.id(),
+                  *longhands[i], important, IsImplicitProperty::kNotImplicit,
+                  properties);
     } else {
-      AddProperty(shorthand_properties[i], shorthand.id(),
+      AddProperty(shorthand_properties[i]->PropertyID(), shorthand.id(),
                   *CSSInitialValue::Create(), important,
                   IsImplicitProperty::kNotImplicit, properties);
     }
@@ -1772,16 +1786,17 @@ bool ConsumeShorthandGreedilyViaLonghandAPIs(
   return true;
 }
 
-void AddExpandedPropertyForValue(CSSPropertyID property,
-                                 const CSSValue& value,
-                                 bool important,
-                                 HeapVector<CSSProperty, 256>& properties) {
+void AddExpandedPropertyForValue(
+    CSSPropertyID property,
+    const CSSValue& value,
+    bool important,
+    HeapVector<CSSPropertyValue, 256>& properties) {
   const StylePropertyShorthand& shorthand = shorthandForProperty(property);
   unsigned shorthand_length = shorthand.length();
   DCHECK(shorthand_length);
-  const CSSPropertyID* longhands = shorthand.properties();
+  const CSSProperty** longhands = shorthand.properties();
   for (unsigned i = 0; i < shorthand_length; ++i) {
-    AddProperty(longhands[i], property, value, important,
+    AddProperty(longhands[i]->PropertyID(), property, value, important,
                 IsImplicitProperty::kNotImplicit, properties);
   }
 }

@@ -27,9 +27,11 @@ class ContextVk : public ContextImpl, public ResourceVk
 
     gl::Error initialize() override;
 
+    void onDestroy(const gl::Context *context) override;
+
     // Flush and finish.
-    gl::Error flush() override;
-    gl::Error finish() override;
+    gl::Error flush(const gl::Context *context) override;
+    gl::Error finish(const gl::Context *context) override;
 
     // Drawing methods.
     gl::Error drawArrays(const gl::Context *context,
@@ -75,10 +77,14 @@ class ContextVk : public ContextImpl, public ResourceVk
     std::string getVendorString() const override;
     std::string getRendererDescription() const override;
 
-    // Debug markers.
+    // EXT_debug_marker
     void insertEventMarker(GLsizei length, const char *marker) override;
     void pushGroupMarker(GLsizei length, const char *marker) override;
     void popGroupMarker() override;
+
+    // KHR_debug
+    void pushDebugGroup(GLenum source, GLuint id, GLsizei length, const char *message) override;
+    void popDebugGroup() override;
 
     // State sync with dirty bits.
     void syncState(const gl::Context *context, const gl::State::DirtyBits &dirtyBits) override;
@@ -135,8 +141,8 @@ class ContextVk : public ContextImpl, public ResourceVk
     std::vector<PathImpl *> createPaths(GLsizei) override;
 
     VkDevice getDevice() const;
-    vk::Error getStartedCommandBuffer(vk::CommandBuffer **commandBufferOut);
-    vk::Error submitCommands(vk::CommandBuffer *commandBuffer);
+    vk::Error getStartedCommandBuffer(vk::CommandBufferAndState **commandBufferOut);
+    vk::Error submitCommands(vk::CommandBufferAndState *commandBuffer);
 
     RendererVk *getRenderer() { return mRenderer; }
 
@@ -148,6 +154,8 @@ class ContextVk : public ContextImpl, public ResourceVk
                               GLuint numGroupsY,
                               GLuint numGroupsZ) override;
 
+    vk::DescriptorPool *getDescriptorPool();
+
   private:
     gl::Error initPipeline(const gl::Context *context);
     gl::Error setupDraw(const gl::Context *context, GLenum mode);
@@ -155,6 +163,26 @@ class ContextVk : public ContextImpl, public ResourceVk
     RendererVk *mRenderer;
     vk::Pipeline mCurrentPipeline;
     GLenum mCurrentDrawMode;
+
+    // Keep CreateInfo structures cached so that we can quickly update them when creating
+    // updated pipelines. When we move to a pipeline cache, we will want to use a more compact
+    // structure that we can use to query the pipeline cache in the Renderer.
+    // TODO(jmadill): Update this when we move to a pipeline cache.
+    VkPipelineShaderStageCreateInfo mCurrentShaderStages[2];
+    VkPipelineVertexInputStateCreateInfo mCurrentVertexInputState;
+    VkPipelineInputAssemblyStateCreateInfo mCurrentInputAssemblyState;
+    VkViewport mCurrentViewportVk;
+    VkRect2D mCurrentScissorVk;
+    VkPipelineViewportStateCreateInfo mCurrentViewportState;
+    VkPipelineRasterizationStateCreateInfo mCurrentRasterState;
+    VkPipelineMultisampleStateCreateInfo mCurrentMultisampleState;
+    VkPipelineColorBlendAttachmentState mCurrentBlendAttachmentState;
+    VkPipelineColorBlendStateCreateInfo mCurrentBlendState;
+    VkGraphicsPipelineCreateInfo mCurrentPipelineInfo;
+
+    // The descriptor pool is externally sychronized, so cannot be accessed from different threads
+    // simulataneously. Hence, we keep it in the ContextVk instead of the RendererVk.
+    vk::DescriptorPool mDescriptorPool;
 };
 
 }  // namespace rx

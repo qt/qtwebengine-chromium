@@ -57,6 +57,7 @@ class CORE_EXPORT HTMLLinkElement final : public HTMLElement,
   String Media() const { return media_; }
   String TypeValue() const { return type_; }
   String AsValue() const { return as_; }
+  String IntegrityValue() const { return integrity_; }
   ReferrerPolicy GetReferrerPolicy() const { return referrer_policy_; }
   const LinkRelAttribute& RelAttribute() const { return rel_attribute_; }
   DOMTokenList& relList() const {
@@ -74,7 +75,7 @@ class CORE_EXPORT HTMLLinkElement final : public HTMLElement,
   bool Async() const;
 
   CSSStyleSheet* sheet() const {
-    return GetLinkStyle() ? GetLinkStyle()->Sheet() : 0;
+    return GetLinkStyle() ? GetLinkStyle()->Sheet() : nullptr;
   }
   Document* import() const;
 
@@ -100,6 +101,7 @@ class CORE_EXPORT HTMLLinkElement final : public HTMLElement,
                 const String& as,
                 const String& media,
                 const String& nonce,
+                const String& integrity,
                 ReferrerPolicy,
                 const KURL&);
   bool IsAlternate() const {
@@ -110,9 +112,9 @@ class CORE_EXPORT HTMLLinkElement final : public HTMLElement,
   }
   bool IsCreatedByParser() const { return created_by_parser_; }
 
-  DECLARE_VIRTUAL_TRACE();
+  virtual void Trace(blink::Visitor*);
 
-  DECLARE_VIRTUAL_TRACE_WRAPPERS();
+  virtual void TraceWrappers(const ScriptWrappableVisitor*) const;
 
  private:
   HTMLLinkElement(Document&, bool created_by_parser);
@@ -149,7 +151,7 @@ class CORE_EXPORT HTMLLinkElement final : public HTMLElement,
   void DidStopLinkPrerender() override;
   void DidSendLoadForLinkPrerender() override;
   void DidSendDOMContentLoadedForLinkPrerender() override;
-  RefPtr<WebTaskRunner> GetLoadingTaskRunner() override;
+  scoped_refptr<WebTaskRunner> GetLoadingTaskRunner() override;
 
   Member<LinkResource> link_;
   Member<LinkLoader> link_loader_;
@@ -157,6 +159,7 @@ class CORE_EXPORT HTMLLinkElement final : public HTMLElement,
   String type_;
   String as_;
   String media_;
+  String integrity_;
   ReferrerPolicy referrer_policy_;
   Member<DOMTokenList> sizes_;
   Vector<IntSize> icon_sizes_;

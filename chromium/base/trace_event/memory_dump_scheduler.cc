@@ -50,6 +50,11 @@ void MemoryDumpScheduler::StartInternal(MemoryDumpScheduler::Config config) {
   for (const Config::Trigger& trigger : config.triggers) {
     DCHECK_GT(trigger.period_ms, 0u);
     switch (trigger.level_of_detail) {
+      case MemoryDumpLevelOfDetail::VM_REGIONS_ONLY_FOR_HEAP_PROFILER:
+        // There is no use case to request a periodic dump which contains
+        // details that are useful only for the heap-profiler.
+        NOTREACHED();
+        return;
       case MemoryDumpLevelOfDetail::BACKGROUND:
         break;
       case MemoryDumpLevelOfDetail::LIGHT:
@@ -109,8 +114,8 @@ void MemoryDumpScheduler::Tick(uint32_t expected_generation) {
       TimeDelta::FromMilliseconds(period_ms_));
 }
 
-MemoryDumpScheduler::Config::Config() {}
-MemoryDumpScheduler::Config::~Config() {}
+MemoryDumpScheduler::Config::Config() = default;
+MemoryDumpScheduler::Config::~Config() = default;
 MemoryDumpScheduler::Config::Config(const MemoryDumpScheduler::Config&) =
     default;
 

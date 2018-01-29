@@ -121,8 +121,8 @@ class QuicChromiumClientSessionTest
                                                    base::Bind(&base::RandInt),
                                                    &net_log_, NetLogSource());
     socket->Connect(kIpEndPoint);
-    QuicChromiumPacketWriter* writer =
-        new net::QuicChromiumPacketWriter(socket.get());
+    QuicChromiumPacketWriter* writer = new net::QuicChromiumPacketWriter(
+        socket.get(), base::ThreadTaskRunnerHandle::Get().get());
     QuicConnection* connection = new QuicConnection(
         0, QuicSocketAddress(QuicSocketAddressImpl(kIpEndPoint)), &helper_,
         &alarm_factory_, writer, true, Perspective::IS_CLIENT,
@@ -132,7 +132,11 @@ class QuicChromiumClientSessionTest
         /*stream_factory=*/nullptr, &crypto_client_stream_factory_, &clock_,
         &transport_security_state_,
         base::WrapUnique(static_cast<QuicServerInfo*>(nullptr)), server_id_,
-        /*require_confirmation=*/false, kQuicYieldAfterPacketsRead,
+        /*require_confirmation=*/false, /*migrate_session_early*/ false,
+        /*migrate_session_on_network_change*/ false,
+        /*migrate_session_early_v2*/ false,
+        /*migrate_session_on_network_change_v2*/ false,
+        kQuicYieldAfterPacketsRead,
         QuicTime::Delta::FromMilliseconds(kQuicYieldAfterDurationMilliseconds),
         /*cert_verify_flags=*/0, DefaultQuicConfig(), &crypto_config_,
         "CONNECTION_UNKNOWN", base::TimeTicks::Now(), base::TimeTicks::Now(),
@@ -162,7 +166,8 @@ class QuicChromiumClientSessionTest
       DatagramClientSocket* socket,
       QuicChromiumClientSession* session) const {
     std::unique_ptr<QuicChromiumPacketWriter> writer(
-        new QuicChromiumPacketWriter(socket));
+        new QuicChromiumPacketWriter(
+            socket, base::ThreadTaskRunnerHandle::Get().get()));
     writer->set_delegate(session);
     return writer.release();
   }
@@ -425,7 +430,8 @@ TEST_P(QuicChromiumClientSessionTest, AsyncStreamRequest) {
                                   callback.callback()));
 
   // Close a stream and ensure the stream request completes.
-  QuicRstStreamFrame rst(GetNthClientInitiatedStreamId(0),
+  QuicRstStreamFrame rst(kInvalidControlFrameId,
+                         GetNthClientInitiatedStreamId(0),
                          QUIC_STREAM_CANCELLED, 0);
   session_->OnRstStream(rst);
   ASSERT_TRUE(callback.have_result());
@@ -516,7 +522,8 @@ TEST_P(QuicChromiumClientSessionTest, CancelPendingStreamRequest) {
   handle.reset();
 
   // Close a stream and ensure that no new stream is created.
-  QuicRstStreamFrame rst(GetNthClientInitiatedStreamId(0),
+  QuicRstStreamFrame rst(kInvalidControlFrameId,
+                         GetNthClientInitiatedStreamId(0),
                          QUIC_STREAM_CANCELLED, 0);
   session_->OnRstStream(rst);
   EXPECT_EQ(kMaxOpenStreams - 1, session_->GetNumOpenOutgoingStreams());
@@ -645,7 +652,8 @@ TEST_P(QuicChromiumClientSessionTest, MaxNumStreams) {
   session_->CloseStream(stream_id);
 
   EXPECT_FALSE(session_->CreateOutgoingDynamicStream());
-  QuicRstStreamFrame rst1(stream_id, QUIC_STREAM_NO_ERROR, 0);
+  QuicRstStreamFrame rst1(kInvalidControlFrameId, stream_id,
+                          QUIC_STREAM_NO_ERROR, 0);
   session_->OnRstStream(rst1);
   EXPECT_EQ(kMaxOpenStreams - 1, session_->GetNumOpenOutgoingStreams());
   EXPECT_TRUE(session_->CreateOutgoingDynamicStream());
@@ -943,7 +951,8 @@ TEST_P(QuicChromiumClientSessionTest, MaxNumStreamsViaRequest) {
   // Close a stream and ensure I can now open a new one.
   QuicStreamId stream_id = streams[0]->id();
   session_->CloseStream(stream_id);
-  QuicRstStreamFrame rst1(stream_id, QUIC_STREAM_NO_ERROR, 0);
+  QuicRstStreamFrame rst1(kInvalidControlFrameId, stream_id,
+                          QUIC_STREAM_NO_ERROR, 0);
   session_->OnRstStream(rst1);
   ASSERT_TRUE(callback.have_result());
   EXPECT_THAT(callback.WaitForResult(), IsOk());
@@ -963,8 +972,8 @@ TEST_P(QuicChromiumClientSessionTest, GoAwayReceived) {
 
   // After receiving a GoAway, I should no longer be able to create outgoing
   // streams.
-  session_->connection()->OnGoAwayFrame(
-      QuicGoAwayFrame(QUIC_PEER_GOING_AWAY, 1u, "Going away."));
+  session_->connection()->OnGoAwayFrame(QuicGoAwayFrame(
+      kInvalidControlFrameId, QUIC_PEER_GOING_AWAY, 1u, "Going away."));
   EXPECT_EQ(nullptr, session_->CreateOutgoingDynamicStream());
 }
 
@@ -1149,12 +1158,9 @@ TEST_P(QuicChromiumClientSessionTest, MigrateToSocket) {
   struct iovec iov[1];
   iov[0].iov_base = data;
   iov[0].iov_len = 4;
-  QuicStreamPeer::SendBuffer(stream).SaveStreamData(
-      QuicIOVector(iov, arraysize(iov), 4), 0, 4);
+  QuicStreamPeer::SendBuffer(stream).SaveStreamData(iov, 1, 0, 4);
   QuicStreamPeer::SetStreamBytesWritten(4, stream);
-  session_->WritevData(stream, stream->id(),
-                       QuicIOVector(iov, arraysize(iov), 4), 0, NO_FIN,
-                       nullptr);
+  session_->WritevData(stream, stream->id(), 4, 0, NO_FIN);
 
   EXPECT_TRUE(socket_data.AllReadDataConsumed());
   EXPECT_TRUE(socket_data.AllWriteDataConsumed());

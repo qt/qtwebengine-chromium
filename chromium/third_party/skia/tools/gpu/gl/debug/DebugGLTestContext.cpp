@@ -982,7 +982,8 @@ private:
             case GR_GL_COMPILE_STATUS:
                 *params = GR_GL_TRUE;
                 break;
-            case GR_GL_INFO_LOG_LENGTH:
+            case GR_GL_INFO_LOG_LENGTH: // fallthru
+            case GL_PROGRAM_BINARY_LENGTH:
                 *params = 0;
                 break;
                 // we don't expect any other pnames
@@ -1202,6 +1203,7 @@ public:
 
 private:
     void onPlatformMakeCurrent() const override {}
+    std::function<void()> onPlatformGetAutoContextRestore() const override { return nullptr; }
     void onPlatformSwapBuffers() const override {}
     GrGLFuncPtr onPlatformGetProcAddress(const char*) const override { return nullptr; }
 };

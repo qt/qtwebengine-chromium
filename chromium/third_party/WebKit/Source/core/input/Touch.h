@@ -40,8 +40,7 @@ namespace blink {
 
 class LocalFrame;
 
-class CORE_EXPORT Touch final : public GarbageCollectedFinalized<Touch>,
-                                public ScriptWrappable {
+class CORE_EXPORT Touch final : public ScriptWrappable {
   DEFINE_WRAPPERTYPEINFO();
 
  public:
@@ -82,7 +81,7 @@ class CORE_EXPORT Touch final : public GarbageCollectedFinalized<Touch>,
   const FloatPoint& ScreenLocation() const { return screen_pos_; }
   Touch* CloneWithNewTarget(EventTarget*) const;
 
-  DECLARE_TRACE();
+  void Trace(blink::Visitor*);
 
  private:
   Touch(LocalFrame*,

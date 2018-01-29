@@ -91,7 +91,6 @@
 <translation id="5941711191222866238">Kicsinyítés</translation>
 <translation id="5943826764092288734">{HOURS,plural, =1{1 óra}other{# óra}}</translation>
 <translation id="5948410903763073882">Alt+<ph name="KEY_COMBO_NAME" /></translation>
-<translation id="598033046487663418">Alkalmazások</translation>
 <translation id="6012623610530968780"><ph name="TOTAL_PAGE_NUM" />/<ph name="SELECTED_PAGE" />. oldal</translation>
 <translation id="6022924867608035986">A keresőmezőben lévő szöveg törlése</translation>
 <translation id="6040143037577758943">Bezárás</translation>
@@ -144,6 +143,7 @@
 <translation id="8352146631962686268">{YEARS,plural, =1{1 év}other{# év}}</translation>
 <translation id="8371695176452482769">Most beszéljen</translation>
 <translation id="838869780401515933">Megjelölés</translation>
+<translation id="8393700583063109961">Üzenet küldése</translation>
 <translation id="8394908167088220973">Lejátszás/szüneteltetés</translation>
 <translation id="8400147561352026160">Shift+<ph name="KEY_COMBO_NAME" /></translation>
 <translation id="8458811141851741261">{YEARS,plural, =1{1 é}other{# é}}</translation>

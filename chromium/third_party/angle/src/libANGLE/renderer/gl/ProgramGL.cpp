@@ -14,7 +14,9 @@
 #include "common/string_utils.h"
 #include "common/utilities.h"
 #include "libANGLE/Context.h"
+#include "libANGLE/ProgramLinkedResources.h"
 #include "libANGLE/Uniform.h"
+#include "libANGLE/queryconversions.h"
 #include "libANGLE/renderer/gl/ContextGL.h"
 #include "libANGLE/renderer/gl/FunctionsGL.h"
 #include "libANGLE/renderer/gl/ShaderGL.h"
@@ -82,14 +84,14 @@ void ProgramGL::save(const gl::Context *context, gl::BinaryOutputStream *stream)
     GLint binaryLength = 0;
     mFunctions->getProgramiv(mProgramID, GL_PROGRAM_BINARY_LENGTH, &binaryLength);
 
-    std::vector<uint8_t> binary(binaryLength);
+    std::vector<uint8_t> binary(std::max(binaryLength, 1));
     GLenum binaryFormat = GL_NONE;
     mFunctions->getProgramBinary(mProgramID, binaryLength, &binaryLength, &binaryFormat,
-                                 &binary[0]);
+                                 binary.data());
 
     stream->writeInt(binaryFormat);
     stream->writeInt(binaryLength);
-    stream->writeBytes(&binary[0], binaryLength);
+    stream->writeBytes(binary.data(), binaryLength);
 
     reapplyUBOBindingsIfNeeded(context);
 }
@@ -124,7 +126,7 @@ void ProgramGL::setSeparable(bool separable)
 }
 
 gl::LinkResult ProgramGL::link(const gl::Context *context,
-                               const gl::VaryingPacking &packing,
+                               const gl::ProgramLinkedResources &resources,
                                gl::InfoLog &infoLog)
 {
     preLink();
@@ -212,6 +214,7 @@ gl::LinkResult ProgramGL::link(const gl::Context *context,
         mStateManager->forceUseProgram(mProgramID);
     }
 
+    linkResources(resources);
     postLink();
 
     return true;
@@ -574,7 +577,61 @@ bool ProgramGL::getUniformBlockMemberInfo(const std::string & /* memberUniformNa
     GLint isRowMajorMatrix = 0;
     mFunctions->getActiveUniformsiv(mProgramID, 1, &uniformIndex, GL_UNIFORM_IS_ROW_MAJOR,
                                     &isRowMajorMatrix);
-    memberInfoOut->isRowMajorMatrix = isRowMajorMatrix != GL_FALSE;
+    memberInfoOut->isRowMajorMatrix = gl::ConvertToBool(isRowMajorMatrix);
+    return true;
+}
+
+bool ProgramGL::getShaderStorageBlockMemberInfo(const std::string & /* memberName */,
+                                                const std::string &memberUniformMappedName,
+                                                sh::BlockMemberInfo *memberInfoOut) const
+{
+    const GLchar *memberNameGLStr = memberUniformMappedName.c_str();
+    GLuint index =
+        mFunctions->getProgramResourceIndex(mProgramID, GL_BUFFER_VARIABLE, memberNameGLStr);
+
+    if (index == GL_INVALID_INDEX)
+    {
+        *memberInfoOut = sh::BlockMemberInfo::getDefaultBlockInfo();
+        return false;
+    }
+
+    constexpr int kPropCount             = 5;
+    std::array<GLenum, kPropCount> props = {
+        {GL_ARRAY_STRIDE, GL_IS_ROW_MAJOR, GL_MATRIX_STRIDE, GL_OFFSET, GL_TOP_LEVEL_ARRAY_STRIDE}};
+    std::array<GLint, kPropCount> params;
+    GLsizei length;
+    mFunctions->getProgramResourceiv(mProgramID, GL_BUFFER_VARIABLE, index, kPropCount,
+                                     props.data(), kPropCount, &length, params.data());
+    ASSERT(kPropCount == length);
+    memberInfoOut->arrayStride         = params[0];
+    memberInfoOut->isRowMajorMatrix    = params[1] != 0;
+    memberInfoOut->matrixStride        = params[2];
+    memberInfoOut->offset              = params[3];
+    memberInfoOut->topLevelArrayStride = params[4];
+
+    return true;
+}
+
+bool ProgramGL::getShaderStorageBlockSize(const std::string &name,
+                                          const std::string &mappedName,
+                                          size_t *sizeOut) const
+{
+    const GLchar *nameGLStr = mappedName.c_str();
+    GLuint index =
+        mFunctions->getProgramResourceIndex(mProgramID, GL_SHADER_STORAGE_BLOCK, nameGLStr);
+
+    if (index == GL_INVALID_INDEX)
+    {
+        *sizeOut = 0;
+        return false;
+    }
+
+    GLenum prop    = GL_BUFFER_DATA_SIZE;
+    GLsizei length = 0;
+    GLint dataSize = 0;
+    mFunctions->getProgramResourceiv(mProgramID, GL_SHADER_STORAGE_BLOCK, index, 1, &prop, 1,
+                                     &length, &dataSize);
+    *sizeOut = static_cast<size_t>(dataSize);
     return true;
 }
 
@@ -663,14 +720,15 @@ void ProgramGL::postLink()
         // "Locations for sequential array indices are not required to be sequential."
         const gl::LinkedUniform &uniform = uniforms[entry.index];
         std::stringstream fullNameStr;
-        fullNameStr << uniform.mappedName;
         if (uniform.isArray())
         {
-            for (auto arrayElementIndexIt = entry.arrayIndices.rbegin();
-                 arrayElementIndexIt != entry.arrayIndices.rend(); ++arrayElementIndexIt)
-            {
-                fullNameStr << "[" << (*arrayElementIndexIt) << "]";
-            }
+            ASSERT(angle::EndsWith(uniform.mappedName, "[0]"));
+            fullNameStr << uniform.mappedName.substr(0, uniform.mappedName.length() - 3);
+            fullNameStr << "[" << entry.arrayIndex << "]";
+        }
+        else
+        {
+            fullNameStr << uniform.mappedName;
         }
         const std::string &fullName = fullNameStr.str();
 
@@ -802,6 +860,35 @@ void ProgramGL::markUnusedUniformLocations(std::vector<gl::VariableLocation> *un
             locationRef.markUnused();
         }
     }
+}
+
+void ProgramGL::linkResources(const gl::ProgramLinkedResources &resources)
+{
+    // Gather interface block info.
+    auto getUniformBlockSize = [this](const std::string &name, const std::string &mappedName,
+                                      size_t *sizeOut) {
+        return this->getUniformBlockSize(name, mappedName, sizeOut);
+    };
+
+    auto getUniformBlockMemberInfo = [this](const std::string &name, const std::string &mappedName,
+                                            sh::BlockMemberInfo *infoOut) {
+        return this->getUniformBlockMemberInfo(name, mappedName, infoOut);
+    };
+
+    resources.uniformBlockLinker.linkBlocks(getUniformBlockSize, getUniformBlockMemberInfo);
+
+    auto getShaderStorageBlockSize = [this](const std::string &name, const std::string &mappedName,
+                                            size_t *sizeOut) {
+        return this->getShaderStorageBlockSize(name, mappedName, sizeOut);
+    };
+
+    auto getShaderStorageBlockMemberInfo = [this](const std::string &name,
+                                                  const std::string &mappedName,
+                                                  sh::BlockMemberInfo *infoOut) {
+        return this->getShaderStorageBlockMemberInfo(name, mappedName, infoOut);
+    };
+    resources.shaderStorageBlockLinker.linkBlocks(getShaderStorageBlockSize,
+                                                  getShaderStorageBlockMemberInfo);
 }
 
 }  // namespace rx

@@ -65,8 +65,9 @@ class FakeSoftwareOutputDevice : public viz::SoftwareOutputDevice {
 class SoftwareBrowserCompositorOutputSurfaceTest : public testing::Test {
  public:
   SoftwareBrowserCompositorOutputSurfaceTest()
-      : begin_frame_source_(base::MakeUnique<viz::DelayBasedTimeSource>(
-            message_loop_.task_runner().get())) {}
+      : begin_frame_source_(std::make_unique<viz::DelayBasedTimeSource>(
+                                message_loop_.task_runner().get()),
+                            viz::BeginFrameSource::kNotRestartableId) {}
   ~SoftwareBrowserCompositorOutputSurfaceTest() override = default;
 
   void SetUp() override;
@@ -118,7 +119,7 @@ void SoftwareBrowserCompositorOutputSurfaceTest::TearDown() {
 std::unique_ptr<content::BrowserCompositorOutputSurface>
 SoftwareBrowserCompositorOutputSurfaceTest::CreateSurface(
     std::unique_ptr<viz::SoftwareOutputDevice> device) {
-  return base::MakeUnique<content::SoftwareBrowserCompositorOutputSurface>(
+  return std::make_unique<content::SoftwareBrowserCompositorOutputSurface>(
       std::move(device),
       base::Bind(
           &SoftwareBrowserCompositorOutputSurfaceTest::UpdateVSyncParameters,
@@ -140,7 +141,7 @@ TEST_F(SoftwareBrowserCompositorOutputSurfaceTest, NoVSyncProvider) {
   output_surface_->BindToClient(&output_surface_client);
 
   output_surface_->SwapBuffers(viz::OutputSurfaceFrame());
-  EXPECT_EQ(NULL, output_surface_->software_device()->GetVSyncProvider());
+  EXPECT_EQ(nullptr, output_surface_->software_device()->GetVSyncProvider());
   EXPECT_EQ(0, update_vsync_parameters_call_count_);
 }
 

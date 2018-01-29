@@ -40,6 +40,7 @@ import optparse
 import os
 import re
 import sys
+import tempfile
 
 from webkitpy.common import exit_codes
 from webkitpy.common import find_files
@@ -87,6 +88,7 @@ class Port(object):
         ('mac10.10', 'x86'),
         ('mac10.11', 'x86'),
         ('mac10.12', 'x86'),
+        ('mac10.13', 'x86'),
         ('win7', 'x86'),
         ('win10', 'x86'),
         ('trusty', 'x86_64'),
@@ -99,7 +101,7 @@ class Port(object):
     )
 
     CONFIGURATION_SPECIFIER_MACROS = {
-        'mac': ['retina', 'mac10.10', 'mac10.11', 'mac10.12'],
+        'mac': ['retina', 'mac10.10', 'mac10.11', 'mac10.12', 'mac10.13'],
         'win': ['win7', 'win10'],
         'linux': ['trusty'],
         'android': ['kitkat'],
@@ -171,11 +173,11 @@ class Port(object):
             self._name, self._version, self._architecture, self._test_configuration)
 
     def primary_driver_flag(self):
-        """Returns the driver flag that is used for flag-specific expectations
-           and baselines.  This is the flag in LayoutTests/rwt.flag if present,
-           otherwise the first flag passed by --additional-driver-flag.
+        """Returns the driver flag that is used for flag-specific expectations and baselines. This
+           is the flag in LayoutTests/additional-driver-flag.setting, if present, otherwise the
+           first flag passed by --additional-driver-flag.
         """
-        flag_file = self._filesystem.join(self.layout_tests_dir(), 'rwt.flag')
+        flag_file = self._filesystem.join(self.layout_tests_dir(), 'additional-driver-flag.setting')
         if self._filesystem.exists(flag_file):
             flag = self._filesystem.read_text_file(flag_file).strip()
             if flag:
@@ -201,7 +203,8 @@ class Port(object):
             fingerprint = 'Nxvaj3+bY3oVrTc+Jp7m3E3sB1n3lXtnMDCyBsqEXiY='
             flags += [
                 '--run-layout-test',
-                '--ignore-certificate-errors-spki-list=' + fingerprint]
+                '--ignore-certificate-errors-spki-list=' + fingerprint,
+                '--user-data-dir']
         return flags
 
     def supports_per_test_timeout(self):
@@ -263,12 +266,6 @@ class Port(object):
            platform-independent results. Otherwise returns None."""
         flag_specific_path = self._flag_specific_baseline_search_path()
         return flag_specific_path[-1] if flag_specific_path else None
-
-    def virtual_baseline_search_path(self, test_name):
-        suite = self.lookup_virtual_suite(test_name)
-        if not suite:
-            return None
-        return [self._filesystem.join(path, suite.name) for path in self.default_baseline_search_path()]
 
     def baseline_search_path(self):
         return (self.get_option('additional_platform_directory', []) +
@@ -546,7 +543,7 @@ class Port(object):
 
         return [(None, baseline_filename)]
 
-    def expected_filename(self, test_name, suffix, return_default=True):
+    def expected_filename(self, test_name, suffix, return_default=True, fallback_base_for_virtual=True):
         """Given a test name, returns an absolute path to its expected results.
 
         If no expected results are found in any of the searched directories,
@@ -565,15 +562,20 @@ class Port(object):
                 search list of directories, e.g., 'win'.
             return_default: if True, returns the path to the generic expectation if nothing
                 else is found; if False, returns None.
+            fallback_base_for_virtual: For virtual test only. When no virtual specific
+                baseline is found, if this parameter is True, fallback to find baselines
+                of the base test; if False, depending on |return_default|, returns the
+                generic virtual baseline or None.
         """
         # FIXME: The [0] here is very mysterious, as is the destructured return.
         platform_dir, baseline_filename = self.expected_baselines(test_name, suffix)[0]
         if platform_dir:
             return self._filesystem.join(platform_dir, baseline_filename)
 
-        actual_test_name = self.lookup_virtual_test_base(test_name)
-        if actual_test_name:
-            return self.expected_filename(actual_test_name, suffix)
+        if fallback_base_for_virtual:
+            actual_test_name = self.lookup_virtual_test_base(test_name)
+            if actual_test_name:
+                return self.expected_filename(actual_test_name, suffix, return_default)
 
         if return_default:
             return self._filesystem.join(self.layout_tests_dir(), baseline_filename)
@@ -1111,7 +1113,12 @@ class Port(object):
             'UBSAN_OPTIONS',
             'VALGRIND_LIB',
             'VALGRIND_LIB_INNER',
+            'TMPDIR',
         ]
+        if 'TMPDIR' not in self.host.environ:
+            self.host.environ['TMPDIR'] = tempfile.gettempdir()
+        # CGIs are run directory-relative so they need an absolute TMPDIR
+        self.host.environ['TMPDIR'] = self._filesystem.abspath(self.host.environ['TMPDIR'])
         if self.host.platform.is_linux() or self.host.platform.is_freebsd():
             variables_to_copy += [
                 'XAUTHORITY',
@@ -1340,6 +1347,8 @@ class Port(object):
         for (_, _, filenames) in self._filesystem.walk(flag_path):
             if 'README.txt' in filenames:
                 filenames.remove('README.txt')
+            if 'PRESUBMIT.py' in filenames:
+                filenames.remove('PRESUBMIT.py')
             for filename in filenames:
                 path = self._filesystem.join(flag_path, filename)
                 expectations[path] = self._filesystem.read_text_file(path)

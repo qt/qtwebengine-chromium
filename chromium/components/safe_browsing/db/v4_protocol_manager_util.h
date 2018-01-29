@@ -30,6 +30,7 @@ class IPAddress;
 
 namespace safe_browsing {
 
+
 // The size of the hash prefix, in bytes. It should be between 4 to 32 (full
 // hash).
 using PrefixSize = size_t;
@@ -49,6 +50,8 @@ using FullHash = HashPrefix;
 
 using ListUpdateRequest = FetchThreatListUpdatesRequest::ListUpdateRequest;
 using ListUpdateResponse = FetchThreatListUpdatesResponse::ListUpdateResponse;
+
+void SetSbV4UrlPrefixForTesting(const char* url_prefix);
 
 // Config passed to the constructor of a V4 protocol manager.
 struct V4ProtocolConfig {
@@ -334,6 +337,12 @@ class V4ProtocolManagerUtil {
   // server implementation for calculating the hash prefix of an IP address.
   static bool IPAddressToEncodedIPV6Hash(const std::string& ip_address,
                                          FullHash* hashed_encoded_ip);
+
+  // Stores the client state values for each of the lists in |store_state_map|
+  // into |list_client_states|.
+  static void GetListClientStatesFromStoreStateMap(
+      const std::unique_ptr<StoreStateMap>& store_state_map,
+      std::vector<std::string>* list_client_states);
 
  private:
   V4ProtocolManagerUtil() {}

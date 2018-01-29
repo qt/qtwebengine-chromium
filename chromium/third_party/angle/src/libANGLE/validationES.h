@@ -10,6 +10,7 @@
 #define LIBANGLE_VALIDATION_ES_H_
 
 #include "common/mathutil.h"
+#include "libANGLE/PackedGLEnums.h"
 
 #include <GLES2/gl2.h>
 #include <GLES3/gl3.h>
@@ -25,6 +26,7 @@ namespace gl
 {
 class Context;
 struct Format;
+struct LinkedUniform;
 class Program;
 class Shader;
 class ValidationContext;
@@ -36,8 +38,8 @@ bool ValidTextureExternalTarget(const ValidationContext *context, GLenum target)
 bool ValidTexture2DDestinationTarget(const ValidationContext *context, GLenum target);
 bool ValidTexture3DDestinationTarget(const ValidationContext *context, GLenum target);
 bool ValidTexLevelDestinationTarget(const ValidationContext *context, GLenum target);
-bool ValidFramebufferTarget(GLenum target);
-bool ValidBufferTarget(const ValidationContext *context, GLenum target);
+bool ValidFramebufferTarget(const ValidationContext *context, GLenum target);
+bool ValidBufferType(const ValidationContext *context, BufferBinding target);
 bool ValidBufferParameter(const ValidationContext *context, GLenum pname, GLsizei *numParams);
 bool ValidMipLevel(const ValidationContext *context, GLenum target, GLint level);
 bool ValidImageSizeParameters(ValidationContext *context,
@@ -209,23 +211,17 @@ bool ValidateGetQueryObjectui64vRobustANGLE(Context *context,
                                             GLsizei *length,
                                             GLuint64 *params);
 
-bool ValidateProgramUniform(Context *context,
-                            GLenum uniformType,
-                            GLuint program,
-                            GLint location,
-                            GLsizei count);
-bool ValidateProgramUniform1iv(Context *context,
-                               GLuint program,
+bool ValidateUniformCommonBase(ValidationContext *context,
+                               gl::Program *program,
                                GLint location,
                                GLsizei count,
-                               const GLint *value);
-bool ValidateProgramUniformMatrix(Context *context,
-                                  GLenum matrixType,
-                                  GLuint program,
-                                  GLint location,
-                                  GLsizei count,
-                                  GLboolean transpose);
-
+                               const LinkedUniform **uniformOut);
+bool ValidateUniform1ivValue(ValidationContext *context,
+                             GLenum uniformType,
+                             GLsizei count,
+                             const GLint *value);
+bool ValidateUniformValue(ValidationContext *context, GLenum valueType, GLenum uniformType);
+bool ValidateUniformMatrixValue(ValidationContext *context, GLenum valueType, GLenum uniformType);
 bool ValidateUniform(ValidationContext *context, GLenum uniformType, GLint location, GLsizei count);
 bool ValidateUniformMatrix(ValidationContext *context,
                            GLenum matrixType,
@@ -366,18 +362,18 @@ bool ValidateGetProgramBinaryBase(Context *context,
 bool ValidateDrawBuffersBase(ValidationContext *context, GLsizei n, const GLenum *bufs);
 
 bool ValidateGetBufferPointervBase(Context *context,
-                                   GLenum target,
+                                   BufferBinding target,
                                    GLenum pname,
                                    GLsizei *length,
                                    void **params);
-bool ValidateUnmapBufferBase(Context *context, GLenum target);
+bool ValidateUnmapBufferBase(Context *context, BufferBinding target);
 bool ValidateMapBufferRangeBase(Context *context,
-                                GLenum target,
+                                BufferBinding target,
                                 GLintptr offset,
                                 GLsizeiptr length,
                                 GLbitfield access);
 bool ValidateFlushMappedBufferRangeBase(Context *context,
-                                        GLenum target,
+                                        BufferBinding target,
                                         GLintptr offset,
                                         GLsizeiptr length);
 
@@ -399,19 +395,19 @@ bool ValidateGetFramebufferAttachmentParameterivRobustANGLE(ValidationContext *c
                                                             GLsizei *numParams);
 
 bool ValidateGetBufferParameterBase(ValidationContext *context,
-                                    GLenum target,
+                                    BufferBinding target,
                                     GLenum pname,
                                     bool pointerVersion,
                                     GLsizei *numParams);
 bool ValidateGetBufferParameterivRobustANGLE(ValidationContext *context,
-                                             GLenum target,
+                                             BufferBinding target,
                                              GLenum pname,
                                              GLsizei bufSize,
                                              GLsizei *length,
                                              GLint *params);
 
 bool ValidateGetBufferParameteri64vRobustANGLE(ValidationContext *context,
-                                               GLenum target,
+                                               BufferBinding target,
                                                GLenum pname,
                                                GLsizei bufSize,
                                                GLsizei *length,

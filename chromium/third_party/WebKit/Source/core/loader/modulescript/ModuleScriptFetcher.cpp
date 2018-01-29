@@ -6,14 +6,14 @@
 
 namespace blink {
 
-DEFINE_TRACE(ModuleScriptFetcher) {
+void ModuleScriptFetcher::Trace(blink::Visitor* visitor) {
   visitor->Trace(client_);
 }
 
 void ModuleScriptFetcher::NotifyFetchFinished(
     const WTF::Optional<ModuleScriptCreationParams>& params,
-    ConsoleMessage* error_message) {
-  client_->NotifyFetchFinished(params, error_message);
+    const HeapVector<Member<ConsoleMessage>>& error_messages) {
+  client_->NotifyFetchFinished(params, error_messages);
 }
 
 void ModuleScriptFetcher::SetClient(Client* client) {

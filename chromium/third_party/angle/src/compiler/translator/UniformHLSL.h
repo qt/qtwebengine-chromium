@@ -16,11 +16,13 @@
 namespace sh
 {
 class StructureHLSL;
+class TSymbolTable;
 
 class UniformHLSL : angle::NonCopyable
 {
   public:
-    UniformHLSL(StructureHLSL *structureHLSL,
+    UniformHLSL(sh::GLenum shaderType,
+                StructureHLSL *structureHLSL,
                 ShShaderOutput outputType,
                 const std::vector<Uniform> &uniforms);
 
@@ -28,7 +30,8 @@ class UniformHLSL : angle::NonCopyable
     void reserveUniformBlockRegisters(unsigned int registerCount);
     void uniformsHeader(TInfoSinkBase &out,
                         ShShaderOutput outputType,
-                        const ReferencedSymbols &referencedUniforms);
+                        const ReferencedSymbols &referencedUniforms,
+                        TSymbolTable *symbolTable);
 
     // Must be called after uniformsHeader
     void samplerMetadataUniforms(TInfoSinkBase &out, const char *reg);
@@ -61,7 +64,14 @@ class UniformHLSL : angle::NonCopyable
                                     const TType &type,
                                     const TName &name,
                                     const unsigned int registerIndex);
-
+    void outputHLSL4_1_FL11Texture(TInfoSinkBase &out,
+                                   const TType &type,
+                                   const TName &name,
+                                   const unsigned int registerIndex);
+    void outputHLSL4_1_FL11RWTexture(TInfoSinkBase &out,
+                                     const TType &type,
+                                     const TName &name,
+                                     const unsigned int registerIndex);
     void outputUniform(TInfoSinkBase &out,
                        const TType &type,
                        const TName &name,
@@ -77,14 +87,17 @@ class UniformHLSL : angle::NonCopyable
 
     void outputHLSLSamplerUniformGroup(
         TInfoSinkBase &out,
-        const HLSLTextureSamplerGroup textureGroup,
+        const HLSLTextureGroup textureGroup,
         const TVector<const TIntermSymbol *> &group,
         const TMap<const TIntermSymbol *, TString> &samplerInStructSymbolsToAPINames,
         unsigned int *groupTextureRegisterIndex);
 
     unsigned int mUniformRegister;
     unsigned int mUniformBlockRegister;
-    unsigned int mSamplerRegister;
+    unsigned int mTextureRegister;
+    unsigned int mRWTextureRegister;
+    unsigned int mSamplerCount;
+    sh::GLenum mShaderType;
     StructureHLSL *mStructureHLSL;
     ShShaderOutput mOutputType;
 

@@ -91,7 +91,7 @@ enum PseudoId {
                          (1 << (kPseudoIdBackdrop - kFirstPublicPseudoId))
 };
 
-enum OutlineIsAuto { kOutlineIsAutoOff = 0, kOutlineIsAutoOn };
+enum class OutlineIsAuto : bool { kOff = false, kOn = true };
 
 // Random visual rendering model attributes. Not inherited.
 
@@ -148,23 +148,6 @@ enum EMaskSourceType { kMaskAlpha, kMaskLuminance };
 enum QuoteType { OPEN_QUOTE, CLOSE_QUOTE, NO_OPEN_QUOTE, NO_CLOSE_QUOTE };
 
 enum EAnimPlayState { kAnimPlayStatePlaying, kAnimPlayStatePaused };
-
-static const size_t kTextDecorationSkipBits = 3;
-enum class TextDecorationSkip { kNone = 0x0, kObjects = 0x1, kInk = 0x2 };
-inline TextDecorationSkip operator&(TextDecorationSkip a,
-                                    TextDecorationSkip b) {
-  return TextDecorationSkip(static_cast<unsigned>(a) &
-                            static_cast<unsigned>(b));
-}
-inline TextDecorationSkip operator|(TextDecorationSkip a,
-                                    TextDecorationSkip b) {
-  return TextDecorationSkip(static_cast<unsigned>(a) |
-                            static_cast<unsigned>(b));
-}
-inline TextDecorationSkip& operator|=(TextDecorationSkip& a,
-                                      TextDecorationSkip b) {
-  return a = a | b;
-}
 
 enum OffsetRotationType { kOffsetRotationAuto, kOffsetRotationFixed };
 
@@ -266,22 +249,17 @@ enum CSSBoxType {
   kContentBox
 };
 
-enum SnapAxis {
-  kSnapAxisBoth,
-  kSnapAxisX,
-  kSnapAxisY,
-  kSnapAxisBlock,
-  kSnapAxisInline,
+enum class SnapAxis : unsigned {
+  kBoth,
+  kX,
+  kY,
+  kBlock,
+  kInline,
 };
 
 enum class SnapStrictness { kProximity, kMandatory };
 
-enum SnapAlignment {
-  kSnapAlignmentNone,
-  kSnapAlignmentStart,
-  kSnapAlignmentEnd,
-  kSnapAlignmentCenter
-};
+enum class SnapAlignment : unsigned { kNone, kStart, kEnd, kCenter };
 
 enum TextEmphasisPosition {
   kOverRight,

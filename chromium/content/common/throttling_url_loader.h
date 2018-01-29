@@ -45,8 +45,7 @@ class CONTENT_EXPORT ThrottlingURLLoader : public mojom::URLLoaderClient {
       const ResourceRequest& url_request,
       mojom::URLLoaderClient* client,
       const net::NetworkTrafficAnnotationTag& traffic_annotation,
-      scoped_refptr<base::SingleThreadTaskRunner> task_runner =
-          base::ThreadTaskRunnerHandle::Get());
+      scoped_refptr<base::SingleThreadTaskRunner> task_runner);
 
   using StartLoaderCallback =
       base::OnceCallback<void(mojom::URLLoaderRequest request,
@@ -58,11 +57,11 @@ class CONTENT_EXPORT ThrottlingURLLoader : public mojom::URLLoaderClient {
   static std::unique_ptr<ThrottlingURLLoader> CreateLoaderAndStart(
       StartLoaderCallback start_loader_callback,
       std::vector<std::unique_ptr<URLLoaderThrottle>> throttles,
+      int32_t routing_id,
       const ResourceRequest& url_request,
       mojom::URLLoaderClient* client,
       const net::NetworkTrafficAnnotationTag& traffic_annotation,
-      scoped_refptr<base::SingleThreadTaskRunner> task_runner =
-          base::ThreadTaskRunnerHandle::Get());
+      scoped_refptr<base::SingleThreadTaskRunner> task_runner);
 
   ~ThrottlingURLLoader() override;
 
@@ -131,7 +130,7 @@ class CONTENT_EXPORT ThrottlingURLLoader : public mojom::URLLoaderClient {
   void OnTransferSizeUpdated(int32_t transfer_size_diff) override;
   void OnStartLoadingResponseBody(
       mojo::ScopedDataPipeConsumerHandle body) override;
-  void OnComplete(const ResourceRequestCompletionStatus& status) override;
+  void OnComplete(const network::URLLoaderCompletionStatus& status) override;
 
   void OnClientConnectionError();
 
@@ -240,6 +239,9 @@ class CONTENT_EXPORT ThrottlingURLLoader : public mojom::URLLoaderClient {
   const net::NetworkTrafficAnnotationTag traffic_annotation_;
 
   uint32_t inside_delegate_calls_ = 0;
+
+  // The latest request URL from where we expect a response
+  GURL response_url_;
 
   DISALLOW_COPY_AND_ASSIGN(ThrottlingURLLoader);
 };

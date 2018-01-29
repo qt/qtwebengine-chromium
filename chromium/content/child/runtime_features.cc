@@ -218,7 +218,7 @@ void SetRuntimeFeaturesDefaultsAndUpdateFromArgs(
     WebRuntimeFeatures::EnableWebVR(true);
 
   WebRuntimeFeatures::EnableWebVRExperimentalRendering(
-      base::FeatureList::IsEnabled(features::kWebVRExperimentalRendering));
+      base::FeatureList::IsEnabled(features::kWebVrExperimentalRendering));
 
   if (command_line.HasSwitch(switches::kDisablePresentationAPI))
     WebRuntimeFeatures::EnablePresentationAPI(false);
@@ -229,6 +229,9 @@ void SetRuntimeFeaturesDefaultsAndUpdateFromArgs(
   WebRuntimeFeatures::EnableScrollAnchoring(
       base::FeatureList::IsEnabled(features::kScrollAnchoring) ||
       enableExperimentalWebPlatformFeatures);
+
+  WebRuntimeFeatures::EnableUserActivationV2(
+      base::FeatureList::IsEnabled(features::kUserActivationV2));
 
   if (command_line.HasSwitch(switches::kEnableSlimmingPaintV175))
     WebRuntimeFeatures::EnableFeatureFromString("SlimmingPaintV175", true);
@@ -285,8 +288,15 @@ void SetRuntimeFeaturesDefaultsAndUpdateFromArgs(
   WebRuntimeFeatures::EnablePaymentRequest(
       base::FeatureList::IsEnabled(features::kWebPayments));
 
+  if (base::FeatureList::IsEnabled(features::kServiceWorkerPaymentApps))
+    WebRuntimeFeatures::EnablePaymentApp(true);
+
   WebRuntimeFeatures::EnableServiceWorkerScriptStreaming(
       base::FeatureList::IsEnabled(features::kServiceWorkerScriptStreaming));
+
+  WebRuntimeFeatures::EnableServiceWorkerScriptFullCodeCache(
+      base::FeatureList::IsEnabled(
+          features::kServiceWorkerScriptFullCodeCache));
 
   WebRuntimeFeatures::EnableOffMainThreadFetch(
       base::FeatureList::IsEnabled(features::kOffMainThreadFetch));
@@ -309,8 +319,8 @@ void SetRuntimeFeaturesDefaultsAndUpdateFromArgs(
   if (base::FeatureList::IsEnabled(features::kCompositorTouchAction))
     WebRuntimeFeatures::EnableCompositorTouchAction(true);
 
-  if (base::FeatureList::IsEnabled(features::kSkipCompositingSmallScrollers))
-    WebRuntimeFeatures::EnableSkipCompositingSmallScrollers(true);
+  WebRuntimeFeatures::EnablePreventLayerSquashing(
+      base::FeatureList::IsEnabled(features::kEnablePreventLayerSquashing));
 
   if (base::FeatureList::IsEnabled(features::kGenericSensor)) {
     WebRuntimeFeatures::EnableGenericSensor(true);
@@ -321,6 +331,9 @@ void SetRuntimeFeaturesDefaultsAndUpdateFromArgs(
   if (base::FeatureList::IsEnabled(features::kLoadingWithMojo) ||
       base::FeatureList::IsEnabled(features::kNetworkService))
     WebRuntimeFeatures::EnableLoadingWithMojo(true);
+
+  if (base::FeatureList::IsEnabled(features::kNotificationsWithMojo))
+    WebRuntimeFeatures::EnableNotificationsWithMojo(true);
 
   if (base::FeatureList::IsEnabled(features::kOutOfBlinkCORS))
     WebRuntimeFeatures::EnableOutOfBlinkCORS(true);
@@ -355,9 +368,6 @@ void SetRuntimeFeaturesDefaultsAndUpdateFromArgs(
       !enableExperimentalWebPlatformFeatures)
     WebRuntimeFeatures::EnableWebAuth(false);
 
-  WebRuntimeFeatures::EnableModuleScripts(
-      base::FeatureList::IsEnabled(features::kModuleScripts));
-
   WebRuntimeFeatures::EnableClientPlaceholdersForServerLoFi(
       base::GetFieldTrialParamValue("PreviewsClientLoFi",
                                     "replace_server_placeholders") == "true");
@@ -380,6 +390,9 @@ void SetRuntimeFeaturesDefaultsAndUpdateFromArgs(
   WebRuntimeFeatures::EnableModuleScriptsDynamicImport(
       base::FeatureList::IsEnabled(features::kModuleScriptsDynamicImport));
 
+  WebRuntimeFeatures::EnableModuleScriptsImportMetaUrl(
+      base::FeatureList::IsEnabled(features::kModuleScriptsImportMetaUrl));
+
   WebRuntimeFeatures::EnableOverflowIconsForMediaControls(
       base::FeatureList::IsEnabled(media::kOverflowIconsForMediaControls));
 
@@ -388,6 +401,13 @@ void SetRuntimeFeaturesDefaultsAndUpdateFromArgs(
 
   WebRuntimeFeatures::EnableModernMediaControls(
       base::FeatureList::IsEnabled(media::kUseModernMediaControls));
+
+  WebRuntimeFeatures::EnableWorkStealingInScriptRunner(
+      base::FeatureList::IsEnabled(features::kWorkStealingInScriptRunner));
+
+  WebRuntimeFeatures::EnableFeatureFromString(
+      "FeaturePolicyForPermissions",
+      base::FeatureList::IsEnabled(features::kUseFeaturePolicyForPermissions));
 
   // Enable explicitly enabled features, and then disable explicitly disabled
   // ones.
@@ -402,6 +422,15 @@ void SetRuntimeFeaturesDefaultsAndUpdateFromArgs(
 
   if (base::FeatureList::IsEnabled(features::kV8ContextSnapshot))
     WebRuntimeFeatures::EnableV8ContextSnapshot(true);
+
+  if (base::FeatureList::IsEnabled(features::kStopLoadingInBackground))
+    WebRuntimeFeatures::EnableStopLoadingInBackgroundAndroid(true);
+
+  WebRuntimeFeatures::EnablePWAFullCodeCache(
+      base::FeatureList::IsEnabled(features::kPWAFullCodeCache));
+
+  WebRuntimeFeatures::EnableRequireCSSExtensionForFile(
+      base::FeatureList::IsEnabled(features::kRequireCSSExtensionForFile));
 };
 
 }  // namespace content

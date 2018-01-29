@@ -20,8 +20,8 @@
 #include "core/fpdfdoc/cpdf_annot.h"
 #include "core/fpdfdoc/cpdf_formfield.h"
 #include "core/fpdfdoc/cpdf_interform.h"
-#include "core/fpdfdoc/cpvt_color.h"
 #include "core/fpdfdoc/cpvt_generateap.h"
+#include "core/fxge/cfx_color.h"
 #include "fpdfsdk/fsdk_define.h"
 
 namespace {
@@ -357,14 +357,7 @@ FPDFAnnot_AppendObject(FPDF_ANNOTATION annot, FPDF_PAGEOBJECT obj) {
   CPDF_Stream* pStream = FPDFDOC_GetAnnotAP(pAnnot->GetAnnotDict(),
                                             CPDF_Annot::AppearanceMode::Normal);
   if (!pStream) {
-    auto pExtGStateDict =
-        CPVT_GenerateAP::GenerateExtGStateDict(*pAnnotDict, "GS", "Normal");
-    auto pResourceDict = CPVT_GenerateAP::GenerateResourceDict(
-        pPage->m_pDocument.Get(), std::move(pExtGStateDict), nullptr);
-    std::ostringstream sStream;
-    CPVT_GenerateAP::GenerateAndSetAPDict(pPage->m_pDocument.Get(), pAnnotDict,
-                                          &sStream, std::move(pResourceDict),
-                                          false);
+    CPVT_GenerateAP::GenerateEmptyAP(pPage->m_pDocument.Get(), pAnnotDict);
     pStream =
         FPDFDOC_GetAnnotAP(pAnnotDict, CPDF_Annot::AppearanceMode::Normal);
     if (!pStream)
@@ -536,24 +529,25 @@ FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV FPDFAnnot_GetColor(FPDF_ANNOTATION annot,
     }
     return true;
   }
-  CPVT_Color color = CPVT_Color::ParseColor(*pColor);
+
+  CFX_Color color = CFX_Color::ParseColor(*pColor);
   switch (color.nColorType) {
-    case CPVT_Color::kRGB:
+    case CFX_Color::kRGB:
       *R = color.fColor1 * 255.f;
       *G = color.fColor2 * 255.f;
       *B = color.fColor3 * 255.f;
       break;
-    case CPVT_Color::kGray:
+    case CFX_Color::kGray:
       *R = 255.f * color.fColor1;
       *G = 255.f * color.fColor1;
       *B = 255.f * color.fColor1;
       break;
-    case CPVT_Color::kCMYK:
+    case CFX_Color::kCMYK:
       *R = 255.f * (1 - color.fColor1) * (1 - color.fColor4);
       *G = 255.f * (1 - color.fColor2) * (1 - color.fColor4);
       *B = 255.f * (1 - color.fColor3) * (1 - color.fColor4);
       break;
-    case CPVT_Color::kTransparent:
+    case CFX_Color::kTransparent:
       *R = 0;
       *G = 0;
       *B = 0;
@@ -650,7 +644,7 @@ FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV FPDFAnnot_SetRect(FPDF_ANNOTATION annot,
   if (!pAnnotDict)
     return false;
 
-  CFX_FloatRect newRect(rect->left, rect->bottom, rect->right, rect->top);
+  CFX_FloatRect newRect = CFXFloatRectFromFSRECTF(*rect);
 
   // Update the "Rect" entry in the annotation dictionary.
   pAnnotDict->SetRectFor("Rect", newRect);
@@ -680,11 +674,7 @@ FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV FPDFAnnot_GetRect(FPDF_ANNOTATION annot,
   if (!pAnnotDict)
     return false;
 
-  CFX_FloatRect rt = pAnnotDict->GetRectFor("Rect");
-  rect->left = rt.left;
-  rect->bottom = rt.bottom;
-  rect->right = rt.right;
-  rect->top = rt.top;
+  FSRECTFFromCFXFloatRect(pAnnotDict->GetRectFor("Rect"), rect);
   return true;
 }
 

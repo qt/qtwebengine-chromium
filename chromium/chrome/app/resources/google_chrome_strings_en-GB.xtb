@@ -10,10 +10,10 @@ Some features may be unavailable and changes to preferences won't be saved.</tra
 <translation id="1104959162601287462">About &amp;Chrome OS</translation>
 <translation id="110877069173485804">This is your Chrome</translation>
 <translation id="1142745911746664600">Can't update Chrome</translation>
+<translation id="1154147086299354128">&amp;Open in Chrome</translation>
 <translation id="123620459398936149">Chrome OS could not sync your data. Please update your Sync passphrase.</translation>
 <translation id="127345590676626841">Chrome updates automatically so that you always have the freshest version. When this download completes, Chrome will restart and you'll be on your way.</translation>
 <translation id="1302523850133262269">Please wait while Chrome installs the latest system updates.</translation>
-<translation id="1350930993895295930">Chrome has detected unusual behaviour</translation>
 <translation id="137466361146087520">Google Chrome Beta</translation>
 <translation id="1393853151966637042">Get help with using Chrome</translation>
 <translation id="1399397803214730675">This computer already has a more recent version of Google Chrome. If the software is not working, please uninstall Google Chrome and try again.</translation>
@@ -21,6 +21,7 @@ Some features may be unavailable and changes to preferences won't be saved.</tra
 <translation id="1457721931618994305">Updating Google Chrome ...</translation>
 <translation id="1469002951682717133">Chrome App Launcher</translation>
 <translation id="1553358976309200471">Update Chrome</translation>
+<translation id="1585657529869845941">Click <ph name="BEGIN_BOLD" />Switch anyway<ph name="END_BOLD" />, if it appears</translation>
 <translation id="1587223624401073077">Google Chrome is using your camera.</translation>
 <translation id="1587325591171447154"><ph name="FILE_NAME" /> is dangerous, so Chrome has blocked it.</translation>
 <translation id="1619887657840448962">To make Chrome safer, we disabled the following extension that isn't listed in the <ph name="IDS_EXTENSION_WEB_STORE_TITLE" /> and may have been added without your knowledge.</translation>
@@ -69,6 +70,7 @@ Signing in anyway will merge Chrome information like bookmarks, history and othe
 <translation id="2664962310688259219">Chrome OS open source licences</translation>
 <translation id="2665296953892887393">Help make Google Chrome better by sending crash reports and <ph name="UMA_LINK" /> to Google</translation>
 <translation id="2689103672227170538">This extension has changed the page that is shown when you start Chrome.</translation>
+<translation id="2705403826523567092">Sign in for a personalised browsing experience, synced across devices</translation>
 <translation id="2769762047821873045">Google Chrome isn't your default browser.</translation>
 <translation id="2770231113462710648">Change default browser to:</translation>
 <translation id="2799223571221894425">Relaunch</translation>
@@ -95,18 +97,20 @@ Please check your email at <ph name="ACCOUNT_EMAIL" /> for further instructions.
 <translation id="3398288718845740432">Hide in Chrome Menu</translation>
 <translation id="3451115285585441894">Adding to Chrome...</translation>
 <translation id="345171907106878721">Add yourself to Chrome</translation>
+<translation id="3479552764303398839">Not now</translation>
 <translation id="3612333635265770873">A module with the same name has been known to conflict with Google Chrome.</translation>
 <translation id="3622797965165704966">Now it's easier to use Chrome with your Google Account and on shared computers.</translation>
 <translation id="3637702109597584617">Google Chrome OS <ph name="TERMS_OF_SERVICE_LINK" />Terms of Service<ph name="END_TERMS_OF_SERVICE_LINK" /></translation>
+<translation id="3716182511346448902">This page uses too much memory, so Chrome paused it.</translation>
 <translation id="3718181793972440140">This will delete 1 item from this device. To retrieve your data later, sign in to Chrome as <ph name="USER_EMAIL" />.</translation>
 <translation id="3735758079232443276">The extension "<ph name="EXTENSION_NAME" />" has changed the page that is shown when you start Chrome.</translation>
-<translation id="3738139272394829648">Touch to Search</translation>
 <translation id="3780814664026482060">Chrome - <ph name="PAGE_TITLE" /></translation>
 <translation id="3784527566857328444">Remove from Chrome</translation>
 <translation id="386202838227397562">Please close all Google Chrome windows and try again.</translation>
 <translation id="3870154837782082782">Google Inc.</translation>
 <translation id="3873044882194371212">Open link in Chrome inco&amp;gnito window</translation>
 <translation id="3889417619312448367">Uninstall Google Chrome</translation>
+<translation id="3898493977366060150">Web browsing with Google smarts</translation>
 <translation id="4028693306634653894">Get to Chrome faster</translation>
 <translation id="4031074602479304239">Chrome stopped this site from taking you to</translation>
 <translation id="4042449298237264661">This computer will no longer receive Google Chrome updates because Windows XP and Windows Vista are no longer supported.</translation>
@@ -131,7 +135,6 @@ Please check your email at <ph name="ACCOUNT_EMAIL" /> for further instructions.
 <translation id="4664415150087723341">A special security update for Google Chrome was just applied; you should restart now for it to take effect (we'll restore your tabs).</translation>
 <translation id="4700157086864140907">Google Chrome can provide smarter spell-checking by sending what you type in the browser to Google servers, allowing you to use the same spell-checking technology used by Google search.</translation>
 <translation id="4728575227883772061">Installation failed due to unspecified error. If Google Chrome is currently running, please close it and try again.</translation>
-<translation id="4743926867934016338">Accept &amp; Search</translation>
 <translation id="4750550185319565338">Restart Chrome to enable <ph name="PLUGIN_NAME" /></translation>
 <translation id="4754614261631455953">Google Chrome Canary (mDNS-In)</translation>
 <translation id="4771048833395599659">This file may be dangerous, so Chrome has blocked it.</translation>
@@ -155,8 +158,8 @@ Some features may be unavailable. Please specify a different profile directory o
 <translation id="5204098752394657250">Google Chrome <ph name="TERMS_OF_SERVICE_LINK" />Terms of Service<ph name="END_TERMS_OF_SERVICE_LINK" /></translation>
 <translation id="5243785881901838525">Google Payments (copied to Chrome)</translation>
 <translation id="5251420635869119124">Guests can use Chrome without leaving anything behind.</translation>
-<translation id="5253588388888612165">If you share this computer with <ph name="PROFILE_NAME" />, add yourself to Chrome to browse separately. Otherwise disconnect their Google Account.</translation>
 <translation id="5284703908158630707">{SECONDS,plural, =1{Google Chrome will restart in 1 second.}other{Google Chrome will restart in # seconds.}}</translation>
+<translation id="532046782124376502">Warning: Google Chrome cannot prevent extensions from recording your browsing history. To disable this extension in incognito mode, unselect this option.</translation>
 <translation id="5334545119300433702">This module is known to conflict with Google Chrome.</translation>
 <translation id="5386244825306882791">It also controls what page is shown when you start Chrome or search from the Omnibox.</translation>
 <translation id="5430073640787465221">Your preferences file is corrupt or invalid.
@@ -164,12 +167,9 @@ Some features may be unavailable. Please specify a different profile directory o
 Google Chrome is unable to recover your settings.</translation>
 <translation id="5453904507266736060">Let Google Chrome Run In The Background</translation>
 <translation id="5495581687705680288">Modules loaded into Google Chrome</translation>
-<translation id="5524843473235508879">Redirect blocked.</translation>
 <translation id="556024056938947818">Google Chrome is trying to show passwords.</translation>
-<translation id="5563479599352954471">Search with one touch</translation>
 <translation id="5566025111015594046">Google Chrome (mDNS-In)</translation>
 <translation id="557283862590186398">Chrome needs permission to access your microphone for this site.</translation>
-<translation id="5620765574781326016">Learn about topics on websites without leaving the page.</translation>
 <translation id="565744775970812598"><ph name="FILE_NAME" /> may be dangerous, so Chrome has blocked it.</translation>
 <translation id="573759479754913123">About Chrome OS</translation>
 <translation id="5749068826913805084">Chrome needs storage access to download files.</translation>
@@ -200,13 +200,11 @@ Google Chrome is unable to recover your settings.</translation>
 <translation id="6566149418543181476">Updating Google Chrome (<ph name="PROGRESS_PERCENT" />)</translation>
 <translation id="6598387184982954187">You're using <ph name="PROFILE_EMAIL" /> to sync your Chrome stuff. To update your sync preference or to use Chrome without a Google account, visit <ph name="SETTINGS_LINK" />.</translation>
 <translation id="6600954340915313787">Copied to Chrome</translation>
-<translation id="6626317981028933585">Sadly, your Mozilla Firefox settings are not available while that browser is running. To import those settings to Google Chrome, save your work and close all Firefox windows. Then click Continue.</translation>
 <translation id="6634887557811630702">Google Chrome is up to date.</translation>
 <translation id="6676384891291319759">Access the Internet</translation>
 <translation id="6697947395630195233">Chrome needs access to your location to share your location with this site.</translation>
 <translation id="683440813066116847">Inbound rule for Google Chrome Canary to allow mDNS traffic.</translation>
 <translation id="686561893457936865">Take Chrome everywhere</translation>
-<translation id="6883876366448858277">sends a word and its surrounding context to Google Search, returning definitions, pictures and other search results.</translation>
 <translation id="6885412569789873916">Chrome Beta Apps</translation>
 <translation id="6967962315388095737">Inbound rule for Google Chrome Beta to allow mDNS traffic.</translation>
 <translation id="6970811910055250180">Updating your device...</translation>
@@ -228,7 +226,6 @@ Google Chrome is unable to recover your settings.</translation>
 <translation id="7437998757836447326">Sign out of Chrome</translation>
 <translation id="7459554271817304652">Set up Sync to save your personalised browser features to the web and access them from Google Chrome on any computer.</translation>
 <translation id="7473136999113284234">Chrome updates automatically so that you always have the freshest version.</translation>
-<translation id="7473891865547856676">No Thanks</translation>
 <translation id="7494905215383356681">Chrome open source licences</translation>
 <translation id="7535429826459677826">Google Chrome Dev</translation>
 <translation id="7552219221109926349">Display Chrome OS in this language</translation>
@@ -283,7 +280,6 @@ Google Chrome is unable to recover your settings.</translation>
 <translation id="9026991721384951619">Chrome OS could not sync your data because your account sign-in details are out of date.</translation>
 <translation id="9067395829937117663">Google Chrome requires Windows 7 or higher.</translation>
 <translation id="9084668267983921457">Authentication certificate failed. Please sign in to Google Chrome again or contact your administrator for more information. <ph name="ADDITIONAL_EXPLANATION" /></translation>
-<translation id="9107728822479888688"><ph name="BEGIN_BOLD" />Warning:<ph name="END_BOLD" /> Google Chrome cannot prevent extensions from recording your browsing history. To disable this extension in incognito mode, unselect this option.</translation>
 <translation id="911206726377975832">Also delete your browsing data?</translation>
 <translation id="919706545465235479">Update Chrome to start sync</translation>
 <translation id="924447568950697217">Make Chrome your default browser</translation>

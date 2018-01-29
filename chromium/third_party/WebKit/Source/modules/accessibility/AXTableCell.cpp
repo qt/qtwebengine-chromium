@@ -80,11 +80,11 @@ bool AXTableCell::ComputeAccessibilityIsIgnored(
 
 AXObject* AXTableCell::ParentTable() const {
   if (!layout_object_ || !layout_object_->IsTableCell())
-    return 0;
+    return nullptr;
 
   // If the document no longer exists, we might not have an axObjectCache.
   if (IsDetached())
-    return 0;
+    return nullptr;
 
   // Do not use getOrCreate. parentTable() can be called while the layout tree
   // is being modified by javascript, and creating a table element may try to
@@ -92,7 +92,7 @@ AXObject* AXTableCell::ParentTable() const {
   // that the AXTable must be created before AXTableCells. This should always be
   // the case when AT clients access a table.
   // https://bugs.webkit.org/show_bug.cgi?id=42652
-  return AxObjectCache().Get(ToLayoutTableCell(layout_object_)->Table());
+  return AXObjectCache().Get(ToLayoutTableCell(layout_object_)->Table());
 }
 
 AXObject* AXTableCell::ParentRow() const {
@@ -103,7 +103,7 @@ AXObject* AXTableCell::ParentRow() const {
   if (IsDetached())
     return nullptr;
 
-  return AxObjectCache().Get(ToLayoutTableCell(layout_object_)->Row());
+  return AXObjectCache().Get(ToLayoutTableCell(layout_object_)->Row());
 }
 
 bool AXTableCell::IsTableCell() const {

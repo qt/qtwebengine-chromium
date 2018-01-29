@@ -66,7 +66,7 @@ HTMLObjectElement* HTMLObjectElement::Create(Document& document,
   return element;
 }
 
-DEFINE_TRACE(HTMLObjectElement) {
+void HTMLObjectElement::Trace(blink::Visitor* visitor) {
   ListedElement::Trace(visitor);
   HTMLPlugInElement::Trace(visitor);
 }
@@ -87,7 +87,7 @@ bool HTMLObjectElement::IsPresentationAttribute(
 void HTMLObjectElement::CollectStyleForPresentationAttribute(
     const QualifiedName& name,
     const AtomicString& value,
-    MutableStylePropertySet* style) {
+    MutableCSSPropertyValueSet* style) {
   if (name == borderAttr)
     ApplyBorderAttributeToStyle(value, style);
   else
@@ -167,13 +167,12 @@ void HTMLObjectElement::ParametersForPlugin(Vector<String>& param_names,
     // TODO(schenney): crbug.com/572908 url adjustment does not belong in this
     // function.
     // HTML5 says that an object resource's URL is specified by the object's
-    // data attribute, not by a param element. However, for compatibility, allow
-    // the resource's URL to be given by a param named "src", "movie", "code" or
-    // "url" if we know that resource points to a plugin.
-    if (url_.IsEmpty() && (DeprecatedEqualIgnoringCase(name, "src") ||
-                           DeprecatedEqualIgnoringCase(name, "movie") ||
-                           DeprecatedEqualIgnoringCase(name, "code") ||
-                           DeprecatedEqualIgnoringCase(name, "url"))) {
+    // data attribute, not by a param element with a name of "data". However,
+    // for compatibility, allow the resource's URL to be given by a param
+    // element with one of the common names if we know that resource points
+    // to a plugin.
+    if (url_.IsEmpty() && !DeprecatedEqualIgnoringCase(name, "data") &&
+        HTMLParamElement::IsURLParameter(name)) {
       url_ = StripLeadingAndTrailingHTMLSpaces(p->Value());
     }
     // TODO(schenney): crbug.com/572908 serviceType calculation does not belong
@@ -366,10 +365,10 @@ void HTMLObjectElement::RenderFallbackContent() {
 
   // Before we give up and use fallback content, check to see if this is a MIME
   // type issue.
-  if (image_loader_ && image_loader_->GetImage() &&
-      image_loader_->GetImage()->GetContentStatus() !=
+  if (image_loader_ && image_loader_->GetContent() &&
+      image_loader_->GetContent()->GetContentStatus() !=
           ResourceStatus::kLoadError) {
-    service_type_ = image_loader_->GetImage()->GetResponse().MimeType();
+    service_type_ = image_loader_->GetContent()->GetResponse().MimeType();
     if (!IsImageType()) {
       // If we don't think we have an image type anymore, then clear the image
       // from the loader.

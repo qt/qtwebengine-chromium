@@ -21,7 +21,6 @@
 #include "SkSurfaceProps.h"
 #include "SkTInternalLList.h"
 
-class GrBlobRegenHelper;
 struct GrDistanceFieldAdjustTable;
 class GrMemoryPool;
 class SkDrawFilter;
@@ -49,6 +48,8 @@ class SkTextBlobRunIterator;
 class GrAtlasTextBlob : public SkNVRefCnt<GrAtlasTextBlob> {
 public:
     SK_DECLARE_INTERNAL_LLIST_INTERFACE(GrAtlasTextBlob);
+
+    class VertexRegenerator;
 
     static sk_sp<GrAtlasTextBlob> Make(GrMemoryPool* pool, int glyphCount, int runCount);
 
@@ -183,14 +184,14 @@ public:
                         const SkMatrix& viewMatrix, SkScalar x, SkScalar y);
 
     // flush a GrAtlasTextBlob associated with a SkTextBlob
-    void flushCached(GrContext* context, GrRenderTargetContext* rtc, const SkTextBlob* blob,
+    void flushCached(GrContext* context, GrTextUtils::Target*, const SkTextBlob* blob,
                      const SkSurfaceProps& props,
                      const GrDistanceFieldAdjustTable* distanceAdjustTable,
                      const GrTextUtils::Paint&, SkDrawFilter* drawFilter, const GrClip& clip,
                      const SkMatrix& viewMatrix, const SkIRect& clipBounds, SkScalar x, SkScalar y);
 
     // flush a throwaway GrAtlasTextBlob *not* associated with an SkTextBlob
-    void flushThrowaway(GrContext* context, GrRenderTargetContext* rtc, const SkSurfaceProps& props,
+    void flushThrowaway(GrContext* context, GrTextUtils::Target*, const SkSurfaceProps& props,
                         const GrDistanceFieldAdjustTable* distanceAdjustTable,
                         const GrTextUtils::Paint& paint, const GrClip& clip,
                         const SkMatrix& viewMatrix, const SkIRect& clipBounds, SkScalar x,
@@ -240,8 +241,8 @@ public:
     // The color here is the GrPaint color, and it is used to determine whether we
     // have to regenerate LCD text blobs.
     // We use this color vs the SkPaint color because it has the colorfilter applied.
-    void initReusableBlob(SkColor luminanceColor, const SkMatrix& viewMatrix, SkScalar x,
-                          SkScalar y) {
+    void initReusableBlob(SkColor luminanceColor, const SkMatrix& viewMatrix,
+                          SkScalar x, SkScalar y) {
         fLuminanceColor = luminanceColor;
         this->setupViewMatrix(viewMatrix, x, y);
     }
@@ -249,16 +250,6 @@ public:
     void initThrowawayBlob(const SkMatrix& viewMatrix, SkScalar x, SkScalar y) {
         this->setupViewMatrix(viewMatrix, x, y);
     }
-
-    /**
-     * Consecutive calls to regenInOp often use the same SkGlyphCache. If the same instance of
-     * SkAutoGlyphCache is passed to multiple calls of regenInOp then it can save the cost of
-     * multiple detach/attach operations of SkGlyphCache.
-     */
-    void regenInOp(GrDrawOp::Target* target, GrAtlasGlyphCache* fontCache,
-                   GrBlobRegenHelper* helper, int run, int subRun, SkAutoGlyphCache*,
-                   size_t vertexStride, const SkMatrix& viewMatrix, SkScalar x, SkScalar y,
-                   GrColor color, void** vertices, size_t* byteCount, int* glyphCount);
 
     const Key& key() const { return fKey; }
 
@@ -270,11 +261,11 @@ public:
 
     ////////////////////////////////////////////////////////////////////////////////////////////////
     // Internal test methods
-    std::unique_ptr<GrDrawOp> test_makeOp(int glyphCount, int run, int subRun,
+    std::unique_ptr<GrDrawOp> test_makeOp(int glyphCount, uint16_t run, uint16_t subRun,
                                           const SkMatrix& viewMatrix, SkScalar x, SkScalar y,
                                           const GrTextUtils::Paint&, const SkSurfaceProps&,
                                           const GrDistanceFieldAdjustTable*, GrAtlasGlyphCache*,
-                                          GrRenderTargetContext*);
+                                          GrTextUtils::Target*);
 
 private:
     GrAtlasTextBlob()
@@ -285,21 +276,21 @@ private:
     void appendLargeGlyph(GrGlyph* glyph, SkGlyphCache* cache, const SkGlyph& skGlyph,
                           SkScalar x, SkScalar y, SkScalar scale, bool treatAsBMP);
 
-    inline void flushRun(GrRenderTargetContext* rtc, const GrClip&, int run,
-                         const SkMatrix& viewMatrix, SkScalar x, SkScalar y,
-                         const GrTextUtils::Paint& paint, const SkSurfaceProps& props,
+    inline void flushRun(GrTextUtils::Target*, const GrClip&, int run, const SkMatrix& viewMatrix,
+                         SkScalar x, SkScalar y, const GrTextUtils::Paint& paint,
+                         const SkSurfaceProps& props,
                          const GrDistanceFieldAdjustTable* distanceAdjustTable,
                          GrAtlasGlyphCache* cache);
 
-    void flushBigGlyphs(GrContext* context, GrRenderTargetContext* rtc, const GrClip& clip,
+    void flushBigGlyphs(GrContext* context, GrTextUtils::Target*, const GrClip& clip,
                         const SkPaint& paint, const SkMatrix& viewMatrix, SkScalar x, SkScalar y,
                         const SkIRect& clipBounds);
 
-    void flushRunAsPaths(GrContext* context, GrRenderTargetContext* rtc,
-                         const SkSurfaceProps& props, const SkTextBlobRunIterator& it,
-                         const GrClip& clip, const GrTextUtils::Paint& paint,
-                         SkDrawFilter* drawFilter, const SkMatrix& viewMatrix,
-                         const SkIRect& clipBounds, SkScalar x, SkScalar y);
+    void flushRunAsPaths(GrContext* context, GrTextUtils::Target*, const SkSurfaceProps& props,
+                         const SkTextBlobRunIterator& it, const GrClip& clip,
+                         const GrTextUtils::Paint& paint, SkDrawFilter* drawFilter,
+                         const SkMatrix& viewMatrix, const SkIRect& clipBounds, SkScalar x,
+                         SkScalar y);
 
     // This function will only be called when we are generating a blob from scratch. We record the
     // initial view matrix and initial offsets(x,y), because we record vertex bounds relative to
@@ -334,7 +325,7 @@ private:
      * practice, the vast majority of runs have only a single subrun.
      *
      * Finally, for runs where the entire thing is too large for the GrAtlasTextContext to
-     * handle, we have a bit to mark the run as flusahable via rendering as paths.  It is worth
+     * handle, we have a bit to mark the run as flushable via rendering as paths.  It is worth
      * pointing. It would be a bit expensive to figure out ahead of time whether or not a run
      * can flush in this manner, so we always allocate vertices for the run, regardless of
      * whether or not it is too large.  The benefit of this strategy is that we can always reuse
@@ -463,7 +454,7 @@ private:
             GrColor fColor;
             GrMaskFormat fMaskFormat;
             uint32_t fFlags;
-        };
+        };  // SubRunInfo
 
         SubRunInfo& push_back() {
             // Forward glyph / vertex information to seed the new sub run
@@ -490,19 +481,14 @@ private:
         std::unique_ptr<SkAutoDescriptor> fOverrideDescriptor; // df properties
         bool fInitialized;
         bool fDrawAsPaths;
-    };
+    };  // Run
 
-    template <bool regenPos, bool regenCol, bool regenTexCoords, bool regenGlyphs>
-    void regenInOp(GrDrawOp::Target* target, GrAtlasGlyphCache* fontCache, GrBlobRegenHelper* helper,
-                   Run* run, Run::SubRunInfo* info, SkAutoGlyphCache*, int glyphCount,
-                   size_t vertexStride, GrColor color, SkScalar transX, SkScalar transY) const;
-
-    inline std::unique_ptr<GrDrawOp> makeOp(const Run::SubRunInfo& info, int glyphCount, int run,
-                                            int subRun, const SkMatrix& viewMatrix, SkScalar x,
-                                            SkScalar y, const GrTextUtils::Paint& paint,
-                                            const SkSurfaceProps& props,
-                                            const GrDistanceFieldAdjustTable* distanceAdjustTable,
-                                            GrAtlasGlyphCache* cache, GrRenderTargetContext*);
+    inline std::unique_ptr<GrAtlasTextOp> makeOp(
+            const Run::SubRunInfo& info, int glyphCount, uint16_t run, uint16_t subRun,
+            const SkMatrix& viewMatrix, SkScalar x, SkScalar y, const SkIRect& clipRect,
+            const GrTextUtils::Paint& paint, const SkSurfaceProps& props,
+            const GrDistanceFieldAdjustTable* distanceAdjustTable, GrAtlasGlyphCache* cache,
+            GrTextUtils::Target*);
 
     struct BigGlyph {
         BigGlyph(const SkPath& path, SkScalar vx, SkScalar vy, SkScalar scale, bool treatAsBMP)
@@ -530,7 +516,7 @@ private:
     };
 
     // all glyph / vertex offsets are into these pools.
-    unsigned char* fVertices;
+    char* fVertices;
     GrGlyph** fGlyphs;
     Run* fRuns;
     GrMemoryPool* fPool;
@@ -552,6 +538,66 @@ private:
     SkScalar fMinMaxScale;
     int fRunCount;
     uint8_t fTextType;
+};
+
+/**
+ * Used to produce vertices for a subrun of a blob. The vertices are cached in the blob itself.
+ * This is invoked each time a sub run is drawn. It regenerates the vertex data as required either
+ * because of changes to the atlas or because of different draw parameters (e.g. color change). In
+ * rare cases the draw may have to interrupted and flushed in the middle of the sub run in order to
+ * free up atlas space. Thus, this generator is stateful and should be invoked in a loop until the
+ * entire sub run has been completed.
+ */
+class GrAtlasTextBlob::VertexRegenerator {
+public:
+    /**
+     * Consecutive VertexRegenerators often use the same SkGlyphCache. If the same instance of
+     * SkAutoGlyphCache is reused then it can save the cost of multiple detach/attach operations of
+     * SkGlyphCache.
+     */
+    VertexRegenerator(GrAtlasTextBlob* blob, int runIdx, int subRunIdx, const SkMatrix& viewMatrix,
+                      SkScalar x, SkScalar y, GrColor color, GrDeferredUploadTarget*,
+                      GrAtlasGlyphCache*, SkAutoGlyphCache*);
+
+    struct Result {
+        /**
+         * Was regenerate() able to draw all the glyphs from the sub run? If not flush all glyph
+         * draws and call regenerate() again.
+         */
+        bool fFinished = true;
+
+        /**
+         * How many glyphs were regenerated. Will be equal to the sub run's glyph count if
+         * fType is kFinished.
+         */
+        int fGlyphsRegenerated = 0;
+
+        /**
+         * Pointer where the caller finds the first regenerated vertex.
+         */
+        const char* fFirstVertex;
+    };
+
+    Result regenerate();
+
+private:
+    template <bool regenPos, bool regenCol, bool regenTexCoords, bool regenGlyphs>
+    Result doRegen();
+
+    const SkMatrix& fViewMatrix;
+    GrAtlasTextBlob* fBlob;
+    GrDeferredUploadTarget* fUploadTarget;
+    GrAtlasGlyphCache* fGlyphCache;
+    SkAutoGlyphCache* fLazyCache;
+    Run* fRun;
+    Run::SubRunInfo* fSubRun;
+    GrColor fColor;
+    SkScalar fTransX;
+    SkScalar fTransY;
+
+    uint32_t fRegenFlags = 0;
+    int fCurrGlyph = 0;
+    bool fBrokenRun = false;
 };
 
 #endif

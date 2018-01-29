@@ -11,11 +11,11 @@
 
 namespace blink {
 
-RefPtr<PaintRecordPattern> PaintRecordPattern::Create(
+scoped_refptr<PaintRecordPattern> PaintRecordPattern::Create(
     sk_sp<PaintRecord> record,
     const FloatRect& record_bounds,
     RepeatMode repeat_mode) {
-  return WTF::AdoptRef(
+  return base::AdoptRef(
       new PaintRecordPattern(std::move(record), record_bounds, repeat_mode));
 }
 

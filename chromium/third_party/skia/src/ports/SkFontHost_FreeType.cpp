@@ -75,7 +75,7 @@
 //#define SK_FONTHOST_FREETYPE_RUNTIME_VERSION
 //#define SK_GAMMA_APPLY_TO_A8
 
-static bool isLCD(const SkScalerContext::Rec& rec) {
+static bool isLCD(const SkScalerContextRec& rec) {
     return SkMask::kLCD16_Format == rec.fMaskFormat;
 }
 
@@ -633,7 +633,7 @@ static bool bothZero(SkScalar a, SkScalar b) {
 }
 
 // returns false if there is any non-90-rotation or skew
-static bool isAxisAligned(const SkScalerContext::Rec& rec) {
+static bool isAxisAligned(const SkScalerContextRec& rec) {
     return 0 == rec.fPreSkewX &&
            (bothZero(rec.fPost2x2[0][1], rec.fPost2x2[1][0]) ||
             bothZero(rec.fPost2x2[0][0], rec.fPost2x2[1][1]));
@@ -674,11 +674,6 @@ void SkTypeface_FreeType::onFilterRec(SkScalerContextRec* rec) const {
     if (SkPaint::kFull_Hinting == h && !isLCD(*rec)) {
         // collapse full->normal hinting if we're not doing LCD
         h = SkPaint::kNormal_Hinting;
-    }
-    if ((rec->fFlags & SkScalerContext::kSubpixelPositioning_Flag)) {
-        if (SkPaint::kNo_Hinting != h) {
-            h = SkPaint::kSlight_Hinting;
-        }
     }
 
     // rotated text looks bad with hinting, so we disable it as needed

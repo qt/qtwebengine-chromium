@@ -49,40 +49,28 @@ static inline GrSamplerState::Filter highest_filter_mode(const GrGLTexture::IDDe
 
 // Because this class is virtually derived from GrSurface we must explicitly call its constructor.
 GrGLTexture::GrGLTexture(GrGLGpu* gpu, SkBudgeted budgeted, const GrSurfaceDesc& desc,
-                         const IDDesc& idDesc)
+                         const IDDesc& idDesc, GrMipMapsStatus mipMapsStatus)
     : GrSurface(gpu, desc)
     , INHERITED(gpu, desc, sampler_type(idDesc, desc.fConfig, gpu),
-                highest_filter_mode(idDesc, desc.fConfig), false, false) {
+                highest_filter_mode(idDesc, desc.fConfig), mipMapsStatus) {
     this->init(desc, idDesc);
     this->registerWithCache(budgeted);
 }
 
-GrGLTexture::GrGLTexture(GrGLGpu* gpu, SkBudgeted budgeted, const GrSurfaceDesc& desc,
-                         const IDDesc& idDesc,
-                         bool mipsAllocated,
-                         bool wasFullMipMapDataProvided)
+GrGLTexture::GrGLTexture(GrGLGpu* gpu, Wrapped, const GrSurfaceDesc& desc,
+                         GrMipMapsStatus mipMapsStatus, const IDDesc& idDesc)
     : GrSurface(gpu, desc)
     , INHERITED(gpu, desc, sampler_type(idDesc, desc.fConfig, gpu),
-                highest_filter_mode(idDesc, desc.fConfig),
-                mipsAllocated, wasFullMipMapDataProvided) {
-    this->init(desc, idDesc);
-    this->registerWithCache(budgeted);
-}
-
-GrGLTexture::GrGLTexture(GrGLGpu* gpu, Wrapped, const GrSurfaceDesc& desc, const IDDesc& idDesc)
-    : GrSurface(gpu, desc)
-    , INHERITED(gpu, desc, sampler_type(idDesc, desc.fConfig, gpu),
-                highest_filter_mode(idDesc, desc.fConfig), false, false) {
+                highest_filter_mode(idDesc, desc.fConfig), mipMapsStatus) {
     this->init(desc, idDesc);
     this->registerWithCacheWrapped();
 }
 
 GrGLTexture::GrGLTexture(GrGLGpu* gpu, const GrSurfaceDesc& desc, const IDDesc& idDesc,
-                         bool mipsAllocated, bool wasFullMipMapDataProvided)
+                         GrMipMapsStatus mipMapsStatus)
     : GrSurface(gpu, desc)
     , INHERITED(gpu, desc, sampler_type(idDesc, desc.fConfig, gpu),
-                highest_filter_mode(idDesc, desc.fConfig),
-                mipsAllocated, wasFullMipMapDataProvided) {
+                highest_filter_mode(idDesc, desc.fConfig), mipMapsStatus) {
     this->init(desc, idDesc);
 }
 
@@ -125,7 +113,19 @@ void GrGLTexture::setMemoryBacking(SkTraceMemoryDump* traceMemoryDump,
 }
 
 sk_sp<GrGLTexture> GrGLTexture::MakeWrapped(GrGLGpu* gpu, const GrSurfaceDesc& desc,
-                                            const IDDesc& idDesc) {
-    return sk_sp<GrGLTexture>(new GrGLTexture(gpu, kWrapped, desc, idDesc));
+                                            GrMipMapsStatus mipMapsStatus, const IDDesc& idDesc) {
+    return sk_sp<GrGLTexture>(new GrGLTexture(gpu, kWrapped, desc, mipMapsStatus, idDesc));
 }
 
+bool GrGLTexture::onStealBackendTexture(GrBackendTexture* backendTexture,
+                                        SkImage::BackendTextureReleaseProc* releaseProc) {
+    *backendTexture = GrBackendTexture(width(), height(), config(), fInfo);
+    // Set the release proc to a no-op function. GL doesn't require any special cleanup.
+    *releaseProc = [](GrBackendTexture){};
+
+    // It's important that we only abandon this texture's objects, not subclass objects such as
+    // those held by GrGLTextureRenderTarget. Those objects are not being stolen and need to be
+    // cleaned up by us.
+    this->GrGLTexture::onAbandon();
+    return true;
+}

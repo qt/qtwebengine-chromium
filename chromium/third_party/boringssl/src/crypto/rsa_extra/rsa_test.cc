@@ -622,13 +622,6 @@ TEST(RSATest, ASN1) {
                                       sizeof(kEstonianRSAKey)));
   EXPECT_FALSE(rsa);
   ERR_clear_error();
-
-  // But |RSA_parse_public_key_buggy| will accept it.
-  CBS cbs;
-  CBS_init(&cbs, kEstonianRSAKey, sizeof(kEstonianRSAKey));
-  rsa.reset(RSA_parse_public_key_buggy(&cbs));
-  EXPECT_TRUE(rsa);
-  EXPECT_EQ(0u, CBS_len(&cbs));
 }
 
 TEST(RSATest, BadExponent) {
@@ -740,58 +733,6 @@ TEST(RSATest, SqrtTwo) {
 
   // Check the kBoringSSLRSASqrtTwo is sized for a 3072-bit RSA key.
   EXPECT_EQ(3072u / 2u, bits);
-}
-
-TEST(RSATest, LessThanWords) {
-  // kTestVectors is an array of 256-bit values in sorted order.
-  static const BN_ULONG kTestVectors[][256 / BN_BITS2] = {
-      {TOBN(0x00000000, 0x00000000), TOBN(0x00000000, 0x00000000),
-       TOBN(0x00000000, 0x00000000), TOBN(0x00000000, 0x00000000)},
-      {TOBN(0x00000000, 0x00000001), TOBN(0x00000000, 0x00000000),
-       TOBN(0x00000000, 0x00000000), TOBN(0x00000000, 0x00000000)},
-      {TOBN(0xffffffff, 0xffffffff), TOBN(0x00000000, 0x00000000),
-       TOBN(0x00000000, 0x00000000), TOBN(0x00000000, 0x00000000)},
-      {TOBN(0xffffffff, 0xffffffff), TOBN(0xffffffff, 0xffffffff),
-       TOBN(0x00000000, 0x00000000), TOBN(0x00000000, 0x00000000)},
-      {TOBN(0xffffffff, 0xffffffff), TOBN(0xffffffff, 0xffffffff),
-       TOBN(0xffffffff, 0xffffffff), TOBN(0x00000000, 0x00000000)},
-      {TOBN(0x00000000, 0x00000000), TOBN(0x1d6f60ba, 0x893ba84c),
-       TOBN(0x597d89b3, 0x754abe9f), TOBN(0xb504f333, 0xf9de6484)},
-      {TOBN(0x00000000, 0x83339915), TOBN(0x1d6f60ba, 0x893ba84c),
-       TOBN(0x597d89b3, 0x754abe9f), TOBN(0xb504f333, 0xf9de6484)},
-      {TOBN(0xed17ac85, 0x00000000), TOBN(0x1d6f60ba, 0x893ba84c),
-       TOBN(0x597d89b3, 0x754abe9f), TOBN(0xb504f333, 0xf9de6484)},
-      {TOBN(0xed17ac85, 0x83339915), TOBN(0x1d6f60ba, 0x893ba84c),
-       TOBN(0x597d89b3, 0x754abe9f), TOBN(0xb504f333, 0xf9de6484)},
-      {TOBN(0xed17ac85, 0xffffffff), TOBN(0x1d6f60ba, 0x893ba84c),
-       TOBN(0x597d89b3, 0x754abe9f), TOBN(0xb504f333, 0xf9de6484)},
-      {TOBN(0xffffffff, 0x83339915), TOBN(0x1d6f60ba, 0x893ba84c),
-       TOBN(0x597d89b3, 0x754abe9f), TOBN(0xb504f333, 0xf9de6484)},
-      {TOBN(0xffffffff, 0xffffffff), TOBN(0x1d6f60ba, 0x893ba84c),
-       TOBN(0x597d89b3, 0x754abe9f), TOBN(0xb504f333, 0xf9de6484)},
-      {TOBN(0x00000000, 0x00000000), TOBN(0x00000000, 0x00000000),
-       TOBN(0x00000000, 0x00000000), TOBN(0xffffffff, 0xffffffff)},
-      {TOBN(0x00000000, 0x00000000), TOBN(0x00000000, 0x00000000),
-       TOBN(0xffffffff, 0xffffffff), TOBN(0xffffffff, 0xffffffff)},
-      {TOBN(0x00000000, 0x00000001), TOBN(0x00000000, 0x00000000),
-       TOBN(0xffffffff, 0xffffffff), TOBN(0xffffffff, 0xffffffff)},
-      {TOBN(0x00000000, 0x00000000), TOBN(0xffffffff, 0xffffffff),
-       TOBN(0xffffffff, 0xffffffff), TOBN(0xffffffff, 0xffffffff)},
-      {TOBN(0xffffffff, 0xffffffff), TOBN(0xffffffff, 0xffffffff),
-       TOBN(0xffffffff, 0xffffffff), TOBN(0xffffffff, 0xffffffff)},
-  };
-
-  for (size_t i = 0; i < OPENSSL_ARRAY_SIZE(kTestVectors); i++) {
-    SCOPED_TRACE(i);
-    for (size_t j = 0; j < OPENSSL_ARRAY_SIZE(kTestVectors); j++) {
-      SCOPED_TRACE(j);
-      EXPECT_EQ(i < j ? 1 : 0,
-                rsa_less_than_words(kTestVectors[i], kTestVectors[j],
-                                    OPENSSL_ARRAY_SIZE(kTestVectors[i])));
-    }
-  }
-
-  EXPECT_EQ(0, rsa_less_than_words(NULL, NULL, 0));
 }
 
 TEST(RSATest, GreaterThanPow2) {

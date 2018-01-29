@@ -39,6 +39,14 @@ sk_sp<GrRenderTargetContext> GrOnFlushResourceProvider::makeRenderTargetContext(
         return nullptr;
     }
 
+    // Since this is at flush time and these won't be allocated for us by the GrResourceAllocator
+    // we have to manually ensure it is allocated here. The proxy had best have been created
+    // with the kNoPendingIO flag!
+    if (!renderTargetContext->asSurfaceProxy()->instantiate(
+                                                fDrawingMgr->getContext()->resourceProvider())) {
+        return nullptr;
+    }
+
     renderTargetContext->discard();
 
     return renderTargetContext;
@@ -59,6 +67,14 @@ sk_sp<GrRenderTargetContext> GrOnFlushResourceProvider::makeRenderTargetContext(
         return nullptr;
     }
 
+    // Since this is at flush time and these won't be allocated for us by the GrResourceAllocator
+    // we have to manually ensure it is allocated here. The proxy had best have been created
+    // with the kNoPendingIO flag!
+    if (!renderTargetContext->asSurfaceProxy()->instantiate(
+                                                fDrawingMgr->getContext()->resourceProvider())) {
+        return nullptr;
+    }
+
     renderTargetContext->discard();
 
     return renderTargetContext;
@@ -76,7 +92,7 @@ sk_sp<GrBuffer> GrOnFlushResourceProvider::findOrMakeStaticBuffer(const GrUnique
                                                                   GrBufferType intendedType,
                                                                   size_t size, const void* data) {
     GrResourceProvider* rp = fDrawingMgr->getContext()->resourceProvider();
-    sk_sp<GrBuffer> buffer(rp->findAndRefTByUniqueKey<GrBuffer>(key));
+    sk_sp<GrBuffer> buffer(rp->findByUniqueKey<GrBuffer>(key));
     if (!buffer) {
         buffer.reset(rp->createBuffer(size, intendedType, kStatic_GrAccessPattern, 0, data));
         if (!buffer) {

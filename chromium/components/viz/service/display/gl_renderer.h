@@ -22,9 +22,14 @@
 #include "components/viz/service/display/gl_renderer_copier.h"
 #include "components/viz/service/display/gl_renderer_draw_cache.h"
 #include "components/viz/service/display/program_binding.h"
+#include "components/viz/service/display/texture_deleter.h"
 #include "components/viz/service/viz_service_export.h"
 #include "ui/gfx/geometry/quad_f.h"
 #include "ui/latency/latency_info.h"
+
+namespace base {
+class SingleThreadTaskRunner;
+}
 
 namespace cc {
 class GLRendererShaderTest;
@@ -46,7 +51,6 @@ namespace viz {
 class DynamicGeometryBinding;
 class StaticGeometryBinding;
 class TextureDrawQuad;
-class TextureMailboxDeleter;
 struct DrawRenderPassDrawQuadParams;
 
 // Class that handles drawing of composited render layers using GL.
@@ -57,7 +61,7 @@ class VIZ_SERVICE_EXPORT GLRenderer : public DirectRenderer {
   GLRenderer(const RendererSettings* settings,
              OutputSurface* output_surface,
              cc::DisplayResourceProvider* resource_provider,
-             TextureMailboxDeleter* texture_mailbox_deleter);
+             scoped_refptr<base::SingleThreadTaskRunner> current_task_runner);
   ~GLRenderer() override;
 
   bool use_swap_with_bounds() const { return use_swap_with_bounds_; }
@@ -69,6 +73,8 @@ class VIZ_SERVICE_EXPORT GLRenderer : public DirectRenderer {
       const gpu::TextureInUseResponses& responses) override;
 
   virtual bool IsContextLost();
+  bool HasAllocatedResourcesForTesting(
+      const RenderPassId render_pass_id) const override;
 
  protected:
   void DidChangeVisibility() override;
@@ -93,8 +99,20 @@ class VIZ_SERVICE_EXPORT GLRenderer : public DirectRenderer {
 
   bool CanPartialSwap() override;
   ResourceFormat BackbufferFormat() const override;
+  void UpdateRenderPassTextures(
+      const RenderPassList& render_passes_in_draw_order,
+      const base::flat_map<RenderPassId, RenderPassRequirements>&
+          render_passes_in_frame) override;
+  void AllocateRenderPassResourceIfNeeded(
+      const RenderPassId render_pass_id,
+      const gfx::Size& enlarged_size,
+      ResourceTextureHint texturehint) override;
+  bool IsRenderPassResourceAllocated(
+      const RenderPassId render_pass_id) const override;
+  const gfx::Size& GetRenderPassTextureSize(
+      const RenderPassId render_pass_id) override;
   void BindFramebufferToOutputSurface() override;
-  bool BindFramebufferToTexture(const cc::ScopedResource* resource) override;
+  void BindFramebufferToTexture(const RenderPassId render_pass_id) override;
   void SetScissorTestRect(const gfx::Rect& scissor_rect) override;
   void PrepareSurfaceForPass(SurfaceInitializationMode initialization_mode,
                              const gfx::Rect& render_pass_scissor) override;
@@ -146,7 +164,8 @@ class VIZ_SERVICE_EXPORT GLRenderer : public DirectRenderer {
   bool UpdateRPDQWithSkiaFilters(DrawRenderPassDrawQuadParams* params);
   void UpdateRPDQTexturesForSampling(DrawRenderPassDrawQuadParams* params);
   void UpdateRPDQBlendMode(DrawRenderPassDrawQuadParams* params);
-  void ChooseRPDQProgram(DrawRenderPassDrawQuadParams* params);
+  void ChooseRPDQProgram(DrawRenderPassDrawQuadParams* params,
+                         const gfx::ColorSpace& target_color_space);
   void UpdateRPDQUniforms(DrawRenderPassDrawQuadParams* params);
   void DrawRPDQ(const DrawRenderPassDrawQuadParams& params);
 
@@ -230,13 +249,9 @@ class VIZ_SERVICE_EXPORT GLRenderer : public DirectRenderer {
   // YUV to RGB conversion) is performed. This explicit argument is available
   // so that video color conversion can be enabled separately from general color
   // conversion.
-  // TODO(ccameron): Remove the version with an explicit |dst_color_space|,
-  // since that will always be the device color space.
   void SetUseProgram(const ProgramKey& program_key,
                      const gfx::ColorSpace& src_color_space,
                      const gfx::ColorSpace& dst_color_space);
-  void SetUseProgram(const ProgramKey& program_key,
-                     const gfx::ColorSpace& src_color_space);
 
   bool MakeContextCurrent();
 
@@ -275,6 +290,10 @@ class VIZ_SERVICE_EXPORT GLRenderer : public DirectRenderer {
                                unsigned query,
                                int multiplier);
 
+  // A map from RenderPass id to the texture used to draw the RenderPass from.
+  base::flat_map<RenderPassId, std::unique_ptr<cc::ScopedResource>>
+      render_pass_textures_;
+
   using OverlayResourceLock =
       std::unique_ptr<cc::DisplayResourceProvider::ScopedReadLockGL>;
   using OverlayResourceLockList = std::vector<OverlayResourceLock>;
@@ -312,6 +331,7 @@ class VIZ_SERVICE_EXPORT GLRenderer : public DirectRenderer {
   gpu::ContextSupport* context_support_;
   std::unique_ptr<ContextCacheController::ScopedVisibility> context_visibility_;
 
+  TextureDeleter texture_deleter_;
   GLRendererCopier copier_;
 
   gfx::Rect swap_buffer_rect_;
@@ -340,10 +360,6 @@ class VIZ_SERVICE_EXPORT GLRenderer : public DirectRenderer {
   bool use_occlusion_query_ = false;
   bool use_swap_with_bounds_ = false;
 
-  // Some overlays require that content is copied from a render pass into an
-  // overlay resource. This means the GLRenderer needs its own cc::ResourcePool.
-  std::unique_ptr<cc::ResourcePool> overlay_resource_pool_;
-
   // If true, draw a green border after compositing a overlay candidate quad
   // using GL.
   bool gl_composited_overlay_candidate_quad_border_;
@@ -363,6 +379,13 @@ class VIZ_SERVICE_EXPORT GLRenderer : public DirectRenderer {
 
   unsigned num_triangles_drawn_ = 0;
 
+  // This may be null if the compositor is run on a thread without a
+  // MessageLoop.
+  scoped_refptr<base::SingleThreadTaskRunner> current_task_runner_;
+  // Some overlays require that content is copied from a render pass into an
+  // overlay resource. This means the GLRenderer needs its own cc::ResourcePool.
+  // This references the |current_task_runner_| and |resource_provider_|.
+  std::unique_ptr<cc::ResourcePool> overlay_resource_pool_;
   base::WeakPtrFactory<GLRenderer> weak_ptr_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(GLRenderer);

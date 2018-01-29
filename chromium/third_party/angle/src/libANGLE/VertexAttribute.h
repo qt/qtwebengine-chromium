@@ -23,7 +23,8 @@ class VertexBinding final : angle::NonCopyable
 {
   public:
     VertexBinding();
-    explicit VertexBinding(VertexBinding &&binding);
+    VertexBinding(VertexBinding &&binding);
+    ~VertexBinding();
     VertexBinding &operator=(VertexBinding &&binding);
 
     GLuint getStride() const { return mStride; }

@@ -4,6 +4,7 @@
 
 #include "services/resource_coordinator/memory_instrumentation/graph.h"
 
+#include "base/test/mock_callback.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace memory_instrumentation {
@@ -38,9 +39,47 @@ TEST(GlobalDumpGraphTest, AddNodeOwnershipEdge) {
   ASSERT_EQ(edge.priority(), 1);
 }
 
+TEST(GlobalDumpGraphTest, VisitInDepthFirstPostOrder) {
+  GlobalDumpGraph graph;
+  Process* process = graph.shared_memory_graph();
+  Node* root = process->root();
+
+  Node c1(process, root);
+  Node c2(process, root);
+  Node c2_c1(process, &c2);
+  Node c2_c2(process, &c2);
+  Node c3(process, root);
+  Node c3_c1(process, &c3);
+  Node c3_c2(process, &c3);
+
+  root->InsertChild("c1", &c1);
+  root->InsertChild("c2", &c2);
+  root->InsertChild("c3", &c3);
+  c2.InsertChild("c1", &c2_c1);
+  c2.InsertChild("c2", &c2_c2);
+  c3.InsertChild("c1", &c3_c1);
+  c3.InsertChild("c2", &c3_c2);
+
+  // |c3_c2| owns |c2_c2|.
+  graph.AddNodeOwnershipEdge(&c3_c2, &c2_c2, 1);
+
+  // This method should always call owners and then children before the node
+  // itself.
+  auto iterator = process->VisitInDepthFirstPostOrder();
+  ASSERT_EQ(iterator.next(), &c1);
+  ASSERT_EQ(iterator.next(), &c2_c1);
+  ASSERT_EQ(iterator.next(), &c3_c2);
+  ASSERT_EQ(iterator.next(), &c2_c2);
+  ASSERT_EQ(iterator.next(), &c2);
+  ASSERT_EQ(iterator.next(), &c3_c1);
+  ASSERT_EQ(iterator.next(), &c3);
+  ASSERT_EQ(iterator.next(), root);
+  ASSERT_EQ(iterator.next(), nullptr);
+}
+
 TEST(ProcessTest, CreateAndFindNode) {
   GlobalDumpGraph global_dump_graph;
-  Process graph(&global_dump_graph);
+  Process graph(1, &global_dump_graph);
 
   Node* first =
       graph.CreateNode(MemoryAllocatorDumpGuid(1), "simple/test/1", false);
@@ -69,7 +108,7 @@ TEST(ProcessTest, CreateAndFindNode) {
 
 TEST(ProcessTest, CreateNodeParent) {
   GlobalDumpGraph global_dump_graph;
-  Process graph(&global_dump_graph);
+  Process graph(1, &global_dump_graph);
 
   Node* parent = graph.CreateNode(MemoryAllocatorDumpGuid(1), "simple", false);
   Node* child =
@@ -81,7 +120,7 @@ TEST(ProcessTest, CreateNodeParent) {
 
 TEST(ProcessTest, WeakAndExplicit) {
   GlobalDumpGraph global_dump_graph;
-  Process graph(&global_dump_graph);
+  Process graph(1, &global_dump_graph);
 
   Node* first =
       graph.CreateNode(MemoryAllocatorDumpGuid(1), "simple/test/1", true);
@@ -132,17 +171,17 @@ TEST(NodeTest, AddEntry) {
   Node node(global_dump_graph.shared_memory_graph(), nullptr);
 
   node.AddEntry("scalar", Node::Entry::ScalarUnits::kBytes, 100ul);
-  ASSERT_EQ(node.entries().size(), 1ul);
+  ASSERT_EQ(node.entries()->size(), 1ul);
 
   node.AddEntry("string", "data");
-  ASSERT_EQ(node.entries().size(), 2ul);
+  ASSERT_EQ(node.entries()->size(), 2ul);
 
-  auto scalar = node.entries().find("scalar");
+  auto scalar = node.entries()->find("scalar");
   ASSERT_EQ(scalar->first, "scalar");
   ASSERT_EQ(scalar->second.units, Node::Entry::ScalarUnits::kBytes);
   ASSERT_EQ(scalar->second.value_uint64, 100ul);
 
-  auto string = node.entries().find("string");
+  auto string = node.entries()->find("string");
   ASSERT_EQ(string->first, "string");
   ASSERT_EQ(string->second.value_string, "data");
 }

@@ -102,7 +102,7 @@ interface CoreProbes {
   void willSendEventSourceRequest(ExecutionContext*, ThreadableLoaderClient* eventSource);
   void willDispatchEventSourceEvent(ExecutionContext*, ThreadableLoaderClient* eventSource, const AtomicString& eventName, const AtomicString& eventId, const String& data);
   void didFinishEventSourceRequest(ExecutionContext*, ThreadableLoaderClient* eventSource);
-  void willLoadXHR(ExecutionContext*, XMLHttpRequest* xhr, ThreadableLoaderClient* client, const AtomicString& method, const KURL& url, bool async, RefPtr<EncodedFormData>, const HTTPHeaderMap& headers, bool includeCredentials);
+  void willLoadXHR(ExecutionContext*, XMLHttpRequest* xhr, ThreadableLoaderClient* client, const AtomicString& method, const KURL& url, bool async, scoped_refptr<EncodedFormData>, const HTTPHeaderMap& headers, bool includeCredentials);
   void didFailXHRLoading([Keep] ExecutionContext*, XMLHttpRequest* xhr, ThreadableLoaderClient* client, const AtomicString& method, const String& url);
   void didFinishXHRLoading([Keep] ExecutionContext*, XMLHttpRequest* xhr, ThreadableLoaderClient* client, const AtomicString& method, const String& url);
   void willStartFetch(ExecutionContext*, ThreadableLoaderClient*);
@@ -143,15 +143,15 @@ interface CoreProbes {
   void didCreateAnimation(Document*, unsigned);
   void animationPlayStateChanged(Document*, Animation*, Animation::AnimationPlayState oldPlayState, Animation::AnimationPlayState newPlayState);
   void windowCreated(LocalFrame* opener, LocalFrame* created);
-  void windowOpen([Keep] Document*, const String& url, const AtomicString& windowName, const String& windowFeatures, bool userGestrue);
+  void windowOpen([Keep] Document*, const String& url, const AtomicString& windowName, const WebWindowFeatures& windowFeatures, bool userGestrue);
   void consoleMessageAdded(ExecutionContext*, ConsoleMessage*);
   void willRunJavaScriptDialog(LocalFrame* frame);
   void didRunJavaScriptDialog(LocalFrame* frame);
   void documentWriteFetchScript([Keep] Document*);
   void didChangeViewport(LocalFrame* document);
   void breakableLocation(ExecutionContext* context, const char* name);
-  RecalculateStyle(Document*);
-  UpdateLayout(Document*);
+  RecalculateStyle(Document* document);
+  UpdateLayout(Document* document);
   ExecuteScript([Keep] ExecutionContext* context);
   CallFunction([Keep] ExecutionContext* context, v8::Local<v8::Function> function, int depth = 0);
   UserCallback([Keep] ExecutionContext* context, const char* name, const AtomicString& atomicName, bool recurring, EventTarget* eventTarget = nullptr);
@@ -161,7 +161,8 @@ interface CoreProbes {
   void shouldWaitForDebuggerOnWorkerStart(ExecutionContext* context, bool* result);
   void shouldForceCORSPreflight(ExecutionContext*, bool* result);
   void shouldBlockRequest(ExecutionContext*, const KURL&, bool* result);
+  void shouldBypassServiceWorker(ExecutionContext* context, bool* result);
   void consoleTimeStamp(ExecutionContext*, const String& title);
-  void lifecycleEvent([Keep] LocalFrame*, const char* name, double timestamp);
+  void lifecycleEvent([Keep] LocalFrame*, DocumentLoader*, const char* name, double timestamp);
   void paintTiming([Keep] Document*, const char* name, double timestamp);
 }

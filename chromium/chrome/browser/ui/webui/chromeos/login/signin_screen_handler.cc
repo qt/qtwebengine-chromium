@@ -52,7 +52,7 @@
 #include "chrome/browser/chromeos/login/screens/network_error.h"
 #include "chrome/browser/chromeos/login/startup_utils.h"
 #include "chrome/browser/chromeos/login/ui/login_display_host.h"
-#include "chrome/browser/chromeos/login/ui/login_display_host_impl.h"
+#include "chrome/browser/chromeos/login/ui/login_display_host_webui.h"
 #include "chrome/browser/chromeos/login/ui/login_feedback.h"
 #include "chrome/browser/chromeos/login/ui/webui_login_display.h"
 #include "chrome/browser/chromeos/login/users/multi_profile_user_controller.h"
@@ -131,7 +131,6 @@ const char kSourceAccountPicker[] = "account-picker";
 
 // Constants for lock screen apps activity state values:
 const char kNoLockScreenApps[] = "LOCK_SCREEN_APPS_STATE.NONE";
-const char kBackgroundLockScreenApps[] = "LOCK_SCREEN_APPS_STATE.BACKGROUND";
 const char kForegroundLockScreenApps[] = "LOCK_SCREEN_APPS_STATE.FOREGROUND";
 const char kAvailableLockScreenApps[] = "LOCK_SCREEN_APPS_STATE.AVAILABLE";
 
@@ -538,6 +537,8 @@ void SigninScreenHandler::RegisterMessages() {
               &SigninScreenHandler::HandleCloseLockScreenApp);
   AddCallback("requestNewLockScreenNote",
               &SigninScreenHandler::HandleRequestNewNoteAction);
+  AddCallback("newNoteLaunchAnimationDone",
+              &SigninScreenHandler::HandleNewNoteLaunchAnimationDone);
 }
 
 void SigninScreenHandler::Show(const LoginScreenContext& context) {
@@ -676,7 +677,8 @@ void SigninScreenHandler::UpdateStateInternal(NetworkError::ErrorReason reason,
   // Skip "update" notification about OFFLINE state from
   // NetworkStateInformer if previous notification already was
   // delayed.
-  if ((state == NetworkStateInformer::OFFLINE || has_pending_auth_ui_) &&
+  if ((state == NetworkStateInformer::OFFLINE ||
+       network_state_ignored_until_proxy_auth_) &&
       !force_update && !update_state_closure_.IsCancelled()) {
     return;
   }
@@ -684,7 +686,7 @@ void SigninScreenHandler::UpdateStateInternal(NetworkError::ErrorReason reason,
   update_state_closure_.Cancel();
 
   if ((state == NetworkStateInformer::OFFLINE && !force_update) ||
-      has_pending_auth_ui_) {
+      network_state_ignored_until_proxy_auth_) {
     update_state_closure_.Reset(
         base::Bind(&SigninScreenHandler::UpdateStateInternal,
                    weak_factory_.GetWeakPtr(),
@@ -780,7 +782,6 @@ void SigninScreenHandler::UpdateStateInternal(NetworkError::ErrorReason reason,
 
   if (is_gaia_loading_timeout) {
     LOG(WARNING) << "Retry frame load due to loading timeout.";
-    LOG(ERROR) << "UpdateStateInternal reload 4";
     reload_gaia.ScheduleCall();
   }
 
@@ -1073,25 +1074,42 @@ void SigninScreenHandler::Observe(int type,
                                   const content::NotificationDetails& details) {
   switch (type) {
     case chrome::NOTIFICATION_AUTH_NEEDED: {
-      has_pending_auth_ui_ = true;
+      network_state_ignored_until_proxy_auth_ = true;
       break;
     }
-    case chrome::NOTIFICATION_AUTH_SUPPLIED:
-      has_pending_auth_ui_ = false;
-      // Reload auth extension as proxy credentials are supplied.
-      if (!IsSigninScreenHiddenByError() && ui_state_ == UI_STATE_GAIA_SIGNIN)
-        ReloadGaia(true);
-      update_state_closure_.Cancel();
+    case chrome::NOTIFICATION_AUTH_SUPPLIED: {
+      if (IsGaiaHiddenByError()) {
+        // Start listening to network state notifications immediately, hoping
+        // that the network will switch to ONLINE soon.
+        update_state_closure_.Cancel();
+        ReenableNetworkStateUpdatesAfterProxyAuth();
+      } else {
+        // Gaia is not hidden behind an error yet. Discard last cached network
+        // state notification and wait for |kOfflineTimeoutSec| before
+        // considering network update notifications again (hoping the network
+        // will become ONLINE by then).
+        update_state_closure_.Cancel();
+        base::ThreadTaskRunnerHandle::Get()->PostDelayedTask(
+            FROM_HERE,
+            base::BindOnce(
+                &SigninScreenHandler::ReenableNetworkStateUpdatesAfterProxyAuth,
+                weak_factory_.GetWeakPtr()),
+            base::TimeDelta::FromSeconds(kOfflineTimeoutSec));
+      }
       break;
+    }
     case chrome::NOTIFICATION_AUTH_CANCELLED: {
-      // Don't reload auth extension if proxy auth dialog was cancelled.
-      has_pending_auth_ui_ = false;
       update_state_closure_.Cancel();
+      ReenableNetworkStateUpdatesAfterProxyAuth();
       break;
     }
     default:
       NOTREACHED() << "Unexpected notification " << type;
   }
+}
+
+void SigninScreenHandler::ReenableNetworkStateUpdatesAfterProxyAuth() {
+  network_state_ignored_until_proxy_auth_ = false;
 }
 
 void SigninScreenHandler::SuspendDone(const base::TimeDelta& sleep_duration) {
@@ -1115,9 +1133,6 @@ void SigninScreenHandler::OnLockScreenNoteStateChanged(
     case ash::mojom::TrayActionState::kLaunching:
     case ash::mojom::TrayActionState::kActive:
       lock_screen_apps_state = kForegroundLockScreenApps;
-      break;
-    case ash::mojom::TrayActionState::kBackground:
-      lock_screen_apps_state = kBackgroundLockScreenApps;
       break;
     case ash::mojom::TrayActionState::kAvailable:
       lock_screen_apps_state = kAvailableLockScreenApps;
@@ -1160,6 +1175,15 @@ void SigninScreenHandler::HandleAuthenticateUser(const AccountId& account_id,
   UserContext user_context(account_id);
   user_context.SetKey(Key(password));
   user_context.SetIsUsingPin(authenticated_by_pin);
+  const user_manager::User* user =
+      user_manager::UserManager::Get()->FindUser(account_id);
+  DCHECK(user);
+  if (!user) {
+    LOG(ERROR) << "HandleAuthenticateUser: User not found! account type="
+               << AccountId::AccountTypeToString(account_id.GetAccountType());
+  } else {
+    user_context.SetUserType(user->GetType());
+  }
   if (account_id.GetAccountType() == AccountType::ACTIVE_DIRECTORY)
     user_context.SetUserType(user_manager::USER_TYPE_ACTIVE_DIRECTORY);
   delegate_->Login(user_context, SigninSpecifics());
@@ -1238,9 +1262,8 @@ void SigninScreenHandler::HandleRemoveUser(const AccountId& account_id) {
 }
 
 void SigninScreenHandler::HandleShowAddUser(const base::ListValue* args) {
-  TRACE_EVENT_ASYNC_STEP_INTO0("ui",
-                               "ShowLoginWebUI",
-                               LoginDisplayHostImpl::kShowLoginWebUIid,
+  TRACE_EVENT_ASYNC_STEP_INTO0("ui", "ShowLoginWebUI",
+                               LoginDisplayHostWebUI::kShowLoginWebUIid,
                                "ShowAddUser");
   std::string email;
   // |args| can be null if it's OOBE.
@@ -1349,8 +1372,8 @@ void SigninScreenHandler::HandleLoginVisible(const std::string& source) {
         chrome::NOTIFICATION_LOGIN_OR_LOCK_WEBUI_VISIBLE,
         content::NotificationService::AllSources(),
         content::NotificationService::NoDetails());
-    TRACE_EVENT_ASYNC_END0(
-        "ui", "ShowLoginWebUI", LoginDisplayHostImpl::kShowLoginWebUIid);
+    TRACE_EVENT_ASYNC_END0("ui", "ShowLoginWebUI",
+                           LoginDisplayHostWebUI::kShowLoginWebUIid);
   }
   webui_visible_ = true;
   if (preferences_changed_delayed_)
@@ -1544,6 +1567,10 @@ void SigninScreenHandler::HandleRequestNewNoteAction(
   } else {
     NOTREACHED() << "Unknown request type " << request_type;
   }
+}
+
+void SigninScreenHandler::HandleNewNoteLaunchAnimationDone() {
+  lock_screen_apps::StateController::Get()->NewNoteLaunchAnimationDone();
 }
 
 void SigninScreenHandler::HandleCloseLockScreenApp() {

@@ -49,7 +49,6 @@
 #include "platform/wtf/HashMap.h"
 #include "public/platform/InterfaceProvider.h"
 #include "public/platform/WebCanvasCaptureHandler.h"
-#include "public/platform/WebFeaturePolicy.h"
 #include "public/platform/WebGestureCurve.h"
 #include "public/platform/WebGraphicsContext3DProvider.h"
 #include "public/platform/WebImageCaptureFrameGrabber.h"
@@ -109,7 +108,7 @@ static void CallOnMainThreadFunction(WTF::MainThreadFunction function,
       CrossThreadBind(function, CrossThreadUnretained(context)));
 }
 
-Platform::Platform() : main_thread_(0) {
+Platform::Platform() : main_thread_(nullptr) {
   WTF::Partitions::Initialize(MaxObservedSizeFunction);
 }
 
@@ -187,7 +186,8 @@ WebTaskRunner* Platform::FileTaskRunner() const {
   return file_thread_ ? file_thread_->GetWebTaskRunner() : nullptr;
 }
 
-SingleThreadTaskRunnerRefPtr Platform::BaseFileTaskRunner() const {
+scoped_refptr<base::SingleThreadTaskRunner> Platform::BaseFileTaskRunner()
+    const {
   return file_thread_ ? file_thread_->GetSingleThreadTaskRunner() : nullptr;
 }
 
@@ -206,6 +206,11 @@ std::unique_ptr<WebMIDIAccessor> Platform::CreateMIDIAccessor(
 }
 
 std::unique_ptr<WebStorageNamespace> Platform::CreateLocalStorageNamespace() {
+  return nullptr;
+}
+
+std::unique_ptr<WebStorageNamespace> Platform::CreateSessionStorageNamespace(
+    int64_t namespace_id) {
   return nullptr;
 }
 
@@ -280,24 +285,7 @@ Platform::CreateImageCaptureFrameGrabber() {
   return nullptr;
 }
 
-std::unique_ptr<WebTrialTokenValidator> Platform::TrialTokenValidator() {
-  return std::unique_ptr<WebTrialTokenValidator>{};
-}
-std::unique_ptr<TrialPolicy> Platform::OriginTrialPolicy() {
-  return std::unique_ptr<TrialPolicy>{};
-}
-
-std::unique_ptr<WebFeaturePolicy> Platform::CreateFeaturePolicy(
-    const WebFeaturePolicy* parent_policy,
-    const WebParsedFeaturePolicy& container_policy,
-    const WebParsedFeaturePolicy& policy_header,
-    const WebSecurityOrigin&) {
-  return nullptr;
-}
-
-std::unique_ptr<WebFeaturePolicy> Platform::DuplicateFeaturePolicyWithOrigin(
-    const WebFeaturePolicy&,
-    const WebSecurityOrigin&) {
+std::unique_ptr<WebTrialTokenValidator> Platform::CreateTrialTokenValidator() {
   return nullptr;
 }
 

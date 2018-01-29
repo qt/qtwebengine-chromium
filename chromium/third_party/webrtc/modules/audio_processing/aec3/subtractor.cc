@@ -16,7 +16,7 @@
 #include "api/array_view.h"
 #include "modules/audio_processing/logging/apm_data_dumper.h"
 #include "rtc_base/checks.h"
-#include "rtc_base/safe_minmax.h"
+#include "rtc_base/numerics/safe_minmax.h"
 
 namespace webrtc {
 
@@ -90,6 +90,7 @@ void Subtractor::Process(const RenderBuffer& render_buffer,
   // Form the output of the shadow filter.
   shadow_filter_.Filter(render_buffer, &S);
   PredictionError(fft_, S, y, &e_shadow, &E_shadow, nullptr);
+
 
   if (!converged_filter_) {
     const auto sum_of_squares = [](float a, float b) { return a + b * b; };

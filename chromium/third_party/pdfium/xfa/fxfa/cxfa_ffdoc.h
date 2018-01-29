@@ -54,7 +54,7 @@ class CXFA_FFDoc {
   IXFA_DocEnvironment* GetDocEnvironment() const {
     return m_pDocEnvironment.Get();
   }
-  XFA_DocType GetDocType() const { return m_dwDocType; }
+  FormType GetFormType() const { return m_FormType; }
 
   int32_t StartLoad();
   int32_t DoLoad();
@@ -75,7 +75,7 @@ class CXFA_FFDoc {
                                            int32_t& iImageYDpi);
   CFGAS_PDFFontMgr* GetPDFFontMgr() const { return m_pPDFFontMgr.get(); }
 
-  bool SavePackage(XFA_HashCode code,
+  bool SavePackage(CXFA_Node* pNode,
                    const RetainPtr<IFX_SeekableStream>& pFile,
                    CFX_ChecksumContext* pCSContext);
   bool ImportData(const RetainPtr<IFX_SeekableStream>& pStream,
@@ -91,7 +91,7 @@ class CXFA_FFDoc {
   std::map<uint32_t, FX_IMAGEDIB_AND_DPI> m_HashToDibDpiMap;
   std::unique_ptr<CXFA_FFDocView> m_DocView;
   std::unique_ptr<CFGAS_PDFFontMgr> m_pPDFFontMgr;
-  XFA_DocType m_dwDocType;
+  FormType m_FormType;
 };
 
 #endif  // XFA_FXFA_CXFA_FFDOC_H_

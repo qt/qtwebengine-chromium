@@ -44,12 +44,12 @@ class IntersectionObserverDelegateImpl final
 
   void Deliver(const HeapVector<Member<IntersectionObserverEntry>>& entries,
                IntersectionObserver&) override {
-    callback_(entries);
+    callback_.Run(entries);
   }
 
   ExecutionContext* GetExecutionContext() const override { return context_; }
 
-  DEFINE_INLINE_TRACE() {
+  void Trace(blink::Visitor* visitor) {
     IntersectionObserverDelegate::Trace(visitor);
     visitor->Trace(context_);
   }
@@ -214,8 +214,8 @@ IntersectionObserver::IntersectionObserver(
   }
   if (root)
     root->EnsureIntersectionObserverData().AddObserver(*this);
-  TrackingDocument().EnsureIntersectionObserverController().AddTrackedObserver(
-      *this);
+  if (Document* document = TrackingDocument())
+    document->EnsureIntersectionObserverController().AddTrackedObserver(*this);
 }
 
 void IntersectionObserver::ClearWeakMembers(Visitor* visitor) {
@@ -230,13 +230,14 @@ bool IntersectionObserver::RootIsValid() const {
   return RootIsImplicit() || root();
 }
 
-Document& IntersectionObserver::TrackingDocument() const {
+Document* IntersectionObserver::TrackingDocument() const {
   if (RootIsImplicit()) {
-    DCHECK(delegate_->GetExecutionContext());
-    return *ToDocument(delegate_->GetExecutionContext());
+    if (!delegate_->GetExecutionContext())
+      return nullptr;
+    return ToDocument(delegate_->GetExecutionContext());
   }
   DCHECK(root());
-  return root()->GetDocument();
+  return &root()->GetDocument();
 }
 
 void IntersectionObserver::observe(Element* target,
@@ -329,6 +330,7 @@ String IntersectionObserver::rootMargin() const {
 
 void IntersectionObserver::EnqueueIntersectionObserverEntry(
     IntersectionObserverEntry& entry) {
+  DCHECK(delegate_->GetExecutionContext());
   entries_.push_back(&entry);
   ToDocument(delegate_->GetExecutionContext())
       ->EnsureIntersectionObserverController()
@@ -351,15 +353,17 @@ void IntersectionObserver::Deliver() {
   delegate_->Deliver(entries, *this);
 }
 
-DEFINE_TRACE(IntersectionObserver) {
+void IntersectionObserver::Trace(blink::Visitor* visitor) {
   visitor->template RegisterWeakMembers<
       IntersectionObserver, &IntersectionObserver::ClearWeakMembers>(this);
   visitor->Trace(delegate_);
   visitor->Trace(observations_);
   visitor->Trace(entries_);
+  ScriptWrappable::Trace(visitor);
 }
 
-DEFINE_TRACE_WRAPPERS(IntersectionObserver) {
+void IntersectionObserver::TraceWrappers(
+    const ScriptWrappableVisitor* visitor) const {
   visitor->TraceWrappers(delegate_);
 }
 

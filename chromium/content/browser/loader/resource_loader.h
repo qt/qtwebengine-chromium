@@ -60,10 +60,6 @@ class CONTENT_EXPORT ResourceLoader : public net::URLRequest::Delegate,
   // ResourceHandler::Delegate implementation:
   void OutOfBandCancel(int error_code, bool tell_renderer) override;
 
-  // CHECKs that the associated URLRequest is still present on its context.
-  // Added for http://crbug.com/754704; remove when that bug is resolved.
-  void AssertURLRequestPresent() const;
-
  private:
   // ResourceController implementation for the ResourceLoader.
   class Controller;
@@ -79,7 +75,7 @@ class CONTENT_EXPORT ResourceLoader : public net::URLRequest::Delegate,
   void OnSSLCertificateError(net::URLRequest* request,
                              const net::SSLInfo& info,
                              bool fatal) override;
-  void OnResponseStarted(net::URLRequest* request) override;
+  void OnResponseStarted(net::URLRequest* request, int net_error) override;
   void OnReadCompleted(net::URLRequest* request, int bytes_read) override;
 
   // SSLErrorHandler::Delegate implementation:
@@ -188,10 +184,6 @@ class CONTENT_EXPORT ResourceLoader : public net::URLRequest::Delegate,
 
   net::HttpRawRequestHeaders raw_request_headers_;
   scoped_refptr<const net::HttpResponseHeaders> raw_response_headers_;
-
-  // URLRequestContext of the associated URLRequest.
-  // Added for http://crbug.com/754704; remove when that bug is resolved.
-  const net::URLRequestContext* request_context_;
 
   base::ThreadChecker thread_checker_;
 

@@ -25,11 +25,23 @@
 #include "content/public/browser/web_contents.h"
 #include "ui/base/l10n/l10n_util.h"
 
+#if defined(OS_WIN)
+#include "chrome/browser/password_manager/password_manager_util_win.h"
+#elif defined(OS_MACOSX)
+#include "chrome/browser/password_manager/password_manager_util_mac.h"
+#endif
+
 namespace extensions {
 
 PasswordsPrivateDelegateImpl::PasswordsPrivateDelegateImpl(Profile* profile)
     : profile_(profile),
-      password_manager_presenter_(new PasswordManagerPresenter(this)),
+      password_manager_presenter_(
+          std::make_unique<PasswordManagerPresenter>(this)),
+      password_manager_porter_(std::make_unique<PasswordManagerPorter>(
+          password_manager_presenter_.get())),
+      password_access_authenticator_(
+          base::BindRepeating(&PasswordsPrivateDelegateImpl::OsReauthCall,
+                              base::Unretained(this))),
       current_entries_initialized_(false),
       current_exceptions_initialized_(false),
       is_initialized_(false),
@@ -120,9 +132,22 @@ void PasswordsPrivateDelegateImpl::RequestShowPasswordInternal(
   // TODO(stevenjb): Pass this directly to RequestShowPassword(); see
   // crbug.com/495290.
   web_contents_ = web_contents;
+  if (!password_access_authenticator_.EnsureUserIsAuthenticated()) {
+    return;
+  }
 
   // Request the password. When it is retrieved, ShowPassword() will be called.
   password_manager_presenter_->RequestShowPassword(index);
+}
+
+bool PasswordsPrivateDelegateImpl::OsReauthCall() {
+#if defined(OS_WIN)
+  return password_manager_util_win::AuthenticateUser(GetNativeWindow());
+#elif defined(OS_MACOSX)
+  return password_manager_util_mac::AuthenticateUser();
+#else
+  return true;
+#endif
 }
 
 Profile* PasswordsPrivateDelegateImpl::GetProfile() {
@@ -210,12 +235,23 @@ void PasswordsPrivateDelegateImpl::SetPasswordExceptionList(
 
 void PasswordsPrivateDelegateImpl::ImportPasswords(
     content::WebContents* web_contents) {
-  password_manager_presenter_->ImportPasswords(web_contents);
+  password_manager_porter_->set_web_contents(web_contents);
+  password_manager_porter_->Load();
 }
 
 void PasswordsPrivateDelegateImpl::ExportPasswords(
     content::WebContents* web_contents) {
-  password_manager_presenter_->ExportPasswords(web_contents);
+  // Save |web_contents| so that it can be used later when GetNativeWindow() is
+  // called. Note: This is safe because the |web_contents| is used before
+  // exiting this method. TODO(crbug.com/495290): Pass the native window
+  // directly to the reauth-handling code.
+  web_contents_ = web_contents;
+  if (!password_access_authenticator_.EnsureUserIsAuthenticated()) {
+    return;
+  }
+
+  password_manager_porter_->set_web_contents(web_contents);
+  password_manager_porter_->Store();
 }
 
 #if !defined(OS_ANDROID)
@@ -227,6 +263,13 @@ gfx::NativeWindow PasswordsPrivateDelegateImpl::GetNativeWindow() const {
 
 void PasswordsPrivateDelegateImpl::Shutdown() {
   password_manager_presenter_.reset();
+  password_manager_porter_.reset();
+}
+
+void PasswordsPrivateDelegateImpl::SetOsReauthCallForTesting(
+    base::RepeatingCallback<bool()> os_reauth_call) {
+  password_access_authenticator_.SetOsReauthCallForTesting(
+      std::move(os_reauth_call));
 }
 
 void PasswordsPrivateDelegateImpl::ExecuteFunction(

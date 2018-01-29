@@ -19,11 +19,12 @@
 
 namespace blink {
 
-OffscreenFontSelector::OffscreenFontSelector() {
+OffscreenFontSelector::OffscreenFontSelector(ExecutionContext* context)
+    : execution_context_(context) {
   FontCache::GetFontCache()->AddClient(this);
 }
 
-OffscreenFontSelector::~OffscreenFontSelector() {}
+OffscreenFontSelector::~OffscreenFontSelector() = default;
 
 void OffscreenFontSelector::UpdateGenericFontFamilySettings(
     const GenericFontFamilySettings& settings) {
@@ -36,7 +37,7 @@ void OffscreenFontSelector::RegisterForInvalidationCallbacks(
 void OffscreenFontSelector::UnregisterForInvalidationCallbacks(
     FontSelectorClient* client) {}
 
-RefPtr<FontData> OffscreenFontSelector::GetFontData(
+scoped_refptr<FontData> OffscreenFontSelector::GetFontData(
     const FontDescription& font_description,
     const AtomicString& family_name) {
   if (CSSSegmentedFontFace* face =
@@ -92,7 +93,8 @@ void OffscreenFontSelector::FontFaceInvalidated() {
   FontCacheInvalidated();
 }
 
-DEFINE_TRACE(OffscreenFontSelector) {
+void OffscreenFontSelector::Trace(blink::Visitor* visitor) {
+  visitor->Trace(execution_context_);
   visitor->Trace(font_face_cache_);
   FontSelector::Trace(visitor);
 }

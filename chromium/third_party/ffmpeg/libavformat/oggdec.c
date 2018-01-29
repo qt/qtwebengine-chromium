@@ -41,16 +41,22 @@
 
 static const struct ogg_codec * const ogg_codecs[] = {
     &ff_skeleton_codec,
+#if 0  // These codecs are not supported by Chromium.
     &ff_daala_codec,
     &ff_dirac_codec,
     &ff_speex_codec,
+#endif
     &ff_vorbis_codec,
     &ff_theora_codec,
     &ff_flac_codec,
+#if 0  // These codecs are not supported by Chromium.
     &ff_celt_codec,
+#endif
     &ff_opus_codec,
     &ff_vp8_codec,
+#if 0  // These codecs are not supported by Chromium.
     &ff_old_dirac_codec,
+#endif
     &ff_old_flac_codec,
     &ff_ogm_video_codec,
     &ff_ogm_audio_codec,
@@ -543,7 +549,9 @@ static int ogg_packet(AVFormatContext *s, int *sid, int *dstart, int *dsize,
     os->incomplete = 0;
 
     if (os->header) {
-        os->header = os->codec->header(s, idx);
+        if ((ret = os->codec->header(s, idx)) < 0)
+            return ret;
+        os->header = ret;
         if (!os->header) {
             os->segp  = segp;
             os->psize = psize;
@@ -574,8 +582,10 @@ static int ogg_packet(AVFormatContext *s, int *sid, int *dstart, int *dsize,
     } else {
         os->pflags    = 0;
         os->pduration = 0;
-        if (os->codec && os->codec->packet)
-            os->codec->packet(s, idx);
+        if (os->codec && os->codec->packet) {
+            if ((ret = os->codec->packet(s, idx)) < 0)
+                return ret;
+        }
         if (sid)
             *sid = idx;
         if (dstart)
@@ -719,8 +729,10 @@ static int ogg_read_header(AVFormatContext *s)
                    "Headers mismatch for stream %d: "
                    "expected %d received %d.\n",
                    i, os->codec->nb_header, os->nb_header);
-            if (s->error_recognition & AV_EF_EXPLODE)
+            if (s->error_recognition & AV_EF_EXPLODE) {
+                ogg_read_close(s);
                 return AVERROR_INVALIDDATA;
+            }
         }
         if (os->start_granule != OGG_NOGRANULE_VALUE)
             os->lastpts = s->streams[i]->start_time =

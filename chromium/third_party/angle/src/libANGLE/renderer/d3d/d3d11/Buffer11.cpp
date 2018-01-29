@@ -295,6 +295,7 @@ Buffer11::Buffer11(const gl::BufferState &state, Renderer11 *renderer)
       mSize(0),
       mMappedStorage(nullptr),
       mBufferStorages({}),
+      mLatestBufferStorage(nullptr),
       mDeallocThresholds({}),
       mIdleness({}),
       mConstantBufferStorageAdditionalSize(0),
@@ -304,7 +305,7 @@ Buffer11::Buffer11(const gl::BufferState &state, Renderer11 *renderer)
 
 Buffer11::~Buffer11()
 {
-    for (auto &storage : mBufferStorages)
+    for (BufferStorage *&storage : mBufferStorages)
     {
         SafeDelete(storage);
     }
@@ -318,10 +319,10 @@ Buffer11::~Buffer11()
 }
 
 gl::Error Buffer11::setData(const gl::Context *context,
-                            GLenum target,
+                            gl::BufferBinding target,
                             const void *data,
                             size_t size,
-                            GLenum usage)
+                            gl::BufferUsage usage)
 {
     updateD3DBufferUsage(context, usage);
     ANGLE_TRY(setSubData(context, target, data, size, 0));
@@ -348,7 +349,7 @@ gl::ErrorOrResult<Buffer11::SystemMemoryStorage *> Buffer11::getSystemMemoryStor
 }
 
 gl::Error Buffer11::setSubData(const gl::Context *context,
-                               GLenum target,
+                               gl::BufferBinding target,
                                const void *data,
                                size_t size,
                                size_t offset)
@@ -360,7 +361,7 @@ gl::Error Buffer11::setSubData(const gl::Context *context,
         // Use system memory storage for dynamic buffers.
         // Try using a constant storage for constant buffers
         BufferStorage *writeBuffer = nullptr;
-        if (target == GL_UNIFORM_BUFFER)
+        if (target == gl::BufferBinding::Uniform)
         {
             // If we are a very large uniform buffer, keep system memory storage around so that we
             // aren't forced to read back from a constant buffer. We also check the workaround for
@@ -398,7 +399,7 @@ gl::Error Buffer11::setSubData(const gl::Context *context,
         }
 
         ANGLE_TRY(writeBuffer->setData(static_cast<const uint8_t *>(data), offset, size));
-        writeBuffer->setDataRevision(writeBuffer->getDataRevision() + 1);
+        onStorageUpdate(writeBuffer);
 
         // Notify any vertex arrays that we have dirty data.
         // TODO(jmadill): Use a more fine grained notification for data updates.
@@ -431,10 +432,12 @@ gl::Error Buffer11::copySubData(const gl::Context *context,
     BufferStorage *copySource = nullptr;
     ANGLE_TRY_RESULT(sourceBuffer->getLatestBufferStorage(context), copySource);
 
-    if (!copySource || !copyDest)
+    if (!copySource)
     {
-        return gl::OutOfMemory() << "Failed to allocate internal staging buffer.";
+        ANGLE_TRY_RESULT(sourceBuffer->getStagingStorage(context), copySource);
     }
+
+    ASSERT(copySource && copyDest);
 
     // A staging buffer is needed if there is no cpu-cpu or gpu-gpu copy path avaiable.
     if (!copyDest->isGPUAccessible() && !copySource->isCPUAccessible(GL_MAP_READ_BIT))
@@ -465,10 +468,13 @@ gl::Error Buffer11::copySubData(const gl::Context *context,
     CopyResult copyResult = CopyResult::NOT_RECREATED;
     ANGLE_TRY_RESULT(copyDest->copyFromStorage(context, copySource, sourceOffset, size, destOffset),
                      copyResult);
-    copyDest->setDataRevision(copyDest->getDataRevision() + 1);
+    onStorageUpdate(copyDest);
 
     mSize = std::max<size_t>(mSize, destOffset + size);
     invalidateStaticData(context);
+
+    // Also notify that direct buffers are dirty.
+    mDirectBroadcastChannel.signal(context);
 
     return gl::NoError();
 }
@@ -513,7 +519,7 @@ gl::Error Buffer11::mapRange(const gl::Context *context,
     if ((access & GL_MAP_WRITE_BIT) > 0)
     {
         // Update the data revision immediately, since the data might be changed at any time
-        mMappedStorage->setDataRevision(mMappedStorage->getDataRevision() + 1);
+        onStorageUpdate(mMappedStorage);
         invalidateStaticData(context);
     }
 
@@ -545,7 +551,7 @@ gl::Error Buffer11::markTransformFeedbackUsage(const gl::Context *context)
 
     if (transformFeedbackStorage)
     {
-        transformFeedbackStorage->setDataRevision(transformFeedbackStorage->getDataRevision() + 1);
+        onStorageUpdate(transformFeedbackStorage);
     }
 
     invalidateStaticData(context);
@@ -694,12 +700,9 @@ gl::Error Buffer11::packPixels(const gl::Context *context,
     PackStorage *packStorage = nullptr;
     ANGLE_TRY_RESULT(getPackStorage(context), packStorage);
 
-    BufferStorage *latestStorage = nullptr;
-    ANGLE_TRY_RESULT(getLatestBufferStorage(context), latestStorage);
-
     ASSERT(packStorage);
     ANGLE_TRY(packStorage->packPixels(context, readAttachment, params));
-    packStorage->setDataRevision(latestStorage ? latestStorage->getDataRevision() + 1 : 1);
+    onStorageUpdate(packStorage);
 
     return gl::NoError();
 }
@@ -755,6 +758,7 @@ Buffer11::BufferStorage *Buffer11::allocateStorage(BufferUsage usage)
             return new SystemMemoryStorage(mRenderer);
         case BUFFER_USAGE_EMULATED_INDEXED_VERTEX:
             return new EmulatedIndexedStorage(mRenderer);
+        case BUFFER_USAGE_INDEX:
         case BUFFER_USAGE_VERTEX_OR_TRANSFORM_FEEDBACK:
             return new NativeStorage(mRenderer, usage, &mDirectBroadcastChannel);
         default:
@@ -833,66 +837,59 @@ gl::Error Buffer11::updateBufferStorage(const gl::Context *context,
 
     ASSERT(storage);
 
-    if (latestBuffer && latestBuffer->getDataRevision() > storage->getDataRevision())
+    if (!latestBuffer)
     {
-        // Copy through a staging buffer if we're copying from or to a non-staging, mappable
-        // buffer storage. This is because we can't map a GPU buffer, and copy CPU
-        // data directly. If we're already using a staging buffer we're fine.
-        if (latestBuffer->getUsage() != BUFFER_USAGE_STAGING &&
-            storage->getUsage() != BUFFER_USAGE_STAGING &&
-            (!latestBuffer->isCPUAccessible(GL_MAP_READ_BIT) ||
-             !storage->isCPUAccessible(GL_MAP_WRITE_BIT)))
-        {
-            NativeStorage *stagingBuffer = nullptr;
-            ANGLE_TRY_RESULT(getStagingStorage(context), stagingBuffer);
+        onStorageUpdate(storage);
+        return gl::NoError();
+    }
 
-            CopyResult copyResult = CopyResult::NOT_RECREATED;
-            ANGLE_TRY_RESULT(stagingBuffer->copyFromStorage(context, latestBuffer, 0,
-                                                            latestBuffer->getSize(), 0),
-                             copyResult);
-            stagingBuffer->setDataRevision(latestBuffer->getDataRevision());
+    if (latestBuffer->getDataRevision() <= storage->getDataRevision())
+    {
+        return gl::NoError();
+    }
 
-            latestBuffer = stagingBuffer;
-        }
+    // Copy through a staging buffer if we're copying from or to a non-staging, mappable
+    // buffer storage. This is because we can't map a GPU buffer, and copy CPU
+    // data directly. If we're already using a staging buffer we're fine.
+    if (latestBuffer->getUsage() != BUFFER_USAGE_STAGING &&
+        storage->getUsage() != BUFFER_USAGE_STAGING &&
+        (!latestBuffer->isCPUAccessible(GL_MAP_READ_BIT) ||
+         !storage->isCPUAccessible(GL_MAP_WRITE_BIT)))
+    {
+        NativeStorage *stagingBuffer = nullptr;
+        ANGLE_TRY_RESULT(getStagingStorage(context), stagingBuffer);
 
         CopyResult copyResult = CopyResult::NOT_RECREATED;
         ANGLE_TRY_RESULT(
-            storage->copyFromStorage(context, latestBuffer, sourceOffset, storageSize, 0),
+            stagingBuffer->copyFromStorage(context, latestBuffer, 0, latestBuffer->getSize(), 0),
             copyResult);
-        // If the D3D buffer has been recreated, we should update our serial.
-        if (copyResult == CopyResult::RECREATED)
-        {
-            updateSerial();
-        }
-        storage->setDataRevision(latestBuffer->getDataRevision());
+        onCopyStorage(stagingBuffer, latestBuffer);
+
+        latestBuffer = stagingBuffer;
     }
 
+    CopyResult copyResult = CopyResult::NOT_RECREATED;
+    ANGLE_TRY_RESULT(storage->copyFromStorage(context, latestBuffer, sourceOffset, storageSize, 0),
+                     copyResult);
+    // If the D3D buffer has been recreated, we should update our serial.
+    if (copyResult == CopyResult::RECREATED)
+    {
+        updateSerial();
+    }
+    onCopyStorage(storage, latestBuffer);
     return gl::NoError();
 }
 
 gl::ErrorOrResult<Buffer11::BufferStorage *> Buffer11::getLatestBufferStorage(
     const gl::Context *context) const
 {
-    // Even though we iterate over all the direct buffers, it is expected that only
-    // 1 or 2 will be present.
-    BufferStorage *latestStorage = nullptr;
-    DataRevision latestRevision  = 0;
-    for (auto &storage : mBufferStorages)
-    {
-        if (storage && (!latestStorage || storage->getDataRevision() > latestRevision))
-        {
-            latestStorage  = storage;
-            latestRevision = storage->getDataRevision();
-        }
-    }
-
     // resize buffer
-    if (latestStorage && latestStorage->getSize() < mSize)
+    if (mLatestBufferStorage && mLatestBufferStorage->getSize() < mSize)
     {
-        ANGLE_TRY(latestStorage->resize(context, mSize, true));
+        ANGLE_TRY(mLatestBufferStorage->resize(context, mSize, true));
     }
 
-    return latestStorage;
+    return mLatestBufferStorage;
 }
 
 gl::ErrorOrResult<Buffer11::NativeStorage *> Buffer11::getStagingStorage(const gl::Context *context)
@@ -907,6 +904,11 @@ gl::ErrorOrResult<Buffer11::PackStorage *> Buffer11::getPackStorage(const gl::Co
     BufferStorage *packStorage = nullptr;
     ANGLE_TRY_RESULT(getBufferStorage(context, BUFFER_USAGE_PIXEL_PACK), packStorage);
     return GetAs<PackStorage>(packStorage);
+}
+
+size_t Buffer11::getSize() const
+{
+    return mSize;
 }
 
 bool Buffer11::supportsDirectBinding() const
@@ -940,6 +942,24 @@ OnBufferDataDirtyChannel *Buffer11::getStaticBroadcastChannel()
 OnBufferDataDirtyChannel *Buffer11::getDirectBroadcastChannel()
 {
     return &mDirectBroadcastChannel;
+}
+
+void Buffer11::onCopyStorage(BufferStorage *dest, BufferStorage *source)
+{
+    ASSERT(source && mLatestBufferStorage);
+    dest->setDataRevision(source->getDataRevision());
+
+    // Only update the latest buffer storage if our usage index is lower. See comment in header.
+    if (dest->getUsage() < mLatestBufferStorage->getUsage())
+    {
+        mLatestBufferStorage = dest;
+    }
+}
+
+void Buffer11::onStorageUpdate(BufferStorage *updatedStorage)
+{
+    updatedStorage->setDataRevision(updatedStorage->getDataRevision() + 1);
+    mLatestBufferStorage = updatedStorage;
 }
 
 // Buffer11::BufferStorage implementation
@@ -1473,7 +1493,7 @@ gl::Error Buffer11::PackStorage::packPixels(const gl::Context *context,
     ASSERT(srcTexture.valid());
     unsigned int srcSubresource = renderTarget->getSubresourceIndex();
 
-    mQueuedPackCommand.reset(new PackPixelsParams(context, params));
+    mQueuedPackCommand.reset(new PackPixelsParams(params));
 
     gl::Extents srcTextureSize(params.area.width, params.area.height, 1);
     if (!mStagingTexture.get() || mStagingTexture.getFormat() != srcTexture.getFormat() ||

@@ -48,9 +48,7 @@ class CustomWindowDelegate : public aura::WindowDelegate {
   void OnWindowDestroying(aura::Window* window) override {}
   void OnWindowDestroyed(aura::Window* window) override { delete this; }
   void OnWindowTargetVisibilityChanged(bool visible) override {}
-  bool HasHitTestMask() const override {
-    return notification_surface_->HasHitTestMask();
-  }
+  bool HasHitTestMask() const override { return true; }
   void GetHitTestMask(gfx::Path* mask) const override {
     notification_surface_->GetHitTestMask(mask);
   }
@@ -78,7 +76,7 @@ ArcNotificationSurfaceImpl::ArcNotificationSurfaceImpl(
     : surface_(surface) {
   DCHECK(surface);
   native_view_ =
-      base::MakeUnique<aura::Window>(new CustomWindowDelegate(surface));
+      std::make_unique<aura::Window>(new CustomWindowDelegate(surface));
   native_view_->SetType(aura::client::WINDOW_TYPE_CONTROL);
   native_view_->set_owned_by_parent(false);
   native_view_->Init(ui::LAYER_NOT_DRAWN);

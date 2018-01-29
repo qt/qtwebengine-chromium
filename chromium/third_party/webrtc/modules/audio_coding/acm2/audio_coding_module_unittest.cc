@@ -15,16 +15,15 @@
 
 #include "api/audio_codecs/audio_encoder.h"
 #include "api/audio_codecs/builtin_audio_decoder_factory.h"
+#include "api/audio_codecs/opus/audio_encoder_opus.h"
 #include "modules/audio_coding/acm2/acm_receive_test.h"
 #include "modules/audio_coding/acm2/acm_send_test.h"
 #include "modules/audio_coding/codecs/audio_format_conversion.h"
 #include "modules/audio_coding/codecs/g711/audio_decoder_pcm.h"
 #include "modules/audio_coding/codecs/g711/audio_encoder_pcm.h"
 #include "modules/audio_coding/codecs/isac/main/include/audio_encoder_isac.h"
-#include "modules/audio_coding/codecs/opus/audio_encoder_opus.h"
 #include "modules/audio_coding/include/audio_coding_module.h"
 #include "modules/audio_coding/include/audio_coding_module_typedefs.h"
-#include "modules/audio_coding/neteq/audio_decoder_impl.h"
 #include "modules/audio_coding/neteq/tools/audio_checksum.h"
 #include "modules/audio_coding/neteq/tools/audio_loop.h"
 #include "modules/audio_coding/neteq/tools/constant_pcm_packet_source.h"
@@ -36,6 +35,7 @@
 #include "modules/include/module_common_types.h"
 #include "rtc_base/criticalsection.h"
 #include "rtc_base/md5digest.h"
+#include "rtc_base/numerics/safe_conversions.h"
 #include "rtc_base/platform_thread.h"
 #include "rtc_base/refcountedobject.h"
 #include "rtc_base/thread_annotations.h"
@@ -123,7 +123,7 @@ class PacketizationCallbackStubOldApi : public AudioPacketizationCallback {
 
   int last_payload_len_bytes() const {
     rtc::CritScope lock(&crit_sect_);
-    return last_payload_vec_.size();
+    return rtc::checked_cast<int>(last_payload_vec_.size());
   }
 
   FrameType last_frame_type() const {
@@ -184,8 +184,7 @@ class AudioCodingModuleTestOldApi : public ::testing::Test {
 
   // Set up L16 codec.
   virtual void SetUpL16Codec() {
-    audio_format_ =
-        rtc::Optional<SdpAudioFormat>(SdpAudioFormat("L16", kSampleRateHz, 1));
+    audio_format_ = SdpAudioFormat("L16", kSampleRateHz, 1);
     ASSERT_EQ(0, AudioCodingModule::Codec("L16", &codec_, kSampleRateHz, 1));
     codec_.pltype = kPayloadType;
   }
@@ -660,8 +659,7 @@ class AcmIsacMtTestOldApi : public AudioCodingModuleMtTestOldApi {
 
   void RegisterCodec() override {
     static_assert(kSampleRateHz == 16000, "test designed for iSAC 16 kHz");
-    audio_format_ =
-        rtc::Optional<SdpAudioFormat>(SdpAudioFormat("isac", kSampleRateHz, 1));
+    audio_format_ = SdpAudioFormat("isac", kSampleRateHz, 1);
     AudioCodingModule::Codec("ISAC", &codec_, kSampleRateHz, 1);
     codec_.pltype = kPayloadType;
 
@@ -980,7 +978,7 @@ class AcmReceiverBitExactnessOldApi : public ::testing::Test {
 };
 
 #if (defined(WEBRTC_CODEC_ISAC) || defined(WEBRTC_CODEC_ISACFX)) && \
-    defined(WEBRTC_CODEC_ILBC) && defined(WEBRTC_CODEC_G722)
+    defined(WEBRTC_CODEC_ILBC)
 TEST_F(AcmReceiverBitExactnessOldApi, 8kHzOutput) {
   Run(8000, PlatformChecksum("2adede965c6f87de7142c51552111d08",
                              "028c0fc414b1c9ab7e582dccdf381e98",
@@ -1159,9 +1157,9 @@ class AcmSenderBitExactnessOldApi : public ::testing::Test,
   bool RegisterExternalSendCodec(AudioEncoder* external_speech_encoder,
                                  int payload_type) {
     payload_type_ = payload_type;
-    frame_size_rtp_timestamps_ =
+    frame_size_rtp_timestamps_ = rtc::checked_cast<uint32_t>(
         external_speech_encoder->Num10MsFramesInNextPacket() *
-        external_speech_encoder->RtpTimestampRateHz() / 100;
+        external_speech_encoder->RtpTimestampRateHz() / 100);
     return send_test_->RegisterExternalCodec(external_speech_encoder);
   }
 
@@ -1438,7 +1436,6 @@ TEST_F(AcmSenderBitExactnessOldApi, MAYBE_Ilbc_30ms) {
 #else
 #define MAYBE_G722_20ms G722_20ms
 #endif
-#if defined(WEBRTC_CODEC_G722)
 TEST_F(AcmSenderBitExactnessOldApi, MAYBE_G722_20ms) {
   ASSERT_NO_FATAL_FAILURE(SetUpTest("G722", 16000, 1, 9, 320, 160));
   Run(AcmReceiverBitExactnessOldApi::PlatformChecksum(
@@ -1451,14 +1448,12 @@ TEST_F(AcmSenderBitExactnessOldApi, MAYBE_G722_20ms) {
           "android_arm64_payload", "android_arm64_clang_payload"),
       50, test::AcmReceiveTestOldApi::kMonoOutput);
 }
-#endif
 
 #if defined(WEBRTC_ANDROID)
 #define MAYBE_G722_stereo_20ms DISABLED_G722_stereo_20ms
 #else
 #define MAYBE_G722_stereo_20ms G722_stereo_20ms
 #endif
-#if defined(WEBRTC_CODEC_G722)
 TEST_F(AcmSenderBitExactnessOldApi, MAYBE_G722_stereo_20ms) {
   ASSERT_NO_FATAL_FAILURE(SetUpTest("G722", 16000, 2, 119, 320, 160));
   Run(AcmReceiverBitExactnessOldApi::PlatformChecksum(
@@ -1471,7 +1466,6 @@ TEST_F(AcmSenderBitExactnessOldApi, MAYBE_G722_stereo_20ms) {
           "android_arm64_payload", "android_arm64_clang_payload"),
       50, test::AcmReceiveTestOldApi::kStereoOutput);
 }
-#endif
 
 TEST_F(AcmSenderBitExactnessOldApi, Opus_stereo_20ms) {
   ASSERT_NO_FATAL_FAILURE(SetUpTest("opus", 48000, 2, 120, 960, 960));
@@ -1491,9 +1485,10 @@ TEST_F(AcmSenderBitExactnessOldApi, Opus_stereo_20ms) {
 }
 
 TEST_F(AcmSenderBitExactnessNewApi, MAYBE_OpusFromFormat_stereo_20ms) {
-  const SdpAudioFormat kOpusFormat("opus", 48000, 2, {{"stereo", "1"}});
-  AudioEncoderOpus encoder(120, kOpusFormat);
-  ASSERT_NO_FATAL_FAILURE(SetUpTestExternalEncoder(&encoder, 120));
+  const auto config = AudioEncoderOpus::SdpToConfig(
+      SdpAudioFormat("opus", 48000, 2, {{"stereo", "1"}}));
+  const auto encoder = AudioEncoderOpus::MakeAudioEncoder(*config, 120);
+  ASSERT_NO_FATAL_FAILURE(SetUpTestExternalEncoder(encoder.get(), 120));
   Run(AcmReceiverBitExactnessOldApi::PlatformChecksum(
           "3e285b74510e62062fbd8142dacd16e9",
           "3e285b74510e62062fbd8142dacd16e9",
@@ -1529,9 +1524,10 @@ TEST_F(AcmSenderBitExactnessOldApi, Opus_stereo_20ms_voip) {
 }
 
 TEST_F(AcmSenderBitExactnessNewApi, OpusFromFormat_stereo_20ms_voip) {
-  const SdpAudioFormat kOpusFormat("opus", 48000, 2, {{"stereo", "1"}});
-  AudioEncoderOpus encoder(120, kOpusFormat);
-  ASSERT_NO_FATAL_FAILURE(SetUpTestExternalEncoder(&encoder, 120));
+  const auto config = AudioEncoderOpus::SdpToConfig(
+      SdpAudioFormat("opus", 48000, 2, {{"stereo", "1"}}));
+  const auto encoder = AudioEncoderOpus::MakeAudioEncoder(*config, 120);
+  ASSERT_NO_FATAL_FAILURE(SetUpTestExternalEncoder(encoder.get(), 120));
   // If not set, default will be kAudio in case of stereo.
   EXPECT_EQ(0, send_test_->acm()->SetOpusApplication(kVoip));
   Run(AcmReceiverBitExactnessOldApi::PlatformChecksum(
@@ -1590,7 +1586,7 @@ class AcmSetBitRateTest : public ::testing::Test {
     int nr_bytes = 0;
     while (std::unique_ptr<test::Packet> next_packet =
                send_test_->NextPacket()) {
-      nr_bytes += next_packet->payload_length_bytes();
+      nr_bytes += rtc::checked_cast<int>(next_packet->payload_length_bytes());
     }
     EXPECT_EQ(expected_total_bits, nr_bytes * 8);
   }
@@ -1639,10 +1635,11 @@ TEST_F(AcmSetBitRateOldApi, Opus_48khz_20ms_10kbps) {
 }
 
 TEST_F(AcmSetBitRateNewApi, OpusFromFormat_48khz_20ms_10kbps) {
-  AudioEncoderOpus encoder(
-      107, SdpAudioFormat("opus", 48000, 2, {{"maxaveragebitrate", "10000"}}));
+  const auto config = AudioEncoderOpus::SdpToConfig(
+      SdpAudioFormat("opus", 48000, 2, {{"maxaveragebitrate", "10000"}}));
+  const auto encoder = AudioEncoderOpus::MakeAudioEncoder(*config, 107);
   ASSERT_TRUE(SetUpSender());
-  ASSERT_TRUE(RegisterExternalSendCodec(&encoder, 107));
+  ASSERT_TRUE(RegisterExternalSendCodec(encoder.get(), 107));
 #if defined(WEBRTC_ANDROID)
   RunInner(8640);
 #else
@@ -1660,10 +1657,11 @@ TEST_F(AcmSetBitRateOldApi, Opus_48khz_20ms_50kbps) {
 }
 
 TEST_F(AcmSetBitRateNewApi, OpusFromFormat_48khz_20ms_50kbps) {
-  AudioEncoderOpus encoder(
-      107, SdpAudioFormat("opus", 48000, 2, {{"maxaveragebitrate", "50000"}}));
+  const auto config = AudioEncoderOpus::SdpToConfig(
+      SdpAudioFormat("opus", 48000, 2, {{"maxaveragebitrate", "50000"}}));
+  const auto encoder = AudioEncoderOpus::MakeAudioEncoder(*config, 107);
   ASSERT_TRUE(SetUpSender());
-  ASSERT_TRUE(RegisterExternalSendCodec(&encoder, 107));
+  ASSERT_TRUE(RegisterExternalSendCodec(encoder.get(), 107));
 #if defined(WEBRTC_ANDROID)
   RunInner(45792);
 #else
@@ -1688,10 +1686,11 @@ TEST_F(AcmSetBitRateOldApi, MAYBE_Opus_48khz_20ms_100kbps) {
 }
 
 TEST_F(AcmSetBitRateNewApi, MAYBE_OpusFromFormat_48khz_20ms_100kbps) {
-  AudioEncoderOpus encoder(
-      107, SdpAudioFormat("opus", 48000, 2, {{"maxaveragebitrate", "100000"}}));
+  const auto config = AudioEncoderOpus::SdpToConfig(
+      SdpAudioFormat("opus", 48000, 2, {{"maxaveragebitrate", "100000"}}));
+  const auto encoder = AudioEncoderOpus::MakeAudioEncoder(*config, 107);
   ASSERT_TRUE(SetUpSender());
-  ASSERT_TRUE(RegisterExternalSendCodec(&encoder, 107));
+  ASSERT_TRUE(RegisterExternalSendCodec(encoder.get(), 107));
   RunInner(100832);
 }
 
@@ -1743,9 +1742,11 @@ class AcmChangeBitRateOldApi : public AcmSetBitRateOldApi {
       if (packet_counter == nr_packets / 2)
         send_test_->acm()->SetBitRate(target_bitrate_bps);
       if (packet_counter < nr_packets / 2)
-        nr_bytes_before += next_packet->payload_length_bytes();
+        nr_bytes_before += rtc::checked_cast<int>(
+            next_packet->payload_length_bytes());
       else
-        nr_bytes_after += next_packet->payload_length_bytes();
+        nr_bytes_after += rtc::checked_cast<int>(
+            next_packet->payload_length_bytes());
       packet_counter++;
     }
     EXPECT_EQ(expected_before_switch_bits, nr_bytes_before * 8);

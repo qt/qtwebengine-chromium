@@ -69,7 +69,7 @@ public:
     void discard() override;
     void insertEventMarker(const char*) override;
 
-    void inlineUpload(GrOpFlushState* state, GrDrawOp::DeferredUploadFn& upload) override;
+    void inlineUpload(GrOpFlushState* state, GrDeferredTextureUploadFn& upload) override;
 
     void copy(GrSurface* src, GrSurfaceOrigin srcOrigin, const SkIRect& srcRect,
               const SkIPoint& dstPoint) override;
@@ -87,10 +87,10 @@ private:
                       const GrBuffer* vertexBuffer,
                       const GrBuffer* instanceBuffer);
 
-    sk_sp<GrVkPipelineState> prepareDrawState(const GrPipeline&,
-                                              const GrPrimitiveProcessor&,
-                                              GrPrimitiveType,
-                                              bool hasDynamicState);
+    GrVkPipelineState* prepareDrawState(const GrPipeline&,
+                                        const GrPrimitiveProcessor&,
+                                        GrPrimitiveType,
+                                        bool hasDynamicState);
 
     void onDraw(const GrPipeline& pipeline,
                 const GrPrimitiveProcessor& primProc,
@@ -134,11 +134,11 @@ private:
     void addAdditionalRenderPass();
 
     struct InlineUploadInfo {
-        InlineUploadInfo(GrOpFlushState* state, const GrDrawOp::DeferredUploadFn& upload)
-            : fFlushState(state), fUpload(upload) {}
+        InlineUploadInfo(GrOpFlushState* state, const GrDeferredTextureUploadFn& upload)
+                : fFlushState(state), fUpload(upload) {}
 
         GrOpFlushState* fFlushState;
-        GrDrawOp::DeferredUploadFn fUpload;
+        GrDeferredTextureUploadFn fUpload;
     };
 
     struct CopyInfo {

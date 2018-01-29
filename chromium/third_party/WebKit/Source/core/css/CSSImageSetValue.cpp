@@ -48,7 +48,7 @@ CSSImageSetValue::CSSImageSetValue(CSSParserMode parser_mode)
       cached_scale_factor_(1),
       parser_mode_(parser_mode) {}
 
-CSSImageSetValue::~CSSImageSetValue() {}
+CSSImageSetValue::~CSSImageSetValue() = default;
 
 void CSSImageSetValue::FillImageSet() {
   size_t length = this->length();
@@ -66,8 +66,8 @@ void CSSImageSetValue::FillImageSet() {
     ImageWithScale image;
     image.image_url = image_url;
     image.referrer = SecurityPolicy::GenerateReferrer(
-        image_value.GetReferrer().referrer_policy,
-        KURL(kParsedURLString, image_url), image_value.GetReferrer().referrer);
+        image_value.GetReferrer().referrer_policy, KURL(image_url),
+        image_value.GetReferrer().referrer);
     image.scale_factor = scale_factor;
     images_in_set_.push_back(image);
     ++i;
@@ -117,7 +117,9 @@ StyleImage* CSSImageSetValue::CacheImage(
     ResourceRequest resource_request(document.CompleteURL(image.image_url));
     resource_request.SetHTTPReferrer(image.referrer);
     ResourceLoaderOptions options;
-    options.initiator_info.name = FetchInitiatorTypeNames::css;
+    options.initiator_info.name = parser_mode_ == kUASheetMode
+                                      ? FetchInitiatorTypeNames::uacss
+                                      : FetchInitiatorTypeNames::css;
     FetchParameters params(resource_request, options);
 
     if (cross_origin != kCrossOriginAttributeNotSet) {
@@ -183,7 +185,7 @@ bool CSSImageSetValue::HasFailedOrCanceledSubresources() const {
   return true;
 }
 
-DEFINE_TRACE_AFTER_DISPATCH(CSSImageSetValue) {
+void CSSImageSetValue::TraceAfterDispatch(blink::Visitor* visitor) {
   visitor->Trace(cached_image_);
   CSSValueList::TraceAfterDispatch(visitor);
 }

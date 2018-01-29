@@ -51,7 +51,6 @@ class Thread;
 namespace cricket {
 
 class DecoderFactoryAdapter;
-class EncoderFactoryAdapter;
 class VideoCapturer;
 class VideoProcessor;
 class VideoRenderer;
@@ -65,8 +64,6 @@ class WebRtcVideoChannelRecvInfo;
 class WebRtcVideoChannelSendInfo;
 class WebRtcVoiceEngine;
 class WebRtcVoiceMediaChannel;
-
-struct Device;
 
 class UnsignalledSsrcHandler {
  public:
@@ -122,7 +119,7 @@ class WebRtcVideoEngine {
 
  private:
   const std::unique_ptr<DecoderFactoryAdapter> decoder_factory_;
-  const std::unique_ptr<EncoderFactoryAdapter> encoder_factory_;
+  const std::unique_ptr<webrtc::VideoEncoderFactory> encoder_factory_;
 };
 
 class WebRtcVideoChannel : public VideoMediaChannel, public webrtc::Transport {
@@ -130,8 +127,8 @@ class WebRtcVideoChannel : public VideoMediaChannel, public webrtc::Transport {
   WebRtcVideoChannel(webrtc::Call* call,
                      const MediaConfig& config,
                      const VideoOptions& options,
-                     const EncoderFactoryAdapter* encoder_factory,
-                     const DecoderFactoryAdapter* decoder_factory);
+                     webrtc::VideoEncoderFactory* encoder_factory,
+                     DecoderFactoryAdapter* decoder_factory);
   ~WebRtcVideoChannel() override;
 
   // VideoMediaChannel implementation
@@ -170,7 +167,6 @@ class WebRtcVideoChannel : public VideoMediaChannel, public webrtc::Transport {
   void OnReadyToSend(bool ready) override;
   void OnNetworkRouteChanged(const std::string& transport_name,
                              const rtc::NetworkRoute& network_route) override;
-  void OnTransportOverheadChanged(int transport_overhead_per_packet) override;
   void SetInterface(NetworkInterface* iface) override;
 
   // Implemented for VideoMediaChannelTest.
@@ -259,7 +255,7 @@ class WebRtcVideoChannel : public VideoMediaChannel, public webrtc::Transport {
         const StreamParams& sp,
         webrtc::VideoSendStream::Config config,
         const VideoOptions& options,
-        const EncoderFactoryAdapter* encoder_factory,
+        webrtc::VideoEncoderFactory* encoder_factory,
         bool enable_cpu_overuse_detection,
         int max_bitrate_bps,
         const rtc::Optional<VideoCodecSettings>& codec_settings,
@@ -337,7 +333,7 @@ class WebRtcVideoChannel : public VideoMediaChannel, public webrtc::Transport {
     const bool enable_cpu_overuse_detection_;
     rtc::VideoSourceInterface<webrtc::VideoFrame>* source_
         RTC_ACCESS_ON(&thread_checker_);
-    const EncoderFactoryAdapter* const encoder_factory_
+    webrtc::VideoEncoderFactory* const encoder_factory_
         RTC_ACCESS_ON(&thread_checker_);
 
     webrtc::VideoSendStream* stream_ RTC_ACCESS_ON(&thread_checker_);
@@ -369,7 +365,7 @@ class WebRtcVideoChannel : public VideoMediaChannel, public webrtc::Transport {
         webrtc::Call* call,
         const StreamParams& sp,
         webrtc::VideoReceiveStream::Config config,
-        const DecoderFactoryAdapter* decoder_factory,
+        DecoderFactoryAdapter* decoder_factory,
         bool default_stream,
         const std::vector<VideoCodecSettings>& recv_codecs,
         const webrtc::FlexfecReceiveStream::Config& flexfec_config);
@@ -430,7 +426,7 @@ class WebRtcVideoChannel : public VideoMediaChannel, public webrtc::Transport {
     webrtc::FlexfecReceiveStream::Config flexfec_config_;
     webrtc::FlexfecReceiveStream* flexfec_stream_;
 
-    const DecoderFactoryAdapter* decoder_factory_;
+    DecoderFactoryAdapter* decoder_factory_;
     DecoderMap allocated_decoders_;
 
     rtc::CriticalSection sink_lock_;
@@ -494,8 +490,8 @@ class WebRtcVideoChannel : public VideoMediaChannel, public webrtc::Transport {
   rtc::Optional<VideoCodecSettings> send_codec_;
   rtc::Optional<std::vector<webrtc::RtpExtension>> send_rtp_extensions_;
 
-  const EncoderFactoryAdapter* const encoder_factory_;
-  const DecoderFactoryAdapter* const decoder_factory_;
+  webrtc::VideoEncoderFactory* const encoder_factory_;
+  DecoderFactoryAdapter* const decoder_factory_;
   std::vector<VideoCodecSettings> recv_codecs_;
   std::vector<webrtc::RtpExtension> recv_rtp_extensions_;
   // See reason for keeping track of the FlexFEC payload type separately in

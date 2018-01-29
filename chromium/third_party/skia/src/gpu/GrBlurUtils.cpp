@@ -42,8 +42,7 @@ static bool draw_mask(GrRenderTargetContext* renderTargetContext,
     SkMatrix matrix = SkMatrix::MakeTrans(-SkIntToScalar(maskRect.fLeft),
                                           -SkIntToScalar(maskRect.fTop));
     matrix.preConcat(viewMatrix);
-    paint.addCoverageFragmentProcessor(GrSimpleTextureEffect::Make(std::move(mask),
-                                                                   nullptr, matrix));
+    paint.addCoverageFragmentProcessor(GrSimpleTextureEffect::Make(std::move(mask), matrix));
 
     renderTargetContext->fillRectWithLocalMatrix(clip, std::move(paint), GrAA::kNo, SkMatrix::I(),
                                                  SkRect::Make(maskRect), inverse);
@@ -86,6 +85,7 @@ static bool sw_draw_with_mask_filter(GrContext* context,
 
     sk_sp<GrSurfaceContext> sContext = context->contextPriv().makeDeferredSurfaceContext(
                                                         desc,
+                                                        GrMipMapped::kNo,
                                                         SkBackingFit::kApprox,
                                                         SkBudgeted::kYes);
     if (!sContext) {
@@ -292,10 +292,11 @@ void GrBlurUtils::drawPathWithMaskFilter(GrContext* context,
     SkDEBUGCODE(prePathMatrix = (const SkMatrix*)0x50FF8001;)
 
     GrPaint grPaint;
-    if (!SkPaintToGrPaint(context, renderTargetContext, paint, viewMatrix, &grPaint)) {
+    if (!SkPaintToGrPaint(context, renderTargetContext->colorSpaceInfo(), paint, viewMatrix,
+                          &grPaint)) {
         return;
     }
-    GrAA aa = GrBoolToAA(paint.isAntiAlias());
+    GrAA aa = GrAA(paint.isAntiAlias());
     SkMaskFilter* mf = paint.getMaskFilter();
     if (mf && !mf->asFragmentProcessor(nullptr)) {
         // The MaskFilter wasn't already handled in SkPaintToGrPaint

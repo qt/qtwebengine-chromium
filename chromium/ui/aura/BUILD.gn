@@ -2,10 +2,11 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/config/jumbo.gni")
 import("//build/config/ui.gni")
 import("//testing/test.gni")
 
-component("aura") {
+jumbo_component("aura") {
   public = [
     "client/aura_constants.h",
     "client/capture_client.h",
@@ -71,6 +72,7 @@ component("aura") {
     "window_delegate.h",
     "window_event_dispatcher.h",
     "window_observer.h",
+    "window_occlusion_tracker.h",
     "window_port.h",
     "window_targeter.h",
     "window_tracker.h",
@@ -128,6 +130,7 @@ component("aura") {
     "window.cc",
     "window_event_dispatcher.cc",
     "window_observer.cc",
+    "window_occlusion_tracker.cc",
     "window_port.cc",
     "window_port_for_shutdown.cc",
     "window_port_for_shutdown.h",
@@ -214,17 +217,22 @@ component("aura") {
   }
 }
 
-static_library("test_support") {
+jumbo_static_library("test_support") {
   testonly = true
   sources = [
     "test/aura_mus_test_base.cc",
     "test/aura_mus_test_base.h",
     "test/aura_test_base.cc",
     "test/aura_test_base.h",
+    "test/aura_test_context_factory.cc",
+    "test/aura_test_context_factory.h",
     "test/aura_test_helper.cc",
     "test/aura_test_helper.h",
+    "test/aura_test_suite_setup.cc",
+    "test/aura_test_suite_setup.h",
     "test/aura_test_utils.cc",
     "test/aura_test_utils.h",
+    "test/env_test_helper.cc",
     "test/env_test_helper.h",
     "test/event_generator_delegate_aura.cc",
     "test/event_generator_delegate_aura.h",
@@ -233,8 +241,12 @@ static_library("test_support") {
     "test/mus/input_method_mus_test_api.h",
     "test/mus/test_window_manager_client.cc",
     "test/mus/test_window_manager_client.h",
+    "test/mus/test_window_manager_delegate.cc",
+    "test/mus/test_window_manager_delegate.h",
     "test/mus/test_window_tree.cc",
     "test/mus/test_window_tree.h",
+    "test/mus/test_window_tree_client_delegate.cc",
+    "test/mus/test_window_tree_client_delegate.h",
     "test/mus/test_window_tree_client_setup.cc",
     "test/mus/test_window_tree_client_setup.h",
     "test/mus/window_tree_client_private.cc",
@@ -265,9 +277,15 @@ static_library("test_support") {
 
   public_deps = [
     ":aura",
+
+    # Must be public as headers include ui_features.h.
+    "//ui/base:ui_features",
   ]
   deps = [
     "//base/test:test_support",
+    "//cc:test_support",
+    "//components/viz/test:test_support",
+    "//services/ui/public/cpp/input_devices",
     "//services/ui/public/interfaces",
     "//skia",
     "//testing/gtest",
@@ -349,6 +367,7 @@ test("aura_unittests") {
     "mus/window_tree_host_mus_unittest.cc",
     "test/run_all_unittests.cc",
     "window_event_dispatcher_unittest.cc",
+    "window_occlusion_tracker_unittest.cc",
     "window_targeter_unittest.cc",
     "window_tree_host_unittest.cc",
     "window_unittest.cc",

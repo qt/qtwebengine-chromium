@@ -12,7 +12,9 @@
 #include "SkSLGLSLCodeGenerator.h"
 #include "SkSLHCodeGenerator.h"
 #include "SkSLIRGenerator.h"
+#include "SkSLMetalCodeGenerator.h"
 #include "SkSLSPIRVCodeGenerator.h"
+#include "ir/SkSLEnum.h"
 #include "ir/SkSLExpression.h"
 #include "ir/SkSLExpressionStatement.h"
 #include "ir/SkSLIntLiteral.h"
@@ -27,9 +29,9 @@
 #include "spirv-tools/libspirv.hpp"
 #endif
 
-#define STRINGIFY(x) #x
-
 // include the built-in shader symbols as static strings
+
+#define STRINGIFY(x) #x
 
 static const char* SKSL_INCLUDE =
 #include "sksl.include"
@@ -48,6 +50,7 @@ static const char* SKSL_GEOM_INCLUDE =
 ;
 
 static const char* SKSL_FP_INCLUDE =
+#include "sksl_enums.include"
 #include "sksl_fp.include"
 ;
 
@@ -184,7 +187,6 @@ Compiler::Compiler(Flags flags)
     ADD_TYPE(SamplerCubeArrayShadow);
     ADD_TYPE(GSampler2DArrayShadow);
     ADD_TYPE(GSamplerCubeArrayShadow);
-    ADD_TYPE(ColorSpaceXform);
     ADD_TYPE(FragmentProcessor);
 
     StringFragment skCapsName("sk_Caps");
@@ -1153,6 +1155,11 @@ std::unique_ptr<Program> Compiler::convertProgram(Program::Kind kind, String tex
             break;
     }
     fIRGenerator->fSymbolTable->markAllFunctionsBuiltin();
+    for (auto& element : elements) {
+        if (element->fKind == ProgramElement::kEnum_Kind) {
+            ((Enum&) *element).fBuiltin = true;
+        }
+    }
     std::unique_ptr<String> textPtr(new String(std::move(text)));
     fSource = textPtr.get();
     fIRGenerator->convertProgram(textPtr->c_str(), textPtr->size(), *fTypes, &elements);
@@ -1233,6 +1240,13 @@ bool Compiler::toGLSL(const Program& program, String* out) {
     if (result) {
         *out = buffer.str();
     }
+    return result;
+}
+
+bool Compiler::toMetal(const Program& program, OutputStream& out) {
+    MetalCodeGenerator cg(&fContext, &program, this, &out);
+    bool result = cg.generateCode();
+    this->writeErrorCount();
     return result;
 }
 

@@ -26,7 +26,7 @@ class ContentSecurityPolicyTest : public ::testing::Test {
  public:
   ContentSecurityPolicyTest()
       : csp(ContentSecurityPolicy::Create()),
-        secure_url(kParsedURLString, "https://example.test/image.png"),
+        secure_url("https://example.test/image.png"),
         secure_origin(SecurityOrigin::Create(secure_url)) {}
 
  protected:
@@ -41,7 +41,7 @@ class ContentSecurityPolicyTest : public ::testing::Test {
 
   Persistent<ContentSecurityPolicy> csp;
   KURL secure_url;
-  RefPtr<SecurityOrigin> secure_origin;
+  scoped_refptr<SecurityOrigin> secure_origin;
   Persistent<NullExecutionContext> execution_context;
 };
 
@@ -940,7 +940,7 @@ TEST_F(ContentSecurityPolicyTest, ShouldEnforceEmbeddersPolicy) {
 
   for (const auto& test : cases) {
     ResourceResponse response;
-    response.SetURL(KURL(kParsedURLString, test.resource_url));
+    response.SetURL(KURL(test.resource_url));
     EXPECT_EQ(ContentSecurityPolicy::ShouldEnforceEmbeddersPolicy(
                   response, secure_origin.get()),
               test.inherits);

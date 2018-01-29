@@ -247,8 +247,9 @@ class NET_EXPORT HttpServerPropertiesManager : public HttpServerProperties {
       const QuicServerInfoMap& quic_server_info_map,
       base::DictionaryValue* http_server_properties_dict);
   void SaveBrokenAlternativeServicesToPrefs(
-      const BrokenAlternativeServiceList* broken_alternative_service_list,
-      const RecentlyBrokenAlternativeServices*
+      const BrokenAlternativeServiceList& broken_alternative_service_list,
+      size_t max_broken_alternative_services,
+      const RecentlyBrokenAlternativeServices&
           recently_broken_alternative_services,
       base::DictionaryValue* http_server_properties_dict);
 

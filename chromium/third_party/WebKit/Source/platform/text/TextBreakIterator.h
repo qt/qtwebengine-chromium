@@ -22,6 +22,7 @@
 #ifndef TextBreakIterator_h
 #define TextBreakIterator_h
 
+#include "base/macros.h"
 #include "platform/PlatformExport.h"
 #include "platform/wtf/text/AtomicString.h"
 #include "platform/wtf/text/CharacterNames.h"
@@ -63,6 +64,9 @@ PLATFORM_EXPORT void ReleaseLineBreakIterator(TextBreakIterator*);
 PLATFORM_EXPORT TextBreakIterator* SentenceBreakIterator(const UChar*,
                                                          int length);
 
+// Before calling this, check if the iterator is not at the end. Otherwise,
+// it may not work as expected.
+// See https://ssl.icu-project.org/trac/ticket/13447 .
 PLATFORM_EXPORT bool IsWordTextBreak(TextBreakIterator*);
 
 const int kTextBreakDone = -1;
@@ -115,8 +119,8 @@ class PLATFORM_EXPORT LazyLineBreakIterator final {
 
  public:
   LazyLineBreakIterator()
-      : iterator_(0),
-        cached_prior_context_(0),
+      : iterator_(nullptr),
+        cached_prior_context_(nullptr),
         cached_prior_context_length_(0),
         break_type_(LineBreakType::kNormal) {
     ResetPriorContext();
@@ -127,8 +131,8 @@ class PLATFORM_EXPORT LazyLineBreakIterator final {
                         LineBreakType break_type = LineBreakType::kNormal)
       : string_(string),
         locale_(locale),
-        iterator_(0),
-        cached_prior_context_(0),
+        iterator_(nullptr),
+        cached_prior_context_(nullptr),
         cached_prior_context_length_(0),
         break_type_(break_type) {
     ResetPriorContext();
@@ -195,7 +199,7 @@ class PLATFORM_EXPORT LazyLineBreakIterator final {
     const UChar* prior_context =
         prior_context_length
             ? &prior_context_[kPriorContextCapacity - prior_context_length]
-            : 0;
+            : nullptr;
     if (!iterator_) {
       if (string_.Is8Bit())
         iterator_ = AcquireLineBreakIterator(
@@ -268,8 +272,8 @@ class PLATFORM_EXPORT LazyLineBreakIterator final {
   void ReleaseIterator() const {
     if (iterator_)
       ReleaseLineBreakIterator(iterator_);
-    iterator_ = 0;
-    cached_prior_context_ = 0;
+    iterator_ = nullptr;
+    cached_prior_context_ = nullptr;
     cached_prior_context_length_ = 0;
   }
 
@@ -300,7 +304,6 @@ class PLATFORM_EXPORT LazyLineBreakIterator final {
 
 class PLATFORM_EXPORT NonSharedCharacterBreakIterator final {
   STACK_ALLOCATED();
-  WTF_MAKE_NONCOPYABLE(NonSharedCharacterBreakIterator);
 
  public:
   explicit NonSharedCharacterBreakIterator(const String&);
@@ -346,6 +349,8 @@ class PLATFORM_EXPORT NonSharedCharacterBreakIterator final {
 
   // For 16 bit strings, we use a TextBreakIterator.
   TextBreakIterator* iterator_;
+
+  DISALLOW_COPY_AND_ASSIGN(NonSharedCharacterBreakIterator);
 };
 
 // Counts the number of grapheme clusters. A surrogate pair or a sequence

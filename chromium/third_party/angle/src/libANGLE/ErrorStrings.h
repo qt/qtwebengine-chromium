@@ -69,7 +69,7 @@ ERRMSG(InvalidFilterTexture, "Texture only supports NEAREST and LINEAR filtering
 ERRMSG(InvalidFormat, "Invalid format.");
 ERRMSG(InvalidFramebufferTarget, "Invalid framebuffer target.");
 ERRMSG(InvalidFramebufferTextureLevel, "Mipmap level must be 0 when attaching a texture.");
-ERRMSG(InvalidFramebufferTextureParameter, "Invalid parameter name for framebuffer attachment.");
+ERRMSG(InvalidFramebufferAttachmentParameter, "Invalid parameter name for framebuffer attachment.");
 ERRMSG(InvalidInternalFormat, "Invalid internal format.");
 ERRMSG(InvalidMatrixMode, "Invalid matrix mode.");
 ERRMSG(InvalidMipLevel, "Level of detail outside of range.");
@@ -125,12 +125,15 @@ ERRMSG(NegativeSize, "Cannot have negative height or width.");
 ERRMSG(NegativeStart, "Cannot have negative start.");
 ERRMSG(NegativeStride, "Cannot have negative stride.");
 ERRMSG(NoSuchPath, "No such path object.");
+ERRMSG(NoTransformFeedbackOutputVariables,
+    "The active program has specified no output variables to record.");
 ERRMSG(NoZeroDivisor, "At least one enabled attribute must have a divisor of zero.");
 ERRMSG(ObjectNotGenerated, "Object cannot be used because it has not been generated.");
 ERRMSG(OffsetMustBeMultipleOfType, "Offset must be a multiple of the passed in datatype.");
 ERRMSG(OutsideOfBounds, "Parameter outside of bounds.");
 ERRMSG(ParamOverflow, "The provided parameters overflow with the provided buffer.");
 ERRMSG(PixelDataNotNull, "Pixel data must be null.");
+ERRMSG(PixelDataNull, "Pixel data cannot be null.");
 ERRMSG(ProgramDoesNotExist, "Program doesn't exist.");
 ERRMSG(ProgramNotBound, "A program must be bound.");
 ERRMSG(ProgramNotLinked, "Program not linked.");

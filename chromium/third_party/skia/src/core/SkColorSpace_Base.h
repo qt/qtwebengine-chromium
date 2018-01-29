@@ -180,19 +180,22 @@ public:
      */
     virtual sk_sp<SkColorSpace> makeSRGBGamma() const = 0;
 
+    /**
+     *  Returns a color space with the same transfer function as this one, but with the primary
+     *  colors rotated. For any XYZ space, this produces a new color space that maps RGB to GBR
+     *  (when applied to a source), and maps RGB to BRG (when applied to a destination). For other
+     *  types of color spaces, returns nullptr.
+     *
+     *  This is used for testing, to construct color spaces that have severe and testable behavior.
+     */
+    virtual sk_sp<SkColorSpace> makeColorSpin() const { return nullptr; }
+
     enum class Type : uint8_t {
         kXYZ,
         kA2B
     };
 
     virtual Type type() const = 0;
-
-    typedef uint8_t ICCTypeFlag;
-    static constexpr ICCTypeFlag kRGB_ICCTypeFlag  = 1 << 0;
-    static constexpr ICCTypeFlag kCMYK_ICCTypeFlag = 1 << 1;
-    static constexpr ICCTypeFlag kGray_ICCTypeFlag = 1 << 2;
-
-    static sk_sp<SkColorSpace> MakeICC(const void* input, size_t len, ICCTypeFlag type);
 
     static sk_sp<SkColorSpace> MakeRGB(SkGammaNamed gammaNamed, const SkMatrix44& toXYZD50);
 

@@ -27,7 +27,7 @@
 #include "components/prefs/testing_pref_store.h"
 #include "components/signin/core/browser/account_fetcher_service.h"
 #include "components/signin/core/browser/account_tracker_service.h"
-#include "components/signin/core/common/signin_pref_names.h"
+#include "components/signin/core/browser/signin_pref_names.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 using base::ASCIIToUTF16;
@@ -132,7 +132,8 @@ void CreateTestAddressFormData(FormData* form,
   form->name = ASCIIToUTF16("MyForm");
   form->origin = GURL("http://myform.com/form.html");
   form->action = GURL("http://myform.com/submit.html");
-  form->main_frame_origin = GURL("http://myform_root.com/form.html");
+  form->main_frame_origin =
+      url::Origin::Create(GURL("https://myform_root.com/form.html"));
   types->clear();
 
   FormFieldData field;
@@ -200,11 +201,19 @@ inline void check_and_set(
     profile->SetRawInfo(type, base::UTF8ToUTF16(value));
 }
 
-AutofillProfile GetFullValidProfile() {
+AutofillProfile GetFullValidProfileForCanada() {
   AutofillProfile profile(base::GenerateGUID(), "http://www.example.com/");
   SetProfileInfo(&profile, "Alice", "", "Wonderland", "alice@wonderland.ca",
                  "Fiction", "666 Notre-Dame Ouest", "Apt 8", "Montreal", "QC",
                  "H3B 2T9", "CA", "15141112233");
+  return profile;
+}
+
+AutofillProfile GetFullValidProfileForChina() {
+  AutofillProfile profile(base::GenerateGUID(), "http://www.example.com/");
+  SetProfileInfo(&profile, "John", "H.", "Doe", "johndoe@google.cn", "Google",
+                 "100 Century Avenue", "", "赫章县", "毕节地区", "贵州省",
+                 "200120", "CN", "+86-21-6133-7666");
   return profile;
 }
 
@@ -239,6 +248,14 @@ AutofillProfile GetFullProfile2() {
                  "48838",
                  "US",
                  "13105557889");
+  return profile;
+}
+
+AutofillProfile GetFullCanadianProfile() {
+  AutofillProfile profile(base::GenerateGUID(), "http://www.example.com/");
+  SetProfileInfo(&profile, "Wayne", "", "Gretzky", "wayne@hockey.com", "NHL",
+                 "123 Hockey rd.", "Apt 8", "Moncton", "New Brunswick",
+                 "E1A 0A6", "CA", "15068531212");
   return profile;
 }
 
@@ -345,11 +362,47 @@ CreditCard GetRandomCreditCard(CreditCard::RecordType record_type) {
 }
 
 void SetProfileInfo(AutofillProfile* profile,
-    const char* first_name, const char* middle_name,
-    const char* last_name, const char* email, const char* company,
-    const char* address1, const char* address2, const char* city,
-    const char* state, const char* zipcode, const char* country,
-    const char* phone) {
+                    const char* first_name,
+                    const char* middle_name,
+                    const char* last_name,
+                    const char* email,
+                    const char* company,
+                    const char* address1,
+                    const char* address2,
+                    const char* dependent_locality,
+                    const char* city,
+                    const char* state,
+                    const char* zipcode,
+                    const char* country,
+                    const char* phone) {
+  check_and_set(profile, NAME_FIRST, first_name);
+  check_and_set(profile, NAME_MIDDLE, middle_name);
+  check_and_set(profile, NAME_LAST, last_name);
+  check_and_set(profile, EMAIL_ADDRESS, email);
+  check_and_set(profile, COMPANY_NAME, company);
+  check_and_set(profile, ADDRESS_HOME_LINE1, address1);
+  check_and_set(profile, ADDRESS_HOME_LINE2, address2);
+  check_and_set(profile, ADDRESS_HOME_DEPENDENT_LOCALITY, dependent_locality);
+  check_and_set(profile, ADDRESS_HOME_CITY, city);
+  check_and_set(profile, ADDRESS_HOME_STATE, state);
+  check_and_set(profile, ADDRESS_HOME_ZIP, zipcode);
+  check_and_set(profile, ADDRESS_HOME_COUNTRY, country);
+  check_and_set(profile, PHONE_HOME_WHOLE_NUMBER, phone);
+}
+
+void SetProfileInfo(AutofillProfile* profile,
+                    const char* first_name,
+                    const char* middle_name,
+                    const char* last_name,
+                    const char* email,
+                    const char* company,
+                    const char* address1,
+                    const char* address2,
+                    const char* city,
+                    const char* state,
+                    const char* zipcode,
+                    const char* country,
+                    const char* phone) {
   check_and_set(profile, NAME_FIRST, first_name);
   check_and_set(profile, NAME_MIDDLE, middle_name);
   check_and_set(profile, NAME_LAST, last_name);

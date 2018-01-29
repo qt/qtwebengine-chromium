@@ -11,7 +11,6 @@
 #include <string>
 
 #include "base/macros.h"
-#include "net/quic/core/quic_iovector.h"
 #include "net/quic/core/quic_packets.h"
 #include "net/quic/platform/api/quic_endian.h"
 #include "net/quic/platform/api/quic_export.h"
@@ -67,7 +66,7 @@ class QUIC_EXPORT_PRIVATE QuicFramerVisitorInterface {
   // Called if an error is detected in the QUIC protocol.
   virtual void OnError(QuicFramer* framer) = 0;
 
-  // Called only when |perspective_| is IS_SERVER and the the framer gets a
+  // Called only when |perspective_| is IS_SERVER and the framer gets a
   // packet with version flag true and the version on the packet doesn't match
   // |quic_version_|. The visitor should return true after it updates the
   // version of the |framer_| to |received_version| or false to stop processing
@@ -88,10 +87,11 @@ class QUIC_EXPORT_PRIVATE QuicFramerVisitorInterface {
   virtual void OnVersionNegotiationPacket(
       const QuicVersionNegotiationPacket& packet) = 0;
 
-  // Called when the public header has been parsed, but has not been
-  // authenticated. If it returns false, framing for this packet will cease.
+  // Called when all fields except packet number has been parsed, but has not
+  // been authenticated. If it returns false, framing for this packet will
+  // cease.
   virtual bool OnUnauthenticatedPublicHeader(
-      const QuicPacketPublicHeader& header) = 0;
+      const QuicPacketHeader& header) = 0;
 
   // Called when the unauthenticated portion of the header has been parsed.
   // If OnUnauthenticatedHeader returns false, framing for this packet will
@@ -248,6 +248,12 @@ class QUIC_EXPORT_PRIVATE QuicFramer {
                          char* buffer,
                          size_t packet_length);
 
+  // Serializes a probing packet, which is a padded PING packet. Returns the
+  // length of the packet. Returns 0 if it fails to serialize.
+  size_t BuildConnectivityProbingPacket(const QuicPacketHeader& header,
+                                        char* buffer,
+                                        size_t packet_length);
+
   // Returns a new public reset packet.
   static std::unique_ptr<QuicEncryptedPacket> BuildPublicResetPacket(
       const QuicPublicResetPacket& packet);
@@ -257,9 +263,9 @@ class QUIC_EXPORT_PRIVATE QuicFramer {
       QuicConnectionId connection_id,
       const QuicTransportVersionVector& versions);
 
-  // If header.public_header.version_flag is set, the version in the
+  // If header.version_flag is set, the version in the
   // packet will be set -- but it will be set from transport_version_ not
-  // header.public_header.versions.
+  // header.versions.
   bool AppendPacketHeader(const QuicPacketHeader& header,
                           QuicDataWriter* writer);
   bool AppendTypeByte(const QuicFrame& frame,
@@ -315,14 +321,6 @@ class QUIC_EXPORT_PRIVATE QuicFramer {
   // to ciphertext no larger than |ciphertext_size|.
   size_t GetMaxPlaintextSize(size_t ciphertext_size);
 
-  // Let data_producer_ save |data_length| data starts at |iov_offset| in |iov|.
-  // TODO(fayang): Remove this method when data is saved before it is consumed.
-  void SaveStreamData(QuicStreamId id,
-                      QuicIOVector iov,
-                      size_t iov_offset,
-                      QuicStreamOffset offset,
-                      QuicByteCount data_length);
-
   const std::string& detailed_error() { return detailed_error_; }
 
   // The minimum packet number length required to represent |packet_number|.
@@ -335,9 +333,6 @@ class QUIC_EXPORT_PRIVATE QuicFramer {
     supported_versions_ = versions;
     transport_version_ = versions[0];
   }
-
-  // Returns true if data_producer_ is not null.
-  bool HasDataProducer() const { return data_producer_ != nullptr; }
 
   // Returns true if data with |offset| of stream |id| starts with 'CHLO'.
   bool StartsWithChlo(QuicStreamId id, QuicStreamOffset offset) const;
@@ -374,19 +369,18 @@ class QUIC_EXPORT_PRIVATE QuicFramer {
   };
 
   bool ProcessDataPacket(QuicDataReader* reader,
-                         const QuicPacketPublicHeader& public_header,
+                         QuicPacketHeader* header,
                          const QuicEncryptedPacket& packet,
                          char* decrypted_buffer,
                          size_t buffer_length);
 
   bool ProcessPublicResetPacket(QuicDataReader* reader,
-                                const QuicPacketPublicHeader& public_header);
+                                const QuicPacketHeader& header);
 
   bool ProcessVersionNegotiationPacket(QuicDataReader* reader,
-                                       QuicPacketPublicHeader* public_header);
+                                       const QuicPacketHeader& header);
 
-  bool ProcessPublicHeader(QuicDataReader* reader,
-                           QuicPacketPublicHeader* header);
+  bool ProcessPublicHeader(QuicDataReader* reader, QuicPacketHeader* header);
 
   // Processes the unauthenticated portion of the header into |header| from
   // the current QuicDataReader.  Returns true on success, false on failure.
@@ -412,7 +406,7 @@ class QUIC_EXPORT_PRIVATE QuicFramer {
                                    QuicDataReader* reader,
                                    QuicAckFrame* ack_frame);
   bool ProcessStopWaitingFrame(QuicDataReader* reader,
-                               const QuicPacketHeader& public_header,
+                               const QuicPacketHeader& header,
                                QuicStopWaitingFrame* stop_waiting);
   bool ProcessRstStreamFrame(QuicDataReader* reader, QuicRstStreamFrame* frame);
   bool ProcessConnectionCloseFrame(QuicDataReader* reader,
@@ -429,10 +423,6 @@ class QUIC_EXPORT_PRIVATE QuicFramer {
                       char* decrypted_buffer,
                       size_t buffer_length,
                       size_t* decrypted_length);
-
-  // Sets last_packet_number_. This can only be called after the packet is
-  // successfully decrypted.
-  void SetLastPacketNumber(const QuicPacketHeader& header);
 
   // Returns the full packet number from the truncated
   // wire format version and the last seen packet number.
@@ -511,11 +501,11 @@ class QUIC_EXPORT_PRIVATE QuicFramer {
 
   void set_detailed_error(const char* error) { detailed_error_ = error; }
 
+  QuicStringPiece TruncateErrorString(QuicStringPiece error);
+
   std::string detailed_error_;
   QuicFramerVisitorInterface* visitor_;
   QuicErrorCode error_;
-  // Updated by ProcessPacketHeader when it succeeds.
-  QuicPacketNumber last_packet_number_;
   // Updated by ProcessPacketHeader when it succeeds decrypting a larger packet.
   QuicPacketNumber largest_packet_number_;
   // Updated by WritePacketHeader.
@@ -558,7 +548,7 @@ class QUIC_EXPORT_PRIVATE QuicFramer {
   DiversificationNonce last_nonce_;
 
   // If not null, framer asks data_producer_ to write stream frame data. Not
-  // owned.
+  // owned. TODO(fayang): Consider add data producer to framer's constructor.
   QuicStreamFrameDataProducer* data_producer_;
 
   DISALLOW_COPY_AND_ASSIGN(QuicFramer);

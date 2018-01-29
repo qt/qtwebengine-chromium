@@ -101,7 +101,7 @@ TEST_P(SurfaceTest, Attach) {
 }
 
 const viz::CompositorFrame& GetFrameFromSurface(ShellSurface* shell_surface) {
-  viz::SurfaceId surface_id = shell_surface->surface_host()->GetSurfaceId();
+  viz::SurfaceId surface_id = shell_surface->host_window()->GetSurfaceId();
   viz::SurfaceManager* surface_manager = aura::Env::GetInstance()
                                              ->context_factory_private()
                                              ->GetFrameSinkManager()
@@ -138,20 +138,28 @@ TEST_P(SurfaceTest, Damage) {
   {
     const viz::CompositorFrame& frame =
         GetFrameFromSurface(shell_surface.get());
-    EXPECT_EQ(ToPixel(gfx::Rect(0, 0, 512, 512)),
+    EXPECT_EQ(ToPixel(gfx::Rect(buffer_size)),
               frame.render_pass_list.back()->damage_rect);
   }
 
+  gfx::RectF buffer_damage(32, 64, 16, 32);
+  gfx::Rect surface_damage = gfx::ToNearestRect(buffer_damage);
+
   // Check that damage is correct for a non-square rectangle not at the origin.
-  surface->Damage(gfx::Rect(64, 128, 16, 32));
+  surface->Damage(surface_damage);
   surface->Commit();
   RunAllPendingInMessageLoop();
+
+  // Adjust damage for DSF filtering and verify it below.
+  if (device_scale_factor() > 1.f)
+    buffer_damage.Inset(-1.f, -1.f);
 
   {
     const viz::CompositorFrame& frame =
         GetFrameFromSurface(shell_surface.get());
-    EXPECT_EQ(ToPixel(gfx::Rect(64, 128, 16, 32)),
-              frame.render_pass_list.back()->damage_rect);
+    EXPECT_TRUE(
+        gfx::RectF(frame.render_pass_list.back()->damage_rect)
+            .Contains(gfx::ScaleRect(buffer_damage, device_scale_factor())));
   }
 }
 
@@ -183,7 +191,7 @@ TEST_P(SurfaceTest, SetOpaqueRegion) {
 
   // Setting an opaque region that contains the buffer size doesn't require
   // draw with blending.
-  surface->SetOpaqueRegion(SkRegion(SkIRect::MakeWH(256, 256)));
+  surface->SetOpaqueRegion(gfx::Rect(256, 256));
   surface->Commit();
   RunAllPendingInMessageLoop();
 
@@ -200,7 +208,7 @@ TEST_P(SurfaceTest, SetOpaqueRegion) {
   }
 
   // Setting an empty opaque region requires draw with blending.
-  surface->SetOpaqueRegion(SkRegion(SkIRect::MakeEmpty()));
+  surface->SetOpaqueRegion(gfx::Rect());
   surface->Commit();
   RunAllPendingInMessageLoop();
 
@@ -248,60 +256,85 @@ TEST_P(SurfaceTest, SetInputRegion) {
       exo_test_helper()->CreateGpuMemoryBuffer(buffer_size));
   surface->Attach(buffer.get());
   surface->Commit();
-  EXPECT_FALSE(surface->HasHitTestMask());
+
+  {
+    // Default input region should match surface bounds.
+    auto rects = surface->GetHitTestShapeRects();
+    ASSERT_TRUE(rects);
+    ASSERT_EQ(1u, rects->size());
+    ASSERT_EQ(gfx::Rect(512, 512), (*rects)[0]);
+  }
 
   {
     // Setting a non-empty input region should succeed.
-    surface->SetInputRegion(SkRegion(SkIRect::MakeWH(256, 256)));
+    surface->SetInputRegion(gfx::Rect(256, 256));
     surface->Commit();
-    std::unique_ptr<std::vector<gfx::Rect>> rects =
-        surface->GetHitTestShapeRects();
 
-    // The input region doesn't contain the surface, so we need hit test mask.
-    EXPECT_TRUE(surface->HasHitTestMask());
+    auto rects = surface->GetHitTestShapeRects();
+    ASSERT_TRUE(rects);
     ASSERT_EQ(1u, rects->size());
     ASSERT_EQ(gfx::Rect(256, 256), (*rects)[0]);
   }
 
   {
     // Setting an empty input region should succeed.
-    surface->SetInputRegion(SkRegion(SkIRect::MakeEmpty()));
+    surface->SetInputRegion(gfx::Rect());
     surface->Commit();
 
-    // The input region doesn't contain the surface, so we need hit test mask.
-    EXPECT_TRUE(surface->HasHitTestMask());
-    auto rects = surface->GetHitTestShapeRects();
-    EXPECT_TRUE(rects->empty());
+    EXPECT_FALSE(surface->GetHitTestShapeRects());
   }
 
   {
-    // Setting an input region which contains the surface.
-    surface->SetInputRegion(SkRegion(SkIRect::MakeWH(512, 512)));
-    surface->Commit();
-
-    // The input region contains the surface, so we don't need hit test mask.
-    EXPECT_FALSE(surface->HasHitTestMask());
-  }
-
-  {
-    SkRegion region(SkIRect::MakeWH(512, 512));
-    region.op(SkIRect::MakeXYWH(0, 64, 64, 64), SkRegion::kDifference_Op);
-    region.op(SkIRect::MakeXYWH(88, 88, 12, 55), SkRegion::kDifference_Op);
-    region.op(SkIRect::MakeXYWH(100, 0, 33, 66), SkRegion::kDifference_Op);
+    cc::Region region = gfx::Rect(512, 512);
+    region.Subtract(gfx::Rect(0, 64, 64, 64));
+    region.Subtract(gfx::Rect(88, 88, 12, 55));
+    region.Subtract(gfx::Rect(100, 0, 33, 66));
 
     // Setting a non-rectangle input region should succeed.
-    surface->SetInputRegion(SkRegion(region));
+    surface->SetInputRegion(region);
     surface->Commit();
 
-    // The input region doesn't contain the surface, so we need hit test mask.
-    EXPECT_TRUE(surface->HasHitTestMask());
+    auto rects = surface->GetHitTestShapeRects();
+    ASSERT_TRUE(rects);
+    ASSERT_EQ(10u, rects->size());
+    cc::Region result;
+    for (const auto& r : *rects)
+      result.Union(r);
+    ASSERT_EQ(result, region);
+  }
+
+  {
+    // Input region should be clipped to surface bounds.
+    surface->SetInputRegion(gfx::Rect(-50, -50, 1000, 100));
+    surface->Commit();
 
     auto rects = surface->GetHitTestShapeRects();
-    ASSERT_EQ(10u, rects->size());
-    SkRegion result(SkIRect::MakeEmpty());
-    for (const auto& r : *rects)
-      result.op(gfx::RectToSkIRect(r), SkRegion::kUnion_Op);
-    ASSERT_EQ(result, region);
+    ASSERT_TRUE(rects);
+    ASSERT_EQ(1u, rects->size());
+    ASSERT_EQ(gfx::Rect(512, 50), (*rects)[0]);
+  }
+
+  {
+    // Hit test region should accumulate input regions of sub-surfaces.
+    gfx::Rect input_rect(50, 50, 100, 100);
+    surface->SetInputRegion(input_rect);
+
+    gfx::Rect child_input_rect(-50, -50, 1000, 100);
+    auto child_buffer = std::make_unique<Buffer>(
+        exo_test_helper()->CreateGpuMemoryBuffer(child_input_rect.size()));
+    auto child_surface = std::make_unique<Surface>();
+    auto sub_surface =
+        std::make_unique<SubSurface>(child_surface.get(), surface.get());
+    sub_surface->SetPosition(child_input_rect.origin());
+    child_surface->Attach(child_buffer.get());
+    child_surface->Commit();
+    surface->Commit();
+
+    auto rects = surface->GetHitTestShapeRects();
+    ASSERT_TRUE(rects);
+    ASSERT_EQ(2u, rects->size());
+    cc::Region result = cc::UnionRegions((*rects)[0], (*rects)[1]);
+    ASSERT_EQ(cc::UnionRegions(input_rect, child_input_rect), result);
   }
 }
 
@@ -420,18 +453,14 @@ TEST_P(SurfaceTest, MirrorLayers) {
   surface->Attach(buffer.get());
   surface->Commit();
 
-  auto* layer_owner = shell_surface->surface_host();
-  EXPECT_EQ(buffer_size, layer_owner->bounds().size());
-  EXPECT_EQ(buffer_size, layer_owner->layer()->bounds().size());
-
-  std::unique_ptr<ui::LayerTreeOwner> old_layer_owner = ::wm::MirrorLayers(
-      shell_surface->surface_host(), false /* sync_bounds */);
-
-  EXPECT_EQ(buffer_size, layer_owner->bounds().size());
-  EXPECT_EQ(buffer_size, layer_owner->layer()->bounds().size());
+  EXPECT_EQ(buffer_size, surface->window()->bounds().size());
+  EXPECT_EQ(buffer_size, surface->window()->layer()->bounds().size());
+  std::unique_ptr<ui::LayerTreeOwner> old_layer_owner =
+      ::wm::MirrorLayers(shell_surface->host_window(), false /* sync_bounds */);
+  EXPECT_EQ(buffer_size, surface->window()->bounds().size());
+  EXPECT_EQ(buffer_size, surface->window()->layer()->bounds().size());
   EXPECT_EQ(buffer_size, old_layer_owner->root()->bounds().size());
-
-  EXPECT_TRUE(layer_owner->layer()->has_external_content());
+  EXPECT_TRUE(shell_surface->host_window()->layer()->has_external_content());
   EXPECT_TRUE(old_layer_owner->root()->has_external_content());
 }
 
@@ -842,9 +871,28 @@ TEST_P(SurfaceTest, RemoveSubSurface) {
   surface->Commit();
   RunAllPendingInMessageLoop();
 
-  // Remove the subsurface by destroying it. This should damage |surface|.
+  // Remove the subsurface by destroying it. This should not damage |surface|.
+  // TODO(penghuang): Make the damage more precise for sub surface changes.
+  // https://crbug.com/779704
   sub_surface.reset();
-  EXPECT_TRUE(surface->HasPendingDamageForTesting(gfx::Rect(20, 10, 64, 128)));
+  EXPECT_FALSE(surface->HasPendingDamageForTesting(gfx::Rect(20, 10, 64, 128)));
+}
+
+TEST_P(SurfaceTest, DestroyAttachedBuffer) {
+  gfx::Size buffer_size(1, 1);
+  auto buffer = std::make_unique<Buffer>(
+      exo_test_helper()->CreateGpuMemoryBuffer(buffer_size));
+  auto surface = std::make_unique<Surface>();
+  auto shell_surface = std::make_unique<ShellSurface>(surface.get());
+
+  surface->Attach(buffer.get());
+  surface->Commit();
+  RunAllPendingInMessageLoop();
+
+  // Make sure surface size is still valid after buffer is destroyed.
+  buffer.reset();
+  surface->Commit();
+  EXPECT_FALSE(surface->content_size().IsEmpty());
 }
 
 }  // namespace

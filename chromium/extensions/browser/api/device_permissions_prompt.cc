@@ -15,8 +15,6 @@
 #include "content/public/browser/browser_thread.h"
 #include "content/public/common/service_manager_connection.h"
 #include "device/base/device_client.h"
-#include "device/hid/hid_device_filter.h"
-#include "device/hid/public/interfaces/hid.mojom.h"
 #include "device/usb/public/cpp/filter_utils.h"
 #include "device/usb/usb_device.h"
 #include "device/usb/usb_ids.h"
@@ -25,6 +23,8 @@
 #include "extensions/common/extension.h"
 #include "mojo/public/cpp/bindings/associated_binding.h"
 #include "mojo/public/cpp/bindings/interface_request.h"
+#include "services/device/public/cpp/hid/hid_device_filter.h"
+#include "services/device/public/cpp/hid/hid_usage_and_page.h"
 #include "services/device/public/interfaces/constants.mojom.h"
 #include "services/service_manager/public/cpp/connector.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -290,7 +290,7 @@ class HidDevicePermissionsPrompt : public DevicePermissionsPrompt::Prompt,
 
   bool HasUnprotectedCollections(const device::mojom::HidDeviceInfo& device) {
     for (const auto& collection : device.collections) {
-      if (!collection.usage.IsProtected()) {
+      if (!device::IsProtected(*collection->usage)) {
         return true;
       }
     }

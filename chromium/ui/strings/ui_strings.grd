@@ -637,6 +637,9 @@ need to be translated for each locale.-->
       <message name="IDS_MESSAGE_CENTER_NOTIFICATION_CHROMEOS_SYSTEM" desc="The label to describe the notification comes from ChromeOS system.">
         <ph name="IDS_SHORT_PRODUCT_OS_NAME">$1<ex>Chrome OS</ex></ph> system
       </message>
+      <message name="IDS_MESSAGE_CENTER_NOTIFICATION_INLINE_REPLY_PLACEHOLDER" desc="The default placeholder text for notification inline reply.">
+        Send message
+      </message>
       <message name="IDS_MESSAGE_NOTIFICATION_NOW_STRING_SHORTEST" desc="A string denoting the current point in time that should be as short as possible. Should be same as AndroidPlatform msgId 8912796667087856402. (frameworks/base/core/res/res/values/strings.xml:string:now_string_shortest)">
         now
       </message>
@@ -698,9 +701,6 @@ need to be translated for each locale.-->
       <message name="IDS_APP_LIST_BACK" desc="The name of the button that goes to the previous screen in the launcher.">
         Back
       </message>
-      <message name="IDS_APP_LIST_ALL_APPS" desc="The text on the button that opens the app grid view in the app launcher.">
-        All Apps
-      </message>
       <message name="IDS_APP_LIST_FOLDER_NAME_PLACEHOLDER" desc="The placeholder text for app list folder name.">
         Unnamed Folder
       </message>
@@ -734,7 +734,7 @@ need to be translated for each locale.-->
       <message name="IDS_APP_LIST_PAGE_SWITCHER" desc="Tooltip for page switcher for each page in fullscreen view which shows all apps.">
         Page <ph name="selected_page">$1<ex>1</ex></ph> of <ph name="total_page_num">$2<ex>3</ex></ph>
       </message>
-      <message name="IDS_APP_ACCESSIBILITY_STAR_RATING_ARC" desc="Accessibility text for the start rating of a Play Store app.">
+      <message name="IDS_APP_ACCESSIBILITY_STAR_RATING_ARC" desc="Accessibility text for the star rating of a Play Store app.">
         Star rating <ph name="RATING_SCORE">$1<ex>5.0</ex></ph>
       </message>
 

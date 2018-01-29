@@ -24,10 +24,10 @@ namespace rx
 namespace
 {
 
-const vk::Format &GetVkFormatFromConfig(const egl::Config &config)
+const vk::Format &GetVkFormatFromConfig(RendererVk *renderer, const egl::Config &config)
 {
     // TODO(jmadill): Properly handle format interpretation.
-    return vk::Format::Get(GL_BGRA8_EXT);
+    return renderer->getFormat(GL_BGRA8_EXT);
 }
 
 VkPresentModeKHR GetDesiredPresentMode(const std::vector<VkPresentModeKHR> &presentModes,
@@ -157,6 +157,10 @@ gl::Error OffscreenSurfaceVk::initializeContents(const gl::Context *context,
     return gl::NoError();
 }
 
+WindowSurfaceVk::SwapchainImage::SwapchainImage()                                        = default;
+WindowSurfaceVk::SwapchainImage::SwapchainImage(WindowSurfaceVk::SwapchainImage &&other) = default;
+WindowSurfaceVk::SwapchainImage::~SwapchainImage()                                       = default;
+
 WindowSurfaceVk::WindowSurfaceVk(const egl::SurfaceState &surfaceState,
                                  EGLNativeWindowType window,
                                  EGLint width,
@@ -183,7 +187,7 @@ WindowSurfaceVk::~WindowSurfaceVk()
 
 void WindowSurfaceVk::destroy(const egl::Display *display)
 {
-    const DisplayVk *displayVk = GetImplAs<DisplayVk>(display);
+    const DisplayVk *displayVk = vk::GetImpl(display);
     RendererVk *rendererVk     = displayVk->getRenderer();
     VkDevice device            = rendererVk->getDevice();
     VkInstance instance        = rendererVk->getInstance();
@@ -218,7 +222,7 @@ void WindowSurfaceVk::destroy(const egl::Display *display)
 
 egl::Error WindowSurfaceVk::initialize(const egl::Display *display)
 {
-    const DisplayVk *displayVk = GetImplAs<DisplayVk>(display);
+    const DisplayVk *displayVk = vk::GetImpl(display);
     return initializeImpl(displayVk->getRenderer()).toEGL(EGL_BAD_SURFACE);
 }
 
@@ -230,7 +234,7 @@ vk::Error WindowSurfaceVk::initializeImpl(RendererVk *renderer)
     uint32_t presentQueue = 0;
     ANGLE_TRY_RESULT(renderer->selectPresentQueueForSurface(mSurface), presentQueue);
 
-    const auto &physicalDevice = renderer->getPhysicalDevice();
+    const VkPhysicalDevice &physicalDevice = renderer->getPhysicalDevice();
 
     VkSurfaceCapabilitiesKHR surfaceCaps;
     ANGLE_VK_TRY(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physicalDevice, mSurface, &surfaceCaps));
@@ -301,8 +305,8 @@ vk::Error WindowSurfaceVk::initializeImpl(RendererVk *renderer)
     ANGLE_VK_TRY(vkGetPhysicalDeviceSurfaceFormatsKHR(physicalDevice, mSurface, &surfaceFormatCount,
                                                       surfaceFormats.data()));
 
-    mRenderTarget.format = &GetVkFormatFromConfig(*mState.config);
-    auto nativeFormat    = mRenderTarget.format->native;
+    mRenderTarget.format  = &GetVkFormatFromConfig(renderer, *mState.config);
+    VkFormat nativeFormat = mRenderTarget.format->vkTextureFormat;
 
     if (surfaceFormatCount == 1u && surfaceFormats[0].format == VK_FORMAT_UNDEFINED)
     {
@@ -345,7 +349,7 @@ vk::Error WindowSurfaceVk::initializeImpl(RendererVk *renderer)
     swapchainInfo.clipped               = VK_TRUE;
     swapchainInfo.oldSwapchain          = VK_NULL_HANDLE;
 
-    const auto &device = renderer->getDevice();
+    VkDevice device = renderer->getDevice();
     ANGLE_VK_TRY(vkCreateSwapchainKHR(device, &swapchainInfo, nullptr, &mSwapchain));
 
     // Intialize the swapchain image views.
@@ -356,7 +360,7 @@ vk::Error WindowSurfaceVk::initializeImpl(RendererVk *renderer)
     ANGLE_VK_TRY(vkGetSwapchainImagesKHR(device, mSwapchain, &imageCount, swapchainImages.data()));
 
     // CommandBuffer is a singleton in the Renderer.
-    vk::CommandBuffer *commandBuffer = nullptr;
+    vk::CommandBufferAndState *commandBuffer = nullptr;
     ANGLE_TRY(renderer->getStartedCommandBuffer(&commandBuffer));
 
     VkClearColorValue transparentBlack;
@@ -390,19 +394,17 @@ vk::Error WindowSurfaceVk::initializeImpl(RendererVk *renderer)
         imageViewInfo.subresourceRange.baseArrayLayer = 0;
         imageViewInfo.subresourceRange.layerCount     = 1;
 
-        vk::Image image(swapchainImage);
-        vk::ImageView imageView;
-        ANGLE_TRY(imageView.init(device, imageViewInfo));
-
-        // Set transfer dest layout, and clear the image to black.
-        image.changeLayoutTop(VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                              commandBuffer);
-        commandBuffer->clearSingleColorImage(image, transparentBlack);
-
         auto &member = mSwapchainImages[imageIndex];
 
-        member.image.retain(device, std::move(image));
-        member.imageView.retain(device, std::move(imageView));
+        member.image.setHandle(swapchainImage);
+        ANGLE_TRY(member.imageView.init(device, imageViewInfo));
+
+        // Set transfer dest layout, and clear the image to black.
+        member.image.changeLayoutWithStages(
+            VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+            VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, commandBuffer);
+        commandBuffer->clearSingleColorImage(member.image, transparentBlack);
+
         ANGLE_TRY(member.imageAcquiredSemaphore.init(device));
         ANGLE_TRY(member.commandsCompleteSemaphore.init(device));
     }
@@ -422,15 +424,14 @@ FramebufferImpl *WindowSurfaceVk::createDefaultFramebuffer(const gl::Framebuffer
 
 egl::Error WindowSurfaceVk::swap(const gl::Context *context)
 {
-    const DisplayVk *displayVk = GetImplAs<DisplayVk>(context->getCurrentDisplay());
+    const DisplayVk *displayVk = vk::GetImpl(context->getCurrentDisplay());
     RendererVk *renderer       = displayVk->getRenderer();
 
-    vk::CommandBuffer *currentCB = nullptr;
+    vk::CommandBufferAndState *currentCB = nullptr;
     ANGLE_TRY(renderer->getStartedCommandBuffer(&currentCB));
 
     // End render pass
-    FramebufferVk *framebufferVk = GetImplAs<FramebufferVk>(mState.defaultFramebuffer);
-    framebufferVk->endRenderPass(currentCB);
+    renderer->endRenderPass();
 
     auto &image = mSwapchainImages[mCurrentSwapchainImageIndex];
 
@@ -578,11 +579,7 @@ gl::ErrorOrResult<vk::Framebuffer *> WindowSurfaceVk::getCurrentFramebuffer(
     for (auto &swapchainImage : mSwapchainImages)
     {
         framebufferInfo.pAttachments = swapchainImage.imageView.ptr();
-
-        vk::Framebuffer framebuffer;
-        ANGLE_TRY(framebuffer.init(device, framebufferInfo));
-
-        swapchainImage.framebuffer.retain(device, std::move(framebuffer));
+        ANGLE_TRY(swapchainImage.framebuffer.init(device, framebufferInfo));
     }
 
     ASSERT(currentFramebuffer.valid());

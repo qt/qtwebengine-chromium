@@ -16,8 +16,6 @@
 #include "SkStream.h"
 #include <stack>
 
-DEFINE_string(pathfinderTrail, "", "List of keystrokes to execute upon loading a pathfinder.");
-
 /**
  * This is a simple utility designed to extract the paths from an SKP file and then isolate a single
  * one of them. Use the 'x' and 'X' keys to guide a binary search:
@@ -58,12 +56,6 @@ public:
             }
             pic->playback(this);
         }
-        for (int i = 0; i < FLAGS_pathfinderTrail.count(); ++i) {
-            const char* key = FLAGS_pathfinderTrail[i];
-            while (*key) {
-                this->handleKeystroke(*key++);
-            }
-        }
     }
 
     ~PathFinderView() override {}
@@ -102,7 +94,6 @@ private:
                     } else {
                         fTrail.push_back('X');
                     }
-                    this->inval(nullptr);
                 }
                 return true;
             case 'x':
@@ -112,7 +103,6 @@ private:
                     fTossedPaths.reset(fPaths.begin() + midpt, fPaths.count() - midpt);
                     fPaths.resize_back(midpt);
                     fTrail.push_back('x');
-                    this->inval(nullptr);
                 }
                 return true;
             case 'Z': {
@@ -125,14 +115,13 @@ private:
                         ch = fTrail.back();
                         fTrail.pop_back();
                     } while (ch != 'x');
-                    this->inval(nullptr);
                 }
                 return true;
             }
             case 'D':
                 SkDebugf("SampleApp --pathfinder %s", fFilename.c_str());
                 if (!fTrail.empty()) {
-                    SkDebugf(" --pathfinderTrail ", fFilename.c_str());
+                    SkDebugf(" --keys ");
                     for (char ch : fTrail) {
                         SkDebugf("%c", ch);
                     }

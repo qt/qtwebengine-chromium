@@ -30,7 +30,6 @@
 #include "content/browser/fileapi/browser_file_system_helper.h"
 #include "content/browser/loader/resource_request_info_impl.h"
 #include "content/browser/resource_context_impl.h"
-#include "content/browser/service_worker/foreign_fetch_request_handler.h"
 #include "content/browser/service_worker/service_worker_request_handler.h"
 #include "content/browser/storage_partition_impl.h"
 #include "content/browser/streams/stream.h"
@@ -64,11 +63,9 @@ namespace {
 class BlobProtocolHandler : public net::URLRequestJobFactory::ProtocolHandler {
  public:
   BlobProtocolHandler(ChromeBlobStorageContext* blob_storage_context,
-                      StreamContext* stream_context,
-                      storage::FileSystemContext* file_system_context)
+                      StreamContext* stream_context)
       : blob_storage_context_(blob_storage_context),
-        stream_context_(stream_context),
-        file_system_context_(file_system_context) {}
+        stream_context_(stream_context) {}
 
   ~BlobProtocolHandler() override {}
 
@@ -84,8 +81,8 @@ class BlobProtocolHandler : public net::URLRequestJobFactory::ProtocolHandler {
       // Construction is deferred because 'this' is constructed on
       // the main thread but we want blob_protocol_handler_ constructed
       // on the IO thread.
-      blob_protocol_handler_.reset(new storage::BlobProtocolHandler(
-          blob_storage_context_->context(), file_system_context_.get()));
+      blob_protocol_handler_.reset(
+          new storage::BlobProtocolHandler(blob_storage_context_->context()));
     }
     return blob_protocol_handler_->MaybeCreateJob(request, network_delegate);
   }
@@ -93,7 +90,6 @@ class BlobProtocolHandler : public net::URLRequestJobFactory::ProtocolHandler {
  private:
   const scoped_refptr<ChromeBlobStorageContext> blob_storage_context_;
   const scoped_refptr<StreamContext> stream_context_;
-  const scoped_refptr<storage::FileSystemContext> file_system_context_;
   mutable std::unique_ptr<storage::BlobProtocolHandler> blob_protocol_handler_;
   DISALLOW_COPY_AND_ASSIGN(BlobProtocolHandler);
 };
@@ -408,9 +404,7 @@ StoragePartitionImpl* StoragePartitionImplMap::Get(
   ProtocolHandlerMap protocol_handlers;
   protocol_handlers[url::kBlobScheme] =
       linked_ptr<net::URLRequestJobFactory::ProtocolHandler>(
-          new BlobProtocolHandler(blob_storage_context,
-                                  stream_context,
-                                  partition->GetFileSystemContext()));
+          new BlobProtocolHandler(blob_storage_context, stream_context));
   protocol_handlers[url::kFileSystemScheme] =
       linked_ptr<net::URLRequestJobFactory::ProtocolHandler>(
           CreateFileSystemProtocolHandler(partition_domain,
@@ -425,15 +419,10 @@ StoragePartitionImpl* StoragePartitionImplMap::Get(
 
   URLRequestInterceptorScopedVector request_interceptors;
   request_interceptors.push_back(
-      base::MakeUnique<DevToolsURLRequestInterceptor>(browser_context_));
+      std::make_unique<DevToolsURLRequestInterceptor>(browser_context_));
   request_interceptors.push_back(ServiceWorkerRequestHandler::CreateInterceptor(
       browser_context_->GetResourceContext()));
-  if (ForeignFetchRequestHandler::IsForeignFetchEnabled()) {
-    request_interceptors.push_back(
-        ForeignFetchRequestHandler::CreateInterceptor(
-            browser_context_->GetResourceContext()));
-  }
-  request_interceptors.push_back(base::MakeUnique<AppCacheInterceptor>());
+  request_interceptors.push_back(std::make_unique<AppCacheInterceptor>());
 
   // These calls must happen after StoragePartitionImpl::Create().
   if (partition_domain.empty()) {

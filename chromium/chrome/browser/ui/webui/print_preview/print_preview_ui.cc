@@ -37,6 +37,8 @@
 #include "chrome/grit/browser_resources.h"
 #include "chrome/grit/chromium_strings.h"
 #include "chrome/grit/generated_resources.h"
+#include "chrome/grit/print_preview_resources.h"
+#include "chrome/grit/print_preview_resources_map.h"
 #include "components/prefs/pref_service.h"
 #include "components/printing/common/print_messages.h"
 #include "components/strings/grit/components_strings.h"
@@ -163,9 +165,7 @@ bool HandleRequestCallback(
   return true;
 }
 
-content::WebUIDataSource* CreatePrintPreviewUISource(Profile* profile) {
-  content::WebUIDataSource* source =
-      content::WebUIDataSource::Create(chrome::kChromeUIPrintHost);
+void AddPrintPreviewStrings(content::WebUIDataSource* source) {
   source->AddLocalizedString("title", IDS_PRINT_PREVIEW_TITLE);
   source->AddLocalizedString("loading", IDS_PRINT_PREVIEW_LOADING);
   source->AddLocalizedString("noPlugin", IDS_PRINT_PREVIEW_NO_PLUGIN);
@@ -292,13 +292,9 @@ content::WebUIDataSource* CreatePrintPreviewUISource(Profile* profile) {
                              IDS_PRINT_PREVIEW_DESTINATION_COUNT);
   source->AddLocalizedString("recentDestinationsTitle",
                              IDS_PRINT_PREVIEW_RECENT_DESTINATIONS_TITLE);
-  source->AddLocalizedString("localDestinationsTitle",
-                             IDS_PRINT_PREVIEW_LOCAL_DESTINATIONS_TITLE);
-  source->AddLocalizedString("cloudDestinationsTitle",
-                             IDS_PRINT_PREVIEW_CLOUD_DESTINATIONS_TITLE);
+  source->AddLocalizedString("printDestinationsTitle",
+                             IDS_PRINT_PREVIEW_PRINT_DESTINATIONS_TITLE);
   source->AddLocalizedString("manage", IDS_PRINT_PREVIEW_MANAGE);
-  source->AddLocalizedString("setupCloudPrinters",
-                             IDS_PRINT_PREVIEW_SETUP_CLOUD_PRINTERS);
   source->AddLocalizedString("changeDestination",
                              IDS_PRINT_PREVIEW_CHANGE_DESTINATION);
   source->AddLocalizedString("offlineForYear",
@@ -340,38 +336,6 @@ content::WebUIDataSource* CreatePrintPreviewUISource(Profile* profile) {
       "groupPrinterSharingInviteText", IDS_PRINT_PREVIEW_GROUP_INVITE_TEXT);
   source->AddLocalizedString(
       "printerSharingInviteText", IDS_PRINT_PREVIEW_INVITE_TEXT);
-
-  source->SetJsonPath("strings.js");
-  source->AddResourcePath("print_preview.js", IDR_PRINT_PREVIEW_JS);
-  source->AddResourcePath("pdf_preview.html",
-                          IDR_PRINT_PREVIEW_PDF_PREVIEW_HTML);
-  source->AddResourcePath("images/1x/printer.png",
-                          IDR_PRINT_PREVIEW_IMAGES_1X_PRINTER);
-  source->AddResourcePath("images/2x/printer.png",
-                          IDR_PRINT_PREVIEW_IMAGES_2X_PRINTER);
-  source->AddResourcePath("images/1x/printer_shared.png",
-                          IDR_PRINT_PREVIEW_IMAGES_1X_PRINTER_SHARED);
-  source->AddResourcePath("images/2x/printer_shared.png",
-                          IDR_PRINT_PREVIEW_IMAGES_2X_PRINTER_SHARED);
-  source->AddResourcePath("images/business.svg",
-                          IDR_PRINT_PREVIEW_IMAGES_ENTERPRISE_PRINTER);
-  source->AddResourcePath("images/third_party.png",
-                          IDR_PRINT_PREVIEW_IMAGES_THIRD_PARTY);
-  source->AddResourcePath("images/google_doc.png",
-                          IDR_PRINT_PREVIEW_IMAGES_GOOGLE_DOC);
-  source->AddResourcePath("images/pdf.png", IDR_PRINT_PREVIEW_IMAGES_PDF);
-  source->AddResourcePath("images/mobile.png", IDR_PRINT_PREVIEW_IMAGES_MOBILE);
-  source->AddResourcePath("images/mobile_shared.png",
-                          IDR_PRINT_PREVIEW_IMAGES_MOBILE_SHARED);
-  source->SetDefaultResource(IDR_PRINT_PREVIEW_HTML);
-  source->SetRequestFilter(base::Bind(&HandleRequestCallback));
-  source->OverrideContentSecurityPolicyScriptSrc(
-      base::StringPrintf("script-src chrome://resources 'self' 'unsafe-eval' "
-                         "chrome-extension://%s;",
-                         extension_misc::kPdfExtensionId));
-  source->OverrideContentSecurityPolicyChildSrc("child-src 'self';");
-  source->DisableDenyXFrameOptions();
-  source->OverrideContentSecurityPolicyObjectSrc("object-src 'self';");
   source->AddLocalizedString("moreOptionsLabel", IDS_MORE_OPTIONS_LABEL);
   source->AddLocalizedString("lessOptionsLabel", IDS_LESS_OPTIONS_LABEL);
 #if defined(OS_CHROMEOS)
@@ -391,7 +355,30 @@ content::WebUIDataSource* CreatePrintPreviewUISource(Profile* profile) {
   source->AddLocalizedString("openPdfInPreviewOption",
                              IDS_PRINT_PREVIEW_OPEN_PDF_IN_PREVIEW_APP);
 #endif
+}
 
+void AddPrintPreviewImages(content::WebUIDataSource* source) {
+  source->AddResourcePath("images/1x/printer.png",
+                          IDR_PRINT_PREVIEW_IMAGES_1X_PRINTER);
+  source->AddResourcePath("images/2x/printer.png",
+                          IDR_PRINT_PREVIEW_IMAGES_2X_PRINTER);
+  source->AddResourcePath("images/1x/printer_shared.png",
+                          IDR_PRINT_PREVIEW_IMAGES_1X_PRINTER_SHARED);
+  source->AddResourcePath("images/2x/printer_shared.png",
+                          IDR_PRINT_PREVIEW_IMAGES_2X_PRINTER_SHARED);
+  source->AddResourcePath("images/business.svg",
+                          IDR_PRINT_PREVIEW_IMAGES_ENTERPRISE_PRINTER);
+  source->AddResourcePath("images/third_party.png",
+                          IDR_PRINT_PREVIEW_IMAGES_THIRD_PARTY);
+  source->AddResourcePath("images/google_doc.png",
+                          IDR_PRINT_PREVIEW_IMAGES_GOOGLE_DOC);
+  source->AddResourcePath("images/pdf.png", IDR_PRINT_PREVIEW_IMAGES_PDF);
+  source->AddResourcePath("images/mobile.png", IDR_PRINT_PREVIEW_IMAGES_MOBILE);
+  source->AddResourcePath("images/mobile_shared.png",
+                          IDR_PRINT_PREVIEW_IMAGES_MOBILE_SHARED);
+}
+
+void AddPrintPreviewFlags(content::WebUIDataSource* source, Profile* profile) {
 #if !defined(OS_MACOSX) && !defined(OS_WIN)
   bool print_pdf_as_image_enabled = base::FeatureList::IsEnabled(
       features::kPrintPdfAsImage);
@@ -407,7 +394,41 @@ content::WebUIDataSource* CreatePrintPreviewUISource(Profile* profile) {
       prefs::kPrintPreviewUseSystemDefaultPrinter);
   source->AddBoolean("useSystemDefaultPrinter", system_default_printer);
 #endif
-  source->AddBoolean("showLocalManageButton", true);
+}
+
+content::WebUIDataSource* CreateNewPrintPreviewUISource(Profile* profile) {
+  content::WebUIDataSource* source =
+      content::WebUIDataSource::Create(chrome::kChromeUIPrintHost);
+  AddPrintPreviewStrings(source);
+  source->SetJsonPath("strings.js");
+  for (size_t i = 0; i < kPrintPreviewResourcesSize; ++i) {
+    source->AddResourcePath(kPrintPreviewResources[i].name,
+                            kPrintPreviewResources[i].value);
+  }
+  AddPrintPreviewImages(source);
+  source->SetDefaultResource(IDR_PRINT_PREVIEW_NEW_HTML);
+  return source;
+}
+
+content::WebUIDataSource* CreatePrintPreviewUISource(Profile* profile) {
+  content::WebUIDataSource* source =
+      content::WebUIDataSource::Create(chrome::kChromeUIPrintHost);
+  AddPrintPreviewStrings(source);
+  source->SetJsonPath("strings.js");
+  source->AddResourcePath("print_preview.js", IDR_PRINT_PREVIEW_JS);
+  source->AddResourcePath("pdf_preview.html",
+                          IDR_PRINT_PREVIEW_PDF_PREVIEW_HTML);
+  AddPrintPreviewImages(source);
+  source->SetDefaultResource(IDR_PRINT_PREVIEW_HTML);
+  source->SetRequestFilter(base::Bind(&HandleRequestCallback));
+  source->OverrideContentSecurityPolicyScriptSrc(
+      base::StringPrintf("script-src chrome://resources 'self' 'unsafe-eval' "
+                         "chrome-extension://%s;",
+                         extension_misc::kPdfExtensionId));
+  source->OverrideContentSecurityPolicyChildSrc("child-src 'self';");
+  source->DisableDenyXFrameOptions();
+  source->OverrideContentSecurityPolicyObjectSrc("object-src 'self';");
+  AddPrintPreviewFlags(source, profile);
   return source;
 }
 
@@ -440,7 +461,15 @@ PrintPreviewUI::PrintPreviewUI(content::WebUI* web_ui)
       dialog_closed_(false) {
   // Set up the chrome://print/ data source.
   Profile* profile = Profile::FromWebUI(web_ui);
-  content::WebUIDataSource::Add(profile, CreatePrintPreviewUISource(profile));
+
+  bool new_print_preview_enabled =
+      base::FeatureList::IsEnabled(features::kNewPrintPreview);
+  if (new_print_preview_enabled) {
+    content::WebUIDataSource::Add(profile,
+                                  CreateNewPrintPreviewUISource(profile));
+  } else {
+    content::WebUIDataSource::Add(profile, CreatePrintPreviewUISource(profile));
+  }
 
   // Set up the chrome://theme/ source.
   content::URLDataSource::Add(profile, new ThemeSource(profile));

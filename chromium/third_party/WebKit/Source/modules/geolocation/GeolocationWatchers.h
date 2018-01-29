@@ -17,8 +17,8 @@ class GeolocationWatchers : public TraceWrapperBase {
 
  public:
   GeolocationWatchers() {}
-  DECLARE_TRACE();
-  DECLARE_TRACE_WRAPPERS();
+  void Trace(blink::Visitor*);
+  void TraceWrappers(const ScriptWrappableVisitor*) const;
 
   bool Add(int id, GeoNotifier*);
   GeoNotifier* Find(int id);
@@ -27,6 +27,7 @@ class GeolocationWatchers : public TraceWrapperBase {
   bool Contains(GeoNotifier*) const;
   void Clear();
   bool IsEmpty() const;
+  void Swap(GeolocationWatchers& other);
 
   void GetNotifiersVector(HeapVector<Member<GeoNotifier>>&) const;
 
@@ -37,6 +38,10 @@ class GeolocationWatchers : public TraceWrapperBase {
   IdToNotifierMap id_to_notifier_map_;
   NotifierToIdMap notifier_to_id_map_;
 };
+
+inline void swap(GeolocationWatchers& a, GeolocationWatchers& b) {
+  a.Swap(b);
+}
 
 }  // namespace blink
 

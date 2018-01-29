@@ -13,6 +13,7 @@ import time
 from devil.android import crash_handler
 from devil.android import device_errors
 from devil.android import device_temp_file
+from devil.android import logcat_monitor
 from devil.android import ports
 from devil.utils import reraiser_thread
 from incremental_install import installer
@@ -173,6 +174,10 @@ class _ApkDelegate(object):
     if self._wait_for_java_debugger:
       cmd = ['am', 'set-debug-app', '-w', self._package]
       device.RunShellCommand(cmd, check_return=True)
+      logging.warning('*' * 80)
+      logging.warning('Waiting for debugger to attach to process: %s',
+                      self._package)
+      logging.warning('*' * 80)
 
     with command_line_file, test_list_file, stdout_file:
       try:
@@ -376,17 +381,28 @@ class LocalDeviceGtestRun(local_device_test_run.LocalDeviceTestRun):
         on_failure=self._env.BlacklistDevice)
     def list_tests(dev):
       timeout = 30
+      retries = 1
       if self._test_instance.wait_for_java_debugger:
         timeout = None
-      raw_test_list = crash_handler.RetryOnSystemCrash(
-          lambda d: self._delegate.Run(
-              None, d, flags='--gtest_list_tests', timeout=timeout),
-          device=dev)
-      tests = gtest_test_instance.ParseGTestListTests(raw_test_list)
-      if not tests:
-        logging.info('No tests found. Output:')
-        for l in raw_test_list:
-          logging.info('  %s', l)
+      # TODO(crbug.com/726880): Remove retries when no longer necessary.
+      for i in range(0, retries+1):
+        raw_test_list = crash_handler.RetryOnSystemCrash(
+            lambda d: self._delegate.Run(
+                None, d, flags='--gtest_list_tests', timeout=timeout),
+            device=dev)
+        tests = gtest_test_instance.ParseGTestListTests(raw_test_list)
+        if not tests:
+          logging.info('No tests found. Output:')
+          for l in raw_test_list:
+            logging.info('  %s', l)
+          logging.info('Logcat:')
+          for line in dev.adb.Logcat(dump=True):
+            logging.info(line)
+          dev.adb.Logcat(clear=True)
+          if i < retries:
+            logging.info('Retrying...')
+        else:
+          break
       return tests
 
     # Query all devices in case one fails.
@@ -410,17 +426,18 @@ class LocalDeviceGtestRun(local_device_test_run.LocalDeviceTestRun):
     if test_artifacts_dir:
       with tempfile_ext.NamedTemporaryDirectory() as test_artifacts_host_dir:
         device.PullFile(test_artifacts_dir.name, test_artifacts_host_dir)
-        test_artifacts_zip = shutil.make_archive('test_artifacts', 'zip',
-                                                 test_artifacts_host_dir)
-        link = google_storage_helper.upload(
-            google_storage_helper.unique_name(
-                'test_artifacts', device=device),
-            test_artifacts_zip,
-            bucket='%s/test_artifacts' % (
-                self._test_instance.gs_test_artifacts_bucket))
-        logging.info('Uploading test artifacts to %s.', link)
-        os.remove(test_artifacts_zip)
-        return link
+        with tempfile_ext.NamedTemporaryDirectory() as temp_zip_dir:
+          zip_base_name = os.path.join(temp_zip_dir, 'test_artifacts')
+          test_artifacts_zip = shutil.make_archive(
+              zip_base_name, 'zip', test_artifacts_host_dir)
+          link = google_storage_helper.upload(
+              google_storage_helper.unique_name(
+                  'test_artifacts', device=device),
+              test_artifacts_zip,
+              bucket='%s/test_artifacts' % (
+                  self._test_instance.gs_test_artifacts_bucket))
+          logging.info('Uploading test artifacts to %s.', link)
+          return link
     return None
 
   #override
@@ -452,15 +469,27 @@ class LocalDeviceGtestRun(local_device_test_run.LocalDeviceTestRun):
         for f in flags:
           logging.info('  %s', f)
 
-        with local_device_environment.OptionalPerTestLogcat(
-            device, hash(tuple(test)),
-            self._test_instance.should_save_logcat) as logmon:
-          with contextlib_ext.Optional(
-              trace_event.trace(str(test)),
-              self._env.trace_output):
-            output = self._delegate.Run(
-                test, device, flags=' '.join(flags),
-                timeout=timeout, retries=0)
+        stream_name = 'logcat_%s_%s_%s' % (
+            hash(tuple(test)),
+            time.strftime('%Y%m%dT%H%M%S-UTC', time.gmtime()),
+            device.serial)
+
+        with self._env.output_manager.ArchivedTempfile(
+            stream_name, 'logcat') as logcat_file:
+          with logcat_monitor.LogcatMonitor(
+              device.adb,
+              filter_specs=local_device_environment.LOGCAT_FILTERS,
+              output_file=logcat_file.name) as logmon:
+            with contextlib_ext.Optional(
+                trace_event.trace(str(test)),
+                self._env.trace_output):
+              output = self._delegate.Run(
+                  test, device, flags=' '.join(flags),
+                  timeout=timeout, retries=0)
+          logmon.Close()
+
+        if logcat_file.Link():
+          logging.info('Logcat saved to %s', logcat_file.Link())
 
         if self._test_instance.enable_xml_result_parsing:
           try:
@@ -474,7 +503,6 @@ class LocalDeviceGtestRun(local_device_test_run.LocalDeviceTestRun):
                 str(e))
             gtest_xml = None
 
-        logcat_url = logmon.GetLogcatURL()
         test_artifacts_url = self._UploadTestArtifacts(device,
                                                        test_artifacts_dir)
 
@@ -499,8 +527,8 @@ class LocalDeviceGtestRun(local_device_test_run.LocalDeviceTestRun):
 
     tombstones_url = None
     for r in results:
-      if self._test_instance.should_save_logcat:
-        r.SetLink('logcat', logcat_url)
+      if logcat_file:
+        r.SetLink('logcat', logcat_file.Link())
 
       if self._test_instance.gs_test_artifacts_bucket:
         r.SetLink('test_artifacts', test_artifacts_url)

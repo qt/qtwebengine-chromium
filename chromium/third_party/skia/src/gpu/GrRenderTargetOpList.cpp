@@ -75,15 +75,16 @@ void GrRenderTargetOpList::onPrepare(GrOpFlushState* flushState) {
 #ifdef SK_BUILD_FOR_ANDROID_FRAMEWORK
             TRACE_EVENT0("skia", fRecordedOps[i].fOp->name());
 #endif
-            GrOpFlushState::DrawOpArgs opArgs = {
+            GrOpFlushState::OpArgs opArgs = {
+                fRecordedOps[i].fOp.get(),
                 fTarget.get()->asRenderTargetProxy(),
                 fRecordedOps[i].fAppliedClip,
                 fRecordedOps[i].fDstProxy
             };
 
-            flushState->setDrawOpArgs(&opArgs);
+            flushState->setOpArgs(&opArgs);
             fRecordedOps[i].fOp->prepare(flushState);
-            flushState->setDrawOpArgs(nullptr);
+            flushState->setOpArgs(nullptr);
         }
     }
 
@@ -163,15 +164,16 @@ bool GrRenderTargetOpList::onExecute(GrOpFlushState* flushState) {
         TRACE_EVENT0("skia", fRecordedOps[i].fOp->name());
 #endif
 
-        GrOpFlushState::DrawOpArgs opArgs {
+        GrOpFlushState::OpArgs opArgs {
+            fRecordedOps[i].fOp.get(),
             fTarget.get()->asRenderTargetProxy(),
             fRecordedOps[i].fAppliedClip,
             fRecordedOps[i].fDstProxy
         };
 
-        flushState->setDrawOpArgs(&opArgs);
+        flushState->setOpArgs(&opArgs);
         fRecordedOps[i].fOp->execute(flushState);
-        flushState->setDrawOpArgs(nullptr);
+        flushState->setOpArgs(nullptr);
     }
 
     finish_command_buffer(commandBuffer.get());
@@ -183,6 +185,7 @@ bool GrRenderTargetOpList::onExecute(GrOpFlushState* flushState) {
 void GrRenderTargetOpList::endFlush() {
     fLastClipStackGenID = SK_InvalidUniqueID;
     fRecordedOps.reset();
+    fClipAllocator.reset();
     if (fInstancedRendering) {
         fInstancedRendering->endFlush();
         fInstancedRendering = nullptr;
@@ -258,17 +261,27 @@ void GrRenderTargetOpList::gatherProxyIntervals(GrResourceAllocator* alloc) cons
     unsigned int cur = alloc->numOps();
 
     // Add the interval for all the writes to this opList's target
-    alloc->addInterval(fTarget.get(), cur, cur+fRecordedOps.count()-1);
+    if (fRecordedOps.count()) {
+        alloc->addInterval(fTarget.get(), cur, cur+fRecordedOps.count()-1);
+    } else {
+        // This can happen if there is a loadOp (e.g., a clear) but no other draws. In this case we
+        // still need to add an interval for the destination so we create a fake op# for
+        // the missing clear op.
+        alloc->addInterval(fTarget.get());
+        alloc->incOps();
+    }
 
     auto gather = [ alloc ] (GrSurfaceProxy* p) {
         alloc->addInterval(p);
     };
     for (int i = 0; i < fRecordedOps.count(); ++i) {
-        SkASSERT(alloc->curOp() == cur+i);
-
         const GrOp* op = fRecordedOps[i].fOp.get(); // only diff from the GrTextureOpList version
-        op->visitProxies(gather);
+        if (op) {
+            op->visitProxies(gather);
+        }
 
+        // Even though the op may have been moved we still need to increment the op count to
+        // keep all the math consistent.
         alloc->incOps();
     }
 }

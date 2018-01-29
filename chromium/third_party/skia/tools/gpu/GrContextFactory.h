@@ -39,7 +39,6 @@ public:
         kANGLE_GL_ES2_ContextType,   //! ANGLE on OpenGL OpenGL ES 2 context.
         kANGLE_GL_ES3_ContextType,   //! ANGLE on OpenGL OpenGL ES 3 context.
         kCommandBuffer_ContextType,  //! Chromium command buffer OpenGL ES context.
-        kMESA_ContextType,           //! MESA OpenGL context
         kNullGL_ContextType,         //! Non-rendering OpenGL mock context.
         kDebugGL_ContextType,        //! Non-rendering, state verifying OpenGL context.
         kVulkan_ContextType,         //! Vulkan
@@ -107,8 +106,6 @@ public:
                 return "ANGLE GL ES3";
             case kCommandBuffer_ContextType:
                 return "Command Buffer";
-            case kMESA_ContextType:
-                return "Mesa";
             case kNullGL_ContextType:
                 return "Null GL";
             case kDebugGL_ContextType:
@@ -159,6 +156,7 @@ private:
     struct Context {
         ContextType       fType;
         ContextOverrides  fOverrides;
+        GrContextOptions  fOptions;
         GrBackend         fBackend;
         TestContext*      fTestContext;
         GrContext*        fGrContext;
@@ -189,19 +187,18 @@ public:
         return static_cast<GLTestContext*>(fTestContext);
     }
 
+    const GrContextOptions& options() const { return fOptions; }
+
 private:
-    ContextInfo(GrContextFactory::ContextType type,
-                TestContext* testContext,
-                GrContext* grContext)
-        : fType(type)
-        , fTestContext(testContext)
-        , fGrContext(grContext) {
-    }
+    ContextInfo(GrContextFactory::ContextType type, TestContext* testContext, GrContext* grContext,
+                const GrContextOptions& options)
+            : fType(type), fTestContext(testContext), fGrContext(grContext), fOptions(options) {}
 
     GrContextFactory::ContextType fType = GrContextFactory::kGL_ContextType;
     // Valid until the factory destroys it via abandonContexts() or destroyContexts().
-    TestContext*    fTestContext = nullptr;
-    GrContext*      fGrContext = nullptr;
+    TestContext* fTestContext = nullptr;
+    GrContext* fGrContext = nullptr;
+    GrContextOptions fOptions;
 
     friend class GrContextFactory;
 };

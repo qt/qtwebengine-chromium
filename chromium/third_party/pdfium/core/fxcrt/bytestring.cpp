@@ -27,6 +27,8 @@ template struct std::hash<ByteString>;
 
 namespace {
 
+constexpr char kTrimChars[] = "\x09\x0a\x0b\x0c\x0d\x20";
+
 const char* FX_strstr(const char* haystack,
                       int haystack_len,
                       const char* needle,
@@ -90,6 +92,57 @@ namespace fxcrt {
 
 static_assert(sizeof(ByteString) <= sizeof(char*),
               "Strings must not require more space than pointers");
+
+#define FORCE_ANSI 0x10000
+#define FORCE_UNICODE 0x20000
+#define FORCE_INT64 0x40000
+
+// static
+ByteString ByteString::FormatInteger(int i) {
+  char buf[32];
+  FXSYS_snprintf(buf, sizeof(buf), "%d", i);
+  return ByteString(buf);
+}
+
+// static
+ByteString ByteString::FormatFloat(float d) {
+  char buf[32];
+  return ByteString(buf, FX_ftoa(d, buf));
+}
+
+// static
+ByteString ByteString::FormatV(const char* pFormat, va_list argList) {
+  va_list argListCopy;
+  va_copy(argListCopy, argList);
+  int nMaxLen = vsnprintf(nullptr, 0, pFormat, argListCopy);
+  va_end(argListCopy);
+
+  if (nMaxLen <= 0)
+    return "";
+
+  ByteString ret;
+  char* buf = ret.GetBuffer(nMaxLen);
+  if (buf) {
+    // In the following two calls, there's always space in the buffer for
+    // a terminating NUL that's not included in nMaxLen.
+    memset(buf, 0, nMaxLen + 1);
+    va_copy(argListCopy, argList);
+    vsnprintf(buf, nMaxLen + 1, pFormat, argListCopy);
+    va_end(argListCopy);
+    ret.ReleaseBuffer(ret.GetStringLength());
+  }
+  return ret;
+}
+
+// static
+ByteString ByteString::Format(const char* pFormat, ...) {
+  va_list argList;
+  va_start(argList, pFormat);
+  ByteString ret = FormatV(pFormat, argList);
+  va_end(argList);
+
+  return ret;
+}
 
 ByteString::ByteString(const char* pStr, size_t nLen) {
   if (nLen)
@@ -251,13 +304,39 @@ bool ByteString::operator==(const ByteString& other) const {
                 m_pData->m_nDataLength) == 0;
 }
 
-bool ByteString::operator<(const ByteString& str) const {
-  if (m_pData == str.m_pData)
+bool ByteString::operator<(const char* ptr) const {
+  if (!m_pData && !ptr)
+    return false;
+  if (c_str() == ptr)
     return false;
 
+  size_t len = GetLength();
+  size_t other_len = ptr ? strlen(ptr) : 0;
+  int result = memcmp(c_str(), ptr, std::min(len, other_len));
+  return result < 0 || (result == 0 && len < other_len);
+}
+
+bool ByteString::operator<(const ByteStringView& str) const {
+  if (!m_pData && !str.unterminated_c_str())
+    return false;
+  if (c_str() == str.unterminated_c_str())
+    return false;
+
+  size_t len = GetLength();
+  size_t other_len = str.GetLength();
   int result =
-      memcmp(c_str(), str.c_str(), std::min(GetLength(), str.GetLength()));
-  return result < 0 || (result == 0 && GetLength() < str.GetLength());
+      memcmp(c_str(), str.unterminated_c_str(), std::min(len, other_len));
+  return result < 0 || (result == 0 && len < other_len);
+}
+
+bool ByteString::operator<(const ByteString& other) const {
+  if (m_pData == other.m_pData)
+    return false;
+
+  size_t len = GetLength();
+  size_t other_len = other.GetLength();
+  int result = memcmp(c_str(), other.c_str(), std::min(len, other_len));
+  return result < 0 || (result == 0 && len < other_len);
 }
 
 bool ByteString::EqualNoCase(const ByteStringView& str) const {
@@ -459,42 +538,6 @@ void ByteString::AllocCopy(ByteString& dest,
   dest.m_pData.Swap(pNewData);
 }
 
-#define FORCE_ANSI 0x10000
-#define FORCE_UNICODE 0x20000
-#define FORCE_INT64 0x40000
-
-ByteString ByteString::FormatInteger(int i) {
-  char buf[32];
-  FXSYS_snprintf(buf, 32, "%d", i);
-  return ByteString(buf);
-}
-
-void ByteString::FormatV(const char* pFormat, va_list argList) {
-  va_list argListCopy;
-  va_copy(argListCopy, argList);
-  int nMaxLen = vsnprintf(nullptr, 0, pFormat, argListCopy);
-  va_end(argListCopy);
-  if (nMaxLen > 0) {
-    GetBuffer(nMaxLen);
-    if (m_pData) {
-      // In the following two calls, there's always space in the buffer for
-      // a terminating NUL that's not included in nMaxLen.
-      memset(m_pData->m_String, 0, nMaxLen + 1);
-      va_copy(argListCopy, argList);
-      vsnprintf(m_pData->m_String, nMaxLen + 1, pFormat, argListCopy);
-      va_end(argListCopy);
-      ReleaseBuffer(GetStringLength());
-    }
-  }
-}
-
-void ByteString::Format(const char* pFormat, ...) {
-  va_list argList;
-  va_start(argList, pFormat);
-  FormatV(pFormat, argList);
-  va_end(argList);
-}
-
 void ByteString::SetAt(size_t index, char c) {
   ASSERT(IsValidIndex(index));
   ReallocBeforeWrite(m_pData->m_nDataLength);
@@ -668,65 +711,51 @@ ByteString ByteString::FromUnicode(const WideString& str) {
 }
 
 int ByteString::Compare(const ByteStringView& str) const {
-  if (!m_pData) {
+  if (!m_pData)
     return str.IsEmpty() ? 0 : -1;
-  }
+
   size_t this_len = m_pData->m_nDataLength;
   size_t that_len = str.GetLength();
   size_t min_len = std::min(this_len, that_len);
   for (size_t i = 0; i < min_len; i++) {
-    if (static_cast<uint8_t>(m_pData->m_String[i]) < str[i]) {
+    if (static_cast<uint8_t>(m_pData->m_String[i]) < str[i])
       return -1;
-    }
-    if (static_cast<uint8_t>(m_pData->m_String[i]) > str[i]) {
+    if (static_cast<uint8_t>(m_pData->m_String[i]) > str[i])
       return 1;
-    }
   }
-  if (this_len < that_len) {
+  if (this_len < that_len)
     return -1;
-  }
-  if (this_len > that_len) {
+  if (this_len > that_len)
     return 1;
-  }
   return 0;
 }
 
-void ByteString::TrimRight(const ByteStringView& pTargets) {
-  if (!m_pData || pTargets.IsEmpty())
-    return;
-
-  size_t pos = GetLength();
-  if (pos == 0)
-    return;
-
-  while (pos) {
-    size_t i = 0;
-    while (i < pTargets.GetLength() &&
-           pTargets[i] != m_pData->m_String[pos - 1]) {
-      i++;
-    }
-    if (i == pTargets.GetLength()) {
-      break;
-    }
-    pos--;
-  }
-  if (pos < m_pData->m_nDataLength) {
-    ReallocBeforeWrite(m_pData->m_nDataLength);
-    m_pData->m_String[pos] = 0;
-    m_pData->m_nDataLength = pos;
-  }
+void ByteString::Trim() {
+  TrimRight(kTrimChars);
+  TrimLeft(kTrimChars);
 }
 
-void ByteString::TrimRight(char chTarget) {
-  TrimRight(ByteStringView(chTarget));
+void ByteString::Trim(char target) {
+  ByteStringView targets(target);
+  TrimRight(targets);
+  TrimLeft(targets);
 }
 
-void ByteString::TrimRight() {
-  TrimRight("\x09\x0a\x0b\x0c\x0d\x20");
+void ByteString::Trim(const ByteStringView& targets) {
+  TrimRight(targets);
+  TrimLeft(targets);
 }
 
-void ByteString::TrimLeft(const ByteStringView& pTargets) {
-  if (!m_pData || pTargets.IsEmpty())
+void ByteString::TrimLeft() {
+  TrimLeft(kTrimChars);
+}
+
+void ByteString::TrimLeft(char target) {
+  TrimLeft(ByteStringView(target));
+}
+
+void ByteString::TrimLeft(const ByteStringView& targets) {
+  if (!m_pData || targets.IsEmpty())
     return;
 
   size_t len = GetLength();
@@ -736,12 +765,10 @@ void ByteString::TrimLeft(const ByteStringView& pTargets) {
   size_t pos = 0;
   while (pos < len) {
     size_t i = 0;
-    while (i < pTargets.GetLength() && pTargets[i] != m_pData->m_String[pos]) {
+    while (i < targets.GetLength() && targets[i] != m_pData->m_String[pos])
       i++;
-    }
-    if (i == pTargets.GetLength()) {
+    if (i == targets.GetLength())
       break;
-    }
     pos++;
   }
   if (pos) {
@@ -753,17 +780,35 @@ void ByteString::TrimLeft(const ByteStringView& pTargets) {
   }
 }
 
-void ByteString::TrimLeft(char chTarget) {
-  TrimLeft(ByteStringView(chTarget));
+void ByteString::TrimRight() {
+  TrimRight(kTrimChars);
 }
 
-void ByteString::TrimLeft() {
-  TrimLeft("\x09\x0a\x0b\x0c\x0d\x20");
+void ByteString::TrimRight(char target) {
+  TrimRight(ByteStringView(target));
 }
 
-ByteString ByteString::FormatFloat(float d, int precision) {
-  char buf[32];
-  return ByteString(buf, FX_ftoa(d, buf));
+void ByteString::TrimRight(const ByteStringView& targets) {
+  if (!m_pData || targets.IsEmpty())
+    return;
+
+  size_t pos = GetLength();
+  if (pos == 0)
+    return;
+
+  while (pos) {
+    size_t i = 0;
+    while (i < targets.GetLength() && targets[i] != m_pData->m_String[pos - 1])
+      i++;
+    if (i == targets.GetLength())
+      break;
+    pos--;
+  }
+  if (pos < m_pData->m_nDataLength) {
+    ReallocBeforeWrite(m_pData->m_nDataLength);
+    m_pData->m_String[pos] = 0;
+    m_pData->m_nDataLength = pos;
+  }
 }
 
 std::ostream& operator<<(std::ostream& os, const ByteString& str) {

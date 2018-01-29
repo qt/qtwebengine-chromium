@@ -29,6 +29,7 @@ rtc_source_set("call_interfaces") {
     "../api:optional",
     "../api:transport_api",
     "../api/audio_codecs:audio_codecs_api",
+    "../modules/audio_processing:audio_processing_statistics",
     "../rtc_base:rtc_base",
     "../rtc_base:rtc_base_approved",
   ]
@@ -84,6 +85,7 @@ rtc_source_set("rtp_sender") {
     ":rtp_interfaces",
     "..:webrtc_common",
     "../modules/congestion_controller",
+    "../modules/pacing",
     "../rtc_base:rtc_base_approved",
   ]
 }
@@ -175,17 +177,10 @@ if (rtc_include_tests) {
   rtc_source_set("call_tests") {
     testonly = true
 
-    # Skip restricting visibility on mobile platforms since the tests on those
-    # gets additional generated targets which would require many lines here to
-    # cover (which would be confusing to read and hard to maintain).
-    if (!is_android && !is_ios) {
-      visibility = [ "..:video_engine_tests" ]
-    }
     sources = [
       "bitrate_allocator_unittest.cc",
       "bitrate_estimator_tests.cc",
       "call_unittest.cc",
-      "fake_rtp_transport_controller_send.h",
       "flexfec_receive_stream_unittest.cc",
       "rtcp_demuxer_unittest.cc",
       "rtp_demuxer_unittest.cc",
@@ -202,6 +197,7 @@ if (rtc_include_tests) {
       "..:webrtc_common",
       "../api:array_view",
       "../api:mock_audio_mixer",
+      "../api/audio_codecs:builtin_audio_decoder_factory",
       "../logging:rtc_event_log_api",
       "../modules/audio_device:mock_audio_device",
       "../modules/audio_mixer",
@@ -232,12 +228,6 @@ if (rtc_include_tests) {
   rtc_source_set("call_perf_tests") {
     testonly = true
 
-    # Skip restricting visibility on mobile platforms since the tests on those
-    # gets additional generated targets which would require many lines here to
-    # cover (which would be confusing to read and hard to maintain).
-    if (!is_android && !is_ios) {
-      visibility = [ "..:webrtc_perf_tests" ]
-    }
     sources = [
       "call_perf_tests.cc",
       "rampup_tests.cc",
@@ -276,10 +266,14 @@ if (rtc_include_tests) {
     testonly = true
 
     sources = [
+      "fake_rtp_transport_controller_send.h",
       "test/mock_rtp_packet_sink_interface.h",
     ]
     deps = [
       ":rtp_interfaces",
+      "..:webrtc_common",
+      "../modules/congestion_controller:congestion_controller",
+      "../modules/pacing:pacing",
       "../test:test_support",
       "//testing/gmock",
     ]

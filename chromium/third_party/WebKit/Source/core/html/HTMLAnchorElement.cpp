@@ -24,6 +24,7 @@
 
 #include "core/html/HTMLAnchorElement.h"
 
+#include "core/dom/UserGestureIndicator.h"
 #include "core/editing/EditingUtilities.h"
 #include "core/events/KeyboardEvent.h"
 #include "core/events/MouseEvent.h"
@@ -50,8 +51,8 @@ HTMLAnchorElement::HTMLAnchorElement(const QualifiedName& tag_name,
                                      Document& document)
     : HTMLElement(tag_name, document),
       link_relations_(0),
-      cached_visited_link_hash_(0),
-      was_focused_by_mouse_(false) {}
+      was_focused_by_mouse_(false),
+      cached_visited_link_hash_(0) {}
 
 HTMLAnchorElement* HTMLAnchorElement::Create(Document& document) {
   return new HTMLAnchorElement(aTag, document);
@@ -225,7 +226,7 @@ void HTMLAnchorElement::ParseAttribute(
 
 void HTMLAnchorElement::AccessKeyAction(bool send_mouse_events) {
   DispatchSimulatedClick(
-      0, send_mouse_events ? kSendMouseUpDownEvents : kSendNoEvents);
+      nullptr, send_mouse_events ? kSendMouseUpDownEvents : kSendNoEvents);
 }
 
 bool HTMLAnchorElement::IsURLAttribute(const Attribute& attribute) const {
@@ -375,6 +376,15 @@ void HTMLAnchorElement::HandleClick(Event* event) {
   }
 
   if (hasAttribute(downloadAttr)) {
+    if (GetDocument().IsSandboxed(kSandboxDownloads)) {
+      // TODO(jochen): Also measure navigations resulting in downloads.
+      UseCounter::Count(
+          GetDocument(),
+          UserGestureIndicator::ProcessingUserGesture()
+              ? WebFeature::kHTMLAnchorElementDownloadInSandboxWithUserGesture
+              : WebFeature::
+                    kHTMLAnchorElementDownloadInSandboxWithoutUserGesture);
+    }
     request.SetRequestContext(WebURLRequest::kRequestContextDownload);
     request.SetRequestorOrigin(SecurityOrigin::Create(GetDocument().Url()));
     frame->Client()->DownloadURL(request, FastGetAttribute(downloadAttr));

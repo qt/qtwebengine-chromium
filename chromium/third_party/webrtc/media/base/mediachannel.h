@@ -11,8 +11,10 @@
 #ifndef MEDIA_BASE_MEDIACHANNEL_H_
 #define MEDIA_BASE_MEDIACHANNEL_H_
 
+#include <map>
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "api/audio_codecs/audio_encoder.h"
@@ -26,6 +28,8 @@
 #include "media/base/streamparams.h"
 #include "media/base/videosinkinterface.h"
 #include "media/base/videosourceinterface.h"
+#include "modules/audio_processing/include/audio_processing_statistics.h"
+#include "rtc_base/asyncpacketsocket.h"
 #include "rtc_base/basictypes.h"
 #include "rtc_base/buffer.h"
 #include "rtc_base/copyonwritebuffer.h"
@@ -35,8 +39,7 @@
 #include "rtc_base/sigslot.h"
 #include "rtc_base/socket.h"
 #include "rtc_base/window.h"
-// TODO(juberti): re-evaluate this include
-#include "pc/audiomonitor.h"
+
 
 namespace rtc {
 class RateLimiter;
@@ -168,8 +171,6 @@ struct AudioOptions {
     SetFrom(&tx_agc_digital_compression_gain,
             change.tx_agc_digital_compression_gain);
     SetFrom(&tx_agc_limiter, change.tx_agc_limiter);
-    SetFrom(&recording_sample_rate, change.recording_sample_rate);
-    SetFrom(&playout_sample_rate, change.playout_sample_rate);
     SetFrom(&combined_audio_video_bwe, change.combined_audio_video_bwe);
     SetFrom(&audio_network_adaptor, change.audio_network_adaptor);
     SetFrom(&audio_network_adaptor_config, change.audio_network_adaptor_config);
@@ -201,8 +202,6 @@ struct AudioOptions {
            tx_agc_digital_compression_gain ==
                o.tx_agc_digital_compression_gain &&
            tx_agc_limiter == o.tx_agc_limiter &&
-           recording_sample_rate == o.recording_sample_rate &&
-           playout_sample_rate == o.playout_sample_rate &&
            combined_audio_video_bwe == o.combined_audio_video_bwe &&
            audio_network_adaptor == o.audio_network_adaptor &&
            audio_network_adaptor_config == o.audio_network_adaptor_config &&
@@ -239,8 +238,6 @@ struct AudioOptions {
     ost << ToStringIfSet("tx_agc_digital_compression_gain",
         tx_agc_digital_compression_gain);
     ost << ToStringIfSet("tx_agc_limiter", tx_agc_limiter);
-    ost << ToStringIfSet("recording_sample_rate", recording_sample_rate);
-    ost << ToStringIfSet("playout_sample_rate", playout_sample_rate);
     ost << ToStringIfSet("combined_audio_video_bwe", combined_audio_video_bwe);
     ost << ToStringIfSet("audio_network_adaptor", audio_network_adaptor);
     // The adaptor config is a serialized proto buffer and therefore not human
@@ -283,8 +280,6 @@ struct AudioOptions {
   rtc::Optional<uint16_t> tx_agc_target_dbov;
   rtc::Optional<uint16_t> tx_agc_digital_compression_gain;
   rtc::Optional<bool> tx_agc_limiter;
-  rtc::Optional<uint32_t> recording_sample_rate;
-  rtc::Optional<uint32_t> playout_sample_rate;
   // Enable combined audio+bandwidth BWE.
   // TODO(pthatcher): This flag is set from the
   // "googCombinedAudioVideoBwe", but not used anywhere. So delete it,
@@ -414,9 +409,6 @@ class MediaChannel : public sigslot::has_slots<> {
   virtual void OnNetworkRouteChanged(
       const std::string& transport_name,
       const rtc::NetworkRoute& network_route) = 0;
-  // Called when the rtp transport overhead changed.
-  virtual void OnTransportOverheadChanged(
-      int transport_overhead_per_packet) = 0;
   // Creates a new outgoing media stream with SSRCs and CNAME as described
   // by sp.
   virtual bool AddSendStream(const StreamParams& sp) = 0;
@@ -634,6 +626,8 @@ struct VoiceSenderInfo : public MediaSenderInfo {
   // https://w3c.github.io/webrtc-stats/#dom-rtcmediastreamtrackstats-totalaudioenergy
   double total_input_energy;
   double total_input_duration;
+  // TODO(bugs.webrtc.org/8572): Remove APM stats from this struct, since they
+  // are no longer needed now that we have apm_statistics.
   float aec_quality_min;
   int echo_delay_median_ms;
   int echo_delay_std_ms;
@@ -643,6 +637,7 @@ struct VoiceSenderInfo : public MediaSenderInfo {
   float residual_echo_likelihood_recent_max;
   bool typing_noise_detected;
   webrtc::ANAStats ana_statistics;
+  webrtc::AudioProcessingStats apm_statistics;
 };
 
 struct VoiceReceiverInfo : public MediaReceiverInfo {
@@ -733,6 +728,7 @@ struct VideoSenderInfo : public MediaSenderInfo {
         avg_encode_ms(0),
         encode_usage_percent(0),
         frames_encoded(0),
+        has_entered_low_resolution(false),
         content_type(webrtc::VideoContentType::UNSPECIFIED) {}
 
   std::vector<SsrcGroup> ssrc_groups;
@@ -753,6 +749,7 @@ struct VideoSenderInfo : public MediaSenderInfo {
   int avg_encode_ms;
   int encode_usage_percent;
   uint32_t frames_encoded;
+  bool has_entered_low_resolution;
   rtc::Optional<uint64_t> qp_sum;
   webrtc::VideoContentType content_type;
 };
@@ -1024,7 +1021,8 @@ class VoiceMediaChannel : public MediaChannel {
                             const AudioOptions* options,
                             AudioSource* source) = 0;
   // Gets current energy levels for all incoming streams.
-  virtual bool GetActiveStreams(AudioInfo::StreamList* actives) = 0;
+  typedef std::vector<std::pair<uint32_t, int>> StreamList;
+  virtual bool GetActiveStreams(StreamList* actives) = 0;
   // Get the current energy level of the stream sent to the speaker.
   virtual int GetOutputLevel() = 0;
   // Set speaker output volume of the specified ssrc.
@@ -1223,7 +1221,7 @@ class DataMediaChannel : public MediaChannel {
   };
 
   DataMediaChannel() {}
-  DataMediaChannel(const MediaConfig& config) : MediaChannel(config) {}
+  explicit DataMediaChannel(const MediaConfig& config) : MediaChannel(config) {}
   virtual ~DataMediaChannel() {}
 
   virtual bool SetSendParameters(const DataSendParameters& params) = 0;

@@ -79,11 +79,6 @@ AsyncMatch TestSafeBrowsingDatabaseManager::CheckCsdWhitelistUrl(
   return AsyncMatch::MATCH;
 }
 
-bool TestSafeBrowsingDatabaseManager::MatchCsdWhitelistUrl(const GURL& url) {
-  NOTIMPLEMENTED();
-  return true;
-}
-
 bool TestSafeBrowsingDatabaseManager::MatchDownloadWhitelistString(
     const std::string& str) {
   NOTIMPLEMENTED();
@@ -108,17 +103,7 @@ safe_browsing::ThreatSource TestSafeBrowsingDatabaseManager::GetThreatSource()
   return safe_browsing::ThreatSource::UNKNOWN;
 }
 
-bool TestSafeBrowsingDatabaseManager::IsCsdWhitelistKillSwitchOn() {
-  NOTIMPLEMENTED();
-  return false;
-}
-
 bool TestSafeBrowsingDatabaseManager::IsDownloadProtectionEnabled() const {
-  NOTIMPLEMENTED();
-  return false;
-}
-
-bool TestSafeBrowsingDatabaseManager::IsMalwareKillSwitchOn() {
   NOTIMPLEMENTED();
   return false;
 }

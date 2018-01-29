@@ -38,50 +38,35 @@
 #include "compiler/translator/ExtensionBehavior.h"
 #include "compiler/translator/InfoSink.h"
 #include "compiler/translator/IntermNode.h"
+#include "compiler/translator/SymbolUniqueId.h"
 
 namespace sh
 {
-
-// Encapsulates a unique id for a symbol.
-class TSymbolUniqueId
-{
-  public:
-    POOL_ALLOCATOR_NEW_DELETE();
-    TSymbolUniqueId(TSymbolTable *symbolTable);
-    TSymbolUniqueId(const TSymbol &symbol);
-    TSymbolUniqueId(const TSymbolUniqueId &) = default;
-    TSymbolUniqueId &operator=(const TSymbolUniqueId &) = default;
-
-    int get() const;
-
-  private:
-    int mId;
-};
 
 // Symbol base class. (Can build functions or variables out of these...)
 class TSymbol : angle::NonCopyable
 {
   public:
     POOL_ALLOCATOR_NEW_DELETE();
-    TSymbol(TSymbolTable *symbolTable, const TString *n);
+    TSymbol(TSymbolTable *symbolTable, const TString *name);
 
     virtual ~TSymbol()
     {
         // don't delete name, it's from the pool
     }
 
-    const TString &getName() const { return *name; }
-    virtual const TString &getMangledName() const { return getName(); }
+    const TString &name() const { return *mName; }
+    virtual const TString &getMangledName() const { return name(); }
     virtual bool isFunction() const { return false; }
     virtual bool isVariable() const { return false; }
-    int getUniqueId() const { return uniqueId; }
-    void relateToExtension(TExtension ext) { extension = ext; }
-    TExtension getExtension() const { return extension; }
+    const TSymbolUniqueId &uniqueId() const { return mUniqueId; }
+    void relateToExtension(TExtension ext) { mExtension = ext; }
+    TExtension extension() const { return mExtension; }
 
   private:
-    const int uniqueId;
-    const TString *name;
-    TExtension extension;
+    const TSymbolUniqueId mUniqueId;
+    const TString *mName;
+    TExtension mExtension;
 };
 
 // Variable, meaning a symbol that's not a function.
@@ -242,7 +227,7 @@ class TInterfaceBlockName : public TSymbol
 class TSymbolTableLevel
 {
   public:
-    typedef TMap<TString, TSymbol *> tLevel;
+    typedef TUnorderedMap<TString, TSymbol *> tLevel;
     typedef tLevel::const_iterator const_iterator;
     typedef const tLevel::value_type tLevelPair;
     typedef std::pair<tLevel::iterator, bool> tInsertResult;
@@ -302,7 +287,7 @@ const int GLOBAL_LEVEL       = 5;
 class TSymbolTable : angle::NonCopyable
 {
   public:
-    TSymbolTable() : mUniqueIdCounter(0)
+    TSymbolTable() : mUniqueIdCounter(0), mEmptySymbolId(this)
     {
         // The symbol table cannot be used until push() is called, but
         // the lack of an initial call to push() can be used to detect
@@ -514,12 +499,20 @@ class TSymbolTable : angle::NonCopyable
         table[currentLevel()]->setGlobalInvariant(invariant);
     }
 
-    int nextUniqueId() { return ++mUniqueIdCounter; }
+    const TSymbolUniqueId nextUniqueId() { return TSymbolUniqueId(this); }
+
+    // The empty symbol id is shared between all empty string ("") symbols. They are used in the
+    // AST for unused function parameters and struct type declarations that don't declare a
+    // variable, for example.
+    const TSymbolUniqueId &getEmptySymbolId() { return mEmptySymbolId; }
 
     // Checks whether there is a built-in accessible by a shader with the specified version.
     bool hasUnmangledBuiltInForShaderVersion(const char *name, int shaderVersion);
 
   private:
+    friend class TSymbolUniqueId;
+    int nextUniqueIdValue() { return ++mUniqueIdCounter; }
+
     ESymbolLevel currentLevel() const { return static_cast<ESymbolLevel>(table.size() - 1); }
 
     TVariable *insertVariable(ESymbolLevel level, const TString *name, const TType &type);
@@ -543,6 +536,8 @@ class TSymbolTable : angle::NonCopyable
     std::vector<PrecisionStackLevel *> precisionStack;
 
     int mUniqueIdCounter;
+
+    const TSymbolUniqueId mEmptySymbolId;
 };
 
 }  // namespace sh

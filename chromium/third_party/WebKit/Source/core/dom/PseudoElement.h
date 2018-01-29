@@ -38,13 +38,15 @@ class CORE_EXPORT PseudoElement : public Element {
  public:
   static PseudoElement* Create(Element* parent, PseudoId);
 
-  RefPtr<ComputedStyle> CustomStyleForLayoutObject() override;
+  scoped_refptr<ComputedStyle> CustomStyleForLayoutObject() override;
   void AttachLayoutTree(AttachContext&) override;
   bool LayoutObjectIsNeeded(const ComputedStyle&) override;
 
   bool CanStartSelection() const override { return false; }
   bool CanContainRangeEndPoint() const override { return false; }
   PseudoId GetPseudoId() const override { return pseudo_id_; }
+  const ComputedStyle* VirtualEnsureComputedStyle(
+      PseudoId pseudo_element_specifier = kPseudoIdNone) final;
 
   static String PseudoElementNameForEvents(PseudoId);
 

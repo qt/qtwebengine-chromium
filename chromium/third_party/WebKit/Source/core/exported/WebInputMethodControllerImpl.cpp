@@ -31,7 +31,7 @@ WebInputMethodControllerImpl::WebInputMethodControllerImpl(
 
 WebInputMethodControllerImpl::~WebInputMethodControllerImpl() {}
 
-DEFINE_TRACE(WebInputMethodControllerImpl) {
+void WebInputMethodControllerImpl::Trace(blink::Visitor* visitor) {
   visitor->Trace(web_frame_);
 }
 
@@ -73,7 +73,7 @@ bool WebInputMethodControllerImpl::SetComposition(
   }
 
   std::unique_ptr<UserGestureIndicator> gesture_indicator =
-      LocalFrame::CreateUserGesture(GetFrame(), UserGestureToken::kNewGesture);
+      Frame::NotifyUserActivation(GetFrame(), UserGestureToken::kNewGesture);
 
   GetInputMethodController().SetComposition(
       String(text), ImeTextSpanVectorBuilder::Build(ime_text_spans),
@@ -110,7 +110,7 @@ bool WebInputMethodControllerImpl::CommitText(
     const WebRange& replacement_range,
     int relative_caret_position) {
   std::unique_ptr<UserGestureIndicator> gesture_indicator =
-      LocalFrame::CreateUserGesture(GetFrame(), UserGestureToken::kNewGesture);
+      Frame::NotifyUserActivation(GetFrame(), UserGestureToken::kNewGesture);
 
   if (WebPlugin* plugin = FocusedPluginIfInputMethodSupported()) {
     return plugin->CommitText(text, ime_text_spans, replacement_range,
@@ -145,6 +145,21 @@ int WebInputMethodControllerImpl::ComputeWebTextInputNextPreviousFlags() {
 
 WebTextInputType WebInputMethodControllerImpl::TextInputType() {
   return GetFrame()->GetInputMethodController().TextInputType();
+}
+
+WebRange WebInputMethodControllerImpl::CompositionRange() {
+  EphemeralRange range =
+      GetFrame()->GetInputMethodController().CompositionEphemeralRange();
+
+  if (range.IsNull())
+    return WebRange();
+
+  Element* editable =
+      GetFrame()->Selection().RootEditableElementOrDocumentElement();
+
+  editable->GetDocument().UpdateStyleAndLayoutIgnorePendingStylesheets();
+
+  return PlainTextRange::Create(*editable, range);
 }
 
 WebRange WebInputMethodControllerImpl::GetSelectionOffsets() const {

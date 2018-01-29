@@ -46,7 +46,7 @@ class PLATFORM_EXPORT UnacceleratedImageBufferSurface
   UnacceleratedImageBufferSurface(
       const IntSize&,
       ImageInitializationMode = kInitializeImagePixels,
-      const CanvasColorParams& = CanvasColorParams(kLegacyCanvasColorSpace,
+      const CanvasColorParams& = CanvasColorParams(kSRGBCanvasColorSpace,
                                                    kRGBA8CanvasPixelFormat,
                                                    kNonOpaque));
   ~UnacceleratedImageBufferSurface() override;
@@ -59,8 +59,8 @@ class PLATFORM_EXPORT UnacceleratedImageBufferSurface
                    int x,
                    int y) override;
 
-  RefPtr<StaticBitmapImage> NewImageSnapshot(AccelerationHint,
-                                             SnapshotReason) override;
+  scoped_refptr<StaticBitmapImage> NewImageSnapshot(AccelerationHint,
+                                                    SnapshotReason) override;
 
  private:
   sk_sp<SkSurface> surface_;

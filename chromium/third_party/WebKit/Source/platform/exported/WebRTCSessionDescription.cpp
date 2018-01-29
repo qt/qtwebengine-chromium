@@ -30,8 +30,8 @@
 
 #include "public/platform/WebRTCSessionDescription.h"
 
+#include "base/memory/scoped_refptr.h"
 #include "platform/wtf/RefCounted.h"
-#include "platform/wtf/RefPtr.h"
 #include "public/platform/WebString.h"
 
 namespace blink {
@@ -39,8 +39,9 @@ namespace blink {
 class WebRTCSessionDescriptionPrivate final
     : public RefCounted<WebRTCSessionDescriptionPrivate> {
  public:
-  static RefPtr<WebRTCSessionDescriptionPrivate> Create(const WebString& type,
-                                                        const WebString& sdp);
+  static scoped_refptr<WebRTCSessionDescriptionPrivate> Create(
+      const WebString& type,
+      const WebString& sdp);
 
   WebString GetType() { return type_; }
   void SetType(const WebString& type) { type_ = type; }
@@ -55,10 +56,10 @@ class WebRTCSessionDescriptionPrivate final
   WebString sdp_;
 };
 
-RefPtr<WebRTCSessionDescriptionPrivate> WebRTCSessionDescriptionPrivate::Create(
-    const WebString& type,
-    const WebString& sdp) {
-  return WTF::AdoptRef(new WebRTCSessionDescriptionPrivate(type, sdp));
+scoped_refptr<WebRTCSessionDescriptionPrivate>
+WebRTCSessionDescriptionPrivate::Create(const WebString& type,
+                                        const WebString& sdp) {
+  return base::AdoptRef(new WebRTCSessionDescriptionPrivate(type, sdp));
 }
 
 WebRTCSessionDescriptionPrivate::WebRTCSessionDescriptionPrivate(

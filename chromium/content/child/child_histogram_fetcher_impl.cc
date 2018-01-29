@@ -13,7 +13,6 @@
 #include "base/metrics/persistent_histogram_allocator.h"
 #include "base/single_thread_task_runner.h"
 #include "content/child/child_process.h"
-#include "content/common/child_process_messages.h"
 #include "ipc/ipc_sender.h"
 #include "mojo/public/cpp/bindings/strong_binding.h"
 #include "mojo/public/cpp/system/platform_handle.h"
@@ -26,7 +25,7 @@ ChildHistogramFetcherFactoryImpl::~ChildHistogramFetcherFactoryImpl() {}
 
 void ChildHistogramFetcherFactoryImpl::Create(
     content::mojom::ChildHistogramFetcherFactoryRequest request) {
-  mojo::MakeStrongBinding(base::MakeUnique<ChildHistogramFetcherFactoryImpl>(),
+  mojo::MakeStrongBinding(std::make_unique<ChildHistogramFetcherFactoryImpl>(),
                           std::move(request));
 }
 
@@ -51,7 +50,7 @@ void ChildHistogramFetcherFactoryImpl::CreateFetcher(
     global_allocator->CreateTrackingHistograms(global_allocator->Name());
 
   content::mojom::ChildHistogramFetcherPtr child_histogram_interface;
-  mojo::MakeStrongBinding(base::MakeUnique<ChildHistogramFetcherImpl>(),
+  mojo::MakeStrongBinding(std::make_unique<ChildHistogramFetcherImpl>(),
                           std::move(request));
 }
 

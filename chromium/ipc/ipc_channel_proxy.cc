@@ -30,8 +30,9 @@ namespace IPC {
 
 ChannelProxy::Context::Context(
     Listener* listener,
-    const scoped_refptr<base::SingleThreadTaskRunner>& ipc_task_runner)
-    : listener_task_runner_(base::ThreadTaskRunnerHandle::Get()),
+    const scoped_refptr<base::SingleThreadTaskRunner>& ipc_task_runner,
+    const scoped_refptr<base::SingleThreadTaskRunner>& listener_task_runner)
+    : listener_task_runner_(listener_task_runner),
       listener_(listener),
       ipc_task_runner_(ipc_task_runner),
       channel_connected_called_(false),
@@ -49,8 +50,7 @@ ChannelProxy::Context::Context(
   DCHECK(!listener || (ipc_task_runner_.get() != listener_task_runner_.get()));
 }
 
-ChannelProxy::Context::~Context() {
-}
+ChannelProxy::Context::~Context() = default;
 
 void ChannelProxy::Context::ClearIPCTaskRunner() {
   ipc_task_runner_ = NULL;
@@ -395,9 +395,10 @@ std::unique_ptr<ChannelProxy> ChannelProxy::Create(
     const IPC::ChannelHandle& channel_handle,
     Channel::Mode mode,
     Listener* listener,
-    const scoped_refptr<base::SingleThreadTaskRunner>& ipc_task_runner) {
+    const scoped_refptr<base::SingleThreadTaskRunner>& ipc_task_runner,
+    const scoped_refptr<base::SingleThreadTaskRunner>& listener_task_runner) {
   std::unique_ptr<ChannelProxy> channel(
-      new ChannelProxy(listener, ipc_task_runner));
+      new ChannelProxy(listener, ipc_task_runner, listener_task_runner));
   channel->Init(channel_handle, mode, true);
   return channel;
 }
@@ -406,9 +407,10 @@ std::unique_ptr<ChannelProxy> ChannelProxy::Create(
 std::unique_ptr<ChannelProxy> ChannelProxy::Create(
     std::unique_ptr<ChannelFactory> factory,
     Listener* listener,
-    const scoped_refptr<base::SingleThreadTaskRunner>& ipc_task_runner) {
+    const scoped_refptr<base::SingleThreadTaskRunner>& ipc_task_runner,
+    const scoped_refptr<base::SingleThreadTaskRunner>& listener_task_runner) {
   std::unique_ptr<ChannelProxy> channel(
-      new ChannelProxy(listener, ipc_task_runner));
+      new ChannelProxy(listener, ipc_task_runner, listener_task_runner));
   channel->Init(std::move(factory), true);
   return channel;
 }
@@ -422,8 +424,10 @@ ChannelProxy::ChannelProxy(Context* context)
 
 ChannelProxy::ChannelProxy(
     Listener* listener,
-    const scoped_refptr<base::SingleThreadTaskRunner>& ipc_task_runner)
-    : context_(new Context(listener, ipc_task_runner)), did_init_(false) {
+    const scoped_refptr<base::SingleThreadTaskRunner>& ipc_task_runner,
+    const scoped_refptr<base::SingleThreadTaskRunner>& listener_task_runner)
+    : context_(new Context(listener, ipc_task_runner, listener_task_runner)),
+      did_init_(false) {
 #if defined(ENABLE_IPC_FUZZER)
   outgoing_message_filter_ = NULL;
 #endif

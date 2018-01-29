@@ -5,11 +5,11 @@
 #ifndef FormDataBytesConsumer_h
 #define FormDataBytesConsumer_h
 
+#include "base/memory/scoped_refptr.h"
 #include "modules/ModulesExport.h"
 #include "modules/fetch/BytesConsumer.h"
 #include "platform/heap/Handle.h"
 #include "platform/wtf/Forward.h"
-#include "platform/wtf/RefPtr.h"
 
 namespace blink {
 
@@ -24,10 +24,10 @@ class FormDataBytesConsumer final : public BytesConsumer {
   explicit MODULES_EXPORT FormDataBytesConsumer(DOMArrayBufferView*);
   MODULES_EXPORT FormDataBytesConsumer(const void* data, size_t);
   MODULES_EXPORT FormDataBytesConsumer(ExecutionContext*,
-                                       RefPtr<EncodedFormData>);
+                                       scoped_refptr<EncodedFormData>);
   MODULES_EXPORT static FormDataBytesConsumer* CreateForTesting(
       ExecutionContext* execution_context,
-      RefPtr<EncodedFormData> form_data,
+      scoped_refptr<EncodedFormData> form_data,
       BytesConsumer* consumer) {
     return new FormDataBytesConsumer(execution_context, std::move(form_data),
                                      consumer);
@@ -40,10 +40,11 @@ class FormDataBytesConsumer final : public BytesConsumer {
   Result EndRead(size_t read_size) override {
     return impl_->EndRead(read_size);
   }
-  RefPtr<BlobDataHandle> DrainAsBlobDataHandle(BlobSizePolicy policy) override {
+  scoped_refptr<BlobDataHandle> DrainAsBlobDataHandle(
+      BlobSizePolicy policy) override {
     return impl_->DrainAsBlobDataHandle(policy);
   }
-  RefPtr<EncodedFormData> DrainAsFormData() override {
+  scoped_refptr<EncodedFormData> DrainAsFormData() override {
     return impl_->DrainAsFormData();
   }
   void SetClient(BytesConsumer::Client* client) override {
@@ -57,14 +58,14 @@ class FormDataBytesConsumer final : public BytesConsumer {
   Error GetError() const override { return impl_->GetError(); }
   String DebugName() const override { return impl_->DebugName(); }
 
-  DEFINE_INLINE_TRACE() {
+  void Trace(blink::Visitor* visitor) override {
     visitor->Trace(impl_);
     BytesConsumer::Trace(visitor);
   }
 
  private:
   MODULES_EXPORT FormDataBytesConsumer(ExecutionContext*,
-                                       RefPtr<EncodedFormData>,
+                                       scoped_refptr<EncodedFormData>,
                                        BytesConsumer*);
 
   const Member<BytesConsumer> impl_;

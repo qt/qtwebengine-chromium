@@ -6,42 +6,73 @@
 
 #include "xfa/fxfa/cxfa_ffline.h"
 
-#include "xfa/fxgraphics/cxfa_color.h"
+#include "xfa/fxgraphics/cxfa_gecolor.h"
+#include "xfa/fxgraphics/cxfa_gepath.h"
 #include "xfa/fxgraphics/cxfa_graphics.h"
-#include "xfa/fxgraphics/cxfa_path.h"
+
+namespace {
+
+CFX_GraphStateData::LineCap LineCapToFXGE(XFA_AttributeEnum iLineCap) {
+  switch (iLineCap) {
+    case XFA_AttributeEnum::Round:
+      return CFX_GraphStateData::LineCapRound;
+    case XFA_AttributeEnum::Butt:
+      return CFX_GraphStateData::LineCapButt;
+    default:
+      break;
+  }
+  return CFX_GraphStateData::LineCapSquare;
+}
+
+}  // namespace
 
 CXFA_FFLine::CXFA_FFLine(CXFA_WidgetAcc* pDataAcc) : CXFA_FFDraw(pDataAcc) {}
 
 CXFA_FFLine::~CXFA_FFLine() {}
 
 void CXFA_FFLine::GetRectFromHand(CFX_RectF& rect,
-                                  int32_t iHand,
+                                  XFA_AttributeEnum iHand,
                                   float fLineWidth) {
   float fHalfWidth = fLineWidth / 2.0f;
   if (rect.height < 1.0f) {
     switch (iHand) {
-      case XFA_ATTRIBUTEENUM_Left:
+      case XFA_AttributeEnum::Left:
         rect.top -= fHalfWidth;
         break;
-      case XFA_ATTRIBUTEENUM_Right:
+      case XFA_AttributeEnum::Right:
         rect.top += fHalfWidth;
+      case XFA_AttributeEnum::Even:
+        break;
+      default:
+        NOTREACHED();
+        break;
     }
   } else if (rect.width < 1.0f) {
     switch (iHand) {
-      case XFA_ATTRIBUTEENUM_Left:
+      case XFA_AttributeEnum::Left:
         rect.left += fHalfWidth;
         break;
-      case XFA_ATTRIBUTEENUM_Right:
+      case XFA_AttributeEnum::Right:
         rect.left += fHalfWidth;
+        break;
+      case XFA_AttributeEnum::Even:
+        break;
+      default:
+        NOTREACHED();
         break;
     }
   } else {
     switch (iHand) {
-      case XFA_ATTRIBUTEENUM_Left:
+      case XFA_AttributeEnum::Left:
         rect.Inflate(fHalfWidth, fHalfWidth);
         break;
-      case XFA_ATTRIBUTEENUM_Right:
+      case XFA_AttributeEnum::Right:
         rect.Deflate(fHalfWidth, fHalfWidth);
+        break;
+      case XFA_AttributeEnum::Even:
+        break;
+      default:
+        NOTREACHED();
         break;
     }
   }
@@ -53,36 +84,37 @@ void CXFA_FFLine::RenderWidget(CXFA_Graphics* pGS,
   if (!IsMatchVisibleStatus(dwStatus))
     return;
 
-  CXFA_Value value = m_pDataAcc->GetFormValue();
-  if (!value)
+  CXFA_ValueData valueData = m_pDataAcc->GetFormValueData();
+  if (!valueData.HasValidNode())
     return;
 
-  CXFA_Line lineObj = value.GetLine();
+  CXFA_LineData lineData = valueData.GetLineData();
   FX_ARGB lineColor = 0xFF000000;
-  int32_t iStrokeType = 0;
   float fLineWidth = 1.0f;
-  int32_t iCap = 0;
-  CXFA_Edge edge = lineObj.GetEdge();
-  if (edge) {
-    if (edge.GetPresence() != XFA_ATTRIBUTEENUM_Visible)
+  XFA_AttributeEnum iStrokeType = XFA_AttributeEnum::Unknown;
+  XFA_AttributeEnum iCap = XFA_AttributeEnum::Unknown;
+  CXFA_EdgeData edgeData = lineData.GetEdgeData();
+  if (edgeData.HasValidNode()) {
+    if (!edgeData.IsVisible())
       return;
 
-    lineColor = edge.GetColor();
-    iStrokeType = edge.GetStrokeType();
-    fLineWidth = edge.GetThickness();
-    iCap = edge.GetCapType();
+    lineColor = edgeData.GetColor();
+    iStrokeType = edgeData.GetStrokeType();
+    fLineWidth = edgeData.GetThickness();
+    iCap = edgeData.GetCapType();
   }
 
   CFX_Matrix mtRotate = GetRotateMatrix();
   mtRotate.Concat(matrix);
 
   CFX_RectF rtLine = GetRectWithoutRotate();
-  if (CXFA_Margin mgWidget = m_pDataAcc->GetMargin())
-    XFA_RectWidthoutMargin(rtLine, mgWidget);
+  CXFA_MarginData marginData = m_pDataAcc->GetMarginData();
+  if (marginData.HasValidNode())
+    XFA_RectWidthoutMargin(rtLine, marginData);
 
-  GetRectFromHand(rtLine, lineObj.GetHand(), fLineWidth);
-  CXFA_Path linePath;
-  if (lineObj.GetSlope() && rtLine.right() > 0.0f && rtLine.bottom() > 0.0f)
+  GetRectFromHand(rtLine, lineData.GetHand(), fLineWidth);
+  CXFA_GEPath linePath;
+  if (lineData.GetSlope() && rtLine.right() > 0.0f && rtLine.bottom() > 0.0f)
     linePath.AddLine(rtLine.TopRight(), rtLine.BottomLeft());
   else
     linePath.AddLine(rtLine.TopLeft(), rtLine.BottomRight());
@@ -91,8 +123,9 @@ void CXFA_FFLine::RenderWidget(CXFA_Graphics* pGS,
   pGS->SetLineWidth(fLineWidth);
   pGS->EnableActOnDash();
   XFA_StrokeTypeSetLineDash(pGS, iStrokeType, iCap);
-  pGS->SetStrokeColor(CXFA_Color(lineColor));
-  pGS->SetLineCap(XFA_LineCapToFXGE(iCap));
+
+  pGS->SetStrokeColor(CXFA_GEColor(lineColor));
+  pGS->SetLineCap(LineCapToFXGE(iCap));
   pGS->StrokePath(&linePath, &mtRotate);
   pGS->RestoreGraphState();
 }

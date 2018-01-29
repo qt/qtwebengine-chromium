@@ -12,13 +12,16 @@
   </outputs>
   <release seq="1">
     <structures>
+      <structure name="IDR_MD_EXTENSIONS_ITEM_BEHAVIOR_HTML"
+                 file="item_behavior.html"
+                 type="chrome_html" />
+      <structure name="IDR_MD_EXTENSIONS_ITEM_BEHAVIOR_JS"
+                 file="item_behavior.js"
+                 type="chrome_html" />
       <structure name="IDR_MD_EXTENSIONS_EXTENSIONS_HTML"
                  file="extensions.html"
                  flattenhtml="true"
                  allowexternalscript="true"
-                 type="chrome_html" />
-      <structure name="IDR_MD_EXTENSIONS_EXTENSIONS_JS"
-                 file="extensions.js"
                  type="chrome_html" />
       <structure name="IDR_MD_EXTENSIONS_CODE_SECTION_HTML"
                  file="code_section.html"
@@ -83,6 +86,12 @@
                  flattenhtml="true" />
       <structure name="IDR_MD_EXTENSIONS_ICONS_HTML"
                  file="icons.html"
+                 type="chrome_html" />
+      <structure name="IDR_MD_EXTENSIONS_INSTALL_WARNINGS_DIALOG_HTML"
+                 file="install_warnings_dialog.html"
+                 type="chrome_html" />
+      <structure name="IDR_MD_EXTENSIONS_INSTALL_WARNINGS_DIALOG_JS"
+                 file="install_warnings_dialog.js"
                  type="chrome_html" />
       <structure name="IDR_MD_EXTENSIONS_ITEM_HTML"
                  file="item.html"
@@ -155,6 +164,12 @@
                  type="chrome_html" />
       <structure name="IDR_MD_EXTENSIONS_SIDEBAR_JS"
                  file="sidebar.js"
+                 type="chrome_html" />
+      <structure name="IDR_MD_EXTENSIONS_TOGGLE_ROW_HTML"
+                 file="toggle_row.html"
+                 type="chrome_html" />
+      <structure name="IDR_MD_EXTENSIONS_TOGGLE_ROW_JS"
+                 file="toggle_row.js"
                  type="chrome_html" />
       <structure name="IDR_MD_EXTENSIONS_TOOLBAR_HTML"
                  file="toolbar.html"

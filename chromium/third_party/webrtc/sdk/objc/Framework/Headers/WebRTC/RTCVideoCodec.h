@@ -15,6 +15,12 @@
 
 NS_ASSUME_NONNULL_BEGIN
 
+RTC_EXPORT extern NSString *const kRTCVideoCodecVp8Name;
+RTC_EXPORT extern NSString *const kRTCVideoCodecVp9Name;
+RTC_EXPORT extern NSString *const kRTCVideoCodecH264Name;
+RTC_EXPORT extern NSString *const kRTCLevel31ConstrainedHigh;
+RTC_EXPORT extern NSString *const kRTCLevel31ConstrainedBaseline;
+
 /** Represents an encoded frame's type. */
 typedef NS_ENUM(NSUInteger, RTCFrameType) {
   RTCFrameTypeEmptyFrame = 0,
@@ -84,7 +90,7 @@ typedef NS_ENUM(NSUInteger, RTCVideoCodecMode) {
 
 /** Holds information to identify a codec. Corresponds to cricket::VideoCodec. */
 RTC_EXPORT
-@interface RTCVideoCodecInfo : NSObject
+@interface RTCVideoCodecInfo : NSObject <NSCoding>
 
 - (instancetype)init NS_UNAVAILABLE;
 

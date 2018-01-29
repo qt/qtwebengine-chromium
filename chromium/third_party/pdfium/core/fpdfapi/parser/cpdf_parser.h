@@ -57,7 +57,13 @@ class CPDF_Parser {
 
   void SetPassword(const char* password) { m_Password = password; }
   ByteString GetPassword() { return m_Password; }
+
   CPDF_Dictionary* GetTrailer() const;
+
+  // Returns a new trailer which combines the last read trailer with the /Root
+  // and /Info from previous ones.
+  std::unique_ptr<CPDF_Dictionary> GetCombinedTrailer() const;
+
   FX_FILESIZE GetLastXRefOffset() const { return m_LastXRefOffset; }
 
   uint32_t GetPermissions() const;
@@ -155,7 +161,7 @@ class CPDF_Parser {
   };
 
   Error StartParseInternal(CPDF_Document* pDocument);
-  CPDF_Object* ParseDirect(CPDF_Object* pObj);
+  FX_FILESIZE ParseStartXRef();
   bool LoadAllCrossRefV4(FX_FILESIZE pos);
   bool LoadAllCrossRefV5(FX_FILESIZE pos);
   bool LoadCrossRefV5(FX_FILESIZE* pos, bool bMainXRef);
@@ -166,7 +172,7 @@ class CPDF_Parser {
   bool LoadLinearizedAllCrossRefV5(FX_FILESIZE pos);
   Error LoadLinearizedMainXRefTable();
   RetainPtr<CPDF_StreamAcc> GetObjectStream(uint32_t number);
-  bool ParseLinearizedHeader();
+  std::unique_ptr<CPDF_LinearizedHeader> ParseLinearizedHeader();
   void SetEncryptDictionary(CPDF_Dictionary* pDict);
   void ShrinkObjectMap(uint32_t size);
   // A simple check whether the cross reference table matches with

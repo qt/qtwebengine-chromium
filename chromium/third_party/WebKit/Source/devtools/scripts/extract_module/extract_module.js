@@ -29,7 +29,7 @@ const APPLICATION_DESCRIPTORS = [
  * If the transformation removes all the files of a module:
  * ['text_editor']
  */
-const MODULES_TO_REMOVE = [];
+const MODULES_TO_REMOVE = ['profiler_test_runner', 'heap_snapshot_test_runner'];
 
 /**
  * If moving to a new module:
@@ -39,7 +39,8 @@ const MODULES_TO_REMOVE = [];
  * {file: 'ui/SomeFile.js', existing: 'common'}
  */
 const JS_FILES_MAPPING = [
-  {file: 'test_runner/PageMockTestRunner.js', new: 'sdk_test_runner'},
+  {file: 'heap_snapshot_test_runner/HeapSnapshotTestRunner.js', new: 'heap_profiler_test_runner'},
+  {file: 'profiler_test_runner/ProfilerTestRunner.js', new: 'cpu_profiler_test_runner'},
 ];
 
 /**
@@ -52,8 +53,14 @@ const JS_FILES_MAPPING = [
  * }
  */
 const MODULE_MAPPING = {
-  sdk_test_runner: {
-    dependencies: ['sdk', 'test_runner'],
+  heap_profiler_test_runner: {
+    dependencies: ['heap_snapshot_worker', 'test_runner'],
+    dependents: [],
+    applications: ['integration_test_runner.json'],
+    autostart: false,
+  },
+  cpu_profiler_test_runner: {
+    dependencies: ['profiler', 'test_runner'],
     dependents: [],
     applications: ['integration_test_runner.json'],
     autostart: false,
@@ -198,7 +205,8 @@ function calculateIdentifiers() {
     let identifiers = [];
     let lines = content.split('\n');
     for (let line of lines) {
-      let match = line.match(new RegExp(`^([a-z_A-Z0-9\.]+)\\s=`)) || line.match(new RegExp(`^([a-z_A-Z0-9\.]+);`));
+      let match =
+          line.match(new RegExp(`^\\s*([a-z_A-Z0-9\.]+)\\s=`)) || line.match(new RegExp(`^\\s*([a-z_A-Z0-9\.]+);`));
       if (!match)
         continue;
       let name = match[1];
@@ -382,7 +390,7 @@ function renameIdentifiers(identifierMap) {
         if (filePath.includes('externs.js'))
           return;
         if (filePath.includes('eslint') || filePath.includes('lighthouse-background.js') || filePath.includes('/cm/') ||
-            filePath.includes('/xterm.js/') || filePath.includes('/acorn/') || filePath.includes('/gonzales-scss'))
+            filePath.includes('/xterm.js/') || filePath.includes('/acorn/'))
           return;
         if (filePath.includes('/cm_modes/') && !filePath.includes('DefaultCodeMirror') &&
             !filePath.includes('module.json'))

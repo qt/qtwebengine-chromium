@@ -101,6 +101,97 @@ and run it as normal.  You may find `bin/droid` convenient.
     adb push resources /data/local/tmp
     adb shell "cd /data/local/tmp; ./dm --src gm --config gl"
 
+
+ChromeOS
+--------------
+To cross-compile Skia for arm ChromeOS devices the following is needed:
+
+  - Clang 4 or newer
+  - An armhf sysroot
+  - The (E)GL lib files on the arm chromebook to link against.
+
+To compile Skia for an x86 ChromeOS device, one only needs Clang and the lib files.
+
+If you have access to CIPD, you can fetch all of these as follows:
+
+    python infra/bots/assets/clang_linux/download.py  -t /opt/clang
+    python infra/bots/assets/armhf_sysroot/download.py -t /opt/armhf_sysroot
+    python infra/bots/assets/chromebook_arm_gles/download.py -t /opt/chromebook_arm_gles
+    python infra/bots/assets/chromebook_x86_64_gles/download.py -t /opt/chromebook_x86_64_gles
+
+If you don't have authorization to use those assets, then see the README.md files for
+[armhf_sysroot](https://skia.googlesource.com/skia/+/master/infra/bots/assets/armhf_sysroot/README.md),
+[chromebook_arm_gles](https://skia.googlesource.com/skia/+/master/infra/bots/assets/chromebook_arm_gles/README.md), and
+[chromebook_x86_64_gles](https://skia.googlesource.com/skia/+/master/infra/bots/assets/chromebook_x86_64_gles/README.md)
+for instructions on creating those assets.
+
+Once those files are in place, generate the GN args that resemble the following:
+
+    #ARM
+    cc= "/opt/clang/bin/clang"
+    cxx = "/opt/clang/bin/clang++"
+
+    extra_asmflags = [
+        "--target=armv7a-linux-gnueabihf",
+        "--sysroot=/opt/armhf_sysroot/",
+        "-march=armv7-a",
+        "-mfpu=neon",
+        "-mthumb",
+    ]
+    extra_cflags=[
+        "--target=armv7a-linux-gnueabihf",
+        "--sysroot=/opt/armhf_sysroot",
+        "-I/opt/chromebook_arm_gles/include",
+        "-I/opt/armhf_sysroot/include/",
+        "-I/opt/armhf_sysroot/include/c++/4.8.4/",
+        "-I/opt/armhf_sysroot/include/c++/4.8.4/arm-linux-gnueabihf/",
+        "-DMESA_EGL_NO_X11_HEADERS",
+        "-funwind-tables",
+    ]
+    extra_ldflags=[
+        "--sysroot=/opt/armhf_sysroot",
+        "-B/opt/armhf_sysroot/bin",
+        "-B/opt/armhf_sysroot/gcc-cross",
+        "-L/opt/armhf_sysroot/gcc-cross",
+        "-L/opt/armhf_sysroot/lib",
+        "-L/opt/chromebook_arm_gles/lib",
+        "--target=armv7a-linux-gnueabihf",
+    ]
+    target_cpu="arm"
+    skia_use_fontconfig = false
+    skia_use_system_freetype2 = false
+    skia_use_egl = true
+
+
+    # x86_64
+    cc= "/opt/clang/bin/clang"
+    cxx = "/opt/clang/bin/clang++"
+    extra_cflags=[
+        "-I/opt/clang/include/c++/v1/",
+        "-I/opt/chromebook_x86_64_gles/include",
+        "-DMESA_EGL_NO_X11_HEADERS",
+        "-DEGL_NO_IMAGE_EXTERNAL",
+    ]
+    extra_ldflags=[
+        "-stdlib=libc++",
+        "-fuse-ld=lld",
+        "-L/opt/chromebook_x86_64_gles/lib",
+    ]
+    target_cpu="x64"
+    skia_use_fontconfig = false
+    skia_use_system_freetype2 = false
+    skia_use_egl = true
+
+Compile dm (or another executable of your choice) with ninja, as per usual.
+
+Push the binary to a chromebook via ssh and [run dm as normal](https://skia.org/dev/testing/tests)
+using the gles GPU config.
+
+Most chromebooks by default have their home directory partition marked as noexec.
+To avoid "permission denied" errors, remember to run something like:
+
+    sudo mount -i -o remount,exec /home/chronos
+
 Mac
 ---
 
@@ -116,16 +207,14 @@ This defaults to `target_cpu="arm64"`.  Choosing `x64` targets the iOS simulator
     bin/gn gen out/ios32  --args='target_os="ios" target_cpu="arm"'
     bin/gn gen out/iossim --args='target_os="ios" target_cpu="x64"'
 
-Googlers who want to sign and run iOS test binaries can do so by running something like
+This will also package (and for devices, sign) iOS test binaries. For the moment a
+Google provisioning profile is needed to sign.
 
-    python gn/package_ios.py out/Debug/dm
-    python gn/package_ios.py out/Release/nanobench
-
-These commands will create and sign `dm.app` or `nanobench.app` packages you
-can push to iOS devices registered for Google development.  `ios-deploy` makes
-installing and running these packages easy:
+For signed packages `ios-deploy` makes installing and running them on a device easy:
 
     ios-deploy -b out/Debug/dm.app -d --args "--match foo"
+
+Alternatively you can generate an Xcode project by passing `--ide=xcode` to `bin/gn gen`.
 
 If you find yourself missing a Google signing identity or provisioning profile,
 you'll want to have a read through go/appledev.

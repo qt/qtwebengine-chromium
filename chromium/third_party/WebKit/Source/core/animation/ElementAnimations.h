@@ -31,12 +31,12 @@
 #ifndef ElementAnimations_h
 #define ElementAnimations_h
 
+#include "base/macros.h"
+#include "base/memory/scoped_refptr.h"
 #include "core/animation/EffectStack.h"
 #include "core/animation/css/CSSAnimations.h"
 #include "platform/wtf/HashCountedSet.h"
 #include "platform/wtf/HashMap.h"
-#include "platform/wtf/RefPtr.h"
-#include "platform/wtf/Vector.h"
 
 namespace blink {
 
@@ -45,8 +45,6 @@ class CSSAnimations;
 using AnimationCountedSet = HeapHashCountedSet<WeakMember<Animation>>;
 
 class ElementAnimations : public GarbageCollectedFinalized<ElementAnimations> {
-  WTF_MAKE_NONCOPYABLE(ElementAnimations);
-
  public:
   ElementAnimations();
   ~ElementAnimations();
@@ -81,7 +79,7 @@ class ElementAnimations : public GarbageCollectedFinalized<ElementAnimations> {
   void UpdateBaseComputedStyle(const ComputedStyle*);
   void ClearBaseComputedStyle();
 
-  DECLARE_TRACE();
+  void Trace(blink::Visitor*);
 
  private:
   bool IsAnimationStyleChange() const;
@@ -90,10 +88,11 @@ class ElementAnimations : public GarbageCollectedFinalized<ElementAnimations> {
   CSSAnimations css_animations_;
   AnimationCountedSet animations_;
   bool animation_style_change_;
-  RefPtr<ComputedStyle> base_computed_style_;
+  scoped_refptr<ComputedStyle> base_computed_style_;
 
   // CSSAnimations checks if a style change is due to animation.
   friend class CSSAnimations;
+  DISALLOW_COPY_AND_ASSIGN(ElementAnimations);
 };
 
 }  // namespace blink

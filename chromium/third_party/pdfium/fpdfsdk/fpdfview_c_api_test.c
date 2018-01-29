@@ -11,6 +11,7 @@
 
 #include "public/fpdf_annot.h"
 #include "public/fpdf_attachment.h"
+#include "public/fpdf_catalog.h"
 #include "public/fpdf_dataavail.h"
 #include "public/fpdf_doc.h"
 #include "public/fpdf_edit.h"
@@ -77,6 +78,9 @@ int CheckPDFiumCApi() {
     CHK(FPDFAttachment_GetStringValue);
     CHK(FPDFAttachment_SetFile);
     CHK(FPDFAttachment_GetFile);
+
+    // fpdf_catalog.h
+    CHK(FPDFCatalog_IsTagged);
 
     // fpdf_dataavail.h
     CHK(FPDFAvail_Create);
@@ -206,8 +210,8 @@ int CheckPDFiumCApi() {
     CHK(FPDF_SetFormFieldHighlightAlpha);
     CHK(FPDF_RemoveFormFieldHighlight);
     CHK(FPDF_FFLDraw);
+    CHK(FPDF_GetFormType);
 #ifdef PDF_ENABLE_XFA
-    CHK(FPDF_HasXFAField);
     CHK(FPDF_LoadXFA);
     CHK(FPDF_Widget_Undo);
     CHK(FPDF_Widget_Redo);

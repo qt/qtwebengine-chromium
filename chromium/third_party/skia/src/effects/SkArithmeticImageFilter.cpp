@@ -8,6 +8,7 @@
 #include "SkArithmeticImageFilter.h"
 #include "SkCanvas.h"
 #include "SkColorSpaceXformer.h"
+#include "SkImageFilterPriv.h"
 #include "SkNx.h"
 #include "SkReadBuffer.h"
 #include "SkSpecialImage.h"
@@ -16,6 +17,7 @@
 #include "SkXfermodeImageFilter.h"
 #if SK_SUPPORT_GPU
 #include "GrClip.h"
+#include "GrColorSpaceXform.h"
 #include "GrContext.h"
 #include "GrRenderTargetContext.h"
 #include "GrTextureProxy.h"
@@ -305,26 +307,29 @@ sk_sp<SkSpecialImage> ArithmeticImageFilterImpl::filterImageGPU(
     if (backgroundProxy) {
         SkMatrix backgroundMatrix = SkMatrix::MakeTrans(-SkIntToScalar(backgroundOffset.fX),
                                                         -SkIntToScalar(backgroundOffset.fY));
-        sk_sp<GrColorSpaceXform> bgXform =
-                GrColorSpaceXform::Make(background->getColorSpace(), outputProperties.colorSpace());
+        GrPixelConfig bgConfig = backgroundProxy->config();
         bgFP = GrTextureDomainEffect::Make(
-                std::move(backgroundProxy), std::move(bgXform), backgroundMatrix,
+                std::move(backgroundProxy), backgroundMatrix,
                 GrTextureDomain::MakeTexelDomain(background->subset()),
                 GrTextureDomain::kDecal_Mode, GrSamplerState::Filter::kNearest);
+        bgFP = GrColorSpaceXformEffect::Make(std::move(bgFP), background->getColorSpace(),
+                                             bgConfig, outputProperties.colorSpace());
     } else {
         bgFP = GrConstColorProcessor::Make(GrColor4f::TransparentBlack(),
-                                           GrConstColorProcessor::kIgnore_InputMode);
+                                           GrConstColorProcessor::InputMode::kIgnore);
     }
 
     if (foregroundProxy) {
         SkMatrix foregroundMatrix = SkMatrix::MakeTrans(-SkIntToScalar(foregroundOffset.fX),
                                                         -SkIntToScalar(foregroundOffset.fY));
-        sk_sp<GrColorSpaceXform> fgXform =
-                GrColorSpaceXform::Make(foreground->getColorSpace(), outputProperties.colorSpace());
+        GrPixelConfig fgConfig = foregroundProxy->config();
         auto foregroundFP = GrTextureDomainEffect::Make(
-                std::move(foregroundProxy), std::move(fgXform), foregroundMatrix,
+                std::move(foregroundProxy), foregroundMatrix,
                 GrTextureDomain::MakeTexelDomain(foreground->subset()),
                 GrTextureDomain::kDecal_Mode, GrSamplerState::Filter::kNearest);
+        foregroundFP = GrColorSpaceXformEffect::Make(std::move(foregroundFP),
+                                                     foreground->getColorSpace(), fgConfig,
+                                                     outputProperties.colorSpace());
         paint.addColorFragmentProcessor(std::move(foregroundFP));
 
         std::unique_ptr<GrFragmentProcessor> xferFP =
@@ -347,18 +352,19 @@ sk_sp<SkSpecialImage> ArithmeticImageFilterImpl::filterImageGPU(
     if (!renderTargetContext) {
         return nullptr;
     }
-    paint.setGammaCorrect(renderTargetContext->isGammaCorrect());
+    paint.setGammaCorrect(renderTargetContext->colorSpaceInfo().isGammaCorrect());
 
     SkMatrix matrix;
     matrix.setTranslate(SkIntToScalar(-bounds.left()), SkIntToScalar(-bounds.top()));
     renderTargetContext->drawRect(GrNoClip(), std::move(paint), GrAA::kNo, matrix,
                                   SkRect::Make(bounds));
 
-    return SkSpecialImage::MakeDeferredFromGpu(context,
-                                               SkIRect::MakeWH(bounds.width(), bounds.height()),
-                                               kNeedNewImageUniqueID_SpecialImage,
-                                               renderTargetContext->asTextureProxyRef(),
-                                               renderTargetContext->refColorSpace());
+    return SkSpecialImage::MakeDeferredFromGpu(
+            context,
+            SkIRect::MakeWH(bounds.width(), bounds.height()),
+            kNeedNewImageUniqueID_SpecialImage,
+            renderTargetContext->asTextureProxyRef(),
+            renderTargetContext->colorSpaceInfo().refColorSpace());
 }
 #endif
 

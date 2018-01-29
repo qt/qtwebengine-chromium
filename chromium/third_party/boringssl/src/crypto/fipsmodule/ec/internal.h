@@ -73,16 +73,37 @@
 #include <openssl/bn.h>
 #include <openssl/ex_data.h>
 #include <openssl/thread.h>
+#include <openssl/type_check.h>
+
+#include "../bn/internal.h"
 
 #if defined(__cplusplus)
 extern "C" {
 #endif
 
 
+// Cap the size of all field elements and scalars, including custom curves, to
+// 66 bytes, large enough to fit secp521r1 and brainpoolP512r1, which appear to
+// be the largest fields anyone plausibly uses.
+#define EC_MAX_SCALAR_BYTES 66
+#define EC_MAX_SCALAR_WORDS ((66 + BN_BYTES - 1) / BN_BYTES)
+
+OPENSSL_COMPILE_ASSERT(EC_MAX_SCALAR_WORDS <= BN_SMALL_MAX_WORDS,
+                       bn_small_functions_applicable);
+
+// An EC_SCALAR is a |BN_num_bits(order)|-bit integer. Only the first
+// |order->top| words are used. An |EC_SCALAR| is specific to an |EC_GROUP| and
+// must not be mixed between groups. Unless otherwise specified, it is fully
+// reduced modulo the |order|.
+typedef union {
+  // bytes is the representation of the scalar in little-endian order.
+  uint8_t bytes[EC_MAX_SCALAR_BYTES];
+  BN_ULONG words[EC_MAX_SCALAR_WORDS];
+} EC_SCALAR;
+
 struct ec_method_st {
   int (*group_init)(EC_GROUP *);
   void (*group_finish)(EC_GROUP *);
-  int (*group_copy)(EC_GROUP *, const EC_GROUP *);
   int (*group_set_curve)(EC_GROUP *, const BIGNUM *p, const BIGNUM *a,
                          const BIGNUM *b, BN_CTX *);
   int (*point_get_affine_coordinates)(const EC_GROUP *, const EC_POINT *,
@@ -93,8 +114,8 @@ struct ec_method_st {
   // Computes |r = p_scalar*p| if g_scalar is null. At least one of |g_scalar|
   // and |p_scalar| must be non-null, and |p| must be non-null if |p_scalar| is
   // non-null.
-  int (*mul)(const EC_GROUP *group, EC_POINT *r, const BIGNUM *g_scalar,
-             const EC_POINT *p, const BIGNUM *p_scalar, BN_CTX *ctx);
+  int (*mul)(const EC_GROUP *group, EC_POINT *r, const EC_SCALAR *g_scalar,
+             const EC_POINT *p, const EC_SCALAR *p_scalar, BN_CTX *ctx);
 
   // 'field_mul' and 'field_sqr' can be used by 'add' and 'dbl' so that the
   // same implementations of point operations can be used with different
@@ -114,12 +135,14 @@ const EC_METHOD *EC_GFp_mont_method(void);
 struct ec_group_st {
   const EC_METHOD *meth;
 
+  // Unlike all other |EC_POINT|s, |generator| does not own |generator->group|
+  // to avoid a reference cycle.
   EC_POINT *generator;
   BIGNUM order;
 
   int curve_name;  // optional NID for named curve
 
-  const BN_MONT_CTX *order_mont;  // data for ECDSA inverse
+  BN_MONT_CTX *order_mont;  // data for ECDSA inverse
 
   // The following members are handled by the method functions,
   // even if they appear generic
@@ -130,13 +153,17 @@ struct ec_group_st {
 
   int a_is_minus3;  // enable optimized point arithmetics for special case
 
+  CRYPTO_refcount_t references;
+
   BN_MONT_CTX *mont;  // Montgomery structure.
 
   BIGNUM one;  // The value one.
 } /* EC_GROUP */;
 
 struct ec_point_st {
-  const EC_METHOD *meth;
+  // group is an owning reference to |group|, unless this is
+  // |group->generator|.
+  EC_GROUP *group;
 
   BIGNUM X;
   BIGNUM Y;
@@ -145,20 +172,33 @@ struct ec_point_st {
 } /* EC_POINT */;
 
 EC_GROUP *ec_group_new(const EC_METHOD *meth);
-int ec_group_copy(EC_GROUP *dest, const EC_GROUP *src);
 
-// ec_group_get_order_mont returns a Montgomery context for operations modulo
-// |group|'s order. It may return NULL in the case that |group| is not a
-// built-in group.
-const BN_MONT_CTX *ec_group_get_order_mont(const EC_GROUP *group);
+// ec_bignum_to_scalar converts |in| to an |EC_SCALAR| and writes it to |*out|.
+// |in| must be non-negative and have at most |BN_num_bits(&group->order)| bits.
+// It returns one on success and zero on error. It does not ensure |in| is fully
+// reduced.
+int ec_bignum_to_scalar(const EC_GROUP *group, EC_SCALAR *out,
+                        const BIGNUM *in);
 
-int ec_wNAF_mul(const EC_GROUP *group, EC_POINT *r, const BIGNUM *g_scalar,
-                const EC_POINT *p, const BIGNUM *p_scalar, BN_CTX *ctx);
+// ec_random_nonzero_scalar sets |out| to a uniformly selected random value from
+// 1 to |group->order| - 1. It returns one on success and zero on error.
+int ec_random_nonzero_scalar(const EC_GROUP *group, EC_SCALAR *out,
+                             const uint8_t additional_data[32]);
+
+// ec_point_mul_scalar sets |r| to generator * |g_scalar| + |p| *
+// |p_scalar|. Unlike other functions which take |EC_SCALAR|, |g_scalar| and
+// |p_scalar| need not be fully reduced. They need only contain as many bits as
+// the order.
+int ec_point_mul_scalar(const EC_GROUP *group, EC_POINT *r,
+                        const EC_SCALAR *g_scalar, const EC_POINT *p,
+                        const EC_SCALAR *p_scalar, BN_CTX *ctx);
+
+int ec_wNAF_mul(const EC_GROUP *group, EC_POINT *r, const EC_SCALAR *g_scalar,
+                const EC_POINT *p, const EC_SCALAR *p_scalar, BN_CTX *ctx);
 
 // method functions in simple.c
 int ec_GFp_simple_group_init(EC_GROUP *);
 void ec_GFp_simple_group_finish(EC_GROUP *);
-int ec_GFp_simple_group_copy(EC_GROUP *, const EC_GROUP *);
 int ec_GFp_simple_group_set_curve(EC_GROUP *, const BIGNUM *p, const BIGNUM *a,
                                   const BIGNUM *b, BN_CTX *);
 int ec_GFp_simple_group_get_curve(const EC_GROUP *, BIGNUM *p, BIGNUM *a,
@@ -166,17 +206,12 @@ int ec_GFp_simple_group_get_curve(const EC_GROUP *, BIGNUM *p, BIGNUM *a,
 unsigned ec_GFp_simple_group_get_degree(const EC_GROUP *);
 int ec_GFp_simple_point_init(EC_POINT *);
 void ec_GFp_simple_point_finish(EC_POINT *);
-void ec_GFp_simple_point_clear_finish(EC_POINT *);
 int ec_GFp_simple_point_copy(EC_POINT *, const EC_POINT *);
 int ec_GFp_simple_point_set_to_infinity(const EC_GROUP *, EC_POINT *);
 int ec_GFp_simple_set_Jprojective_coordinates_GFp(const EC_GROUP *, EC_POINT *,
                                                   const BIGNUM *x,
                                                   const BIGNUM *y,
                                                   const BIGNUM *z, BN_CTX *);
-int ec_GFp_simple_get_Jprojective_coordinates_GFp(const EC_GROUP *,
-                                                  const EC_POINT *, BIGNUM *x,
-                                                  BIGNUM *y, BIGNUM *z,
-                                                  BN_CTX *);
 int ec_GFp_simple_point_set_affine_coordinates(const EC_GROUP *, EC_POINT *,
                                                const BIGNUM *x, const BIGNUM *y,
                                                BN_CTX *);
@@ -205,7 +240,6 @@ int ec_GFp_mont_group_init(EC_GROUP *);
 int ec_GFp_mont_group_set_curve(EC_GROUP *, const BIGNUM *p, const BIGNUM *a,
                                 const BIGNUM *b, BN_CTX *);
 void ec_GFp_mont_group_finish(EC_GROUP *);
-int ec_GFp_mont_group_copy(EC_GROUP *, const EC_GROUP *);
 int ec_GFp_mont_field_mul(const EC_GROUP *, BIGNUM *r, const BIGNUM *a,
                           const BIGNUM *b, BN_CTX *);
 int ec_GFp_mont_field_sqr(const EC_GROUP *, BIGNUM *r, const BIGNUM *a,

@@ -30,6 +30,7 @@ namespace sh
 {
 
 class TCompiler;
+class TParseContext;
 #ifdef ANGLE_ENABLE_HLSL
 class TranslatorHLSL;
 #endif  // ANGLE_ENABLE_HLSL
@@ -156,8 +157,10 @@ class TCompiler : public TShHandleBase
     // Add emulated functions to the built-in function emulator.
     virtual void initBuiltInFunctionEmulator(BuiltInFunctionEmulator *emu,
                                              ShCompileOptions compileOptions){};
-    // Translate to object code.
-    virtual void translate(TIntermBlock *root, ShCompileOptions compileOptions) = 0;
+    // Translate to object code. May generate performance warnings through the diagnostics.
+    virtual void translate(TIntermBlock *root,
+                           ShCompileOptions compileOptions,
+                           PerformanceDiagnostics *perfDiagnostics) = 0;
     // Insert statements to reference all members in unused uniform blocks with standard and shared
     // layout. This is to work around a Mac driver that treats unused standard/shared
     // uniform blocks as inactive.
@@ -186,7 +189,6 @@ class TCompiler : public TShHandleBase
 
     virtual bool shouldFlattenPragmaStdglInvariantAll() = 0;
     virtual bool shouldCollectVariables(ShCompileOptions compileOptions);
-    virtual bool needToInitializeGlobalsInAST() const { return IsWebGLBasedSpec(shaderSpec); }
 
     bool wereVariablesCollected() const;
     std::vector<sh::Attribute> attributes;
@@ -216,11 +218,20 @@ class TCompiler : public TShHandleBase
 
     // Removes unused function declarations and prototypes from the AST
     class UnusedPredicate;
-    bool pruneUnusedFunctions(TIntermBlock *root);
+    void pruneUnusedFunctions(TIntermBlock *root);
 
     TIntermBlock *compileTreeImpl(const char *const shaderStrings[],
                                   size_t numStrings,
                                   const ShCompileOptions compileOptions);
+
+    // Fetches and stores shader metadata that is not stored within the AST itself, such as shader
+    // version.
+    void setASTMetadata(const TParseContext &parseContext);
+
+    // Does checks that need to be run after parsing is complete and returns true if they pass.
+    bool checkAndSimplifyAST(TIntermBlock *root,
+                             const TParseContext &parseContext,
+                             ShCompileOptions compileOptions);
 
     sh::GLenum shaderType;
     ShShaderSpec shaderSpec;

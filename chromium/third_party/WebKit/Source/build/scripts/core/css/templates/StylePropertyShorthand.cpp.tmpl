@@ -29,26 +29,29 @@
 #include "platform/wtf/StdLibExtras.h"
 
 namespace blink {
-{% for property_id, property in properties.items() %}
+{% for property in properties %}
 
 const StylePropertyShorthand& {{property.lower_camel_name}}Shorthand() {
-  static constexpr CSSPropertyID {{property.lower_camel_name}}Properties[] = {
+  static const CSSProperty* {{property.lower_camel_name}}Properties[] = {
     {% for longhand_id in property.longhand_property_ids %}
-    {{longhand_id}},
+    &Get{{longhand_id}}(),
     {% endfor %}
   };
 
-  static constexpr StylePropertyShorthand {{property.lower_camel_name}}Longhands ({{property_id}}, {{property.lower_camel_name}}Properties, WTF_ARRAY_LENGTH({{property.lower_camel_name}}Properties));
+  static StylePropertyShorthand {{property.lower_camel_name}}Longhands(
+    {{property.property_id}},
+    {{property.lower_camel_name}}Properties,
+    WTF_ARRAY_LENGTH({{property.lower_camel_name}}Properties));
   return {{property.lower_camel_name}}Longhands;
 }
 {% endfor %}
 
 // TODO(ericwilligers): Retire this when offset-position and offset-anchor ship
 const StylePropertyShorthand& offsetShorthandWithoutPositionAnchor() {
-  static const CSSPropertyID offsetProperties[] = {
-    CSSPropertyOffsetPath,
-    CSSPropertyOffsetDistance,
-    CSSPropertyOffsetRotate,
+  static const CSSProperty* offsetProperties[] = {
+    &GetCSSPropertyOffsetPath(),
+    &GetCSSPropertyOffsetDistance(),
+    &GetCSSPropertyOffsetRotate(),
   };
   DEFINE_STATIC_LOCAL(StylePropertyShorthand, offsetLonghands, (CSSPropertyOffset, offsetProperties, WTF_ARRAY_LENGTH(offsetProperties)));
   return offsetLonghands;
@@ -57,14 +60,14 @@ const StylePropertyShorthand& offsetShorthandWithoutPositionAnchor() {
 // Returns an empty list if the property is not a shorthand
 const StylePropertyShorthand& shorthandForProperty(CSSPropertyID propertyID) {
   // FIXME: We shouldn't switch between shorthand/not shorthand based on a runtime flag
-  static constexpr StylePropertyShorthand emptyShorthand;
+  static StylePropertyShorthand emptyShorthand;
 
   if (propertyID == CSSPropertyOffset &&
       !RuntimeEnabledFeatures::CSSOffsetPositionAnchorEnabled())
     return offsetShorthandWithoutPositionAnchor();
   switch (propertyID) {
-    {% for property_id, property in properties.items() %}
-    case {{property_id}}:
+    {% for property in properties %}
+    case {{property.property_id}}:
       return {{property.lower_camel_name}}Shorthand();
     {% endfor %}
     default: {

@@ -73,7 +73,6 @@
 #include "base/mac/scoped_nsautorelease_pool.h"
 #include "base/power_monitor/power_monitor_device_source.h"
 #include "content/browser/mach_broker_mac.h"
-#include "content/common/sandbox_init_mac.h"
 #endif  // OS_WIN
 
 #if defined(OS_POSIX)
@@ -170,6 +169,7 @@ void InitializeFieldTrialAndFeatureList(
   base::FeatureList::SetInstance(std::move(feature_list));
 }
 
+#if defined(V8_USE_EXTERNAL_STARTUP_DATA)
 void LoadV8ContextSnapshotFile() {
 #if defined(OS_POSIX) && !defined(OS_MACOSX)
   base::FileDescriptorStore& file_descriptor_store =
@@ -182,14 +182,13 @@ void LoadV8ContextSnapshotFile() {
                                                     region.size);
     return;
   }
-#endif  // OS
+#endif  // OS_POSIX && !OS_MACOSX
 #if !defined(CHROME_MULTIPLE_DLL_BROWSER)
   gin::V8Initializer::LoadV8ContextSnapshot();
-#endif
+#endif  // !CHROME_MULTIPLE_DLL_BROWSER
 }
 
 void LoadV8SnapshotFile() {
-#if defined(V8_USE_EXTERNAL_STARTUP_DATA)
 #if defined(OS_POSIX) && !defined(OS_MACOSX)
   base::FileDescriptorStore& file_descriptor_store =
       base::FileDescriptorStore::GetInstance();
@@ -204,12 +203,10 @@ void LoadV8SnapshotFile() {
 #endif  // OS_POSIX && !OS_MACOSX
 #if !defined(CHROME_MULTIPLE_DLL_BROWSER)
   gin::V8Initializer::LoadV8Snapshot();
-#endif
-#endif  // V8_USE_EXTERNAL_STARTUP_DATA
+#endif  // !CHROME_MULTIPLE_DLL_BROWSER
 }
 
 void LoadV8NativesFile() {
-#if defined(V8_USE_EXTERNAL_STARTUP_DATA)
 #if defined(OS_POSIX) && !defined(OS_MACOSX)
   base::FileDescriptorStore& file_descriptor_store =
       base::FileDescriptorStore::GetInstance();
@@ -224,18 +221,20 @@ void LoadV8NativesFile() {
 #endif  // OS_POSIX && !OS_MACOSX
 #if !defined(CHROME_MULTIPLE_DLL_BROWSER)
   gin::V8Initializer::LoadV8Natives();
-#endif
-#endif  // V8_USE_EXTERNAL_STARTUP_DATA
+#endif  // !CHROME_MULTIPLE_DLL_BROWSER
 }
+#endif  // V8_USE_EXTERNAL_STARTUP_DATA
 
 void InitializeV8IfNeeded(const base::CommandLine& command_line,
                           const std::string& process_type) {
   if (process_type == switches::kGpuProcess)
     return;
 
+#if defined(V8_USE_EXTERNAL_STARTUP_DATA)
   LoadV8SnapshotFile();
   LoadV8NativesFile();
   LoadV8ContextSnapshotFile();
+#endif  // V8_USE_EXTERNAL_STARTUP_DATA
 }
 
 }  // namespace
@@ -306,8 +305,7 @@ struct MainFunction {
   int (*function)(const MainFunctionParams&);
 };
 
-#if defined(OS_POSIX) && !defined(OS_MACOSX) && !defined(OS_ANDROID) && \
-    !defined(OS_FUCHSIA)
+#if defined(OS_LINUX)
 // On platforms that use the zygote, we have a special subset of
 // subprocesses that are launched via the zygote.  This function
 // fills in some process-launching bits around ZygoteMain().
@@ -364,8 +362,7 @@ int RunZygote(const MainFunctionParams& main_function_params,
   NOTREACHED() << "Unknown zygote process type: " << process_type;
   return 1;
 }
-#endif  // defined(OS_POSIX) && !defined(OS_MACOSX) && !defined(OS_ANDROID) && \
-//         !defined(OS_FUCHSIA)
+#endif  // defined(OS_LINUX)
 
 static void RegisterMainThreadFactories() {
 #if !defined(CHROME_MULTIPLE_DLL_BROWSER) && !defined(CHROME_MULTIPLE_DLL_CHILD)
@@ -453,8 +450,8 @@ class ContentMainRunnerImpl : public ContentMainRunner {
       : is_initialized_(false),
         is_shutdown_(false),
         completed_basic_startup_(false),
-        delegate_(NULL),
-        ui_task_(NULL) {
+        delegate_(nullptr),
+        ui_task_(nullptr) {
 #if defined(OS_WIN)
     memset(&sandbox_info_, 0, sizeof(sandbox_info_));
 #endif
@@ -693,8 +690,6 @@ class ContentMainRunnerImpl : public ContentMainRunner {
     if (!process_type.empty() && process_type != switches::kZygoteProcess)
       InitializeFieldTrialAndFeatureList(&field_trial_list);
 
-    base::HistogramBase::EnableActivityReportHistogram(process_type);
-
     MainFunctionParams main_params(command_line);
     main_params.ui_task = ui_task_;
 #if defined(OS_WIN)
@@ -729,9 +724,9 @@ class ContentMainRunnerImpl : public ContentMainRunner {
 #endif  // _CRTDBG_MAP_ALLOC
 #endif  // OS_WIN
 
-    exit_manager_.reset(NULL);
+    exit_manager_.reset(nullptr);
 
-    delegate_ = NULL;
+    delegate_ = nullptr;
     is_shutdown_ = true;
   }
 

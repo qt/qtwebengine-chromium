@@ -104,18 +104,6 @@ void ec_GFp_simple_group_finish(EC_GROUP *group) {
   BN_free(&group->one);
 }
 
-int ec_GFp_simple_group_copy(EC_GROUP *dest, const EC_GROUP *src) {
-  if (!BN_copy(&dest->field, &src->field) ||
-      !BN_copy(&dest->a, &src->a) ||
-      !BN_copy(&dest->b, &src->b) ||
-      !BN_copy(&dest->one, &src->one)) {
-    return 0;
-  }
-
-  dest->a_is_minus3 = src->a_is_minus3;
-  return 1;
-}
-
 int ec_GFp_simple_group_set_curve(EC_GROUP *group, const BIGNUM *p,
                                   const BIGNUM *a, const BIGNUM *b,
                                   BN_CTX *ctx) {
@@ -249,12 +237,6 @@ void ec_GFp_simple_point_finish(EC_POINT *point) {
   BN_free(&point->Z);
 }
 
-void ec_GFp_simple_point_clear_finish(EC_POINT *point) {
-  BN_clear_free(&point->X);
-  BN_clear_free(&point->Y);
-  BN_clear_free(&point->Z);
-}
-
 int ec_GFp_simple_point_copy(EC_POINT *dest, const EC_POINT *src) {
   if (!BN_copy(&dest->X, &src->X) ||
       !BN_copy(&dest->Y, &src->Y) ||
@@ -304,49 +286,6 @@ int ec_GFp_simple_set_Jprojective_coordinates_GFp(
       !set_Jprojective_coordinate_GFp(group, &point->Y, y, ctx) ||
       !set_Jprojective_coordinate_GFp(group, &point->Z, z, ctx)) {
     goto err;
-  }
-
-  ret = 1;
-
-err:
-  BN_CTX_free(new_ctx);
-  return ret;
-}
-
-int ec_GFp_simple_get_Jprojective_coordinates_GFp(const EC_GROUP *group,
-                                                  const EC_POINT *point,
-                                                  BIGNUM *x, BIGNUM *y,
-                                                  BIGNUM *z, BN_CTX *ctx) {
-  BN_CTX *new_ctx = NULL;
-  int ret = 0;
-
-  if (group->meth->field_decode != 0) {
-    if (ctx == NULL) {
-      ctx = new_ctx = BN_CTX_new();
-      if (ctx == NULL) {
-        return 0;
-      }
-    }
-
-    if (x != NULL && !group->meth->field_decode(group, x, &point->X, ctx)) {
-      goto err;
-    }
-    if (y != NULL && !group->meth->field_decode(group, y, &point->Y, ctx)) {
-      goto err;
-    }
-    if (z != NULL && !group->meth->field_decode(group, z, &point->Z, ctx)) {
-      goto err;
-    }
-  } else {
-    if (x != NULL && !BN_copy(x, &point->X)) {
-      goto err;
-    }
-    if (y != NULL && !BN_copy(y, &point->Y)) {
-      goto err;
-    }
-    if (z != NULL && !BN_copy(z, &point->Z)) {
-      goto err;
-    }
   }
 
   ret = 1;
@@ -814,11 +753,11 @@ int ec_GFp_simple_cmp(const EC_GROUP *group, const EC_POINT *a,
   const BIGNUM *tmp1_, *tmp2_;
   int ret = -1;
 
-  if (EC_POINT_is_at_infinity(group, a)) {
-    return EC_POINT_is_at_infinity(group, b) ? 0 : 1;
+  if (ec_GFp_simple_is_at_infinity(group, a)) {
+    return ec_GFp_simple_is_at_infinity(group, b) ? 0 : 1;
   }
 
-  if (EC_POINT_is_at_infinity(group, b)) {
+  if (ec_GFp_simple_is_at_infinity(group, b)) {
     return 1;
   }
 

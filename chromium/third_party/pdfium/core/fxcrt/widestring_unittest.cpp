@@ -54,29 +54,94 @@ TEST(WideString, OperatorLT) {
   WideString a(L"a");
   WideString abc(L"\x0110qq");  // Comes before despite endianness.
   WideString def(L"\x1001qq");  // Comes after despite endianness.
+  WideStringView v_empty;
+  WideStringView v_a(L"a");
+  WideStringView v_abc(L"\x0110qq");
+  WideStringView v_def(L"\x1001qq");
+  const wchar_t* const c_null = nullptr;
+  const wchar_t* const c_empty = L"";
+  const wchar_t* const c_a = L"a";
+  const wchar_t* const c_abc = L"\x0110qq";
+  const wchar_t* const c_def = L"\x1001qq";
 
   EXPECT_FALSE(empty < empty);
   EXPECT_FALSE(a < a);
   EXPECT_FALSE(abc < abc);
   EXPECT_FALSE(def < def);
+  EXPECT_FALSE(c_null < empty);
+  EXPECT_FALSE(c_empty < empty);
+  EXPECT_FALSE(c_a < a);
+  EXPECT_FALSE(c_abc < abc);
+  EXPECT_FALSE(c_def < def);
+  EXPECT_FALSE(empty < c_null);
+  EXPECT_FALSE(empty < c_empty);
+  EXPECT_FALSE(a < c_a);
+  EXPECT_FALSE(abc < c_abc);
+  EXPECT_FALSE(def < c_def);
+  EXPECT_FALSE(empty < v_empty);
+  EXPECT_FALSE(a < v_a);
+  EXPECT_FALSE(abc < v_abc);
+  EXPECT_FALSE(def < v_def);
 
   EXPECT_TRUE(empty < a);
   EXPECT_FALSE(a < empty);
+  EXPECT_TRUE(c_null < a);
+  EXPECT_TRUE(c_empty < a);
+  EXPECT_FALSE(c_a < empty);
+  EXPECT_TRUE(empty < c_a);
+  EXPECT_FALSE(a < c_null);
+  EXPECT_FALSE(a < c_empty);
+  EXPECT_TRUE(empty < v_a);
+  EXPECT_FALSE(a < v_empty);
 
   EXPECT_TRUE(empty < abc);
   EXPECT_FALSE(abc < empty);
+  EXPECT_TRUE(c_null < abc);
+  EXPECT_TRUE(c_empty < abc);
+  EXPECT_FALSE(c_abc < empty);
+  EXPECT_TRUE(empty < c_abc);
+  EXPECT_FALSE(abc < c_null);
+  EXPECT_FALSE(abc < c_empty);
+  EXPECT_TRUE(empty < v_abc);
+  EXPECT_FALSE(abc < v_empty);
 
   EXPECT_TRUE(empty < def);
   EXPECT_FALSE(def < empty);
+  EXPECT_TRUE(c_null < def);
+  EXPECT_TRUE(c_empty < def);
+  EXPECT_FALSE(c_def < empty);
+  EXPECT_TRUE(empty < c_def);
+  EXPECT_FALSE(def < c_null);
+  EXPECT_FALSE(def < c_empty);
+  EXPECT_TRUE(empty < v_def);
+  EXPECT_FALSE(def < v_empty);
 
   EXPECT_TRUE(a < abc);
   EXPECT_FALSE(abc < a);
+  EXPECT_TRUE(c_a < abc);
+  EXPECT_FALSE(c_abc < a);
+  EXPECT_TRUE(a < c_abc);
+  EXPECT_FALSE(abc < c_a);
+  EXPECT_TRUE(a < v_abc);
+  EXPECT_FALSE(abc < v_a);
 
   EXPECT_TRUE(a < def);
   EXPECT_FALSE(def < a);
+  EXPECT_TRUE(c_a < def);
+  EXPECT_FALSE(c_def < a);
+  EXPECT_TRUE(a < c_def);
+  EXPECT_FALSE(def < c_a);
+  EXPECT_TRUE(a < v_def);
+  EXPECT_FALSE(def < v_a);
 
   EXPECT_TRUE(abc < def);
   EXPECT_FALSE(def < abc);
+  EXPECT_TRUE(c_abc < def);
+  EXPECT_FALSE(c_def < abc);
+  EXPECT_TRUE(abc < c_def);
+  EXPECT_FALSE(def < c_abc);
+  EXPECT_TRUE(abc < v_def);
+  EXPECT_FALSE(def < v_abc);
 }
 
 TEST(WideString, OperatorEQ) {
@@ -152,8 +217,8 @@ TEST(WideString, OperatorEQ) {
   EXPECT_FALSE(wide_string_c2 == wide_string);
   EXPECT_FALSE(wide_string_c3 == wide_string);
 
-  const wchar_t* c_null_string = nullptr;
-  const wchar_t* c_empty_string = L"";
+  const wchar_t* const c_null_string = nullptr;
+  const wchar_t* const c_empty_string = L"";
   EXPECT_TRUE(null_string == c_null_string);
   EXPECT_TRUE(null_string == c_empty_string);
   EXPECT_TRUE(empty_string == c_null_string);
@@ -167,13 +232,13 @@ TEST(WideString, OperatorEQ) {
   EXPECT_TRUE(c_null_string == deleted_string);
   EXPECT_TRUE(c_empty_string == deleted_string);
 
-  const wchar_t* c_string_same1 = L"hello";
+  const wchar_t* const c_string_same1 = L"hello";
   EXPECT_TRUE(wide_string == c_string_same1);
   EXPECT_TRUE(c_string_same1 == wide_string);
 
-  const wchar_t* c_string1 = L"he";
-  const wchar_t* c_string2 = L"hellp";
-  const wchar_t* c_string3 = L"hellod";
+  const wchar_t* const c_string1 = L"he";
+  const wchar_t* const c_string2 = L"hellp";
+  const wchar_t* const c_string3 = L"hellod";
   EXPECT_FALSE(wide_string == c_string1);
   EXPECT_FALSE(wide_string == c_string2);
   EXPECT_FALSE(wide_string == c_string3);
@@ -253,8 +318,8 @@ TEST(WideString, OperatorNE) {
   EXPECT_TRUE(wide_string_c2 != wide_string);
   EXPECT_TRUE(wide_string_c3 != wide_string);
 
-  const wchar_t* c_null_string = nullptr;
-  const wchar_t* c_empty_string = L"";
+  const wchar_t* const c_null_string = nullptr;
+  const wchar_t* const c_empty_string = L"";
   EXPECT_FALSE(null_string != c_null_string);
   EXPECT_FALSE(null_string != c_empty_string);
   EXPECT_FALSE(empty_string != c_null_string);
@@ -268,13 +333,13 @@ TEST(WideString, OperatorNE) {
   EXPECT_FALSE(c_null_string != deleted_string);
   EXPECT_FALSE(c_empty_string != deleted_string);
 
-  const wchar_t* c_string_same1 = L"hello";
+  const wchar_t* const c_string_same1 = L"hello";
   EXPECT_FALSE(wide_string != c_string_same1);
   EXPECT_FALSE(c_string_same1 != wide_string);
 
-  const wchar_t* c_string1 = L"he";
-  const wchar_t* c_string2 = L"hellp";
-  const wchar_t* c_string3 = L"hellod";
+  const wchar_t* const c_string1 = L"he";
+  const wchar_t* const c_string2 = L"hellp";
+  const wchar_t* const c_string3 = L"hellod";
   EXPECT_TRUE(wide_string != c_string1);
   EXPECT_TRUE(wide_string != c_string2);
   EXPECT_TRUE(wide_string != c_string3);
@@ -563,63 +628,38 @@ TEST(WideString, UpperLower) {
   EXPECT_EQ(L"", empty);
 }
 
-TEST(WideString, TrimRight) {
+TEST(WideString, Trim) {
   WideString fred(L"  FRED  ");
-  fred.TrimRight();
-  EXPECT_EQ(L"  FRED", fred);
-  fred.TrimRight(L'E');
-  EXPECT_EQ(L"  FRED", fred);
-  fred.TrimRight(L'D');
-  EXPECT_EQ(L"  FRE", fred);
-  fred.TrimRight(L"ERP");
-  EXPECT_EQ(L"  F", fred);
+  fred.Trim();
+  EXPECT_EQ(L"FRED", fred);
+  fred.Trim(L'E');
+  EXPECT_EQ(L"FRED", fred);
+  fred.Trim(L'F');
+  EXPECT_EQ(L"RED", fred);
+  fred.Trim(L"ERP");
+  EXPECT_EQ(L"D", fred);
 
   WideString blank(L"   ");
-  blank.TrimRight(L"ERP");
+  blank.Trim(L"ERP");
   EXPECT_EQ(L"   ", blank);
-  blank.TrimRight(L'E');
+  blank.Trim(L'E');
   EXPECT_EQ(L"   ", blank);
-  blank.TrimRight();
+  blank.Trim();
   EXPECT_EQ(L"", blank);
 
   WideString empty;
-  empty.TrimRight(L"ERP");
+  empty.Trim(L"ERP");
   EXPECT_EQ(L"", empty);
-  empty.TrimRight(L'E');
+  empty.Trim(L'E');
   EXPECT_EQ(L"", empty);
-  empty.TrimRight();
+  empty.Trim();
   EXPECT_EQ(L"", empty);
-}
 
-TEST(WideString, TrimRightCopies) {
-  {
-    // With a single reference, no copy takes place.
-    WideString fred(L"  FRED  ");
-    const wchar_t* old_buffer = fred.c_str();
-    fred.TrimRight();
-    EXPECT_EQ(L"  FRED", fred);
-    EXPECT_EQ(old_buffer, fred.c_str());
-  }
-  {
-    // With multiple references, we must copy.
-    WideString fred(L"  FRED  ");
-    WideString other_fred = fred;
-    const wchar_t* old_buffer = fred.c_str();
-    fred.TrimRight();
-    EXPECT_EQ(L"  FRED", fred);
-    EXPECT_EQ(L"  FRED  ", other_fred);
-    EXPECT_NE(old_buffer, fred.c_str());
-  }
-  {
-    // With multiple references, but no modifications, no copy.
-    WideString fred(L"FRED");
-    WideString other_fred = fred;
-    const wchar_t* old_buffer = fred.c_str();
-    fred.TrimRight();
-    EXPECT_EQ(L"FRED", fred);
-    EXPECT_EQ(L"FRED", other_fred);
-    EXPECT_EQ(old_buffer, fred.c_str());
-  }
+  WideString abc(L"  ABCCBA  ");
+  abc.Trim(L"A");
+  EXPECT_EQ(L"  ABCCBA  ", abc);
+  abc.Trim(L" A");
+  EXPECT_EQ(L"BCCB", abc);
 }
 
 TEST(WideString, TrimLeft) {
@@ -675,6 +715,65 @@ TEST(WideString, TrimLeftCopies) {
     WideString other_fred = fred;
     const wchar_t* old_buffer = fred.c_str();
     fred.TrimLeft();
+    EXPECT_EQ(L"FRED", fred);
+    EXPECT_EQ(L"FRED", other_fred);
+    EXPECT_EQ(old_buffer, fred.c_str());
+  }
+}
+
+TEST(WideString, TrimRight) {
+  WideString fred(L"  FRED  ");
+  fred.TrimRight();
+  EXPECT_EQ(L"  FRED", fred);
+  fred.TrimRight(L'E');
+  EXPECT_EQ(L"  FRED", fred);
+  fred.TrimRight(L'D');
+  EXPECT_EQ(L"  FRE", fred);
+  fred.TrimRight(L"ERP");
+  EXPECT_EQ(L"  F", fred);
+
+  WideString blank(L"   ");
+  blank.TrimRight(L"ERP");
+  EXPECT_EQ(L"   ", blank);
+  blank.TrimRight(L'E');
+  EXPECT_EQ(L"   ", blank);
+  blank.TrimRight();
+  EXPECT_EQ(L"", blank);
+
+  WideString empty;
+  empty.TrimRight(L"ERP");
+  EXPECT_EQ(L"", empty);
+  empty.TrimRight(L'E');
+  EXPECT_EQ(L"", empty);
+  empty.TrimRight();
+  EXPECT_EQ(L"", empty);
+}
+
+TEST(WideString, TrimRightCopies) {
+  {
+    // With a single reference, no copy takes place.
+    WideString fred(L"  FRED  ");
+    const wchar_t* old_buffer = fred.c_str();
+    fred.TrimRight();
+    EXPECT_EQ(L"  FRED", fred);
+    EXPECT_EQ(old_buffer, fred.c_str());
+  }
+  {
+    // With multiple references, we must copy.
+    WideString fred(L"  FRED  ");
+    WideString other_fred = fred;
+    const wchar_t* old_buffer = fred.c_str();
+    fred.TrimRight();
+    EXPECT_EQ(L"  FRED", fred);
+    EXPECT_EQ(L"  FRED  ", other_fred);
+    EXPECT_NE(old_buffer, fred.c_str());
+  }
+  {
+    // With multiple references, but no modifications, no copy.
+    WideString fred(L"FRED");
+    WideString other_fred = fred;
+    const wchar_t* old_buffer = fred.c_str();
+    fred.TrimRight();
     EXPECT_EQ(L"FRED", fred);
     EXPECT_EQ(L"FRED", other_fred);
     EXPECT_EQ(old_buffer, fred.c_str());
@@ -829,7 +928,7 @@ TEST(WideString, UTF16LE_Encode) {
   struct UTF16LEEncodeCase {
     WideString ws;
     ByteString bs;
-  } utf16le_encode_cases[] = {
+  } const utf16le_encode_cases[] = {
       {L"", ByteString("\0\0", 2)},
       {L"abc", ByteString("a\0b\0c\0\0\0", 8)},
       {L"abcdef", ByteString("a\0b\0c\0d\0e\0f\0\0\0", 14)},
@@ -879,29 +978,59 @@ TEST(WideStringView, OperatorLT) {
   WideStringView a(L"a");
   WideStringView abc(L"\x0110qq");  // Comes InsertAtFront despite endianness.
   WideStringView def(L"\x1001qq");  // Comes InsertAtBack despite endianness.
+  const wchar_t* const c_null = nullptr;
+  const wchar_t* const c_empty = L"";
+  const wchar_t* const c_a = L"a";
+  const wchar_t* const c_abc = L"\x0110qq";
+  const wchar_t* const c_def = L"\x1001qq";
 
   EXPECT_FALSE(empty < empty);
   EXPECT_FALSE(a < a);
   EXPECT_FALSE(abc < abc);
   EXPECT_FALSE(def < def);
+  EXPECT_FALSE(c_null < empty);
+  EXPECT_FALSE(c_empty < empty);
+  EXPECT_FALSE(c_a < a);
+  EXPECT_FALSE(c_abc < abc);
+  EXPECT_FALSE(c_def < def);
+  EXPECT_FALSE(empty < c_null);
+  EXPECT_FALSE(empty < c_empty);
+  EXPECT_FALSE(a < c_a);
+  EXPECT_FALSE(abc < c_abc);
+  EXPECT_FALSE(def < c_def);
 
   EXPECT_TRUE(empty < a);
   EXPECT_FALSE(a < empty);
+  EXPECT_TRUE(empty < c_a);
+  EXPECT_FALSE(a < c_null);
+  EXPECT_FALSE(a < c_empty);
 
   EXPECT_TRUE(empty < abc);
   EXPECT_FALSE(abc < empty);
+  EXPECT_TRUE(empty < c_abc);
+  EXPECT_FALSE(abc < c_null);
+  EXPECT_FALSE(abc < c_empty);
 
   EXPECT_TRUE(empty < def);
   EXPECT_FALSE(def < empty);
+  EXPECT_TRUE(empty < c_def);
+  EXPECT_FALSE(def < c_null);
+  EXPECT_FALSE(def < c_empty);
 
   EXPECT_TRUE(a < abc);
   EXPECT_FALSE(abc < a);
+  EXPECT_TRUE(a < c_abc);
+  EXPECT_FALSE(abc < c_a);
 
   EXPECT_TRUE(a < def);
   EXPECT_FALSE(def < a);
+  EXPECT_TRUE(a < c_def);
+  EXPECT_FALSE(def < c_a);
 
   EXPECT_TRUE(abc < def);
   EXPECT_FALSE(def < abc);
+  EXPECT_TRUE(abc < c_def);
+  EXPECT_FALSE(def < c_abc);
 }
 
 TEST(WideStringView, OperatorEQ) {
@@ -940,13 +1069,13 @@ TEST(WideStringView, OperatorEQ) {
   EXPECT_FALSE(wide_string2 == wide_string_c);
   EXPECT_FALSE(wide_string3 == wide_string_c);
 
-  const wchar_t* c_string_same1 = L"hello";
+  const wchar_t* const c_string_same1 = L"hello";
   EXPECT_TRUE(wide_string_c == c_string_same1);
   EXPECT_TRUE(c_string_same1 == wide_string_c);
 
-  const wchar_t* c_string1 = L"he";
-  const wchar_t* c_string2 = L"hellp";
-  const wchar_t* c_string3 = L"hellod";
+  const wchar_t* const c_string1 = L"he";
+  const wchar_t* const c_string2 = L"hellp";
+  const wchar_t* const c_string3 = L"hellod";
   EXPECT_FALSE(wide_string_c == c_string1);
   EXPECT_FALSE(wide_string_c == c_string2);
   EXPECT_FALSE(wide_string_c == c_string3);
@@ -992,13 +1121,13 @@ TEST(WideStringView, OperatorNE) {
   EXPECT_TRUE(wide_string2 != wide_string_c);
   EXPECT_TRUE(wide_string3 != wide_string_c);
 
-  const wchar_t* c_string_same1 = L"hello";
+  const wchar_t* const c_string_same1 = L"hello";
   EXPECT_FALSE(wide_string_c != c_string_same1);
   EXPECT_FALSE(c_string_same1 != wide_string_c);
 
-  const wchar_t* c_string1 = L"he";
-  const wchar_t* c_string2 = L"hellp";
-  const wchar_t* c_string3 = L"hellod";
+  const wchar_t* const c_string1 = L"he";
+  const wchar_t* const c_string2 = L"hellp";
+  const wchar_t* const c_string3 = L"hellod";
   EXPECT_TRUE(wide_string_c != c_string1);
   EXPECT_TRUE(wide_string_c != c_string2);
   EXPECT_TRUE(wide_string_c != c_string3);
@@ -1183,84 +1312,25 @@ TEST(WideStringView, TrimmedRight) {
 }
 
 TEST(WideString, FormatWidth) {
-  {
-    WideString str;
-    str.Format(L"%5d", 1);
-    EXPECT_EQ(L"    1", str);
-  }
-
-  {
-    WideString str;
-    str.Format(L"%d", 1);
-    EXPECT_EQ(L"1", str);
-  }
-
-  {
-    WideString str;
-    str.Format(L"%*d", 5, 1);
-    EXPECT_EQ(L"    1", str);
-  }
-
-  {
-    WideString str;
-    str.Format(L"%-1d", 1);
-    EXPECT_EQ(L"1", str);
-  }
-
-  {
-    WideString str;
-    str.Format(L"%0d", 1);
-    EXPECT_EQ(L"1", str);
-  }
-
-  {
-    WideString str;
-    str.Format(L"%1048576d", 1);
-    EXPECT_EQ(L"", str);
-  }
+  EXPECT_EQ(L"    1", WideString::Format(L"%5d", 1));
+  EXPECT_EQ(L"1", WideString::Format(L"%d", 1));
+  EXPECT_EQ(L"    1", WideString::Format(L"%*d", 5, 1));
+  EXPECT_EQ(L"1", WideString::Format(L"%-1d", 1));
+  EXPECT_EQ(L"1", WideString::Format(L"%0d", 1));
+  EXPECT_EQ(L"", WideString::Format(L"%1048576d", 1));
 }
 
 TEST(WideString, FormatPrecision) {
-  {
-    WideString str;
-    str.Format(L"%.2f", 1.12345);
-    EXPECT_EQ(L"1.12", str);
-  }
-
-  {
-    WideString str;
-    str.Format(L"%.*f", 3, 1.12345);
-    EXPECT_EQ(L"1.123", str);
-  }
-
-  {
-    WideString str;
-    str.Format(L"%f", 1.12345);
-    EXPECT_EQ(L"1.123450", str);
-  }
-
-  {
-    WideString str;
-    str.Format(L"%-1f", 1.12345);
-    EXPECT_EQ(L"1.123450", str);
-  }
-
-  {
-    WideString str;
-    str.Format(L"%0f", 1.12345);
-    EXPECT_EQ(L"1.123450", str);
-  }
-
-  {
-    WideString str;
-    str.Format(L"%.1048576f", 1.2);
-    EXPECT_EQ(L"", str);
-  }
+  EXPECT_EQ(L"1.12", WideString::Format(L"%.2f", 1.12345));
+  EXPECT_EQ(L"1.123", WideString::Format(L"%.*f", 3, 1.12345));
+  EXPECT_EQ(L"1.123450", WideString::Format(L"%f", 1.12345));
+  EXPECT_EQ(L"1.123450", WideString::Format(L"%-1f", 1.12345));
+  EXPECT_EQ(L"1.123450", WideString::Format(L"%0f", 1.12345));
+  EXPECT_EQ(L"", WideString::Format(L"%.1048576f", 1.2));
 }
 
 TEST(WideString, FormatOutOfRangeChar) {
-  WideString str;
-  str.Format(L"unsupported char '%c'", 0x00FF00FF);
+  WideString::Format(L"unsupported char '%c'", 0x00FF00FF);
 }
 
 TEST(WideString, Empty) {

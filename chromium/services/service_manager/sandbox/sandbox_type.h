@@ -23,6 +23,11 @@ enum SandboxType {
   // Do not apply any sandboxing to the process.
   SANDBOX_TYPE_NO_SANDBOX = SANDBOX_TYPE_FIRST_TYPE,
 
+#if defined(OS_WIN)
+  // Do not apply any sandboxing and elevate the privileges of the process.
+  SANDBOX_TYPE_NO_SANDBOX_AND_ELEVATED_PRIVILEGES,
+#endif
+
   // Renderer or worker process. Most common case.
   SANDBOX_TYPE_RENDERER,
 
@@ -56,11 +61,8 @@ enum SandboxType {
   SANDBOX_TYPE_AFTER_LAST_TYPE,  // Placeholder to ease iteration.
 };
 
-inline bool IsUnsandboxedSandboxType(SandboxType sandbox_type) {
-  // TODO(tsepez): Sandbox network process.
-  return sandbox_type == SANDBOX_TYPE_NO_SANDBOX ||
-         sandbox_type == SANDBOX_TYPE_NETWORK;
-}
+SERVICE_MANAGER_SANDBOX_EXPORT bool IsUnsandboxedSandboxType(
+    SandboxType sandbox_type);
 
 SERVICE_MANAGER_SANDBOX_EXPORT void SetCommandLineFlagsForSandboxType(
     base::CommandLine* command_line,
@@ -68,6 +70,9 @@ SERVICE_MANAGER_SANDBOX_EXPORT void SetCommandLineFlagsForSandboxType(
 
 SERVICE_MANAGER_SANDBOX_EXPORT SandboxType
 SandboxTypeFromCommandLine(const base::CommandLine& command_line);
+
+SERVICE_MANAGER_SANDBOX_EXPORT std::string StringFromUtilitySandboxType(
+    SandboxType sandbox_type);
 
 SERVICE_MANAGER_SANDBOX_EXPORT SandboxType
 UtilitySandboxTypeFromString(const std::string& sandbox_string);

@@ -51,8 +51,8 @@ class CORE_EXPORT ScriptedAnimationController
   }
   virtual ~ScriptedAnimationController() = default;
 
-  DECLARE_TRACE();
-  DECLARE_TRACE_WRAPPERS();
+  void Trace(blink::Visitor*);
+  void TraceWrappers(const ScriptWrappableVisitor*) const;
   void ClearDocumentPointer() { document_ = nullptr; }
 
   // Animation frame callbacks are used for requestAnimationFrame().
@@ -75,8 +75,8 @@ class CORE_EXPORT ScriptedAnimationController
   // https://html.spec.whatwg.org/multipage/webappapis.html#event-loop-processing-model
   void ServiceScriptedAnimations(double monotonic_time_now);
 
-  void Suspend();
-  void Resume();
+  void Pause();
+  void Unpause();
 
   void DispatchEventsAndCallbacksForPrinting();
 

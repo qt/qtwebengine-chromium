@@ -86,15 +86,17 @@ CustomElementRegistry::CustomElementRegistry(const LocalDOMWindow* owner)
       upgrade_candidates_(new UpgradeCandidateMap()),
       reaction_stack_(&CustomElementReactionStack::Current()) {}
 
-DEFINE_TRACE(CustomElementRegistry) {
+void CustomElementRegistry::Trace(blink::Visitor* visitor) {
   visitor->Trace(definitions_);
   visitor->Trace(owner_);
   visitor->Trace(v0_);
   visitor->Trace(upgrade_candidates_);
   visitor->Trace(when_defined_promise_map_);
+  ScriptWrappable::Trace(visitor);
 }
 
-DEFINE_TRACE_WRAPPERS(CustomElementRegistry) {
+void CustomElementRegistry::TraceWrappers(
+    const ScriptWrappableVisitor* visitor) const {
   visitor->TraceWrappers(reaction_stack_);
   for (auto definition : definitions_)
     visitor->TraceWrappers(definition);

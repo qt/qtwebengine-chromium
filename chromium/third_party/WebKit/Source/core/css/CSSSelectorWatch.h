@@ -48,7 +48,7 @@ class CORE_EXPORT CSSSelectorWatch final
   USING_GARBAGE_COLLECTED_MIXIN(CSSSelectorWatch);
 
  public:
-  virtual ~CSSSelectorWatch() {}
+  virtual ~CSSSelectorWatch() = default;
 
   static CSSSelectorWatch& From(Document&);
   static CSSSelectorWatch* FromIfExists(Document&);
@@ -61,7 +61,7 @@ class CORE_EXPORT CSSSelectorWatch final
   void UpdateSelectorMatches(const Vector<String>& removed_selectors,
                              const Vector<String>& added_selectors);
 
-  DECLARE_VIRTUAL_TRACE();
+  virtual void Trace(blink::Visitor*);
 
  private:
   explicit CSSSelectorWatch(Document&);

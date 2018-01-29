@@ -98,6 +98,7 @@ if (pdf_bundle_freetype) {
       "//third_party/freetype/src/include/freetype/ftcffdrv.h",
       "//third_party/freetype/src/include/freetype/fterrdef.h",
       "//third_party/freetype/src/include/freetype/fterrors.h",
+      "//third_party/freetype/src/include/freetype/ftfntfmt.h",
       "//third_party/freetype/src/include/freetype/ftglyph.h",
       "//third_party/freetype/src/include/freetype/ftgzip.h",
       "//third_party/freetype/src/include/freetype/ftimage.h",
@@ -159,6 +160,7 @@ if (pdf_bundle_freetype) {
       "//third_party/freetype/src/src/base/ftbase.c",
       "//third_party/freetype/src/src/base/ftbase.h",
       "//third_party/freetype/src/src/base/ftbitmap.c",
+      "//third_party/freetype/src/src/base/ftfntfmt.c",
       "//third_party/freetype/src/src/base/ftglyph.c",
       "//third_party/freetype/src/src/base/ftinit.c",
       "//third_party/freetype/src/src/base/ftlcdfil.c",
@@ -179,9 +181,7 @@ if (pdf_bundle_freetype) {
     ]
     if (pdf_use_skia || pdf_use_skia_paths) {
       sources += [
-        "//third_party/freetype/src/include/freetype/ftfntfmt.h",
         "//third_party/freetype/src/include/freetype/ftsynth.h",
-        "//third_party/freetype/src/src/base/ftfntfmt.c",
         "//third_party/freetype/src/src/base/ftfstype.c",
         "//third_party/freetype/src/src/base/fttype1.c",
       ]
@@ -388,12 +388,29 @@ static_library("fx_libopenjpeg") {
     "libopenjpeg20/openjpeg.c",
     "libopenjpeg20/opj_clock.c",
     "libopenjpeg20/pi.c",
+    "libopenjpeg20/sparse_array.c",
+    "libopenjpeg20/sparse_array.h",
     "libopenjpeg20/t1.c",
     "libopenjpeg20/t2.c",
     "libopenjpeg20/tcd.c",
     "libopenjpeg20/tgt.c",
     "libopenjpeg20/thread.c",
   ]
+}
+
+config("system_libpng_config") {
+  libs = [ "png" ]
+  defines = [ "USE_SYSTEM_LIBPNG" ]
+}
+
+group("png") {
+  if (use_system_libpng) {
+    public_configs = [ ":system_libpng_config" ]
+  } else {
+    public_deps = [
+      ":fx_lpng",
+    ]
+  }
 }
 
 static_library("fx_lpng") {

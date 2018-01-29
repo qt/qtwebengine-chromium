@@ -13,6 +13,7 @@
 #include "base/threading/sequenced_worker_pool.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "base/time/time.h"
+#include "build/build_config.h"
 #include "content/browser/dom_storage/dom_storage_area.h"
 #include "content/browser/dom_storage/dom_storage_namespace.h"
 #include "content/browser/dom_storage/dom_storage_task_runner.h"
@@ -63,7 +64,7 @@ class DOMStorageContextImplTest : public testing::Test {
   void VerifySingleOriginRemains(const GURL& origin) {
     // Use a new instance to examine the contexts of temp_dir_.
     scoped_refptr<DOMStorageContextImpl> context = new DOMStorageContextImpl(
-        temp_dir_.GetPath(), base::FilePath(), NULL, NULL);
+        temp_dir_.GetPath(), base::FilePath(), nullptr, nullptr);
     std::vector<LocalStorageUsageInfo> infos;
     context->GetLocalStorageUsage(&infos, kDontIncludeFileInfo);
     ASSERT_EQ(1u, infos.size());
@@ -115,13 +116,13 @@ TEST_F(DOMStorageContextImplTest, UsageInfo) {
                   ->OpenStorageArea(kOrigin)
                   ->SetItem(kKey, kValue, old_value, &old_value));
   context_->Shutdown();
-  context_ = NULL;
+  context_ = nullptr;
   base::RunLoop().RunUntilIdle();
 
   // Create a new context that points to the same directory, see that
   // it knows about the origin that we stored data for.
   context_ = new DOMStorageContextImpl(temp_dir_.GetPath(), base::FilePath(),
-                                       NULL, NULL);
+                                       nullptr, nullptr);
   context_->GetLocalStorageUsage(&infos, kDontIncludeFileInfo);
   EXPECT_EQ(1u, infos.size());
   EXPECT_EQ(kOrigin, infos[0].origin);
@@ -150,7 +151,7 @@ TEST_F(DOMStorageContextImplTest, SessionOnly) {
                   ->OpenStorageArea(kSessionOnlyOrigin)
                   ->SetItem(kKey, kValue, old_value, &old_value));
   context_->Shutdown();
-  context_ = NULL;
+  context_ = nullptr;
   base::RunLoop().RunUntilIdle();
 
   // Verify that the session-only origin data is gone.
@@ -169,7 +170,7 @@ TEST_F(DOMStorageContextImplTest, SetForceKeepSessionState) {
                   ->SetItem(kKey, kValue, old_value, &old_value));
   context_->SetForceKeepSessionState();  // Should override clear behavior.
   context_->Shutdown();
-  context_ = NULL;
+  context_ = nullptr;
   base::RunLoop().RunUntilIdle();
 
   VerifySingleOriginRemains(kSessionOnlyOrigin);
@@ -204,7 +205,14 @@ TEST_F(DOMStorageContextImplTest, PersistentIds) {
   EXPECT_EQ(kClonedPersistentId, cloned_area->persistent_namespace_id_);
 }
 
+// Disable this test on Android as on Android we always delete our old session
+// storage on startup. This is because we don't do any session restoration for
+// the android system. See crbug.com/770307.
+#if defined(OS_ANDROID)
+TEST_F(DOMStorageContextImplTest, DISABLED_DeleteSessionStorage) {
+#else
 TEST_F(DOMStorageContextImplTest, DeleteSessionStorage) {
+#endif
   // Create a DOMStorageContextImpl which will save sessionStorage on disk.
   context_->Shutdown();
   context_ =
@@ -229,7 +237,7 @@ TEST_F(DOMStorageContextImplTest, DeleteSessionStorage) {
 
   // Destroy and recreate the DOMStorageContextImpl.
   context_->Shutdown();
-  context_ = NULL;
+  context_ = nullptr;
   base::RunLoop().RunUntilIdle();
   context_ =
       new DOMStorageContextImpl(temp_dir_.GetPath(), temp_dir_.GetPath(),
@@ -252,7 +260,7 @@ TEST_F(DOMStorageContextImplTest, DeleteSessionStorage) {
 
   // Destroy and recreate again.
   context_->Shutdown();
-  context_ = NULL;
+  context_ = nullptr;
   base::RunLoop().RunUntilIdle();
   context_ =
       new DOMStorageContextImpl(temp_dir_.GetPath(), temp_dir_.GetPath(),
@@ -268,7 +276,7 @@ TEST_F(DOMStorageContextImplTest, DeleteSessionStorage) {
   EXPECT_EQ(0u, area->Length());
   dom_namespace->CloseStorageArea(area);
   context_->Shutdown();
-  context_ = NULL;
+  context_ = nullptr;
   base::RunLoop().RunUntilIdle();
 }
 

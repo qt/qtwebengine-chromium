@@ -9,16 +9,13 @@
 #include "core/dom/Document.h"
 #include "core/frame/LocalFrameView.h"
 #include "core/html/HTMLElement.h"
-#include "core/testing/DummyPageHolder.h"
+#include "core/testing/PageTestBase.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace blink {
 
-class CSSSelectorWatchTest : public ::testing::Test {
+class CSSSelectorWatchTest : public PageTestBase {
  protected:
-  void SetUp() override;
-
-  Document& GetDocument() { return dummy_page_holder_->GetDocument(); }
   StyleEngine& GetStyleEngine() { return GetDocument().GetStyleEngine(); }
 
   static const HashSet<String> AddedSelectors(const CSSSelectorWatch& watch) {
@@ -28,14 +25,7 @@ class CSSSelectorWatchTest : public ::testing::Test {
     return watch.removed_selectors_;
   }
   static void ClearAddedRemoved(CSSSelectorWatch&);
-
- private:
-  std::unique_ptr<DummyPageHolder> dummy_page_holder_;
 };
-
-void CSSSelectorWatchTest::SetUp() {
-  dummy_page_holder_ = DummyPageHolder::Create(IntSize(800, 600));
-}
 
 void CSSSelectorWatchTest::ClearAddedRemoved(CSSSelectorWatch& watch) {
   watch.added_selectors_.clear();
@@ -43,12 +33,13 @@ void CSSSelectorWatchTest::ClearAddedRemoved(CSSSelectorWatch& watch) {
 }
 
 TEST_F(CSSSelectorWatchTest, RecalcOnDocumentChange) {
-  GetDocument().body()->SetInnerHTMLFromString(
-      "<div>"
-      "  <span id='x' class='a'></span>"
-      "  <span id='y' class='b'><span></span></span>"
-      "  <span id='z'><span></span></span>"
-      "</div>");
+  GetDocument().body()->SetInnerHTMLFromString(R"HTML(
+    <div>
+      <span id='x' class='a'></span>
+      <span id='y' class='b'><span></span></span>
+      <span id='z'><span></span></span>
+    </div>
+  )HTML");
 
   CSSSelectorWatch& watch = CSSSelectorWatch::From(GetDocument());
 

@@ -8,7 +8,7 @@
 #include "bindings/core/v8/ExceptionState.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/dom/ExecutionContext.h"
-#include "core/streams/ReadableStreamController.h"
+#include "core/streams/ReadableStreamDefaultControllerWrapper.h"
 #include "core/streams/ReadableStreamOperations.h"
 #include "core/typed_arrays/DOMArrayBuffer.h"
 #include "core/typed_arrays/DOMTypedArray.h"
@@ -39,7 +39,7 @@ class BodyStreamBuffer::LoaderClient final
         client_(client) {}
 
   void DidFetchDataLoadedBlobHandle(
-      RefPtr<BlobDataHandle> blob_data_handle) override {
+      scoped_refptr<BlobDataHandle> blob_data_handle) override {
     buffer_->EndLoading();
     client_->DidFetchDataLoadedBlobHandle(std::move(blob_data_handle));
   }
@@ -74,7 +74,7 @@ class BodyStreamBuffer::LoaderClient final
     client_->DidFetchDataLoadFailed();
   }
 
-  DEFINE_INLINE_TRACE() {
+  void Trace(blink::Visitor* visitor) override {
     visitor->Trace(buffer_);
     visitor->Trace(client_);
     ContextLifecycleObserver::Trace(visitor);
@@ -136,7 +136,7 @@ ScriptValue BodyStreamBuffer::Stream() {
           .GetOrEmpty(body));
 }
 
-RefPtr<BlobDataHandle> BodyStreamBuffer::DrainAsBlobDataHandle(
+scoped_refptr<BlobDataHandle> BodyStreamBuffer::DrainAsBlobDataHandle(
     BytesConsumer::BlobSizePolicy policy) {
   DCHECK(!IsStreamLocked());
   DCHECK(!IsStreamDisturbed());
@@ -146,7 +146,7 @@ RefPtr<BlobDataHandle> BodyStreamBuffer::DrainAsBlobDataHandle(
   if (made_from_readable_stream_)
     return nullptr;
 
-  RefPtr<BlobDataHandle> blob_data_handle =
+  scoped_refptr<BlobDataHandle> blob_data_handle =
       consumer_->DrainAsBlobDataHandle(policy);
   if (blob_data_handle) {
     CloseAndLockAndDisturb();
@@ -155,7 +155,7 @@ RefPtr<BlobDataHandle> BodyStreamBuffer::DrainAsBlobDataHandle(
   return nullptr;
 }
 
-RefPtr<EncodedFormData> BodyStreamBuffer::DrainAsFormData() {
+scoped_refptr<EncodedFormData> BodyStreamBuffer::DrainAsFormData() {
   DCHECK(!IsStreamLocked());
   DCHECK(!IsStreamDisturbed());
   if (IsStreamClosed() || IsStreamErrored())
@@ -164,7 +164,7 @@ RefPtr<EncodedFormData> BodyStreamBuffer::DrainAsFormData() {
   if (made_from_readable_stream_)
     return nullptr;
 
-  RefPtr<EncodedFormData> form_data = consumer_->DrainAsFormData();
+  scoped_refptr<EncodedFormData> form_data = consumer_->DrainAsFormData();
   if (form_data) {
     CloseAndLockAndDisturb();
     return form_data;
@@ -225,7 +225,9 @@ ScriptPromise BodyStreamBuffer::pull(ScriptState* script_state) {
 ScriptPromise BodyStreamBuffer::Cancel(ScriptState* script_state,
                                        ScriptValue reason) {
   DCHECK_EQ(script_state, script_state_.get());
-  Close();
+  if (Controller())
+    Controller()->Close();
+  CancelConsumer();
   return ScriptPromise::CastUndefined(script_state);
 }
 

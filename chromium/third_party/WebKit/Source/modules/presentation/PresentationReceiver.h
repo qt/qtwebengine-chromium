@@ -29,8 +29,7 @@ class WebPresentationClient;
 // to be eagerly created in order to have the receiver associated with the
 // client.
 class MODULES_EXPORT PresentationReceiver final
-    : public GarbageCollectedFinalized<PresentationReceiver>,
-      public ScriptWrappable,
+    : public ScriptWrappable,
       public ContextLifecycleObserver,
       public WebPresentationReceiver,
       public mojom::blink::PresentationReceiver {
@@ -66,7 +65,7 @@ class MODULES_EXPORT PresentationReceiver final
   void RemoveConnection(ReceiverPresentationConnection*);
   void Terminate();
 
-  DECLARE_VIRTUAL_TRACE();
+  virtual void Trace(blink::Visitor*);
 
  private:
   friend class PresentationReceiverTest;

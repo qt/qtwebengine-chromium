@@ -14,9 +14,9 @@ namespace blink {
 
 class PLATFORM_EXPORT PaintGeneratedImage : public GeneratedImage {
  public:
-  static RefPtr<PaintGeneratedImage> Create(sk_sp<PaintRecord> record,
-                                            const IntSize& size) {
-    return WTF::AdoptRef(new PaintGeneratedImage(std::move(record), size));
+  static scoped_refptr<PaintGeneratedImage> Create(sk_sp<PaintRecord> record,
+                                                   const IntSize& size) {
+    return base::AdoptRef(new PaintGeneratedImage(std::move(record), size));
   }
   ~PaintGeneratedImage() override {}
 

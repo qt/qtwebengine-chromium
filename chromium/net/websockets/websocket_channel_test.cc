@@ -155,7 +155,7 @@ typedef StrictMock< MockFunction<void(int)> > Checkpoint;  // NOLINT
 // This mock is for testing expectations about how the EventInterface is used.
 class MockWebSocketEventInterface : public WebSocketEventInterface {
  public:
-  MockWebSocketEventInterface() {}
+  MockWebSocketEventInterface() = default;
 
   ChannelState OnDataFrame(bool fin,
                            WebSocketMessageType type,
@@ -255,7 +255,7 @@ class FakeWebSocketEventInterface : public WebSocketEventInterface {
 class FakeWebSocketStream : public WebSocketStream {
  public:
   // Constructs with empty protocol and extensions.
-  FakeWebSocketStream() {}
+  FakeWebSocketStream() = default;
 
   // Constructs with specified protocol and extensions.
   FakeWebSocketStream(const std::string& protocol,
@@ -812,7 +812,7 @@ class WebSocketChannelTest : public ::testing::Test {
   struct ConnectData {
     ConnectData()
         : socket_url("ws://ws/"),
-          origin(GURL("http://ws")),
+          origin(url::Origin::Create(GURL("http://ws"))),
           site_for_cookies("http://ws/") {}
 
     // URLRequestContext object.
@@ -1040,7 +1040,7 @@ class WebSocketChannelReceiveUtf8Test : public WebSocketChannelStreamTest {
 // callback is passed to the argument saver.
 TEST_F(WebSocketChannelTest, EverythingIsPassedToTheCreatorFunction) {
   connect_data_.socket_url = GURL("ws://example.com/test");
-  connect_data_.origin = url::Origin(GURL("http://example.com"));
+  connect_data_.origin = url::Origin::Create(GURL("http://example.com"));
   connect_data_.site_for_cookies = GURL("http://example.com/");
   connect_data_.requested_subprotocols.push_back("Sinbad");
 
@@ -3416,7 +3416,7 @@ TEST_F(WebSocketChannelStreamTest, ProtocolError) {
 // Set the closing handshake timeout to a very tiny value before connecting.
 class WebSocketChannelStreamTimeoutTest : public WebSocketChannelStreamTest {
  protected:
-  WebSocketChannelStreamTimeoutTest() {}
+  WebSocketChannelStreamTimeoutTest() = default;
 
   void CreateChannelAndConnectSuccessfully() override {
     set_stream(std::move(mock_stream_));

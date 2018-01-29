@@ -63,7 +63,7 @@ ModuleTreeLinker::ModuleTreeLinker(Modulator* modulator,
   CHECK(client);
 }
 
-DEFINE_TRACE(ModuleTreeLinker) {
+void ModuleTreeLinker::Trace(blink::Visitor* visitor) {
   visitor->Trace(modulator_);
   visitor->Trace(registry_);
   visitor->Trace(client_);
@@ -71,7 +71,8 @@ DEFINE_TRACE(ModuleTreeLinker) {
   SingleModuleClient::Trace(visitor);
 }
 
-DEFINE_TRACE_WRAPPERS(ModuleTreeLinker) {
+void ModuleTreeLinker::TraceWrappers(
+    const ScriptWrappableVisitor* visitor) const {
   visitor->TraceWrappers(result_);
 }
 
@@ -343,17 +344,27 @@ void ModuleTreeLinker::FetchDescendants(ModuleScript* module_script) {
     return;
   }
 
-  // [FD] Step 6. For each url in urls, ...
+  // [FD] Step 6. Let options be the descendant script fetch options for module
+  // script's fetch options.
+  // https://html.spec.whatwg.org/multipage/webappapis.html#descendant-script-fetch-options
+  // the descendant script fetch options are a new script fetch options whose
+  // items all have the same values, except for the integrity metadata, which is
+  // instead the empty string.
+  ScriptFetchOptions options(module_script->FetchOptions().Nonce(),
+                             IntegrityMetadataSet(), String(),
+                             module_script->FetchOptions().ParserState(),
+                             module_script->FetchOptions().CredentialsMode());
+
+  // [FD] Step 7. For each url in urls, ...
   //
-  // [FD] Step 6. These invocations of the internal module script graph fetching
+  // [FD] Step 7. These invocations of the internal module script graph fetching
   // procedure should be performed in parallel to each other.
   for (size_t i = 0; i < urls.size(); ++i) {
-    // [FD] Step 6. ... perform the internal module script graph fetching
+    // [FD] Step 7. ... perform the internal module script graph fetching
     // procedure given ... with the top-level module fetch flag unset. ...
     ModuleScriptFetchRequest request(
-        urls[i], module_script->Nonce(), module_script->ParserState(),
-        module_script->CredentialsMode(), module_script->BaseURL().GetString(),
-        positions[i]);
+        urls[i], options, module_script->BaseURL().GetString(),
+        modulator_->GetReferrerPolicy(), positions[i]);
     InitiateInternalModuleScriptGraphFetching(
         request, ModuleGraphLevel::kDependentModuleFetch);
   }

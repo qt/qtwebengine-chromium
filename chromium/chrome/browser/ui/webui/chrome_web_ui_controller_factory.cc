@@ -35,7 +35,6 @@
 #include "chrome/browser/ui/webui/flash_ui.h"
 #include "chrome/browser/ui/webui/gcm_internals_ui.h"
 #include "chrome/browser/ui/webui/identity_internals_ui.h"
-#include "chrome/browser/ui/webui/instant_ui.h"
 #include "chrome/browser/ui/webui/interstitials/interstitial_ui.h"
 #include "chrome/browser/ui/webui/interventions_internals/interventions_internals_ui.h"
 #include "chrome/browser/ui/webui/invalidations_ui.h"
@@ -80,8 +79,8 @@
 #include "components/prefs/pref_service.h"
 #include "components/safe_browsing/web_ui/constants.h"
 #include "components/safe_browsing/web_ui/safe_browsing_ui.h"
-#include "components/signin/core/common/profile_management_switches.h"
-#include "components/signin/core/common/signin_features.h"
+#include "components/signin/core/browser/profile_management_switches.h"
+#include "components/signin/core/browser/signin_features.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_ui.h"
 #include "content/public/common/content_client.h"
@@ -133,24 +132,22 @@
 
 #if defined(OS_CHROMEOS)
 #include "base/sys_info.h"
-#include "chrome/browser/ui/webui/chromeos/bluetooth_pairing_ui.h"
+#include "chrome/browser/ui/webui/chromeos/bluetooth_pairing_dialog.h"
 #include "chrome/browser/ui/webui/chromeos/certificate_manager_dialog_ui.h"
 #include "chrome/browser/ui/webui/chromeos/cryptohome_ui.h"
 #include "chrome/browser/ui/webui/chromeos/drive_internals_ui.h"
 #include "chrome/browser/ui/webui/chromeos/first_run/first_run_ui.h"
 #include "chrome/browser/ui/webui/chromeos/internet_config_dialog.h"
-#include "chrome/browser/ui/webui/chromeos/internet_detail_dialog_ui.h"
+#include "chrome/browser/ui/webui/chromeos/internet_detail_dialog.h"
 #include "chrome/browser/ui/webui/chromeos/keyboard_overlay_ui.h"
 #include "chrome/browser/ui/webui/chromeos/login/oobe_ui.h"
 #include "chrome/browser/ui/webui/chromeos/mobile_setup_ui.h"
 #include "chrome/browser/ui/webui/chromeos/network_ui.h"
 #include "chrome/browser/ui/webui/chromeos/power_ui.h"
 #include "chrome/browser/ui/webui/chromeos/set_time_ui.h"
-#include "chrome/browser/ui/webui/chromeos/sim_unlock_ui.h"
 #include "chrome/browser/ui/webui/chromeos/slow_trace_ui.h"
 #include "chrome/browser/ui/webui/chromeos/slow_ui.h"
 #include "chrome/browser/ui/webui/chromeos/sys_internals/sys_internals_ui.h"
-#include "chrome/browser/ui/webui/chromeos/voice_search_ui.h"
 #include "components/proximity_auth/webui/proximity_auth_ui.h"
 #include "components/proximity_auth/webui/url_constants.h"
 #endif
@@ -177,6 +174,10 @@
 #include "chrome/browser/ui/webui/conflicts_ui.h"
 #include "chrome/browser/ui/webui/set_as_default_browser_ui_win.h"
 #include "chrome/browser/ui/webui/welcome_win10_ui.h"
+#endif
+
+#if defined(OS_WIN) || defined(OS_MACOSX) || defined(OS_LINUX)
+#include "chrome/browser/ui/webui/discards/discards_ui.h"
 #endif
 
 #if defined(OS_LINUX) || defined(OS_ANDROID)
@@ -290,9 +291,6 @@ bool IsAboutUI(const GURL& url) {
 #if defined(OS_CHROMEOS)
           || url.host_piece() == chrome::kChromeUIOSCreditsHost
 #endif
-#if defined(OS_WIN) || defined(OS_MACOSX) || defined(OS_LINUX)
-          || url.host_piece() == chrome::kChromeUIDiscardsHost
-#endif
           );  // NOLINT
 }
 
@@ -339,8 +337,6 @@ WebUIFactoryFunction GetWebUIFactoryFunction(WebUI* web_ui,
     return &NewWebUI<FlagsUI>;
   if (url.host_piece() == chrome::kChromeUIGCMInternalsHost)
     return &NewWebUI<GCMInternalsUI>;
-  if (url.host_piece() == chrome::kChromeUIInstantHost)
-    return &NewWebUI<InstantUI>;
   if (url.host_piece() == chrome::kChromeUIInterstitialHost)
     return &NewWebUI<InterstitialUI>;
   if (url.host_piece() == chrome::kChromeUIInterventionsInternalsHost)
@@ -361,8 +357,6 @@ WebUIFactoryFunction GetWebUIFactoryFunction(WebUI* web_ui,
     return &NewWebUI<OmniboxUI>;
   if (url.host_piece() == chrome::kChromeUIPasswordManagerInternalsHost)
     return &NewWebUI<PasswordManagerInternalsUI>;
-  if (url.host_piece() == chrome::kChromeUIPhysicalWebHost)
-    return &NewWebUI<PhysicalWebUI>;
   if (url.host_piece() == chrome::kChromeUIPredictorsHost)
     return &NewWebUI<PredictorsUI>;
   if (url.host() == chrome::kChromeUIQuotaInternalsHost)
@@ -437,7 +431,7 @@ WebUIFactoryFunction GetWebUIFactoryFunction(WebUI* web_ui,
 #endif
 #if defined(OS_CHROMEOS)
   if (url.host_piece() == chrome::kChromeUIBluetoothPairingHost)
-    return &NewWebUI<chromeos::BluetoothPairingUI>;
+    return &NewWebUI<chromeos::BluetoothPairingDialogUI>;
   if (url.host_piece() == chrome::kChromeUICertificateManagerHost)
     return &NewWebUI<chromeos::CertificateManagerDialogUI>;
   if (url.host_piece() == chrome::kChromeUICryptohomeHost)
@@ -464,8 +458,6 @@ WebUIFactoryFunction GetWebUIFactoryFunction(WebUI* web_ui,
     return &NewWebUI<chromeos::InternetDetailDialogUI>;
   if (url.host_piece() == chrome::kChromeUISetTimeHost)
     return &NewWebUI<chromeos::SetTimeUI>;
-  if (url.host_piece() == chrome::kChromeUISimUnlockHost)
-    return &NewWebUI<chromeos::SimUnlockUI>;
   if (url.host_piece() == chrome::kChromeUISlowHost)
     return &NewWebUI<chromeos::SlowUI>;
   if (url.host_piece() == chrome::kChromeUISlowTraceHost)
@@ -473,8 +465,6 @@ WebUIFactoryFunction GetWebUIFactoryFunction(WebUI* web_ui,
   if (url.host_piece() == chrome::kChromeUISysInternalsHost &&
       SysInternalsUI::IsEnabled())
     return &NewWebUI<SysInternalsUI>;
-  if (url.host_piece() == chrome::kChromeUIVoiceSearchHost)
-    return &NewWebUI<VoiceSearchUI>;
 #if !defined(OFFICIAL_BUILD)
   if (!base::SysInfo::IsRunningOnChromeOS()) {
     if (url.host_piece() == chrome::kChromeUIDeviceEmulatorHost)
@@ -485,6 +475,8 @@ WebUIFactoryFunction GetWebUIFactoryFunction(WebUI* web_ui,
 #if defined(OS_ANDROID)
   if (url.host_piece() == chrome::kChromeUIOfflineInternalsHost)
     return &NewWebUI<OfflineInternalsUI>;
+  if (url.host_piece() == chrome::kChromeUIPhysicalWebHost)
+    return &NewWebUI<PhysicalWebUI>;
   if (url.host_piece() == chrome::kChromeUISnippetsInternalsHost &&
       !profile->IsOffTheRecord())
     return &NewWebUI<SnippetsInternalsUI>;
@@ -597,6 +589,10 @@ WebUIFactoryFunction GetWebUIFactoryFunction(WebUI* web_ui,
   if (url.host_piece() == chrome::kChromeUISandboxHost) {
     return &NewWebUI<SandboxInternalsUI>;
   }
+#endif
+#if defined(OS_WIN) || defined(OS_MACOSX) || defined(OS_LINUX)
+  if (url.host_piece() == chrome::kChromeUIDiscardsHost)
+    return &NewWebUI<DiscardsUI>;
 #endif
   if (IsAboutUI(url))
     return &NewWebUI<AboutUI>;
@@ -715,7 +711,7 @@ void ChromeWebUIControllerFactory::GetFaviconForURL(
       favicon_base::FaviconRawBitmapResult bitmap_result;
       bitmap_result.bitmap_data = bitmap;
       // Leave |bitmap_result|'s icon URL as the default of GURL().
-      bitmap_result.icon_type = favicon_base::FAVICON;
+      bitmap_result.icon_type = favicon_base::IconType::kFavicon;
       bitmap_result.pixel_size = candidate_sizes[selected_index];
       favicon_bitmap_results->push_back(bitmap_result);
     }

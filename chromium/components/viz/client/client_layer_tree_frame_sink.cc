@@ -87,13 +87,15 @@ bool ClientLayerTreeFrameSink::BindToClient(
   if (pipes_.compositor_frame_sink_info.is_valid()) {
     compositor_frame_sink_.Bind(std::move(pipes_.compositor_frame_sink_info));
     compositor_frame_sink_.set_connection_error_with_reason_handler(
-        base::Bind(ClientLayerTreeFrameSink::OnMojoConnectionError));
+        base::Bind(&ClientLayerTreeFrameSink::OnMojoConnectionError,
+                   weak_factory_.GetWeakPtr()));
     compositor_frame_sink_ptr_ = compositor_frame_sink_.get();
   } else if (pipes_.compositor_frame_sink_associated_info.is_valid()) {
     compositor_frame_sink_associated_.Bind(
         std::move(pipes_.compositor_frame_sink_associated_info));
     compositor_frame_sink_associated_.set_connection_error_with_reason_handler(
-        base::Bind(ClientLayerTreeFrameSink::OnMojoConnectionError));
+        base::Bind(&ClientLayerTreeFrameSink::OnMojoConnectionError,
+                   weak_factory_.GetWeakPtr()));
     compositor_frame_sink_ptr_ = compositor_frame_sink_associated_.get();
   }
   client_binding_.Bind(std::move(pipes_.client_request));
@@ -143,7 +145,7 @@ void ClientLayerTreeFrameSink::SubmitCompositorFrame(CompositorFrame frame) {
 
   TRACE_EVENT_FLOW_BEGIN0(TRACE_DISABLED_BY_DEFAULT("cc.debug.ipc"),
                           "SubmitCompositorFrame",
-                          local_surface_id_.local_id());
+                          local_surface_id_.parent_id());
   bool tracing_enabled;
   TRACE_EVENT_CATEGORY_GROUP_ENABLED(TRACE_DISABLED_BY_DEFAULT("cc.debug.ipc"),
                                      &tracing_enabled);
@@ -170,6 +172,21 @@ void ClientLayerTreeFrameSink::DidReceiveCompositorFrameAck(
   DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
   client_->ReclaimResources(resources);
   client_->DidReceiveCompositorFrameAck();
+}
+
+void ClientLayerTreeFrameSink::DidPresentCompositorFrame(
+    uint32_t presentation_token,
+    base::TimeTicks time,
+    base::TimeDelta refresh,
+    uint32_t flags) {
+  DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
+  client_->DidPresentCompositorFrame(presentation_token, time, refresh, flags);
+}
+
+void ClientLayerTreeFrameSink::DidDiscardCompositorFrame(
+    uint32_t presentation_token) {
+  DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
+  client_->DidDiscardCompositorFrame(presentation_token);
 }
 
 void ClientLayerTreeFrameSink::OnBeginFrame(const BeginFrameArgs& args) {
@@ -201,12 +218,13 @@ void ClientLayerTreeFrameSink::OnNeedsBeginFrames(bool needs_begin_frames) {
   compositor_frame_sink_ptr_->SetNeedsBeginFrame(needs_begin_frames);
 }
 
-// static
 void ClientLayerTreeFrameSink::OnMojoConnectionError(
     uint32_t custom_reason,
     const std::string& description) {
   if (custom_reason)
     DLOG(FATAL) << description;
+  if (client_)
+    client_->DidLoseLayerTreeFrameSink();
 }
 
 }  // namespace viz

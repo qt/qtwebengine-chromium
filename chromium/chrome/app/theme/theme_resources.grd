@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- This grd file contains images that are pre-scaled for device scale
-     factors. The image returned by |base::ResourceBundle::GetImageNamed|
-     will contain multiple |gfx:ImageSkiaReps| for each scale factors. The
+     factors. The image returned by ui::ResourceBundle::GetImageNamed()
+     will contain multiple gfx:ImageSkiaReps for each scale factors. The
      |fallback_to_low_resolution| attribute controls behavior when
      an image file is missing for target scale factor. If true, chrome
      will automatically scale the 1x image to the target scale factor.
@@ -29,6 +29,7 @@
       <structure type="chrome_scaled_image" name="IDR_ALLOWED_ADS" file="common/allowed_ads.png" />
       <structure type="chrome_scaled_image" name="IDR_ALLOWED_BACKGROUND_SYNC" file="common/allowed_background_sync.png" />
       <structure type="chrome_scaled_image" name="IDR_ALLOWED_CAMERA" file="common/allowed_camera.png" />
+      <structure type="chrome_scaled_image" name="IDR_ALLOWED_CLIPBOARD" file="common/allowed_clipboard.png" />
       <structure type="chrome_scaled_image" name="IDR_ALLOWED_DOWNLOADS" file="common/allowed_downloads.png" />
       <structure type="chrome_scaled_image" name="IDR_ALLOWED_IMAGES" file="common/allowed_images.png" />
       <structure type="chrome_scaled_image" name="IDR_ALLOWED_JAVASCRIPT" file="common/allowed_script.png" />
@@ -47,8 +48,6 @@
       </if>
       <if expr="enable_app_list">
         <structure type="chrome_scaled_image" name="IDR_APP_LIST_TAB_OVERLAY" file="common/app_list_v1_overlay.png" />
-        <structure type="chrome_scaled_image" name="IDR_APP_LIST_MIC_HOTWORD_OFF" file="common/app_list_mic_hotword_off.png" />
-        <structure type="chrome_scaled_image" name="IDR_APP_LIST_MIC_HOTWORD_ON" file="common/app_list_mic_hotword_on.png" />
       </if>
       <if expr="toolkit_views and not is_macosx">
         <structure type="chrome_scaled_image" name="IDR_APP_WINDOW_CLOSE" file="common/app_window_close.png" />
@@ -78,6 +77,7 @@
       <structure type="chrome_scaled_image" name="IDR_BLOCKED_ADS" file="common/blocked_ads.png" />
       <structure type="chrome_scaled_image" name="IDR_BLOCKED_BACKGROUND_SYNC" file="common/blocked_background_sync.png" />
       <structure type="chrome_scaled_image" name="IDR_BLOCKED_CAMERA" file="common/blocked_camera.png" />
+      <structure type="chrome_scaled_image" name="IDR_BLOCKED_CLIPBOARD" file="common/blocked_clipboard.png" />
       <structure type="chrome_scaled_image" name="IDR_BLOCKED_COOKIES" file="common/blocked_cookies.png" />
       <structure type="chrome_scaled_image" name="IDR_BLOCKED_DOWNLOADS" file="common/blocked_downloads.png" />
       <structure type="chrome_scaled_image" name="IDR_BLOCKED_EXTENSION_SCRIPT" file="common/blocked_extension_script.png" />
@@ -123,7 +123,6 @@
       <if expr="is_win">
         <structure type="chrome_scaled_image" name="IDR_CONFLICT_FAVICON" file="common/favicon_conflicts.png" />
       </if>
-      <structure type="chrome_scaled_image" name="IDR_COOKIE_ICON" file="common/cookie.png" />
       <structure type="chrome_scaled_image" name="IDR_COOKIE_STORAGE_ICON" file="common/cookie_storage.png" />
       <structure type="chrome_scaled_image" name="IDR_DEVELOPER_MODE_HIGHLIGHT_BOTTOM_LEFT" file="common/developer_mode_highlight_bottom_left.png" />
       <structure type="chrome_scaled_image" name="IDR_DEVELOPER_MODE_HIGHLIGHT_BOTTOM" file="common/developer_mode_highlight_bottom.png" />
@@ -199,14 +198,8 @@
         <structure type="chrome_scaled_image" name="IDR_HIDE_PASSWORD" file="cros/hide_password.png" />
       </if>
       <structure type="chrome_scaled_image" name="IDR_HIDE_PASSWORD_HOVER" file="common/hide_password_hover.png" />
-      <structure type="chrome_scaled_image" name="IDR_HOTWORD_NOTIFICATION_ICON" file="common/notification_hotword_icon.png" />
       <if expr="is_macosx">
         <structure type="chrome_scaled_image" name="IDR_ICON_PROFILES_ACCOUNT_BUTTON_ERROR" file="legacy/avatar_menu_auth_error.png" />
-        <structure type="chrome_scaled_image" name="IDR_ICON_PROFILES_EDIT_CAMERA" file="legacy/edit_camera.png" />
-        <structure type="chrome_scaled_image" name="IDR_ICON_PROFILES_EDIT_HOVER" file="legacy/edit_button_hover.png" />
-        <structure type="chrome_scaled_image" name="IDR_ICON_PROFILES_EDIT_PRESSED" file="legacy/edit_button_pressed.png" />
-        <structure type="chrome_scaled_image" name="IDR_ICON_PROFILES_MENU_AVATAR" file="legacy/avatar_menu_profile.png" />
-        <structure type="chrome_scaled_image" name="IDR_ICON_PROFILES_MENU_DISCONNECT" file="legacy/avatar_menu_disconnect.png" />
       </if>
       <if expr="not is_android and not chromeos">
         <!-- User Manager tutorial -->

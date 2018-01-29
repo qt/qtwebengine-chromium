@@ -8,7 +8,6 @@
 
 #include "base/logging.h"
 #include "base/memory/ptr_util.h"
-#include "base/metrics/histogram_macros.h"
 #include "base/time/time.h"
 #include "content/browser/loader/null_resource_controller.h"
 #include "content/browser/loader/resource_controller.h"
@@ -82,7 +81,7 @@ DetachableResourceHandler::DetachableResourceHandler(
 
 DetachableResourceHandler::~DetachableResourceHandler() {
   // Cleanup back-pointer stored on the request info.
-  GetRequestInfo()->set_detachable_handler(NULL);
+  GetRequestInfo()->set_detachable_handler(nullptr);
 }
 
 void DetachableResourceHandler::SetDelegate(Delegate* delegate) {
@@ -103,7 +102,7 @@ void DetachableResourceHandler::Detach() {
     // TODO(mmenke): Get rid of NullResourceController and do something more
     // reasonable.
     next_handler_->OnResponseCompleted(
-        status, base::MakeUnique<NullResourceController>(&was_resumed));
+        status, std::make_unique<NullResourceController>(&was_resumed));
     DCHECK(was_resumed);
     // If |next_handler_| were to defer its shutdown in OnResponseCompleted,
     // this would destroy it anyway. Fortunately, AsyncResourceHandler never
@@ -166,7 +165,7 @@ void DetachableResourceHandler::OnRequestRedirected(
 
   HoldController(std::move(controller));
   next_handler_->OnRequestRedirected(redirect_info, response,
-                                     base::MakeUnique<Controller>(this));
+                                     std::make_unique<Controller>(this));
 }
 
 void DetachableResourceHandler::OnResponseStarted(
@@ -181,7 +180,7 @@ void DetachableResourceHandler::OnResponseStarted(
 
   HoldController(std::move(controller));
   next_handler_->OnResponseStarted(response,
-                                   base::MakeUnique<Controller>(this));
+                                   std::make_unique<Controller>(this));
 }
 
 void DetachableResourceHandler::OnWillStart(
@@ -195,7 +194,7 @@ void DetachableResourceHandler::OnWillStart(
   }
 
   HoldController(std::move(controller));
-  next_handler_->OnWillStart(url, base::MakeUnique<Controller>(this));
+  next_handler_->OnWillStart(url, std::make_unique<Controller>(this));
 }
 
 void DetachableResourceHandler::OnWillRead(
@@ -215,7 +214,7 @@ void DetachableResourceHandler::OnWillRead(
   parent_read_buffer_size_ = buf_size;
 
   HoldController(std::move(controller));
-  next_handler_->OnWillRead(buf, buf_size, base::MakeUnique<Controller>(this));
+  next_handler_->OnWillRead(buf, buf_size, std::make_unique<Controller>(this));
 }
 
 void DetachableResourceHandler::OnReadCompleted(
@@ -230,16 +229,12 @@ void DetachableResourceHandler::OnReadCompleted(
 
   HoldController(std::move(controller));
   next_handler_->OnReadCompleted(bytes_read,
-                                 base::MakeUnique<Controller>(this));
+                                 std::make_unique<Controller>(this));
 }
 
 void DetachableResourceHandler::OnResponseCompleted(
     const net::URLRequestStatus& status,
     std::unique_ptr<ResourceController> controller) {
-  UMA_HISTOGRAM_MEDIUM_TIMES(
-      "Net.DetachableResourceHandler.Duration",
-      base::TimeTicks::Now() - request()->creation_time());
-
   // No DCHECK(!is_deferred_) as the request may have been cancelled while
   // deferred.
 
@@ -252,7 +247,7 @@ void DetachableResourceHandler::OnResponseCompleted(
 
   HoldController(std::move(controller));
   next_handler_->OnResponseCompleted(status,
-                                     base::MakeUnique<Controller>(this));
+                                     std::make_unique<Controller>(this));
 }
 
 void DetachableResourceHandler::OnDataDownloaded(int bytes_downloaded) {

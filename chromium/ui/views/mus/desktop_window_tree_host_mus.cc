@@ -5,7 +5,6 @@
 #include "ui/views/mus/desktop_window_tree_host_mus.h"
 
 #include "base/memory/ptr_util.h"
-#include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "ui/aura/client/aura_constants.h"
@@ -311,8 +310,8 @@ void DesktopWindowTreeHostMus::Init(aura::Window* content_window,
   if (!params.bounds.IsEmpty())
     SetBoundsInDIP(params.bounds);
 
-  cursor_manager_ = base::MakeUnique<wm::CursorManager>(
-      base::MakeUnique<NativeCursorManagerMus>(window()));
+  cursor_manager_ = std::make_unique<wm::CursorManager>(
+      std::make_unique<NativeCursorManagerMus>(window()));
   aura::client::SetCursorClient(window(), cursor_manager_.get());
   InitHost();
 
@@ -376,7 +375,7 @@ void DesktopWindowTreeHostMus::OnWidgetInitDone() {
 }
 
 std::unique_ptr<corewm::Tooltip> DesktopWindowTreeHostMus::CreateTooltip() {
-  return base::MakeUnique<corewm::TooltipAura>();
+  return std::make_unique<corewm::TooltipAura>();
 }
 
 std::unique_ptr<aura::client::DragDropClient>
@@ -662,9 +661,7 @@ Widget::MoveLoopResult DesktopWindowTreeHostMus::RunMoveLoop(
   static_cast<internal::NativeWidgetPrivate*>(
       desktop_native_widget_aura_)->ReleaseCapture();
 
-  base::MessageLoopForUI* loop = base::MessageLoopForUI::current();
-  base::MessageLoop::ScopedNestableTaskAllower allow_nested(loop);
-  base::RunLoop run_loop;
+  base::RunLoop run_loop(base::RunLoop::Type::kNestableTasksAllowed);
 
   ui::mojom::MoveLoopSource mus_source =
       source == Widget::MOVE_LOOP_SOURCE_MOUSE

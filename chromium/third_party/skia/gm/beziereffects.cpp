@@ -18,6 +18,8 @@
 #include "GrTest.h"
 #include "SkColorPriv.h"
 #include "SkGeometry.h"
+#include "SkPoint3.h"
+#include "SkPointPriv.h"
 #include "effects/GrBezierEffect.h"
 #include "ops/GrMeshDrawOp.h"
 
@@ -92,7 +94,7 @@ private:
             return;
         }
         SkRect rect = this->rect();
-        pts[0].setRectFan(rect.fLeft, rect.fTop, rect.fRight, rect.fBottom, vertexStride);
+        SkPointPriv::SetRectTriStrip(pts, rect.fLeft, rect.fTop, rect.fRight, rect.fBottom, vertexStride);
         helper.recordDraw(target, this->gp(), this->makePipeline(target));
     }
 
@@ -157,9 +159,9 @@ protected:
                 {rand.nextRangeF(0.f, w), rand.nextRangeF(0.f, h)},
                 {rand.nextRangeF(0.f, w), rand.nextRangeF(0.f, h)}
             };
-            for(GrPrimitiveEdgeType edgeType : {kFillBW_GrProcessorEdgeType,
-                                                kFillAA_GrProcessorEdgeType,
-                                                kHairlineAA_GrProcessorEdgeType}) {
+            for(GrClipEdgeType edgeType : {GrClipEdgeType::kFillBW,
+                                           GrClipEdgeType::kFillAA,
+                                           GrClipEdgeType::kHairlineAA}) {
                 SkScalar x = col * w;
                 SkScalar y = row * h;
                 SkPoint controlPts[] = {
@@ -267,11 +269,11 @@ private:
             return;
         }
         SkRect rect = this->rect();
-        verts[0].fPosition.setRectFan(rect.fLeft, rect.fTop, rect.fRight, rect.fBottom,
-                                      sizeof(Vertex));
+        SkPointPriv::SetRectTriStrip(&verts[0].fPosition, rect.fLeft, rect.fTop, rect.fRight,
+                                     rect.fBottom, sizeof(Vertex));
         for (int v = 0; v < 4; ++v) {
-            SkScalar pt3[3] = {verts[v].fPosition.x(), verts[v].fPosition.y(), 1.f};
-            fKLM.mapHomogeneousPoints(verts[v].fKLM, pt3, 1);
+            SkPoint3 pt3 = {verts[v].fPosition.x(), verts[v].fPosition.y(), 1.f};
+            fKLM.mapHomogeneousPoints((SkPoint3* ) verts[v].fKLM, &pt3, 1);
         }
         helper.recordDraw(target, this->gp(), this->makePipeline(target));
     }
@@ -341,9 +343,9 @@ protected:
                 {rand.nextRangeF(0.f, w), rand.nextRangeF(0.f, h)}
             };
             SkScalar weight = rand.nextRangeF(0.f, 2.f);
-            for(int edgeType = 0; edgeType < kGrProcessorEdgeTypeCnt; ++edgeType) {
+            for(int edgeType = 0; edgeType < kGrClipEdgeTypeCnt; ++edgeType) {
                 sk_sp<GrGeometryProcessor> gp;
-                GrPrimitiveEdgeType et = (GrPrimitiveEdgeType)edgeType;
+                GrClipEdgeType et = (GrClipEdgeType)edgeType;
                 gp = GrConicEffect::Make(color, SkMatrix::I(), et,
                                          *context->caps(), SkMatrix::I(), false);
                 if (!gp) {
@@ -481,8 +483,8 @@ private:
             return;
         }
         SkRect rect = this->rect();
-        verts[0].fPosition.setRectFan(rect.fLeft, rect.fTop, rect.fRight, rect.fBottom,
-                                      sizeof(Vertex));
+        SkPointPriv::SetRectTriStrip(&verts[0].fPosition, rect.fLeft, rect.fTop, rect.fRight,
+                                     rect.fBottom, sizeof(Vertex));
         fDevToUV.apply<4, sizeof(Vertex), sizeof(SkPoint)>(verts);
         helper.recordDraw(target, this->gp(), this->makePipeline(target));
     }
@@ -549,9 +551,9 @@ protected:
                 {rand.nextRangeF(0.f, w), rand.nextRangeF(0.f, h)},
                 {rand.nextRangeF(0.f, w), rand.nextRangeF(0.f, h)}
             };
-            for(int edgeType = 0; edgeType < kGrProcessorEdgeTypeCnt; ++edgeType) {
+            for(int edgeType = 0; edgeType < kGrClipEdgeTypeCnt; ++edgeType) {
                 sk_sp<GrGeometryProcessor> gp;
-                GrPrimitiveEdgeType et = (GrPrimitiveEdgeType)edgeType;
+                GrClipEdgeType et = (GrClipEdgeType)edgeType;
                 gp = GrQuadEffect::Make(color, SkMatrix::I(), et,
                                         *context->caps(), SkMatrix::I(), false);
                 if (!gp) {

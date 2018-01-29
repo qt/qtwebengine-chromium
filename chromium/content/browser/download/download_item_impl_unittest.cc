@@ -277,9 +277,8 @@ class DownloadItemTest : public testing::Test {
 
   DownloadItemImpl* CreateDownloadItemWithCreateInfo(
       std::unique_ptr<DownloadCreateInfo> info) {
-    DownloadItemImpl* download =
-        new DownloadItemImpl(mock_delegate(), next_download_id_++,
-                             *(info.get()), net::NetLogWithSource());
+    DownloadItemImpl* download = new DownloadItemImpl(
+        mock_delegate(), next_download_id_++, *(info.get()));
     allocated_downloads_[download] = base::WrapUnique(download);
     return download;
   }
@@ -296,9 +295,8 @@ class DownloadItemTest : public testing::Test {
   // called.
   DownloadItemImpl* CreateDownloadItem() {
     create_info_->download_id = ++next_download_id_;
-    DownloadItemImpl* download =
-        new DownloadItemImpl(mock_delegate(), create_info_->download_id,
-                             *create_info_, net::NetLogWithSource());
+    DownloadItemImpl* download = new DownloadItemImpl(
+        mock_delegate(), create_info_->download_id, *create_info_);
     allocated_downloads_[download] = base::WrapUnique(download);
     return download;
   }
@@ -322,7 +320,7 @@ class DownloadItemTest : public testing::Test {
     }
 
     std::unique_ptr<MockRequestHandle> request_handle =
-        base::MakeUnique<NiceMock<MockRequestHandle>>();
+        std::make_unique<NiceMock<MockRequestHandle>>();
     item->Start(std::move(download_file), std::move(request_handle),
                 *create_info_);
     task_environment_.RunUntilIdle();
@@ -852,9 +850,9 @@ TEST_F(DownloadItemTest, AutomaticResumption_AttemptLimit) {
   for (int i = 0; i < (DownloadItemImpl::kMaxAutoResumeAttempts + 1); ++i) {
     SCOPED_TRACE(::testing::Message() << "Iteration " << i);
 
-    mock_download_file = base::MakeUnique<NiceMock<MockDownloadFile>>();
+    mock_download_file = std::make_unique<NiceMock<MockDownloadFile>>();
     mock_download_file_ref = mock_download_file.get();
-    mock_request_handle = base::MakeUnique<NiceMock<MockRequestHandle>>();
+    mock_request_handle = std::make_unique<NiceMock<MockRequestHandle>>();
 
     ON_CALL(*mock_download_file_ref, FullPath())
         .WillByDefault(ReturnRefOfCopy(base::FilePath()));
@@ -1168,9 +1166,9 @@ TEST_F(DownloadItemTest, Start) {
 // file initialization failing.
 TEST_F(DownloadItemTest, InitDownloadFileFails) {
   DownloadItemImpl* item = CreateDownloadItem();
-  std::unique_ptr<MockDownloadFile> file = base::MakeUnique<MockDownloadFile>();
+  std::unique_ptr<MockDownloadFile> file = std::make_unique<MockDownloadFile>();
   std::unique_ptr<MockRequestHandle> request_handle =
-      base::MakeUnique<MockRequestHandle>();
+      std::make_unique<MockRequestHandle>();
 
   base::HistogramTester histogram_tester;
   EXPECT_CALL(*file, Cancel());
@@ -1242,7 +1240,7 @@ TEST_F(DownloadItemTest, StartFailedDownload) {
           DOWNLOAD_INTERRUPT_REASON_NETWORK_FAILED),
       1);
   EXPECT_EQ(target_path, item->GetTargetFilePath());
-  CleanupItem(item, NULL, DownloadItem::INTERRUPTED);
+  CleanupItem(item, nullptr, DownloadItem::INTERRUPTED);
 }
 
 // Test that the delegate is invoked after the download file is renamed.

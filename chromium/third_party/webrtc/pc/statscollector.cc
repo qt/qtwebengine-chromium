@@ -50,8 +50,9 @@ typedef TypeForAdd<float> FloatForAdd;
 typedef TypeForAdd<int64_t> Int64ForAdd;
 typedef TypeForAdd<int> IntForAdd;
 
-StatsReport::Id GetTransportIdFromProxy(const ProxyTransportMap& map,
-                                        const std::string& proxy) {
+StatsReport::Id GetTransportIdFromProxy(
+    const std::map<std::string, std::string>& map,
+    const std::string& proxy) {
   RTC_DCHECK(!proxy.empty());
   auto found = map.find(proxy);
   if (found == map.end()) {
@@ -73,13 +74,14 @@ StatsReport* AddTrackReport(StatsCollection* reports,
 }
 
 template <class TrackVector>
-void CreateTrackReports(const TrackVector& tracks, StatsCollection* reports,
-                        TrackIdMap& track_ids) {
+void CreateTrackReports(const TrackVector& tracks,
+                        StatsCollection* reports,
+                        TrackIdMap* track_ids) {
   for (const auto& track : tracks) {
     const std::string& track_id = track->id();
     StatsReport* report = AddTrackReport(reports, track_id);
     RTC_DCHECK(report != nullptr);
-    track_ids[track_id] = report;
+    (*track_ids)[track_id] = report;
   }
 }
 
@@ -99,40 +101,37 @@ void ExtractCommonReceiveProperties(const cricket::MediaReceiverInfo& info,
 
 void SetAudioProcessingStats(StatsReport* report,
                              bool typing_noise_detected,
-                             int echo_return_loss,
-                             int echo_return_loss_enhancement,
-                             int echo_delay_median_ms,
-                             float aec_quality_min,
-                             int echo_delay_std_ms,
-                             float residual_echo_likelihood,
-                             float residual_echo_likelihood_recent_max) {
+                             const AudioProcessingStats& apm_stats) {
   report->AddBoolean(StatsReport::kStatsValueNameTypingNoiseState,
                      typing_noise_detected);
-  if (aec_quality_min >= 0.0f) {
-    report->AddFloat(StatsReport::kStatsValueNameEchoCancellationQualityMin,
-                     aec_quality_min);
+  if (apm_stats.delay_median_ms) {
+    report->AddInt(StatsReport::kStatsValueNameEchoDelayMedian,
+                   *apm_stats.delay_median_ms);
   }
-  const IntForAdd ints[] = {
-    { StatsReport::kStatsValueNameEchoDelayMedian, echo_delay_median_ms },
-    { StatsReport::kStatsValueNameEchoDelayStdDev, echo_delay_std_ms },
-  };
-  for (const auto& i : ints) {
-    if (i.value >= 0) {
-      report->AddInt(i.name, i.value);
-    }
+  if (apm_stats.delay_standard_deviation_ms) {
+    report->AddInt(StatsReport::kStatsValueNameEchoDelayStdDev,
+                   *apm_stats.delay_standard_deviation_ms);
   }
-  // These can take on valid negative values.
-  report->AddInt(StatsReport::kStatsValueNameEchoReturnLoss, echo_return_loss);
-  report->AddInt(StatsReport::kStatsValueNameEchoReturnLossEnhancement,
-                 echo_return_loss_enhancement);
-  if (residual_echo_likelihood >= 0.0f) {
+  if (apm_stats.echo_return_loss) {
+    report->AddInt(StatsReport::kStatsValueNameEchoReturnLoss,
+                   *apm_stats.echo_return_loss);
+  }
+  if (apm_stats.echo_return_loss_enhancement) {
+    report->AddInt(StatsReport::kStatsValueNameEchoReturnLossEnhancement,
+                   *apm_stats.echo_return_loss_enhancement);
+  }
+  if (apm_stats.residual_echo_likelihood) {
     report->AddFloat(StatsReport::kStatsValueNameResidualEchoLikelihood,
-                     residual_echo_likelihood);
+                     static_cast<float>(*apm_stats.residual_echo_likelihood));
   }
-  if (residual_echo_likelihood_recent_max >= 0.0f) {
+  if (apm_stats.residual_echo_likelihood_recent_max) {
     report->AddFloat(
         StatsReport::kStatsValueNameResidualEchoLikelihoodRecentMax,
-        residual_echo_likelihood_recent_max);
+        static_cast<float>(*apm_stats.residual_echo_likelihood_recent_max));
+  }
+  if (apm_stats.divergent_filter_fraction) {
+    report->AddFloat(StatsReport::kStatsValueNameAecDivergentFilterFraction,
+                     static_cast<float>(*apm_stats.divergent_filter_fraction));
   }
 }
 
@@ -194,11 +193,8 @@ void ExtractStats(const cricket::VoiceReceiverInfo& info, StatsReport* report) {
 void ExtractStats(const cricket::VoiceSenderInfo& info, StatsReport* report) {
   ExtractCommonSendProperties(info, report);
 
-  SetAudioProcessingStats(
-      report, info.typing_noise_detected, info.echo_return_loss,
-      info.echo_return_loss_enhancement, info.echo_delay_median_ms,
-      info.aec_quality_min, info.echo_delay_std_ms,
-      info.residual_echo_likelihood, info.residual_echo_likelihood_recent_max);
+  SetAudioProcessingStats(report, info.typing_noise_detected,
+                          info.apm_statistics);
 
   const FloatForAdd floats[] = {
     { StatsReport::kStatsValueNameTotalAudioEnergy, info.total_input_energy },
@@ -315,6 +311,9 @@ void ExtractStats(const cricket::VideoSenderInfo& info, StatsReport* report) {
                      (info.adapt_reason & 0x2) > 0);
   report->AddBoolean(StatsReport::kStatsValueNameCpuLimitedResolution,
                      (info.adapt_reason & 0x1) > 0);
+  report->AddBoolean(StatsReport::kStatsValueNameHasEnteredLowResolution,
+                     info.has_entered_low_resolution);
+
   if (info.qp_sum)
     report->AddInt(StatsReport::kStatsValueNameQpSum, *info.qp_sum);
 
@@ -462,10 +461,10 @@ void StatsCollector::AddStream(MediaStreamInterface* stream) {
   RTC_DCHECK(pc_->signaling_thread()->IsCurrent());
   RTC_DCHECK(stream != NULL);
 
-  CreateTrackReports<AudioTrackVector>(stream->GetAudioTracks(),
-                                       &reports_, track_ids_);
-  CreateTrackReports<VideoTrackVector>(stream->GetVideoTracks(),
-                                       &reports_, track_ids_);
+  CreateTrackReports<AudioTrackVector>(stream->GetAudioTracks(), &reports_,
+                                       &track_ids_);
+  CreateTrackReports<VideoTrackVector>(stream->GetVideoTracks(), &reports_,
+                                       &track_ids_);
 }
 
 void StatsCollector::AddLocalAudioTrack(AudioTrackInterface* audio_track,
@@ -555,23 +554,19 @@ StatsCollector::UpdateStats(PeerConnectionInterface::StatsOutputLevel level) {
   }
   stats_gathering_started_ = time_now;
 
-  // TODO(pthatcher): Merge PeerConnection and WebRtcSession so there is no
-  // pc_->session().
-  if (pc_->session_created()) {
-    // TODO(tommi): All of these hop over to the worker thread to fetch
-    // information.  We could use an AsyncInvoker to run all of these and post
-    // the information back to the signaling thread where we can create and
-    // update stats reports.  That would also clean up the threading story a bit
-    // since we'd be creating/updating the stats report objects consistently on
-    // the same thread (this class has no locks right now).
-    ExtractSessionInfo();
-    ExtractBweInfo();
-    ExtractVoiceInfo();
-    ExtractVideoInfo(level);
-    ExtractSenderInfo();
-    ExtractDataInfo();
-    UpdateTrackReports();
-  }
+  // TODO(tommi): All of these hop over to the worker thread to fetch
+  // information.  We could use an AsyncInvoker to run all of these and post
+  // the information back to the signaling thread where we can create and
+  // update stats reports.  That would also clean up the threading story a bit
+  // since we'd be creating/updating the stats report objects consistently on
+  // the same thread (this class has no locks right now).
+  ExtractSessionInfo();
+  ExtractBweInfo();
+  ExtractVoiceInfo();
+  ExtractVideoInfo(level);
+  ExtractSenderInfo();
+  ExtractDataInfo();
+  UpdateTrackReports();
 }
 
 StatsReport* StatsCollector::PrepareReport(
@@ -855,7 +850,7 @@ void StatsCollector::ExtractVoiceInfo() {
   }
   cricket::VoiceMediaInfo voice_info;
   if (!pc_->voice_channel()->GetStats(&voice_info)) {
-    LOG(LS_ERROR) << "Failed to get voice channel stats.";
+    RTC_LOG(LS_ERROR) << "Failed to get voice channel stats.";
     return;
   }
 
@@ -866,8 +861,8 @@ void StatsCollector::ExtractVoiceInfo() {
   StatsReport::Id transport_id(GetTransportIdFromProxy(
       proxy_to_transport_, pc_->voice_channel()->content_name()));
   if (!transport_id.get()) {
-    LOG(LS_ERROR) << "Failed to get transport name for proxy "
-                  << pc_->voice_channel()->content_name();
+    RTC_LOG(LS_ERROR) << "Failed to get transport name for proxy "
+                      << pc_->voice_channel()->content_name();
     return;
   }
 
@@ -876,7 +871,7 @@ void StatsCollector::ExtractVoiceInfo() {
   ExtractStatsFromList(voice_info.senders, transport_id, this,
       StatsReport::kSend);
 
-  UpdateStatsFromExistingLocalAudioTracks();
+  UpdateStatsFromExistingLocalAudioTracks(voice_info.receivers.size() > 0);
 }
 
 void StatsCollector::ExtractVideoInfo(
@@ -888,7 +883,7 @@ void StatsCollector::ExtractVideoInfo(
 
   cricket::VideoMediaInfo video_info;
   if (!pc_->video_channel()->GetStats(&video_info)) {
-    LOG(LS_ERROR) << "Failed to get video channel stats.";
+    RTC_LOG(LS_ERROR) << "Failed to get video channel stats.";
     return;
   }
 
@@ -899,8 +894,8 @@ void StatsCollector::ExtractVideoInfo(
   StatsReport::Id transport_id(GetTransportIdFromProxy(
       proxy_to_transport_, pc_->video_channel()->content_name()));
   if (!transport_id.get()) {
-    LOG(LS_ERROR) << "Failed to get transport name for proxy "
-                  << pc_->video_channel()->content_name();
+    RTC_LOG(LS_ERROR) << "Failed to get transport name for proxy "
+                      << pc_->video_channel()->content_name();
     return;
   }
   ExtractStatsFromList(video_info.receivers, transport_id, this,
@@ -972,7 +967,8 @@ StatsReport* StatsCollector::GetReport(const StatsReport::StatsType& type,
   return reports_.Find(StatsReport::NewIdWithDirection(type, id, direction));
 }
 
-void StatsCollector::UpdateStatsFromExistingLocalAudioTracks() {
+void StatsCollector::UpdateStatsFromExistingLocalAudioTracks(
+    bool has_remote_tracks) {
   RTC_DCHECK(pc_->signaling_thread()->IsCurrent());
   // Loop through the existing local audio tracks.
   for (const auto& it : local_audio_tracks_) {
@@ -984,7 +980,7 @@ void StatsCollector::UpdateStatsFromExistingLocalAudioTracks() {
     if (report == NULL) {
       // This can happen if a local audio track is added to a stream on the
       // fly and the report has not been set up yet. Do nothing in this case.
-      LOG(LS_ERROR) << "Stats report does not exist for ssrc " << ssrc;
+      RTC_LOG(LS_ERROR) << "Stats report does not exist for ssrc " << ssrc;
       continue;
     }
 
@@ -995,12 +991,13 @@ void StatsCollector::UpdateStatsFromExistingLocalAudioTracks() {
       continue;
 
     report->set_timestamp(stats_gathering_started_);
-    UpdateReportFromAudioTrack(track, report);
+    UpdateReportFromAudioTrack(track, report, has_remote_tracks);
   }
 }
 
 void StatsCollector::UpdateReportFromAudioTrack(AudioTrackInterface* track,
-                                                StatsReport* report) {
+                                                StatsReport* report,
+                                                bool has_remote_tracks) {
   RTC_DCHECK(pc_->signaling_thread()->IsCurrent());
   RTC_DCHECK(track != NULL);
 
@@ -1014,18 +1011,11 @@ void StatsCollector::UpdateReportFromAudioTrack(AudioTrackInterface* track,
   auto audio_processor(track->GetAudioProcessor());
 
   if (audio_processor.get()) {
-    AudioProcessorInterface::AudioProcessorStats stats;
-    audio_processor->GetStats(&stats);
+    AudioProcessorInterface::AudioProcessorStatistics stats =
+        audio_processor->GetStats(has_remote_tracks);
 
-    SetAudioProcessingStats(
-        report, stats.typing_noise_detected, stats.echo_return_loss,
-        stats.echo_return_loss_enhancement, stats.echo_delay_median_ms,
-        stats.aec_quality_min, stats.echo_delay_std_ms,
-        stats.residual_echo_likelihood,
-        stats.residual_echo_likelihood_recent_max);
-
-    report->AddFloat(StatsReport::kStatsValueNameAecDivergentFilterFraction,
-                     stats.aec_divergent_filter_fraction);
+    SetAudioProcessingStats(report, stats.typing_noise_detected,
+                            stats.apm_statistics);
   }
 }
 
@@ -1035,15 +1025,15 @@ bool StatsCollector::GetTrackIdBySsrc(uint32_t ssrc,
   RTC_DCHECK(pc_->signaling_thread()->IsCurrent());
   if (direction == StatsReport::kSend) {
     if (!pc_->GetLocalTrackIdBySsrc(ssrc, track_id)) {
-      LOG(LS_WARNING) << "The SSRC " << ssrc
-                      << " is not associated with a sending track";
+      RTC_LOG(LS_WARNING) << "The SSRC " << ssrc
+                          << " is not associated with a sending track";
       return false;
     }
   } else {
     RTC_DCHECK(direction == StatsReport::kReceive);
     if (!pc_->GetRemoteTrackIdBySsrc(ssrc, track_id)) {
-      LOG(LS_WARNING) << "The SSRC " << ssrc
-                      << " is not associated with a receiving track";
+      RTC_LOG(LS_WARNING) << "The SSRC " << ssrc
+                          << " is not associated with a receiving track";
       return false;
     }
   }

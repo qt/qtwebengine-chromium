@@ -89,14 +89,11 @@ class URL_EXPORT Origin {
   // 3. 'file' URLs all parse as ("file", "", 0).
   static Origin Create(const GURL& url);
 
-  // TODO(dcheng): Deprecated. Please use the factory helper above.
-  explicit Origin(const GURL& url);
-
   // Copyable and movable.
-  Origin(const Origin&) = default;
-  Origin& operator=(const Origin&) = default;
-  Origin(Origin&&) = default;
-  Origin& operator=(Origin&&) = default;
+  Origin(const Origin&);
+  Origin& operator=(const Origin&);
+  Origin(Origin&&);
+  Origin& operator=(Origin&&);
 
   // Creates an Origin from a |scheme|, |host|, |port| and |suborigin|. All the
   // parameters must be valid and canonicalized. Do not use this method to
@@ -177,16 +174,8 @@ class URL_EXPORT Origin {
   bool operator<(const Origin& other) const;
 
  private:
-  Origin(base::StringPiece scheme,
-         base::StringPiece host,
-         uint16_t port,
-         base::StringPiece suborigin,
-         SchemeHostPort::ConstructPolicy policy);
-  Origin(std::string scheme,
-         std::string host,
-         uint16_t port,
-         std::string suborigin,
-         SchemeHostPort::ConstructPolicy policy);
+  // |tuple| must be valid, implying that the created Origin is never unique.
+  Origin(SchemeHostPort tuple, std::string suborigin);
 
   SchemeHostPort tuple_;
   bool unique_;

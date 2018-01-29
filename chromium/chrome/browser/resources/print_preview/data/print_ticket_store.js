@@ -47,6 +47,12 @@ cr.define('print_preview', function() {
       this.documentInfo_ = documentInfo;
 
       /**
+       * The destination that capabilities were last received for.
+       * @private {?print_preview.Destination}
+       */
+      this.destination_ = null;
+
+      /**
        * Printing capabilities of Chromium and the currently selected
        * destination.
        * @type {!print_preview.CapabilitiesHolder}
@@ -421,12 +427,12 @@ cr.define('print_preview', function() {
           destination.capabilities,
           'Trying to create a Google Cloud Print print ticket for a ' +
               'destination with no print capabilities');
-      var cjt = {version: '1.0', print: {}};
+      const cjt = {version: '1.0', print: {}};
       if (this.collate.isCapabilityAvailable() && this.collate.isUserEdited()) {
         cjt.print.collate = {collate: this.collate.getValue()};
       }
       if (this.color.isCapabilityAvailable() && this.color.isUserEdited()) {
-        var selectedOption = this.color.getSelectedOption();
+        const selectedOption = this.color.getSelectedOption();
         if (!selectedOption) {
           console.error('Could not find correct color option');
         } else {
@@ -445,12 +451,12 @@ cr.define('print_preview', function() {
         };
       }
       if (this.mediaSize.isCapabilityAvailable()) {
-        var value = this.mediaSize.getValue();
+        const mediaValue = this.mediaSize.getValue();
         cjt.print.media_size = {
-          width_microns: value.width_microns,
-          height_microns: value.height_microns,
-          is_continuous_feed: value.is_continuous_feed,
-          vendor_id: value.vendor_id
+          width_microns: mediaValue.width_microns,
+          height_microns: mediaValue.height_microns,
+          is_continuous_feed: mediaValue.is_continuous_feed,
+          vendor_id: mediaValue.vendor_id
         };
       }
       if (!this.landscape.isCapabilityAvailable()) {
@@ -465,18 +471,18 @@ cr.define('print_preview', function() {
         };
       }
       if (this.dpi.isCapabilityAvailable()) {
-        var value = this.dpi.getValue();
+        const dpiValue = this.dpi.getValue();
         cjt.print.dpi = {
-          horizontal_dpi: value.horizontal_dpi,
-          vertical_dpi: value.vertical_dpi,
-          vendor_id: value.vendor_id
+          horizontal_dpi: dpiValue.horizontal_dpi,
+          vertical_dpi: dpiValue.vertical_dpi,
+          vendor_id: dpiValue.vendor_id
         };
       }
       if (this.vendorItems.isCapabilityAvailable() &&
           this.vendorItems.isUserEdited()) {
-        var items = this.vendorItems.ticketItems;
+        const items = this.vendorItems.ticketItems;
         cjt.print.vendor_ticket_item = [];
-        for (var itemId in items) {
+        for (const itemId in items) {
           if (items.hasOwnProperty(itemId)) {
             cjt.print.vendor_ticket_item.push(
                 {id: itemId, value: items[itemId]});
@@ -517,7 +523,11 @@ cr.define('print_preview', function() {
      * @private
      */
     onSelectedDestinationCapabilitiesReady_() {
-      if (this.capabilitiesHolder_.get() != null) {
+      const selectedDestination = this.destinationStore_.selectedDestination;
+      const isFirstUpdate = this.capabilitiesHolder_.get() == null;
+      // Only clear the ticket items if the user selected a new destination
+      // and this is not the first update.
+      if (!isFirstUpdate && this.destination_ != selectedDestination) {
         this.customMargins_.updateValue(null);
         if (this.marginsType_.getValue() ==
             print_preview.ticket_items.MarginsTypeValue.CUSTOM) {
@@ -526,10 +536,9 @@ cr.define('print_preview', function() {
         }
         this.vendorItems_.updateValue({});
       }
-      var caps =
-          assert(this.destinationStore_.selectedDestination.capabilities);
-      var isFirstUpdate = this.capabilitiesHolder_.get() == null;
+      const caps = assert(selectedDestination.capabilities);
       this.capabilitiesHolder_.set(caps);
+      this.destination_ = selectedDestination;
       if (isFirstUpdate) {
         this.isInitialized_ = true;
         cr.dispatchSimpleEvent(this, PrintTicketStore.EventType.INITIALIZE);

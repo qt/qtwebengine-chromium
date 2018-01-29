@@ -81,6 +81,24 @@ GLenum ConvertToGLenum(ParamType param)
     return ConvertToGLenum(GL_NONE, param);
 }
 
+template <typename ParamType>
+GLenum ConvertToGLint(ParamType param)
+{
+    return CastQueryValueTo<GLint>(GL_NONE, param);
+}
+
+template <typename ParamType>
+bool ConvertToBool(ParamType param)
+{
+    return param != GL_FALSE;
+}
+
+template <typename ParamType>
+GLboolean ConvertToGLBoolean(ParamType param)
+{
+    return param ? GL_TRUE : GL_FALSE;
+}
+
 // The GL state query API types are: bool, int, uint, float, int64, uint64
 template <typename QueryT>
 void CastStateValues(Context *context, GLenum nativeType, GLenum pname,

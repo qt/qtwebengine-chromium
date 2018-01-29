@@ -91,7 +91,6 @@
 <translation id="5941711191222866238">最小化</translation>
 <translation id="5943826764092288734">{HOURS,plural, =1{1 時間}other{# 時間}}</translation>
 <translation id="5948410903763073882">Alt+<ph name="KEY_COMBO_NAME" /></translation>
-<translation id="598033046487663418">すべてのアプリ</translation>
 <translation id="6012623610530968780"><ph name="SELECTED_PAGE" /> / <ph name="TOTAL_PAGE_NUM" /> ページ</translation>
 <translation id="6022924867608035986">検索ボックスのテキストを消去</translation>
 <translation id="6040143037577758943">閉じる</translation>
@@ -144,6 +143,7 @@
 <translation id="8352146631962686268">{YEARS,plural, =1{1 年}other{# 年}}</translation>
 <translation id="8371695176452482769">お話しください</translation>
 <translation id="838869780401515933">チェックを付ける</translation>
+<translation id="8393700583063109961">メッセージを送信</translation>
 <translation id="8394908167088220973">メディアの再生/一時停止</translation>
 <translation id="8400147561352026160">Shift+<ph name="KEY_COMBO_NAME" /></translation>
 <translation id="8458811141851741261">{YEARS,plural, =1{1年}other{#年}}</translation>

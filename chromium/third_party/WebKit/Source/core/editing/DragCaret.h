@@ -28,6 +28,8 @@
 #define DragCaret_h
 
 #include <memory>
+
+#include "base/macros.h"
 #include "core/dom/SynchronousMutationObserver.h"
 #include "core/editing/CaretDisplayItemClient.h"
 #include "core/editing/PositionWithAffinity.h"
@@ -40,7 +42,6 @@ struct PaintInvalidatorContext;
 
 class DragCaret final : public GarbageCollectedFinalized<DragCaret>,
                         public SynchronousMutationObserver {
-  WTF_MAKE_NONCOPYABLE(DragCaret);
   USING_GARBAGE_COLLECTED_MIXIN(DragCaret);
 
  public:
@@ -66,7 +67,7 @@ class DragCaret final : public GarbageCollectedFinalized<DragCaret>,
   void SetCaretPosition(const PositionWithAffinity&);
   void Clear() { SetCaretPosition(PositionWithAffinity()); }
 
-  DECLARE_TRACE();
+  void Trace(blink::Visitor*);
 
  private:
   DragCaret();
@@ -77,6 +78,8 @@ class DragCaret final : public GarbageCollectedFinalized<DragCaret>,
 
   PositionWithAffinity position_;
   const std::unique_ptr<CaretDisplayItemClient> display_item_client_;
+
+  DISALLOW_COPY_AND_ASSIGN(DragCaret);
 };
 
 }  // namespace blink

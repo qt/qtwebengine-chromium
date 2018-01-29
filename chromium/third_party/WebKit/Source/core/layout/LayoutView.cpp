@@ -41,7 +41,6 @@
 #include "core/page/ChromeClient.h"
 #include "core/page/Page.h"
 #include "core/paint/PaintLayer.h"
-#include "core/paint/ViewPaintInvalidator.h"
 #include "core/paint/ViewPainter.h"
 #include "core/paint/compositing/PaintLayerCompositor.h"
 #include "core/svg/SVGDocumentExtensions.h"
@@ -219,16 +218,6 @@ bool LayoutView::CanHaveChildren() const {
   return !owner->IsDisplayNone();
 }
 
-void LayoutView::LayoutContent() {
-  DCHECK(NeedsLayout());
-
-  LayoutBlockFlow::UpdateLayout();
-
-#if DCHECK_IS_ON()
-  CheckLayoutState();
-#endif
-}
-
 #if DCHECK_IS_ON()
 void LayoutView::CheckLayoutState() {
   DCHECK(!layout_state_->Next());
@@ -251,6 +240,42 @@ void LayoutView::SetShouldDoFullPaintInvalidationOnResizeIfNeeded(
                                Style()->BackgroundLayers())))
       SetShouldDoFullPaintInvalidation(PaintInvalidationReason::kBackground);
   }
+}
+
+void LayoutView::UpdateBlockLayout(bool relayout_children) {
+  SubtreeLayoutScope layout_scope(*this);
+
+  // Use calcWidth/Height to get the new width/height, since this will take the
+  // full page zoom factor into account.
+  relayout_children |=
+      !ShouldUsePrintingLayout() &&
+      (!frame_view_ || LogicalWidth() != ViewLogicalWidthForBoxSizing() ||
+       LogicalHeight() != ViewLogicalHeightForBoxSizing());
+
+  if (relayout_children) {
+    layout_scope.SetChildNeedsLayout(this);
+    for (LayoutObject* child = FirstChild(); child;
+         child = child->NextSibling()) {
+      if (child->IsSVGRoot())
+        continue;
+
+      if ((child->IsBox() && ToLayoutBox(child)->HasRelativeLogicalHeight()) ||
+          child->Style()->LogicalHeight().IsPercentOrCalc() ||
+          child->Style()->LogicalMinHeight().IsPercentOrCalc() ||
+          child->Style()->LogicalMaxHeight().IsPercentOrCalc())
+        layout_scope.SetChildNeedsLayout(child);
+    }
+
+    if (GetDocument().SvgExtensions())
+      GetDocument()
+          .AccessSVGExtensions()
+          .InvalidateSVGRootsWithRelativeLengthDescendents(&layout_scope);
+  }
+
+  if (!NeedsLayout())
+    return;
+
+  LayoutBlockFlow::UpdateBlockLayout(relayout_children);
 }
 
 void LayoutView::UpdateLayout() {
@@ -279,42 +304,10 @@ void LayoutView::UpdateLayout() {
     pagination_state_changed_ = true;
   }
 
-  SubtreeLayoutScope layout_scope(*this);
-
-  // Use calcWidth/Height to get the new width/height, since this will take the
-  // full page zoom factor into account.
-  bool relayout_children =
-      !ShouldUsePrintingLayout() &&
-      (!frame_view_ || LogicalWidth() != ViewLogicalWidthForBoxSizing() ||
-       LogicalHeight() != ViewLogicalHeightForBoxSizing());
-
-  if (relayout_children) {
-    layout_scope.SetChildNeedsLayout(this);
-    for (LayoutObject* child = FirstChild(); child;
-         child = child->NextSibling()) {
-      if (child->IsSVGRoot())
-        continue;
-
-      if ((child->IsBox() && ToLayoutBox(child)->HasRelativeLogicalHeight()) ||
-          child->Style()->LogicalHeight().IsPercentOrCalc() ||
-          child->Style()->LogicalMinHeight().IsPercentOrCalc() ||
-          child->Style()->LogicalMaxHeight().IsPercentOrCalc())
-        layout_scope.SetChildNeedsLayout(child);
-    }
-
-    if (GetDocument().SvgExtensions())
-      GetDocument()
-          .AccessSVGExtensions()
-          .InvalidateSVGRootsWithRelativeLengthDescendents(&layout_scope);
-  }
-
   DCHECK(!layout_state_);
-  if (!NeedsLayout())
-    return;
-
   LayoutState root_layout_state(*this);
 
-  LayoutContent();
+  LayoutBlockFlow::UpdateLayout();
 
 #if DCHECK_IS_ON()
   CheckLayoutState();
@@ -347,9 +340,9 @@ void LayoutView::MapLocalToAncestor(const LayoutBoxModelObject* ancestor,
                                     TransformState& transform_state,
                                     MapCoordinatesFlags mode) const {
   if (!ancestor && mode & kUseTransforms &&
-      ShouldUseTransformFromContainer(0)) {
+      ShouldUseTransformFromContainer(nullptr)) {
     TransformationMatrix t;
-    GetTransformFromContainer(0, LayoutSize(), t);
+    GetTransformFromContainer(nullptr, LayoutSize(), t);
     transform_state.ApplyTransform(t);
   }
 
@@ -448,11 +441,6 @@ void LayoutView::ComputeSelfHitTestRects(Vector<LayoutRect>& rects,
   // explicitly).
   rects.push_back(LayoutRect(LayoutPoint::Zero(),
                              LayoutSize(GetFrameView()->ContentsSize())));
-}
-
-PaintInvalidationReason LayoutView::InvalidatePaint(
-    const PaintInvalidatorContext& context) const {
-  return ViewPaintInvalidator(*this, context).InvalidatePaint();
 }
 
 void LayoutView::Paint(const PaintInfo& paint_info,
@@ -675,6 +663,13 @@ void LayoutView::CalculateScrollbarModes(ScrollbarMode& h_mode,
       RETURN_SCROLLBAR_MODE(kScrollbarAlwaysOff);
   }
 
+  if (document.Printing()) {
+    // When printing, frame-level scrollbars are never displayed.
+    // TODO(szager): Figure out the right behavior when printing an overflowing
+    // iframe.  https://bugs.chromium.org/p/chromium/issues/detail?id=777528
+    RETURN_SCROLLBAR_MODE(kScrollbarAlwaysOff);
+  }
+
   if (LocalFrameView* frameView = GetFrameView()) {
     // Scrollbars can be disabled by LocalFrameView::setCanHaveScrollbars.
     if (!frameView->CanHaveScrollbars())
@@ -867,7 +862,7 @@ FloatSize LayoutView::ViewportSizeForViewportUnits() const {
 void LayoutView::WillBeDestroyed() {
   // TODO(wangxianzhu): This is a workaround of crbug.com/570706.
   // Should find and fix the root cause.
-  if (PaintLayer* layer = this->Layer())
+  if (PaintLayer* layer = Layer())
     layer->SetNeedsRepaint();
   LayoutBlockFlow::WillBeDestroyed();
   compositor_.reset();

@@ -557,7 +557,7 @@ void IndexedDBCallbacks::IOThreadHelper::SendUpgradeNeeded(
     return;
   }
 
-  auto database = base::MakeUnique<DatabaseImpl>(
+  auto database = std::make_unique<DatabaseImpl>(
       std::move(connection_wrapper.connection), origin_, dispatcher_host_.get(),
       idb_runner_);
 
@@ -581,7 +581,7 @@ void IndexedDBCallbacks::IOThreadHelper::SendSuccessDatabase(
   }
   ::indexed_db::mojom::DatabaseAssociatedPtrInfo ptr_info;
   if (connection_wrapper.connection) {
-    auto database = base::MakeUnique<DatabaseImpl>(
+    auto database = std::make_unique<DatabaseImpl>(
         std::move(connection_wrapper.connection), origin_,
         dispatcher_host_.get(), idb_runner_);
 
@@ -605,7 +605,7 @@ void IndexedDBCallbacks::IOThreadHelper::SendSuccessCursor(
     OnConnectionError();
     return;
   }
-  auto cursor_impl = base::MakeUnique<CursorImpl>(
+  auto cursor_impl = std::make_unique<CursorImpl>(
       std::move(cursor.cursor), origin_, dispatcher_host_.get(), idb_runner_);
 
   if (value && !CreateAllBlobs(blob_info, &value->blob_or_file_info))
@@ -768,10 +768,10 @@ bool IndexedDBCallbacks::IOThreadHelper::CreateAllBlobs(
   for (size_t i = 0; i < blob_info.size(); ++i) {
     std::string uuid = CreateBlobData(blob_info[i]);
     if (features::IsMojoBlobsEnabled()) {
-      storage::mojom::BlobPtr blob_ptr;
+      blink::mojom::BlobPtrInfo blob_ptr_info;
       storage::BlobImpl::Create(blob_context->GetBlobDataFromUUID(uuid),
-                                MakeRequest(&blob_ptr));
-      (*blob_or_file_info)[i]->blob = std::move(blob_ptr);
+                                MakeRequest(&blob_ptr_info));
+      (*blob_or_file_info)[i]->blob = std::move(blob_ptr_info);
     }
     (*blob_or_file_info)[i]->uuid = std::move(uuid);
   }

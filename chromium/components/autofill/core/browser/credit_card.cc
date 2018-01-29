@@ -703,7 +703,7 @@ const std::pair<base::string16, base::string16> CreditCard::LabelPieces()
   if (number().empty())
     return std::make_pair(name_on_card_, base::string16());
 
-  base::string16 obfuscated_cc_number = NetworkAndLastFourDigits();
+  base::string16 obfuscated_cc_number = NetworkOrBankNameAndLastFourDigits();
   // No expiration date set.
   if (!expiration_month_ || !expiration_year_)
     return std::make_pair(obfuscated_cc_number, base::string16());
@@ -746,6 +746,14 @@ base::string16 CreditCard::BankNameAndLastFourDigits() const {
   if (digits.empty())
     return ASCIIToUTF16(bank_name_);
   return ASCIIToUTF16(bank_name_) + base::string16(kMidlineEllipsis) + digits;
+}
+
+base::string16 CreditCard::NetworkOrBankNameAndLastFourDigits() const {
+  if (IsAutofillCreditCardBankNameDisplayExperimentEnabled() &&
+      !bank_name_.empty()) {
+    return BankNameAndLastFourDigits();
+  }
+  return NetworkAndLastFourDigits();
 }
 
 base::string16 CreditCard::AbbreviatedExpirationDateForDisplay() const {
@@ -860,7 +868,7 @@ base::string16 CreditCard::GetInfoImpl(const AutofillType& type,
     // Web pages should never actually be filled by a masked server card,
     // but this function is used at the preview stage.
     if (record_type() == MASKED_SERVER_CARD)
-      return NetworkAndLastFourDigits();
+      return NetworkOrBankNameAndLastFourDigits();
 
     return StripSeparators(number_);
   }
@@ -872,13 +880,13 @@ bool CreditCard::SetInfoImpl(const AutofillType& type,
                              const base::string16& value,
                              const std::string& app_locale) {
   ServerFieldType storable_type = type.GetStorableType();
+  if (storable_type == CREDIT_CARD_EXP_MONTH)
+    return SetExpirationMonthFromString(value, app_locale);
+
   if (storable_type == CREDIT_CARD_NUMBER)
     SetRawInfo(storable_type, StripSeparators(value));
-  else if (storable_type == CREDIT_CARD_EXP_MONTH)
-    return SetExpirationMonthFromString(value, app_locale);
   else
     SetRawInfo(storable_type, value);
-
   return true;
 }
 

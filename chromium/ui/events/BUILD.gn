@@ -206,6 +206,9 @@ component("events") {
     sources += [
       "android/drag_event_android.cc",
       "android/drag_event_android.h",
+      "android/gesture_event_android.cc",
+      "android/gesture_event_android.h",
+      "android/gesture_event_type.h",
       "android/key_event_utils.cc",
       "android/key_event_utils.h",
       "android/motion_event_android.cc",
@@ -366,6 +369,7 @@ if (!is_ios) {
     sources = [
       "android/scroller_unittest.cc",
       "blink/blink_event_util_unittest.cc",
+      "blink/fling_booster_unittest.cc",
       "blink/input_handler_proxy_unittest.cc",
       "blink/input_scroll_elasticity_controller_unittest.cc",
       "blink/web_input_event_traits_unittest.cc",

@@ -42,7 +42,7 @@ void ProgramNULL::setSeparable(bool separable)
 }
 
 gl::LinkResult ProgramNULL::link(const gl::Context *contextImpl,
-                                 const gl::VaryingPacking &packing,
+                                 const gl::ProgramLinkedResources &resources,
                                  gl::InfoLog &infoLog)
 {
     return true;
@@ -181,23 +181,6 @@ void ProgramNULL::getUniformuiv(const gl::Context *context, GLint location, GLui
 
 void ProgramNULL::setUniformBlockBinding(GLuint uniformBlockIndex, GLuint uniformBlockBinding)
 {
-}
-
-bool ProgramNULL::getUniformBlockSize(const std::string &blockName,
-                                      const std::string &blockMappedName,
-                                      size_t *sizeOut) const
-{
-    // TODO(geofflang): Compute reasonable sizes?
-    *sizeOut = 0;
-    return true;
-}
-
-bool ProgramNULL::getUniformBlockMemberInfo(const std::string &memberUniformName,
-                                            const std::string &memberUniformMappedName,
-                                            sh::BlockMemberInfo *memberInfoOut) const
-{
-    // TODO(geofflang): Compute reasonable values?
-    return true;
 }
 
 void ProgramNULL::setPathFragmentInputGen(const std::string &inputName,

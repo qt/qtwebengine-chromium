@@ -5,13 +5,14 @@
 #include "content/browser/devtools/protocol/service_worker_handler.h"
 
 #include "base/bind.h"
+#include "base/containers/flat_set.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
-#include "base/containers/flat_set.h"
 #include "content/browser/background_sync/background_sync_context.h"
 #include "content/browser/background_sync/background_sync_manager.h"
 #include "content/browser/devtools/service_worker_devtools_agent_host.h"
 #include "content/browser/devtools/service_worker_devtools_manager.h"
+#include "content/browser/devtools/shared_worker_devtools_manager.h"
 #include "content/browser/frame_host/frame_tree.h"
 #include "content/browser/frame_host/frame_tree_node.h"
 #include "content/browser/service_worker/embedded_worker_status.h"
@@ -28,6 +29,8 @@
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/push_event_payload.h"
 #include "content/public/common/push_messaging_status.mojom.h"
+#include "third_party/WebKit/common/service_worker/service_worker_provider_type.mojom.h"
+#include "third_party/WebKit/public/platform/modules/serviceworker/service_worker_object.mojom.h"
 #include "url/gurl.h"
 
 namespace content {
@@ -282,7 +285,7 @@ Response ServiceWorkerHandler::InspectWorker(const std::string& version_id) {
   if (!context_)
     return CreateContextErrorResponse();
 
-  int64_t id = kInvalidServiceWorkerVersionId;
+  int64_t id = blink::mojom::kInvalidServiceWorkerVersionId;
   if (!base::StringToInt64(version_id, &id))
     return CreateInvalidVersionIdErrorResponse();
   BrowserThread::PostTask(
@@ -381,7 +384,8 @@ void ServiceWorkerHandler::OnWorkerVersionUpdated(
     base::flat_set<std::string> client_set;
 
     for (const auto& client : version.clients) {
-      if (client.second.type == SERVICE_WORKER_PROVIDER_FOR_WINDOW) {
+      if (client.second.type ==
+          blink::mojom::ServiceWorkerProviderType::kForWindow) {
         // PlzNavigate: a navigation may not yet be associated with a
         // RenderFrameHost. Use the |web_contents_getter| instead.
         WebContents* web_contents =
@@ -395,13 +399,6 @@ void ServiceWorkerHandler::OnWorkerVersionUpdated(
           continue;
         client_set.insert(
             DevToolsAgentHost::GetOrCreateFor(web_contents)->GetId());
-      } else if (client.second.type ==
-                 SERVICE_WORKER_PROVIDER_FOR_SHARED_WORKER) {
-        scoped_refptr<DevToolsAgentHost> agent_host(
-            DevToolsAgentHost::GetForWorker(client.second.process_id,
-                                            client.second.route_id));
-        if (agent_host)
-          client_set.insert(agent_host->GetId());
       }
     }
     std::unique_ptr<protocol::Array<std::string>> clients =

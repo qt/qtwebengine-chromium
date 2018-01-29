@@ -34,6 +34,9 @@ class PeerConnectionDependencyFactory;
 // destroyed on the main thread.
 class CONTENT_EXPORT WebRtcMediaStreamAdapter {
  public:
+  using TrackAdapterRefs = std::vector<
+      std::unique_ptr<WebRtcMediaStreamTrackAdapterMap::AdapterRef>>;
+
   // Creates an adapter for a local media stream. The adapter is already
   // initialized. Invoked on the main thread.
   static std::unique_ptr<WebRtcMediaStreamAdapter> CreateLocalStreamAdapter(
@@ -59,6 +62,8 @@ class CONTENT_EXPORT WebRtcMediaStreamAdapter {
     return (web_stream_.IsNull() && stream.IsNull()) ||
            (web_stream_.Id() == stream.Id());
   }
+
+  virtual void SetTracks(TrackAdapterRefs track_refs) = 0;
 
  protected:
   WebRtcMediaStreamAdapter(
@@ -97,6 +102,7 @@ class LocalWebRtcMediaStreamAdapter : public WebRtcMediaStreamAdapter,
   const scoped_refptr<webrtc::MediaStreamInterface>& webrtc_stream()
       const override;
   const blink::WebMediaStream& web_stream() const override;
+  void SetTracks(TrackAdapterRefs track_refs) override;
 
  private:
   // A map between web track UniqueIDs and references to track adapters.
@@ -137,35 +143,34 @@ class RemoteWebRtcMediaStreamAdapter : public WebRtcMediaStreamAdapter {
   const scoped_refptr<webrtc::MediaStreamInterface>& webrtc_stream()
       const override;
   const blink::WebMediaStream& web_stream() const override;
+  void SetTracks(TrackAdapterRefs track_refs) override;
 
  private:
-  // A map between webrtc tracks and references to track adapters.
-  using RemoteAdapterRefMap =
-      std::map<webrtc::MediaStreamTrackInterface*,
-               std::unique_ptr<WebRtcMediaStreamTrackAdapterMap::AdapterRef>>;
+  // Track adapters for the remote webrtc tracks of a stream.
+  using RemoteAdapterRefs = WebRtcMediaStreamAdapter::TrackAdapterRefs;
+
+  static bool RemoteAdapterRefsContainsTrack(
+      const RemoteAdapterRefs& adapter_refs,
+      webrtc::MediaStreamTrackInterface* track);
 
   // Gets the adapters for the tracks that are members of the webrtc stream.
   // Invoke on webrtc signaling thread. New adapters are initialized in a post
   // to the main thread after which their |web_track| becomes available.
-  static RemoteAdapterRefMap GetRemoteAdapterRefMapFromWebRtcStream(
+  static RemoteAdapterRefs GetRemoteAdapterRefsFromWebRtcStream(
       const scoped_refptr<WebRtcMediaStreamTrackAdapterMap>& track_adapter_map,
       webrtc::MediaStreamInterface* webrtc_stream);
 
-  class WebRtcStreamObserver;
-
   void InitializeOnMainThread(const std::string& label,
-                              RemoteAdapterRefMap track_adapter_refs,
+                              RemoteAdapterRefs track_adapter_refs,
                               size_t audio_track_count,
                               size_t video_track_count);
-  void OnChanged(RemoteAdapterRefMap new_adapter_refs);
 
   mutable base::Lock lock_;
   bool is_initialized_;
-  scoped_refptr<WebRtcStreamObserver> observer_;
   // Track adapters belonging to this stream. Keeping adapter references alive
   // ensures the adapters are not disposed by the |track_adapter_map_| as long
   // as the webrtc layer track is in use by the webrtc layer stream.
-  RemoteAdapterRefMap adapter_refs_;
+  RemoteAdapterRefs adapter_refs_;
   base::WeakPtrFactory<RemoteWebRtcMediaStreamAdapter> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(RemoteWebRtcMediaStreamAdapter);

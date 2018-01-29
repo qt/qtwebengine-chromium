@@ -8,7 +8,7 @@
 
 namespace blink {
 
-DEFINE_TRACE(ModuleScriptLoaderRegistry) {
+void ModuleScriptLoaderRegistry::Trace(blink::Visitor* visitor) {
   visitor->Trace(active_loaders_);
 }
 
@@ -18,7 +18,7 @@ ModuleScriptLoader* ModuleScriptLoaderRegistry::Fetch(
     Modulator* modulator,
     ModuleScriptLoaderClient* client) {
   ModuleScriptLoader* loader =
-      ModuleScriptLoader::Create(modulator, this, client);
+      ModuleScriptLoader::Create(modulator, request.Options(), this, client);
   DCHECK(loader->IsInitialState());
   active_loaders_.insert(loader);
   loader->Fetch(request, level);

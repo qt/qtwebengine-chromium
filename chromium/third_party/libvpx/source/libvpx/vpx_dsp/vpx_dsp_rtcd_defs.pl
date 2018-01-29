@@ -20,6 +20,7 @@ if ($opts{arch} eq "x86_64") {
   $ssse3_x86_64 = 'ssse3';
   $avx_x86_64 = 'avx';
   $avx2_x86_64 = 'avx2';
+  $avx512_x86_64 = 'avx512';
 }
 
 #
@@ -364,13 +365,13 @@ add_proto qw/void vpx_convolve8_vert/, "const uint8_t *src, ptrdiff_t src_stride
 specialize qw/vpx_convolve8_vert sse2 ssse3 avx2 neon dspr2 msa vsx/;
 
 add_proto qw/void vpx_convolve8_avg/, "const uint8_t *src, ptrdiff_t src_stride, uint8_t *dst, ptrdiff_t dst_stride, const InterpKernel *filter, int x0_q4, int x_step_q4, int y0_q4, int y_step_q4, int w, int h";
-specialize qw/vpx_convolve8_avg sse2 ssse3 neon dspr2 msa vsx/;
+specialize qw/vpx_convolve8_avg sse2 ssse3 avx2 neon dspr2 msa vsx/;
 
 add_proto qw/void vpx_convolve8_avg_horiz/, "const uint8_t *src, ptrdiff_t src_stride, uint8_t *dst, ptrdiff_t dst_stride, const InterpKernel *filter, int x0_q4, int x_step_q4, int y0_q4, int y_step_q4, int w, int h";
-specialize qw/vpx_convolve8_avg_horiz sse2 ssse3 neon dspr2 msa vsx/;
+specialize qw/vpx_convolve8_avg_horiz sse2 ssse3 avx2 neon dspr2 msa vsx/;
 
 add_proto qw/void vpx_convolve8_avg_vert/, "const uint8_t *src, ptrdiff_t src_stride, uint8_t *dst, ptrdiff_t dst_stride, const InterpKernel *filter, int x0_q4, int x_step_q4, int y0_q4, int y_step_q4, int w, int h";
-specialize qw/vpx_convolve8_avg_vert sse2 ssse3 neon dspr2 msa vsx/;
+specialize qw/vpx_convolve8_avg_vert sse2 ssse3 avx2 neon dspr2 msa vsx/;
 
 add_proto qw/void vpx_scaled_2d/, "const uint8_t *src, ptrdiff_t src_stride, uint8_t *dst, ptrdiff_t dst_stride, const InterpKernel *filter, int x0_q4, int x_step_q4, int y0_q4, int y_step_q4, int w, int h";
 specialize qw/vpx_scaled_2d ssse3 neon/;
@@ -611,7 +612,7 @@ if (vpx_config("CONFIG_EMULATE_HARDWARE") ne "yes") {
   specialize qw/vpx_idct16x16_38_add neon sse2/;
   specialize qw/vpx_idct16x16_10_add neon sse2/;
   specialize qw/vpx_idct16x16_1_add neon sse2/;
-  specialize qw/vpx_idct32x32_1024_add neon sse2/;
+  specialize qw/vpx_idct32x32_1024_add neon sse2 vsx/;
   specialize qw/vpx_idct32x32_135_add neon sse2 ssse3/;
   specialize qw/vpx_idct32x32_34_add neon sse2 ssse3/;
   specialize qw/vpx_idct32x32_1_add neon sse2/;
@@ -765,23 +766,23 @@ if (vpx_config("CONFIG_VP9_ENCODER") eq "yes") {
   specialize qw/vpx_minmax_8x8 sse2 neon msa/;
 
   if (vpx_config("CONFIG_VP9_HIGHBITDEPTH") eq "yes") {
-    add_proto qw/void vpx_hadamard_8x8/, "const int16_t *src_diff, int src_stride, tran_low_t *coeff";
+    add_proto qw/void vpx_hadamard_8x8/, "const int16_t *src_diff, ptrdiff_t src_stride, tran_low_t *coeff";
     specialize qw/vpx_hadamard_8x8 sse2 neon vsx/, "$ssse3_x86_64";
 
-    add_proto qw/void vpx_hadamard_16x16/, "const int16_t *src_diff, int src_stride, tran_low_t *coeff";
-    specialize qw/vpx_hadamard_16x16 sse2 neon vsx/;
+    add_proto qw/void vpx_hadamard_16x16/, "const int16_t *src_diff, ptrdiff_t src_stride, tran_low_t *coeff";
+    specialize qw/vpx_hadamard_16x16 avx2 sse2 neon vsx/;
 
     add_proto qw/int vpx_satd/, "const tran_low_t *coeff, int length";
-    specialize qw/vpx_satd sse2 neon/;
+    specialize qw/vpx_satd avx2 sse2 neon/;
   } else {
-    add_proto qw/void vpx_hadamard_8x8/, "const int16_t *src_diff, int src_stride, int16_t *coeff";
+    add_proto qw/void vpx_hadamard_8x8/, "const int16_t *src_diff, ptrdiff_t src_stride, int16_t *coeff";
     specialize qw/vpx_hadamard_8x8 sse2 neon msa vsx/, "$ssse3_x86_64";
 
-    add_proto qw/void vpx_hadamard_16x16/, "const int16_t *src_diff, int src_stride, int16_t *coeff";
-    specialize qw/vpx_hadamard_16x16 sse2 neon msa vsx/;
+    add_proto qw/void vpx_hadamard_16x16/, "const int16_t *src_diff, ptrdiff_t src_stride, int16_t *coeff";
+    specialize qw/vpx_hadamard_16x16 avx2 sse2 neon msa vsx/;
 
     add_proto qw/int vpx_satd/, "const int16_t *coeff, int length";
-    specialize qw/vpx_satd sse2 neon msa/;
+    specialize qw/vpx_satd avx2 sse2 neon msa/;
   }
 
   add_proto qw/void vpx_int_pro_row/, "int16_t *hbuf, const uint8_t *ref, const int ref_stride, const int height";
@@ -872,7 +873,7 @@ specialize qw/vpx_sad4x4x8 sse4_1 msa mmi/;
 # Multi-block SAD, comparing a reference to N independent blocks
 #
 add_proto qw/void vpx_sad64x64x4d/, "const uint8_t *src_ptr, int src_stride, const uint8_t * const ref_ptr[], int ref_stride, uint32_t *sad_array";
-specialize qw/vpx_sad64x64x4d avx2 neon msa sse2 vsx mmi/;
+specialize qw/vpx_sad64x64x4d avx512 avx2 neon msa sse2 vsx mmi/;
 
 add_proto qw/void vpx_sad64x32x4d/, "const uint8_t *src_ptr, int src_stride, const uint8_t * const ref_ptr[], int ref_stride, uint32_t *sad_array";
 specialize qw/vpx_sad64x32x4d neon msa sse2 vsx mmi/;

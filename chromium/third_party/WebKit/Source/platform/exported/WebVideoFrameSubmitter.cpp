@@ -5,11 +5,18 @@
 #include "public/platform/WebVideoFrameSubmitter.h"
 
 #include <memory>
+#include <utility>
+
 #include "third_party/WebKit/Source/platform/graphics/VideoFrameSubmitter.h"
 
 namespace cc {
+class LayerTreeSettings;
 class VideoFrameProvider;
 }  // namespace cc
+
+namespace gpu {
+class GpuMemoryBufferManager;
+}
 
 namespace viz {
 class ContextProvider;
@@ -18,10 +25,14 @@ class ContextProvider;
 namespace blink {
 
 std::unique_ptr<WebVideoFrameSubmitter> WebVideoFrameSubmitter::Create(
-    cc::VideoFrameProvider* provider,
-    WebContextProviderCallback context_provider_callback) {
+    WebContextProviderCallback context_provider_callback,
+    viz::SharedBitmapManager* shared_bitmap_manager,
+    gpu::GpuMemoryBufferManager* gpu_memory_buffer_manager,
+    const cc::LayerTreeSettings& settings) {
   return std::make_unique<VideoFrameSubmitter>(
-      provider, std::move(context_provider_callback));
+      std::make_unique<VideoFrameResourceProvider>(
+          std::move(context_provider_callback), shared_bitmap_manager,
+          gpu_memory_buffer_manager, settings));
 }
 
 }  // namespace blink

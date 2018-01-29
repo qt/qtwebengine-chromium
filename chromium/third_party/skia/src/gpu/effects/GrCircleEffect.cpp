@@ -10,7 +10,6 @@
  */
 #include "GrCircleEffect.h"
 #if SK_SUPPORT_GPU
-#include "glsl/GrGLSLColorSpaceXformHelper.h"
 #include "glsl/GrGLSLFragmentProcessor.h"
 #include "glsl/GrGLSLFragmentShaderBuilder.h"
 #include "glsl/GrGLSLProgramBuilder.h"
@@ -23,6 +22,12 @@ public:
         GrGLSLFPFragmentBuilder* fragBuilder = args.fFragBuilder;
         const GrCircleEffect& _outer = args.fFp.cast<GrCircleEffect>();
         (void)_outer;
+        auto edgeType = _outer.edgeType();
+        (void)edgeType;
+        auto center = _outer.center();
+        (void)center;
+        auto radius = _outer.radius();
+        (void)radius;
         prevRadius = -1.0;
         fCircleVar = args.fUniformHandler->addUniform(kFragment_GrShaderFlag, kHalf4_GrSLType,
                                                       kDefault_GrSLPrecision, "circle");
@@ -33,14 +38,14 @@ public:
                 "%s.w))) * float(%s.z));\n}\n@if ((%d == 1 || %d == 3) || %d == 4) {\n    d = "
                 "half(clamp(float(d), 0.0, 1.0));\n} else {\n    d = half(float(d) > 0.5 ? 1.0 : "
                 "0.0);\n}\n%s = %s * d;\n",
-                prevRadius, _outer.edgeType(), _outer.edgeType(),
+                prevRadius, (int)_outer.edgeType(), (int)_outer.edgeType(),
                 args.fUniformHandler->getUniformCStr(fCircleVar),
                 args.fUniformHandler->getUniformCStr(fCircleVar),
                 args.fUniformHandler->getUniformCStr(fCircleVar),
                 args.fUniformHandler->getUniformCStr(fCircleVar),
                 args.fUniformHandler->getUniformCStr(fCircleVar),
-                args.fUniformHandler->getUniformCStr(fCircleVar), _outer.edgeType(),
-                _outer.edgeType(), _outer.edgeType(), args.fOutputColor,
+                args.fUniformHandler->getUniformCStr(fCircleVar), (int)_outer.edgeType(),
+                (int)_outer.edgeType(), (int)_outer.edgeType(), args.fOutputColor,
                 args.fInputColor ? args.fInputColor : "half4(1)");
     }
 
@@ -59,7 +64,7 @@ private:
 
         if (radius != prevRadius || center != prevCenter) {
             SkScalar effectiveRadius = radius;
-            if (GrProcessorEdgeTypeIsInverseFill((GrPrimitiveEdgeType)edgeType)) {
+            if (GrProcessorEdgeTypeIsInverseFill((GrClipEdgeType)edgeType)) {
                 effectiveRadius -= 0.5f;
             } else {
                 effectiveRadius += 0.5f;
@@ -70,8 +75,8 @@ private:
             prevRadius = radius;
         }
     }
-    SkPoint prevCenter;
-    float prevRadius;
+    SkPoint prevCenter = half2(0);
+    float prevRadius = 0;
     UniformHandle fCircleVar;
 };
 GrGLSLFragmentProcessor* GrCircleEffect::onCreateGLSLInstance() const {
@@ -79,7 +84,7 @@ GrGLSLFragmentProcessor* GrCircleEffect::onCreateGLSLInstance() const {
 }
 void GrCircleEffect::onGetGLSLProcessorKey(const GrShaderCaps& caps,
                                            GrProcessorKeyBuilder* b) const {
-    b->add32(fEdgeType);
+    b->add32((int32_t)fEdgeType);
 }
 bool GrCircleEffect::onIsEqual(const GrFragmentProcessor& other) const {
     const GrCircleEffect& that = other.cast<GrCircleEffect>();
@@ -104,10 +109,10 @@ std::unique_ptr<GrFragmentProcessor> GrCircleEffect::TestCreate(GrProcessorTestD
     center.fX = testData->fRandom->nextRangeScalar(0.f, 1000.f);
     center.fY = testData->fRandom->nextRangeScalar(0.f, 1000.f);
     SkScalar radius = testData->fRandom->nextRangeF(0.f, 1000.f);
-    GrPrimitiveEdgeType et;
+    GrClipEdgeType et;
     do {
-        et = (GrPrimitiveEdgeType)testData->fRandom->nextULessThan(kGrProcessorEdgeTypeCnt);
-    } while (kHairlineAA_GrProcessorEdgeType == et);
+        et = (GrClipEdgeType)testData->fRandom->nextULessThan(kGrClipEdgeTypeCnt);
+    } while (GrClipEdgeType::kHairlineAA == et);
     return GrCircleEffect::Make(et, center, radius);
 }
 #endif

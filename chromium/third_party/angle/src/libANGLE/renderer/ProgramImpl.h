@@ -20,7 +20,7 @@
 namespace gl
 {
 class Context;
-class VaryingPacking;
+struct ProgramLinkedResources;
 }
 
 namespace sh
@@ -30,7 +30,6 @@ struct BlockMemberInfo;
 
 namespace rx
 {
-
 class ProgramImpl : angle::NonCopyable
 {
   public:
@@ -46,8 +45,8 @@ class ProgramImpl : angle::NonCopyable
     virtual void setSeparable(bool separable)               = 0;
 
     virtual gl::LinkResult link(const gl::Context *context,
-                                const gl::VaryingPacking &packing,
-                                gl::InfoLog &infoLog) = 0;
+                                const gl::ProgramLinkedResources &resources,
+                                gl::InfoLog &infoLog)                      = 0;
     virtual GLboolean validate(const gl::Caps &caps, gl::InfoLog *infoLog) = 0;
 
     virtual void setUniform1fv(GLint location, GLsizei count, const GLfloat *v) = 0;
@@ -84,17 +83,6 @@ class ProgramImpl : angle::NonCopyable
     // TODO: synchronize in syncState when dirty bits exist.
     virtual void setUniformBlockBinding(GLuint uniformBlockIndex, GLuint uniformBlockBinding) = 0;
 
-    // May only be called after a successful link operation.
-    // Return false for inactive blocks.
-    virtual bool getUniformBlockSize(const std::string &blockName,
-                                     const std::string &blockMappedName,
-                                     size_t *sizeOut) const = 0;
-
-    // May only be called after a successful link operation.
-    // Returns false for inactive members.
-    virtual bool getUniformBlockMemberInfo(const std::string &memberUniformName,
-                                           const std::string &memberUniformMappedName,
-                                           sh::BlockMemberInfo *memberInfoOut) const = 0;
     // CHROMIUM_path_rendering
     // Set parameters to control fragment shader input variable interpolation
     virtual void setPathFragmentInputGen(const std::string &inputName,

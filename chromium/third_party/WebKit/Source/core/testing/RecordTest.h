@@ -17,8 +17,7 @@
 
 namespace blink {
 
-class RecordTest final : public GarbageCollectedFinalized<RecordTest>,
-                         public ScriptWrappable {
+class RecordTest final : public ScriptWrappable {
   DEFINE_WRAPPERTYPEINFO();
 
  public:
@@ -52,7 +51,7 @@ class RecordTest final : public GarbageCollectedFinalized<RecordTest>,
 
   void setFloatOrStringElementRecord(const FloatOrStringElementRecord&){};
 
-  DECLARE_TRACE();
+  void Trace(blink::Visitor*);
 
  private:
   RecordTest();

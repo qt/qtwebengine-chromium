@@ -55,7 +55,6 @@
 #include "ui/views/controls/menu/menu_pre_target_handler.h"
 #endif
 
-using base::Time;
 using base::TimeDelta;
 using ui::OSExchangeData;
 
@@ -1400,7 +1399,7 @@ void MenuController::OnKeyDown(ui::KeyboardCode key_code) {
 MenuController::MenuController(bool blocking,
                                internal::MenuControllerDelegate* delegate)
     : blocking_run_(blocking),
-      active_mouse_view_tracker_(base::MakeUnique<ViewTracker>()),
+      active_mouse_view_tracker_(std::make_unique<ViewTracker>()),
       delegate_(delegate) {
   delegate_stack_.push_back(delegate_);
   active_instance_ = this;

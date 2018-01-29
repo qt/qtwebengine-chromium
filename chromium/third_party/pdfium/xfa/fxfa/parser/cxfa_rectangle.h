@@ -1,4 +1,4 @@
-// Copyright 2016 PDFium Authors. All rights reserved.
+// Copyright 2017 PDFium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,13 +7,12 @@
 #ifndef XFA_FXFA_PARSER_CXFA_RECTANGLE_H_
 #define XFA_FXFA_PARSER_CXFA_RECTANGLE_H_
 
-#include "xfa/fxfa/parser/cxfa_box.h"
+#include "xfa/fxfa/parser/cxfa_node.h"
 
-class CXFA_Node;
-
-class CXFA_Rectangle : public CXFA_Box {
+class CXFA_Rectangle : public CXFA_Node {
  public:
-  explicit CXFA_Rectangle(CXFA_Node* pNode) : CXFA_Box(pNode) {}
+  CXFA_Rectangle(CXFA_Document* doc, XFA_PacketType packet);
+  ~CXFA_Rectangle() override;
 };
 
 #endif  // XFA_FXFA_PARSER_CXFA_RECTANGLE_H_

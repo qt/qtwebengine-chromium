@@ -24,6 +24,7 @@ const char* const kDumpProviderWhitelist[] = {
     "ClientDiscardableSharedMemoryManager",
     "DOMStorage",
     "DiscardableSharedMemoryManager",
+    "DnsConfigServicePosix::HostsReader",
     "gpu::BufferManager",
     "gpu::RenderbufferManager",
     "gpu::TextureManager",
@@ -36,9 +37,11 @@ const char* const kDumpProviderWhitelist[] = {
     "MemoryCache",
     "MojoHandleTable",
     "MojoLevelDB",
+    "OutOfProcessHeapProfilingDumpProvider",
     "PartitionAlloc",
     "ProcessMemoryMetrics",
     "Skia",
+    "SharedMemoryTracker",
     "Sql",
     "URLRequestContext",
     "V8Isolate",
@@ -57,6 +60,7 @@ const char* const kDumpProviderSummaryWhitelist[] = {
     "Malloc",
     "PartitionAlloc",
     "ProcessMemoryMetrics",
+    "SharedMemoryTracker",
     "V8Isolate",
     nullptr  // End of list marker.
 };
@@ -79,10 +83,13 @@ const char* const kAllocatorDumpNameWhitelist[] = {
     "gpu/gl/textures/share_group_0x?",
     "java_heap",
     "java_heap/allocated_objects",
-    "leveldatabase/0x?",
-    "leveldb/leveldb_proto/0x?",
-    "leveldb/mojo/0x?",
-    "leveldb/mojo/0x?/block_cache",
+    "leveldatabase",
+    "leveldatabase/block_cache/browser",
+    "leveldatabase/block_cache/in_memory",
+    "leveldatabase/block_cache/unified",
+    "leveldatabase/block_cache/web",
+    "leveldatabase/db_0x?",
+    "leveldatabase/db_0x?/block_cache",
     "malloc",
     "malloc/allocated_objects",
     "malloc/metadata_fragmentation_caches",
@@ -94,6 +101,7 @@ const char* const kAllocatorDumpNameWhitelist[] = {
     "mojo/shared_buffer",
     "mojo/unknown",
     "mojo/watcher",
+    "net/dns_config_service_posix_hosts_reader",
     "net/http_network_session_0x?",
     "net/http_network_session_0x?/quic_stream_factory",
     "net/http_network_session_0x?/socket_pool",
@@ -262,10 +270,19 @@ bool IsMemoryDumpProviderWhitelistedForSummary(const char* mdp_name) {
 bool IsMemoryAllocatorDumpNameWhitelisted(const std::string& name) {
   // Global dumps are explicitly whitelisted for background use.
   if (base::StartsWith(name, "global/", CompareCase::SENSITIVE)) {
-    for (size_t i = sizeof("global/"); i < name.size(); i++)
+    for (size_t i = strlen("global/"); i < name.size(); i++)
       if (!base::IsHexDigit(name[i]))
         return false;
     return true;
+  }
+
+  // As are shared memory dumps. Note: we skip the first character after the
+  // slash and last character in the string as they are expected to be brackets.
+  if (base::StartsWith(name, "shared_memory/(", CompareCase::SENSITIVE)) {
+    for (size_t i = strlen("shared_memory/") + 1; i < name.size() - 1; i++)
+      if (!base::IsHexDigit(name[i]))
+        return false;
+    return name.back() == ')';
   }
 
   // Remove special characters, numbers (including hexadecimal which are marked

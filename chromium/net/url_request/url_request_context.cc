@@ -45,8 +45,10 @@ URLRequestContext::URLRequestContext()
       job_factory_(nullptr),
       throttler_manager_(nullptr),
       network_quality_estimator_(nullptr),
+#if BUILDFLAG(ENABLE_REPORTING)
       reporting_service_(nullptr),
       network_error_logging_delegate_(nullptr),
+#endif  // BUILDFLAG(ENABLE_REPORTING)
       enable_brotli_(false),
       check_cleartext_permitted_(false),
       name_("unknown"),
@@ -82,8 +84,10 @@ void URLRequestContext::CopyFrom(const URLRequestContext* other) {
   set_throttler_manager(other->throttler_manager_);
   set_http_user_agent_settings(other->http_user_agent_settings_);
   set_network_quality_estimator(other->network_quality_estimator_);
+#if BUILDFLAG(ENABLE_REPORTING)
   set_reporting_service(other->reporting_service_);
   set_network_error_logging_delegate(other->network_error_logging_delegate_);
+#endif  // BUILDFLAG(ENABLE_REPORTING)
   set_enable_brotli(other->enable_brotli_);
   set_check_cleartext_permitted(other->check_cleartext_permitted_);
 }
@@ -162,11 +166,6 @@ void URLRequestContext::AssertNoURLRequests() const {
     CHECK(false) << "Leaked " << num_requests << " URLRequest(s). First URL: "
                  << request->url().spec().c_str() << ".";
   }
-}
-
-void URLRequestContext::AssertURLRequestPresent(
-    const URLRequest* request) const {
-  CHECK_GE(url_requests_.count(request), 0u);
 }
 
 bool URLRequestContext::OnMemoryDump(

@@ -42,6 +42,7 @@ class UI_ANDROID_EXPORT DelegatedFrameHostAndroid
     virtual void DidReceiveCompositorFrameAck() = 0;
     virtual void ReclaimResources(
         const std::vector<viz::ReturnedResource>&) = 0;
+    virtual void OnFrameTokenChanged(uint32_t frame_token) = 0;
   };
 
   DelegatedFrameHostAndroid(ViewAndroid* view,
@@ -84,6 +85,11 @@ class UI_ANDROID_EXPORT DelegatedFrameHostAndroid
   // viz::mojom::CompositorFrameSinkClient implementation.
   void DidReceiveCompositorFrameAck(
       const std::vector<viz::ReturnedResource>& resources) override;
+  void DidPresentCompositorFrame(uint32_t presentation_token,
+                                 base::TimeTicks time,
+                                 base::TimeDelta refresh,
+                                 uint32_t flags) override;
+  void DidDiscardCompositorFrame(uint32_t presentation_token) override;
   void OnBeginFrame(const viz::BeginFrameArgs& args) override;
   void ReclaimResources(
       const std::vector<viz::ReturnedResource>& resources) override;
@@ -94,6 +100,7 @@ class UI_ANDROID_EXPORT DelegatedFrameHostAndroid
 
   // viz::HostFrameSinkClient implementation.
   void OnFirstSurfaceActivation(const viz::SurfaceInfo& surface_info) override;
+  void OnFrameTokenChanged(uint32_t frame_token) override;
 
   void CreateNewCompositorFrameSinkSupport();
 

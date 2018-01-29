@@ -95,7 +95,7 @@ class MockScrollableArea : public GarbageCollectedFinalized<MockScrollableArea>,
     ScrollableArea::SetScrollOrigin(origin);
   }
 
-  RefPtr<WebTaskRunner> GetTimerTaskRunner() const final {
+  scoped_refptr<WebTaskRunner> GetTimerTaskRunner() const final {
     return Platform::Current()->CurrentThread()->Scheduler()->TimerTaskRunner();
   }
 
@@ -105,12 +105,16 @@ class MockScrollableArea : public GarbageCollectedFinalized<MockScrollableArea>,
 
   void SetIsPopup() { chrome_client_->SetIsPopup(true); }
 
+  ScrollbarTheme& GetPageScrollbarTheme() const override {
+    return ScrollbarTheme::DeprecatedStaticGetTheme();
+  }
+
   using ScrollableArea::ShowOverlayScrollbars;
   using ScrollableArea::HorizontalScrollbarNeedsPaintInvalidation;
   using ScrollableArea::VerticalScrollbarNeedsPaintInvalidation;
   using ScrollableArea::ClearNeedsPaintInvalidationForScrollControls;
 
-  DEFINE_INLINE_VIRTUAL_TRACE() {
+  virtual void Trace(blink::Visitor* visitor) {
     visitor->Trace(chrome_client_);
     ScrollableArea::Trace(visitor);
   }

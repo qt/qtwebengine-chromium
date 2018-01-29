@@ -12,6 +12,7 @@
 #include "components/exo/keyboard_delegate.h"
 #include "components/exo/keyboard_device_configuration_delegate.h"
 #include "components/exo/keyboard_observer.h"
+#include "components/exo/seat.h"
 #include "components/exo/shell_surface.h"
 #include "components/exo/surface.h"
 #include "components/exo/test/exo_test_base.h"
@@ -35,7 +36,7 @@ class MockKeyboardDelegate : public KeyboardDelegate {
   MOCK_METHOD1(OnKeyboardDestroying, void(Keyboard*));
   MOCK_CONST_METHOD1(CanAcceptKeyboardEventsForSurface, bool(Surface*));
   MOCK_METHOD2(OnKeyboardEnter,
-               void(Surface*, const std::vector<ui::DomCode>&));
+               void(Surface*, const base::flat_set<ui::DomCode>&));
   MOCK_METHOD1(OnKeyboardLeave, void(Surface*));
   MOCK_METHOD3(OnKeyboardKey, uint32_t(base::TimeTicks, ui::DomCode, bool));
   MOCK_METHOD1(OnKeyboardModifiers, void(int));
@@ -75,6 +76,12 @@ TEST_F(KeyboardTest, OnKeyboardEnter) {
   surface->Attach(buffer.get());
   surface->Commit();
 
+  Seat seat;
+  // Pressing key before Keyboard instance is created and surface has
+  // received focus.
+  ui::test::EventGenerator generator(ash::Shell::GetPrimaryRootWindow());
+  generator.PressKey(ui::VKEY_A, ui::EF_SHIFT_DOWN);
+
   aura::client::FocusClient* focus_client =
       aura::client::GetFocusClient(ash::Shell::GetPrimaryRootWindow());
   focus_client->FocusWindow(surface->window());
@@ -83,21 +90,14 @@ TEST_F(KeyboardTest, OnKeyboardEnter) {
   MockKeyboardDelegate delegate;
   EXPECT_CALL(delegate, CanAcceptKeyboardEventsForSurface(surface.get()))
       .WillOnce(testing::Return(false));
-  std::unique_ptr<Keyboard> keyboard(new Keyboard(&delegate));
-
-  ui::test::EventGenerator generator(ash::Shell::GetPrimaryRootWindow());
-  generator.PressKey(ui::VKEY_A, 0);
+  auto keyboard = std::make_unique<Keyboard>(&delegate, &seat);
 
   EXPECT_CALL(delegate, CanAcceptKeyboardEventsForSurface(surface.get()))
       .WillOnce(testing::Return(true));
-  ui::DomCode expected_pressed_keys[] = {ui::DomCode::US_A};
-  EXPECT_CALL(delegate, OnKeyboardModifiers(0));
-  EXPECT_CALL(delegate,
-              OnKeyboardEnter(surface.get(),
-                              std::vector<ui::DomCode>(
-                                  expected_pressed_keys,
-                                  expected_pressed_keys +
-                                      arraysize(expected_pressed_keys))));
+  EXPECT_CALL(delegate, OnKeyboardModifiers(ui::EF_SHIFT_DOWN));
+  EXPECT_CALL(delegate, OnKeyboardEnter(
+                            surface.get(),
+                            base::flat_set<ui::DomCode>({ui::DomCode::US_A})));
   focus_client->FocusWindow(nullptr);
   focus_client->FocusWindow(surface->window());
   // Surface should maintain keyboard focus when moved to top-level window.
@@ -120,17 +120,27 @@ TEST_F(KeyboardTest, OnKeyboardLeave) {
   focus_client->FocusWindow(nullptr);
 
   MockKeyboardDelegate delegate;
-  std::unique_ptr<Keyboard> keyboard(new Keyboard(&delegate));
+  Seat seat;
+  auto keyboard = std::make_unique<Keyboard>(&delegate, &seat);
 
   EXPECT_CALL(delegate, CanAcceptKeyboardEventsForSurface(surface.get()))
-      .WillOnce(testing::Return(true));
+      .WillRepeatedly(testing::Return(true));
   EXPECT_CALL(delegate, OnKeyboardModifiers(0));
   EXPECT_CALL(delegate,
-              OnKeyboardEnter(surface.get(), std::vector<ui::DomCode>()));
+              OnKeyboardEnter(surface.get(), base::flat_set<ui::DomCode>()));
   focus_client->FocusWindow(surface->window());
 
   EXPECT_CALL(delegate, OnKeyboardLeave(surface.get()));
   focus_client->FocusWindow(nullptr);
+
+  EXPECT_CALL(delegate, OnKeyboardModifiers(0));
+  EXPECT_CALL(delegate,
+              OnKeyboardEnter(surface.get(), base::flat_set<ui::DomCode>()));
+  focus_client->FocusWindow(surface->window());
+
+  EXPECT_CALL(delegate, OnKeyboardLeave(surface.get()));
+  shell_surface.reset();
+  surface.reset();
 
   keyboard.reset();
 }
@@ -149,25 +159,23 @@ TEST_F(KeyboardTest, OnKeyboardKey) {
   focus_client->FocusWindow(nullptr);
 
   MockKeyboardDelegate delegate;
-  std::unique_ptr<Keyboard> keyboard(new Keyboard(&delegate));
+  Seat seat;
+  auto keyboard = std::make_unique<Keyboard>(&delegate, &seat);
 
   EXPECT_CALL(delegate, CanAcceptKeyboardEventsForSurface(surface.get()))
       .WillOnce(testing::Return(true));
   EXPECT_CALL(delegate, OnKeyboardModifiers(0));
   EXPECT_CALL(delegate,
-              OnKeyboardEnter(surface.get(), std::vector<ui::DomCode>()));
+              OnKeyboardEnter(surface.get(), base::flat_set<ui::DomCode>()));
   focus_client->FocusWindow(surface->window());
 
   ui::test::EventGenerator generator(ash::Shell::GetPrimaryRootWindow());
-  // This should only generate one press event for KEY_A.
+  // This should only generate a press event for KEY_A.
   EXPECT_CALL(delegate, OnKeyboardKey(testing::_, ui::DomCode::US_A, true));
   generator.PressKey(ui::VKEY_A, 0);
-  generator.PressKey(ui::VKEY_A, 0);
-  generator.ReleaseKey(ui::VKEY_B, 0);
 
-  // This should only generate one release event for KEY_A.
+  // This should only generate a release event for KEY_A.
   EXPECT_CALL(delegate, OnKeyboardKey(testing::_, ui::DomCode::US_A, false));
-  generator.ReleaseKey(ui::VKEY_A, 0);
   generator.ReleaseKey(ui::VKEY_A, 0);
 
   keyboard.reset();
@@ -187,13 +195,14 @@ TEST_F(KeyboardTest, OnKeyboardModifiers) {
   focus_client->FocusWindow(nullptr);
 
   MockKeyboardDelegate delegate;
-  std::unique_ptr<Keyboard> keyboard(new Keyboard(&delegate));
+  Seat seat;
+  auto keyboard = std::make_unique<Keyboard>(&delegate, &seat);
 
   EXPECT_CALL(delegate, CanAcceptKeyboardEventsForSurface(surface.get()))
       .WillOnce(testing::Return(true));
   EXPECT_CALL(delegate, OnKeyboardModifiers(0));
   EXPECT_CALL(delegate,
-              OnKeyboardEnter(surface.get(), std::vector<ui::DomCode>()));
+              OnKeyboardEnter(surface.get(), base::flat_set<ui::DomCode>()));
   focus_client->FocusWindow(surface->window());
 
   ui::test::EventGenerator generator(ash::Shell::GetPrimaryRootWindow());
@@ -242,7 +251,8 @@ TEST_F(KeyboardTest, OnKeyboardTypeChanged) {
   tablet_mode_controller->EnableTabletModeWindowManager(true);
 
   MockKeyboardDelegate delegate;
-  std::unique_ptr<Keyboard> keyboard(new Keyboard(&delegate));
+  Seat seat;
+  auto keyboard = std::make_unique<Keyboard>(&delegate, &seat);
   MockKeyboardDeviceConfigurationDelegate configuration_delegate;
 
   EXPECT_CALL(configuration_delegate, OnKeyboardTypeChanged(true));
@@ -278,7 +288,8 @@ TEST_F(KeyboardTest, KeyboardObserver) {
   focus_client->FocusWindow(nullptr);
 
   MockKeyboardDelegate delegate;
-  auto keyboard = std::make_unique<Keyboard>(&delegate);
+  Seat seat;
+  auto keyboard = std::make_unique<Keyboard>(&delegate, &seat);
   MockKeyboardObserver observer;
   keyboard->AddObserver(&observer);
 
@@ -300,7 +311,8 @@ TEST_F(KeyboardTest, NeedKeyboardKeyAcks) {
   focus_client->FocusWindow(nullptr);
 
   MockKeyboardDelegate delegate;
-  auto keyboard = std::make_unique<Keyboard>(&delegate);
+  Seat seat;
+  auto keyboard = std::make_unique<Keyboard>(&delegate, &seat);
 
   EXPECT_FALSE(keyboard->AreKeyboardKeyAcksNeeded());
   keyboard->SetNeedKeyboardKeyAcks(true);
@@ -325,13 +337,14 @@ TEST_F(KeyboardTest, AckKeyboardKey) {
   focus_client->FocusWindow(nullptr);
 
   MockKeyboardDelegate delegate;
-  std::unique_ptr<Keyboard> keyboard(new Keyboard(&delegate));
+  Seat seat;
+  auto keyboard = std::make_unique<Keyboard>(&delegate, &seat);
 
   EXPECT_CALL(delegate, CanAcceptKeyboardEventsForSurface(surface.get()))
       .WillOnce(testing::Return(true));
   EXPECT_CALL(delegate, OnKeyboardModifiers(0));
   EXPECT_CALL(delegate,
-              OnKeyboardEnter(surface.get(), std::vector<ui::DomCode>()));
+              OnKeyboardEnter(surface.get(), base::flat_set<ui::DomCode>()));
   focus_client->FocusWindow(surface->window());
 
   // If we don't set NeedKeyboardAckKeys to true, accelerators are always passed
@@ -403,13 +416,14 @@ TEST_F(KeyboardTest, AckKeyboardKeyMoveFocus) {
   focus_client->FocusWindow(nullptr);
 
   MockKeyboardDelegate delegate;
-  std::unique_ptr<Keyboard> keyboard(new Keyboard(&delegate));
+  Seat seat;
+  auto keyboard = std::make_unique<Keyboard>(&delegate, &seat);
 
   EXPECT_CALL(delegate, CanAcceptKeyboardEventsForSurface(surface.get()))
       .WillOnce(testing::Return(true));
   EXPECT_CALL(delegate, OnKeyboardModifiers(0)).Times(1);
   EXPECT_CALL(delegate,
-              OnKeyboardEnter(surface.get(), std::vector<ui::DomCode>()));
+              OnKeyboardEnter(surface.get(), base::flat_set<ui::DomCode>()));
   focus_client->FocusWindow(surface->window());
 
   ui::test::EventGenerator generator(ash::Shell::GetPrimaryRootWindow());
@@ -445,13 +459,14 @@ TEST_F(KeyboardTest, AckKeyboardKeyExpired) {
   focus_client->FocusWindow(nullptr);
 
   MockKeyboardDelegate delegate;
-  std::unique_ptr<Keyboard> keyboard(new Keyboard(&delegate));
+  Seat seat;
+  auto keyboard = std::make_unique<Keyboard>(&delegate, &seat);
 
   EXPECT_CALL(delegate, CanAcceptKeyboardEventsForSurface(surface.get()))
       .WillOnce(testing::Return(true));
   EXPECT_CALL(delegate, OnKeyboardModifiers(0));
   EXPECT_CALL(delegate,
-              OnKeyboardEnter(surface.get(), std::vector<ui::DomCode>()));
+              OnKeyboardEnter(surface.get(), base::flat_set<ui::DomCode>()));
   focus_client->FocusWindow(surface->window());
 
   ui::test::EventGenerator generator(ash::Shell::GetPrimaryRootWindow());
@@ -517,13 +532,14 @@ TEST_F(KeyboardTest, AckKeyboardKeyExpiredWithMovingFocusAccelerator) {
   focus_client->FocusWindow(nullptr);
 
   MockKeyboardDelegate delegate;
-  std::unique_ptr<Keyboard> keyboard(new Keyboard(&delegate));
+  Seat seat;
+  auto keyboard = std::make_unique<Keyboard>(&delegate, &seat);
 
   EXPECT_CALL(delegate, CanAcceptKeyboardEventsForSurface(surface.get()))
       .WillOnce(testing::Return(true));
   EXPECT_CALL(delegate, OnKeyboardModifiers(0));
   EXPECT_CALL(delegate,
-              OnKeyboardEnter(surface.get(), std::vector<ui::DomCode>()));
+              OnKeyboardEnter(surface.get(), base::flat_set<ui::DomCode>()));
   focus_client->FocusWindow(surface->window());
 
   ui::test::EventGenerator generator(ash::Shell::GetPrimaryRootWindow());

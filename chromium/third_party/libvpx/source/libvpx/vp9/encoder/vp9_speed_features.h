@@ -499,6 +499,15 @@ typedef struct SPEED_FEATURES {
 
   // Enable use of alt-refs in 1 pass VBR.
   int use_altref_onepass;
+
+  // Enable use of compound prediction, for nonrd_pickmode with nonzero lag.
+  int use_compound_nonrd_pickmode;
+
+  // Always use nonrd_pick_intra for all block sizes on keyframes.
+  int nonrd_keyframe;
+
+  // For SVC: enables use of partition from lower spatial resolution.
+  int svc_use_lowres_part;
 } SPEED_FEATURES;
 
 struct VP9_COMP;

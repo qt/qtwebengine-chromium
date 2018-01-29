@@ -180,8 +180,8 @@ public:
     */
     void unflatten(SkReadBuffer& buffer);
 
-    /** Sets all paint's contents to their initial values. This is equivalent to replacing
-        the paint with the result of SkPaint().
+    /** Sets all SkPaint contents to their initial values. This is equivalent to replacing
+        SkPaint with the result of SkPaint().
     */
     void reset();
 
@@ -1062,11 +1062,17 @@ public:
 
     /** \enum SkPaint::TextEncoding
         TextEncoding determines whether text specifies character codes and their encoded
-        size, or glyph indices. Character codes use the encoding specified by the Unicode standard.
+        size, or glyph indices. Characters are encoded as specified by the Unicode standard.
 
         Character codes encoded size are specified by UTF-8, UTF-16, or UTF-32.
-        All character encodings are able to represent all of Unicode, differing only
-        in the total storage required. UTF-8 (RFC 3629) encodes each character as one or more 8-bit bytes. UTF-16 (RFC 2781) encodes each character as one or two 16-bit words. UTF-32 encodes each character as one 32-bit word.
+        All character code formats are able to represent all of Unicode, differing only
+        in the total storage required.
+
+        UTF-8 (RFC 3629) encodes each character as one or more 8-bit bytes.
+
+        UTF-16 (RFC 2781) encodes each character as one or two 16-bit words.
+
+        UTF-32 encodes each character as one 32-bit word.
 
         font manager uses font data to convert character code points into glyph indices.
         A glyph index is a 16-bit word.
@@ -1104,6 +1110,10 @@ public:
         computed by font manager using SkTypeface. Values are set to zero if they are
         not available.
 
+        All vertical values relative to the baseline are given y-down. As such, zero is on the
+        baseline, negative values are above the baseline, and positive values are below the
+        baseline.
+
         fUnderlineThickness and fUnderlinePosition have a bit set in fFlags if their values
         are valid, since their value may be zero.
 
@@ -1112,6 +1122,11 @@ public:
     */
     struct FontMetrics {
 
+        /** \enum SkPaint::FontMetrics::FontMetricsFlags
+            FontMetricsFlags are set in fFlags when underline and strikeout metrics are valid;
+            the underline or strikeout metric may be valid and zero.
+            Fonts with embedded bitmaps may not have valid underline or strikeout metrics.
+        */
         enum FontMetricsFlags {
             kUnderlineThicknessIsValid_Flag = 1 << 0, //!< Set if fUnderlineThickness is valid.
             kUnderlinePositionIsValid_Flag  = 1 << 1, //!< Set if fUnderlinePosition is valid.
@@ -1121,28 +1136,28 @@ public:
 
         uint32_t fFlags;              //!< fFlags is set when underline metrics are valid.
 
-        /** Largest height for any glyph.
-            A measure from the baseline, and is less than or equal to zero.
+        /** Greatest extent above the baseline for any glyph.
+            Typically less than zero.
         */
         SkScalar fTop;
 
         /** Recommended distance above the baseline to reserve for a line of text.
-            A measure from the baseline, and is less than or equal to zero.
+            Typically less than zero.
         */
         SkScalar fAscent;
 
         /** Recommended distance below the baseline to reserve for a line of text.
-            A measure from the baseline, and is greater than or equal to zero.
+            Typically greater than zero.
         */
         SkScalar fDescent;
 
         /** Greatest extent below the baseline for any glyph.
-            A measure from the baseline, and is greater than or equal to zero.
+            Typically greater than zero.
         */
         SkScalar fBottom;
 
         /** Recommended distance to add between lines of text.
-            Greater than or equal to zero.
+            Typically greater than or equal to zero.
         */
         SkScalar fLeading;
 
@@ -1150,6 +1165,7 @@ public:
             Zero if no average width is stored in the font.
         */
         SkScalar fAvgCharWidth;
+
         SkScalar fMaxCharWidth;       //!< Maximum character width.
 
         /** Minimum bounding box x value for all glyphs.
@@ -1172,32 +1188,30 @@ public:
         */
         SkScalar fCapHeight;
 
-        /** Underline thickness. If the metric
-            is valid, the kUnderlineThicknessIsValid_Flag is set in fFlags.
+        /** Underline thickness.
+
+            If the metric is valid, the kUnderlineThicknessIsValid_Flag is set in fFlags.
             If kUnderlineThicknessIsValid_Flag is clear, fUnderlineThickness is zero.
         */
         SkScalar fUnderlineThickness;
 
-        /** Underline position relative to the baseline.
-            It may be negative, to draw the underline above the baseline, zero
-            to draw the underline on the baseline, or positive to draw the underline
-            below the baseline.
+        /** Position of the top of the underline stroke relative to the baseline.
+            Typically positive when valid.
 
             If the metric is valid, the kUnderlinePositionIsValid_Flag is set in fFlags.
             If kUnderlinePositionIsValid_Flag is clear, fUnderlinePosition is zero.
         */
         SkScalar fUnderlinePosition;
 
-        /** Strikeout thickness. If the metric
-            is valid, the kStrikeoutThicknessIsValid_Flag is set in fFlags.
+        /** Strikeout thickness.
+
+            If the metric is valid, the kStrikeoutThicknessIsValid_Flag is set in fFlags.
             If kStrikeoutThicknessIsValid_Flag is clear, fStrikeoutThickness is zero.
         */
         SkScalar fStrikeoutThickness;
 
-        /** Strikeout position relative to the baseline.
-            It may be negative, to draw the strikeout above the baseline, zero
-            to draw the strikeout on the baseline, or positive to draw the strikeout
-            below the baseline.
+        /** Position of the bottom of the strikeout stroke relative to the baseline.
+            Typically negative when valid.
 
             If the metric is valid, the kStrikeoutPositionIsValid_Flag is set in fFlags.
             If kStrikeoutPositionIsValid_Flag is clear, fStrikeoutPosition is zero.
@@ -1297,8 +1311,7 @@ public:
         SkPaint::TextEncoding specifies how text represents characters or glyphs.
         glyphs may be nullptr, to compute the glyph count.
 
-        Does not check text for valid character encoding or valid
-        glyph indices.
+        Does not check text for valid character codes or valid glyph indices.
 
         If byteLength equals zero, returns zero.
         If byteLength includes a partial character, the partial character is ignored.

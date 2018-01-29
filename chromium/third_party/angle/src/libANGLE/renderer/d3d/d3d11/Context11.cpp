@@ -147,12 +147,12 @@ std::vector<PathImpl *> Context11::createPaths(GLsizei)
     return std::vector<PathImpl *>();
 }
 
-gl::Error Context11::flush()
+gl::Error Context11::flush(const gl::Context *context)
 {
     return mRenderer->flush();
 }
 
-gl::Error Context11::finish()
+gl::Error Context11::finish(const gl::Context *context)
 {
     return mRenderer->finish();
 }
@@ -259,6 +259,18 @@ void Context11::pushGroupMarker(GLsizei length, const char *marker)
 void Context11::popGroupMarker()
 {
     mRenderer->getAnnotator()->endEvent();
+}
+
+void Context11::pushDebugGroup(GLenum source, GLuint id, GLsizei length, const char *message)
+{
+    // Fall through to the EXT_debug_marker functions
+    pushGroupMarker(length, message);
+}
+
+void Context11::popDebugGroup()
+{
+    // Fall through to the EXT_debug_marker functions
+    popGroupMarker();
 }
 
 void Context11::syncState(const gl::Context *context, const gl::State::DirtyBits &dirtyBits)

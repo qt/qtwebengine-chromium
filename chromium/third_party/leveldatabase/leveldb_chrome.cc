@@ -8,6 +8,7 @@
 
 #include "base/bind.h"
 #include "base/containers/flat_set.h"
+#include "base/files/file.h"
 #include "base/memory/memory_pressure_listener.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/sys_info.h"
@@ -85,19 +86,20 @@ class Globals {
   void UpdateHistograms() {
     leveldb_env::DBTracker::GetInstance()->UpdateHistograms();
 
+    // In-memory caches are hard-coded to be zero bytes so don't log
+    // LevelDB.SharedCache.BytesUsed.InMemory.
+
     // leveldb limits the read cache size to 1GB, but its default value is 8MB,
     // and Chrome uses either 1MB or 8MB.
     if (GetSharedWebBlockCache() == GetSharedBrowserBlockCache()) {
-      UMA_HISTOGRAM_COUNTS_10M("LevelDB.SharedCache.BytesUsed.Unified",
-                               browser_block_cache_->TotalCharge());
+      UMA_HISTOGRAM_COUNTS_100000("LevelDB.SharedCache.KBUsed.Unified",
+                                  browser_block_cache_->TotalCharge() / 1024);
       return;
     }
-    UMA_HISTOGRAM_COUNTS_10M("LevelDB.SharedCache.BytesUsed.Web",
-                             web_block_cache_->TotalCharge());
-    UMA_HISTOGRAM_COUNTS_10M("LevelDB.SharedCache.BytesUsed.Browser",
-                             browser_block_cache_->TotalCharge());
-    UMA_HISTOGRAM_COUNTS_10M("LevelDB.SharedCache.BytesUsed.InMemory",
-                             GetSharedInMemoryBlockCache()->TotalCharge());
+    UMA_HISTOGRAM_COUNTS_100000("LevelDB.SharedCache.KBUsed.Web",
+                                web_block_cache_->TotalCharge() / 1024);
+    UMA_HISTOGRAM_COUNTS_100000("LevelDB.SharedCache.KBUsed.Browser",
+                                browser_block_cache_->TotalCharge() / 1024);
   }
 
  private:
@@ -161,6 +163,25 @@ leveldb::Env* NewMemEnv(leveldb::Env* base_env) {
 
 void UpdateHistograms() {
   return Globals::GetInstance()->UpdateHistograms();
+}
+
+bool ParseFileName(const std::string& filename,
+                   uint64_t* number,
+                   leveldb::FileType* type) {
+  return leveldb::ParseFileName(filename, number, type);
+}
+
+bool CorruptClosedDBForTesting(const base::FilePath& db_path) {
+  base::File current(db_path.Append(FILE_PATH_LITERAL("CURRENT")),
+                     base::File::FLAG_CREATE_ALWAYS | base::File::FLAG_WRITE);
+  if (!current.IsValid()) {
+    return false;
+  }
+  const char kString[] = "StringWithoutEOL";
+  if (current.Write(0, kString, sizeof(kString)) != sizeof(kString))
+    return false;
+  current.Close();
+  return true;
 }
 
 }  // namespace leveldb_chrome

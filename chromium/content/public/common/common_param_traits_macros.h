@@ -11,13 +11,15 @@
 #include "build/build_config.h"
 #include "content/public/common/console_message_level.h"
 #include "content/public/common/referrer.h"
+#include "content/public/common/resource_type.h"
 #include "content/public/common/web_preferences.h"
-#include "content/public/common/webplugininfo.h"
+#include "content/public/common/webplugininfo_param_traits.h"
 #include "ipc/ipc_message_macros.h"
 #include "net/base/network_change_notifier.h"
 #include "net/base/request_priority.h"
 #include "net/http/http_request_headers.h"
 #include "net/nqe/effective_connection_type.h"
+#include "third_party/WebKit/public/platform/WebHistoryScrollRestorationType.h"
 #include "third_party/WebKit/public/platform/WebPoint.h"
 #include "third_party/WebKit/public/platform/WebRect.h"
 #include "third_party/WebKit/public/platform/WebReferrerPolicy.h"
@@ -53,6 +55,8 @@ IPC_ENUM_TRAITS_MAX_VALUE(blink::WebFrameSerializerCacheControlPolicy,
                           blink::WebFrameSerializerCacheControlPolicy::kLast)
 IPC_ENUM_TRAITS_MAX_VALUE(blink::WebReferrerPolicy,
                           blink::kWebReferrerPolicyLast)
+IPC_ENUM_TRAITS_MAX_VALUE(blink::WebHistoryScrollRestorationType,
+                          blink::kWebHistoryScrollRestorationManual)
 IPC_ENUM_TRAITS_MAX_VALUE(blink::WebSecurityStyle, blink::kWebSecurityStyleLast)
 IPC_ENUM_TRAITS_MAX_VALUE(blink::mojom::PermissionStatus,
                           blink::mojom::PermissionStatus::LAST)
@@ -61,6 +65,8 @@ IPC_ENUM_TRAITS_MAX_VALUE(content::EditingBehavior,
 IPC_ENUM_TRAITS_MAX_VALUE(WindowOpenDisposition,
                           WindowOpenDisposition::MAX_VALUE)
 IPC_ENUM_TRAITS_MAX_VALUE(net::RequestPriority, net::MAXIMUM_PRIORITY)
+IPC_ENUM_TRAITS_MAX_VALUE(content::ResourceType,
+                          content::RESOURCE_TYPE_LAST_TYPE - 1)
 IPC_ENUM_TRAITS_MAX_VALUE(content::V8CacheOptions,
                           content::V8_CACHE_OPTIONS_LAST)
 #if defined(OS_ANDROID)
@@ -103,24 +109,6 @@ IPC_STRUCT_TRAITS_BEGIN(content::Referrer)
   IPC_STRUCT_TRAITS_MEMBER(policy)
 IPC_STRUCT_TRAITS_END()
 
-IPC_STRUCT_TRAITS_BEGIN(content::WebPluginMimeType)
-  IPC_STRUCT_TRAITS_MEMBER(mime_type)
-  IPC_STRUCT_TRAITS_MEMBER(file_extensions)
-  IPC_STRUCT_TRAITS_MEMBER(description)
-  IPC_STRUCT_TRAITS_MEMBER(additional_param_names)
-  IPC_STRUCT_TRAITS_MEMBER(additional_param_values)
-IPC_STRUCT_TRAITS_END()
-
-IPC_STRUCT_TRAITS_BEGIN(content::WebPluginInfo)
-  IPC_STRUCT_TRAITS_MEMBER(name)
-  IPC_STRUCT_TRAITS_MEMBER(path)
-  IPC_STRUCT_TRAITS_MEMBER(version)
-  IPC_STRUCT_TRAITS_MEMBER(desc)
-  IPC_STRUCT_TRAITS_MEMBER(mime_types)
-  IPC_STRUCT_TRAITS_MEMBER(type)
-  IPC_STRUCT_TRAITS_MEMBER(pepper_permissions)
-IPC_STRUCT_TRAITS_END()
-
 IPC_STRUCT_TRAITS_BEGIN(content::WebPreferences)
   IPC_STRUCT_TRAITS_MEMBER(standard_font_family_map)
   IPC_STRUCT_TRAITS_MEMBER(fixed_font_family_map)
@@ -139,7 +127,6 @@ IPC_STRUCT_TRAITS_BEGIN(content::WebPreferences)
   IPC_STRUCT_TRAITS_MEMBER(loads_images_automatically)
   IPC_STRUCT_TRAITS_MEMBER(images_enabled)
   IPC_STRUCT_TRAITS_MEMBER(plugins_enabled)
-  IPC_STRUCT_TRAITS_MEMBER(encrypted_media_enabled)
   IPC_STRUCT_TRAITS_MEMBER(dom_paste_enabled)
   IPC_STRUCT_TRAITS_MEMBER(shrinks_standalone_images_to_fit)
   IPC_STRUCT_TRAITS_MEMBER(text_areas_are_resizable)

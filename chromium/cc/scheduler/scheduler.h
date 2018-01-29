@@ -51,6 +51,11 @@ class SchedulerClient {
   virtual void ScheduledActionBeginMainFrameNotExpectedUntil(
       base::TimeTicks time) = 0;
 
+  // Functions used for reporting anmation targeting UMA, crbug.com/758439.
+  virtual size_t CompositedAnimationsCount() const = 0;
+  virtual size_t MainThreadAnimationsCount() const = 0;
+  virtual size_t MainThreadCompositableAnimationsCount() const = 0;
+
  protected:
   virtual ~SchedulerClient() {}
 };
@@ -212,6 +217,7 @@ class CC_EXPORT Scheduler : public viz::BeginFrameObserverBase {
   void DrawForced();
   void ProcessScheduledActions();
   void UpdateCompositorTimingHistoryRecordingEnabled();
+  bool ShouldDropBeginFrame(const viz::BeginFrameArgs& args) const;
   bool ShouldRecoverMainLatency(const viz::BeginFrameArgs& args,
                                 bool can_activate_before_deadline) const;
   bool ShouldRecoverImplLatency(const viz::BeginFrameArgs& args,

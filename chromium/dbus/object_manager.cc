@@ -23,11 +23,10 @@
 namespace dbus {
 
 ObjectManager::Object::Object()
-  : object_proxy(NULL) {
+  : object_proxy(nullptr) {
 }
 
-ObjectManager::Object::~Object() {
-}
+ObjectManager::Object::~Object() = default;
 
 ObjectManager::ObjectManager(Bus* bus,
                              const std::string& service_name,
@@ -116,7 +115,7 @@ std::vector<ObjectPath> ObjectManager::GetObjectsWithInterface(
 ObjectProxy* ObjectManager::GetObjectProxy(const ObjectPath& object_path) {
   ObjectMap::iterator iter = object_map_.find(object_path);
   if (iter == object_map_.end())
-    return NULL;
+    return nullptr;
 
   Object* object = iter->second;
   return object->object_proxy;
@@ -126,13 +125,13 @@ PropertySet* ObjectManager::GetProperties(const ObjectPath& object_path,
                                           const std::string& interface_name) {
   ObjectMap::iterator iter = object_map_.find(object_path);
   if (iter == object_map_.end())
-    return NULL;
+    return nullptr;
 
   Object* object = iter->second;
   Object::PropertiesMap::iterator piter =
       object->properties_map.find(interface_name);
   if (piter == object->properties_map.end())
-    return NULL;
+    return nullptr;
 
   return piter->second;
 }
@@ -350,14 +349,14 @@ void ObjectManager::NotifyPropertiesChangedHelper(
 }
 
 void ObjectManager::OnGetManagedObjects(Response* response) {
-  if (response != NULL) {
+  if (response != nullptr) {
     MessageReader reader(response);
-    MessageReader array_reader(NULL);
+    MessageReader array_reader(nullptr);
     if (!reader.PopArray(&array_reader))
       return;
 
     while (array_reader.HasMoreData()) {
-      MessageReader dict_entry_reader(NULL);
+      MessageReader dict_entry_reader(nullptr);
       ObjectPath object_path;
       if (!array_reader.PopDictEntry(&dict_entry_reader) ||
           !dict_entry_reader.PopObjectPath(&object_path))
@@ -422,12 +421,12 @@ void ObjectManager::InterfacesRemovedConnected(
 void ObjectManager::UpdateObject(const ObjectPath& object_path,
                                  MessageReader* reader) {
   DCHECK(reader);
-  MessageReader array_reader(NULL);
+  MessageReader array_reader(nullptr);
   if (!reader->PopArray(&array_reader))
     return;
 
   while (array_reader.HasMoreData()) {
-    MessageReader dict_entry_reader(NULL);
+    MessageReader dict_entry_reader(nullptr);
     std::string interface_name;
     if (!array_reader.PopDictEntry(&dict_entry_reader) ||
         !dict_entry_reader.PopString(&interface_name))

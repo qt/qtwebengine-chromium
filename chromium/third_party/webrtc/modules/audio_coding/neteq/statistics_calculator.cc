@@ -16,7 +16,7 @@
 
 #include "modules/audio_coding/neteq/delay_manager.h"
 #include "rtc_base/checks.h"
-#include "rtc_base/safe_conversions.h"
+#include "rtc_base/numerics/safe_conversions.h"
 #include "system_wrappers/include/metrics.h"
 
 namespace webrtc {
@@ -153,14 +153,14 @@ void StatisticsCalculator::ResetMcu() {
 void StatisticsCalculator::ExpandedVoiceSamples(size_t num_samples,
                                                 bool is_new_concealment_event) {
   expanded_speech_samples_ += num_samples;
-  ConcealedSamplesCorrection(num_samples);
+  ConcealedSamplesCorrection(rtc::dchecked_cast<int>(num_samples));
   lifetime_stats_.concealment_events += is_new_concealment_event;
 }
 
 void StatisticsCalculator::ExpandedNoiseSamples(size_t num_samples,
                                                 bool is_new_concealment_event) {
   expanded_noise_samples_ += num_samples;
-  ConcealedSamplesCorrection(num_samples);
+  ConcealedSamplesCorrection(rtc::dchecked_cast<int>(num_samples));
   lifetime_stats_.concealment_events += is_new_concealment_event;
 }
 

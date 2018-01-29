@@ -15,7 +15,7 @@
 #include "core/frame/Settings.h"
 #include "core/frame/WebLocalFrameImpl.h"
 #include "core/html/HTMLCanvasElement.h"
-#include "core/html/HTMLMediaElement.h"
+#include "core/html/media/HTMLMediaElement.h"
 #include "core/inspector/InspectorSession.h"
 #include "core/leak_detector/BlinkLeakDetector.h"
 #include "core/offscreencanvas/OffscreenCanvas.h"
@@ -26,13 +26,15 @@
 #include "modules/EventModulesFactory.h"
 #include "modules/accessibility/AXObjectCacheImpl.h"
 #include "modules/accessibility/InspectorAccessibilityAgent.h"
+#include "modules/animationworklet/AnimationWorkletThread.h"
 #include "modules/app_banner/AppBannerController.h"
 #include "modules/audio_output_devices/AudioOutputDeviceClient.h"
 #include "modules/audio_output_devices/AudioOutputDeviceClientImpl.h"
 #include "modules/audio_output_devices/HTMLMediaElementAudioOutputDevice.h"
 #include "modules/cachestorage/InspectorCacheStorageAgent.h"
-#include "modules/canvas2d/CanvasRenderingContext2D.h"
-#include "modules/compositorworker/AnimationWorkletThread.h"
+#include "modules/canvas/canvas2d/CanvasRenderingContext2D.h"
+#include "modules/canvas/imagebitmap/ImageBitmapRenderingContext.h"
+#include "modules/canvas/offscreencanvas2d/OffscreenCanvasRenderingContext2D.h"
 #include "modules/credentialmanager/CredentialManagerClient.h"
 #include "modules/csspaint/CSSPaintImageGeneratorImpl.h"
 #include "modules/device_orientation/DeviceMotionController.h"
@@ -48,7 +50,6 @@
 #include "modules/filesystem/DraggedIsolatedFileSystemImpl.h"
 #include "modules/filesystem/LocalFileSystemClient.h"
 #include "modules/gamepad/NavigatorGamepad.h"
-#include "modules/imagebitmap/ImageBitmapRenderingContext.h"
 #include "modules/indexed_db_names.h"
 #include "modules/indexeddb/IndexedDBClient.h"
 #include "modules/indexeddb/InspectorIndexedDBAgent.h"
@@ -59,7 +60,6 @@
 #include "modules/mediastream/UserMediaController.h"
 #include "modules/navigatorcontentutils/NavigatorContentUtils.h"
 #include "modules/navigatorcontentutils/NavigatorContentUtilsClient.h"
-#include "modules/offscreencanvas2d/OffscreenCanvasRenderingContext2D.h"
 #include "modules/presentation/PresentationController.h"
 #include "modules/presentation/PresentationReceiver.h"
 #include "modules/push_messaging/PushController.h"
@@ -68,7 +68,6 @@
 #include "modules/remoteplayback/RemotePlayback.h"
 #include "modules/screen_orientation/ScreenOrientationControllerImpl.h"
 #include "modules/serviceworkers/NavigatorServiceWorker.h"
-#include "modules/serviceworkers/ServiceWorkerLinkResource.h"
 #include "modules/speech/SpeechRecognitionClientProxy.h"
 #include "modules/storage/DOMWindowStorageController.h"
 #include "modules/storage/InspectorDOMStorageAgent.h"
@@ -79,8 +78,10 @@
 #include "modules/webdatabase/DatabaseClient.h"
 #include "modules/webdatabase/DatabaseManager.h"
 #include "modules/webdatabase/InspectorDatabaseAgent.h"
+#include "modules/webdatabase/WebDatabaseImpl.h"
 #include "modules/webgl/WebGL2RenderingContext.h"
 #include "modules/webgl/WebGLRenderingContext.h"
+#include "platform/CrossThreadFunctional.h"
 #include "platform/mojo/MojoHelper.h"
 #include "platform/wtf/PtrUtil.h"
 #include "public/platform/InterfaceRegistry.h"
@@ -109,28 +110,29 @@ void ModulesInitializer::Initialize() {
   // Some unit tests may have no message loop ready, so we can't initialize the
   // mojo stuff here. They can initialize those mojo stuff they're interested in
   // later after they got a message loop ready.
-  if (CanInitializeMojo())
+  if (CanInitializeMojo()) {
     TimeZoneMonitorClient::Init();
+  }
 
   CoreInitializer::Initialize();
 
   // Canvas context types must be registered with the HTMLCanvasElement.
   HTMLCanvasElement::RegisterRenderingContextFactory(
-      WTF::MakeUnique<CanvasRenderingContext2D::Factory>());
+      std::make_unique<CanvasRenderingContext2D::Factory>());
   HTMLCanvasElement::RegisterRenderingContextFactory(
-      WTF::MakeUnique<WebGLRenderingContext::Factory>());
+      std::make_unique<WebGLRenderingContext::Factory>());
   HTMLCanvasElement::RegisterRenderingContextFactory(
-      WTF::MakeUnique<WebGL2RenderingContext::Factory>());
+      std::make_unique<WebGL2RenderingContext::Factory>());
   HTMLCanvasElement::RegisterRenderingContextFactory(
-      WTF::MakeUnique<ImageBitmapRenderingContext::Factory>());
+      std::make_unique<ImageBitmapRenderingContext::Factory>());
 
   // OffscreenCanvas context types must be registered with the OffscreenCanvas.
   OffscreenCanvas::RegisterRenderingContextFactory(
-      WTF::MakeUnique<OffscreenCanvasRenderingContext2D::Factory>());
+      std::make_unique<OffscreenCanvasRenderingContext2D::Factory>());
   OffscreenCanvas::RegisterRenderingContextFactory(
-      WTF::MakeUnique<WebGLRenderingContext::Factory>());
+      std::make_unique<WebGLRenderingContext::Factory>());
   OffscreenCanvas::RegisterRenderingContextFactory(
-      WTF::MakeUnique<WebGL2RenderingContext::Factory>());
+      std::make_unique<WebGL2RenderingContext::Factory>());
 }
 
 void ModulesInitializer::InitLocalFrame(LocalFrame& frame) const {
@@ -208,11 +210,6 @@ void ModulesInitializer::InitInspectorAgentSession(
   }
 }
 
-LinkResource* ModulesInitializer::CreateServiceWorkerLinkResource(
-    HTMLLinkElement* owner) const {
-  return ServiceWorkerLinkResource::Create(owner);
-}
-
 void ModulesInitializer::OnClearWindowObjectInMainWorld(
     Document& document,
     const Settings& settings) const {
@@ -277,6 +274,12 @@ void ModulesInitializer::ForceNextWebGLContextCreationToFail() const {
 
 void ModulesInitializer::CollectAllGarbageForAnimationWorklet() const {
   AnimationWorkletThread::CollectAllGarbage();
+}
+
+void ModulesInitializer::RegisterInterfaces(InterfaceRegistry& registry) {
+  DCHECK(Platform::Current());
+  registry.AddInterface(blink::CrossThreadBind(&WebDatabaseImpl::Create),
+                        Platform::Current()->GetIOTaskRunner());
 }
 
 }  // namespace blink

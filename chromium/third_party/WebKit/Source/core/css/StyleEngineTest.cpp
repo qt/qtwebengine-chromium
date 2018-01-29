@@ -6,6 +6,7 @@
 
 #include <memory>
 #include "bindings/core/v8/V8BindingForCore.h"
+#include "core/css/CSSFontSelector.h"
 #include "core/css/CSSRuleList.h"
 #include "core/css/CSSStyleRule.h"
 #include "core/css/CSSStyleSheet.h"
@@ -56,7 +57,8 @@ StyleEngineTest::RuleSetInvalidation
 StyleEngineTest::ScheduleInvalidationsForRules(TreeScope& tree_scope,
                                                const String& css_text) {
   StyleSheetContents* sheet =
-      StyleSheetContents::Create(CSSParserContext::Create(kHTMLStandardMode));
+      StyleSheetContents::Create(CSSParserContext::Create(
+          kHTMLStandardMode, SecureContextMode::kInsecureContext));
   sheet->ParseString(css_text);
   HeapHashSet<Member<RuleSet>> rule_sets;
   RuleSet& rule_set = sheet->EnsureRuleSet(MediaQueryEvaluator(),
@@ -73,70 +75,375 @@ TEST_F(StyleEngineTest, DocumentDirtyAfterInject) {
   StyleSheetContents* parsed_sheet =
       StyleSheetContents::Create(CSSParserContext::Create(GetDocument()));
   parsed_sheet->ParseString("div {}");
-  GetStyleEngine().InjectAuthorSheet(parsed_sheet);
+  GetStyleEngine().InjectSheet(parsed_sheet);
   GetDocument().View()->UpdateAllLifecyclePhases();
 
   EXPECT_TRUE(IsDocumentStyleSheetCollectionClean());
 }
 
 TEST_F(StyleEngineTest, AnalyzedInject) {
-  GetDocument().body()->SetInnerHTMLFromString(
-      "<style>div { color: red }</style><div id='t1'>Green</div><div></div>");
+  GetDocument().body()->SetInnerHTMLFromString(R"HTML(
+    <style>
+     @font-face {
+      font-family: 'Cool Font';
+      src: local(monospace);
+      font-weight: bold;
+     }
+     :root {
+      --stop-color: black !important;
+      --go-color: white;
+     }
+     #t1 { color: red !important }
+     #t2 { color: black }
+     #t4 { font-family: 'Cool Font'; font-weight: bold; font-style: italic }
+     #t5 { animation-name: dummy-animation }
+     #t6 { color: var(--stop-color); }
+     #t7 { color: var(--go-color); }
+     .red { color: red; }
+    </style>
+    <div id='t1'>Green</div>
+    <div id='t2'>White</div>
+    <div id='t3' style='color: black !important'>White</div>
+    <div id='t4'>I look cool.</div>
+    <div id='t5'>I animate!</div>
+    <div id='t6'>Stop!</div>
+    <div id='t7'>Go</div>
+    <div id='t8' class='red'>Green</div>
+    <div id='t9' style='color: black !important'>Black</div>
+    <div></div>
+  )HTML");
   GetDocument().View()->UpdateAllLifecyclePhases();
 
   Element* t1 = GetDocument().getElementById("t1");
+  Element* t2 = GetDocument().getElementById("t2");
+  Element* t3 = GetDocument().getElementById("t3");
   ASSERT_TRUE(t1);
+  ASSERT_TRUE(t2);
+  ASSERT_TRUE(t3);
   ASSERT_TRUE(t1->GetComputedStyle());
+  ASSERT_TRUE(t2->GetComputedStyle());
+  ASSERT_TRUE(t3->GetComputedStyle());
   EXPECT_EQ(MakeRGB(255, 0, 0),
             t1->GetComputedStyle()->VisitedDependentColor(CSSPropertyColor));
+  EXPECT_EQ(MakeRGB(0, 0, 0),
+            t2->GetComputedStyle()->VisitedDependentColor(CSSPropertyColor));
+  EXPECT_EQ(MakeRGB(0, 0, 0),
+            t3->GetComputedStyle()->VisitedDependentColor(CSSPropertyColor));
 
   const unsigned initial_count = GetStyleEngine().StyleForElementCount();
 
   StyleSheetContents* green_parsed_sheet =
       StyleSheetContents::Create(CSSParserContext::Create(GetDocument()));
-  green_parsed_sheet->ParseString("#t1 { color: green }");
+  green_parsed_sheet->ParseString(
+      "#t1 { color: green !important }"
+      "#t2 { color: white !important }"
+      "#t3 { color: white }");
   WebStyleSheetId green_id =
-      GetStyleEngine().InjectAuthorSheet(green_parsed_sheet);
+      GetStyleEngine().InjectSheet(green_parsed_sheet,
+                                   WebDocument::kUserOrigin);
   EXPECT_EQ(1u, green_id);
-  EXPECT_EQ(1u, GetStyleEngine().InjectedAuthorStyleSheets().size());
   GetDocument().View()->UpdateAllLifecyclePhases();
 
-  EXPECT_EQ(1u, GetStyleEngine().StyleForElementCount() - initial_count);
+  EXPECT_EQ(3u, GetStyleEngine().StyleForElementCount() - initial_count);
 
   ASSERT_TRUE(t1->GetComputedStyle());
+  ASSERT_TRUE(t2->GetComputedStyle());
+  ASSERT_TRUE(t3->GetComputedStyle());
+
+  // Important user rules override both regular and important author rules.
   EXPECT_EQ(MakeRGB(0, 128, 0),
             t1->GetComputedStyle()->VisitedDependentColor(CSSPropertyColor));
+  EXPECT_EQ(MakeRGB(255, 255, 255),
+            t2->GetComputedStyle()->VisitedDependentColor(CSSPropertyColor));
+  EXPECT_EQ(MakeRGB(0, 0, 0),
+            t3->GetComputedStyle()->VisitedDependentColor(CSSPropertyColor));
 
   StyleSheetContents* blue_parsed_sheet =
       StyleSheetContents::Create(CSSParserContext::Create(GetDocument()));
-  blue_parsed_sheet->ParseString("#t1 { color: blue }");
+  blue_parsed_sheet->ParseString(
+      "#t1 { color: blue !important }"
+      "#t2 { color: silver }"
+      "#t3 { color: silver !important }");
   WebStyleSheetId blue_id =
-      GetStyleEngine().InjectAuthorSheet(blue_parsed_sheet);
+      GetStyleEngine().InjectSheet(blue_parsed_sheet, WebDocument::kUserOrigin);
   EXPECT_EQ(2u, blue_id);
-  EXPECT_EQ(2u, GetStyleEngine().InjectedAuthorStyleSheets().size());
   GetDocument().View()->UpdateAllLifecyclePhases();
 
-  EXPECT_EQ(2u, GetStyleEngine().StyleForElementCount() - initial_count);
+  EXPECT_EQ(6u, GetStyleEngine().StyleForElementCount() - initial_count);
 
   ASSERT_TRUE(t1->GetComputedStyle());
+  ASSERT_TRUE(t2->GetComputedStyle());
+  ASSERT_TRUE(t3->GetComputedStyle());
+
+  // Only important user rules override previously set important user rules.
   EXPECT_EQ(MakeRGB(0, 0, 255),
             t1->GetComputedStyle()->VisitedDependentColor(CSSPropertyColor));
+  EXPECT_EQ(MakeRGB(255, 255, 255),
+            t2->GetComputedStyle()->VisitedDependentColor(CSSPropertyColor));
+  // Important user rules override inline author rules.
+  EXPECT_EQ(MakeRGB(192, 192, 192),
+            t3->GetComputedStyle()->VisitedDependentColor(CSSPropertyColor));
 
-  GetStyleEngine().RemoveInjectedAuthorSheet(green_id);
-  EXPECT_EQ(1u, GetStyleEngine().InjectedAuthorStyleSheets().size());
+  GetStyleEngine().RemoveInjectedSheet(green_id);
   GetDocument().View()->UpdateAllLifecyclePhases();
-  EXPECT_EQ(3u, GetStyleEngine().StyleForElementCount() - initial_count);
+  EXPECT_EQ(9u, GetStyleEngine().StyleForElementCount() - initial_count);
   ASSERT_TRUE(t1->GetComputedStyle());
+  ASSERT_TRUE(t2->GetComputedStyle());
+  ASSERT_TRUE(t3->GetComputedStyle());
+
+  // Regular user rules do not override author rules.
   EXPECT_EQ(MakeRGB(0, 0, 255),
             t1->GetComputedStyle()->VisitedDependentColor(CSSPropertyColor));
+  EXPECT_EQ(MakeRGB(0, 0, 0),
+            t2->GetComputedStyle()->VisitedDependentColor(CSSPropertyColor));
+  EXPECT_EQ(MakeRGB(192, 192, 192),
+            t3->GetComputedStyle()->VisitedDependentColor(CSSPropertyColor));
 
-  GetStyleEngine().RemoveInjectedAuthorSheet(blue_id);
-  EXPECT_EQ(0u, GetStyleEngine().InjectedAuthorStyleSheets().size());
+  GetStyleEngine().RemoveInjectedSheet(blue_id);
   GetDocument().View()->UpdateAllLifecyclePhases();
-  EXPECT_EQ(4u, GetStyleEngine().StyleForElementCount() - initial_count);
+  EXPECT_EQ(12u, GetStyleEngine().StyleForElementCount() - initial_count);
   ASSERT_TRUE(t1->GetComputedStyle());
+  ASSERT_TRUE(t2->GetComputedStyle());
+  ASSERT_TRUE(t3->GetComputedStyle());
   EXPECT_EQ(MakeRGB(255, 0, 0),
             t1->GetComputedStyle()->VisitedDependentColor(CSSPropertyColor));
+  EXPECT_EQ(MakeRGB(0, 0, 0),
+            t2->GetComputedStyle()->VisitedDependentColor(CSSPropertyColor));
+  EXPECT_EQ(MakeRGB(0, 0, 0),
+            t3->GetComputedStyle()->VisitedDependentColor(CSSPropertyColor));
+
+  // @font-face rules
+
+  Element* t4 = GetDocument().getElementById("t4");
+  ASSERT_TRUE(t4);
+  ASSERT_TRUE(t4->GetComputedStyle());
+
+  // There's only one font and it's bold and normal.
+  EXPECT_EQ(1u, GetStyleEngine().GetFontSelector()->GetFontFaceCache()
+                ->GetNumSegmentedFacesForTesting());
+  CSSSegmentedFontFace* font_face =
+      GetStyleEngine().GetFontSelector()->GetFontFaceCache()
+      ->Get(t4->GetComputedStyle()->GetFontDescription(),
+            AtomicString("Cool Font"));
+  EXPECT_TRUE(font_face);
+  FontSelectionCapabilities capabilities =
+      font_face->GetFontSelectionCapabilities();
+  ASSERT_EQ(capabilities.weight,
+            FontSelectionRange({BoldWeightValue(), BoldWeightValue()}));
+  ASSERT_EQ(capabilities.slope,
+            FontSelectionRange({NormalSlopeValue(), NormalSlopeValue()}));
+
+  StyleSheetContents* font_face_parsed_sheet =
+      StyleSheetContents::Create(CSSParserContext::Create(GetDocument()));
+  font_face_parsed_sheet->ParseString(
+      "@font-face {"
+      " font-family: 'Cool Font';"
+      " src: local(monospace);"
+      " font-weight: bold;"
+      " font-style: italic;"
+      "}"
+    );
+  WebStyleSheetId font_face_id =
+      GetStyleEngine().InjectSheet(font_face_parsed_sheet,
+                                   WebDocument::kUserOrigin);
+  GetDocument().View()->UpdateAllLifecyclePhases();
+
+  // After injecting a more specific font, now there are two and the
+  // bold-italic one is selected.
+  EXPECT_EQ(2u, GetStyleEngine().GetFontSelector()->GetFontFaceCache()
+                ->GetNumSegmentedFacesForTesting());
+  font_face = GetStyleEngine().GetFontSelector()->GetFontFaceCache()
+              ->Get(t4->GetComputedStyle()->GetFontDescription(),
+                    AtomicString("Cool Font"));
+  EXPECT_TRUE(font_face);
+  capabilities = font_face->GetFontSelectionCapabilities();
+  ASSERT_EQ(capabilities.weight,
+            FontSelectionRange({BoldWeightValue(), BoldWeightValue()}));
+  ASSERT_EQ(capabilities.slope,
+            FontSelectionRange({ItalicSlopeValue(), ItalicSlopeValue()}));
+
+  HTMLStyleElement* style_element = HTMLStyleElement::Create(
+      GetDocument(), false);
+  style_element->SetInnerHTMLFromString(
+      "@font-face {"
+      " font-family: 'Cool Font';"
+      " src: local(monospace);"
+      " font-weight: normal;"
+      " font-style: italic;"
+      "}"
+    );
+  GetDocument().body()->AppendChild(style_element);
+  GetDocument().View()->UpdateAllLifecyclePhases();
+
+  // Now there are three fonts, but the newest one does not override the older,
+  // better matching one.
+  EXPECT_EQ(3u, GetStyleEngine().GetFontSelector()->GetFontFaceCache()
+                ->GetNumSegmentedFacesForTesting());
+  font_face = GetStyleEngine().GetFontSelector()->GetFontFaceCache()
+              ->Get(t4->GetComputedStyle()->GetFontDescription(),
+                    AtomicString("Cool Font"));
+  EXPECT_TRUE(font_face);
+  capabilities = font_face->GetFontSelectionCapabilities();
+  ASSERT_EQ(capabilities.weight,
+            FontSelectionRange({BoldWeightValue(), BoldWeightValue()}));
+  ASSERT_EQ(capabilities.slope,
+            FontSelectionRange({ItalicSlopeValue(), ItalicSlopeValue()}));
+
+  GetStyleEngine().RemoveInjectedSheet(font_face_id);
+  GetDocument().View()->UpdateAllLifecyclePhases();
+
+  // After removing the injected style sheet we're left with a bold-normal and
+  // a normal-italic font, and the latter is selected by the matching algorithm
+  // as font-style trumps font-weight.
+  EXPECT_EQ(2u, GetStyleEngine().GetFontSelector()->GetFontFaceCache()
+                ->GetNumSegmentedFacesForTesting());
+  font_face = GetStyleEngine().GetFontSelector()->GetFontFaceCache()
+              ->Get(t4->GetComputedStyle()->GetFontDescription(),
+                    AtomicString("Cool Font"));
+  EXPECT_TRUE(font_face);
+  capabilities = font_face->GetFontSelectionCapabilities();
+  ASSERT_EQ(capabilities.weight,
+            FontSelectionRange({NormalWeightValue(), NormalWeightValue()}));
+  ASSERT_EQ(capabilities.slope,
+            FontSelectionRange({ItalicSlopeValue(), ItalicSlopeValue()}));
+
+  // @keyframes rules
+
+  Element* t5 = GetDocument().getElementById("t5");
+  ASSERT_TRUE(t5);
+
+  // There's no @keyframes rule named dummy-animation
+  ASSERT_FALSE(GetStyleEngine().Resolver()->FindKeyframesRule(
+      t5, AtomicString("dummy-animation")));
+
+  StyleSheetContents* keyframes_parsed_sheet =
+      StyleSheetContents::Create(CSSParserContext::Create(GetDocument()));
+  keyframes_parsed_sheet->ParseString("@keyframes dummy-animation { from {} }");
+  WebStyleSheetId keyframes_id =
+      GetStyleEngine().InjectSheet(keyframes_parsed_sheet,
+                                   WebDocument::kUserOrigin);
+  GetDocument().View()->UpdateAllLifecyclePhases();
+
+  // After injecting the style sheet, a @keyframes rule named dummy-animation
+  // is found with one keyframe.
+  StyleRuleKeyframes* keyframes =
+      GetStyleEngine().Resolver()->FindKeyframesRule(
+          t5, AtomicString("dummy-animation"));
+  ASSERT_TRUE(keyframes);
+  EXPECT_EQ(1u, keyframes->Keyframes().size());
+
+  style_element = HTMLStyleElement::Create(GetDocument(), false);
+  style_element->SetInnerHTMLFromString(
+      "@keyframes dummy-animation { from {} to {} }");
+  GetDocument().body()->AppendChild(style_element);
+  GetDocument().View()->UpdateAllLifecyclePhases();
+
+  // Author @keyframes rules take precedence; now there are two keyframes (from
+  // and to).
+  keyframes = GetStyleEngine().Resolver()->FindKeyframesRule(
+      t5, AtomicString("dummy-animation"));
+  ASSERT_TRUE(keyframes);
+  EXPECT_EQ(2u, keyframes->Keyframes().size());
+
+  GetDocument().body()->RemoveChild(style_element);
+  GetDocument().View()->UpdateAllLifecyclePhases();
+
+  keyframes = GetStyleEngine().Resolver()->FindKeyframesRule(
+      t5, AtomicString("dummy-animation"));
+  ASSERT_TRUE(keyframes);
+  EXPECT_EQ(1u, keyframes->Keyframes().size());
+
+  GetStyleEngine().RemoveInjectedSheet(keyframes_id);
+  GetDocument().View()->UpdateAllLifecyclePhases();
+
+  // Injected @keyframes rules are no longer available once removed.
+  ASSERT_FALSE(GetStyleEngine().Resolver()->FindKeyframesRule(
+      t5, AtomicString("dummy-animation")));
+
+  // Custom properties
+
+  Element* t6 = GetDocument().getElementById("t6");
+  Element* t7 = GetDocument().getElementById("t7");
+  ASSERT_TRUE(t6);
+  ASSERT_TRUE(t7);
+  ASSERT_TRUE(t6->GetComputedStyle());
+  ASSERT_TRUE(t7->GetComputedStyle());
+  EXPECT_EQ(MakeRGB(0, 0, 0),
+            t6->GetComputedStyle()->VisitedDependentColor(CSSPropertyColor));
+  EXPECT_EQ(MakeRGB(255, 255, 255),
+            t7->GetComputedStyle()->VisitedDependentColor(CSSPropertyColor));
+
+  StyleSheetContents* custom_properties_parsed_sheet =
+      StyleSheetContents::Create(CSSParserContext::Create(GetDocument()));
+  custom_properties_parsed_sheet->ParseString(
+      ":root {"
+      " --stop-color: red !important;"
+      " --go-color: green;"
+      "}");
+  WebStyleSheetId custom_properties_id =
+      GetStyleEngine().InjectSheet(custom_properties_parsed_sheet,
+                                   WebDocument::kUserOrigin);
+  GetDocument().View()->UpdateAllLifecyclePhases();
+  ASSERT_TRUE(t6->GetComputedStyle());
+  ASSERT_TRUE(t7->GetComputedStyle());
+  EXPECT_EQ(MakeRGB(255, 0, 0),
+            t6->GetComputedStyle()->VisitedDependentColor(CSSPropertyColor));
+  EXPECT_EQ(MakeRGB(255, 255, 255),
+            t7->GetComputedStyle()->VisitedDependentColor(CSSPropertyColor));
+
+  GetStyleEngine().RemoveInjectedSheet(custom_properties_id);
+  GetDocument().View()->UpdateAllLifecyclePhases();
+  ASSERT_TRUE(t6->GetComputedStyle());
+  ASSERT_TRUE(t7->GetComputedStyle());
+  EXPECT_EQ(MakeRGB(0, 0, 0),
+            t6->GetComputedStyle()->VisitedDependentColor(CSSPropertyColor));
+  EXPECT_EQ(MakeRGB(255, 255, 255),
+            t7->GetComputedStyle()->VisitedDependentColor(CSSPropertyColor));
+
+  // Author style sheets
+
+  Element* t8 = GetDocument().getElementById("t8");
+  Element* t9 = GetDocument().getElementById("t9");
+  ASSERT_TRUE(t8);
+  ASSERT_TRUE(t9);
+  ASSERT_TRUE(t8->GetComputedStyle());
+  ASSERT_TRUE(t9->GetComputedStyle());
+  EXPECT_EQ(MakeRGB(255, 0, 0),
+            t8->GetComputedStyle()->VisitedDependentColor(CSSPropertyColor));
+  EXPECT_EQ(MakeRGB(0, 0, 0),
+            t9->GetComputedStyle()->VisitedDependentColor(CSSPropertyColor));
+
+  StyleSheetContents* parsed_author_sheet =
+      StyleSheetContents::Create(CSSParserContext::Create(GetDocument()));
+  parsed_author_sheet->ParseString(
+      "#t8 {"
+      " color: green;"
+      "}"
+      "#t9 {"
+      " color: white !important;"
+      "}");
+  WebStyleSheetId author_sheet_id =
+      GetStyleEngine().InjectSheet(parsed_author_sheet,
+                                   WebDocument::kAuthorOrigin);
+  GetDocument().View()->UpdateAllLifecyclePhases();
+  ASSERT_TRUE(t8->GetComputedStyle());
+  ASSERT_TRUE(t9->GetComputedStyle());
+
+  // Specificity works within author origin.
+  EXPECT_EQ(MakeRGB(0, 128, 0),
+            t8->GetComputedStyle()->VisitedDependentColor(CSSPropertyColor));
+  // Important author rules do not override important inline author rules.
+  EXPECT_EQ(MakeRGB(0, 0, 0),
+            t9->GetComputedStyle()->VisitedDependentColor(CSSPropertyColor));
+
+  GetStyleEngine().RemoveInjectedSheet(author_sheet_id);
+  GetDocument().View()->UpdateAllLifecyclePhases();
+  ASSERT_TRUE(t8->GetComputedStyle());
+  ASSERT_TRUE(t9->GetComputedStyle());
+  EXPECT_EQ(MakeRGB(255, 0, 0),
+            t8->GetComputedStyle()->VisitedDependentColor(CSSPropertyColor));
+  EXPECT_EQ(MakeRGB(0, 0, 0),
+            t9->GetComputedStyle()->VisitedDependentColor(CSSPropertyColor));
 }
 
 TEST_F(StyleEngineTest, TextToSheetCache) {
@@ -177,17 +484,18 @@ TEST_F(StyleEngineTest, TextToSheetCache) {
 }
 
 TEST_F(StyleEngineTest, RuleSetInvalidationTypeSelectors) {
-  GetDocument().body()->SetInnerHTMLFromString(
-      "<div>"
-      "  <span></span>"
-      "  <div></div>"
-      "</div>"
-      "<b></b><b></b><b></b><b></b>"
-      "<i id=i>"
-      "  <i>"
-      "    <b></b>"
-      "  </i>"
-      "</i>");
+  GetDocument().body()->SetInnerHTMLFromString(R"HTML(
+    <div>
+      <span></span>
+      <div></div>
+    </div>
+    <b></b><b></b><b></b><b></b>
+    <i id=i>
+      <i>
+        <b></b>
+      </i>
+    </i>
+  )HTML");
 
   GetDocument().View()->UpdateAllLifecyclePhases();
 
@@ -222,10 +530,11 @@ TEST_F(StyleEngineTest, RuleSetInvalidationTypeSelectors) {
 }
 
 TEST_F(StyleEngineTest, RuleSetInvalidationCustomPseudo) {
-  GetDocument().body()->SetInnerHTMLFromString(
-      "<style>progress { -webkit-appearance:none }</style>"
-      "<progress></progress>"
-      "<div></div><div></div><div></div><div></div><div></div><div></div>");
+  GetDocument().body()->SetInnerHTMLFromString(R"HTML(
+    <style>progress { -webkit-appearance:none }</style>
+    <progress></progress>
+    <div></div><div></div><div></div><div></div><div></div><div></div>
+  )HTML");
 
   GetDocument().View()->UpdateAllLifecyclePhases();
 
@@ -282,13 +591,14 @@ TEST_F(StyleEngineTest, RuleSetInvalidationHost) {
 }
 
 TEST_F(StyleEngineTest, RuleSetInvalidationSlotted) {
-  GetDocument().body()->SetInnerHTMLFromString(
-      "<div id=host>"
-      "  <span slot=other class=s1></span>"
-      "  <span class=s2></span>"
-      "  <span class=s1></span>"
-      "  <span></span>"
-      "</div>");
+  GetDocument().body()->SetInnerHTMLFromString(R"HTML(
+    <div id=host>
+      <span slot=other class=s1></span>
+      <span class=s2></span>
+      <span class=s1></span>
+      <span></span>
+    </div>
+  )HTML");
 
   Element* host = GetDocument().getElementById("host");
   ASSERT_TRUE(host);
@@ -383,11 +693,12 @@ TEST_F(StyleEngineTest, RuleSetInvalidationV0BoundaryCrossing) {
 }
 
 TEST_F(StyleEngineTest, HasViewportDependentMediaQueries) {
-  GetDocument().body()->SetInnerHTMLFromString(
-      "<style>div {}</style>"
-      "<style id='sheet' media='(min-width: 200px)'>"
-      "  div {}"
-      "</style>");
+  GetDocument().body()->SetInnerHTMLFromString(R"HTML(
+    <style>div {}</style>
+    <style id='sheet' media='(min-width: 200px)'>
+      div {}
+    </style>
+  )HTML");
 
   Element* style_element = GetDocument().getElementById("sheet");
 
@@ -463,8 +774,8 @@ TEST_F(StyleEngineTest, StyleMediaAttributeNoStyleChange) {
 TEST_F(StyleEngineTest, ModifyStyleRuleMatchedPropertiesCache) {
   // Test that the MatchedPropertiesCache is cleared when a StyleRule is
   // modified. The MatchedPropertiesCache caches results based on
-  // StylePropertySet pointers. When a mutable StylePropertySet is modified,
-  // the pointer doesn't change, yet the declarations do.
+  // CSSPropertyValueSet pointers. When a mutable CSSPropertyValueSet is
+  // modified, the pointer doesn't change, yet the declarations do.
 
   GetDocument().body()->SetInnerHTMLFromString(
       "<style id='s1'>#t1 { color: blue }</style>"
@@ -479,22 +790,27 @@ TEST_F(StyleEngineTest, ModifyStyleRuleMatchedPropertiesCache) {
 
   CSSStyleSheet* sheet = ToCSSStyleSheet(GetDocument().StyleSheets().item(0));
   ASSERT_TRUE(sheet);
-  ASSERT_TRUE(sheet->cssRules());
-  CSSStyleRule* style_rule = ToCSSStyleRule(sheet->cssRules()->item(0));
+  DummyExceptionStateForTesting exception_state;
+  ASSERT_TRUE(sheet->cssRules(exception_state));
+  CSSStyleRule* style_rule =
+      ToCSSStyleRule(sheet->cssRules(exception_state)->item(0));
+  ASSERT_FALSE(exception_state.HadException());
   ASSERT_TRUE(style_rule);
   ASSERT_TRUE(style_rule->style());
 
-  // Modify the StylePropertySet once to make it a mutable set. Subsequent
-  // modifications will not change the StylePropertySet pointer and cache hash
-  // value will be the same.
-  style_rule->style()->setProperty("color", "red", "", ASSERT_NO_EXCEPTION);
+  // Modify the CSSPropertyValueSet once to make it a mutable set. Subsequent
+  // modifications will not change the CSSPropertyValueSet pointer and cache
+  // hash value will be the same.
+  style_rule->style()->setProperty(&GetDocument(), "color", "red", "",
+                                   ASSERT_NO_EXCEPTION);
   GetDocument().View()->UpdateAllLifecyclePhases();
 
   ASSERT_TRUE(t1->GetComputedStyle());
   EXPECT_EQ(MakeRGB(255, 0, 0),
             t1->GetComputedStyle()->VisitedDependentColor(CSSPropertyColor));
 
-  style_rule->style()->setProperty("color", "green", "", ASSERT_NO_EXCEPTION);
+  style_rule->style()->setProperty(&GetDocument(), "color", "green", "",
+                                   ASSERT_NO_EXCEPTION);
   GetDocument().View()->UpdateAllLifecyclePhases();
 
   ASSERT_TRUE(t1->GetComputedStyle());
@@ -503,14 +819,15 @@ TEST_F(StyleEngineTest, ModifyStyleRuleMatchedPropertiesCache) {
 }
 
 TEST_F(StyleEngineTest, ScheduleInvalidationAfterSubtreeRecalc) {
-  GetDocument().body()->SetInnerHTMLFromString(
-      "<style id='s1'>"
-      "  .t1 span { color: green }"
-      "  .t2 span { color: green }"
-      "</style>"
-      "<style id='s2'>div { background: lime }</style>"
-      "<div id='t1'></div>"
-      "<div id='t2'></div>");
+  GetDocument().body()->SetInnerHTMLFromString(R"HTML(
+    <style id='s1'>
+      .t1 span { color: green }
+      .t2 span { color: green }
+    </style>
+    <style id='s2'>div { background: lime }</style>
+    <div id='t1'></div>
+    <div id='t2'></div>
+  )HTML");
   GetDocument().View()->UpdateAllLifecyclePhases();
 
   Element* t1 = GetDocument().getElementById("t1");
@@ -587,13 +904,14 @@ TEST_F(StyleEngineTest, NoScheduledRuleSetInvalidationsOnNewShadow) {
                          init, ASSERT_NO_EXCEPTION);
   ASSERT_TRUE(shadow_root);
 
-  shadow_root->SetInnerHTMLFromString(
-      "<style>"
-      "  span { color: green }"
-      "  t1 { color: green }"
-      "</style>"
-      "<div id='t1'></div>"
-      "<span></span>");
+  shadow_root->SetInnerHTMLFromString(R"HTML(
+    <style>
+      span { color: green }
+      t1 { color: green }
+    </style>
+    <div id='t1'></div>
+    <span></span>
+  )HTML");
 
   GetStyleEngine().UpdateActiveStyle();
   EXPECT_FALSE(GetDocument().ChildNeedsStyleInvalidation());

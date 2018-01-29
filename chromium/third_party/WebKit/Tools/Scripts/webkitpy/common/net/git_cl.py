@@ -23,6 +23,15 @@ _log = logging.getLogger(__name__)
 _COMMANDS_THAT_TAKE_REFRESH_TOKEN = ('try',)
 
 
+class CLStatus(collections.namedtuple('CLStatus', ('status', 'try_job_results'))):
+    """Represents the current status of a particular CL.
+
+    It contains both the CL's status as reported by `git-cl status' as well as
+    a mapping of Build objects to TryJobStatus objects.
+    """
+    pass
+
+
 class TryJobStatus(collections.namedtuple('TryJobStatus', ('status', 'result'))):
     """Represents a current status of a particular job.
 
@@ -50,15 +59,19 @@ class GitCL(object):
             command += ['--auth-refresh-token-json', self._auth_refresh_token_json]
         return self._host.executive.run_command(command, cwd=self._cwd)
 
-    def trigger_try_jobs(self, builders):
-        # This method assumes the bots to be triggered are Blink try bots,
-        # which are all on the master tryserver.blink except android_blink_rel.
-        if 'android_blink_rel' in builders:
-            self.run(['try', '-b', 'android_blink_rel'])
-            builders.remove('android_blink_rel')
-        # TODO(qyearsley): Stop explicitly adding the master name when
-        # git cl try can get the master name; see http://crbug.com/700523.
-        command = ['try', '-m', 'tryserver.blink']
+    def trigger_try_jobs(self, builders, master=None):
+        # TODO(crbug.com/700552): Let "git cl try" get the master automatically.
+        # (It tries to do this, but its map is unreliable.)
+        if not master:
+            # Assume Blink try bots (all on tryserver.blink except Android).
+            if 'android_blink_rel' in builders:
+                self.trigger_try_jobs(['android_blink_rel'],
+                                      master='tryserver.chromium.android')
+                builders = set(builders) - {'android_blink_rel'}
+            self.trigger_try_jobs(builders, 'tryserver.blink')
+            return
+
+        command = ['try', '-m', master]
         for builder in sorted(builders):
             command.extend(['-b', builder])
         self.run(command)
@@ -66,20 +79,28 @@ class GitCL(object):
     def get_issue_number(self):
         return self.run(['issue']).split()[2]
 
+    def _get_cl_status(self):
+        return self.run(['status', '--field=status']).strip()
+
     def wait_for_try_jobs(self, poll_delay_seconds=10 * 60, timeout_seconds=120 * 60):
         """Waits until all try jobs are finished and returns results, or None.
 
+        This function can also be interrupted if the corresponding CL is
+        closed while the try jobs are still running.
+
         Returns:
-            A dict mapping Build objects to TryJobStatus objects, or
-            None if a timeout occurred.
+            None if a timeout occurs, a CLStatus tuple otherwise.
         """
 
         def finished_try_job_results_or_none():
-            results = self.try_job_results()
-            _log.debug('Fetched try results: %s', results)
-            if results and self.all_finished(results):
-                self._host.print_('All jobs finished.')
-                return results
+            cl_status = self._get_cl_status()
+            _log.debug('Fetched CL status: %s', cl_status)
+            try_job_results = self.try_job_results()
+            _log.debug('Fetched try results: %s', try_job_results)
+            if (cl_status == 'closed' or
+                    (try_job_results and self.all_finished(try_job_results))):
+                return CLStatus(status=cl_status,
+                                try_job_results=try_job_results)
             return None
 
         return self._wait_for(
@@ -91,7 +112,7 @@ class GitCL(object):
         """Waits until git cl reports that the current CL is closed."""
 
         def closed_status_or_none():
-            status = self.run(['status', '--field=status']).strip()
+            status = self._get_cl_status()
             if status == 'closed':
                 self._host.print_('CL is closed.')
                 return status
@@ -163,7 +184,9 @@ class GitCL(object):
         for result in raw_results:
             if builder_names and result['builder_name'] not in builder_names:
                 continue
-            is_swarming_task = result['url'] and '/task/' in result['url']
+            is_swarming_task = result['url'] and (
+                '/task/' in result['url'] or
+                '//ci.chromium.org' in result['url'])
             if is_swarming_task and not include_swarming_tasks:
                 continue
             build_to_status[self._build(result)] = self._try_job_status(result)

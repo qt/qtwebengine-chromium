@@ -144,7 +144,7 @@ ClipRects* PaintLayerClipper::ClipRectsIfCached(
   // We should add a test that has an inconsistent root. See
   // http://crbug.com/366118 for an example.
   if (context.root_layer != entry.root)
-    return 0;
+    return nullptr;
 #if DCHECK_IS_ON()
   DCHECK(entry.overlay_scrollbar_clip_behavior ==
          context.overlay_scrollbar_clip_behavior);
@@ -187,7 +187,7 @@ ClipRects& PaintLayerClipper::GetClipRects(
     parent_clip_rects =
         &PaintLayerClipper(*layer_.Parent(), false).GetClipRects(context);
   }
-  RefPtr<ClipRects> clip_rects = ClipRects::Create();
+  scoped_refptr<ClipRects> clip_rects = ClipRects::Create();
   CalculateClipRects(context, *clip_rects);
   return StoreClipRectsInCache(context, parent_clip_rects, *clip_rects);
 }
@@ -225,28 +225,31 @@ LayoutRect PaintLayerClipper::LocalClipRect(
   if (use_geometry_mapper_) {
     ClipRect clip_rect;
     CalculateBackgroundClipRectWithGeometryMapper(
-        context, *layer_.GetLayoutObject().FirstFragment(), clip_rect);
+        context, layer_.GetLayoutObject().FirstFragment(), clip_rect);
     LayoutRect premapped_rect = clip_rect.Rect();
 
     // The rect now needs to be transformed to the local space of this
     // PaintLayer.
-    premapped_rect.MoveBy(context.root_layer->GetLayoutObject().PaintOffset());
+    // TODO(chrishtr): not correct for fragmentation.
+    premapped_rect.MoveBy(
+        context.root_layer->GetLayoutObject().FirstFragment().PaintOffset());
 
     const auto* clip_root_layer_transform =
         clipping_root_layer.GetLayoutObject()
             .FirstFragment()
-            ->LocalBorderBoxProperties()
+            .LocalBorderBoxProperties()
             ->Transform();
     const auto* layer_transform = layer_.GetLayoutObject()
                                       .FirstFragment()
-                                      ->LocalBorderBoxProperties()
+                                      .LocalBorderBoxProperties()
                                       ->Transform();
     FloatRect clipped_rect_in_local_space(premapped_rect);
     GeometryMapper::SourceToDestinationRect(clip_root_layer_transform,
                                             layer_transform,
                                             clipped_rect_in_local_space);
+    // TODO(chrishtr): not correct for fragmentation.
     clipped_rect_in_local_space.MoveBy(
-        -FloatPoint(layer_.GetLayoutObject().PaintOffset()));
+        -FloatPoint(layer_.GetLayoutObject().FirstFragment().PaintOffset()));
 
     return LayoutRect(clipped_rect_in_local_space);
   }
@@ -287,14 +290,14 @@ void PaintLayerClipper::CalculateRectsWithGeometryMapper(
       PaintLayer* enclosing_pagination_layer =
           layer_.EnclosingPaginationLayer();
       layer_.ConvertToLayerCoords(enclosing_pagination_layer, offset);
-      offset.MoveBy(fragment_data.PaginationOffset());
+      offset.MoveBy(fragment_data.GetRarePaintData()->PaginationOffset());
       offset.MoveBy(enclosing_pagination_layer->VisualOffsetFromAncestor(
           context.root_layer));
     } else {
       layer_.ConvertToLayerCoords(context.root_layer, offset);
     }
   }
-  layer_bounds = LayoutRect(offset, LayoutSize(layer_.Size()));
+  layer_bounds = LayoutRect(offset, LayoutSize(layer_.PixelSnappedSize()));
 
   CalculateBackgroundClipRectWithGeometryMapper(context, fragment_data,
                                                 background_rect);
@@ -321,13 +324,11 @@ void PaintLayerClipper::CalculateRects(
     ClipRect& foreground_rect,
     const LayoutPoint* offset_from_root) const {
   if (use_geometry_mapper_) {
-    auto* first_fragment = layer_.GetLayoutObject().FirstFragment();
-    auto* local_borderbox =
-        first_fragment ? first_fragment->LocalBorderBoxProperties() : nullptr;
-    DCHECK(first_fragment && local_borderbox);
-    // TODO(chrishtr): find the root cause of not having a fragment and fix
-    // it.
-    if (!first_fragment || !local_borderbox)
+    DCHECK(fragment_data);
+    auto* local_borderbox = fragment_data->LocalBorderBoxProperties();
+    DCHECK(local_borderbox);
+    // TODO(chrishtr): find the root cause of not having a fragment and fix it.
+    if (!local_borderbox)
       return;
     CalculateRectsWithGeometryMapper(context, *fragment_data, paint_dirty_rect,
                                      layer_bounds, background_rect,
@@ -354,7 +355,7 @@ void PaintLayerClipper::CalculateRects(
     offset = *offset_from_root;
   else
     layer_.ConvertToLayerCoords(context.root_layer, offset);
-  layer_bounds = LayoutRect(offset, LayoutSize(layer_.Size()));
+  layer_bounds = LayoutRect(offset, LayoutSize(layer_.PixelSnappedSize()));
 
   // Update the clip rects that will be passed to child layers.
   if (ShouldClipOverflow(context)) {
@@ -474,10 +475,8 @@ void PaintLayerClipper::CalculateBackgroundClipRectWithGeometryMapper(
   // are tight results, or else signal an error.
   if (HasOverflowClip(layer_)) {
     FloatClipRect clip_rect((FloatRect(LocalVisualRect(context))));
-    if (layer_.ShouldFragmentCompositedBounds(context.root_layer))
       clip_rect.MoveBy(FloatPoint(fragment_data.PaintOffset()));
-    else
-      clip_rect.MoveBy(FloatPoint(layer_.GetLayoutObject().PaintOffset()));
+
     GeometryMapper::LocalToAncestorVisualRect(
         source_property_tree_state, destination_property_tree_state, clip_rect);
     output.SetRect(clip_rect);
@@ -488,7 +487,9 @@ void PaintLayerClipper::CalculateBackgroundClipRectWithGeometryMapper(
     output.SetRect(clipped_rect_in_root_layer_space);
   }
 
-  output.MoveBy(-context.root_layer->GetLayoutObject().PaintOffset());
+  // TODO(chrishtr): generalize to multiple fragments.
+  output.MoveBy(
+      -context.root_layer->GetLayoutObject().FirstFragment().PaintOffset());
   output.Move(context.sub_pixel_accumulation);
 }
 
@@ -503,13 +504,13 @@ void PaintLayerClipper::InitializeCommonClipRectState(
 
   DCHECK(context.root_layer->GetLayoutObject()
              .FirstFragment()
-             ->LocalBorderBoxProperties());
+             .LocalBorderBoxProperties());
   destination_property_tree_state = *context.root_layer->GetLayoutObject()
                                          .FirstFragment()
-                                         ->LocalBorderBoxProperties();
+                                         .LocalBorderBoxProperties();
 
   auto* ancestor_properties =
-      context.root_layer->GetLayoutObject().FirstFragment()->PaintProperties();
+      context.root_layer->GetLayoutObject().FirstFragment().PaintProperties();
   if (!ancestor_properties)
     return;
 
@@ -561,23 +562,21 @@ void PaintLayerClipper::CalculateBackgroundClipRect(
     const ClipRectsContext& context,
     ClipRect& output) const {
   if (use_geometry_mapper_) {
-    auto* first_fragment = layer_.GetLayoutObject().FirstFragment();
-    auto* local_borderbox =
-        first_fragment ? first_fragment->LocalBorderBoxProperties() : nullptr;
-    DCHECK(first_fragment && local_borderbox);
-    // TODO(chrishtr): find the root cause of not having a fragment and fix
-    // it.
-    if (!first_fragment || !local_borderbox)
+    const auto& fragment_data = layer_.GetLayoutObject().FirstFragment();
+    const auto* local_borderbox = fragment_data.LocalBorderBoxProperties();
+    DCHECK(local_borderbox);
+    // TODO(chrishtr): find the root cause of not having a fragment and fix it.
+    if (!local_borderbox)
       return;
-    CalculateBackgroundClipRectWithGeometryMapper(
-        context, *layer_.GetLayoutObject().FirstFragment(), output);
+    CalculateBackgroundClipRectWithGeometryMapper(context, fragment_data,
+                                                  output);
     return;
   }
   DCHECK(layer_.Parent());
   LayoutView* layout_view = layer_.GetLayoutObject().View();
   DCHECK(layout_view);
 
-  RefPtr<ClipRects> parent_clip_rects = ClipRects::Create();
+  scoped_refptr<ClipRects> parent_clip_rects = ClipRects::Create();
   if (&layer_ == context.root_layer) {
     parent_clip_rects->Reset(LayoutRect(LayoutRect::InfiniteIntRect()));
   } else {

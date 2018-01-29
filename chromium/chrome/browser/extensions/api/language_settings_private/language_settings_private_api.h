@@ -27,6 +27,8 @@ class LanguageSettingsPrivateGetLanguageListFunction
   ResponseAction Run() override;
 
  private:
+  ChromeExtensionFunctionDetails chrome_details_;
+
   DISALLOW_COPY_AND_ASSIGN(LanguageSettingsPrivateGetLanguageListFunction);
 };
 
@@ -90,6 +92,25 @@ class LanguageSettingsPrivateSetEnableTranslationForLanguageFunction
   ChromeExtensionFunctionDetails chrome_details_;
   DISALLOW_COPY_AND_ASSIGN(
       LanguageSettingsPrivateSetEnableTranslationForLanguageFunction);
+};
+
+// Implements the languageSettingsPrivate.moveLanguage method.
+class LanguageSettingsPrivateMoveLanguageFunction
+    : public UIThreadExtensionFunction {
+ public:
+  LanguageSettingsPrivateMoveLanguageFunction();
+  DECLARE_EXTENSION_FUNCTION("languageSettingsPrivate.moveLanguage",
+                             LANGUAGESETTINGSPRIVATE_MOVELANGUAGE)
+
+ protected:
+  ~LanguageSettingsPrivateMoveLanguageFunction() override;
+
+  // ExtensionFunction overrides.
+  ResponseAction Run() override;
+
+ private:
+  ChromeExtensionFunctionDetails chrome_details_;
+  DISALLOW_COPY_AND_ASSIGN(LanguageSettingsPrivateMoveLanguageFunction);
 };
 
 // Implements the languageSettingsPrivate.getSpellcheckDictionaryStatuses

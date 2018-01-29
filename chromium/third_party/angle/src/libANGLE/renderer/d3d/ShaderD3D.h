@@ -36,7 +36,7 @@ class ShaderD3D : public ShaderImpl
     ShaderD3D(const gl::ShaderState &data,
               const angle::WorkaroundsD3D &workarounds,
               const gl::Extensions &extensions);
-    virtual ~ShaderD3D();
+    ~ShaderD3D() override;
 
     // ShaderImpl implementation
     ShCompileOptions prepareSourceAndReturnOptions(std::stringstream *sourceStream,
@@ -47,7 +47,7 @@ class ShaderD3D : public ShaderImpl
     // D3D-specific methods
     void uncompile();
 
-    bool hasUniform(const D3DUniform *d3dUniform) const;
+    bool hasUniform(const std::string &name) const;
 
     // Query regular uniforms with their name. Query sampler fields of structs with field selection
     // using dot (.) operator.

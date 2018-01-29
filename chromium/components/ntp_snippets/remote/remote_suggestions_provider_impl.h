@@ -110,7 +110,7 @@ class RemoteSuggestionsProviderImpl final : public RemoteSuggestionsProvider {
       base::Time begin,
       base::Time end,
       const base::Callback<bool(const GURL& url)>& filter) override;
-  void ClearCachedSuggestions(Category category) override;
+  void ClearCachedSuggestions() override;
   void OnSignInStateChanged() override;
   void GetDismissedSuggestionsForDebugging(
       Category category,
@@ -309,6 +309,9 @@ class RemoteSuggestionsProviderImpl final : public RemoteSuggestionsProvider {
   void PrependArticleSuggestion(
       std::unique_ptr<RemoteSuggestion> remote_suggestion);
 
+  // Refreshes the content suggestions upon receiving a push-to-refresh request.
+  void RefreshSuggestionsUponPushToRefreshRequest();
+
   // Dismisses a suggestion within a given category content.
   // Note that this modifies the suggestion datastructures of |content|
   // invalidating iterators.
@@ -331,10 +334,6 @@ class RemoteSuggestionsProviderImpl final : public RemoteSuggestionsProvider {
 
   // Clears suggestions because any history item has been removed.
   void ClearHistoryDependentState();
-
-  // Clears suggestions for any non-history related reason (e.g., sign-in status
-  // change, etc.).
-  void ClearSuggestions();
 
   // Clears all stored suggestions and updates the observer.
   void NukeAllSuggestions();
@@ -428,6 +427,11 @@ class RemoteSuggestionsProviderImpl final : public RemoteSuggestionsProvider {
   // ready. The nuke will be executed once the service finishes initialization
   // or enters the READY state.
   bool clear_history_dependent_state_when_initialized_;
+
+  // Set to true if ClearCachedSuggestions has been called while the service
+  // isn't ready. The clearing will be executed once the service finishes
+  // initialization or enters the READY state.
+  bool clear_cached_suggestions_when_initialized_;
 
   // A clock for getting the time. This allows to inject a clock in tests.
   std::unique_ptr<base::Clock> clock_;

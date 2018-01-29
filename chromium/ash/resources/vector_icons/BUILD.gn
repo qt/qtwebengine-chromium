@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/config/chrome_build.gni")
 import("//components/vector_icons/vector_icons.gni")
 
 aggregate_vector_icons("ash_vector_icons") {
@@ -26,6 +27,8 @@ aggregate_vector_icons("ash_vector_icons") {
     "lock_screen_arrow.icon",
     "lock_screen_backspace.1x.icon",
     "lock_screen_backspace.icon",
+    "lock_screen_caps_lock.1x.icon",
+    "lock_screen_caps_lock.icon",
     "lock_screen_dropdown.1x.icon",
     "lock_screen_dropdown.icon",
     "network_badge_add_other.1x.icon",
@@ -76,8 +79,10 @@ aggregate_vector_icons("ash_vector_icons") {
     "notification_capslock.icon",
     "notification_center_all_done.icon",
     "notification_center_clear_all.icon",
+    "notification_center_collapse.icon",
     "notification_center_do_not_disturb_off.icon",
     "notification_center_do_not_disturb_on.icon",
+    "notification_center_empty.icon",
     "notification_center_settings.icon",
     "notification_charging_usb_c.icon",
     "notification_chromevox.icon",
@@ -170,10 +175,16 @@ aggregate_vector_icons("ash_vector_icons") {
     "system_menu_caps_lock.icon",
     "system_menu_cast.1x.icon",
     "system_menu_cast.icon",
-    "system_menu_cast_device.1x.icon",
-    "system_menu_cast_device.icon",
+    "system_menu_cast_audio.1x.icon",
+    "system_menu_cast_audio.icon",
+    "system_menu_cast_audio_group.1x.icon",
+    "system_menu_cast_audio_group.icon",
     "system_menu_cast_enabled.1x.icon",
     "system_menu_cast_enabled.icon",
+    "system_menu_cast_generic.1x.icon",
+    "system_menu_cast_generic.icon",
+    "system_menu_cast_message.1x.icon",
+    "system_menu_cast_message.icon",
     "system_menu_child_user.1x.icon",
     "system_menu_child_user.icon",
     "system_menu_computer.1x.icon",
@@ -276,6 +287,8 @@ aggregate_vector_icons("ash_vector_icons") {
     "touch_calibration_hand.icon",
     "tray_action_new_lock_screen_note.1x.icon",
     "tray_action_new_lock_screen_note.icon",
+    "window_control_back.1x.icon",
+    "window_control_back.icon",
     "window_control_close.1x.icon",
     "window_control_close.icon",
     "window_control_left_snapped.1x.icon",
@@ -289,6 +302,19 @@ aggregate_vector_icons("ash_vector_icons") {
     "window_control_right_snapped.1x.icon",
     "window_control_right_snapped.icon",
   ]
+
+  if (is_chrome_branded) {
+    icons += [
+      "system_menu_cast_device.1x.icon",
+      "system_menu_cast_device.icon",
+      "system_menu_cast_education.1x.icon",
+      "system_menu_cast_education.icon",
+      "system_menu_cast_hangout.1x.icon",
+      "system_menu_cast_hangout.icon",
+      "system_menu_cast_meeting.1x.icon",
+      "system_menu_cast_meeting.icon",
+    ]
+  }
 }
 
 source_set("vector_icons") {

@@ -27,6 +27,8 @@
 #include "core/html/parser/HTMLTreeBuilder.h"
 
 #include <memory>
+
+#include "base/macros.h"
 #include "bindings/core/v8/ExceptionState.h"
 #include "core/dom/Document.h"
 #include "core/dom/DocumentFragment.h"
@@ -113,8 +115,6 @@ static bool IsFormattingTag(const AtomicString& tag_name) {
 }
 
 class HTMLTreeBuilder::CharacterTokenBuffer {
-  WTF_MAKE_NONCOPYABLE(CharacterTokenBuffer);
-
  public:
   explicit CharacterTokenBuffer(AtomicHTMLToken* token)
       : characters_(token->Characters().Impl()),
@@ -210,9 +210,11 @@ class HTMLTreeBuilder::CharacterTokenBuffer {
     return StringView(characters_.get(), start, current_ - start);
   }
 
-  RefPtr<StringImpl> characters_;
+  scoped_refptr<StringImpl> characters_;
   unsigned current_;
   unsigned end_;
+
+  DISALLOW_COPY_AND_ASSIGN(CharacterTokenBuffer);
 };
 
 HTMLTreeBuilder::HTMLTreeBuilder(HTMLDocumentParser* parser,
@@ -266,12 +268,12 @@ void HTMLTreeBuilder::FragmentParsingContext::Init(DocumentFragment* fragment,
       context_element, HTMLStackItem::kItemForContextElement);
 }
 
-DEFINE_TRACE(HTMLTreeBuilder::FragmentParsingContext) {
+void HTMLTreeBuilder::FragmentParsingContext::Trace(blink::Visitor* visitor) {
   visitor->Trace(fragment_);
   visitor->Trace(context_element_stack_item_);
 }
 
-DEFINE_TRACE(HTMLTreeBuilder) {
+void HTMLTreeBuilder::Trace(blink::Visitor* visitor) {
   visitor->Trace(fragment_context_);
   visitor->Trace(tree_);
   visitor->Trace(parser_);
@@ -458,7 +460,7 @@ static void MapLoweredLocalNameToName(PrefixedNameToQualifiedNameMap* map,
 // "Any other start tag" bullet in
 // https://html.spec.whatwg.org/multipage/parsing.html#parsing-main-inforeign
 static void AdjustSVGTagNameCase(AtomicHTMLToken* token) {
-  static PrefixedNameToQualifiedNameMap* case_map = 0;
+  static PrefixedNameToQualifiedNameMap* case_map = nullptr;
   if (!case_map) {
     case_map = new PrefixedNameToQualifiedNameMap;
     std::unique_ptr<const SVGQualifiedName* []> svg_tags =
@@ -474,7 +476,7 @@ static void AdjustSVGTagNameCase(AtomicHTMLToken* token) {
 
 template <std::unique_ptr<const QualifiedName* []> getAttrs(), unsigned length>
 static void AdjustAttributes(AtomicHTMLToken* token) {
-  static PrefixedNameToQualifiedNameMap* case_map = 0;
+  static PrefixedNameToQualifiedNameMap* case_map = nullptr;
   if (!case_map) {
     case_map = new PrefixedNameToQualifiedNameMap;
     std::unique_ptr<const QualifiedName* []> attrs = getAttrs();
@@ -513,7 +515,7 @@ static void AddNamesWithPrefix(PrefixedNameToQualifiedNameMap* map,
 }
 
 static void AdjustForeignAttributes(AtomicHTMLToken* token) {
-  static PrefixedNameToQualifiedNameMap* map = 0;
+  static PrefixedNameToQualifiedNameMap* map = nullptr;
   if (!map) {
     map = new PrefixedNameToQualifiedNameMap;
 
@@ -1479,7 +1481,7 @@ void HTMLTreeBuilder::CallTheAdoptionAgency(AtomicHTMLToken* token) {
       // 9.5
       if (!tree_.ActiveFormattingElements()->Contains(node->GetElement())) {
         tree_.OpenElements()->Remove(node->GetElement());
-        node = 0;
+        node = nullptr;
         continue;
       }
       // 9.6

@@ -62,7 +62,10 @@ string MdOut::addReferences(const char* refStart, const char* refEnd,
             lineStart = false;
         } else {
             leadingSpaces = string(base, wordStart - base);
-         }
+        }
+        if (!strncmp("SkPoint::operator-()", start, 20)) {
+            SkDebugf("");
+        }
         t.skipToMethodEnd();
         if (base == t.fChar) {
             break;
@@ -74,6 +77,9 @@ string MdOut::addReferences(const char* refStart, const char* refEnd,
             continue;
         }
         ref = string(start, t.fChar - start);
+        if (412 == t.fLineCount) {
+            SkDebugf("");
+        }
         if (const Definition* def = this->isDefined(t, ref,
                 BmhParser::Resolvable::kOut != resolvable)) {
             SkASSERT(def->fFiddle.length());
@@ -105,7 +111,8 @@ string MdOut::addReferences(const char* refStart, const char* refEnd,
                     return result;
                 }
                 if (!foundMatch) {
-                    if (!(def = this->isDefined(t, fullRef, true))) {
+                    if (!(def = this->isDefined(t, fullRef,
+                            BmhParser::Resolvable::kOut != resolvable))) {
                         if (!result.size()) {
                             t.reportError("missing method");
                         }
@@ -324,7 +331,7 @@ bool MdOut::buildRefFromFile(const char* name, const char* outDir) {
 bool MdOut::checkParamReturnBody(const Definition* def) const {
     TextParser paramBody(def);
     const char* descriptionStart = paramBody.fChar;
-    if (!islower(descriptionStart[0])) {
+    if (!islower(descriptionStart[0]) && !isdigit(descriptionStart[0])) {
         paramBody.skipToNonAlphaNum();
         string ref = string(descriptionStart, paramBody.fChar - descriptionStart);
         if (!this->isDefined(paramBody, ref, true)) {
@@ -349,7 +356,7 @@ void MdOut::childrenOut(const Definition* def, const char* start) {
     } else if (MarkType::kEnumClass == def->fMarkType) {
         fEnumClass = def;
     }
-    BmhParser::Resolvable resolvable = this->resolvable(def->fMarkType);
+    BmhParser::Resolvable resolvable = this->resolvable(def);
     for (auto& child : def->fChildren) {
         end = child->fStart;
         if (BmhParser::Resolvable::kNo != resolvable) {
@@ -640,7 +647,7 @@ void MdOut::markTypeOut(Definition* def) {
         case MarkType::kCode:
             this->lfAlways(2);
             fprintf(fOut, "<pre style=\"padding: 1em 1em 1em 1em;"
-                    "width: 44em; background-color: #f0f0f0\">");
+                    "width: 62.5em; background-color: #f0f0f0\">");
             this->lf(1);
             break;
         case MarkType::kColumn:
@@ -705,17 +712,34 @@ void MdOut::markTypeOut(Definition* def) {
             fprintf(fOut, "Example\n"
                             "\n");
             fHasFiddle = true;
+            bool showGpu = false;
+            bool gpuAndCpu = false;
             const Definition* platform = def->hasChild(MarkType::kPlatform);
             if (platform) {
                 TextParser platParse(platform);
                 fHasFiddle = !platParse.strnstr("!fiddle", platParse.fEnd);
+                showGpu = platParse.strnstr("gpu", platParse.fEnd);
+                if (showGpu) {
+                    gpuAndCpu = platParse.strnstr("cpu", platParse.fEnd);
+                }
             }
             if (fHasFiddle) {
-                fprintf(fOut, "<div><fiddle-embed name=\"%s\">", def->fHash.c_str());
+                fprintf(fOut, "<div><fiddle-embed name=\"%s\"", def->fHash.c_str());
+                if (showGpu) {
+                    fprintf(fOut, "gpu=\"true\"");
+                    if (gpuAndCpu) {
+                        fprintf(fOut, "cpu=\"true\"");
+                    }
+                }
+                fprintf(fOut, ">");
             } else {
-                fprintf(fOut, "<pre style=\"padding: 1em 1em 1em 1em;"
-                        "width: 44em; background-color: #f0f0f0\">");
-                this->lf(1);
+                fprintf(fOut, "<pre style=\"padding: 1em 1em 1em 1em; font-size: 13px"
+                        " width: 62.5em; background-color: #f0f0f0\">");
+                this->lfAlways(1);
+                if (def->fWrapper.length() > 0) {
+                    fprintf(fOut, "%s", def->fWrapper.c_str());
+                }
+                fRespectLeadingSpace = true;
             }
             } break;
         case MarkType::kExperimental:
@@ -741,6 +765,8 @@ void MdOut::markTypeOut(Definition* def) {
             this->lfAlways(2);
             fprintf(fOut, "<table>");
             this->lf(1);
+            break;
+        case MarkType::kLiteral:
             break;
         case MarkType::kMarkChar:
             fBmhParser.fMC = def->fContentStart[0];
@@ -768,11 +794,11 @@ void MdOut::markTypeOut(Definition* def) {
             }
 
             // TODO: put in css spec that we can define somewhere else (if markup supports that)
-            // TODO: 50em below should match limt = 80 in formatFunction()
+            // TODO: 50em below should match limit = 80 in formatFunction()
             this->writePending();
             string preformattedStr = preformat(formattedStr);
             fprintf(fOut, "<pre style=\"padding: 1em 1em 1em 1em;"
-                                    "width: 50em; background-color: #f0f0f0\">\n"
+                                    "width: 62.5em; background-color: #f0f0f0\">\n"
                             "%s\n"
                             "</pre>",  preformattedStr.c_str());
             this->lf(2);
@@ -780,6 +806,8 @@ void MdOut::markTypeOut(Definition* def) {
             fMethod = def;
             } break;
         case MarkType::kNoExample:
+            break;
+        case MarkType::kOutdent:
             break;
         case MarkType::kParam: {
             if (TableState::kNone == fTableState) {
@@ -932,9 +960,15 @@ void MdOut::markTypeOut(Definition* def) {
             if (fHasFiddle) {
                 fprintf(fOut, "</fiddle-embed></div>");
             } else {
+                this->lfAlways(1);
+                if (def->fWrapper.length() > 0) {
+                    fprintf(fOut, "}");
+                    this->lfAlways(1);
+                }
                 fprintf(fOut, "</pre>");
             }
             this->lf(2);
+            fRespectLeadingSpace = false;
             break;
         case MarkType::kList:
             fInList = false;
@@ -1004,6 +1038,24 @@ void MdOut::mdHeaderOutLF(int depth, int lf) {
 }
 
 void MdOut::resolveOut(const char* start, const char* end, BmhParser::Resolvable resolvable) {
+    if ((BmhParser::Resolvable::kLiteral == resolvable || fRespectLeadingSpace) && end > start) {
+        while ('\n' == *start) {
+            ++start;
+        }
+        const char* spaceStart = start;
+        while (' ' == *start) {
+            ++start;
+        }
+        if (start > spaceStart) {
+            fIndent = start - spaceStart;
+        }
+        this->writeBlockTrim(end - start, start);
+        if ('\n' == end[-1]) {
+            this->lf(1);
+        }
+        fIndent = 0;
+        return;
+    }
     // FIXME: this needs the markdown character present when the def was defined,
     // not the last markdown character the parser would have seen...
     while (fBmhParser.fMC == end[-1]) {

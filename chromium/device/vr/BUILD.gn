@@ -22,8 +22,9 @@ if (enable_vr) {
       "features",
     ]
     sources += [
-      "vr_device.cc",
       "vr_device.h",
+      "vr_device_base.cc",
+      "vr_device_base.h",
       "vr_device_provider.h",
       "vr_display_impl.cc",
       "vr_display_impl.h",
@@ -36,7 +37,7 @@ if (enable_vr) {
       "//ui/gfx",
     ]
 
-    if (is_android && (current_cpu == "arm" || current_cpu == "arm64")) {
+    if (enable_gvr_services) {
       sources += [
         "android/gvr/cardboard_gamepad_data_fetcher.cc",
         "android/gvr/cardboard_gamepad_data_fetcher.h",
@@ -69,6 +70,7 @@ if (enable_vr) {
     if (enable_openvr) {
       deps += [
         "//device/gamepad",
+        "//device/gamepad/public/cpp:shared_with_blink",
         "//third_party/openvr:openvr",
       ]
       sources += [
@@ -78,6 +80,20 @@ if (enable_vr) {
         "openvr/openvr_device_provider.h",
         "openvr/openvr_gamepad_data_fetcher.cc",
         "openvr/openvr_gamepad_data_fetcher.h",
+        "openvr/openvr_render_loop.cc",
+        "openvr/openvr_render_loop.h",
+        "openvr/openvr_type_converters.cc",
+        "openvr/openvr_type_converters.h",
+      ]
+    }
+
+    if (is_win && enable_openvr) {
+      libs = [ "d3d11.lib" ]
+      sources += [
+        "windows/d3d11_texture_helper.cc",
+        "windows/d3d11_texture_helper.h",
+        "windows/flip_pixel_shader.h",
+        "windows/flip_vertex_shader.h",
       ]
     }
   }
@@ -96,6 +112,8 @@ if (enable_vr) {
       "test/fake_vr_display_impl_client.h",
       "test/fake_vr_service_client.cc",
       "test/fake_vr_service_client.h",
+      "test/mock_vr_display_impl.cc",
+      "test/mock_vr_display_impl.h",
       "vr_export.h",
     ]
 
@@ -104,6 +122,7 @@ if (enable_vr) {
       ":vr",
       "//base",
       "//mojo/public/cpp/bindings",
+      "//testing/gmock",
     ]
   }
 } else {
@@ -116,7 +135,7 @@ if (enable_vr) {
   }
 }
 
-if (is_android && (current_cpu == "arm" || current_cpu == "arm64")) {
+if (enable_gvr_services) {
   java_sources_needing_jni =
       [ "android/java/src/org/chromium/device/vr/NonPresentingGvrContext.java" ]
 

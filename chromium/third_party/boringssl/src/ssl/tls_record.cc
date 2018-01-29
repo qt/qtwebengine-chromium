@@ -187,10 +187,35 @@ size_t ssl_seal_align_prefix_len(const SSL *ssl) {
   return ret;
 }
 
-enum ssl_open_record_t tls_open_record(SSL *ssl, uint8_t *out_type,
-                                       Span<uint8_t> *out, size_t *out_consumed,
-                                       uint8_t *out_alert, Span<uint8_t> in) {
+static ssl_open_record_t skip_early_data(SSL *ssl, uint8_t *out_alert,
+                                         size_t consumed) {
+  ssl->s3->early_data_skipped += consumed;
+  if (ssl->s3->early_data_skipped < consumed) {
+    ssl->s3->early_data_skipped = kMaxEarlyDataSkipped + 1;
+  }
+
+  if (ssl->s3->early_data_skipped > kMaxEarlyDataSkipped) {
+    OPENSSL_PUT_ERROR(SSL, SSL_R_TOO_MUCH_SKIPPED_EARLY_DATA);
+    *out_alert = SSL_AD_UNEXPECTED_MESSAGE;
+    return ssl_open_record_error;
+  }
+
+  return ssl_open_record_discard;
+}
+
+ssl_open_record_t tls_open_record(SSL *ssl, uint8_t *out_type,
+                                  Span<uint8_t> *out, size_t *out_consumed,
+                                  uint8_t *out_alert, Span<uint8_t> in) {
   *out_consumed = 0;
+  if (ssl->s3->read_shutdown == ssl_shutdown_close_notify) {
+    return ssl_open_record_close_notify;
+  }
+
+  // If there is an unprocessed handshake message or we are already buffering
+  // too much, stop before decrypting another handshake record.
+  if (!tls_can_accept_handshake_data(ssl, out_alert)) {
+    return ssl_open_record_error;
+  }
 
   CBS cbs = CBS(in);
 
@@ -238,12 +263,27 @@ enum ssl_open_record_t tls_open_record(SSL *ssl, uint8_t *out_type,
 
   *out_consumed = in.size() - CBS_len(&cbs);
 
+  if (ssl->s3->have_version &&
+      ssl_is_resumption_experiment(ssl->version) &&
+      SSL_in_init(ssl) &&
+      type == SSL3_RT_CHANGE_CIPHER_SPEC &&
+      ciphertext_len == 1 &&
+      CBS_data(&body)[0] == 1) {
+    ssl->s3->empty_record_count++;
+    if (ssl->s3->empty_record_count > kMaxEmptyRecords) {
+      OPENSSL_PUT_ERROR(SSL, SSL_R_TOO_MANY_EMPTY_FRAGMENTS);
+      *out_alert = SSL_AD_UNEXPECTED_MESSAGE;
+      return ssl_open_record_error;
+    }
+    return ssl_open_record_discard;
+  }
+
   // Skip early data received when expecting a second ClientHello if we rejected
   // 0RTT.
   if (ssl->s3->skip_early_data &&
       ssl->s3->aead_read_ctx->is_null_cipher() &&
       type == SSL3_RT_APPLICATION_DATA) {
-    goto skipped_data;
+    return skip_early_data(ssl, out_alert, *out_consumed);
   }
 
   // Decrypt the body in-place.
@@ -252,7 +292,7 @@ enum ssl_open_record_t tls_open_record(SSL *ssl, uint8_t *out_type,
           MakeSpan(const_cast<uint8_t *>(CBS_data(&body)), CBS_len(&body)))) {
     if (ssl->s3->skip_early_data && !ssl->s3->aead_read_ctx->is_null_cipher()) {
       ERR_clear_error();
-      goto skipped_data;
+      return skip_early_data(ssl, out_alert, *out_consumed);
     }
 
     OPENSSL_PUT_ERROR(SSL, SSL_R_DECRYPTION_FAILED_OR_BAD_RECORD_MAC);
@@ -268,8 +308,21 @@ enum ssl_open_record_t tls_open_record(SSL *ssl, uint8_t *out_type,
   }
 
   // TLS 1.3 hides the record type inside the encrypted data.
-  if (!ssl->s3->aead_read_ctx->is_null_cipher() &&
-      ssl->s3->aead_read_ctx->ProtocolVersion() >= TLS1_3_VERSION) {
+  bool has_padding =
+      !ssl->s3->aead_read_ctx->is_null_cipher() &&
+      ssl->s3->aead_read_ctx->ProtocolVersion() >= TLS1_3_VERSION;
+
+  // If there is padding, the plaintext limit includes the padding, but includes
+  // extra room for the inner content type.
+  size_t plaintext_limit =
+      has_padding ? SSL3_RT_MAX_PLAIN_LENGTH + 1 : SSL3_RT_MAX_PLAIN_LENGTH;
+  if (out->size() > plaintext_limit) {
+    OPENSSL_PUT_ERROR(SSL, SSL_R_DATA_LENGTH_TOO_LONG);
+    *out_alert = SSL_AD_RECORD_OVERFLOW;
+    return ssl_open_record_error;
+  }
+
+  if (has_padding) {
     // The outer record type is always application_data.
     if (type != SSL3_RT_APPLICATION_DATA) {
       OPENSSL_PUT_ERROR(SSL, SSL_R_INVALID_OUTER_RECORD_TYPE);
@@ -288,13 +341,6 @@ enum ssl_open_record_t tls_open_record(SSL *ssl, uint8_t *out_type,
     } while (type == 0);
   }
 
-  // Check the plaintext length.
-  if (out->size() > SSL3_RT_MAX_PLAIN_LENGTH) {
-    OPENSSL_PUT_ERROR(SSL, SSL_R_DATA_LENGTH_TOO_LONG);
-    *out_alert = SSL_AD_RECORD_OVERFLOW;
-    return ssl_open_record_error;
-  }
-
   // Limit the number of consecutive empty records.
   if (out->empty()) {
     ssl->s3->empty_record_count++;
@@ -311,7 +357,8 @@ enum ssl_open_record_t tls_open_record(SSL *ssl, uint8_t *out_type,
 
   if (type == SSL3_RT_ALERT) {
     // Return end_of_early_data alerts as-is for the caller to process.
-    if (out->size() == 2 &&
+    if (!ssl_is_draft21(ssl->version) &&
+        out->size() == 2 &&
         (*out)[0] == SSL3_AL_WARNING &&
         (*out)[1] == TLS1_AD_END_OF_EARLY_DATA) {
       *out_type = type;
@@ -321,24 +368,18 @@ enum ssl_open_record_t tls_open_record(SSL *ssl, uint8_t *out_type,
     return ssl_process_alert(ssl, out_alert, *out);
   }
 
-  ssl->s3->warning_alert_count = 0;
-
-  *out_type = type;
-  return ssl_open_record_success;
-
-skipped_data:
-  ssl->s3->early_data_skipped += *out_consumed;
-  if (ssl->s3->early_data_skipped < *out_consumed) {
-    ssl->s3->early_data_skipped = kMaxEarlyDataSkipped + 1;
-  }
-
-  if (ssl->s3->early_data_skipped > kMaxEarlyDataSkipped) {
-    OPENSSL_PUT_ERROR(SSL, SSL_R_TOO_MUCH_SKIPPED_EARLY_DATA);
+  // Handshake messages may not interleave with any other record type.
+  if (type != SSL3_RT_HANDSHAKE &&
+      tls_has_unprocessed_handshake_data(ssl)) {
+    OPENSSL_PUT_ERROR(SSL, SSL_R_UNEXPECTED_RECORD);
     *out_alert = SSL_AD_UNEXPECTED_MESSAGE;
     return ssl_open_record_error;
   }
 
-  return ssl_open_record_discard;
+  ssl->s3->warning_alert_count = 0;
+
+  *out_type = type;
+  return ssl_open_record_success;
 }
 
 static int do_seal_record(SSL *ssl, uint8_t *out_prefix, uint8_t *out,
@@ -439,8 +480,8 @@ static bool tls_seal_scatter_suffix_len(const SSL *ssl, size_t *out_suffix_len,
 // |tls_seal_scatter_record| implements TLS 1.0 CBC 1/n-1 record splitting and
 // may write two records concatenated.
 static int tls_seal_scatter_record(SSL *ssl, uint8_t *out_prefix, uint8_t *out,
-                            uint8_t *out_suffix, uint8_t type,
-                            const uint8_t *in, size_t in_len) {
+                                   uint8_t *out_suffix, uint8_t type,
+                                   const uint8_t *in, size_t in_len) {
   if (type == SSL3_RT_APPLICATION_DATA && in_len > 1 &&
       ssl_needs_record_splitting(ssl)) {
     assert(ssl->s3->aead_write_ctx->ExplicitNonceLen() == 0);
@@ -541,7 +582,7 @@ enum ssl_open_record_t ssl_process_alert(SSL *ssl, uint8_t *out_alert,
 
     // Warning alerts do not exist in TLS 1.3.
     if (ssl->s3->have_version &&
-        ssl3_protocol_version(ssl) >= TLS1_3_VERSION) {
+        ssl_protocol_version(ssl) >= TLS1_3_VERSION) {
       *out_alert = SSL_AD_DECODE_ERROR;
       OPENSSL_PUT_ERROR(SSL, SSL_R_BAD_ALERT);
       return ssl_open_record_error;
@@ -557,12 +598,8 @@ enum ssl_open_record_t ssl_process_alert(SSL *ssl, uint8_t *out_alert,
   }
 
   if (alert_level == SSL3_AL_FATAL) {
-    ssl->s3->read_shutdown = ssl_shutdown_fatal_alert;
-
-    char tmp[16];
     OPENSSL_PUT_ERROR(SSL, SSL_AD_REASON_OFFSET + alert_descr);
-    BIO_snprintf(tmp, sizeof(tmp), "%d", alert_descr);
-    ERR_add_error_data(2, "SSL alert number ", tmp);
+    ERR_add_error_dataf("SSL alert number %d", alert_descr);
     *out_alert = 0;  // No alert to send back to the peer.
     return ssl_open_record_error;
   }
@@ -579,14 +616,14 @@ OpenRecordResult OpenRecord(SSL *ssl, Span<uint8_t> *out,
   // and below.
   if (SSL_in_init(ssl) ||
       SSL_is_dtls(ssl) ||
-      ssl3_protocol_version(ssl) > TLS1_2_VERSION) {
+      ssl_protocol_version(ssl) > TLS1_2_VERSION) {
     assert(false);
     *out_alert = SSL_AD_INTERNAL_ERROR;
     return OpenRecordResult::kError;
   }
 
   Span<uint8_t> plaintext;
-  uint8_t type;
+  uint8_t type = 0;
   const ssl_open_record_t result = tls_open_record(
       ssl, &type, &plaintext, out_record_len, out_alert, in);
 
@@ -635,7 +672,7 @@ bool SealRecord(SSL *ssl, const Span<uint8_t> out_prefix,
   // and below.
   if (SSL_in_init(ssl) ||
       SSL_is_dtls(ssl) ||
-      ssl3_protocol_version(ssl) > TLS1_2_VERSION) {
+      ssl_protocol_version(ssl) > TLS1_2_VERSION) {
     assert(false);
     OPENSSL_PUT_ERROR(SSL, ERR_R_INTERNAL_ERROR);
     return false;

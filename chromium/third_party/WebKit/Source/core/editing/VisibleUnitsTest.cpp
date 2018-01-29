@@ -468,7 +468,6 @@ TEST_F(VisibleUnitsTest, endOfSentence) {
       "<p><i id=three>333</i> <content select=#two></content> <content "
       "select=#one></content> <i id=four>4444</i></p>";
   SetBodyContent(body_content);
-  SetShadowContent(shadow_content, "host");
   ShadowRoot* shadow_root = SetShadowContent(shadow_content, "host");
 
   Node* one = GetDocument().getElementById("one")->firstChild();
@@ -1814,6 +1813,24 @@ TEST_F(VisibleUnitsTest,
   EXPECT_EQ(Position(one->firstChild(), 7),
             PreviousRootInlineBoxCandidatePosition(
                 two->lastChild(), visible_position, kContentIsEditable));
+}
+
+static unsigned MockBoundarySearch(const UChar*,
+                                   unsigned,
+                                   unsigned,
+                                   BoundarySearchContextAvailability,
+                                   bool&) {
+  return true;
+}
+
+// Regression test for crbug.com/788661
+TEST_F(VisibleUnitsTest, NextBoundaryOfEditableTableWithLeadingSpaceInOutput) {
+  VisiblePosition pos = CreateVisiblePosition(SetCaretTextToBody(
+      // The leading whitespace is necessary for bug repro
+      "<output> <table contenteditable><!--|--></table></output>"));
+  Position result = NextBoundary(pos, MockBoundarySearch);
+  EXPECT_EQ("<output> <table contenteditable>|</table></output>",
+            GetCaretTextFromBody(result));
 }
 
 }  // namespace blink

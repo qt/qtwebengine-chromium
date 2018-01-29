@@ -49,7 +49,7 @@ class CORE_EXPORT NGPhysicalTextFragment final : public NGPhysicalFragment {
                          int expansion,
                          NGLineOrientation line_orientation,
                          NGTextEndEffect end_effect,
-                         RefPtr<const ShapeResult> shape_result)
+                         scoped_refptr<const ShapeResult> shape_result)
       : NGPhysicalFragment(layout_object, style, size, kFragmentText),
         text_(text),
         item_index_(item_index),
@@ -89,27 +89,27 @@ class CORE_EXPORT NGPhysicalTextFragment final : public NGPhysicalFragment {
 
   // The visual bounding box that includes glpyh bounding box and CSS
   // properties, in local coordinates.
-  NGPhysicalOffsetRect LocalVisualRect() const;
+  NGPhysicalOffsetRect SelfVisualRect() const;
 
   NGTextEndEffect EndEffect() const {
     return static_cast<NGTextEndEffect>(end_effect_);
   }
 
-  RefPtr<NGPhysicalFragment> CloneWithoutOffset() const {
-    return WTF::AdoptRef(new NGPhysicalTextFragment(
+  scoped_refptr<NGPhysicalFragment> CloneWithoutOffset() const {
+    return base::AdoptRef(new NGPhysicalTextFragment(
         layout_object_, Style(), text_, item_index_, start_offset_, end_offset_,
         size_, expansion_, LineOrientation(), EndEffect(), shape_result_));
   }
 
   NGTextFragmentPaintInfo PaintInfo() const {
-    return NGTextFragmentPaintInfo{Text(), StartOffset(), EndOffset(),
+    return NGTextFragmentPaintInfo{text_, StartOffset(), EndOffset(),
                                    TextShapeResult()};
   }
 
  private:
   // The text of NGInlineNode; i.e., of a parent block. The text for this
   // fragment is a substring(start_offset_, end_offset_) of this string.
-  const String& text_;
+  const String text_;
 
   // Deprecating, ItemIndexDeprecated().
   unsigned item_index_;
@@ -118,7 +118,7 @@ class CORE_EXPORT NGPhysicalTextFragment final : public NGPhysicalFragment {
   unsigned start_offset_;
   unsigned end_offset_;
 
-  RefPtr<const ShapeResult> shape_result_;
+  scoped_refptr<const ShapeResult> shape_result_;
 
   int expansion_;
 

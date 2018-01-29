@@ -50,6 +50,11 @@ size_t GetSystemPageCount(size_t mapped_size, size_t page_size) {
 }
 #endif
 
+UnguessableToken GetTokenForCurrentProcess() {
+  static UnguessableToken instance = UnguessableToken::Create();
+  return instance;
+}
+
 }  // namespace
 
 // static
@@ -188,10 +193,12 @@ ProcessMemoryDump::ProcessMemoryDump(
     scoped_refptr<HeapProfilerSerializationState>
         heap_profiler_serialization_state,
     const MemoryDumpArgs& dump_args)
-    : heap_profiler_serialization_state_(
+    : process_token_(GetTokenForCurrentProcess()),
+      heap_profiler_serialization_state_(
           std::move(heap_profiler_serialization_state)),
       dump_args_(dump_args) {}
-ProcessMemoryDump::~ProcessMemoryDump() {}
+
+ProcessMemoryDump::~ProcessMemoryDump() = default;
 ProcessMemoryDump::ProcessMemoryDump(ProcessMemoryDump&& other) = default;
 ProcessMemoryDump& ProcessMemoryDump::operator=(ProcessMemoryDump&& other) =
     default;
@@ -199,7 +206,7 @@ ProcessMemoryDump& ProcessMemoryDump::operator=(ProcessMemoryDump&& other) =
 MemoryAllocatorDump* ProcessMemoryDump::CreateAllocatorDump(
     const std::string& absolute_name) {
   return AddAllocatorDumpInternal(std::make_unique<MemoryAllocatorDump>(
-      absolute_name, dump_args_.level_of_detail));
+      absolute_name, dump_args_.level_of_detail, GetDumpId(absolute_name)));
 }
 
 MemoryAllocatorDump* ProcessMemoryDump::CreateAllocatorDump(
@@ -377,11 +384,12 @@ void ProcessMemoryDump::AddOwnershipEdge(const MemoryAllocatorDumpGuid& source,
                                          int importance) {
   // This will either override an existing edge or create a new one.
   auto it = allocator_dumps_edges_.find(source);
+  int max_importance = importance;
   if (it != allocator_dumps_edges_.end()) {
-    DCHECK_EQ(target.ToUint64(),
-              allocator_dumps_edges_[source].target.ToUint64());
+    DCHECK_EQ(target.ToUint64(), it->second.target.ToUint64());
+    max_importance = std::max(importance, it->second.importance);
   }
-  allocator_dumps_edges_[source] = {source, target, importance,
+  allocator_dumps_edges_[source] = {source, target, max_importance,
                                     false /* overridable */};
 }
 
@@ -434,8 +442,8 @@ void ProcessMemoryDump::CreateSharedMemoryOwnershipEdgeInternal(
 
   // The guid of the local dump created by SharedMemoryTracker for the memory
   // segment.
-  auto local_shm_guid = MemoryAllocatorDump::GetDumpIdFromName(
-      SharedMemoryTracker::GetDumpNameForTracing(shared_memory_guid));
+  auto local_shm_guid =
+      GetDumpId(SharedMemoryTracker::GetDumpNameForTracing(shared_memory_guid));
 
   // The dump guid of the global dump created by the tracker for the memory
   // segment.
@@ -468,10 +476,18 @@ void ProcessMemoryDump::AddSuballocation(const MemoryAllocatorDumpGuid& source,
 
 MemoryAllocatorDump* ProcessMemoryDump::GetBlackHoleMad() {
   DCHECK(is_black_hole_non_fatal_for_testing_);
-  if (!black_hole_mad_)
-    black_hole_mad_.reset(
-        new MemoryAllocatorDump("discarded", dump_args_.level_of_detail));
+  if (!black_hole_mad_) {
+    std::string name = "discarded";
+    black_hole_mad_.reset(new MemoryAllocatorDump(
+        name, dump_args_.level_of_detail, GetDumpId(name)));
+  }
   return black_hole_mad_.get();
+}
+
+MemoryAllocatorDumpGuid ProcessMemoryDump::GetDumpId(
+    const std::string& absolute_name) {
+  return MemoryAllocatorDumpGuid(StringPrintf(
+      "%s:%s", process_token().ToString().c_str(), absolute_name.c_str()));
 }
 
 bool ProcessMemoryDump::MemoryAllocatorDumpEdge::operator==(

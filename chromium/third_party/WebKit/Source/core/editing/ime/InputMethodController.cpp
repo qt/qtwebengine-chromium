@@ -51,7 +51,6 @@
 #include "core/input_type_names.h"
 #include "core/layout/LayoutObject.h"
 #include "core/layout/LayoutTheme.h"
-#include "core/page/ChromeClient.h"
 #include "core/page/FocusController.h"
 #include "core/page/Page.h"
 
@@ -96,8 +95,6 @@ bool NeedsIncrementalInsertion(const LocalFrame& frame,
 void DispatchBeforeInputFromComposition(EventTarget* target,
                                         InputEvent::InputType input_type,
                                         const String& data) {
-  if (!RuntimeEnabledFeatures::InputEventEnabled())
-    return;
   if (!target)
     return;
   // TODO(chongz): Pass appropriate |ranges| after it's defined on spec.
@@ -170,7 +167,7 @@ void InsertTextDuringCompositionWithEvents(
       // TODO(chongz): Use TypingCommand::insertText after TextEvent was
       // removed. (Removed from spec since 2012)
       // See TextEvent.idl.
-      frame.GetEventHandler().HandleTextInputEvent(text, 0,
+      frame.GetEventHandler().HandleTextInputEvent(text, nullptr,
                                                    kTextEventInputComposition);
       break;
     default:
@@ -584,7 +581,7 @@ bool InputMethodController::InsertText(const String& text) {
   if (DispatchBeforeInputInsertText(GetDocument().FocusedElement(), text) !=
       DispatchEventResult::kNotCanceled)
     return false;
-  GetEditor().InsertText(text, 0);
+  GetEditor().InsertText(text, nullptr);
   return true;
 }
 
@@ -1352,7 +1349,7 @@ void InputMethodController::WillChangeFocus() {
   FinishComposingText(kKeepSelection);
 }
 
-DEFINE_TRACE(InputMethodController) {
+void InputMethodController::Trace(blink::Visitor* visitor) {
   visitor->Trace(frame_);
   visitor->Trace(composition_range_);
   DocumentShutdownObserver::Trace(visitor);

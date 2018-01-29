@@ -14,6 +14,7 @@
 namespace blink {
 
 class CullRect;
+class ElementVisibilityObserver;
 class GraphicsContext;
 class RemoteFrame;
 
@@ -52,13 +53,17 @@ class RemoteFrameView final : public GarbageCollectedFinalized<RemoteFrameView>,
   void UpdateViewportIntersectionsForSubtree(
       DocumentLifecycle::LifecycleState) override;
 
-  DECLARE_VIRTUAL_TRACE();
+  virtual void Trace(blink::Visitor*);
 
  private:
   explicit RemoteFrameView(RemoteFrame*);
 
   LocalFrameView* ParentFrameView() const;
   IntRect ConvertFromRootFrame(const IntRect&) const;
+
+  void UpdateRenderThrottlingStatus(bool hidden, bool subtree_throttled);
+  bool CanThrottleRendering() const;
+  void SetupRenderThrottling();
 
   // The properties and handling of the cycle between RemoteFrame
   // and its RemoteFrameView corresponds to that between LocalFrame
@@ -70,6 +75,10 @@ class RemoteFrameView final : public GarbageCollectedFinalized<RemoteFrameView>,
   IntRect frame_rect_;
   bool self_visible_;
   bool parent_visible_;
+
+  Member<ElementVisibilityObserver> visibility_observer_;
+  bool subtree_throttled_ = false;
+  bool hidden_for_throttling_ = false;
 };
 
 }  // namespace blink

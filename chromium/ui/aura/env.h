@@ -7,6 +7,7 @@
 
 #include <memory>
 
+#include "base/callback_forward.h"
 #include "base/macros.h"
 #include "base/observer_list.h"
 #include "base/supports_user_data.h"
@@ -19,20 +20,35 @@
 
 #if defined(USE_OZONE)
 #include "ui/ozone/public/client_native_pixmap_factory_ozone.h"
+#endif
 
+namespace base {
+class UnguessableToken;
+}
+
+#if defined(USE_OZONE)
 namespace gfx {
 class ClientNativePixmapFactory;
 }
 #endif
 
+namespace mojo {
+template <typename MojoInterface>
+class InterfacePtr;
+}
+
 namespace ui {
 class ContextFactory;
 class ContextFactoryPrivate;
 class PlatformEventSource;
+namespace mojom {
+class WindowTreeClient;
+}
 }
 namespace aura {
 namespace test {
 class EnvTestHelper;
+class EnvWindowTreeClientSetter;
 }
 
 class EnvInputStateController;
@@ -114,8 +130,15 @@ class AURA_EXPORT Env : public ui::EventTarget,
   void SetWindowTreeClient(WindowTreeClient* window_tree_client);
   bool HasWindowTreeClient() const { return window_tree_client_ != nullptr; }
 
+  // Schedules an embed of a client. See
+  // mojom::WindowTreeClient::ScheduleEmbed() for details.
+  void ScheduleEmbed(
+      mojo::InterfacePtr<ui::mojom::WindowTreeClient> client,
+      base::OnceCallback<void(const base::UnguessableToken&)> callback);
+
  private:
   friend class test::EnvTestHelper;
+  friend class test::EnvWindowTreeClientSetter;
   friend class EventInjector;
   friend class MusMouseLocationUpdater;
   friend class Window;

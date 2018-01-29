@@ -61,7 +61,7 @@ enum {
 class TurnServerAllocation::Permission : public rtc::MessageHandler {
  public:
   Permission(rtc::Thread* thread, const rtc::IPAddress& peer);
-  ~Permission();
+  ~Permission() override;
 
   const rtc::IPAddress& peer() const { return peer_; }
   void Refresh();
@@ -69,7 +69,7 @@ class TurnServerAllocation::Permission : public rtc::MessageHandler {
   sigslot::signal1<Permission*> SignalDestroyed;
 
  private:
-  virtual void OnMessage(rtc::Message* msg);
+  void OnMessage(rtc::Message* msg) override;
 
   rtc::Thread* thread_;
   rtc::IPAddress peer_;
@@ -82,7 +82,7 @@ class TurnServerAllocation::Channel : public rtc::MessageHandler {
  public:
   Channel(rtc::Thread* thread, int id,
                      const rtc::SocketAddress& peer);
-  ~Channel();
+  ~Channel() override;
 
   int id() const { return id_; }
   const rtc::SocketAddress& peer() const { return peer_; }
@@ -91,7 +91,7 @@ class TurnServerAllocation::Channel : public rtc::MessageHandler {
   sigslot::signal1<Channel*> SignalDestroyed;
 
  private:
-  virtual void OnMessage(rtc::Message* msg);
+  void OnMessage(rtc::Message* msg) override;
 
   rtc::Thread* thread_;
   int id_;
@@ -222,7 +222,7 @@ void TurnServer::HandleStunMessage(TurnServerConnection* conn, const char* data,
   TurnMessage msg;
   rtc::ByteBufferReader buf(data, size);
   if (!msg.Read(&buf) || (buf.Length() > 0)) {
-    LOG(LS_WARNING) << "Received invalid STUN message";
+    RTC_LOG(LS_WARNING) << "Received invalid STUN message";
     return;
   }
 
@@ -461,8 +461,8 @@ void TurnServer::SendErrorResponse(TurnServerConnection* conn,
                                    int code, const std::string& reason) {
   TurnMessage resp;
   InitErrorResponse(req, code, reason, &resp);
-  LOG(LS_INFO) << "Sending error response, type=" << resp.type()
-               << ", code=" << code << ", reason=" << reason;
+  RTC_LOG(LS_INFO) << "Sending error response, type=" << resp.type()
+                   << ", code=" << code << ", reason=" << reason;
   SendStun(conn, &resp);
 }
 

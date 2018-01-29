@@ -14,6 +14,7 @@
 #include "base/memory/ptr_util.h"
 #include "base/path_service.h"
 #include "content/public/browser/browser_context.h"
+#include "content/public/browser/browser_thread.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/resource_dispatcher_host.h"
@@ -114,9 +115,11 @@ int GetCrashSignalFD(const base::CommandLine& command_line,
 
 HeadlessContentBrowserClient::HeadlessContentBrowserClient(
     HeadlessBrowserImpl* browser)
-    : browser_(browser) {}
+    : browser_(browser),
+      append_command_line_flags_callback_(
+          browser_->options()->append_command_line_flags_callback) {}
 
-HeadlessContentBrowserClient::~HeadlessContentBrowserClient() {}
+HeadlessContentBrowserClient::~HeadlessContentBrowserClient() = default;
 
 content::BrowserMainParts* HeadlessContentBrowserClient::CreateBrowserMainParts(
     const content::MainFunctionParams&) {
@@ -230,6 +233,9 @@ void HeadlessContentBrowserClient::GetAdditionalMappedFilesForChildProcess(
 void HeadlessContentBrowserClient::AppendExtraCommandLineSwitches(
     base::CommandLine* command_line,
     int child_process_id) {
+  // NOTE: We may be called on the UI or IO thread. If called on the IO thread,
+  // |browser_| may have already been destroyed.
+
   command_line->AppendSwitch(::switches::kHeadless);
   const base::CommandLine& old_command_line(
       *base::CommandLine::ForCurrentProcess());
@@ -245,8 +251,10 @@ void HeadlessContentBrowserClient::AppendExtraCommandLineSwitches(
 #endif  // defined(HEADLESS_USE_BREAKPAD)
 
   // If we're spawning a renderer, then override the language switch.
-  if (command_line->GetSwitchValueASCII(::switches::kProcessType) ==
-      ::switches::kRendererProcess) {
+  std::string process_type =
+      command_line->GetSwitchValueASCII(::switches::kProcessType);
+  if (process_type == ::switches::kRendererProcess) {
+    // Renderer processes are initialized on the UI thread, so this is safe.
     content::RenderProcessHost* render_process_host =
         content::RenderProcessHost::FromID(child_process_id);
     if (render_process_host) {
@@ -261,6 +269,22 @@ void HeadlessContentBrowserClient::AppendExtraCommandLineSwitches(
                                         languages[0].as_string());
       }
     }
+  }
+
+  if (append_command_line_flags_callback_) {
+    HeadlessBrowserContextImpl* headless_browser_context_impl = nullptr;
+    if (process_type == ::switches::kRendererProcess) {
+      // Renderer processes are initialized on the UI thread, so this is safe.
+      content::RenderProcessHost* render_process_host =
+          content::RenderProcessHost::FromID(child_process_id);
+      if (render_process_host) {
+        headless_browser_context_impl = HeadlessBrowserContextImpl::From(
+            render_process_host->GetBrowserContext());
+      }
+    }
+    append_command_line_flags_callback_.Run(command_line,
+                                            headless_browser_context_impl,
+                                            process_type, child_process_id);
   }
 }
 
@@ -290,14 +314,46 @@ void HeadlessContentBrowserClient::AllowCertificateError(
 
 void HeadlessContentBrowserClient::ResourceDispatcherHostCreated() {
   resource_dispatcher_host_delegate_.reset(
-      new HeadlessResourceDispatcherHostDelegate(
-          browser_->options()->enable_resource_scheduler));
+      new HeadlessResourceDispatcherHostDelegate);
   content::ResourceDispatcherHost::Get()->SetDelegate(
       resource_dispatcher_host_delegate_.get());
 }
 
 net::NetLog* HeadlessContentBrowserClient::GetNetLog() {
   return browser_->browser_main_parts()->net_log();
+}
+
+bool HeadlessContentBrowserClient::AllowGetCookie(
+    const GURL& url,
+    const GURL& first_party,
+    const net::CookieList& cookie_list,
+    content::ResourceContext* context,
+    int render_process_id,
+    int render_frame_id) {
+  DCHECK_CURRENTLY_ON(content::BrowserThread::IO);
+  LockedPtr<HeadlessBrowserContextImpl> browser_context =
+      browser_->GetBrowserContextForRenderFrame(render_process_id,
+                                                render_frame_id);
+  if (!browser_context)
+    return false;
+  return browser_context->options()->allow_cookies();
+}
+
+bool HeadlessContentBrowserClient::AllowSetCookie(
+    const GURL& url,
+    const GURL& first_party,
+    const net::CanonicalCookie& cookie,
+    content::ResourceContext* context,
+    int render_process_id,
+    int render_frame_id,
+    const net::CookieOptions& options) {
+  DCHECK_CURRENTLY_ON(content::BrowserThread::IO);
+  LockedPtr<HeadlessBrowserContextImpl> browser_context =
+      browser_->GetBrowserContextForRenderFrame(render_process_id,
+                                                render_frame_id);
+  if (!browser_context)
+    return false;
+  return browser_context->options()->allow_cookies();
 }
 
 }  // namespace headless

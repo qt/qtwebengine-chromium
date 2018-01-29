@@ -11,8 +11,10 @@
 #include "SkData.h"
 #include "SkGeometry.h"
 #include "SkMath.h"
+#include "SkMatrixPriv.h"
 #include "SkPathPriv.h"
 #include "SkPathRef.h"
+#include "SkPointPriv.h"
 #include "SkRRect.h"
 
 static float poly_eval(float A, float B, float C, float t) {
@@ -1526,7 +1528,7 @@ void SkPath::addPath(const SkPath& path, const SkMatrix& matrix, AddPathMode mod
     SkPoint pts[4];
     Verb    verb;
 
-    SkMatrix::MapPtsProc proc = matrix.getMapPtsProc();
+    SkMatrixPriv::MapPtsProc proc = SkMatrixPriv::GetMapPtsProc(matrix);
     bool firstVerb = true;
     while ((verb = iter.next(pts)) != kDone_Verb) {
         switch (verb) {
@@ -2163,7 +2165,13 @@ size_t SkPath::readFromMemory(const void* storage, size_t length) {
         return 0;
     }
 
-    fConvexity.store( (Convexity)((packed >> kConvexity_SerializationShift) & 0xFF) );
+    // These are written into the serialized data but we no longer use them in the deserialized
+    // path. If convexity is corrupted it may cause the GPU backend to make incorrect
+    // rendering choices, possibly crashing. We set them to unknown so that they'll be recomputed if
+    // requested.
+    fConvexity = kUnknown_Convexity;
+    fFirstDirection = SkPathPriv::kUnknown_FirstDirection;
+
     fFillType = fillType;
     fIsVolatile = (packed >> kIsVolatile_SerializationShift) & 0x1;
     SkPathRef* pathRef = SkPathRef::CreateFromBuffer(&buffer);
@@ -2174,26 +2182,6 @@ size_t SkPath::readFromMemory(const void* storage, size_t length) {
     fPathRef.reset(pathRef);
     SkDEBUGCODE(this->validate();)
     buffer.skipToAlign4();
-
-    // compatibility check
-    if (version < kPathPrivFirstDirection_Version) {
-        switch (dir) {  // old values
-            case 0:
-                fFirstDirection = SkPathPriv::kUnknown_FirstDirection;
-                break;
-            case 1:
-                fFirstDirection = SkPathPriv::kCW_FirstDirection;
-                break;
-            case 2:
-                fFirstDirection = SkPathPriv::kCCW_FirstDirection;
-                break;
-            default:
-                return 0;
-        }
-    } else {
-        fFirstDirection = dir;
-    }
-
     return buffer.pos();
 }
 
@@ -2407,7 +2395,7 @@ struct Convexicator {
             ++fPtCount;
         } else {
             SkVector vec = pt - fCurrPt;
-            SkScalar lengthSqd = vec.lengthSqd();
+            SkScalar lengthSqd = SkPointPriv::LengthSqd(vec);
             if (!SkScalarIsFinite(lengthSqd)) {
                 fIsFinite = false;
             } else if (lengthSqd) {
@@ -2469,8 +2457,10 @@ struct Convexicator {
             }
         }
 
-        if (!SkScalarNearlyZero(fLastVec.lengthSqd(), SK_ScalarNearlyZero*SK_ScalarNearlyZero) &&
-            !SkScalarNearlyZero(curVec.lengthSqd(), SK_ScalarNearlyZero*SK_ScalarNearlyZero) &&
+        if (!SkScalarNearlyZero(SkPointPriv::LengthSqd(fLastVec),
+                                SK_ScalarNearlyZero*SK_ScalarNearlyZero) &&
+            !SkScalarNearlyZero(SkPointPriv::LengthSqd(curVec),
+                                SK_ScalarNearlyZero*SK_ScalarNearlyZero) &&
             fLastVec.dot(curVec) < 0.0f) {
             return kBackwards_DirChange;
         }
@@ -3351,7 +3341,7 @@ bool SkPath::contains(SkScalar x, SkScalar y) const {
        if (tangents.count() > oldCount) {
             int last = tangents.count() - 1;
             const SkVector& tangent = tangents[last];
-            if (SkScalarNearlyZero(tangent.lengthSqd())) {
+            if (SkScalarNearlyZero(SkPointPriv::LengthSqd(tangent))) {
                 tangents.remove(last);
             } else {
                 for (int index = 0; index < last; ++index) {
@@ -3599,4 +3589,22 @@ DONE:
     min.store((SkPoint*)&bounds.fLeft);
     max.store((SkPoint*)&bounds.fRight);
     return bounds;
+}
+
+bool SkPath::IsLineDegenerate(const SkPoint& p1, const SkPoint& p2, bool exact) {
+    return exact ? p1 == p2 : SkPointPriv::EqualsWithinTolerance(p1, p2);
+}
+
+bool SkPath::IsQuadDegenerate(const SkPoint& p1, const SkPoint& p2,
+                                const SkPoint& p3, bool exact) {
+    return exact ? p1 == p2 && p2 == p3 : SkPointPriv::EqualsWithinTolerance(p1, p2) &&
+            SkPointPriv::EqualsWithinTolerance(p2, p3);
+}
+
+bool SkPath::IsCubicDegenerate(const SkPoint& p1, const SkPoint& p2,
+                                const SkPoint& p3, const SkPoint& p4, bool exact) {
+    return exact ? p1 == p2 && p2 == p3 && p3 == p4 :
+            SkPointPriv::EqualsWithinTolerance(p1, p2) &&
+            SkPointPriv::EqualsWithinTolerance(p2, p3) &&
+            SkPointPriv::EqualsWithinTolerance(p3, p4);
 }

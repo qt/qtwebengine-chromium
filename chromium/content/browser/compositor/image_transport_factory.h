@@ -20,10 +20,6 @@ namespace viz {
 class GLHelper;
 }
 
-namespace gpu {
-class GpuChannelEstablishFactory;
-}
-
 namespace content {
 
 // This class provides the interface for creating the support for the
@@ -43,6 +39,11 @@ class CONTENT_EXPORT ImageTransportFactory {
   // Gets the factory instance.
   static ImageTransportFactory* GetInstance();
 
+  // Whether gpu compositing is being used or is disabled for software
+  // compositing. Clients of the compositor should give resources that match
+  // the appropriate mode.
+  virtual bool IsGpuCompositingDisabled() = 0;
+
   // Gets the image transport factory as a context factory for the compositor.
   virtual ui::ContextFactory* GetContextFactory() = 0;
 
@@ -55,9 +56,6 @@ class CONTENT_EXPORT ImageTransportFactory {
   // GLHelper will get destroyed whenever the shared context is lost
   // (ImageTransportFactoryObserver::OnLostResources is called).
   virtual viz::GLHelper* GetGLHelper() = 0;
-
-  virtual void SetGpuChannelEstablishFactory(
-      gpu::GpuChannelEstablishFactory* factory) = 0;
 
 #if defined(OS_MACOSX)
   // Called with |suspended| as true when the ui::Compositor has been

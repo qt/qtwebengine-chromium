@@ -132,7 +132,11 @@ class QuicProxyClientSocketTest
 
   void SetUp() override {}
 
-  void TearDown() override {}
+  void TearDown() override {
+    sock_.reset();
+    EXPECT_TRUE(mock_quic_data_.AllReadDataConsumed());
+    EXPECT_TRUE(mock_quic_data_.AllWriteDataConsumed());
+  }
 
   void Initialize() {
     std::unique_ptr<MockUDPClientSocket> socket(new MockUDPClientSocket(
@@ -160,8 +164,8 @@ class QuicProxyClientSocketTest
         new QuicChromiumConnectionHelper(&clock_, &random_generator_));
     alarm_factory_.reset(new QuicChromiumAlarmFactory(runner_.get(), &clock_));
 
-    QuicChromiumPacketWriter* writer =
-        new QuicChromiumPacketWriter(socket.get());
+    QuicChromiumPacketWriter* writer = new QuicChromiumPacketWriter(
+        socket.get(), base::ThreadTaskRunnerHandle::Get().get());
     QuicConnection* connection = new QuicConnection(
         connection_id_, QuicSocketAddress(QuicSocketAddressImpl(peer_addr_)),
         helper_.get(), alarm_factory_.get(), writer, true /* owns_writer */,
@@ -187,7 +191,11 @@ class QuicProxyClientSocketTest
         &transport_security_state_,
         base::WrapUnique(static_cast<QuicServerInfo*>(nullptr)),
         QuicServerId("mail.example.org", 80, PRIVACY_MODE_DISABLED),
-        /*require_confirmation=*/false, kQuicYieldAfterPacketsRead,
+        /*require_confirmation=*/false, /*migrate_session_early*/ false,
+        /*migrate_session_on_network_change*/ false,
+        /*migrate_session_early_v2*/ false,
+        /*migrate_session_on_network_change_v2*/ false,
+        kQuicYieldAfterPacketsRead,
         QuicTime::Delta::FromMilliseconds(kQuicYieldAfterDurationMilliseconds),
         /*cert_verify_flags=*/0, DefaultQuicConfig(), &crypto_config_,
         "CONNECTION_UNKNOWN", dns_start, dns_end, &push_promise_index_, nullptr,
@@ -1335,7 +1343,7 @@ TEST_P(QuicProxyClientSocketTest, RstWithReadAndWritePending) {
 
   mock_quic_data_.AddRead(
       ConstructServerRstPacket(2, QUIC_STREAM_CANCELLED, 0));
-  mock_quic_data_.AddRead(SYNCHRONOUS, 0);  // EOF
+  mock_quic_data_.AddRead(SYNCHRONOUS, ERR_IO_PENDING);
   mock_quic_data_.AddAsyncWrite(
       ConstructAckAndDataPacket(3, 1, 1, 1, 0, kMsg2, kLen2));
   mock_quic_data_.AddWrite(
@@ -1373,7 +1381,7 @@ TEST_P(QuicProxyClientSocketTest, NetLog) {
 
   mock_quic_data_.AddRead(ConstructServerDataPacket(2, 0, kMsg1, kLen1));
   mock_quic_data_.AddWrite(ConstructAckPacket(3, 2, 1, 1));
-  mock_quic_data_.AddRead(SYNCHRONOUS, ERR_IO_PENDING);  // EOF
+  mock_quic_data_.AddRead(SYNCHRONOUS, ERR_IO_PENDING);
   mock_quic_data_.AddWrite(ConstructRstPacket(4, QUIC_STREAM_CANCELLED, 0));
 
   Initialize();

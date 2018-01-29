@@ -164,12 +164,12 @@ std::string OCSPDateToString(
 
 }  // namespace
 
-BaseTestServer::SSLOptions::SSLOptions() {}
+BaseTestServer::SSLOptions::SSLOptions() = default;
 BaseTestServer::SSLOptions::SSLOptions(ServerCertificate cert)
     : server_certificate(cert) {}
 BaseTestServer::SSLOptions::SSLOptions(const SSLOptions& other) = default;
 
-BaseTestServer::SSLOptions::~SSLOptions() {}
+BaseTestServer::SSLOptions::~SSLOptions() = default;
 
 base::FilePath BaseTestServer::SSLOptions::GetCertificateFile() const {
   switch (server_certificate) {
@@ -257,7 +257,7 @@ BaseTestServer::BaseTestServer(Type type, const SSLOptions& ssl_options)
   Init(GetHostname(type, ssl_options));
 }
 
-BaseTestServer::~BaseTestServer() {}
+BaseTestServer::~BaseTestServer() = default;
 
 bool BaseTestServer::Start() {
   return StartInBackground() && BlockUntilStarted();
@@ -507,6 +507,12 @@ bool BaseTestServer::GenerateArguments(base::DictionaryValue* arguments) const {
   if (no_anonymous_ftp_user_) {
     DCHECK_EQ(TYPE_FTP, type_);
     arguments->Set("no-anonymous-ftp-user", std::make_unique<base::Value>());
+  }
+
+  if (redirect_connect_to_localhost_) {
+    DCHECK_EQ(TYPE_BASIC_AUTH_PROXY, type_);
+    arguments->Set("redirect-connect-to-localhost",
+                   std::make_unique<base::Value>());
   }
 
   if (UsingSSL(type_)) {

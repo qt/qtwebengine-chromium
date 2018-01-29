@@ -6,18 +6,18 @@
 
 #include "bindings/core/v8/v8_mojo_watch_callback.h"
 #include "core/dom/ExecutionContext.h"
-#include "core/dom/TaskRunnerHelper.h"
 #include "core/mojo/MojoHandleSignals.h"
 #include "platform/CrossThreadFunctional.h"
 #include "platform/WebTaskRunner.h"
 #include "platform/bindings/ScriptState.h"
+#include "public/platform/TaskType.h"
 
 namespace blink {
 
 static void RunWatchCallback(V8MojoWatchCallback* callback,
                              ScriptWrappable* wrappable,
                              MojoResult result) {
-  callback->call(wrappable, result);
+  callback->InvokeAndReportException(wrappable, result);
 }
 
 // static
@@ -53,12 +53,13 @@ MojoResult MojoWatcher::cancel() {
   return MOJO_RESULT_OK;
 }
 
-DEFINE_TRACE(MojoWatcher) {
+void MojoWatcher::Trace(blink::Visitor* visitor) {
   visitor->Trace(callback_);
+  ScriptWrappable::Trace(visitor);
   ContextLifecycleObserver::Trace(visitor);
 }
 
-DEFINE_TRACE_WRAPPERS(MojoWatcher) {
+void MojoWatcher::TraceWrappers(const ScriptWrappableVisitor* visitor) const {
   visitor->TraceWrappers(callback_);
 }
 
@@ -73,7 +74,7 @@ void MojoWatcher::ContextDestroyed(ExecutionContext*) {
 MojoWatcher::MojoWatcher(ExecutionContext* context,
                          V8MojoWatchCallback* callback)
     : ContextLifecycleObserver(context),
-      task_runner_(TaskRunnerHelper::Get(TaskType::kUnspecedTimer, context)),
+      task_runner_(context->GetTaskRunner(TaskType::kUnspecedTimer)),
       callback_(callback) {}
 
 MojoResult MojoWatcher::Watch(mojo::Handle handle,

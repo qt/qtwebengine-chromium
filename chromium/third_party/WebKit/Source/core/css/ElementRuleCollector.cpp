@@ -33,13 +33,13 @@
 #include "core/css/CSSImportRule.h"
 #include "core/css/CSSKeyframesRule.h"
 #include "core/css/CSSMediaRule.h"
+#include "core/css/CSSPropertyValueSet.h"
 #include "core/css/CSSRuleList.h"
 #include "core/css/CSSSelector.h"
 #include "core/css/CSSStyleRule.h"
 #include "core/css/CSSStyleSheet.h"
 #include "core/css/CSSSupportsRule.h"
 #include "core/css/StyleEngine.h"
-#include "core/css/StylePropertySet.h"
 #include "core/css/resolver/StyleResolver.h"
 #include "core/css/resolver/StyleResolverStats.h"
 #include "core/css/resolver/StyleRuleUsageTracker.h"
@@ -62,7 +62,7 @@ ElementRuleCollector::ElementRuleCollector(const ElementResolveContext& context,
       matching_ua_rules_(false),
       include_empty_rules_(false) {}
 
-ElementRuleCollector::~ElementRuleCollector() {}
+ElementRuleCollector::~ElementRuleCollector() = default;
 
 const MatchResult& ElementRuleCollector::MatchedResult() const {
   return result_;
@@ -95,7 +95,7 @@ inline StaticCSSRuleList* ElementRuleCollector::EnsureRuleList() {
 }
 
 void ElementRuleCollector::AddElementStyleProperties(
-    const StylePropertySet* property_set,
+    const CSSPropertyValueSet* property_set,
     bool is_cacheable) {
   if (!property_set)
     return;
@@ -252,7 +252,7 @@ CSSRule* ElementRuleCollector::FindStyleRule(CSSRuleCollection* css_rules,
                                              StyleRule* style_rule) {
   if (!css_rules)
     return nullptr;
-  CSSRule* result = 0;
+  CSSRule* result = nullptr;
   for (unsigned i = 0; i < css_rules->length() && !result; ++i) {
     CSSRule* css_rule = css_rules->item(i);
     CSSRule::Type css_rule_type = css_rule->type();

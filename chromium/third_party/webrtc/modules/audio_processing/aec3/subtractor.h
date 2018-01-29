@@ -68,7 +68,6 @@ class Subtractor {
   MainFilterUpdateGain G_main_;
   ShadowFilterUpdateGain G_shadow_;
   bool converged_filter_ = false;
-
   RTC_DISALLOW_IMPLICIT_CONSTRUCTORS(Subtractor);
 };
 

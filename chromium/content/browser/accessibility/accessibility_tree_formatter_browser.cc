@@ -17,12 +17,26 @@ AccessibilityTreeFormatterBrowser::BuildAccessibilityTree(
   return dict;
 }
 
+std::unique_ptr<base::DictionaryValue>
+AccessibilityTreeFormatterBrowser::BuildAccessibilityTreeForProcess(
+    base::ProcessId pid) {
+  NOTREACHED();
+  return nullptr;
+}
+
+std::unique_ptr<base::DictionaryValue>
+AccessibilityTreeFormatterBrowser::BuildAccessibilityTreeForWindow(
+    gfx::AcceleratedWidget widget) {
+  NOTREACHED();
+  return nullptr;
+}
+
 void AccessibilityTreeFormatterBrowser::RecursiveBuildAccessibilityTree(
     const BrowserAccessibility& node,
     base::DictionaryValue* dict) {
   AddProperties(node, dict);
 
-  auto children = base::MakeUnique<base::ListValue>();
+  auto children = std::make_unique<base::ListValue>();
 
   for (size_t i = 0; i < ChildCount(node); ++i) {
     BrowserAccessibility* child_node = GetChild(node, i);

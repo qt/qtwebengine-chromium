@@ -32,6 +32,8 @@
 #define ServiceWorkerGlobalScopeProxy_h
 
 #include <memory>
+
+#include "base/macros.h"
 #include "core/workers/WorkerReportingProxy.h"
 #include "platform/heap/Handle.h"
 #include "platform/heap/HeapAllocator.h"
@@ -68,8 +70,6 @@ class ServiceWorkerGlobalScopeProxy final
     : public GarbageCollectedFinalized<ServiceWorkerGlobalScopeProxy>,
       public WebServiceWorkerContextProxy,
       public WorkerReportingProxy {
-  WTF_MAKE_NONCOPYABLE(ServiceWorkerGlobalScopeProxy);
-
  public:
   static ServiceWorkerGlobalScopeProxy* Create(WebEmbeddedWorkerImpl&,
                                                WebServiceWorkerContextClient&);
@@ -109,8 +109,6 @@ class ServiceWorkerGlobalScopeProxy final
   void DispatchFetchEvent(int fetch_event_id,
                           const WebServiceWorkerRequest&,
                           bool navigation_preload_sent) override;
-  void DispatchForeignFetchEvent(int fetch_event_id,
-                                 const WebServiceWorkerRequest&) override;
   void DispatchInstallEvent(int) override;
   void DispatchNotificationClickEvent(int,
                                       const WebString& notification_id,
@@ -166,7 +164,7 @@ class ServiceWorkerGlobalScopeProxy final
   void WillDestroyWorkerGlobalScope() override;
   void DidTerminateWorkerThread() override;
 
-  DECLARE_TRACE();
+  void Trace(blink::Visitor*);
 
   // Detaches this proxy object entirely from the outside world, clearing out
   // all references.
@@ -201,6 +199,8 @@ class ServiceWorkerGlobalScopeProxy final
   WebServiceWorkerContextClient* client_;
 
   CrossThreadPersistent<ServiceWorkerGlobalScope> worker_global_scope_;
+
+  DISALLOW_COPY_AND_ASSIGN(ServiceWorkerGlobalScopeProxy);
 };
 
 }  // namespace blink

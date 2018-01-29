@@ -75,6 +75,8 @@ public:
         kNoModesInMergeImageFilter_Verison = 55,
         kTileModeInBlurImageFilter_Version = 56,
         kTileInfoInSweepGradient_Version   = 57,
+        k2PtConicalNoFlip_Version          = 58,
+        kRemovePictureImageFilterLocalSpace = 59,
     };
 
     /**
@@ -176,7 +178,6 @@ public:
     // helpers to get info about arrays and binary data
     virtual uint32_t getArrayCount();
 
-    sk_sp<SkImage> readBitmapAsImage();
     sk_sp<SkImage> readImage();
     virtual sk_sp<SkTypeface> readTypeface();
 
@@ -222,7 +223,18 @@ public:
     SkInflator* getInflator() const { return fInflator; }
     void setInflator(SkInflator* inf) { fInflator = inf; }
 
-//    sk_sp<SkImage> inflateImage();
+    // Utilities that mark the buffer invalid if the requested value is out-of-range
+
+    // If the read value is outside of the range, validate(false) is called, and min
+    // is returned, else the value is returned.
+    int32_t checkInt(int min, int max);
+
+    template <typename T> T checkRange(T min, T max) {
+        return static_cast<T>(this->checkInt(static_cast<int32_t>(min),
+                                             static_cast<int32_t>(max)));
+    }
+
+    SkFilterQuality checkFilterQuality();
 
 protected:
     /**

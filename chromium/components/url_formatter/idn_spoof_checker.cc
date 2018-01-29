@@ -133,15 +133,31 @@ IDNSpoofChecker::IDNSpoofChecker() {
 
   // Used for diacritics-removal before the skeleton calculation. Add
   // "ł > l; ø > o; đ > d" that are not handled by "NFD; Nonspacing mark
-  // removal; NFC". On top of that, supplement the Unicode confusable list by
-  // replacing {U+043A (к), U+0138(ĸ), U+03BA(κ)}, U+04CF (ӏ) and U+043F(п) by
-  // 'k', 'l' and 'n', respectively.
+  // removal; NFC".
   // TODO(jshin): Revisit "ł > l; ø > o" mapping.
   UParseError parse_error;
-  transliterator_.reset(icu::Transliterator::createFromRules(
+  diacritic_remover_.reset(icu::Transliterator::createFromRules(
       UNICODE_STRING_SIMPLE("DropAcc"),
       icu::UnicodeString("::NFD; ::[:Nonspacing Mark:] Remove; ::NFC;"
-                         " ł > l; ø > o; đ > d; ӏ > l; [кĸκ] > k; п > n;"),
+                         " ł > l; ø > o; đ > d;"),
+      UTRANS_FORWARD, parse_error, status));
+
+  // Supplement the Unicode confusable list by the following mapping.
+  //   - U+04CF (ӏ) => l
+  //   - {U+043A (к), U+0138(ĸ), U+03BA(κ)} => k
+  //   - U+043F(п) => n
+  //   - {U+0185 (ƅ), U+044C (ь)} => b
+  //   - U+0432 (в) => b
+  //   - U+043C (м) => m
+  //   - U+043D (н) => h
+  //   - U+0442 (т) => t
+  //   - {U+0448 (ш), U+0449 (щ)} => w
+  //   - U+0D1F (ട) => s
+  extra_confusable_mapper_.reset(icu::Transliterator::createFromRules(
+      UNICODE_STRING_SIMPLE("ExtraConf"),
+      icu::UnicodeString(
+          "ӏ > l; [кĸκ] > k; п > n; [ƅь] > b; в > b; м > m; н > h; "
+          "т > t; [шщ] > w; ട > s;"),
       UTRANS_FORWARD, parse_error, status));
   DCHECK(U_SUCCESS(status))
       << "Spoofchecker initalization failed due to an error: "
@@ -157,7 +173,7 @@ bool IDNSpoofChecker::SafeToDisplayAsUnicode(base::StringPiece16 label,
   UErrorCode status = U_ZERO_ERROR;
   int32_t result =
       uspoof_check(checker_, label.data(),
-                   base::checked_cast<int32_t>(label.size()), NULL, &status);
+                   base::checked_cast<int32_t>(label.size()), nullptr, &status);
   // If uspoof_check fails (due to library failure), or if any of the checks
   // fail, treat the IDN as unsafe.
   if (U_FAILURE(status) || (result & USPOOF_ALL_CHECKS))
@@ -238,6 +254,7 @@ bool IDNSpoofChecker::SafeToDisplayAsUnicode(base::StringPiece16 label,
     // - Disallow combining diacritical mark (U+0300-U+0339) after a non-LGC
     //   character. Other combining diacritical marks are not in the allowed
     //   character set.
+    // - Disallow dotless i (U+0131) followed by a combining mark.
     // - Disallow U+0307 (dot above) after 'i', 'j', 'l' or dotless i (U+0131).
     //   Dotless j (U+0237) is not in the allowed set to begin with.
     dangerous_pattern = new icu::RegexMatcher(
@@ -251,7 +268,8 @@ bool IDNSpoofChecker::SafeToDisplayAsUnicode(base::StringPiece16 label,
             R"(^[\p{scx=hira}]+[\u30d8-\u30da][\p{scx=hira}]+$|)"
             R"([a-z]\u30fb|\u30fb[a-z]|)"
             R"([^\p{scx=latn}\p{scx=grek}\p{scx=cyrl}][\u0300-\u0339]|)"
-            R"([ijl\u0131]\u0307)",
+            R"(\u0131[\u0300-\u0339]|)"
+            R"([ijl]\u0307)",
             -1, US_INV),
         0, status);
     tls_index.Set(dangerous_pattern);
@@ -268,7 +286,8 @@ bool IDNSpoofChecker::SimilarToTopDomains(base::StringPiece16 hostname) {
   // attached to non-LGC characters are already blocked.
   if (lgc_letters_n_ascii_.span(ustr_host, 0, USET_SPAN_CONTAINED) ==
       ustr_host.length())
-    transliterator_.get()->transliterate(ustr_host);
+    diacritic_remover_.get()->transliterate(ustr_host);
+  extra_confusable_mapper_.get()->transliterate(ustr_host);
 
   UErrorCode status = U_ZERO_ERROR;
   icu::UnicodeString ustr_skeleton;
@@ -277,8 +296,7 @@ bool IDNSpoofChecker::SimilarToTopDomains(base::StringPiece16 hostname) {
   if (U_FAILURE(status))
     return false;
   std::string skeleton;
-  ustr_skeleton.toUTF8String(skeleton);
-  return LookupMatchInTopDomains(skeleton);
+  return LookupMatchInTopDomains(ustr_skeleton.toUTF8String(skeleton));
 }
 
 bool IDNSpoofChecker::IsMadeOfLatinAlikeCyrillic(
@@ -318,39 +336,6 @@ void IDNSpoofChecker::SetAllowedUnicodeSet(UErrorCode* status) {
   allowed_set.addAll(*recommended_set);
   const icu::UnicodeSet* inclusion_set = uspoof_getInclusionUnicodeSet(status);
   allowed_set.addAll(*inclusion_set);
-
-// Five aspirational scripts are taken from UTR 31 Table 6 at
-// http://www.unicode.org/reports/tr31/#Aspirational_Use_Scripts .
-// Not all the characters of aspirational scripts are suitable for
-// identifiers. Therefore, only characters belonging to
-// [:Identifier_Type=Aspirational:] (listed in 'Status/Type=Aspirational'
-// section at
-// http://www.unicode.org/Public/security/latest/xidmodifications.txt) are
-// are added to the allowed set. The list has to be updated when a new
-// version of Unicode is released. The current version is 9.0.0 and ICU 60
-// will have Unicode 10.0 data.
-#if U_ICU_VERSION_MAJOR_NUM < 60
-  const icu::UnicodeSet aspirational_scripts(
-      icu::UnicodeString(
-          // Unified Canadian Syllabics
-          "[\\u1401-\\u166C\\u166F-\\u167F"
-          // Mongolian
-          "\\u1810-\\u1819\\u1820-\\u1877\\u1880-\\u18AA"
-          // Unified Canadian Syllabics
-          "\\u18B0-\\u18F5"
-          // Tifinagh
-          "\\u2D30-\\u2D67\\u2D7F"
-          // Yi
-          "\\uA000-\\uA48C"
-          // Miao
-          "\\U00016F00-\\U00016F44\\U00016F50-\\U00016F7E"
-          "\\U00016F8F-\\U00016F9F]",
-          -1, US_INV),
-      *status);
-  allowed_set.addAll(aspirational_scripts);
-#else
-#error "Update aspirational_scripts per Unicode 10.0"
-#endif
 
   // The sections below refer to Mozilla's IDN blacklist:
   // http://kb.mozillazine.org/Network.IDN.blacklist_chars

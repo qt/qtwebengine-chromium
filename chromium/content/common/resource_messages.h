@@ -18,7 +18,6 @@
 #include "content/public/common/common_param_traits.h"
 #include "content/public/common/resource_request.h"
 #include "content/public/common/resource_request_body.h"
-#include "content/public/common/resource_request_completion_status.h"
 #include "content/public/common/resource_response.h"
 #include "content/public/common/service_worker_modes.h"
 #include "ipc/ipc_message_macros.h"
@@ -30,6 +29,9 @@
 #include "net/ssl/ssl_info.h"
 #include "net/traffic_annotation/network_traffic_annotation.h"
 #include "net/url_request/redirect_info.h"
+#include "services/network/public/cpp/cors_error_status.h"
+#include "services/network/public/cpp/url_loader_completion_status.h"
+#include "services/network/public/interfaces/fetch_api.mojom.h"
 #include "third_party/WebKit/public/platform/WebMixedContentContextType.h"
 
 #ifndef INTERNAL_CONTENT_COMMON_RESOURCE_MESSAGES_H_
@@ -141,18 +143,18 @@ IPC_ENUM_TRAITS_MAX_VALUE(net::TokenBindingParam, net::TB_PARAM_ECDSAP256)
 IPC_ENUM_TRAITS_MAX_VALUE(net::SSLInfo::HandshakeType,
                           net::SSLInfo::HANDSHAKE_FULL)
 IPC_ENUM_TRAITS_MAX_VALUE(
-    net::ct::CertPolicyCompliance,
-    net::ct::CertPolicyCompliance::CERT_POLICY_BUILD_NOT_TIMELY)
+    net::ct::CTPolicyCompliance,
+    net::ct::CTPolicyCompliance::CT_POLICY_COMPLIANCE_DETAILS_NOT_AVAILABLE)
 IPC_ENUM_TRAITS_MAX_VALUE(net::OCSPVerifyResult::ResponseStatus,
                           net::OCSPVerifyResult::PARSE_RESPONSE_DATA_ERROR)
 IPC_ENUM_TRAITS_MAX_VALUE(net::OCSPRevocationStatus,
                           net::OCSPRevocationStatus::UNKNOWN)
 
-IPC_ENUM_TRAITS_MAX_VALUE(content::FetchRequestMode,
-                          content::FETCH_REQUEST_MODE_LAST)
+IPC_ENUM_TRAITS_MAX_VALUE(network::mojom::FetchRequestMode,
+                          network::mojom::FetchRequestMode::kLast)
 
-IPC_ENUM_TRAITS_MAX_VALUE(content::FetchCredentialsMode,
-                          content::FETCH_CREDENTIALS_MODE_LAST)
+IPC_ENUM_TRAITS_MAX_VALUE(network::mojom::FetchCredentialsMode,
+                          network::mojom::FetchCredentialsMode::kLast)
 
 IPC_ENUM_TRAITS_MAX_VALUE(content::FetchRedirectMode,
                           content::FetchRedirectMode::LAST)
@@ -252,7 +254,7 @@ IPC_STRUCT_TRAITS_BEGIN(content::ResourceRequest)
   IPC_STRUCT_TRAITS_MEMBER(visibility_state)
   IPC_STRUCT_TRAITS_MEMBER(headers)
   IPC_STRUCT_TRAITS_MEMBER(load_flags)
-  IPC_STRUCT_TRAITS_MEMBER(origin_pid)
+  IPC_STRUCT_TRAITS_MEMBER(plugin_child_id)
   IPC_STRUCT_TRAITS_MEMBER(resource_type)
   IPC_STRUCT_TRAITS_MEMBER(priority)
   IPC_STRUCT_TRAITS_MEMBER(request_context)
@@ -290,13 +292,23 @@ IPC_STRUCT_TRAITS_BEGIN(content::ResourceRequest)
 IPC_STRUCT_TRAITS_END()
 
 // Parameters for a ResourceMsg_RequestComplete
-IPC_STRUCT_TRAITS_BEGIN(content::ResourceRequestCompletionStatus)
+IPC_ENUM_TRAITS_MAX_VALUE(network::mojom::CORSError,
+                          network::mojom::CORSError::kLast)
+
+IPC_STRUCT_TRAITS_BEGIN(network::CORSErrorStatus)
+  IPC_STRUCT_TRAITS_MEMBER(cors_error)
+  IPC_STRUCT_TRAITS_MEMBER(related_response_headers)
+IPC_STRUCT_TRAITS_END()
+
+IPC_STRUCT_TRAITS_BEGIN(network::URLLoaderCompletionStatus)
   IPC_STRUCT_TRAITS_MEMBER(error_code)
   IPC_STRUCT_TRAITS_MEMBER(exists_in_cache)
   IPC_STRUCT_TRAITS_MEMBER(completion_time)
   IPC_STRUCT_TRAITS_MEMBER(encoded_data_length)
   IPC_STRUCT_TRAITS_MEMBER(encoded_body_length)
   IPC_STRUCT_TRAITS_MEMBER(decoded_body_length)
+  IPC_STRUCT_TRAITS_MEMBER(cors_error_status)
+  IPC_STRUCT_TRAITS_MEMBER(ssl_info)
 IPC_STRUCT_TRAITS_END()
 
 // Resource messages sent from the browser to the renderer.
@@ -332,15 +344,10 @@ IPC_MESSAGE_CONTROL3(ResourceMsg_ReceivedRedirect,
 //
 // NOTE: The shared memory handle should already be mapped into the process
 // that receives this message.
-//
-// TODO(darin): The |renderer_pid| parameter is just a temporary parameter,
-// added to help in debugging crbug/160401.
-//
-IPC_MESSAGE_CONTROL4(ResourceMsg_SetDataBuffer,
+IPC_MESSAGE_CONTROL3(ResourceMsg_SetDataBuffer,
                      int /* request_id */,
                      base::SharedMemoryHandle /* shm_handle */,
-                     int /* shm_size */,
-                     base::ProcessId /* renderer_pid */)
+                     int /* shm_size */)
 
 // Sent when some data from a resource request is ready.  The data offset and
 // length specify a byte range into the shared memory buffer provided by the
@@ -362,7 +369,7 @@ IPC_MESSAGE_CONTROL3(ResourceMsg_DataDownloaded,
 // Sent when the request has been completed.
 IPC_MESSAGE_CONTROL2(ResourceMsg_RequestComplete,
                      int /* request_id */,
-                     content::ResourceRequestCompletionStatus)
+                     network::URLLoaderCompletionStatus)
 
 // Resource messages sent from the renderer to the browser.
 

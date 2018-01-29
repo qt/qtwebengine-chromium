@@ -26,7 +26,6 @@
 #define WebMediaStreamTrack_h
 
 #include "WebCommon.h"
-#include "WebNonCopyable.h"
 #include "WebPrivatePtr.h"
 #include "WebString.h"
 
@@ -132,7 +131,7 @@ class WebMediaStreamTrack {
 #if INSIDE_BLINK
   BLINK_PLATFORM_EXPORT WebMediaStreamTrack(MediaStreamComponent*);
   BLINK_PLATFORM_EXPORT WebMediaStreamTrack& operator=(MediaStreamComponent*);
-  BLINK_PLATFORM_EXPORT operator WTF::RefPtr<MediaStreamComponent>() const;
+  BLINK_PLATFORM_EXPORT operator scoped_refptr<MediaStreamComponent>() const;
   BLINK_PLATFORM_EXPORT operator MediaStreamComponent*() const;
 #endif
 

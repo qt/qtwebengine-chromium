@@ -10,8 +10,6 @@
 #include "base/trace_event/trace_event.h"
 #include "platform/PlatformExport.h"
 
-// TODO(kraynov): Move platform/scheduler/base/trace_helper.h here.
-
 namespace blink {
 namespace scheduler {
 
@@ -22,33 +20,38 @@ PLATFORM_EXPORT extern const char kTracingCategoryNameDefault[];
 PLATFORM_EXPORT extern const char kTracingCategoryNameInfo[];
 PLATFORM_EXPORT extern const char kTracingCategoryNameDebug[];
 
-void WarmupTracingCategories();
+namespace internal {
 
-bool AreVerboseSnapshotsEnabled();
+PLATFORM_EXPORT void ValidateTracingCategory(const char* category);
 
-std::string PointerToString(const void* pointer);
+}  // namespace internal
+
+PLATFORM_EXPORT void WarmupTracingCategories();
+
+PLATFORM_EXPORT bool AreVerboseSnapshotsEnabled();
+
+PLATFORM_EXPORT std::string PointerToString(const void* pointer);
 
 // TRACE_EVENT macros define static variable to cache a pointer to the state
 // of category. Hence, we need distinct version for each category in order to
 // prevent unintended leak of state.
+
 template <typename T, const char* category>
 class TraceableState {
  public:
+  using ConverterFuncPtr = const char* (*)(T);
+
   TraceableState(T initial_state,
                  const char* name,
                  const void* object,
-                 const char* (*converter)(T))
+                 ConverterFuncPtr converter)
       : name_(name),
         object_(object),
         converter_(converter),
         state_(initial_state),
         started_(false) {
-    // Category must be a constant defined in tracing_helper.
-    // Unfortunately, static_assert won't work here because inequality (!=)
-    // of linker symbols is undefined in compile-time.
-    DCHECK(category == kTracingCategoryNameDefault ||
-           category == kTracingCategoryNameInfo ||
-           category == kTracingCategoryNameDebug);
+    internal::ValidateTracingCategory(category);
+    Trace();
   }
 
   ~TraceableState() {
@@ -70,15 +73,18 @@ class TraceableState {
   }
 
   void OnTraceLogEnabled() {
-    Assign(state_, true);
+    Trace();
   }
 
  private:
-  void Assign(T new_state, bool force_trace = false) {
-    if (!force_trace && new_state == state_)
-      return;
-    state_ = new_state;
+  void Assign(T new_state) {
+    if (state_ != new_state) {
+      state_ = new_state;
+      Trace();
+    }
+  }
 
+  void Trace() {
     if (started_)
       TRACE_EVENT_ASYNC_END0(category, name_, object_);
 
@@ -101,7 +107,7 @@ class TraceableState {
 
   const char* const name_;  // Not owned.
   const void* const object_;  // Not owned.
-  const char* (*converter_)(T);
+  const ConverterFuncPtr converter_;
 
   T state_;
   // We have to track |started_| state to avoid race condition since SetState
@@ -109,6 +115,54 @@ class TraceableState {
   bool started_;
 
   DISALLOW_COPY(TraceableState);
+};
+
+template <typename T, const char* category>
+class TraceableCounter {
+ public:
+  using ConverterFuncPtr = double (*)(const T&);
+
+  TraceableCounter(T initial_value,
+                   const char* name,
+                   const void* object,
+                   ConverterFuncPtr converter)
+      : name_(name),
+        object_(object),
+        converter_(converter),
+        value_(initial_value) {
+    internal::ValidateTracingCategory(category);
+    Trace();
+  }
+
+  TraceableCounter& operator =(const T& value) {
+    value_ = value;
+    Trace();
+    return *this;
+  }
+  TraceableCounter& operator =(const TraceableCounter& another) {
+    value_ = another.value_;
+    Trace();
+    return *this;
+  }
+
+  const T& get() const {
+    return value_;
+  }
+  operator T() const {
+    return value_;
+  }
+
+  void Trace() {
+    TRACE_COUNTER_ID1(category, name_, object_, converter_(value_));
+  }
+
+ private:
+  const char* const name_;  // Not owned.
+  const void* const object_;  // Not owned.
+  const ConverterFuncPtr converter_;
+
+  T value_;
+  DISALLOW_COPY(TraceableCounter);
 };
 
 }  // namespace scheduler

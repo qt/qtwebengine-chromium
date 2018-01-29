@@ -53,7 +53,8 @@ class ServiceWorkerControlleeRequestHandlerTest : public testing::Test {
         ServiceWorkerControlleeRequestHandlerTest* test,
         const GURL& url,
         ResourceType type,
-        FetchRequestMode fetch_type = FETCH_REQUEST_MODE_NO_CORS)
+        network::mojom::FetchRequestMode fetch_type =
+            network::mojom::FetchRequestMode::kNoCORS)
         : test_(test),
           request_(test->url_request_context_.CreateRequest(
               url,
@@ -65,9 +66,10 @@ class ServiceWorkerControlleeRequestHandlerTest : public testing::Test {
               test->provider_host_,
               base::WeakPtr<storage::BlobStorageContext>(),
               fetch_type,
-              FETCH_CREDENTIALS_MODE_OMIT,
+              network::mojom::FetchCredentialsMode::kOmit,
               FetchRedirectMode::FOLLOW_MODE,
               std::string() /* integrity */,
+              false /* keepalive */,
               type,
               REQUEST_CONTEXT_TYPE_HYPERLINK,
               REQUEST_CONTEXT_FRAME_TYPE_TOP_LEVEL,
@@ -110,9 +112,15 @@ class ServiceWorkerControlleeRequestHandlerTest : public testing::Test {
     version_ = new ServiceWorkerVersion(
         registration_.get(), script_url_, 1L, context()->AsWeakPtr());
 
+    context()->storage()->LazyInitializeForTest(
+        base::BindOnce(&base::DoNothing));
+    base::RunLoop().RunUntilIdle();
+
     std::vector<ServiceWorkerDatabase::ResourceRecord> records;
-    records.push_back(
-        ServiceWorkerDatabase::ResourceRecord(10, version_->script_url(), 100));
+    records.push_back(WriteToDiskCacheSync(
+        context()->storage(), version_->script_url(),
+        context()->storage()->NewResourceId(), {} /* headers */, "I'm a body",
+        "I'm a meta data"));
     version_->script_cache_map()->SetResources(records);
     version_->SetMainScriptHttpResponseInfo(
         EmbeddedWorkerTestHelper::CreateHttpResponseInfo());
@@ -126,15 +134,11 @@ class ServiceWorkerControlleeRequestHandlerTest : public testing::Test {
             &remote_endpoints_.back());
     provider_host_ = host->AsWeakPtr();
     context()->AddProviderHost(std::move(host));
-
-    context()->storage()->LazyInitializeForTest(
-        base::BindOnce(&base::DoNothing));
-    base::RunLoop().RunUntilIdle();
   }
 
   void TearDown() override {
-    version_ = NULL;
-    registration_ = NULL;
+    version_ = nullptr;
+    registration_ = nullptr;
     helper_.reset();
   }
 
@@ -273,8 +277,8 @@ TEST_F(ServiceWorkerControlleeRequestHandlerTest, DeletedProviderHost) {
       version_.get(),
       base::Bind(&ServiceWorkerUtils::NoOpStatusCallback));
   base::RunLoop().RunUntilIdle();
-  version_ = NULL;
-  registration_ = NULL;
+  version_ = nullptr;
+  registration_ = nullptr;
 
   // Conduct a main resource load.
   ServiceWorkerRequestTestResources test_resources(
@@ -371,7 +375,7 @@ TEST_F(ServiceWorkerControlleeRequestHandlerTest, FallbackWithNoFetchHandler) {
   // CORS request should be returned to renderer for CORS checking.
   ServiceWorkerRequestTestResources sub_test_resources_cors(
       this, GURL("https://host/scope/doc/subresource"), RESOURCE_TYPE_SCRIPT,
-      FETCH_REQUEST_MODE_CORS);
+      network::mojom::FetchRequestMode::kCORS);
   ServiceWorkerURLRequestJob* sub_cors_job =
       sub_test_resources_cors.MaybeCreateJob();
 

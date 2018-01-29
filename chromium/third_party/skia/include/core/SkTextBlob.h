@@ -50,10 +50,6 @@ public:
      */
     static sk_sp<SkTextBlob> MakeFromBuffer(SkReadBuffer&);
 
-    static const SkTextBlob* CreateFromBuffer(SkReadBuffer& buffer) {
-        return MakeFromBuffer(buffer).release();
-    }
-
     enum GlyphPositioning : uint8_t {
         kDefault_Positioning      = 0, // Default glyph advances -- zero scalars per glyph.
         kHorizontal_Positioning   = 1, // Horizontal positioning -- one scalar per glyph.
@@ -246,7 +242,7 @@ private:
     void allocInternal(const SkPaint& font, SkTextBlob::GlyphPositioning positioning,
                        int count, int textBytes, SkPoint offset, const SkRect* bounds);
     bool mergeRun(const SkPaint& font, SkTextBlob::GlyphPositioning positioning,
-                  int count, SkPoint offset);
+                  uint32_t count, SkPoint offset);
     void updateDeferredBounds();
 
     static SkRect ConservativeRunBounds(const SkTextBlob::RunRecord&);

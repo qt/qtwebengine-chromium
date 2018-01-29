@@ -8,6 +8,7 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
+#include <cmath>
 #include <limits>
 #include <memory>
 #include <string>
@@ -36,18 +37,41 @@
 #include "modules/audio_coding/audio_network_adaptor/include/audio_network_adaptor_config.h"
 #include "modules/remote_bitrate_estimator/include/bwe_defines.h"
 #include "modules/rtp_rtcp/source/rtcp_packet/bye.h"  // Arbitrary RTCP message.
+#include "modules/rtp_rtcp/source/rtp_header_extensions.h"
 #include "modules/rtp_rtcp/source/rtp_packet_received.h"
 #include "modules/rtp_rtcp/source/rtp_packet_to_send.h"
+#include "rtc_base/arraysize.h"
+#include "rtc_base/numerics/safe_conversions.h"
 #include "rtc_base/ptr_util.h"
 #include "rtc_base/random.h"
-#include "rtc_base/safe_conversions.h"
 #include "test/gtest.h"
 
 namespace webrtc {
 
 namespace {
-const char* const arbitrary_uri =  // Just a recognized URI.
-    "urn:ietf:params:rtp-hdrext:sdes:rtp-stream-id";
+struct ExtensionInfo {
+  RTPExtensionType type;
+  const char* uri;
+};
+
+template <typename Extension>
+constexpr ExtensionInfo CreateExtensionInfo() {
+  return {Extension::kId, Extension::kUri};
+}
+
+constexpr ExtensionInfo kExtensions[] = {
+    CreateExtensionInfo<TransmissionOffset>(),
+    CreateExtensionInfo<AudioLevel>(),
+    CreateExtensionInfo<AbsoluteSendTime>(),
+    CreateExtensionInfo<VideoOrientation>(),
+    CreateExtensionInfo<TransportSequenceNumber>(),
+    CreateExtensionInfo<PlayoutDelayLimits>(),
+    CreateExtensionInfo<VideoContentTypeExtension>(),
+    CreateExtensionInfo<VideoTimingExtension>(),
+    CreateExtensionInfo<RtpStreamId>(),
+    CreateExtensionInfo<RepairedRtpStreamId>(),
+    CreateExtensionInfo<RtpMid>(),
+};
 }  // namespace
 
 class RtcEventLogEncoderTest : public testing::TestWithParam<int> {
@@ -82,9 +106,15 @@ class RtcEventLogEncoderTest : public testing::TestWithParam<int> {
     return prng_.Rand(std::numeric_limits<uint32_t>::max());
   }
 
-  int RandomRtpExtensionId() {
-    return static_cast<int>(
-        prng_.Rand(RtpExtension::kMinId, RtpExtension::kMaxId));
+  std::vector<RtpExtension> RandomRtpExtensions() {
+    RTC_DCHECK(arraysize(kExtensions) >= 2);
+    size_t id_1 = prng_.Rand(0u, arraysize(kExtensions) - 1);
+    size_t id_2 = prng_.Rand(0u, arraysize(kExtensions) - 2);
+    if (id_2 == id_1)
+      id_2 = arraysize(kExtensions) - 1;
+    return std::vector<RtpExtension>{
+        RtpExtension(kExtensions[id_1].uri, kExtensions[id_1].type),
+        RtpExtension(kExtensions[id_2].uri, kExtensions[id_2].type)};
   }
 
   int RandomBitrate() { return RandomInt(); }
@@ -118,14 +148,14 @@ void RtcEventLogEncoderTest::TestRtcEventAudioNetworkAdaptation(
 TEST_P(RtcEventLogEncoderTest, RtcEventAudioNetworkAdaptationBitrate) {
   auto runtime_config = rtc::MakeUnique<AudioEncoderRuntimeConfig>();
   const int bitrate_bps = RandomBitrate();
-  runtime_config->bitrate_bps = rtc::Optional<int>(bitrate_bps);
+  runtime_config->bitrate_bps = bitrate_bps;
   TestRtcEventAudioNetworkAdaptation(std::move(runtime_config));
 }
 
 TEST_P(RtcEventLogEncoderTest, RtcEventAudioNetworkAdaptationFrameLength) {
   auto runtime_config = rtc::MakeUnique<AudioEncoderRuntimeConfig>();
   const int frame_length_ms = prng_.Rand(1, 1000);
-  runtime_config->frame_length_ms = rtc::Optional<int>(frame_length_ms);
+  runtime_config->frame_length_ms = frame_length_ms;
   TestRtcEventAudioNetworkAdaptation(std::move(runtime_config));
 }
 
@@ -133,7 +163,7 @@ TEST_P(RtcEventLogEncoderTest, RtcEventAudioNetworkAdaptationPacketLoss) {
   // To simplify the test, we just check powers of two.
   const float plr = std::pow(0.5f, prng_.Rand(1, 8));
   auto runtime_config = rtc::MakeUnique<AudioEncoderRuntimeConfig>();
-  runtime_config->uplink_packet_loss_fraction = rtc::Optional<float>(plr);
+  runtime_config->uplink_packet_loss_fraction = plr;
   TestRtcEventAudioNetworkAdaptation(std::move(runtime_config));
 }
 
@@ -142,7 +172,7 @@ TEST_P(RtcEventLogEncoderTest, RtcEventAudioNetworkAdaptationFec) {
   // for safety's sake, we test both.
   for (bool fec_enabled : {false, true}) {
     auto runtime_config = rtc::MakeUnique<AudioEncoderRuntimeConfig>();
-    runtime_config->enable_fec = rtc::Optional<bool>(fec_enabled);
+    runtime_config->enable_fec = fec_enabled;
     TestRtcEventAudioNetworkAdaptation(std::move(runtime_config));
   }
 }
@@ -152,7 +182,7 @@ TEST_P(RtcEventLogEncoderTest, RtcEventAudioNetworkAdaptationDtx) {
   // for safety's sake, we test both.
   for (bool dtx_enabled : {false, true}) {
     auto runtime_config = rtc::MakeUnique<AudioEncoderRuntimeConfig>();
-    runtime_config->enable_dtx = rtc::Optional<bool>(dtx_enabled);
+    runtime_config->enable_dtx = dtx_enabled;
     TestRtcEventAudioNetworkAdaptation(std::move(runtime_config));
   }
 }
@@ -162,7 +192,7 @@ TEST_P(RtcEventLogEncoderTest, RtcEventAudioNetworkAdaptationChannels) {
   // for safety's sake, we test both.
   for (size_t channels : {1, 2}) {
     auto runtime_config = rtc::MakeUnique<AudioEncoderRuntimeConfig>();
-    runtime_config->num_channels = rtc::Optional<size_t>(channels);
+    runtime_config->num_channels = channels;
     TestRtcEventAudioNetworkAdaptation(std::move(runtime_config));
   }
 }
@@ -175,12 +205,12 @@ TEST_P(RtcEventLogEncoderTest, RtcEventAudioNetworkAdaptationAll) {
     for (bool dtx_enabled : {false, true}) {
       for (size_t channels : {1, 2}) {
         auto runtime_config = rtc::MakeUnique<AudioEncoderRuntimeConfig>();
-        runtime_config->bitrate_bps = rtc::Optional<int>(bitrate_bps);
-        runtime_config->frame_length_ms = rtc::Optional<int>(frame_length_ms);
-        runtime_config->uplink_packet_loss_fraction = rtc::Optional<float>(plr);
-        runtime_config->enable_fec = rtc::Optional<bool>(fec_enabled);
-        runtime_config->enable_dtx = rtc::Optional<bool>(dtx_enabled);
-        runtime_config->num_channels = rtc::Optional<size_t>(channels);
+        runtime_config->bitrate_bps = bitrate_bps;
+        runtime_config->frame_length_ms = frame_length_ms;
+        runtime_config->uplink_packet_loss_fraction = plr;
+        runtime_config->enable_fec = fec_enabled;
+        runtime_config->enable_dtx = dtx_enabled;
+        runtime_config->num_channels = channels;
 
         TestRtcEventAudioNetworkAdaptation(std::move(runtime_config));
       }
@@ -209,9 +239,11 @@ TEST_P(RtcEventLogEncoderTest, RtcEventAudioReceiveStreamConfig) {
   auto stream_config = rtc::MakeUnique<rtclog::StreamConfig>();
   stream_config->local_ssrc = RandomSsrc();
   stream_config->remote_ssrc = RandomSsrc();
-  // TODO(eladalon): !!! Validate this, here and elsewhere.
-  stream_config->rtp_extensions.push_back(
-      RtpExtension(arbitrary_uri, RandomRtpExtensionId()));
+  // TODO(eladalon): Verify that the extensions are used correctly when
+  // parsing RTP packets headers. Here and elsewhere.
+  std::vector<RtpExtension> extensions = RandomRtpExtensions();
+  for (const auto& extension : extensions)
+    stream_config->rtp_extensions.push_back(extension);
 
   auto original_stream_config = *stream_config;
 
@@ -232,8 +264,9 @@ TEST_P(RtcEventLogEncoderTest, RtcEventAudioReceiveStreamConfig) {
 TEST_P(RtcEventLogEncoderTest, RtcEventAudioSendStreamConfig) {
   auto stream_config = rtc::MakeUnique<rtclog::StreamConfig>();
   stream_config->local_ssrc = RandomSsrc();
-  stream_config->rtp_extensions.push_back(
-      RtpExtension(arbitrary_uri, RandomRtpExtensionId()));
+  std::vector<RtpExtension> extensions = RandomRtpExtensions();
+  for (const auto& extension : extensions)
+    stream_config->rtp_extensions.push_back(extension);
 
   auto original_stream_config = *stream_config;
 
@@ -440,6 +473,8 @@ void RtcEventLogEncoderTest::TestRtcEventRtpPacket(PacketDirection direction) {
   packet->SetSsrc(RandomSsrc());
   packet->SetSequenceNumber(static_cast<uint16_t>(RandomInt()));
   packet->SetPayloadSize(prng_.Rand(0u, 1000u));
+  // TODO(terelius): Add marker bit, capture timestamp, CSRCs, and header
+  // extensions.
 
   std::unique_ptr<RtcEvent> event;
   if (direction == PacketDirection::kIncomingPacket) {
@@ -487,8 +522,9 @@ TEST_P(RtcEventLogEncoderTest, RtcEventVideoReceiveStreamConfig) {
   stream_config->remote_ssrc = RandomSsrc();
   stream_config->rtcp_mode = RtcpMode::kCompound;
   stream_config->remb = prng_.Rand<bool>();
-  stream_config->rtp_extensions.push_back(
-      RtpExtension(arbitrary_uri, RandomRtpExtensionId()));
+  std::vector<RtpExtension> extensions = RandomRtpExtensions();
+  for (const auto& extension : extensions)
+    stream_config->rtp_extensions.push_back(extension);
   stream_config->codecs.emplace_back("CODEC", 122, 7);
 
   auto original_stream_config = *stream_config;
@@ -510,8 +546,9 @@ TEST_P(RtcEventLogEncoderTest, RtcEventVideoReceiveStreamConfig) {
 TEST_P(RtcEventLogEncoderTest, RtcEventVideoSendStreamConfig) {
   auto stream_config = rtc::MakeUnique<rtclog::StreamConfig>();
   stream_config->local_ssrc = RandomSsrc();
-  stream_config->rtp_extensions.push_back(
-      RtpExtension(arbitrary_uri, RandomRtpExtensionId()));
+  std::vector<RtpExtension> extensions = RandomRtpExtensions();
+  for (const auto& extension : extensions)
+    stream_config->rtp_extensions.push_back(extension);
   stream_config->codecs.emplace_back("CODEC", 120, 3);
 
   auto original_stream_config = *stream_config;

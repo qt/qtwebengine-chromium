@@ -1,4 +1,4 @@
-// Copyright 2016 PDFium Authors. All rights reserved.
+// Copyright 2017 PDFium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,10 +6,27 @@
 
 #include "xfa/fxfa/parser/cxfa_tooltip.h"
 
-#include "xfa/fxfa/parser/cxfa_node.h"
+namespace {
 
-CXFA_ToolTip::CXFA_ToolTip(CXFA_Node* pNode) : CXFA_Data(pNode) {}
+const CXFA_Node::AttributeData kAttributeData[] = {
+    {XFA_Attribute::Id, XFA_AttributeType::CData, nullptr},
+    {XFA_Attribute::Rid, XFA_AttributeType::CData, nullptr},
+    {XFA_Attribute::Use, XFA_AttributeType::CData, nullptr},
+    {XFA_Attribute::Usehref, XFA_AttributeType::CData, nullptr},
+    {XFA_Attribute::Unknown, XFA_AttributeType::Integer, nullptr}};
 
-bool CXFA_ToolTip::GetTip(WideString& wsTip) {
-  return m_pNode->TryContent(wsTip);
-}
+constexpr wchar_t kName[] = L"toolTip";
+
+}  // namespace
+
+CXFA_ToolTip::CXFA_ToolTip(CXFA_Document* doc, XFA_PacketType packet)
+    : CXFA_Node(doc,
+                packet,
+                (XFA_XDPPACKET_Template | XFA_XDPPACKET_Form),
+                XFA_ObjectType::TextNode,
+                XFA_Element::ToolTip,
+                nullptr,
+                kAttributeData,
+                kName) {}
+
+CXFA_ToolTip::~CXFA_ToolTip() {}

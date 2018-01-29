@@ -77,12 +77,13 @@ class BeaconString final : public Beacon {
   }
 
   void Serialize(ResourceRequest& request) const override {
-    RefPtr<EncodedFormData> entity_body = EncodedFormData::Create(data_.Utf8());
+    scoped_refptr<EncodedFormData> entity_body =
+        EncodedFormData::Create(data_.Utf8());
     request.SetHTTPBody(entity_body);
     request.SetHTTPContentType(GetContentType());
   }
 
-  const AtomicString GetContentType() const {
+  const AtomicString GetContentType() const override {
     return AtomicString("text/plain;charset=UTF-8");
   }
 
@@ -103,7 +104,7 @@ class BeaconBlob final : public Beacon {
   void Serialize(ResourceRequest& request) const override {
     DCHECK(data_);
 
-    RefPtr<EncodedFormData> entity_body = EncodedFormData::Create();
+    scoped_refptr<EncodedFormData> entity_body = EncodedFormData::Create();
     if (data_->HasBackingFile())
       entity_body->AppendFile(ToFile(data_)->GetPath());
     else
@@ -115,7 +116,7 @@ class BeaconBlob final : public Beacon {
       request.SetHTTPContentType(content_type_);
   }
 
-  const AtomicString GetContentType() const { return content_type_; }
+  const AtomicString GetContentType() const override { return content_type_; }
 
  private:
   const Member<Blob> data_;
@@ -131,7 +132,7 @@ class BeaconDOMArrayBufferView final : public Beacon {
   void Serialize(ResourceRequest& request) const override {
     DCHECK(data_);
 
-    RefPtr<EncodedFormData> entity_body =
+    scoped_refptr<EncodedFormData> entity_body =
         EncodedFormData::Create(data_->BaseAddress(), data_->byteLength());
     request.SetHTTPBody(std::move(entity_body));
 
@@ -140,7 +141,7 @@ class BeaconDOMArrayBufferView final : public Beacon {
     request.SetHTTPContentType(AtomicString("application/octet-stream"));
   }
 
-  const AtomicString GetContentType() const { return g_null_atom; }
+  const AtomicString GetContentType() const override { return g_null_atom; }
 
  private:
   const Member<DOMArrayBufferView> data_;
@@ -163,11 +164,11 @@ class BeaconFormData final : public Beacon {
     request.SetHTTPContentType(content_type_);
   }
 
-  const AtomicString GetContentType() const { return content_type_; }
+  const AtomicString GetContentType() const override { return content_type_; }
 
  private:
   const Member<FormData> data_;
-  RefPtr<EncodedFormData> entity_body_;
+  scoped_refptr<EncodedFormData> entity_body_;
   AtomicString content_type_;
 };
 
@@ -262,7 +263,7 @@ void PingLoader::SendLinkAuditPing(LocalFrame* frame,
   request.SetHTTPHeaderField(HTTPNames::Cache_Control, "max-age=0");
   request.SetHTTPHeaderField(HTTPNames::Ping_To,
                              AtomicString(destination_url.GetString()));
-  RefPtr<SecurityOrigin> ping_origin = SecurityOrigin::Create(ping_url);
+  scoped_refptr<SecurityOrigin> ping_origin = SecurityOrigin::Create(ping_url);
   if (ProtocolIs(frame->GetDocument()->Url().GetString(), "http") ||
       frame->GetDocument()->GetSecurityOrigin()->CanAccess(ping_origin.get())) {
     request.SetHTTPHeaderField(
@@ -285,7 +286,7 @@ void PingLoader::SendLinkAuditPing(LocalFrame* frame,
 
 void PingLoader::SendViolationReport(LocalFrame* frame,
                                      const KURL& report_url,
-                                     RefPtr<EncodedFormData> report,
+                                     scoped_refptr<EncodedFormData> report,
                                      ViolationReportType type) {
   ResourceRequest request(report_url);
   request.SetHTTPMethod(HTTPNames::POST);
@@ -300,7 +301,7 @@ void PingLoader::SendViolationReport(LocalFrame* frame,
   request.SetKeepalive(true);
   request.SetHTTPBody(std::move(report));
   request.SetFetchCredentialsMode(
-      WebURLRequest::kFetchCredentialsModeSameOrigin);
+      network::mojom::FetchCredentialsMode::kSameOrigin);
   request.SetRequestContext(WebURLRequest::kRequestContextCSPReport);
   request.SetFetchRedirectMode(WebURLRequest::kFetchRedirectModeError);
   FetchParameters params(request);

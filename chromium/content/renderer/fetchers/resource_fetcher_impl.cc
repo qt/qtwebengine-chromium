@@ -9,12 +9,12 @@
 #include "base/logging.h"
 #include "base/macros.h"
 #include "base/memory/ptr_util.h"
-#include "content/child/resource_dispatcher.h"
-#include "content/child/web_url_request_util.h"
 #include "content/common/possibly_associated_interface_ptr.h"
-#include "content/public/child/child_url_loader_factory_getter.h"
 #include "content/public/common/resource_request_body.h"
+#include "content/public/renderer/child_url_loader_factory_getter.h"
 #include "content/public/renderer/render_frame.h"
+#include "content/renderer/loader/resource_dispatcher.h"
+#include "content/renderer/loader/web_url_request_util.h"
 #include "mojo/public/cpp/bindings/binding.h"
 #include "net/base/net_errors.h"
 #include "net/http/http_request_headers.h"
@@ -208,7 +208,7 @@ class ResourceFetcherImpl::ClientImpl : public mojom::URLLoaderClient {
             base::Unretained(this)));
     ReadDataPipe();
   }
-  void OnComplete(const ResourceRequestCompletionStatus& status) override {
+  void OnComplete(const network::URLLoaderCompletionStatus& status) override {
     // When Cancel() sets |complete_|, OnComplete() may be called.
     if (completed_)
       return;
@@ -312,7 +312,7 @@ void ResourceFetcherImpl::Start(
   }
   request_.resource_type = WebURLRequestContextToResourceType(request_context);
 
-  client_ = base::MakeUnique<ClientImpl>(this, std::move(callback),
+  client_ = std::make_unique<ClientImpl>(this, std::move(callback),
                                          maximum_download_size);
   // TODO(kinuko, toyoshim): This task runner should be given by the consumer
   // of this class.

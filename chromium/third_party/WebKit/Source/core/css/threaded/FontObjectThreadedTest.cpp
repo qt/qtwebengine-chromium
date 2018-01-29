@@ -29,9 +29,10 @@ TSAN_TEST(FontObjectThreadedTest, Language) {
 
 TSAN_TEST(FontObjectThreadedTest, GetFontDefinition) {
   RunOnThreads([]() {
-    MutableStylePropertySet* style =
-        MutableStylePropertySet::Create(kHTMLStandardMode);
-    CSSParser::ParseValue(style, CSSPropertyFont, "15px Ahem", true);
+    MutableCSSPropertyValueSet* style =
+        MutableCSSPropertyValueSet::Create(kHTMLStandardMode);
+    CSSParser::ParseValue(style, CSSPropertyFont, "15px Ahem", true,
+                          SecureContextMode::kInsecureContext);
 
     FontDescription desc = FontStyleResolver::ComputeFont(*style, nullptr);
 
@@ -125,7 +126,7 @@ TSAN_TEST(FontObjectThreadedTest, WordShaperTest) {
 
     TextRun text_run(reinterpret_cast<const LChar*>("ABC DEF."), 8);
 
-    RefPtr<const ShapeResult> result;
+    scoped_refptr<const ShapeResult> result;
     CachingWordShapeIterator iter(&cache, text_run, &font);
 
     ASSERT_TRUE(iter.Next(&result));

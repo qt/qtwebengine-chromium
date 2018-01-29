@@ -23,10 +23,12 @@ namespace webrtc {
 // Class for removing the echo from the capture signal.
 class EchoRemover {
  public:
-  static EchoRemover* Create(
-      const AudioProcessing::Config::EchoCanceller3& config,
-      int sample_rate_hz);
+  static EchoRemover* Create(const EchoCanceller3Config& config,
+                             int sample_rate_hz);
   virtual ~EchoRemover() = default;
+
+  // Get current metrics.
+  virtual void GetMetrics(EchoControl::Metrics* metrics) const = 0;
 
   // Removes the echo from a block of samples from the capture signal. The
   // supplied render signal is assumed to be pre-aligned with the capture

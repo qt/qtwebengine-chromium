@@ -10,14 +10,15 @@
 #include "content/browser/sandbox_host_linux.h"
 #include "content/browser/zygote_host/zygote_communication_linux.h"
 #include "content/browser/zygote_host/zygote_host_impl_linux.h"
-#include "content/common/sandbox_linux/sandbox_linux.h"
 #include "content/public/browser/content_browser_client.h"
 #include "content/public/browser/zygote_handle_linux.h"
+#include "content/public/common/common_sandbox_support_linux.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/result_codes.h"
 #include "content/public/common/sandboxed_process_launcher_delegate.h"
 #include "gpu/config/gpu_switches.h"
+#include "services/service_manager/sandbox/linux/sandbox_linux.h"
 
 namespace content {
 namespace internal {
@@ -40,7 +41,7 @@ ChildProcessLauncherHelper::GetFilesToMap() {
                                       GetProcessType(), command_line());
 }
 
-void ChildProcessLauncherHelper::BeforeLaunchOnLauncherThread(
+bool ChildProcessLauncherHelper::BeforeLaunchOnLauncherThread(
     const PosixFileDescriptorInfo& files_to_register,
     base::LaunchOptions* options) {
   // Convert FD mapping to FileHandleMappingVector
@@ -56,6 +57,8 @@ void ChildProcessLauncherHelper::BeforeLaunchOnLauncherThread(
   }
 
   options->environ = delegate_->GetEnvironment();
+
+  return true;
 }
 
 ChildProcessLauncherHelper::Process

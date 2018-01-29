@@ -12,6 +12,7 @@
 #include "base/memory/ref_counted.h"
 #include "base/time/time.h"
 #include "content/public/common/url_loader_throttle.h"
+#include "url/gurl.h"
 
 namespace content {
 class WebContents;
@@ -19,7 +20,6 @@ class WebContents;
 
 namespace safe_browsing {
 
-class NetEventLogger;
 class SafeBrowsingUrlCheckerImpl;
 class UrlCheckerDelegate;
 
@@ -40,9 +40,9 @@ class BrowserURLLoaderThrottle : public content::URLLoaderThrottle {
                         bool* defer) override;
   void WillRedirectRequest(const net::RedirectInfo& redirect_info,
                            bool* defer) override;
-  void WillProcessResponse(bool* defer) override;
-
-  void set_net_event_logger(NetEventLogger* net_event_logger);
+  void WillProcessResponse(const GURL& response_url,
+                           const content::ResourceResponseHead& response_head,
+                           bool* defer) override;
 
  private:
   using NativeUrlCheckNotifier =
@@ -84,13 +84,13 @@ class BrowserURLLoaderThrottle : public content::URLLoaderThrottle {
   base::TimeTicks defer_start_time_;
   bool deferred_ = false;
 
-  NetEventLogger* net_event_logger_ = nullptr;
-
   // The total delay caused by SafeBrowsing deferring the resource load.
   base::TimeDelta total_delay_;
   // Whether the interstitial page has been shown and therefore user action has
   // been involved.
   bool user_action_involved_ = false;
+
+  GURL original_url_;
 
   DISALLOW_COPY_AND_ASSIGN(BrowserURLLoaderThrottle);
 };

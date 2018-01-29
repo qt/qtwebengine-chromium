@@ -84,7 +84,10 @@
             discard-image-label="$i18n{discardPhoto}"
             preview-alt-text="$i18n{previewAltText}"
             take-photo-label="$i18n{takePhoto}"
-            switch-mode-label="$i18n{switchMode}">
+            capture-video-label="$i18n{captureVideo}"
+            switch-mode-to-camera-label="$i18n{switchModeToCamera}"
+            switch-mode-to-video-label="$i18n{switchModeToVideo}"
+            camera-video-mode-enabled="[[cameraVideoModeEnabled_]]">
         </cr-picture-pane>
         <div id="authorCredit"
             hidden="[[!isAuthorCreditShown_(selectedItem_)]]">
@@ -103,8 +106,8 @@
           choose-file-label="$i18n{chooseFile}"
           old-image-label="$i18n{oldPhoto}"
           profile-image-label="$i18n{profilePhoto}"
-          take-photo-label="$i18n{takePhoto}"
-          switch-mode-label="$i18n{switchMode}">
+          take-photo-label="$i18n{takePhoto}">
+          capture-video-label="$i18n{captureVideo}">
       </cr-picture-list>
     </div>
   </template>

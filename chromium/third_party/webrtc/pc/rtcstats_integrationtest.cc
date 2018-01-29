@@ -56,15 +56,16 @@ class RTCStatsReportTraceListener {
   }
 
  private:
-  static void AddTraceEventHandler(char phase,
-                                   const unsigned char* category_enabled,
-                                   const char* name,
-                                   unsigned long long id,
-                                   int num_args,
-                                   const char** arg_names,
-                                   const unsigned char* arg_types,
-                                   const unsigned long long* arg_values,
-                                   unsigned char flags) {
+  static void AddTraceEventHandler(
+      char phase,
+      const unsigned char* category_enabled,
+      const char* name,
+      unsigned long long id,  // NOLINT(runtime/int)
+      int num_args,
+      const char** arg_names,
+      const unsigned char* arg_types,
+      const unsigned long long* arg_values,  // NOLINT(runtime/int)
+      unsigned char flags) {
     RTC_DCHECK(traced_report_);
     EXPECT_STREQ("webrtc_stats",
                  reinterpret_cast<const char*>(category_enabled));
@@ -266,7 +267,7 @@ class RTCStatsVerifier {
         valid_reference = true;
         const RTCStatsMember<std::vector<std::string>>& ids =
             member.cast_to<RTCStatsMember<std::vector<std::string>>>();
-        for (const std::string id : *ids) {
+        for (const std::string& id : *ids) {
           const RTCStats* referenced_stats = report_->Get(id);
           if (!referenced_stats || referenced_stats->type() != expected_type) {
             valid_reference = false;
@@ -462,6 +463,11 @@ class RTCStatsReportVerifier {
     verifier.TestMemberIsIDReference(
         candidate.transport_id, RTCTransportStats::kType);
     verifier.TestMemberIsDefined(candidate.is_remote);
+    if (*candidate.is_remote) {
+      verifier.TestMemberIsUndefined(candidate.network_type);
+    } else {
+      verifier.TestMemberIsDefined(candidate.network_type);
+    }
     verifier.TestMemberIsDefined(candidate.ip);
     verifier.TestMemberIsNonNegative<int32_t>(candidate.port);
     verifier.TestMemberIsDefined(candidate.protocol);

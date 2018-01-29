@@ -78,7 +78,7 @@ AXObject* AXMenuListOption::ComputeParent() const {
   HTMLSelectElement* select = ToHTMLOptionElement(node)->OwnerSelectElement();
   if (!select)
     return nullptr;
-  AXObject* select_ax_object = AxObjectCache().GetOrCreate(select);
+  AXObject* select_ax_object = AXObjectCache().GetOrCreate(select);
 
   // This happens if the <select> is not rendered. Return it and move on.
   if (!select_ax_object->IsMenuList())
@@ -132,10 +132,10 @@ bool AXMenuListOption::ComputeAccessibilityIsIgnored(
   return AccessibilityIsIgnoredByDefault(ignored_reasons);
 }
 
-void AXMenuListOption::GetRelativeBounds(
-    AXObject** out_container,
-    FloatRect& out_bounds_in_container,
-    SkMatrix44& out_container_transform) const {
+void AXMenuListOption::GetRelativeBounds(AXObject** out_container,
+                                         FloatRect& out_bounds_in_container,
+                                         SkMatrix44& out_container_transform,
+                                         bool* clips_children) const {
   *out_container = nullptr;
   out_bounds_in_container = FloatRect();
   out_container_transform.setIdentity();
@@ -150,7 +150,7 @@ void AXMenuListOption::GetRelativeBounds(
     return;
   DCHECK(grandparent->IsMenuList());
   grandparent->GetRelativeBounds(out_container, out_bounds_in_container,
-                                 out_container_transform);
+                                 out_container_transform, clips_children);
 }
 
 String AXMenuListOption::TextAlternative(bool recursive,
@@ -188,15 +188,15 @@ String AXMenuListOption::TextAlternative(bool recursive,
 
 HTMLSelectElement* AXMenuListOption::ParentSelectNode() const {
   if (!GetNode())
-    return 0;
+    return nullptr;
 
   if (auto* option = ToHTMLOptionElementOrNull(GetNode()))
     return option->OwnerSelectElement();
 
-  return 0;
+  return nullptr;
 }
 
-DEFINE_TRACE(AXMenuListOption) {
+void AXMenuListOption::Trace(blink::Visitor* visitor) {
   visitor->Trace(element_);
   AXMockObject::Trace(visitor);
 }

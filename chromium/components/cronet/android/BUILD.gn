@@ -274,8 +274,6 @@ android_library("cronet_api_java") {
   ]
 
   srcjar_deps = cronet_api_srcjar_deps
-
-  run_findbugs_override = true
 }
 
 cronet_impl_common_java_srcjar_deps = [
@@ -404,8 +402,6 @@ android_library("cronet_sample_apk_java") {
     "//base:base_java",
     "//third_party/android_tools:android_support_v7_appcompat_java",
   ]
-
-  run_findbugs_override = true
 }
 
 android_apk("cronet_sample_apk") {
@@ -421,7 +417,6 @@ android_apk("cronet_sample_apk") {
     "//third_party/jsr-305:jsr_305_javalib",
   ]
 
-  run_findbugs_override = true
   proguard_enabled = true
   proguard_configs = [
     "$target_gen_dir/cronet_impl_native_proguard.cfg",
@@ -463,7 +458,6 @@ instrumentation_test_apk("cronet_sample_test_apk") {
   ]
   additional_apks = [ "//net/android:net_test_support_apk" ]
 
-  run_findbugs_override = true
   proguard_enabled = true
 }
 
@@ -555,10 +549,9 @@ android_library("cronet_test_apk_java") {
     "//base:base_java",
     "//base:base_java_test_support",
     "//net/android:net_java_test_support",
+    "//third_party/junit",
     "//third_party/netty4:netty_all_java",
   ]
-
-  run_findbugs_override = true
 }
 
 cronet_smoketests_platform_only_common_srcs = [
@@ -649,8 +642,6 @@ android_apk("cronet_test_apk") {
     "cronet_impl_common_proguard.cfg",
     "cronet_impl_platform_proguard.cfg",
   ]
-
-  run_findbugs_override = true
 }
 
 android_library("cronet_javatests") {
@@ -708,8 +699,6 @@ android_library("cronet_javatests") {
     "//third_party/android_support_test_runner:runner_java",
     "//third_party/junit",
   ]
-
-  run_findbugs_override = true
 }
 
 instrumentation_test_apk("cronet_test_instrumentation_apk") {
@@ -738,8 +727,6 @@ instrumentation_test_apk("cronet_test_instrumentation_apk") {
   proguard_enabled = true
 
   proguard_configs = [ "test/proguard.cfg" ]
-
-  run_findbugs_override = true
 }
 
 android_resources("cronet_smoketests_platform_only_apk_resources") {
@@ -778,7 +765,6 @@ android_apk("cronet_smoketests_platform_only_apk") {
     ":cronet_impl_platform_java",
     ":cronet_smoketests_platform_only_apk_resources",
   ]
-  run_findbugs_override = true
 }
 
 instrumentation_test_apk(
@@ -795,7 +781,6 @@ instrumentation_test_apk(
   proguard_enabled = true
 
   proguard_configs = [ "test/proguard.cfg" ]
-  run_findbugs_override = true
 }
 
 android_library("cronet_smoketests_missing_native_library_java") {
@@ -830,8 +815,6 @@ android_apk("cronet_smoketests_missing_native_library_apk") {
     "cronet_impl_common_proguard.cfg",
     "cronet_impl_platform_proguard.cfg",
   ]
-
-  run_findbugs_override = true
 }
 
 instrumentation_test_apk(
@@ -847,8 +830,6 @@ instrumentation_test_apk(
   proguard_enabled = true
 
   proguard_configs = [ "test/proguard.cfg" ]
-
-  run_findbugs_override = true
 }
 
 android_library("cronet_perf_test_apk_java") {
@@ -864,8 +845,6 @@ android_library("cronet_perf_test_apk_java") {
     ":cronet_test_apk_java",
     "//base:base_java",
   ]
-
-  run_findbugs_override = true
 }
 
 android_apk("cronet_perf_test_apk") {
@@ -884,7 +863,6 @@ android_apk("cronet_perf_test_apk") {
     "//base:base_java",
   ]
 
-  run_findbugs_override = true
   proguard_enabled = true
   proguard_configs = [
     "$target_gen_dir/cronet_impl_native_proguard.cfg",
@@ -909,6 +887,7 @@ test("cronet_unittests") {
     ":cronet_static",
     "//base",
     "//base/test:test_support",
+    "//components/cronet/native:cronet_native_impl_tests",
     "//components/metrics",
     "//components/prefs:test_support",
     "//net",
@@ -1216,9 +1195,9 @@ action("generate_javadoc") {
     rebase_path(depfile, root_build_dir),
     "--stamp",
     rebase_path(_stamp_file, root_build_dir),
-    "--lib-java-dir",
-    rebase_path("$root_build_dir/lib.java/components/cronet/android",
-                root_build_dir),
+
+    "--android-sdk-jar",
+    rebase_path(android_sdk_jar, root_build_dir),
 
     # JavaDoc is generated from Cronet's API source jar.
     "--input-src-jar",

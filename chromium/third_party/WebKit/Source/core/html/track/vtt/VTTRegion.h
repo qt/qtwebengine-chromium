@@ -45,8 +45,7 @@ class HTMLDivElement;
 class VTTCueBox;
 class VTTScanner;
 
-class VTTRegion final : public GarbageCollectedFinalized<VTTRegion>,
-                        public ScriptWrappable {
+class VTTRegion final : public ScriptWrappable {
   DEFINE_WRAPPERTYPEINFO();
 
  public:
@@ -88,7 +87,7 @@ class VTTRegion final : public GarbageCollectedFinalized<VTTRegion>,
   void DisplayLastVTTCueBox();
   void WillRemoveVTTCueBox(VTTCueBox*);
 
-  DECLARE_TRACE();
+  void Trace(blink::Visitor*);
 
  private:
   VTTRegion();

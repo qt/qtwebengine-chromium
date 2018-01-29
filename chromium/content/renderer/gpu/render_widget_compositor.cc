@@ -43,12 +43,13 @@
 #include "cc/trees/layer_tree_host.h"
 #include "cc/trees/layer_tree_mutator.h"
 #include "cc/trees/swap_promise.h"
+#include "cc/trees/ukm_manager.h"
+#include "components/viz/common/features.h"
 #include "components/viz/common/frame_sinks/begin_frame_args.h"
 #include "components/viz/common/frame_sinks/begin_frame_source.h"
 #include "components/viz/common/frame_sinks/copy_output_request.h"
 #include "components/viz/common/frame_sinks/copy_output_result.h"
 #include "components/viz/common/resources/single_release_callback.h"
-#include "components/viz/common/switches.h"
 #include "content/common/content_switches_internal.h"
 #include "content/common/layer_tree_settings_factory.h"
 #include "content/public/common/content_client.h"
@@ -90,7 +91,7 @@ using blink::WebSelection;
 using blink::WebSize;
 using blink::WebBrowserControlsState;
 using blink::WebLayerTreeView;
-using blink::WebScrollBoundaryBehavior;
+using blink::WebOverscrollBehavior;
 
 namespace content {
 namespace {
@@ -279,8 +280,7 @@ std::unique_ptr<RenderWidgetCompositor> RenderWidgetCompositor::Create(
 RenderWidgetCompositor::RenderWidgetCompositor(
     RenderWidgetCompositorDelegate* delegate,
     CompositorDependencies* compositor_deps)
-    : num_failed_recreate_attempts_(0),
-      delegate_(delegate),
+    : delegate_(delegate),
       compositor_deps_(compositor_deps),
       threaded_(!!compositor_deps_->GetCompositorImplThreadTaskRunner()),
       never_visible_(false),
@@ -321,6 +321,7 @@ std::unique_ptr<cc::LayerTreeHost> RenderWidgetCompositor::CreateLayerTreeHost(
   params.task_graph_runner = deps->GetTaskGraphRunner();
   params.main_task_runner = deps->GetCompositorMainThreadTaskRunner();
   params.mutator_host = mutator_host;
+  params.ukm_recorder_factory = deps->CreateUkmRecorderFactory();
   if (base::TaskScheduler::GetInstance()) {
     // The image worker thread needs to allow waiting since it makes discardable
     // shared memory allocations which need to make synchronous calls to the
@@ -459,7 +460,7 @@ cc::LayerTreeSettings RenderWidgetCompositor::GenerateLayerTreeSettings(
   settings.initial_debug_state.SetRecordRenderingStats(
       cmd.HasSwitch(cc::switches::kEnableGpuBenchmarking));
   settings.enable_surface_synchronization =
-      cmd.HasSwitch(switches::kEnableSurfaceSynchronization);
+      features::IsSurfaceSynchronizationEnabled();
 
   if (cmd.HasSwitch(cc::switches::kSlowDownRasterScaleFactor)) {
     const int kMinSlowDownScaleFactor = 0;
@@ -533,15 +534,13 @@ cc::LayerTreeSettings RenderWidgetCompositor::GenerateLayerTreeSettings(
   }
 
   // On desktop, if there's over 4GB of memory on the machine, increase the
-  // image decode budget to 256MB for both gpu and software.
+  // working set size to 256MB for both gpu and software.
   const int kImageDecodeMemoryThresholdMB = 4 * 1024;
   if (base::SysInfo::AmountOfPhysicalMemoryMB() >=
       kImageDecodeMemoryThresholdMB) {
-    settings.decoded_image_cache_budget_bytes = 256 * 1024 * 1024;
     settings.decoded_image_working_set_budget_bytes = 256 * 1024 * 1024;
   } else {
-    // These are the defaults, but recorded here as well.
-    settings.decoded_image_cache_budget_bytes = 128 * 1024 * 1024;
+    // This is the default, but recorded here as well.
     settings.decoded_image_working_set_budget_bytes = 128 * 1024 * 1024;
   }
 #endif  // defined(OS_ANDROID)
@@ -556,11 +555,6 @@ cc::LayerTreeSettings RenderWidgetCompositor::GenerateLayerTreeSettings(
         !using_synchronous_compositor) {
       settings.preferred_tile_format = viz::RGBA_4444;
     }
-
-    // When running on a low end device, we limit cached bytes to 512KB.
-    // This allows pages which are light on images to stay in cache, but
-    // prevents most long-term caching.
-    settings.decoded_image_cache_budget_bytes = 512 * 1024;
   }
 
   if (cmd.HasSwitch(switches::kEnableLowResTiling))
@@ -590,8 +584,10 @@ cc::LayerTreeSettings RenderWidgetCompositor::GenerateLayerTreeSettings(
   settings.disallow_non_exact_resource_reuse =
       cmd.HasSwitch(switches::kDisallowNonExactResourceReuse);
 
-  settings.wait_for_all_pipeline_stages_before_draw =
-      cmd.HasSwitch(cc::switches::kRunAllCompositorStagesBeforeDraw);
+  if (cmd.HasSwitch(cc::switches::kRunAllCompositorStagesBeforeDraw)) {
+    settings.wait_for_all_pipeline_stages_before_draw = true;
+    settings.enable_latency_recovery = false;
+  }
 
   settings.enable_image_animations =
       cmd.HasSwitch(switches::kEnableCompositorImageAnimations);
@@ -733,7 +729,7 @@ void RenderWidgetCompositor::SetNeedsForcedRedraw() {
 std::unique_ptr<cc::SwapPromiseMonitor>
 RenderWidgetCompositor::CreateLatencyInfoSwapPromiseMonitor(
     ui::LatencyInfo* latency) {
-  return base::MakeUnique<cc::LatencyInfoSwapPromiseMonitor>(
+  return std::make_unique<cc::LatencyInfoSwapPromiseMonitor>(
       latency, layer_tree_host_->GetSwapPromiseManager(), nullptr);
 }
 
@@ -813,6 +809,9 @@ void RenderWidgetCompositor::SetVisible(bool visible) {
     return;
 
   layer_tree_host_->SetVisible(visible);
+
+  if (visible && layer_tree_frame_sink_request_failed_while_invisible_)
+    DidFailToInitializeLayerTreeFrameSink();
 }
 
 void RenderWidgetCompositor::SetPageScaleFactorAndLimits(
@@ -973,12 +972,6 @@ void RenderWidgetCompositor::UpdateEventRectsForSubframeIfNecessary() {
       touch_end_cancel_properties ==
           WebEventListenerProperties::kBlockingAndPassive;
 
-  WebEventListenerProperties wheel_event_properties =
-      EventListenerProperties(WebEventListenerClass::kMouseWheel);
-  bool has_wheel_handlers =
-      wheel_event_properties == WebEventListenerProperties::kBlocking ||
-      wheel_event_properties == WebEventListenerProperties::kBlockingAndPassive;
-
   cc::Layer* root_layer = layer_tree_host_->root_layer();
 
   cc::TouchActionRegion touch_event_handler;
@@ -987,11 +980,6 @@ void RenderWidgetCompositor::UpdateEventRectsForSubframeIfNecessary() {
                               gfx::Rect(gfx::Point(), root_layer->bounds()));
   }
   root_layer->SetTouchActionRegion(std::move(touch_event_handler));
-
-  cc::Region wheel_handler_region;
-  if (has_wheel_handlers)
-    wheel_handler_region = gfx::Rect(gfx::Point(), root_layer->bounds());
-  root_layer->SetNonFastScrollableRegion(wheel_handler_region);
 }
 
 blink::WebEventListenerProperties
@@ -1157,8 +1145,8 @@ void RenderWidgetCompositor::SetBrowserControlsShownRatio(float ratio) {
 
 void RenderWidgetCompositor::RequestDecode(
     const PaintImage& image,
-    const base::Callback<void(bool)>& callback) {
-  layer_tree_host_->QueueImageDecode(image, callback);
+    base::OnceCallback<void(bool)> callback) {
+  layer_tree_host_->QueueImageDecode(image, std::move(callback));
 
   // If we're compositing synchronously, the SetNeedsCommit call which will be
   // issued by |layer_tree_host_| is not going to cause a commit, due to the
@@ -1173,9 +1161,9 @@ void RenderWidgetCompositor::RequestDecode(
   }
 }
 
-void RenderWidgetCompositor::SetScrollBoundaryBehavior(
-    const WebScrollBoundaryBehavior& behavior) {
-  layer_tree_host_->SetScrollBoundaryBehavior(behavior);
+void RenderWidgetCompositor::SetOverscrollBehavior(
+    const WebOverscrollBehavior& behavior) {
+  layer_tree_host_->SetOverscrollBehavior(behavior);
 }
 
 void RenderWidgetCompositor::WillBeginMainFrame() {
@@ -1228,24 +1216,20 @@ void RenderWidgetCompositor::RequestNewLayerTreeFrameSink() {
   // the CreateLayerTreeFrameSink task.
   if (delegate_->IsClosing())
     return;
-
-  bool fallback = num_failed_recreate_attempts_ >=
-                  LAYER_TREE_FRAME_SINK_RETRIES_BEFORE_FALLBACK;
-#ifdef OS_ANDROID
-  LOG_IF(FATAL, fallback) << "Android does not support fallback frame sinks.";
-#endif
-
   delegate_->RequestNewLayerTreeFrameSink(
-      fallback, base::Bind(&RenderWidgetCompositor::SetLayerTreeFrameSink,
-                           weak_factory_.GetWeakPtr()));
+      base::Bind(&RenderWidgetCompositor::SetLayerTreeFrameSink,
+                 weak_factory_.GetWeakPtr()));
 }
 
 void RenderWidgetCompositor::DidInitializeLayerTreeFrameSink() {
-  num_failed_recreate_attempts_ = 0;
 }
 
 void RenderWidgetCompositor::DidFailToInitializeLayerTreeFrameSink() {
-  ++num_failed_recreate_attempts_;
+  if (!layer_tree_host_->IsVisible()) {
+    layer_tree_frame_sink_request_failed_while_invisible_ = true;
+    return;
+  }
+  layer_tree_frame_sink_request_failed_while_invisible_ = false;
   base::ThreadTaskRunnerHandle::Get()->PostTask(
       FROM_HERE,
       base::BindOnce(&RenderWidgetCompositor::RequestNewLayerTreeFrameSink,
@@ -1309,12 +1293,16 @@ void RenderWidgetCompositor::SetContentSourceId(uint32_t id) {
 }
 
 void RenderWidgetCompositor::NotifySwapTime(ReportTimeCallback callback) {
-  QueueSwapPromise(base::MakeUnique<ReportTimeSwapPromise>(
+  QueueSwapPromise(std::make_unique<ReportTimeSwapPromise>(
       std::move(callback), base::ThreadTaskRunnerHandle::Get()));
 }
 
 void RenderWidgetCompositor::RequestBeginMainFrameNotExpected(bool new_state) {
   layer_tree_host_->RequestBeginMainFrameNotExpected(new_state);
+}
+
+void RenderWidgetCompositor::SetURLForUkm(const GURL& url) {
+  layer_tree_host_->SetURLForUkm(url);
 }
 
 }  // namespace content

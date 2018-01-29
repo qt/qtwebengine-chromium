@@ -78,6 +78,25 @@ void Display::Init(const display::ViewportMetrics& metrics,
   UpdateCursorConfig();
 }
 
+void Display::InitWindowManagerDisplayRoots() {
+  if (binding_) {
+    std::unique_ptr<WindowManagerDisplayRoot> display_root_ptr(
+        new WindowManagerDisplayRoot(this));
+    WindowManagerDisplayRoot* display_root = display_root_ptr.get();
+    // For this case we never create additional displays roots, so any
+    // id works.
+    window_manager_display_root_map_[service_manager::mojom::kRootUserID] =
+        display_root_ptr.get();
+    WindowTree* window_tree = binding_->CreateWindowTree(display_root->root());
+    display_root->window_manager_state_ = window_tree->window_manager_state();
+    window_tree->window_manager_state()->AddWindowManagerDisplayRoot(
+        std::move(display_root_ptr));
+  } else {
+    CreateWindowManagerDisplayRootsFromFactories();
+  }
+  display_manager()->OnDisplayUpdated(display_);
+}
+
 int64_t Display::GetId() const {
   // TODO(tonikitoo): Implement a different ID for external window mode.
   return display_.id();
@@ -187,8 +206,6 @@ void Display::RemoveWindowManagerDisplayRoot(
        it != window_manager_display_root_map_.end(); ++it) {
     if (it->second == display_root) {
       window_manager_display_root_map_.erase(it);
-      if (window_manager_display_root_map_.empty())
-        display_manager()->DestroyDisplay(this);
       return;
     }
   }
@@ -209,25 +226,6 @@ void Display::SetSize(const gfx::Size& size) {
 
 void Display::SetTitle(const std::string& title) {
   platform_display_->SetTitle(base::UTF8ToUTF16(title));
-}
-
-void Display::InitWindowManagerDisplayRoots() {
-  if (binding_) {
-    std::unique_ptr<WindowManagerDisplayRoot> display_root_ptr(
-        new WindowManagerDisplayRoot(this));
-    WindowManagerDisplayRoot* display_root = display_root_ptr.get();
-    // For this case we never create additional displays roots, so any
-    // id works.
-    window_manager_display_root_map_[service_manager::mojom::kRootUserID] =
-        display_root_ptr.get();
-    WindowTree* window_tree = binding_->CreateWindowTree(display_root->root());
-    display_root->window_manager_state_ = window_tree->window_manager_state();
-    window_tree->window_manager_state()->AddWindowManagerDisplayRoot(
-        std::move(display_root_ptr));
-  } else {
-    CreateWindowManagerDisplayRootsFromFactories();
-  }
-  display_manager()->OnDisplayUpdated(display_);
 }
 
 void Display::CreateWindowManagerDisplayRootsFromFactories() {
@@ -268,7 +266,7 @@ void Display::CreateRootWindow(const gfx::Size& size) {
       mojom::EventTargetingPolicy::DESCENDANTS_ONLY);
   root_->SetBounds(gfx::Rect(size), allocator_.GenerateId());
   root_->SetVisible(true);
-  focus_controller_ = base::MakeUnique<FocusController>(root_.get());
+  focus_controller_ = std::make_unique<FocusController>(root_.get());
   focus_controller_->AddObserver(this);
 }
 
@@ -307,6 +305,10 @@ OzonePlatform* Display::GetOzonePlatform() {
 #else
   return nullptr;
 #endif
+}
+
+bool Display::IsHostingViz() const {
+  return window_server_->is_hosting_viz();
 }
 
 void Display::OnViewportMetricsChanged(

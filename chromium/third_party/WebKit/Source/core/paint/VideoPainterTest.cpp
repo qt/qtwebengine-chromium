@@ -4,7 +4,7 @@
 
 #include "core/paint/VideoPainter.h"
 
-#include "core/html/HTMLMediaElement.h"
+#include "core/html/media/HTMLMediaElement.h"
 #include "core/paint/PaintControllerPaintTest.h"
 #include "core/paint/StubChromeClientForSPv2.h"
 #include "platform/testing/EmptyWebMediaPlayer.h"
@@ -27,7 +27,7 @@ class StubWebMediaPlayer : public EmptyWebMediaPlayer {
   const WebLayer* GetWebLayer() { return web_layer_.get(); }
 
   // WebMediaPlayer
-  void Load(LoadType, const WebMediaPlayerSource&, CORSMode) {
+  void Load(LoadType, const WebMediaPlayerSource&, CORSMode) override {
     network_state_ = kNetworkStateLoaded;
     client_->NetworkStateChanged();
     ready_state_ = kReadyStateHaveEnoughData;
@@ -53,7 +53,7 @@ class VideoStubLocalFrameClient : public EmptyLocalFrameClient {
       const WebMediaPlayerSource&,
       WebMediaPlayerClient* client,
       WebLayerTreeView* view) override {
-    return WTF::MakeUnique<StubWebMediaPlayer>(client);
+    return std::make_unique<StubWebMediaPlayer>(client);
   }
 };
 

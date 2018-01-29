@@ -50,15 +50,15 @@ V8DOMActivityLogger* V8DOMActivityLogger::ActivityLogger(
     DOMActivityLoggerMapForIsolatedWorld& loggers =
         DomActivityLoggersForIsolatedWorld();
     DOMActivityLoggerMapForIsolatedWorld::iterator it = loggers.find(world_id);
-    return it == loggers.end() ? 0 : it->value.get();
+    return it == loggers.end() ? nullptr : it->value.get();
   }
 
   if (extension_id.IsEmpty())
-    return 0;
+    return nullptr;
 
   DOMActivityLoggerMapForMainWorld& loggers = DomActivityLoggersForMainWorld();
   DOMActivityLoggerMapForMainWorld::iterator it = loggers.find(extension_id);
-  return it == loggers.end() ? 0 : it->value.get();
+  return it == loggers.end() ? nullptr : it->value.get();
 }
 
 V8DOMActivityLogger* V8DOMActivityLogger::ActivityLogger(int world_id,
@@ -71,7 +71,7 @@ V8DOMActivityLogger* V8DOMActivityLogger::ActivityLogger(int world_id,
   // extension, we need to obtain the extension ID. Extension ID is a hostname
   // of a background page's URL.
   if (!url.ProtocolIs("chrome-extension"))
-    return 0;
+    return nullptr;
 
   return ActivityLogger(world_id, url.Host());
 }
@@ -79,36 +79,46 @@ V8DOMActivityLogger* V8DOMActivityLogger::ActivityLogger(int world_id,
 V8DOMActivityLogger* V8DOMActivityLogger::CurrentActivityLogger() {
   v8::Isolate* isolate = v8::Isolate::GetCurrent();
   if (!isolate->InContext())
-    return 0;
+    return nullptr;
 
   v8::HandleScope handle_scope(isolate);
   v8::Local<v8::Context> context = isolate->GetCurrentContext();
 
   V8PerContextData* context_data = ScriptState::From(context)->PerContextData();
   if (!context_data)
-    return 0;
+    return nullptr;
+
+  return context_data->ActivityLogger();
+}
+
+V8DOMActivityLogger* V8DOMActivityLogger::CurrentActivityLoggerIfIsolatedWorld(
+    v8::Isolate* isolate) {
+  if (!isolate->InContext())
+    return nullptr;
+
+  ScriptState* script_state = ScriptState::From(isolate->GetCurrentContext());
+  if (!script_state->World().IsIsolatedWorld())
+    return nullptr;
+
+  V8PerContextData* context_data = script_state->PerContextData();
+  if (!context_data)
+    return nullptr;
 
   return context_data->ActivityLogger();
 }
 
 V8DOMActivityLogger*
 V8DOMActivityLogger::CurrentActivityLoggerIfIsolatedWorld() {
-  v8::Isolate* isolate = v8::Isolate::GetCurrent();
-  if (!isolate->InContext())
-    return 0;
+  return CurrentActivityLoggerIfIsolatedWorld(v8::Isolate::GetCurrent());
+}
 
-  v8::HandleScope handle_scope(isolate);
-  v8::Local<v8::Context> context = isolate->GetCurrentContext();
-
-  ScriptState* script_state = ScriptState::From(context);
-  if (!script_state->World().IsIsolatedWorld())
-    return 0;
-
-  V8PerContextData* context_data = script_state->PerContextData();
-  if (!context_data)
-    return 0;
-
-  return context_data->ActivityLogger();
+V8DOMActivityLogger*
+V8DOMActivityLogger::CurrentActivityLoggerIfIsolatedWorldForMainThread() {
+  DCHECK(IsMainThread());
+  if (DomActivityLoggersForIsolatedWorld().IsEmpty())
+    return nullptr;
+  return CurrentActivityLoggerIfIsolatedWorld(
+      V8PerIsolateData::MainThreadIsolate());
 }
 
 }  // namespace blink

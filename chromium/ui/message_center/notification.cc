@@ -33,6 +33,13 @@ const gfx::ImageSkia CreateSolidColorImage(int width,
   return gfx::ImageSkia::CreateFrom1xBitmap(bitmap);
 }
 
+gfx::Image DeepCopyImage(const gfx::Image& image) {
+  if (image.IsEmpty())
+    return gfx::Image();
+  std::unique_ptr<gfx::ImageSkia> image_skia(image.CopyImageSkia());
+  return gfx::Image(*image_skia);
+}
+
 }  // namespace
 
 NotificationItem::NotificationItem(const base::string16& title,
@@ -60,6 +67,7 @@ RichNotificationData::RichNotificationData(const RichNotificationData& other)
       context_message(other.context_message),
       image(other.image),
       small_image(other.small_image),
+      vector_small_image(other.vector_small_image),
       items(other.items),
       progress(other.progress),
       progress_status(other.progress_status),
@@ -75,7 +83,9 @@ RichNotificationData::RichNotificationData(const RichNotificationData& other)
       silent(other.silent),
       accessible_name(other.accessible_name),
       accent_color(other.accent_color),
-      use_image_as_icon(other.use_image_as_icon) {
+      use_image_as_icon(other.use_image_as_icon),
+      settings_button_handler(other.settings_button_handler),
+      fullscreen_visibility(other.fullscreen_visibility) {
 }
 
 RichNotificationData::~RichNotificationData() = default;
@@ -156,6 +166,29 @@ Notification& Notification::operator=(const Notification& other) {
 
 Notification::~Notification() = default;
 
+// static
+std::unique_ptr<Notification> Notification::DeepCopy(
+    const Notification& notification,
+    bool include_body_image,
+    bool include_small_image,
+    bool include_icon_images) {
+  std::unique_ptr<Notification> notification_copy =
+      std::make_unique<Notification>(notification);
+  notification_copy->set_icon(DeepCopyImage(notification_copy->icon()));
+  notification_copy->set_image(include_body_image
+                                   ? DeepCopyImage(notification_copy->image())
+                                   : gfx::Image());
+  notification_copy->set_small_image(
+      include_small_image ? notification_copy->small_image() : gfx::Image());
+  for (size_t i = 0; i < notification_copy->buttons().size(); i++) {
+    notification_copy->SetButtonIcon(
+        i, include_icon_images
+               ? DeepCopyImage(notification_copy->buttons()[i].icon)
+               : gfx::Image());
+  }
+  return notification_copy;
+}
+
 bool Notification::IsRead() const {
   return is_read_ || optional_fields_.priority == MIN_PRIORITY;
 }
@@ -212,6 +245,7 @@ std::unique_ptr<Notification> Notification::CreateSystemNotification(
     const gfx::Image& icon,
     const std::string& system_component_id,
     const base::Closure& click_callback) {
+  DCHECK(!click_callback.is_null());
   std::unique_ptr<Notification> notification = CreateSystemNotification(
       NOTIFICATION_TYPE_SIMPLE, notification_id, title, message, icon,
       base::string16() /* display_source */, GURL(),
@@ -219,6 +253,7 @@ std::unique_ptr<Notification> Notification::CreateSystemNotification(
       RichNotificationData(),
       new HandleNotificationClickedDelegate(click_callback), gfx::kNoneIcon,
       SystemNotificationWarningLevel::CRITICAL_WARNING);
+  notification->set_clickable(true);
   notification->SetSystemPriority();
   return notification;
 }

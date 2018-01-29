@@ -68,7 +68,7 @@ class FormDataIterationSource final
     return true;
   }
 
-  DEFINE_INLINE_VIRTUAL_TRACE() {
+  void Trace(blink::Visitor* visitor) override {
     visitor->Trace(form_data_);
     PairIterable<String, FormDataEntryValue>::IterationSource::Trace(visitor);
   }
@@ -93,8 +93,9 @@ FormData::FormData(HTMLFormElement* form) : encoding_(UTF8Encoding()) {
   }
 }
 
-DEFINE_TRACE(FormData) {
+void FormData::Trace(blink::Visitor* visitor) {
   visitor->Trace(entries_);
+  ScriptWrappable::Trace(visitor);
 }
 
 void FormData::append(const String& name, const String& value) {
@@ -214,9 +215,9 @@ String FormData::Decode(const CString& data) const {
   return Encoding().Decode(data.data(), data.length());
 }
 
-RefPtr<EncodedFormData> FormData::EncodeFormData(
+scoped_refptr<EncodedFormData> FormData::EncodeFormData(
     EncodedFormData::EncodingType encoding_type) {
-  RefPtr<EncodedFormData> form_data = EncodedFormData::Create();
+  scoped_refptr<EncodedFormData> form_data = EncodedFormData::Create();
   Vector<char> encoded_data;
   for (const auto& entry : Entries()) {
     FormDataEncoder::AddKeyValuePairAsFormData(
@@ -229,8 +230,8 @@ RefPtr<EncodedFormData> FormData::EncodeFormData(
   return form_data;
 }
 
-RefPtr<EncodedFormData> FormData::EncodeMultiPartFormData() {
-  RefPtr<EncodedFormData> form_data = EncodedFormData::Create();
+scoped_refptr<EncodedFormData> FormData::EncodeMultiPartFormData() {
+  scoped_refptr<EncodedFormData> form_data = EncodedFormData::Create();
   form_data->SetBoundary(FormDataEncoder::GenerateUniqueBoundaryString());
   Vector<char> encoded_data;
   for (const auto& entry : Entries()) {
@@ -288,8 +289,6 @@ RefPtr<EncodedFormData> FormData::EncodeMultiPartFormData() {
         // Do not add the file if the path is empty.
         if (!file->GetPath().IsEmpty())
           form_data->AppendFile(file->GetPath());
-        if (!file->FileSystemURL().IsEmpty())
-          form_data->AppendFileSystemURL(file->FileSystemURL());
       } else {
         form_data->AppendBlob(entry->GetBlob()->Uuid(),
                               entry->GetBlob()->GetBlobDataHandle());
@@ -312,7 +311,7 @@ FormData::StartIteration(ScriptState*, ExceptionState&) {
 
 // ----------------------------------------------------------------
 
-DEFINE_TRACE(FormData::Entry) {
+void FormData::Entry::Trace(blink::Visitor* visitor) {
   visitor->Trace(blob_);
 }
 

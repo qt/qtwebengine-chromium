@@ -6,13 +6,16 @@
 
 #include "base/callback.h"
 #include "base/callback_helpers.h"
+#include "base/command_line.h"
 #include "base/logging.h"
 #include "base/memory/ptr_util.h"
 #include "base/memory/weak_ptr.h"
+#include "base/metrics/histogram_macros.h"
 #include "media/base/android/media_codec_bridge_impl.h"
 #include "media/base/android/media_codec_util.h"
 #include "media/base/bind_to_current_loop.h"
 #include "media/base/decoder_buffer.h"
+#include "media/base/media_switches.h"
 #include "media/base/video_codecs.h"
 #include "media/base/video_decoder_config.h"
 #include "media/gpu/android/android_video_surface_chooser.h"
@@ -106,7 +109,11 @@ MediaCodecVideoDecoder::MediaCodecVideoDecoder(
     : output_cb_(output_cb),
       codec_allocator_(codec_allocator),
       request_overlay_info_cb_(std::move(request_overlay_info_cb)),
-      surface_chooser_(std::move(surface_chooser)),
+      surface_chooser_helper_(
+          std::move(surface_chooser),
+          base::CommandLine::ForCurrentProcess()->HasSwitch(
+              switches::kForceVideoOverlays),
+          base::FeatureList::IsEnabled(media::kUseAndroidOverlayAggressively)),
       video_frame_factory_(std::move(video_frame_factory)),
       overlay_factory_cb_(std::move(overlay_factory_cb)),
       device_info_(device_info),
@@ -116,7 +123,7 @@ MediaCodecVideoDecoder::MediaCodecVideoDecoder(
       weak_factory_(this),
       codec_allocator_weak_factory_(this) {
   DVLOG(2) << __func__;
-  surface_chooser_->SetClientCallbacks(
+  surface_chooser_helper_.chooser()->SetClientCallbacks(
       base::Bind(&MediaCodecVideoDecoder::OnSurfaceChosen,
                  weak_factory_.GetWeakPtr()),
       base::Bind(&MediaCodecVideoDecoder::OnSurfaceChosen,
@@ -127,6 +134,17 @@ MediaCodecVideoDecoder::~MediaCodecVideoDecoder() {
   DVLOG(2) << __func__;
   ReleaseCodec();
   codec_allocator_->StopThread(this);
+
+  if (!media_drm_bridge_cdm_context_)
+    return;
+
+  DCHECK(cdm_registration_id_);
+
+  // Cancel previously registered callback (if any).
+  media_drm_bridge_cdm_context_->SetMediaCryptoReadyCB(
+      MediaDrmBridgeCdmContext::MediaCryptoReadyCB());
+
+  media_drm_bridge_cdm_context_->UnregisterPlayer(cdm_registration_id_);
 }
 
 void MediaCodecVideoDecoder::Destroy() {
@@ -168,9 +186,73 @@ void MediaCodecVideoDecoder::Initialize(const VideoDecoderConfig& config,
     ExtractSpsAndPps(config.extra_data(), &csd0_, &csd1_);
 #endif
 
+  // For encrypted content, defer signalling success until the Cdm is ready.
+  if (config.is_encrypted()) {
+    SetCdm(cdm_context, init_cb);
+    return;
+  }
+
   // Do the rest of the initialization lazily on the first decode.
-  // TODO(watk): Add CDM Support.
-  DCHECK(!cdm_context);
+  init_cb.Run(true);
+}
+
+void MediaCodecVideoDecoder::SetCdm(CdmContext* cdm_context,
+                                    const InitCB& init_cb) {
+  if (!cdm_context) {
+    LOG(ERROR) << "No CDM provided";
+    EnterTerminalState(State::kError);
+    init_cb.Run(false);
+    return;
+  }
+
+  // On Android platform the CdmContext must be a MediaDrmBridgeCdmContext.
+  media_drm_bridge_cdm_context_ =
+      static_cast<media::MediaDrmBridgeCdmContext*>(cdm_context);
+
+  // Register CDM callbacks. The callbacks registered will be posted back to
+  // this thread via BindToCurrentLoop.
+
+  // Since |this| holds a reference to the |cdm_|, by the time the CDM is
+  // destructed, UnregisterPlayer() must have been called and |this| has been
+  // destructed as well. So the |cdm_unset_cb| will never have a chance to be
+  // called.
+  // TODO(xhwang): Remove |cdm_unset_cb| after it's not used on all platforms.
+  cdm_registration_id_ = media_drm_bridge_cdm_context_->RegisterPlayer(
+      media::BindToCurrentLoop(base::Bind(&MediaCodecVideoDecoder::OnKeyAdded,
+                                          weak_factory_.GetWeakPtr())),
+      base::Bind(&base::DoNothing));
+
+  media_drm_bridge_cdm_context_->SetMediaCryptoReadyCB(media::BindToCurrentLoop(
+      base::Bind(&MediaCodecVideoDecoder::OnMediaCryptoReady,
+                 weak_factory_.GetWeakPtr(), init_cb)));
+}
+
+void MediaCodecVideoDecoder::OnMediaCryptoReady(
+    const InitCB& init_cb,
+    JavaObjectPtr media_crypto,
+    bool requires_secure_video_codec) {
+  DVLOG(1) << __func__;
+
+  DCHECK(state_ == State::kInitializing);
+
+  if (!media_crypto || media_crypto->is_null()) {
+    LOG(ERROR) << "MediaCrypto is not available";
+    EnterTerminalState(State::kError);
+    init_cb.Run(false);
+    return;
+  }
+
+  media_crypto_ = *media_crypto;
+  requires_secure_codec_ = requires_secure_video_codec;
+
+  // Request a secure surface in all cases.  For L3, it's okay if we fall back
+  // to SurfaceTexture rather than fail composition.  For L1, it's required.
+  surface_chooser_helper_.SetSecureSurfaceMode(
+      requires_secure_video_codec
+          ? SurfaceChooserHelper::SecureSurfaceMode::kRequired
+          : SurfaceChooserHelper::SecureSurfaceMode::kRequested);
+
+  // Signal success, and create the codec lazily on the first decode.
   init_cb.Run(true);
 }
 
@@ -184,7 +266,14 @@ void MediaCodecVideoDecoder::StartLazyInit() {
   DVLOG(2) << __func__;
   lazy_init_pending_ = false;
   codec_allocator_->StartThread(this);
+  // Only ask for promotion hints if we can actually switch surfaces, since we
+  // wouldn't be able to do anything with them.  Also, if threaded texture
+  // mailboxes are enabled, then we turn off overlays anyway.
+  const bool want_promotion_hints =
+      device_info_->IsSetOutputSurfaceSupported() &&
+      !enable_threaded_texture_mailboxes_;
   video_frame_factory_->Initialize(
+      want_promotion_hints,
       base::Bind(&MediaCodecVideoDecoder::OnVideoFrameFactoryInitialized,
                  weak_factory_.GetWeakPtr()));
 }
@@ -222,18 +311,12 @@ void MediaCodecVideoDecoder::OnOverlayInfoChanged(
   if (InTerminalState())
     return;
 
-  // TODO(watk): Handle frame_hidden like AVDA. Maybe even if in a terminal
-  // state.
-  // TODO(watk): Incorporate the other chooser_state_ signals.
-
   bool overlay_changed = !overlay_info_.RefersToSameOverlayAs(overlay_info);
   overlay_info_ = overlay_info;
-  chooser_state_.is_fullscreen = overlay_info_.is_fullscreen;
-  chooser_state_.is_frame_hidden = overlay_info_.is_frame_hidden;
-  surface_chooser_->UpdateState(
+  surface_chooser_helper_.SetIsFullscreen(overlay_info_.is_fullscreen);
+  surface_chooser_helper_.UpdateChooserState(
       overlay_changed ? base::make_optional(CreateOverlayFactoryCb())
-                      : base::nullopt,
-      chooser_state_);
+                      : base::nullopt);
 }
 
 void MediaCodecVideoDecoder::OnSurfaceChosen(
@@ -267,7 +350,8 @@ void MediaCodecVideoDecoder::OnSurfaceDestroyed(AndroidOverlay* overlay) {
   // a single overlay so this must be the one we're using. In this case it's
   // the responsibility of our consumer to destroy us for surface transitions.
   // TODO(liberato): This might not be true for L1 / L3, since our caller has
-  // no idea that this has happened.  We should unback the frames here.
+  // no idea that this has happened.  We should unback the frames here.  This
+  // might work now that we have CodecImageGroup -- verify this.
   if (!device_info_->IsSetOutputSurfaceSupported()) {
     EnterTerminalState(State::kSurfaceDestroyed);
     return;
@@ -291,8 +375,14 @@ void MediaCodecVideoDecoder::TransitionToTargetSurface() {
   DCHECK(SurfaceTransitionPending());
   DCHECK(device_info_->IsSetOutputSurfaceSupported());
 
-  if (!codec_->SetSurface(target_surface_bundle_))
+  if (!codec_->SetSurface(target_surface_bundle_)) {
+    video_frame_factory_->SetSurfaceBundle(nullptr);
     EnterTerminalState(State::kError);
+    return;
+  }
+
+  video_frame_factory_->SetSurfaceBundle(target_surface_bundle_);
+  CacheFrameInformation();
 }
 
 void MediaCodecVideoDecoder::CreateCodec() {
@@ -302,11 +392,16 @@ void MediaCodecVideoDecoder::CreateCodec() {
 
   scoped_refptr<CodecConfig> config = new CodecConfig();
   config->codec = decoder_config_.codec();
-  // TODO(watk): Set |requires_secure_codec| correctly using
-  // MediaDrmBridgeCdmContext::MediaCryptoReadyCB.
-  config->requires_secure_codec = decoder_config_.is_encrypted();
+  config->requires_secure_codec = requires_secure_codec_;
+  // TODO(liberato): per android_util.h, remove JavaObjectPtr.
+  config->media_crypto =
+      base::MakeUnique<base::android::ScopedJavaGlobalRef<jobject>>(
+          media_crypto_);
   config->initial_expected_coded_size = decoder_config_.coded_size();
   config->surface_bundle = target_surface_bundle_;
+  // Note that this might be the same surface bundle that we've been using, if
+  // we're reinitializing the codec without changing surfaces.  That's fine.
+  video_frame_factory_->SetSurfaceBundle(target_surface_bundle_);
   codec_allocator_->CreateMediaCodecAsync(
       codec_allocator_weak_factory_.GetWeakPtr(), std::move(config));
 }
@@ -333,6 +428,9 @@ void MediaCodecVideoDecoder::OnCodecConfigured(
   // |surface_chooser_| doesn't change the target surface.
   if (SurfaceTransitionPending())
     TransitionToTargetSurface();
+
+  // Cache the frame information that goes with this codec.
+  CacheFrameInformation();
 
   StartTimer();
 }
@@ -535,13 +633,16 @@ bool MediaCodecVideoDecoder::DequeueOutput() {
   if (drain_type_)
     return true;
 
+  // Record the frame type that we're sending and some information about why.
+  UMA_HISTOGRAM_ENUMERATION(
+      "Media.AVDA.FrameInformation", cached_frame_information_,
+      static_cast<int>(
+          SurfaceChooserHelper::FrameInformation::FRAME_INFORMATION_MAX) +
+          1);  // PRESUBMIT_IGNORE_UMA_MAX
+
   video_frame_factory_->CreateVideoFrame(
-      std::move(output_buffer),
-      codec_->SurfaceBundle()->overlay
-          ? nullptr
-          : surface_texture_bundle_->surface_texture,
-      presentation_time, decoder_config_.natural_size(),
-      CreatePromotionHintCB(),
+      std::move(output_buffer), presentation_time,
+      decoder_config_.natural_size(), CreatePromotionHintCB(),
       base::Bind(&MediaCodecVideoDecoder::ForwardVideoFrame,
                  weak_factory_.GetWeakPtr(), reset_generation_));
   return true;
@@ -707,27 +808,47 @@ int MediaCodecVideoDecoder::GetMaxDecodeRequests() const {
 }
 
 PromotionHintAggregator::NotifyPromotionHintCB
-MediaCodecVideoDecoder::CreatePromotionHintCB() const {
+MediaCodecVideoDecoder::CreatePromotionHintCB() {
   // Right now, we don't request promotion hints.  This is only used by SOP.
   // While we could simplify it a bit, this is the general form that we'll use
   // when handling promotion hints.
 
-  // TODO(liberato): Keeping the surface bundle around as long as the images
-  // doesn't work so well if the surface is destroyed.  In that case, the right
-  // thing to do is (a) wait for any codec to quit using the surface, and (b)
-  // clear |overlay| out of the surface bundle.
-  // Having the surface bundle register for destruction callbacks, instead of
-  // us, makes sense.
+  // Note that this keeps only a wp to the surface bundle via |layout_cb|.  It
+  // also continues to work even if |this| is destroyed; images might want to
+  // move an overlay around even after MCVD has been torn down.  For example
+  // inline L1 content will fall into this case.
   return BindToCurrentLoop(base::BindRepeating(
-      [](scoped_refptr<AVDASurfaceBundle> surface_bundle,
+      [](base::WeakPtr<MediaCodecVideoDecoder> mcvd,
+         AVDASurfaceBundle::ScheduleLayoutCB layout_cb,
          PromotionHintAggregator::Hint hint) {
         // If we're promotable, and we have a surface bundle, then also
         // position the overlay.  We could do this even if the overlay is
         // not promotable, but it wouldn't have any visible effect.
-        if (hint.is_promotable && surface_bundle)
-          surface_bundle->overlay->ScheduleLayout(hint.screen_rect);
+        if (hint.is_promotable)
+          layout_cb.Run(hint.screen_rect);
+
+        // Notify MCVD about the promotion hint, so that it can decide if it
+        // wants to switch to / from an overlay.
+        if (mcvd)
+          mcvd->NotifyPromotionHint(hint);
       },
-      codec_->SurfaceBundle()));
+      weak_factory_.GetWeakPtr(),
+      codec_->SurfaceBundle()->GetScheduleLayoutCB()));
+}
+
+bool MediaCodecVideoDecoder::IsUsingOverlay() const {
+  return codec_ && codec_->SurfaceBundle() && codec_->SurfaceBundle()->overlay;
+}
+
+void MediaCodecVideoDecoder::NotifyPromotionHint(
+    PromotionHintAggregator::Hint hint) {
+  surface_chooser_helper_.NotifyPromotionHintAndUpdateChooser(hint,
+                                                              IsUsingOverlay());
+}
+
+void MediaCodecVideoDecoder::CacheFrameInformation() {
+  cached_frame_information_ =
+      surface_chooser_helper_.ComputeFrameInformation(IsUsingOverlay());
 }
 
 }  // namespace media

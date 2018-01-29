@@ -441,8 +441,9 @@ class CDM_CLASS_API FileIO {
   // - When the file is opened by a CDM instance, it will be classified as "in
   //   use". In this case other CDM instances in the same domain may receive
   //   kInUse status when trying to open it.
-  // - |file_name| must not contain forward slash ('/') or backslash ('\'), and
-  //   must not start with an underscore ('_').
+  // - |file_name| must only contain letters (A-Za-z), digits(0-9), or "._-".
+  //   It must not start with an underscore ('_'), and must be at least 1
+  //   character and no more than 256 characters long.
   virtual void Open(const char* file_name, uint32_t file_name_size) = 0;
 
   // Reads the contents of the file. FileIOClient::OnReadComplete() will be
@@ -1186,10 +1187,10 @@ class CDM_CLASS_API Host_9 {
   // Requests a specific version of the storage ID. A storage ID is a stable,
   // device specific ID used by the CDM to securely store persistent data. The
   // ID will be returned by the host via ContentDecryptionModule::OnStorageId().
-  // If |version| is 0, the latest version will be returned. On some systems
-  // storage ID is not implemented, so the response will be |storage_id| = null.
-  // The CDM must not expose the ID outside the client device, even in encrypted
-  // form.
+  // If |version| is 0, the latest version will be returned. All |version|s
+  // that are greater than or equal to 0x80000000 are reserved for the CDM and
+  // should not be supported or returned by the host. The CDM must not expose
+  // the ID outside the client device, even in encrypted form.
   virtual void RequestStorageId(uint32_t version) = 0;
 
  protected:

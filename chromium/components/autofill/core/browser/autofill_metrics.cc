@@ -382,6 +382,11 @@ void LogPredictionQualityMetrics(
   // purposes, but remember whether or not it was empty for more precise logging
   // later.
   bool is_empty = (actual_type == EMPTY_TYPE);
+  // TODO(crbug.com/780471): Do not log anything if a field is empty and is not
+  // supposed to be automatically filled for now. Long term solution is add a
+  // server enum to capture this case to accurately collect metrics.
+  if (is_empty && field.only_fill_when_focused())
+    return;
   bool is_ambiguous = (actual_type == AMBIGUOUS_TYPE);
   if (is_empty || is_ambiguous)
     actual_type = UNKNOWN_TYPE;
@@ -470,6 +475,30 @@ void LogPredictionQualityMetrics(
       GetFieldTypeGroupMetric(predicted_type,
                               AutofillMetrics::FALSE_POSITIVE_MISMATCH),
       KMaxFieldTypeGroupMetric);
+}
+
+AutofillMetrics::FormEvent GetCardNumberStatusFormEvent(
+    const AutofillMetrics::CardNumberStatus card_number_status) {
+  switch (card_number_status) {
+    case AutofillMetrics::EMPTY_CARD:
+      return AutofillMetrics::
+          FORM_EVENT_SUBMIT_WITHOUT_SELECTING_SUGGESTIONS_NO_CARD;
+    case AutofillMetrics::WRONG_SIZE_CARD:
+      return AutofillMetrics::
+          FORM_EVENT_SUBMIT_WITHOUT_SELECTING_SUGGESTIONS_WRONG_SIZE_CARD;
+    case AutofillMetrics::FAIL_LUHN_CHECK_CARD:
+      return AutofillMetrics::
+          FORM_EVENT_SUBMIT_WITHOUT_SELECTING_SUGGESTIONS_FAIL_LUHN_CHECK_CARD;
+    case AutofillMetrics::KNOWN_CARD:
+      return AutofillMetrics::
+          FORM_EVENT_SUBMIT_WITHOUT_SELECTING_SUGGESTIONS_KNOWN_CARD;
+    case AutofillMetrics::UNKNOWN_CARD:
+      return AutofillMetrics::
+          FORM_EVENT_SUBMIT_WITHOUT_SELECTING_SUGGESTIONS_UNKNOWN_CARD;
+  }
+  NOTREACHED();
+  return AutofillMetrics::
+      FORM_EVENT_SUBMIT_WITHOUT_SELECTING_SUGGESTIONS_NO_CARD;
 }
 
 }  // namespace
@@ -1157,8 +1186,6 @@ AutofillMetrics::FormEventLogger::FormEventLogger(
       has_logged_will_submit_(false),
       has_logged_submitted_(false),
       has_logged_bank_name_available_(false),
-      has_logged_detected_card_in_submitted_form_(false),
-      has_logged_submitted_known_card(false),
       logged_suggestion_filled_was_server_data_(false),
       logged_suggestion_filled_was_masked_server_card_(false),
       form_interactions_ukm_logger_(form_interactions_ukm_logger) {}
@@ -1323,7 +1350,9 @@ void AutofillMetrics::FormEventLogger::OnWillSubmitForm() {
   base::RecordAction(base::UserMetricsAction("Autofill_OnWillSubmitForm"));
 }
 
-void AutofillMetrics::FormEventLogger::OnFormSubmitted(bool force_logging) {
+void AutofillMetrics::FormEventLogger::OnFormSubmitted(
+    bool force_logging,
+    const CardNumberStatus card_number_status) {
   // Not logging this kind of form if we haven't logged a user interaction.
   if (!has_logged_interacted_)
     return;
@@ -1347,30 +1376,13 @@ void AutofillMetrics::FormEventLogger::OnFormSubmitted(bool force_logging) {
   if (has_logged_suggestions_shown_ || force_logging) {
     Log(AutofillMetrics::FORM_EVENT_SUGGESTION_SHOWN_SUBMITTED_ONCE);
     if (is_for_credit_card_ && !has_logged_suggestion_filled_) {
-      if (!has_logged_detected_card_in_submitted_form_) {
-        Log(AutofillMetrics::
-                FORM_EVENT_SUBMIT_WITHOUT_SELECTING_SUGGESTIONS_NO_CARD);
-      } else if (has_logged_submitted_known_card) {
-        Log(AutofillMetrics::
-                FORM_EVENT_SUBMIT_WITHOUT_SELECTING_SUGGESTIONS_KNOWN_CARD);
-      } else {
-        Log(AutofillMetrics::
-                FORM_EVENT_SUBMIT_WITHOUT_SELECTING_SUGGESTIONS_UNKNOWN_CARD);
-      }
+      Log(GetCardNumberStatusFormEvent(card_number_status));
     }
   }
 }
 
 void AutofillMetrics::FormEventLogger::SetBankNameAvailable() {
   has_logged_bank_name_available_ = true;
-}
-
-void AutofillMetrics::FormEventLogger::DetectedCardInSubmittedForm() {
-  has_logged_detected_card_in_submitted_form_ = true;
-}
-
-void AutofillMetrics::FormEventLogger::SubmittedKnownCard() {
-  has_logged_submitted_known_card = true;
 }
 
 void AutofillMetrics::FormEventLogger::Log(FormEvent event) const {

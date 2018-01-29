@@ -74,16 +74,16 @@ static bool ExpressionCompare(const MediaQueryExp& a, const MediaQueryExp& b) {
 }
 
 std::unique_ptr<MediaQuery> MediaQuery::CreateNotAll() {
-  return WTF::MakeUnique<MediaQuery>(MediaQuery::kNot, MediaTypeNames::all,
-                                     ExpressionHeapVector());
+  return std::make_unique<MediaQuery>(MediaQuery::kNot, MediaTypeNames::all,
+                                      ExpressionHeapVector());
 }
 
 std::unique_ptr<MediaQuery> MediaQuery::Create(
     RestrictorType restrictor,
     String media_type,
     ExpressionHeapVector expressions) {
-  return WTF::MakeUnique<MediaQuery>(restrictor, std::move(media_type),
-                                     std::move(expressions));
+  return std::make_unique<MediaQuery>(restrictor, std::move(media_type),
+                                      std::move(expressions));
 }
 
 MediaQuery::MediaQuery(RestrictorType restrictor,
@@ -115,7 +115,7 @@ MediaQuery::MediaQuery(const MediaQuery& o)
     expressions_.push_back(o.expressions_[i]);
 }
 
-MediaQuery::~MediaQuery() {}
+MediaQuery::~MediaQuery() = default;
 
 // http://dev.w3.org/csswg/cssom/#compare-media-queries
 bool MediaQuery::operator==(const MediaQuery& other) const {

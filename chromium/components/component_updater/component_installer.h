@@ -62,6 +62,11 @@ class ComponentInstallerPolicy {
       const base::DictionaryValue& manifest,
       const base::FilePath& install_dir) = 0;
 
+  // OnCustomUninstall is called during the unregister (uninstall) process.
+  // Components that require custom uninstallation operations should implement
+  // them here.
+  virtual void OnCustomUninstall() = 0;
+
   // ComponentReady is called in two cases:
   //   1) After an installation is successfully completed.
   //   2) During component registration if the component is already installed.
@@ -111,14 +116,14 @@ class ComponentInstaller final : public update_client::CrxInstaller {
   // Registers the component for update checks and installs.
   // The passed |callback| will be called once the initial check for installed
   // versions is done and the component has been registered.
-  void Register(ComponentUpdateService* cus, const base::Closure& callback);
+  void Register(ComponentUpdateService* cus, base::OnceClosure callback);
 
   // Overrides from update_client::CrxInstaller.
   void OnUpdateError(int error) override;
 
-  void Install(std::unique_ptr<base::DictionaryValue> manifest,
-               const base::FilePath& unpack_path,
-               const Callback& callback) override;
+  void Install(const base::FilePath& unpack_path,
+               const std::string& public_key,
+               Callback callback) override;
 
   bool GetInstalledFile(const std::string& file,
                         base::FilePath* installed_file) override;
@@ -152,17 +157,16 @@ class ComponentInstaller final : public update_client::CrxInstaller {
       const base::FilePath& root,
       const scoped_refptr<RegistrationInfo>& registration_info);
   update_client::CrxInstaller::Result InstallHelper(
-      const base::DictionaryValue& manifest,
       const base::FilePath& unpack_path,
+      std::unique_ptr<base::DictionaryValue>* manifest,
       base::Version* version,
       base::FilePath* install_path);
   void StartRegistration(
-      const scoped_refptr<RegistrationInfo>& registration_info,
-      ComponentUpdateService* cus);
+      const scoped_refptr<RegistrationInfo>& registration_info);
   void FinishRegistration(
       const scoped_refptr<RegistrationInfo>& registration_info,
       ComponentUpdateService* cus,
-      const base::Closure& callback);
+      base::OnceClosure callback);
   void ComponentReady(std::unique_ptr<base::DictionaryValue> manifest);
   void UninstallOnTaskRunner();
 

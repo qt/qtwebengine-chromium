@@ -117,7 +117,7 @@ std::string WebrtcAudioPrivateFunction::CalculateHMAC(
   if (media::AudioDeviceDescription::IsDefaultDevice(raw_id))
     return media::AudioDeviceDescription::kDefaultDeviceId;
 
-  url::Origin security_origin(source_url().GetOrigin());
+  url::Origin security_origin = url::Origin::Create(source_url().GetOrigin());
   return content::GetHMACForMediaDeviceID(device_id_salt(), security_origin,
                                           raw_id);
 }
@@ -253,7 +253,8 @@ void WebrtcAudioPrivateGetAssociatedSinkFunction::
     ReceiveInputDeviceDescriptionsOnIOThread(
         media::AudioDeviceDescriptions source_devices) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
-  url::Origin security_origin(GURL(params_->security_origin));
+  url::Origin security_origin =
+      url::Origin::Create(GURL(params_->security_origin));
   std::string source_id_in_origin(params_->source_id_in_origin);
 
   // Find the raw source ID for source_id_in_origin.
@@ -314,24 +315,42 @@ bool WebrtcAudioPrivateSetAudioExperimentsFunction::RunAsync() {
       wap::SetAudioExperiments::Params::Create(*args_));
   EXTENSION_FUNCTION_VALIDATE(params.get());
 
-  if (params->audio_experiments.enable_aec3.get()) {
-    content::RenderProcessHost* host = GetRenderProcessHostFromRequest(
-        params->request, params->security_origin);
-    if (!host) {
-      SendResponse(false);
-      return false;
-    }
-
-    host->SetEchoCanceller3(*params->audio_experiments.enable_aec3);
+  // Currently the only available experiment is AEC3, so we expect this to be
+  // set if this extension is called.
+  if (!params->audio_experiments.enable_aec3.get()) {
+    SetError("No experiment specified");
+    SendResponse(false);
+    return false;
   }
 
-  SendResponse(true);
+  content::RenderProcessHost* host =
+      GetRenderProcessHostFromRequest(params->request, params->security_origin);
+  if (!host) {
+    // Error message has been set in GetRenderProcessHostFromRequest().
+    SendResponse(false);
+    return false;
+  }
+
+  host->SetEchoCanceller3(
+      *params->audio_experiments.enable_aec3,
+      base::BindOnce(
+          &WebrtcAudioPrivateSetAudioExperimentsFunction::FireCallback, this));
+
   return true;
 #else
   SetError("Not supported");
   SendResponse(false);
   return false;
 #endif
+}
+
+void WebrtcAudioPrivateSetAudioExperimentsFunction::FireCallback(
+    bool success,
+    const std::string& error_message) {
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+  if (!success)
+    SetError(error_message);
+  SendResponse(success);
 }
 
 }  // namespace extensions

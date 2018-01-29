@@ -15,8 +15,7 @@ namespace media {
 MockAudioManager::MockAudioManager(std::unique_ptr<AudioThread> audio_thread)
     : AudioManager(std::move(audio_thread)) {}
 
-MockAudioManager::~MockAudioManager() {
-}
+MockAudioManager::~MockAudioManager() = default;
 
 void MockAudioManager::ShutdownOnAudioThread() {}
 
@@ -109,12 +108,12 @@ std::unique_ptr<AudioLog> MockAudioManager::CreateAudioLog(
   return nullptr;
 }
 
-void MockAudioManager::InitializeOutputDebugRecording() {}
+void MockAudioManager::InitializeDebugRecording() {}
 
-void MockAudioManager::EnableOutputDebugRecording(
+void MockAudioManager::EnableDebugRecording(
     const base::FilePath& base_file_name) {}
 
-void MockAudioManager::DisableOutputDebugRecording() {}
+void MockAudioManager::DisableDebugRecording() {}
 
 const char* MockAudioManager::GetName() {
   return nullptr;

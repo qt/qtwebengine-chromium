@@ -56,7 +56,7 @@ class WebUIImpl::MainFrameNavigationObserver : public WebContentsObserver {
   WebUIImpl* web_ui_;
 };
 
-const WebUI::TypeID WebUI::kNoWebUI = NULL;
+const WebUI::TypeID WebUI::kNoWebUI = nullptr;
 
 // static
 base::string16 WebUI::GetJavascriptCall(
@@ -112,7 +112,9 @@ void WebUIImpl::OnWebUISend(RenderFrameHost* sender,
           sender->GetProcess()->GetID()) ||
       !WebUIControllerFactoryRegistry::GetInstance()->IsURLAcceptableForWebUI(
           web_contents_->GetBrowserContext(), source_url)) {
-    NOTREACHED() << "Blocked unauthorized use of WebUIBindings.";
+    bad_message::ReceivedBadMessage(
+        sender->GetProcess(),
+        bad_message::WEBUI_SEND_FROM_UNAUTHORIZED_PROCESS);
     return;
   }
 

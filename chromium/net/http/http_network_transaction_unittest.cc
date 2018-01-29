@@ -569,8 +569,9 @@ class HttpNetworkTransactionTest : public PlatformTest {
 
   void AddSSLSocketData() {
     ssl_.next_proto = kProtoHTTP2;
-    ssl_.cert = ImportCertFromFile(GetTestCertsDirectory(), "spdy_pooling.pem");
-    ASSERT_TRUE(ssl_.cert);
+    ssl_.ssl_info.cert =
+        ImportCertFromFile(GetTestCertsDirectory(), "spdy_pooling.pem");
+    ASSERT_TRUE(ssl_.ssl_info.cert);
     session_deps_.socket_factory->AddSSLSocketDataProvider(&ssl_);
   }
 
@@ -866,6 +867,35 @@ TEST_F(HttpNetworkTransactionTest, SimpleGETNoHeadersWeirdPort) {
   TestCompletionCallback callback;
   int rv = trans->Start(&request, callback.callback(), NetLogWithSource());
   EXPECT_THAT(callback.GetResult(rv), IsError(ERR_INVALID_HTTP_RESPONSE));
+}
+
+// Tests that request info can be destroyed after the headers phase is complete.
+TEST_F(HttpNetworkTransactionTest, SimpleGETNoReadDestroyRequestInfo) {
+  std::unique_ptr<HttpNetworkSession> session(CreateSession(&session_deps_));
+  auto trans =
+      std::make_unique<HttpNetworkTransaction>(DEFAULT_PRIORITY, session.get());
+
+  MockRead data_reads[] = {
+      MockRead("HTTP/1.0 200 OK\r\n"), MockRead("Connection: keep-alive\r\n"),
+      MockRead("Content-Length: 100\r\n\r\n"), MockRead(SYNCHRONOUS, 0),
+  };
+  StaticSocketDataProvider data(data_reads, arraysize(data_reads), NULL, 0);
+  session_deps_.socket_factory->AddSocketDataProvider(&data);
+
+  TestCompletionCallback callback;
+
+  {
+    auto request = std::make_unique<HttpRequestInfo>();
+    request->method = "GET";
+    request->url = GURL("http://www.example.org/");
+
+    int rv =
+        trans->Start(request.get(), callback.callback(), NetLogWithSource());
+
+    EXPECT_THAT(callback.GetResult(rv), IsOk());
+  }  // Let request info be destroyed.
+
+  trans.reset();
 }
 
 // Response with no status line, and a weird port.  Option to allow weird ports
@@ -10153,8 +10183,8 @@ TEST_F(HttpNetworkTransactionTest, UploadUnreadableFile) {
 TEST_F(HttpNetworkTransactionTest, CancelDuringInitRequestBody) {
   class FakeUploadElementReader : public UploadElementReader {
    public:
-    FakeUploadElementReader() {}
-    ~FakeUploadElementReader() override {}
+    FakeUploadElementReader() = default;
+    ~FakeUploadElementReader() override = default;
 
     const CompletionCallback& callback() const { return callback_; }
 
@@ -10377,9 +10407,10 @@ TEST_F(HttpNetworkTransactionTest, IgnoreAltSvcWithInvalidCert) {
   session_deps_.socket_factory->AddSocketDataProvider(&data);
 
   SSLSocketDataProvider ssl(ASYNC, OK);
-  ssl.cert = ImportCertFromFile(GetTestCertsDirectory(), "wildcard.pem");
-  ASSERT_TRUE(ssl.cert);
-  ssl.cert_status = CERT_STATUS_COMMON_NAME_INVALID;
+  ssl.ssl_info.cert =
+      ImportCertFromFile(GetTestCertsDirectory(), "wildcard.pem");
+  ASSERT_TRUE(ssl.ssl_info.cert);
+  ssl.ssl_info.cert_status = CERT_STATUS_COMMON_NAME_INVALID;
   session_deps_.socket_factory->AddSSLSocketDataProvider(&ssl);
 
   TestCompletionCallback callback;
@@ -10430,8 +10461,9 @@ TEST_F(HttpNetworkTransactionTest, HonorAlternativeServiceHeader) {
   session_deps_.socket_factory->AddSocketDataProvider(&data);
 
   SSLSocketDataProvider ssl(ASYNC, OK);
-  ssl.cert = ImportCertFromFile(GetTestCertsDirectory(), "wildcard.pem");
-  ASSERT_TRUE(ssl.cert);
+  ssl.ssl_info.cert =
+      ImportCertFromFile(GetTestCertsDirectory(), "wildcard.pem");
+  ASSERT_TRUE(ssl.ssl_info.cert);
   session_deps_.socket_factory->AddSSLSocketDataProvider(&ssl);
 
   TestCompletionCallback callback;
@@ -10629,8 +10661,9 @@ TEST_F(HttpNetworkTransactionTest, ClearAlternativeServices) {
   session_deps_.socket_factory->AddSocketDataProvider(&data);
 
   SSLSocketDataProvider ssl(ASYNC, OK);
-  ssl.cert = ImportCertFromFile(GetTestCertsDirectory(), "wildcard.pem");
-  ASSERT_TRUE(ssl.cert);
+  ssl.ssl_info.cert =
+      ImportCertFromFile(GetTestCertsDirectory(), "wildcard.pem");
+  ASSERT_TRUE(ssl.ssl_info.cert);
   session_deps_.socket_factory->AddSSLSocketDataProvider(&ssl);
 
   HttpRequestInfo request;
@@ -10676,8 +10709,9 @@ TEST_F(HttpNetworkTransactionTest, HonorMultipleAlternativeServiceHeaders) {
   session_deps_.socket_factory->AddSocketDataProvider(&data);
 
   SSLSocketDataProvider ssl(ASYNC, OK);
-  ssl.cert = ImportCertFromFile(GetTestCertsDirectory(), "wildcard.pem");
-  ASSERT_TRUE(ssl.cert);
+  ssl.ssl_info.cert =
+      ImportCertFromFile(GetTestCertsDirectory(), "wildcard.pem");
+  ASSERT_TRUE(ssl.ssl_info.cert);
   session_deps_.socket_factory->AddSSLSocketDataProvider(&ssl);
 
   TestCompletionCallback callback;
@@ -11307,8 +11341,9 @@ TEST_F(HttpNetworkTransactionTest, AlternateProtocolWithSpdyLateBinding) {
   session_deps_.socket_factory->AddSocketDataProvider(&http11_data);
 
   SSLSocketDataProvider ssl_http11(ASYNC, OK);
-  ssl_http11.cert = ImportCertFromFile(GetTestCertsDirectory(), "wildcard.pem");
-  ASSERT_TRUE(ssl_http11.cert);
+  ssl_http11.ssl_info.cert =
+      ImportCertFromFile(GetTestCertsDirectory(), "wildcard.pem");
+  ASSERT_TRUE(ssl_http11.ssl_info.cert);
   session_deps_.socket_factory->AddSSLSocketDataProvider(&ssl_http11);
 
   // Second transaction starts an alternative and a non-alternative Job.
@@ -11420,8 +11455,9 @@ TEST_F(HttpNetworkTransactionTest, StallAlternativeServiceForNpnSpdy) {
   session_deps_.socket_factory->AddSocketDataProvider(&first_transaction);
 
   SSLSocketDataProvider ssl(ASYNC, OK);
-  ssl.cert = ImportCertFromFile(GetTestCertsDirectory(), "wildcard.pem");
-  ASSERT_TRUE(ssl.cert);
+  ssl.ssl_info.cert =
+      ImportCertFromFile(GetTestCertsDirectory(), "wildcard.pem");
+  ASSERT_TRUE(ssl.ssl_info.cert);
   session_deps_.socket_factory->AddSSLSocketDataProvider(&ssl);
 
   MockConnect never_finishing_connect(SYNCHRONOUS, ERR_IO_PENDING);
@@ -11477,8 +11513,8 @@ TEST_F(HttpNetworkTransactionTest, StallAlternativeServiceForNpnSpdy) {
 
 class CapturingProxyResolver : public ProxyResolver {
  public:
-  CapturingProxyResolver() {}
-  ~CapturingProxyResolver() override {}
+  CapturingProxyResolver() = default;
+  ~CapturingProxyResolver() override = default;
 
   int GetProxyForURL(const GURL& url,
                      ProxyInfo* results,
@@ -13025,7 +13061,7 @@ class UrlRecordingHttpAuthHandlerMock : public HttpAuthHandlerMock {
  public:
   explicit UrlRecordingHttpAuthHandlerMock(GURL* url) : url_(url) {}
 
-  ~UrlRecordingHttpAuthHandlerMock() override {}
+  ~UrlRecordingHttpAuthHandlerMock() override = default;
 
  protected:
   int GenerateAuthTokenImpl(const AuthCredentials* credentials,
@@ -14227,7 +14263,7 @@ class OneTimeCachingHostResolver : public MockHostResolverBase {
  public:
   explicit OneTimeCachingHostResolver(const HostPortPair& host_port)
       : MockHostResolverBase(/* use_caching = */ true), host_port_(host_port) {}
-  ~OneTimeCachingHostResolver() override {}
+  ~OneTimeCachingHostResolver() override = default;
 
   int ResolveFromCache(const RequestInfo& info,
                        AddressList* addresses,
@@ -14854,8 +14890,9 @@ TEST_F(HttpNetworkTransactionTest, DoNotUseSpdySessionIfCertDoesNotMatch) {
   // be valid for proxy because the MockSSLClientSocket does
   // not actually verify it.  But SpdySession will use this
   // to see if it is valid for the new origin
-  ssl1.cert = ImportCertFromFile(GetTestCertsDirectory(), "ok_cert.pem");
-  ASSERT_TRUE(ssl1.cert);
+  ssl1.ssl_info.cert =
+      ImportCertFromFile(GetTestCertsDirectory(), "ok_cert.pem");
+  ASSERT_TRUE(ssl1.ssl_info.cert);
   session_deps_.socket_factory->AddSSLSocketDataProvider(&ssl1);
   session_deps_.socket_factory->AddSocketDataProvider(&data1);
 
@@ -15388,7 +15425,7 @@ class FakeStream : public HttpStream,
                    public base::SupportsWeakPtr<FakeStream> {
  public:
   explicit FakeStream(RequestPriority priority) : priority_(priority) {}
-  ~FakeStream() override {}
+  ~FakeStream() override = default;
 
   RequestPriority priority() const { return priority_; }
 
@@ -15504,7 +15541,7 @@ class FakeStreamRequest : public HttpStreamRequest,
         delegate_(delegate),
         websocket_stream_create_helper_(create_helper) {}
 
-  ~FakeStreamRequest() override {}
+  ~FakeStreamRequest() override = default;
 
   RequestPriority priority() const { return priority_; }
 
@@ -15558,8 +15595,8 @@ class FakeStreamRequest : public HttpStreamRequest,
 // Fake HttpStreamFactory that vends FakeStreamRequests.
 class FakeStreamFactory : public HttpStreamFactory {
  public:
-  FakeStreamFactory() {}
-  ~FakeStreamFactory() override {}
+  FakeStreamFactory() = default;
+  ~FakeStreamFactory() override = default;
 
   // Returns a WeakPtr<> to the last HttpStreamRequest returned by
   // RequestStream() (which may be NULL if it was destroyed already).
@@ -15761,7 +15798,7 @@ class FakeWebSocketStreamCreateHelper :
         std::move(connection), using_proxy);
   }
 
-  ~FakeWebSocketStreamCreateHelper() override {}
+  ~FakeWebSocketStreamCreateHelper() override = default;
 
   virtual std::unique_ptr<WebSocketStream> Upgrade() {
     NOTREACHED();
@@ -17116,8 +17153,8 @@ TEST_F(HttpNetworkTransactionTest, TokenBindingSpdy) {
   request.method = "GET";
 
   SSLSocketDataProvider ssl(ASYNC, OK);
-  ssl.token_binding_negotiated = true;
-  ssl.token_binding_key_param = TB_PARAM_ECDSAP256;
+  ssl.ssl_info.token_binding_negotiated = true;
+  ssl.ssl_info.token_binding_key_param = TB_PARAM_ECDSAP256;
   ssl.next_proto = kProtoHTTP2;
   session_deps_.socket_factory->AddSSLSocketDataProvider(&ssl);
 

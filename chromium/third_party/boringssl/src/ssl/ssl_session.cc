@@ -377,7 +377,7 @@ int ssl_get_new_session(SSL_HANDSHAKE *hs, int is_server) {
   ssl_get_current_time(ssl, &now);
   session->time = now.tv_sec;
 
-  uint16_t version = ssl3_protocol_version(ssl);
+  uint16_t version = ssl_protocol_version(ssl);
   if (version >= TLS1_3_VERSION) {
     // TLS 1.3 uses tickets as authenticators, so we are willing to use them for
     // longer.
@@ -999,9 +999,9 @@ SSL_SESSION *SSL_get_session(const SSL *ssl) {
   // we return the intermediate session, either |session| (for resumption) or
   // |new_session| if doing a full handshake.
   if (!SSL_in_init(ssl)) {
-    return ssl->s3->established_session;
+    return ssl->s3->established_session.get();
   }
-  SSL_HANDSHAKE *hs = ssl->s3->hs;
+  SSL_HANDSHAKE *hs = ssl->s3->hs.get();
   if (hs->early_session) {
     return hs->early_session.get();
   }

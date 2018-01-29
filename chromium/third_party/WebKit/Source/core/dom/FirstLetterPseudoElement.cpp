@@ -105,7 +105,7 @@ static bool IsInvalidFirstLetterLayoutObject(const LayoutObject* obj) {
 
 LayoutObject* FirstLetterPseudoElement::FirstLetterTextLayoutObject(
     const Element& element) {
-  LayoutObject* parent_layout_object = 0;
+  LayoutObject* parent_layout_object = nullptr;
 
   // If we are looking at a first letter element then we need to find the
   // first letter text layoutObject from the parent node, and not ourselves.
@@ -138,7 +138,7 @@ LayoutObject* FirstLetterPseudoElement::FirstLetterTextLayoutObject(
     } else if (first_letter_text_layout_object->IsText()) {
       // FIXME: If there is leading punctuation in a different LayoutText than
       // the first letter, we'll not apply the correct style to it.
-      RefPtr<StringImpl> str =
+      scoped_refptr<StringImpl> str =
           ToLayoutText(first_letter_text_layout_object)->IsTextFragment()
               ? ToLayoutTextFragment(first_letter_text_layout_object)
                     ->CompleteText()

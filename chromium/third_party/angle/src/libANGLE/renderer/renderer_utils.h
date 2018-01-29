@@ -138,7 +138,7 @@ class FastCopyFunctionMap
     const Entry *mData;
 };
 
-struct PackPixelsParams : private angle::NonCopyable
+struct PackPixelsParams
 {
     PackPixelsParams();
     PackPixelsParams(const gl::Rectangle &area,
@@ -146,8 +146,8 @@ struct PackPixelsParams : private angle::NonCopyable
                      GLenum type,
                      GLuint outputPitch,
                      const gl::PixelPackState &pack,
+                     gl::Buffer *packBufferIn,
                      ptrdiff_t offset);
-    PackPixelsParams(const gl::Context *context, const PackPixelsParams &other);
 
     gl::Rectangle area;
     GLenum format;
@@ -216,6 +216,38 @@ void CopyImageCHROMIUM(const uint8_t *sourceData,
                        bool unpackFlipY,
                        bool unpackPremultiplyAlpha,
                        bool unpackUnmultiplyAlpha);
+
+// Incomplete textures are 1x1 textures filled with black, used when samplers are incomplete.
+// This helper class encapsulates handling incomplete textures. Because the GL back-end
+// can take advantage of the driver's incomplete textures, and because clearing multisample
+// textures is so difficult, we can keep an instance of this class in the back-end instead
+// of moving the logic to the Context front-end.
+
+// This interface allows us to call-back to init a multisample texture.
+class MultisampleTextureInitializer
+{
+  public:
+    virtual ~MultisampleTextureInitializer() {}
+    virtual gl::Error initializeMultisampleTextureToBlack(const gl::Context *context,
+                                                          gl::Texture *glTexture) = 0;
+};
+
+class IncompleteTextureSet final : angle::NonCopyable
+{
+  public:
+    IncompleteTextureSet();
+    ~IncompleteTextureSet();
+
+    void onDestroy(const gl::Context *context);
+
+    gl::Error getIncompleteTexture(const gl::Context *context,
+                                   GLenum type,
+                                   MultisampleTextureInitializer *multisampleInitializer,
+                                   gl::Texture **textureOut);
+
+  private:
+    gl::TextureMap mIncompleteTextures;
+};
 
 }  // namespace rx
 

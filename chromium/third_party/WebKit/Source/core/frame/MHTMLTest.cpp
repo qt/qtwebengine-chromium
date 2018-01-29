@@ -117,7 +117,7 @@ class MHTMLTest : public ::testing::Test {
 
   void AddResource(const char* url,
                    const char* mime,
-                   RefPtr<SharedBuffer> data) {
+                   scoped_refptr<SharedBuffer> data) {
     SerializedResource resource(ToKURL(url), mime, std::move(data));
     resources_.push_back(resource);
   }
@@ -151,7 +151,7 @@ class MHTMLTest : public ::testing::Test {
   }
 
   static std::map<std::string, std::string> ExtractMHTMLHeaders(
-      RefPtr<RawData> mhtml_data) {
+      scoped_refptr<RawData> mhtml_data) {
     // Read the MHTML data per line until reaching the empty line.
     std::map<std::string, std::string> mhtml_headers;
     LineReader line_reader(
@@ -168,7 +168,7 @@ class MHTMLTest : public ::testing::Test {
     return mhtml_headers;
   }
 
-  static RefPtr<RawData> GenerateMHTMLData(
+  static scoped_refptr<RawData> GenerateMHTMLData(
       const Vector<SerializedResource>& resources,
       MHTMLArchive::EncodingPolicy encoding_policy,
       const KURL& url,
@@ -178,7 +178,7 @@ class MHTMLTest : public ::testing::Test {
     // all the examples in the MHTML spec - RFC 2557.
     String boundary = String::FromUTF8("boundary-example");
 
-    RefPtr<RawData> mhtml_data = RawData::Create();
+    scoped_refptr<RawData> mhtml_data = RawData::Create();
     MHTMLArchive::GenerateMHTMLHeader(boundary, url, title, mime_type,
                                       *mhtml_data->MutableData());
     for (const auto& resource : resources) {
@@ -197,15 +197,16 @@ class MHTMLTest : public ::testing::Test {
     return mhtml_data;
   }
 
-  RefPtr<RawData> Serialize(const KURL& url,
-                            const String& title,
-                            const String& mime,
-                            MHTMLArchive::EncodingPolicy encoding_policy) {
+  scoped_refptr<RawData> Serialize(
+      const KURL& url,
+      const String& title,
+      const String& mime,
+      MHTMLArchive::EncodingPolicy encoding_policy) {
     return GenerateMHTMLData(resources_, encoding_policy, url, title, mime);
   }
 
  private:
-  RefPtr<SharedBuffer> ReadFile(const char* file_name) {
+  scoped_refptr<SharedBuffer> ReadFile(const char* file_name) {
     String file_path = file_path_ + file_name;
     return testing::ReadFromFile(file_path);
   }
@@ -242,7 +243,7 @@ TEST_F(MHTMLTest, TestMHTMLHeadersWithTitleContainingAllPrintableCharacters) {
   const char kURL[] = "http://www.example.com/";
   const char kTitle[] = "abc";
   AddTestResources();
-  RefPtr<RawData> data =
+  scoped_refptr<RawData> data =
       Serialize(ToKURL(kURL), String::FromUTF8(kTitle), "text/html",
                 MHTMLArchive::kUseDefaultEncoding);
 
@@ -259,7 +260,7 @@ TEST_F(MHTMLTest, TestMHTMLHeadersWithTitleContainingNonPrintableCharacters) {
   const char kURL[] = "http://www.example.com/";
   const char kTitle[] = u8"abc=\u261D\U0001F3FB";
   AddTestResources();
-  RefPtr<RawData> data =
+  scoped_refptr<RawData> data =
       Serialize(ToKURL(kURL), String::FromUTF8(kTitle), "text/html",
                 MHTMLArchive::kUseDefaultEncoding);
 
@@ -276,7 +277,7 @@ TEST_F(MHTMLTest, TestMHTMLHeadersWithTitleContainingNonPrintableCharacters) {
 TEST_F(MHTMLTest, TestMHTMLEncoding) {
   const char kURL[] = "http://www.example.com";
   AddTestResources();
-  RefPtr<RawData> data =
+  scoped_refptr<RawData> data =
       Serialize(ToKURL(kURL), "Test Serialization", "text/html",
                 MHTMLArchive::kUseDefaultEncoding);
 
@@ -284,7 +285,7 @@ TEST_F(MHTMLTest, TestMHTMLEncoding) {
   // the right encoding is used for the different sections.
   LineReader line_reader(std::string(data->data(), data->length()));
   int section_checked_count = 0;
-  const char* expected_encoding = 0;
+  const char* expected_encoding = nullptr;
   std::string line;
   while (line_reader.GetNextLine(&line)) {
     if (line.compare(0, 13, "Content-Type:") == 0) {
@@ -304,7 +305,7 @@ TEST_F(MHTMLTest, TestMHTMLEncoding) {
     if (line.compare(0, 26, "Content-Transfer-Encoding:") == 0) {
       ASSERT_TRUE(expected_encoding);
       EXPECT_NE(line.find(expected_encoding), std::string::npos);
-      expected_encoding = 0;
+      expected_encoding = nullptr;
       section_checked_count++;
     }
   }
@@ -314,11 +315,11 @@ TEST_F(MHTMLTest, TestMHTMLEncoding) {
 TEST_F(MHTMLTest, MHTMLFromScheme) {
   const char kURL[] = "http://www.example.com";
   AddTestResources();
-  RefPtr<RawData> raw_data =
+  scoped_refptr<RawData> raw_data =
       Serialize(ToKURL(kURL), "Test Serialization", "text/html",
                 MHTMLArchive::kUseDefaultEncoding);
 
-  RefPtr<SharedBuffer> data =
+  scoped_refptr<SharedBuffer> data =
       SharedBuffer::Create(raw_data->data(), raw_data->length());
   KURL http_url = ToKURL("http://www.example.com");
   KURL content_url = ToKURL("content://foo");

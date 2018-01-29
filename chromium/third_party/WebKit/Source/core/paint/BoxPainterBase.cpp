@@ -17,6 +17,7 @@
 #include "core/style/ShadowList.h"
 #include "platform/geometry/LayoutRect.h"
 #include "platform/graphics/GraphicsContextStateSaver.h"
+#include "platform/graphics/ScopedInterpolationQuality.h"
 #include "platform/wtf/Optional.h"
 
 namespace blink {
@@ -238,7 +239,7 @@ bool BoxPainterBase::CalculateFillLayerOcclusionCulling(
     FillLayerOcclusionOutputList& reversed_paint_list,
     const FillLayer& fill_layer) {
   bool is_non_associative = false;
-  for (auto current_layer = &fill_layer; current_layer;
+  for (auto* current_layer = &fill_layer; current_layer;
        current_layer = current_layer->Next()) {
     reversed_paint_list.push_back(current_layer);
     // Stop traversal when an opaque layer is encountered.
@@ -361,28 +362,6 @@ BoxPainterBase::FillLayerInfo::FillLayerInfo(
 }
 
 namespace {
-
-class InterpolationQualityContext {
- public:
-  InterpolationQualityContext(const ComputedStyle& style,
-                              GraphicsContext& context)
-      : context_(context),
-        previous_interpolation_quality_(context.ImageInterpolationQuality()) {
-    interpolation_quality_ = style.GetInterpolationQuality();
-    if (interpolation_quality_ != previous_interpolation_quality_)
-      context.SetImageInterpolationQuality(interpolation_quality_);
-  }
-
-  ~InterpolationQualityContext() {
-    if (interpolation_quality_ != previous_interpolation_quality_)
-      context_.SetImageInterpolationQuality(previous_interpolation_quality_);
-  }
-
- private:
-  GraphicsContext& context_;
-  InterpolationQuality interpolation_quality_;
-  InterpolationQuality previous_interpolation_quality_;
-};
 
 inline bool PaintFastBottomLayer(const DisplayItemClient& image_client,
                                  Node* node,
@@ -553,17 +532,18 @@ void BoxPainterBase::PaintFillLayer(const PaintInfo& paint_info,
   LayoutRect scrolled_paint_rect =
       AdjustForScrolledContent(paint_info, info, rect);
 
-  RefPtr<Image> image;
+  scoped_refptr<Image> image;
   SkBlendMode composite_op = op;
-  Optional<InterpolationQualityContext> interpolation_quality_context;
+  Optional<ScopedInterpolationQuality> interpolation_quality_context;
   if (info.should_paint_image) {
     geometry.Calculate(paint_info.PaintContainer(),
                        paint_info.GetGlobalPaintFlags(), bg_layer,
                        scrolled_paint_rect);
     image = info.image->GetImage(
         geometry.ImageClient(), geometry.ImageDocument(), geometry.ImageStyle(),
-        FlooredIntSize(geometry.TileSize()), &geometry.LogicalTileSize());
-    interpolation_quality_context.emplace(geometry.ImageStyle(), context);
+        FlooredIntSize(geometry.TileSize()));
+    interpolation_quality_context.emplace(
+        context, geometry.ImageStyle().GetInterpolationQuality());
 
     if (bg_layer.MaskSourceType() == kMaskLuminance)
       context.SetColorFilter(kColorFilterLuminanceToAlpha);

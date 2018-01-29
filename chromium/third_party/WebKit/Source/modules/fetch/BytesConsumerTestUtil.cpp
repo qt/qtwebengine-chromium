@@ -5,11 +5,11 @@
 #include "modules/fetch/BytesConsumerTestUtil.h"
 
 #include "core/dom/ExecutionContext.h"
-#include "core/dom/TaskRunnerHelper.h"
 #include "platform/WebTaskRunner.h"
 #include "platform/testing/UnitTestHelpers.h"
 #include "platform/wtf/Assertions.h"
 #include "platform/wtf/Functional.h"
+#include "public/platform/TaskType.h"
 
 namespace blink {
 
@@ -68,13 +68,13 @@ Result BytesConsumerTestUtil::ReplayingBytesConsumer::BeginRead(
     case Command::kError: {
       Error e(String::FromUTF8(command.Body().data(), command.Body().size()));
       commands_.pop_front();
-      GetError(std::move(e));
+      MakeErrored(std::move(e));
       return Result::kError;
     }
     case Command::kWait:
       commands_.pop_front();
       state_ = InternalState::kWaiting;
-      TaskRunnerHelper::Get(TaskType::kNetworking, execution_context_)
+      execution_context_->GetTaskRunner(TaskType::kNetworking)
           ->PostTask(BLINK_FROM_HERE,
                      WTF::Bind(&ReplayingBytesConsumer::NotifyAsReadable,
                                WrapPersistent(this), notification_token_));
@@ -145,7 +145,8 @@ void BytesConsumerTestUtil::ReplayingBytesConsumer::Close() {
   ++notification_token_;
 }
 
-void BytesConsumerTestUtil::ReplayingBytesConsumer::GetError(const Error& e) {
+void BytesConsumerTestUtil::ReplayingBytesConsumer::MakeErrored(
+    const Error& e) {
   commands_.clear();
   offset_ = 0;
   error_ = e;
@@ -153,7 +154,8 @@ void BytesConsumerTestUtil::ReplayingBytesConsumer::GetError(const Error& e) {
   ++notification_token_;
 }
 
-DEFINE_TRACE(BytesConsumerTestUtil::ReplayingBytesConsumer) {
+void BytesConsumerTestUtil::ReplayingBytesConsumer::Trace(
+    blink::Visitor* visitor) {
   visitor->Trace(execution_context_);
   visitor->Trace(client_);
   BytesConsumer::Trace(visitor);

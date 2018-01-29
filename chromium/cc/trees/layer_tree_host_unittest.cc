@@ -57,6 +57,7 @@
 #include "cc/trees/swap_promise.h"
 #include "cc/trees/swap_promise_manager.h"
 #include "cc/trees/transform_node.h"
+#include "components/ukm/test_ukm_recorder.h"
 #include "components/viz/common/frame_sinks/begin_frame_args.h"
 #include "components/viz/common/frame_sinks/copy_output_request.h"
 #include "components/viz/common/frame_sinks/copy_output_result.h"
@@ -83,6 +84,10 @@ using testing::Mock;
 
 namespace cc {
 namespace {
+const char kUserInteraction[] = "Compositor.UserInteraction";
+const char kCheckerboardArea[] = "CheckerboardedContentArea";
+const char kCheckerboardAreaRatio[] = "CheckerboardedContentAreaRatio";
+const char kMissingTiles[] = "NumMissingTiles";
 
 class LayerTreeHostTest : public LayerTreeTest {};
 
@@ -457,9 +462,8 @@ class LayerTreeHostContextCacheTest : public LayerTreeHostTest {
     // Create the main viz::ContextProvider with a MockContextSupport.
     auto worker_support = std::make_unique<MockContextSupport>();
     mock_worker_context_support_ = worker_support.get();
-    auto test_worker_context_provider = TestContextProvider::Create(
+    auto test_worker_context_provider = TestContextProvider::CreateWorker(
         TestWebGraphicsContext3D::Create(), std::move(worker_support));
-    test_worker_context_provider->BindToCurrentThread();
 
     // At init, visibility is set to true, so SetAggressivelyFreeResources will
     // be disabled.
@@ -2765,7 +2769,7 @@ class ViewportDeltasAppliedDuringPinch : public LayerTreeHostTest {
     if (!sent_gesture_) {
       host_impl->PinchGestureBegin();
       host_impl->PinchGestureUpdate(2, gfx::Point(100, 100));
-      host_impl->PinchGestureEnd();
+      host_impl->PinchGestureEnd(gfx::Point(100, 100), true);
       sent_gesture_ = true;
     }
   }
@@ -3988,11 +3992,11 @@ class LayerTreeHostTestImplLayersPushProperties
         break;
     }
 
-    PushPropertiesCountingLayerImpl* root_impl_ = NULL;
-    PushPropertiesCountingLayerImpl* child_impl_ = NULL;
-    PushPropertiesCountingLayerImpl* child2_impl_ = NULL;
-    PushPropertiesCountingLayerImpl* grandchild_impl_ = NULL;
-    PushPropertiesCountingLayerImpl* leaf_always_pushing_layer_impl_ = NULL;
+    PushPropertiesCountingLayerImpl* root_impl_ = nullptr;
+    PushPropertiesCountingLayerImpl* child_impl_ = nullptr;
+    PushPropertiesCountingLayerImpl* child2_impl_ = nullptr;
+    PushPropertiesCountingLayerImpl* grandchild_impl_ = nullptr;
+    PushPropertiesCountingLayerImpl* leaf_always_pushing_layer_impl_ = nullptr;
 
     // Pull the layers that we need from the tree assuming the same structure
     // as LayerTreeHostTestLayersPushProperties
@@ -5375,7 +5379,7 @@ class LayerTreeHostTestSwapPromiseDuringCommit : public LayerTreeHostTest {
 
     {
       std::unique_ptr<SimpleSwapPromiseMonitor> swap_promise_monitor(
-          new SimpleSwapPromiseMonitor(layer_tree_host(), NULL,
+          new SimpleSwapPromiseMonitor(layer_tree_host(), nullptr,
                                        &set_needs_commit_count,
                                        &set_needs_redraw_count));
       layer_tree_host()->QueueSwapPromise(std::move(swap_promise));
@@ -5398,7 +5402,7 @@ class LayerTreeHostTestSwapPromiseDuringCommit : public LayerTreeHostTest {
 
     {
       std::unique_ptr<SimpleSwapPromiseMonitor> swap_promise_monitor(
-          new SimpleSwapPromiseMonitor(layer_tree_host(), NULL,
+          new SimpleSwapPromiseMonitor(layer_tree_host(), nullptr,
                                        &set_needs_commit_count,
                                        &set_needs_redraw_count));
       layer_tree_host()->QueueSwapPromise(std::move(swap_promise));
@@ -5430,7 +5434,7 @@ class LayerTreeHostTestSimpleSwapPromiseMonitor : public LayerTreeHostTest {
 
     {
       std::unique_ptr<SimpleSwapPromiseMonitor> swap_promise_monitor(
-          new SimpleSwapPromiseMonitor(layer_tree_host(), NULL,
+          new SimpleSwapPromiseMonitor(layer_tree_host(), nullptr,
                                        &set_needs_commit_count,
                                        &set_needs_redraw_count));
       layer_tree_host()->SetNeedsCommit();
@@ -5446,7 +5450,7 @@ class LayerTreeHostTestSimpleSwapPromiseMonitor : public LayerTreeHostTest {
 
     {
       std::unique_ptr<SimpleSwapPromiseMonitor> swap_promise_monitor(
-          new SimpleSwapPromiseMonitor(layer_tree_host(), NULL,
+          new SimpleSwapPromiseMonitor(layer_tree_host(), nullptr,
                                        &set_needs_commit_count,
                                        &set_needs_redraw_count));
       layer_tree_host()->SetNeedsUpdateLayers();
@@ -5456,7 +5460,7 @@ class LayerTreeHostTestSimpleSwapPromiseMonitor : public LayerTreeHostTest {
 
     {
       std::unique_ptr<SimpleSwapPromiseMonitor> swap_promise_monitor(
-          new SimpleSwapPromiseMonitor(layer_tree_host(), NULL,
+          new SimpleSwapPromiseMonitor(layer_tree_host(), nullptr,
                                        &set_needs_commit_count,
                                        &set_needs_redraw_count));
       layer_tree_host()->SetNeedsAnimate();
@@ -6440,7 +6444,7 @@ class LayerTreeHostTestCrispUpAfterPinchEnds : public LayerTreeHostTest {
         // Pinch zoom in.
         host_impl->PinchGestureBegin();
         host_impl->PinchGestureUpdate(1.5f, gfx::Point(100, 100));
-        host_impl->PinchGestureEnd();
+        host_impl->PinchGestureEnd(gfx::Point(100, 100), true);
         break;
       case 3:
         // Pinch zoom back to 1.f but don't end it.
@@ -6450,7 +6454,7 @@ class LayerTreeHostTestCrispUpAfterPinchEnds : public LayerTreeHostTest {
       case 4:
         // End the pinch, but delay tile production.
         playback_allowed_event_.Reset();
-        host_impl->PinchGestureEnd();
+        host_impl->PinchGestureEnd(gfx::Point(100, 100), true);
         break;
       case 5:
         // Let tiles complete.
@@ -6723,7 +6727,7 @@ class LayerTreeHostTestContinuousDrawWhenCreatingVisibleTiles
         // Pinch zoom in to cause new tiles to be required.
         host_impl->PinchGestureBegin();
         host_impl->PinchGestureUpdate(1.5f, gfx::Point(100, 100));
-        host_impl->PinchGestureEnd();
+        host_impl->PinchGestureEnd(gfx::Point(100, 100), true);
         ++step_;
         break;
       case 2:
@@ -7615,7 +7619,6 @@ class GpuRasterizationSucceedsWithLargeImage : public LayerTreeHostTest {
 
     // Set to 0 to force at-raster GPU image decode.
     settings->decoded_image_working_set_budget_bytes = 0;
-    settings->decoded_image_cache_budget_bytes = 0;
   }
 
   void SetupTree() override {
@@ -8127,6 +8130,217 @@ class LayerTreeHostTestImageAnimation : public LayerTreeHostTest {
 };
 
 MULTI_THREAD_TEST_F(LayerTreeHostTestImageAnimation);
+
+class LayerTreeHostTestImageAnimationSynchronousScheduling
+    : public LayerTreeHostTestImageAnimation {
+ public:
+  void InitializeSettings(LayerTreeSettings* settings) override {
+    LayerTreeHostTestImageAnimation::InitializeSettings(settings);
+    settings->using_synchronous_renderer_compositor = true;
+  }
+};
+
+MULTI_THREAD_TEST_F(LayerTreeHostTestImageAnimationSynchronousScheduling);
+
+class LayerTreeHostTestImageDecodingHints : public LayerTreeHostTest {
+ public:
+  void BeginTest() override { PostSetNeedsCommitToMainThread(); }
+
+  void SetupTree() override {
+    gfx::Size layer_size(100, 100);
+    content_layer_client_.set_bounds(layer_size);
+    content_layer_client_.set_fill_with_nonsolid_color(true);
+    PaintImage async_image =
+        PaintImageBuilder::WithCopy(
+            CreateDiscardablePaintImage(gfx::Size(10, 10)))
+            .set_id(1)
+            .set_decoding_mode(PaintImage::DecodingMode::kAsync)
+            .TakePaintImage();
+    PaintImage sync_image =
+        PaintImageBuilder::WithCopy(
+            CreateDiscardablePaintImage(gfx::Size(10, 10)))
+            .set_id(2)
+            .set_decoding_mode(PaintImage::DecodingMode::kSync)
+            .TakePaintImage();
+    PaintImage unspecified_image =
+        PaintImageBuilder::WithCopy(
+            CreateDiscardablePaintImage(gfx::Size(10, 10)))
+            .set_id(3)
+            .set_decoding_mode(PaintImage::DecodingMode::kUnspecified)
+            .TakePaintImage();
+    content_layer_client_.add_draw_image(async_image, gfx::Point(0, 0),
+                                         PaintFlags());
+    content_layer_client_.add_draw_image(sync_image, gfx::Point(1, 2),
+                                         PaintFlags());
+    content_layer_client_.add_draw_image(unspecified_image, gfx::Point(3, 4),
+                                         PaintFlags());
+
+    layer_tree_host()->SetRootLayer(
+        FakePictureLayer::Create(&content_layer_client_));
+    layer_tree_host()->root_layer()->SetBounds(layer_size);
+    LayerTreeTest::SetupTree();
+  }
+
+  void WillPrepareToDrawOnThread(LayerTreeHostImpl* host_impl) override {
+    auto& tracker = host_impl->tile_manager()->checker_image_tracker();
+    EXPECT_EQ(tracker.get_decoding_mode_hint_for_testing(1),
+              PaintImage::DecodingMode::kAsync);
+    EXPECT_EQ(tracker.get_decoding_mode_hint_for_testing(2),
+              PaintImage::DecodingMode::kSync);
+    EXPECT_EQ(tracker.get_decoding_mode_hint_for_testing(3),
+              PaintImage::DecodingMode::kUnspecified);
+    EndTest();
+  }
+
+  void AfterTest() override {}
+
+ private:
+  FakeContentLayerClient content_layer_client_;
+};
+
+MULTI_THREAD_TEST_F(LayerTreeHostTestImageDecodingHints);
+
+class LayerTreeHostTestCheckerboardUkm : public LayerTreeHostTest {
+ public:
+  LayerTreeHostTestCheckerboardUkm() : url_(GURL("https://example.com")) {}
+
+  void BeginTest() override {
+    PostSetNeedsCommitToMainThread();
+    layer_tree_host()->SetURLForUkm(url_);
+  }
+
+  void SetupTree() override {
+    gfx::Size layer_size(100, 100);
+    content_layer_client_.set_bounds(layer_size);
+    content_layer_client_.set_fill_with_nonsolid_color(true);
+    layer_tree_host()->SetRootLayer(
+        FakePictureLayer::Create(&content_layer_client_));
+    layer_tree_host()->root_layer()->SetBounds(layer_size);
+    LayerTreeTest::SetupTree();
+  }
+
+  void DidActivateTreeOnThread(LayerTreeHostImpl* impl) override {
+    if (impl->active_tree()->source_frame_number() != 0)
+      return;
+
+    // We have an active tree. Start a pinch gesture so we start recording
+    // stats.
+    impl->PinchGestureBegin();
+  }
+
+  void DrawLayersOnThread(LayerTreeHostImpl* impl) override {
+    if (!impl->pinch_gesture_active())
+      return;
+
+    // We just drew a frame, stats for it should have been recorded. End the
+    // gesture so they are flushed to the recorder.
+    impl->PinchGestureEnd(gfx::Point(50, 50), false);
+
+    // RenewTreePriority will run when the smoothness expiration timer fires.
+    // Synthetically do it here so the UkmManager is notified.
+    impl->RenewTreePriorityForTesting();
+
+    auto* recorder = static_cast<ukm::TestUkmRecorder*>(
+        impl->ukm_manager()->recorder_for_testing());
+
+    const auto& entries = recorder->GetEntriesByName(kUserInteraction);
+    EXPECT_EQ(1u, entries.size());
+    for (const auto* entry : entries) {
+      recorder->ExpectEntrySourceHasUrl(entry, url_);
+      recorder->ExpectEntryMetric(entry, kCheckerboardArea, 0);
+      recorder->ExpectEntryMetric(entry, kMissingTiles, 0);
+      recorder->ExpectEntryMetric(entry, kCheckerboardAreaRatio, 0);
+    }
+
+    EndTest();
+  }
+
+  void AfterTest() override {}
+
+ private:
+  const GURL url_;
+  FakeContentLayerClient content_layer_client_;
+};
+
+// Only multi-thread mode needs to record UKMs.
+MULTI_THREAD_TEST_F(LayerTreeHostTestCheckerboardUkm);
+
+class DontUpdateLayersWithEmptyBounds : public LayerTreeTest {
+ protected:
+  void SetupTree() override {
+    auto root = FakePictureLayer::Create(&root_client_);
+    child_ = FakePictureLayer::Create(&child_client_);
+    mask_ = FakePictureLayer::Create(&mask_client_);
+
+    // Add a lot of draw ops, to make sure the recording source
+    // hits the early out and avoids being detected as solid color even
+    // though it is empty. This ensures we hit later code paths that would
+    // early out if solid color in CanHaveTilings().
+    PaintFlags flags;
+    flags.setColor(SK_ColorRED);
+    for (int i = 0; i < 100; ++i) {
+      child_client_.add_draw_rect(gfx::Rect(3, 3), flags);
+      mask_client_.add_draw_rect(gfx::Rect(2, 2), flags);
+    }
+
+    root_client_.set_bounds(gfx::Size(10, 10));
+    root->SetBounds(gfx::Size(10, 10));
+
+    child_client_.set_bounds(gfx::Size(9, 9));
+    child_->SetBounds(gfx::Size(9, 9));
+    mask_client_.set_bounds(gfx::Size(9, 9));
+    mask_->SetBounds(gfx::Size(9, 9));
+
+    child_->SetMaskLayer(mask_.get());
+    root->AddChild(child_);
+    layer_tree_host()->SetRootLayer(std::move(root));
+    LayerTreeTest::SetupTree();
+  }
+
+  void BeginTest() override { PostSetNeedsCommitToMainThread(); }
+
+  void DidCommit() override {
+    switch (layer_tree_host()->SourceFrameNumber()) {
+      case 1:
+        // The child and mask are updated when they have non-empty bounds.
+        EXPECT_EQ(1, child_->update_count());
+        EXPECT_EQ(1, mask_->update_count());
+
+        // The child and mask become empty bounds.
+        child_client_.set_bounds(gfx::Size());
+        child_->SetBounds(gfx::Size());
+        mask_client_.set_bounds(gfx::Size());
+        mask_->SetBounds(gfx::Size());
+        break;
+      case 2: {
+        scoped_refptr<RasterSource> child_raster =
+            child_->GetRecordingSourceForTesting()->CreateRasterSource();
+        EXPECT_FALSE(child_raster->IsSolidColor());
+        scoped_refptr<RasterSource> mask_raster =
+            mask_->GetRecordingSourceForTesting()->CreateRasterSource();
+        EXPECT_FALSE(mask_raster->IsSolidColor());
+      }
+
+        // The child and mask are not updated when they have empty bounds.
+        EXPECT_EQ(1, child_->update_count());
+        EXPECT_EQ(1, mask_->update_count());
+        EndTest();
+        break;
+      default:
+        ADD_FAILURE() << layer_tree_host()->SourceFrameNumber();
+    }
+  }
+
+  void AfterTest() override {}
+
+  scoped_refptr<FakePictureLayer> child_;
+  scoped_refptr<FakePictureLayer> mask_;
+  FakeContentLayerClient root_client_;
+  FakeContentLayerClient child_client_;
+  FakeContentLayerClient mask_client_;
+};
+
+SINGLE_AND_MULTI_THREAD_TEST_F(DontUpdateLayersWithEmptyBounds);
 
 }  // namespace
 }  // namespace cc

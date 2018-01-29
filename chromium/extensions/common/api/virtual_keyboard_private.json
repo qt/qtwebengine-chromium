@@ -186,12 +186,31 @@
       {
         "name": "setMode",
         "type": "function",
-        "description": "Sets the virtual keyboard mode.",
+        "description": "Sets the virtual keyboard container mode.",
         "parameters": [
           {
             "$ref": "KeyboardMode",
             "name": "mode",
             "description": "The value of the virtual keyboard mode to set to."
+          },
+          {
+            "type": "function",
+            "name": "callback",
+            "optional": true,
+            "description": "Called when container mode is ready to change.",
+            "parameters": []
+          }
+        ]
+      },
+      {
+        "name": "setDraggableArea",
+        "type": "function",
+        "description": "Sets the virtual keyboard draggable area bounds.",
+        "parameters": [
+          {
+            "$ref": "Bounds",
+            "name": "bounds",
+            "description": "The value of draggable rect area of floating keyboard."
           }
         ]
       },

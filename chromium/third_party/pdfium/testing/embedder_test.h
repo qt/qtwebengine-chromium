@@ -81,7 +81,7 @@ class EmbedderTest : public ::testing::Test,
 
   // Create an empty document, and its form fill environment. Returns true
   // on success or false on failure.
-  virtual bool CreateEmptyDocument();
+  bool CreateEmptyDocument();
 
   // Open the document specified by |filename|, and create its form fill
   // environment, or return false on failure.
@@ -92,27 +92,27 @@ class EmbedderTest : public ::testing::Test,
                             bool must_linearize = false);
 
   // Perform JavaScript actions that are to run at document open time.
-  virtual void DoOpenActions();
+  void DoOpenActions();
 
   // Determine the page numbers present in the document.
-  virtual int GetFirstPageNum();
-  virtual int GetPageCount();
+  int GetFirstPageNum();
+  int GetPageCount();
 
   // Load a specific page of the open document.
-  virtual FPDF_PAGE LoadPage(int page_number);
+  FPDF_PAGE LoadPage(int page_number);
 
   // Convert a loaded page into a bitmap.
-  virtual FPDF_BITMAP RenderPage(FPDF_PAGE page);
+  FPDF_BITMAP RenderPage(FPDF_PAGE page);
 
   // Convert a loaded page into a bitmap with page rendering flags specified.
   // See public/fpdfview.h for a list of page rendering flags.
-  virtual FPDF_BITMAP RenderPageWithFlags(FPDF_PAGE page,
-                                          FPDF_FORMHANDLE handle,
-                                          int flags);
+  FPDF_BITMAP RenderPageWithFlags(FPDF_PAGE page,
+                                  FPDF_FORMHANDLE handle,
+                                  int flags);
 
   // Relese the resources obtained from LoadPage(). Further use of |page|
   // is prohibited after this call is made.
-  virtual void UnloadPage(FPDF_PAGE page);
+  void UnloadPage(FPDF_PAGE page);
 
  protected:
   bool OpenDocumentHelper(const char* password,
@@ -125,9 +125,7 @@ class EmbedderTest : public ::testing::Test,
   FPDF_FORMHANDLE SetupFormFillEnvironment(FPDF_DOCUMENT doc);
 
   // Return the hash of |bitmap|.
-  static std::string HashBitmap(FPDF_BITMAP bitmap,
-                                int expected_width,
-                                int expected_height);
+  static std::string HashBitmap(FPDF_BITMAP bitmap);
 
   // Check |bitmap| to make sure it has the right dimensions and content.
   static void CompareBitmap(FPDF_BITMAP bitmap,
@@ -143,12 +141,16 @@ class EmbedderTest : public ::testing::Test,
                                 unsigned char* buf,
                                 unsigned long size);
 
-  void TestSaved(int width,
-                 int height,
-                 const char* md5,
-                 const char* password = nullptr);
-  void CloseSaved();
-  void TestAndCloseSaved(int width, int height, const char* md5);
+  FPDF_DOCUMENT OpenSavedDocument(const char* password = nullptr);
+  void CloseSavedDocument();
+  FPDF_PAGE LoadSavedPage(int page_number);
+  FPDF_BITMAP RenderSavedPage(FPDF_PAGE page);
+  void CloseSavedPage(FPDF_PAGE page);
+  void VerifySavedRendering(FPDF_PAGE page,
+                            int width,
+                            int height,
+                            const char* md5);
+  void VerifySavedDocument(int width, int height, const char* md5);
 
   void SetWholeFileAvailable();
 
@@ -168,7 +170,6 @@ class EmbedderTest : public ::testing::Test,
   std::map<int, FPDF_PAGE> page_map_;
   std::map<FPDF_PAGE, int> page_reverse_map_;
   FPDF_DOCUMENT m_SavedDocument;
-  FPDF_PAGE m_SavedPage;
   FPDF_FORMHANDLE m_SavedForm;
   FPDF_AVAIL m_SavedAvail;
   FPDF_FILEACCESS saved_file_access_;  // must outlive m_SavedAvail.

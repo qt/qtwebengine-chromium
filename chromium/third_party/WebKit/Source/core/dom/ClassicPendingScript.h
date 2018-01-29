@@ -5,11 +5,13 @@
 #ifndef ClassicPendingScript_h
 #define ClassicPendingScript_h
 
+#include "bindings/core/v8/ScriptSourceLocationType.h"
 #include "bindings/core/v8/ScriptStreamer.h"
 #include "core/dom/ClassicScript.h"
 #include "core/dom/PendingScript.h"
 #include "core/loader/resource/ScriptResource.h"
 #include "platform/MemoryCoordinator.h"
+#include "platform/loader/fetch/FetchParameters.h"
 #include "platform/loader/fetch/ResourceOwner.h"
 
 namespace blink {
@@ -30,10 +32,26 @@ class CORE_EXPORT ClassicPendingScript final
   USING_PRE_FINALIZER(ClassicPendingScript, Prefinalize);
 
  public:
-  // For script from an external file.
-  static ClassicPendingScript* Create(ScriptElementBase*, ScriptResource*);
-  // For inline script.
-  static ClassicPendingScript* Create(ScriptElementBase*, const TextPosition&);
+  // https://html.spec.whatwg.org/multipage/webappapis.html#fetch-a-classic-script
+  //
+  // For a script from an external file, calls ScriptResource::Fetch() and
+  // creates ClassicPendingScript. Returns nullptr if Fetch() returns nullptr.
+  static ClassicPendingScript* Fetch(const KURL&,
+                                     Document&,
+                                     const ScriptFetchOptions&,
+                                     const WTF::TextEncoding&,
+                                     ScriptElementBase*,
+                                     FetchParameters::DeferOption);
+
+  // For a script from an external file, with a supplied ScriptResource.
+  static ClassicPendingScript* CreateExternalForTest(ScriptElementBase*,
+                                                     ScriptResource*);
+
+  // For an inline script.
+  static ClassicPendingScript* CreateInline(ScriptElementBase*,
+                                            const TextPosition&,
+                                            ScriptSourceLocationType,
+                                            const ScriptFetchOptions&);
 
   ~ClassicPendingScript() override;
 
@@ -41,7 +59,7 @@ class CORE_EXPORT ClassicPendingScript final
   void SetStreamer(ScriptStreamer*);
   void StreamingFinished();
 
-  DECLARE_TRACE();
+  void Trace(blink::Visitor*);
 
   blink::ScriptType GetScriptType() const override {
     return blink::ScriptType::kClassic;
@@ -50,13 +68,12 @@ class CORE_EXPORT ClassicPendingScript final
   ClassicScript* GetSource(const KURL& document_url,
                            bool& error_occurred) const override;
   bool IsReady() const override;
-  bool IsExternal() const override { return GetResource(); }
+  bool IsExternal() const override { return is_external_; }
   bool ErrorOccurred() const override;
   bool WasCanceled() const override;
   bool StartStreamingIfPossible(ScriptStreamer::Type, WTF::Closure) override;
   bool IsCurrentlyStreaming() const override;
-  KURL UrlForClassicScript() const override;
-  void RemoveFromMemoryCache() override;
+  KURL UrlForTracing() const override;
   void DisposeInternal() override;
 
   void Prefinalize();
@@ -74,8 +91,10 @@ class CORE_EXPORT ClassicPendingScript final
   };
 
   ClassicPendingScript(ScriptElementBase*,
-                       ScriptResource*,
-                       const TextPosition&);
+                       const TextPosition&,
+                       ScriptSourceLocationType,
+                       const ScriptFetchOptions&,
+                       bool is_external);
   ClassicPendingScript() = delete;
 
   // Advances the current state of the script, reporting to the client if
@@ -89,16 +108,23 @@ class CORE_EXPORT ClassicPendingScript final
 
   void CheckState() const override;
 
-  // ScriptResourceClient
+  // ResourceClient
   void NotifyFinished(Resource*) override;
   String DebugName() const override { return "PendingScript"; }
-  void NotifyAppendData(ScriptResource*) override;
+  void DataReceived(Resource*, const char*, size_t) override;
 
   // MemoryCoordinatorClient
   void OnPurgeMemory() override;
 
+  const ScriptFetchOptions options_;
+
+  const ScriptSourceLocationType source_location_type_;
+  const bool is_external_;
   ReadyState ready_state_;
   bool integrity_failure_;
+
+  // The request is intervened by document.write() intervention.
+  bool intervened_ = false;
 
   Member<ScriptStreamer> streamer_;
   WTF::Closure streamer_done_;

@@ -5,7 +5,7 @@
 #include "modules/media_controls/elements/MediaControlPlayButtonElement.h"
 
 #include "core/dom/events/Event.h"
-#include "core/html/HTMLMediaElement.h"
+#include "core/html/media/HTMLMediaElement.h"
 #include "core/html/media/HTMLMediaSource.h"
 #include "core/input_type_names.h"
 #include "modules/media_controls/MediaControlsImpl.h"
@@ -16,7 +16,6 @@ namespace blink {
 MediaControlPlayButtonElement::MediaControlPlayButtonElement(
     MediaControlsImpl& media_controls)
     : MediaControlInputElement(media_controls, kMediaPlayButton) {
-  EnsureUserAgentShadowRoot();
   setType(InputTypeNames::button);
   SetShadowPseudoId(AtomicString("-webkit-media-controls-play-button"));
 }

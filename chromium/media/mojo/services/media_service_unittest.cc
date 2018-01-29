@@ -54,8 +54,8 @@ const char kSecurityOrigin[] = "http://foo.com";
 
 class MockRendererClient : public mojom::RendererClient {
  public:
-  MockRendererClient() {}
-  ~MockRendererClient() override {}
+  MockRendererClient() = default;
+  ~MockRendererClient() override = default;
 
   // mojom::RendererClient implementation.
   MOCK_METHOD3(OnTimeUpdate,
@@ -84,7 +84,7 @@ class MediaServiceTest : public service_manager::test::ServiceTest {
       : ServiceTest("media_service_unittests"),
         renderer_client_binding_(&renderer_client_),
         video_stream_(DemuxerStream::VIDEO) {}
-  ~MediaServiceTest() override {}
+  ~MediaServiceTest() override = default;
 
   void SetUp() override {
     ServiceTest::SetUp();
@@ -118,7 +118,7 @@ class MediaServiceTest : public service_manager::test::ServiceTest {
     EXPECT_CALL(*this, OnCdmInitializedInternal(expected_result, cdm_id))
         .Times(Exactly(1))
         .WillOnce(InvokeWithoutArgs(run_loop_.get(), &base::RunLoop::Quit));
-    cdm_->Initialize(key_system, url::Origin(GURL(kSecurityOrigin)),
+    cdm_->Initialize(key_system, url::Origin::Create(GURL(kSecurityOrigin)),
                      CdmConfig(),
                      base::Bind(&MediaServiceTest::OnCdmInitialized,
                                 base::Unretained(this)));
@@ -133,9 +133,9 @@ class MediaServiceTest : public service_manager::test::ServiceTest {
 
     video_stream_.set_video_decoder_config(video_config);
 
-    mojom::DemuxerStreamPtr video_stream_proxy;
+    mojom::DemuxerStreamPtrInfo video_stream_proxy_info;
     mojo_video_stream_.reset(new MojoDemuxerStreamImpl(
-        &video_stream_, MakeRequest(&video_stream_proxy)));
+        &video_stream_, MakeRequest(&video_stream_proxy_info)));
 
     mojom::RendererClientAssociatedPtrInfo client_ptr_info;
     renderer_client_binding_.Bind(mojo::MakeRequest(&client_ptr_info));
@@ -143,8 +143,8 @@ class MediaServiceTest : public service_manager::test::ServiceTest {
     EXPECT_CALL(*this, OnRendererInitialized(expected_result))
         .Times(Exactly(1))
         .WillOnce(InvokeWithoutArgs(run_loop_.get(), &base::RunLoop::Quit));
-    std::vector<mojom::DemuxerStreamPtr> streams;
-    streams.push_back(std::move(video_stream_proxy));
+    std::vector<mojom::DemuxerStreamPtrInfo> streams;
+    streams.push_back(std::move(video_stream_proxy_info));
     renderer_->Initialize(std::move(client_ptr_info), std::move(streams),
                           base::nullopt, base::nullopt,
                           base::Bind(&MediaServiceTest::OnRendererInitialized,

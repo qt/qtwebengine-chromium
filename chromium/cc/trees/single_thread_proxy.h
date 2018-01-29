@@ -57,6 +57,11 @@ class CC_EXPORT SingleThreadProxy : public Proxy,
   void SetMutator(std::unique_ptr<LayerTreeMutator> mutator) override;
   bool SupportsImplScrolling() const override;
   bool MainFrameWillHappenForTesting() override;
+  void SetURLForUkm(const GURL& url) override {
+    // Single-threaded mode is only for browser compositing and for renderers in
+    // layout tests. This will still get called in the latter case, but we don't
+    // need to record UKM in that case.
+  }
 
   // Blink layout tests might call into this even though an unthreaded CC
   // doesn't have BrowserControls itself.
@@ -81,6 +86,9 @@ class CC_EXPORT SingleThreadProxy : public Proxy,
   void SendBeginMainFrameNotExpectedSoon() override;
   void ScheduledActionBeginMainFrameNotExpectedUntil(
       base::TimeTicks time) override;
+  size_t CompositedAnimationsCount() const override;
+  size_t MainThreadAnimationsCount() const override;
+  size_t MainThreadCompositableAnimationsCount() const override;
 
   // LayerTreeHostImplClient implementation
   void DidLoseLayerTreeFrameSinkOnImplThread() override;

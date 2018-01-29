@@ -30,14 +30,14 @@
 
 #include "core/css/CSSSelectorWatch.h"
 
+#include "core/css/CSSPropertyValueSet.h"
 #include "core/css/StyleEngine.h"
-#include "core/css/StylePropertySet.h"
 #include "core/css/parser/CSSParser.h"
 #include "core/dom/Document.h"
 #include "core/dom/ExecutionContext.h"
-#include "core/dom/TaskRunnerHelper.h"
 #include "core/frame/LocalFrame.h"
 #include "core/frame/LocalFrameClient.h"
+#include "public/platform/TaskType.h"
 
 namespace blink {
 
@@ -47,7 +47,7 @@ static const char kSupplementNameWatch[] = "CSSSelectorWatch";
 CSSSelectorWatch::CSSSelectorWatch(Document& document)
     : Supplement<Document>(document),
       callback_selector_change_timer_(
-          TaskRunnerHelper::Get(TaskType::kUnspecedTimer, &document),
+          document.GetTaskRunner(TaskType::kUnspecedTimer),
           this,
           &CSSSelectorWatch::CallbackSelectorChangeTimerFired),
       timer_expirations_(0) {}
@@ -72,7 +72,7 @@ void CSSSelectorWatch::CallbackSelectorChangeTimerFired(TimerBase*) {
 
   if (timer_expirations_ < 1) {
     timer_expirations_++;
-    callback_selector_change_timer_.StartOneShot(0, BLINK_FROM_HERE);
+    callback_selector_change_timer_.StartOneShot(TimeDelta(), BLINK_FROM_HERE);
     return;
   }
   if (GetSupplementable()->GetFrame()) {
@@ -130,8 +130,10 @@ void CSSSelectorWatch::UpdateSelectorMatches(
     }
   } else {
     timer_expirations_ = 0;
-    if (!callback_selector_change_timer_.IsActive())
-      callback_selector_change_timer_.StartOneShot(0, BLINK_FROM_HERE);
+    if (!callback_selector_change_timer_.IsActive()) {
+      callback_selector_change_timer_.StartOneShot(TimeDelta(),
+                                                   BLINK_FROM_HERE);
+    }
   }
 }
 
@@ -147,10 +149,12 @@ static bool AllCompound(const CSSSelectorList& selector_list) {
 void CSSSelectorWatch::WatchCSSSelectors(const Vector<String>& selectors) {
   watched_callback_selectors_.clear();
 
-  StylePropertySet* callback_property_set =
-      ImmutableStylePropertySet::Create(nullptr, 0, kUASheetMode);
+  CSSPropertyValueSet* callback_property_set =
+      ImmutableCSSPropertyValueSet::Create(nullptr, 0, kUASheetMode);
 
-  CSSParserContext* context = CSSParserContext::Create(kUASheetMode);
+  // UA stylesheets always parse in the insecure context mode.
+  CSSParserContext* context = CSSParserContext::Create(
+      kUASheetMode, SecureContextMode::kInsecureContext);
   for (const auto& selector : selectors) {
     CSSSelectorList selector_list =
         CSSParser::ParseSelector(context, nullptr, selector);
@@ -167,7 +171,7 @@ void CSSSelectorWatch::WatchCSSSelectors(const Vector<String>& selectors) {
   GetSupplementable()->GetStyleEngine().WatchedSelectorsChanged();
 }
 
-DEFINE_TRACE(CSSSelectorWatch) {
+void CSSSelectorWatch::Trace(blink::Visitor* visitor) {
   visitor->Trace(watched_callback_selectors_);
   Supplement<Document>::Trace(visitor);
 }

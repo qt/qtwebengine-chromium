@@ -29,6 +29,7 @@
 #ifndef Gradient_h
 #define Gradient_h
 
+#include "base/memory/scoped_refptr.h"
 #include "platform/PlatformExport.h"
 #include "platform/graphics/Color.h"
 #include "platform/graphics/GraphicsTypes.h"
@@ -36,7 +37,6 @@
 #include "platform/graphics/paint/PaintShader.h"
 #include "platform/wtf/Noncopyable.h"
 #include "platform/wtf/RefCounted.h"
-#include "platform/wtf/RefPtr.h"
 #include "platform/wtf/Vector.h"
 #include "third_party/skia/include/core/SkRefCnt.h"
 
@@ -58,13 +58,13 @@ class PLATFORM_EXPORT Gradient : public RefCounted<Gradient> {
     kUnpremultiplied,
   };
 
-  static RefPtr<Gradient> CreateLinear(
+  static scoped_refptr<Gradient> CreateLinear(
       const FloatPoint& p0,
       const FloatPoint& p1,
       GradientSpreadMethod = kSpreadMethodPad,
       ColorInterpolation = ColorInterpolation::kUnpremultiplied);
 
-  static RefPtr<Gradient> CreateRadial(
+  static scoped_refptr<Gradient> CreateRadial(
       const FloatPoint& p0,
       float r0,
       const FloatPoint& p1,
@@ -73,7 +73,7 @@ class PLATFORM_EXPORT Gradient : public RefCounted<Gradient> {
       GradientSpreadMethod = kSpreadMethodPad,
       ColorInterpolation = ColorInterpolation::kUnpremultiplied);
 
-  static RefPtr<Gradient> CreateConic(
+  static scoped_refptr<Gradient> CreateConic(
       const FloatPoint& position,
       float rotation,
       float start_angle,

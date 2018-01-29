@@ -54,6 +54,8 @@ struct FuzzingOptions {
   bool DumpCoverage = false;
   bool UseClangCoverage = false;
   bool DetectLeaks = true;
+  int PurgeAllocatorIntervalSec = 1;
+  int UseFeatureFrequency = false;
   int  TraceMalloc = 0;
   bool HandleAbrt = false;
   bool HandleBus = false;
@@ -63,6 +65,8 @@ struct FuzzingOptions {
   bool HandleSegv = false;
   bool HandleTerm = false;
   bool HandleXfsz = false;
+  bool HandleUsr1 = false;
+  bool HandleUsr2 = false;
 };
 
 }  // namespace fuzzer

@@ -29,7 +29,7 @@ void PlatformEventController::StartUpdating() {
 
   if (HasLastData() && !update_callback_handle_.IsActive()) {
     update_callback_handle_ =
-        TaskRunnerHelper::Get(TaskType::kUnspecedTimer, document_)
+        document_->GetTaskRunner(TaskType::kUnspecedTimer)
             ->PostCancellableTask(
                 BLINK_FROM_HERE,
                 WTF::Bind(&PlatformEventController::UpdateCallback,
@@ -59,7 +59,7 @@ void PlatformEventController::PageVisibilityChanged() {
     StopUpdating();
 }
 
-DEFINE_TRACE(PlatformEventController) {
+void PlatformEventController::Trace(blink::Visitor* visitor) {
   visitor->Trace(document_);
   PageVisibilityObserver::Trace(visitor);
 }

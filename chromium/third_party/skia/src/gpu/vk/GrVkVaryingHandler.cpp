@@ -28,10 +28,16 @@ static inline int grsltype_to_location_size(GrSLType type) {
         case kUint2_GrSLType:
             return 1;
         case kInt2_GrSLType:
+        case kShort2_GrSLType:
+        case kUShort2_GrSLType:
             return 1;
         case kInt3_GrSLType:
+        case kShort3_GrSLType:
+        case kUShort3_GrSLType:
             return 1;
         case kInt4_GrSLType:
+        case kShort4_GrSLType:
+        case kUShort4_GrSLType:
             return 1;
         case kFloat2x2_GrSLType:
         case kHalf2x2_GrSLType:
@@ -64,10 +70,6 @@ static inline int grsltype_to_location_size(GrSLType type) {
              return 0;
         case kSampler_GrSLType:
              return 0;
-        case kImageStorage2D_GrSLType:
-            return 0;
-        case kIImageStorage2D_GrSLType:
-            return 0;
     }
     SK_ABORT("Unexpected type");
     return -1;

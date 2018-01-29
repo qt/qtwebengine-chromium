@@ -1,4 +1,4 @@
-// Copyright 2016 PDFium Authors. All rights reserved.
+// Copyright 2017 PDFium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,27 +6,32 @@
 
 #include "xfa/fxfa/parser/cxfa_calculate.h"
 
-#include "xfa/fxfa/parser/cxfa_node.h"
-#include "xfa/fxfa/parser/cxfa_text.h"
+namespace {
 
-CXFA_Calculate::CXFA_Calculate(CXFA_Node* pNode) : CXFA_Data(pNode) {}
+const CXFA_Node::PropertyData kPropertyData[] = {{XFA_Element::Message, 1, 0},
+                                                 {XFA_Element::Script, 1, 0},
+                                                 {XFA_Element::Extras, 1, 0},
+                                                 {XFA_Element::Unknown, 0, 0}};
+const CXFA_Node::AttributeData kAttributeData[] = {
+    {XFA_Attribute::Id, XFA_AttributeType::CData, nullptr},
+    {XFA_Attribute::Use, XFA_AttributeType::CData, nullptr},
+    {XFA_Attribute::Usehref, XFA_AttributeType::CData, nullptr},
+    {XFA_Attribute::Override, XFA_AttributeType::Enum,
+     (void*)XFA_AttributeEnum::Error},
+    {XFA_Attribute::Unknown, XFA_AttributeType::Integer, nullptr}};
 
-int32_t CXFA_Calculate::GetOverride() {
-  XFA_ATTRIBUTEENUM eAtt = XFA_ATTRIBUTEENUM_Error;
-  m_pNode->TryEnum(XFA_ATTRIBUTE_Override, eAtt, false);
-  return eAtt;
-}
+constexpr wchar_t kName[] = L"calculate";
 
-CXFA_Script CXFA_Calculate::GetScript() {
-  return CXFA_Script(m_pNode->GetChild(0, XFA_Element::Script));
-}
+}  // namespace
 
-void CXFA_Calculate::GetMessageText(WideString& wsMessage) {
-  CXFA_Node* pNode = m_pNode->GetChild(0, XFA_Element::Message);
-  if (!pNode)
-    return;
+CXFA_Calculate::CXFA_Calculate(CXFA_Document* doc, XFA_PacketType packet)
+    : CXFA_Node(doc,
+                packet,
+                (XFA_XDPPACKET_Template | XFA_XDPPACKET_Form),
+                XFA_ObjectType::Node,
+                XFA_Element::Calculate,
+                kPropertyData,
+                kAttributeData,
+                kName) {}
 
-  CXFA_Text text(pNode->GetChild(0, XFA_Element::Text));
-  if (text)
-    text.GetContent(wsMessage);
-}
+CXFA_Calculate::~CXFA_Calculate() {}

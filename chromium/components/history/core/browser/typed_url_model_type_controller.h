@@ -23,12 +23,9 @@ class TypedURLModelTypeController : public syncer::ModelTypeController {
 
  private:
   // syncer::ModelTypeController implementation.
-  void PostBridgeTask(const base::Location& location,
-                      const BridgeTask& task) override;
+  void PostBridgeTask(const base::Location& location, BridgeTask task) override;
 
   void OnSavingBrowserHistoryDisabledChanged();
-
-  void PostTaskOnHistoryThread(const base::Closure& task);
 
   // Name of the pref that indicates whether saving history is disabled.
   const char* history_disabled_pref_name_;

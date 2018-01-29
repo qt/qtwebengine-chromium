@@ -5,10 +5,12 @@
  * found in the LICENSE file.
  */
 
+#include "SkLinearGradient.h"
+
 #include "Sk4fLinearGradient.h"
 #include "SkColorSpaceXformer.h"
-#include "SkLinearGradient.h"
-#include "SkRefCnt.h"
+#include "SkReadBuffer.h"
+#include "SkWriteBuffer.h"
 
 static SkMatrix pts_to_unit_matrix(const SkPoint pts[2]) {
     SkVector    vec = pts[1] - pts[0];
@@ -70,10 +72,9 @@ void SkLinearGradient::appendGradientStages(SkArenaAlloc*, SkRasterPipeline*,
 }
 
 sk_sp<SkShader> SkLinearGradient::onMakeColorSpace(SkColorSpaceXformer* xformer) const {
+    const AutoXformColors xformedColors(*this, xformer);
     SkPoint pts[2] = { fStart, fEnd };
-    SkSTArray<8, SkColor> xformedColors(fColorCount);
-    xformer->apply(xformedColors.begin(), fOrigColors, fColorCount);
-    return SkGradientShader::MakeLinear(pts, xformedColors.begin(), fOrigPos, fColorCount,
+    return SkGradientShader::MakeLinear(pts, xformedColors.fColors.get(), fOrigPos, fColorCount,
                                         fTileMode, fGradFlags, &this->getLocalMatrix());
 }
 
@@ -88,7 +89,6 @@ SkShader::GradientType SkLinearGradient::asAGradient(GradientInfo* info) const {
 
 #if SK_SUPPORT_GPU
 
-#include "GrColorSpaceXform.h"
 #include "GrShaderCaps.h"
 #include "glsl/GrGLSLFragmentShaderBuilder.h"
 #include "SkGr.h"
@@ -100,8 +100,9 @@ public:
     class GLSLLinearProcessor;
 
     static std::unique_ptr<GrFragmentProcessor> Make(const CreateArgs& args) {
-        auto processor = std::unique_ptr<GrLinearGradient>(new GrLinearGradient(args));
-        return processor->isValid() ? std::move(processor) : nullptr;
+        return GrGradientEffect::AdjustFP(std::unique_ptr<GrLinearGradient>(
+                new GrLinearGradient(args)),
+                args);
     }
 
     const char* name() const override { return "Linear Gradient"; }
@@ -119,9 +120,6 @@ private:
 
     GrGLSLFragmentProcessor* onCreateGLSLInstance() const override;
 
-    virtual void onGetGLSLProcessorKey(const GrShaderCaps& caps,
-                                       GrProcessorKeyBuilder* b) const override;
-
     GR_DECLARE_FRAGMENT_PROCESSOR_TEST
 
     typedef GrGradientEffect INHERITED;
@@ -135,10 +133,6 @@ public:
 
     virtual void emitCode(EmitArgs&) override;
 
-    static void GenKey(const GrProcessor& processor, const GrShaderCaps&, GrProcessorKeyBuilder* b) {
-        b->add32(GenBaseGradientKey(processor));
-    }
-
 private:
     typedef GrGradientEffect::GLSLProcessor INHERITED;
 };
@@ -147,11 +141,6 @@ private:
 
 GrGLSLFragmentProcessor* GrLinearGradient::onCreateGLSLInstance() const {
     return new GrLinearGradient::GLSLLinearProcessor(*this);
-}
-
-void GrLinearGradient::onGetGLSLProcessorKey(const GrShaderCaps& caps,
-                                             GrProcessorKeyBuilder* b) const {
-    GrLinearGradient::GLSLLinearProcessor::GenKey(*this, caps, b);
 }
 
 /////////////////////////////////////////////////////////////////////
@@ -212,15 +201,8 @@ std::unique_ptr<GrFragmentProcessor> SkLinearGradient::asFragmentProcessor(
     }
     matrix.postConcat(fPtsToUnit);
 
-    sk_sp<GrColorSpaceXform> colorSpaceXform = GrColorSpaceXform::Make(fColorSpace.get(),
-                                                                       args.fDstColorSpace);
-    auto inner = GrLinearGradient::Make(GrGradientEffect::CreateArgs(
-            args.fContext, this, &matrix, fTileMode, std::move(colorSpaceXform),
-            SkToBool(args.fDstColorSpace)));
-    if (!inner) {
-        return nullptr;
-    }
-    return GrFragmentProcessor::MulOutputByInputAlpha(std::move(inner));
+    return GrLinearGradient::Make(GrGradientEffect::CreateArgs(
+            args.fContext, this, &matrix, fTileMode, args.fDstColorSpaceInfo->colorSpace()));
 }
 
 

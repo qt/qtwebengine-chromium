@@ -58,7 +58,7 @@ DynamicsCompressorHandler::DynamicsCompressorHandler(
   Initialize();
 }
 
-RefPtr<DynamicsCompressorHandler> DynamicsCompressorHandler::Create(
+scoped_refptr<DynamicsCompressorHandler> DynamicsCompressorHandler::Create(
     AudioNode& node,
     float sample_rate,
     AudioParamHandler& threshold,
@@ -66,7 +66,7 @@ RefPtr<DynamicsCompressorHandler> DynamicsCompressorHandler::Create(
     AudioParamHandler& ratio,
     AudioParamHandler& attack,
     AudioParamHandler& release) {
-  return WTF::AdoptRef(new DynamicsCompressorHandler(
+  return base::AdoptRef(new DynamicsCompressorHandler(
       node, sample_rate, threshold, knee, ratio, attack, release));
 }
 
@@ -190,26 +190,31 @@ DynamicsCompressorNode::DynamicsCompressorNode(BaseAudioContext& context)
     : AudioNode(context),
       threshold_(AudioParam::Create(context,
                                     kParamTypeDynamicsCompressorThreshold,
+                                    "DynamicsCompressor.threshold",
                                     -24,
                                     -100,
                                     0)),
       knee_(AudioParam::Create(context,
                                kParamTypeDynamicsCompressorKnee,
+                               "DynamicsCompressor.knee",
                                30,
                                0,
                                40)),
       ratio_(AudioParam::Create(context,
                                 kParamTypeDynamicsCompressorRatio,
+                                "DynamicsCompressor.ratio",
                                 12,
                                 1,
                                 20)),
       attack_(AudioParam::Create(context,
                                  kParamTypeDynamicsCompressorAttack,
+                                 "DynamicsCompressor.attack",
                                  0.003,
                                  0,
                                  1)),
       release_(AudioParam::Create(context,
                                   kParamTypeDynamicsCompressorRelease,
+                                  "DynamicsCompressor.release",
                                   0.250,
                                   0,
                                   1)) {
@@ -251,7 +256,7 @@ DynamicsCompressorNode* DynamicsCompressorNode::Create(
   return node;
 }
 
-DEFINE_TRACE(DynamicsCompressorNode) {
+void DynamicsCompressorNode::Trace(blink::Visitor* visitor) {
   visitor->Trace(threshold_);
   visitor->Trace(knee_);
   visitor->Trace(ratio_);

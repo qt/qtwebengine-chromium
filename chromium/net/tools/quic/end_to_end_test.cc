@@ -242,7 +242,7 @@ class ServerDelegate : public PacketDroppingTestWriter::Delegate {
  public:
   explicit ServerDelegate(QuicDispatcher* dispatcher)
       : dispatcher_(dispatcher) {}
-  ~ServerDelegate() override {}
+  ~ServerDelegate() override = default;
   void OnCanWrite() override { dispatcher_->OnCanWrite(); }
 
  private:
@@ -252,7 +252,7 @@ class ServerDelegate : public PacketDroppingTestWriter::Delegate {
 class ClientDelegate : public PacketDroppingTestWriter::Delegate {
  public:
   explicit ClientDelegate(QuicClient* client) : client_(client) {}
-  ~ClientDelegate() override {}
+  ~ClientDelegate() override = default;
   void OnCanWrite() override {
     EpollEvent event(EPOLLOUT);
     client_->epoll_network_helper()->OnEvent(client_->GetLatestFD(), &event);
@@ -1140,7 +1140,8 @@ TEST_P(EndToEndTest, DoNotSetResumeWriteAlarmIfConnectionFlowControlBlocked) {
 
   // The stream now attempts to write, fails because it is still connection
   // level flow control blocked, and is added to the write blocked list.
-  QuicWindowUpdateFrame window_update(stream->id(), 2 * flow_control_window);
+  QuicWindowUpdateFrame window_update(kInvalidControlFrameId, stream->id(),
+                                      2 * flow_control_window);
   stream->OnWindowUpdateFrame(window_update);
 
   // Prior to fixing b/14677858 this call would result in an infinite loop in
@@ -1316,14 +1317,10 @@ TEST_P(EndToEndTest, NegotiateCongestionControl) {
 
   EXPECT_TRUE(client_->client()->WaitForCryptoHandshakeConfirmed());
 
-  CongestionControlType expected_congestion_control_type = kReno;
+  CongestionControlType expected_congestion_control_type = kRenoBytes;
   switch (GetParam().congestion_control_tag) {
     case kRENO:
-      if (!FLAGS_quic_reloadable_flag_quic_disable_packets_based_cc) {
-        expected_congestion_control_type = kReno;
-      } else {
-        expected_congestion_control_type = kRenoBytes;
-      }
+      expected_congestion_control_type = kRenoBytes;
       break;
     case kTBBR:
       expected_congestion_control_type = kBBR;
@@ -1442,8 +1439,7 @@ TEST_P(EndToEndTest, 0ByteConnectionId) {
 
   QuicPacketHeader* header = QuicConnectionPeer::GetLastHeader(
       client_->client()->client_session()->connection());
-  EXPECT_EQ(PACKET_0BYTE_CONNECTION_ID,
-            header->public_header.connection_id_length);
+  EXPECT_EQ(PACKET_0BYTE_CONNECTION_ID, header->connection_id_length);
 }
 
 TEST_P(EndToEndTest, 8ByteConnectionId) {
@@ -1454,8 +1450,7 @@ TEST_P(EndToEndTest, 8ByteConnectionId) {
   EXPECT_EQ("200", client_->response_headers()->find(":status")->second);
   QuicPacketHeader* header = QuicConnectionPeer::GetLastHeader(
       client_->client()->client_session()->connection());
-  EXPECT_EQ(PACKET_8BYTE_CONNECTION_ID,
-            header->public_header.connection_id_length);
+  EXPECT_EQ(PACKET_8BYTE_CONNECTION_ID, header->connection_id_length);
 }
 
 TEST_P(EndToEndTest, 15ByteConnectionId) {
@@ -1467,8 +1462,7 @@ TEST_P(EndToEndTest, 15ByteConnectionId) {
   EXPECT_EQ("200", client_->response_headers()->find(":status")->second);
   QuicPacketHeader* header = QuicConnectionPeer::GetLastHeader(
       client_->client()->client_session()->connection());
-  EXPECT_EQ(PACKET_8BYTE_CONNECTION_ID,
-            header->public_header.connection_id_length);
+  EXPECT_EQ(PACKET_8BYTE_CONNECTION_ID, header->connection_id_length);
 }
 
 TEST_P(EndToEndTest, ResetConnection) {
@@ -1955,9 +1949,7 @@ TEST_P(EndToEndTest, ServerSendPublicReset) {
   QuicConnectionId connection_id =
       client_->client()->client_session()->connection()->connection_id();
   QuicPublicResetPacket header;
-  header.public_header.connection_id = connection_id;
-  header.public_header.reset_flag = true;
-  header.public_header.version_flag = false;
+  header.connection_id = connection_id;
   QuicFramer framer(server_supported_versions_, QuicTime::Zero(),
                     Perspective::IS_SERVER);
   std::unique_ptr<QuicEncryptedPacket> packet(
@@ -1987,9 +1979,7 @@ TEST_P(EndToEndTest, ServerSendPublicResetWithDifferentConnectionId) {
   QuicConnectionId incorrect_connection_id =
       client_->client()->client_session()->connection()->connection_id() + 1;
   QuicPublicResetPacket header;
-  header.public_header.connection_id = incorrect_connection_id;
-  header.public_header.reset_flag = true;
-  header.public_header.version_flag = false;
+  header.connection_id = incorrect_connection_id;
   QuicFramer framer(server_supported_versions_, QuicTime::Zero(),
                     Perspective::IS_SERVER);
   std::unique_ptr<QuicEncryptedPacket> packet(
@@ -2023,9 +2013,7 @@ TEST_P(EndToEndTest, ClientSendPublicResetWithDifferentConnectionId) {
   QuicConnectionId incorrect_connection_id =
       client_->client()->client_session()->connection()->connection_id() + 1;
   QuicPublicResetPacket header;
-  header.public_header.connection_id = incorrect_connection_id;
-  header.public_header.reset_flag = true;
-  header.public_header.version_flag = false;
+  header.connection_id = incorrect_connection_id;
   QuicFramer framer(server_supported_versions_, QuicTime::Zero(),
                     Perspective::IS_CLIENT);
   std::unique_ptr<QuicEncryptedPacket> packet(
@@ -2226,7 +2214,7 @@ class ServerStreamWithErrorResponseBody : public QuicSimpleServerStream {
       : QuicSimpleServerStream(id, session, response_cache),
         response_body_(std::move(response_body)) {}
 
-  ~ServerStreamWithErrorResponseBody() override {}
+  ~ServerStreamWithErrorResponseBody() override = default;
 
  protected:
   void SendErrorResponse() override {
@@ -2249,7 +2237,7 @@ class StreamWithErrorFactory : public QuicTestServer::StreamFactory {
   explicit StreamWithErrorFactory(string response_body)
       : response_body_(std::move(response_body)) {}
 
-  ~StreamWithErrorFactory() override {}
+  ~StreamWithErrorFactory() override = default;
 
   QuicSimpleServerStream* CreateStream(
       QuicStreamId id,
@@ -2271,7 +2259,7 @@ class ServerStreamThatDropsBody : public QuicSimpleServerStream {
                             QuicHttpResponseCache* response_cache)
       : QuicSimpleServerStream(id, session, response_cache) {}
 
-  ~ServerStreamThatDropsBody() override {}
+  ~ServerStreamThatDropsBody() override = default;
 
  protected:
   void OnDataAvailable() override {
@@ -2305,9 +2293,9 @@ class ServerStreamThatDropsBody : public QuicSimpleServerStream {
 
 class ServerStreamThatDropsBodyFactory : public QuicTestServer::StreamFactory {
  public:
-  ServerStreamThatDropsBodyFactory() {}
+  ServerStreamThatDropsBodyFactory() = default;
 
-  ~ServerStreamThatDropsBodyFactory() override {}
+  ~ServerStreamThatDropsBodyFactory() override = default;
 
   QuicSimpleServerStream* CreateStream(
       QuicStreamId id,
@@ -2327,7 +2315,7 @@ class ServerStreamThatSendsHugeResponse : public QuicSimpleServerStream {
       : QuicSimpleServerStream(id, session, response_cache),
         body_bytes_(body_bytes) {}
 
-  ~ServerStreamThatSendsHugeResponse() override {}
+  ~ServerStreamThatSendsHugeResponse() override = default;
 
  protected:
   void SendResponse() override {
@@ -2350,7 +2338,7 @@ class ServerStreamThatSendsHugeResponseFactory
   explicit ServerStreamThatSendsHugeResponseFactory(int64_t body_bytes)
       : body_bytes_(body_bytes) {}
 
-  ~ServerStreamThatSendsHugeResponseFactory() override {}
+  ~ServerStreamThatSendsHugeResponseFactory() override = default;
 
   QuicSimpleServerStream* CreateStream(
       QuicStreamId id,
@@ -2368,7 +2356,7 @@ class ClientStreamThatDropsBody : public QuicSpdyClientStream {
  public:
   ClientStreamThatDropsBody(QuicStreamId id, QuicSpdyClientSession* session)
       : QuicSpdyClientStream(id, session) {}
-  ~ClientStreamThatDropsBody() override {}
+  ~ClientStreamThatDropsBody() override = default;
 
   void OnDataAvailable() override {
     while (HasBytesToRead()) {
@@ -2399,7 +2387,7 @@ class ClientSessionThatDropsBody : public QuicSpdyClientSession {
                               crypto_config,
                               push_promise_index) {}
 
-  ~ClientSessionThatDropsBody() override {}
+  ~ClientSessionThatDropsBody() override = default;
 
   std::unique_ptr<QuicSpdyClientStream> CreateClientStream() override {
     return QuicMakeUnique<ClientStreamThatDropsBody>(GetNextOutgoingStreamId(),
@@ -2420,7 +2408,7 @@ class MockableQuicClientThatDropsBody : public MockableQuicClient {
                            config,
                            supported_versions,
                            epoll_server) {}
-  ~MockableQuicClientThatDropsBody() override {}
+  ~MockableQuicClientThatDropsBody() override = default;
 
   std::unique_ptr<QuicSession> CreateQuicClientSession(
       QuicConnection* connection) override {
@@ -2447,7 +2435,7 @@ class QuicTestClientThatDropsBody : public QuicTestClient {
                      PRIVACY_MODE_DISABLED),
         config, supported_versions, epoll_server()));
   }
-  ~QuicTestClientThatDropsBody() override {}
+  ~QuicTestClientThatDropsBody() override = default;
 };
 
 TEST_P(EndToEndTest, EarlyResponseFinRecording) {

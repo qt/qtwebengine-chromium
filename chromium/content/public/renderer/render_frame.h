@@ -19,12 +19,14 @@
 #include "ipc/ipc_sender.h"
 #include "ppapi/features/features.h"
 #include "services/service_manager/public/cpp/binder_registry.h"
+#include "third_party/WebKit/common/page/page_visibility_state.mojom.h"
 #include "third_party/WebKit/public/platform/TaskType.h"
-#include "third_party/WebKit/public/platform/WebPageVisibilityState.h"
 #include "third_party/WebKit/public/web/WebNavigationPolicy.h"
 #include "third_party/WebKit/public/web/WebTriggeringEventInfo.h"
 
 namespace blink {
+class AssociatedInterfaceProvider;
+class AssociatedInterfaceRegistry;
 class WebFrame;
 class WebLocalFrame;
 class WebPlugin;
@@ -51,8 +53,6 @@ class Isolate;
 }
 
 namespace content {
-class AssociatedInterfaceProvider;
-class AssociatedInterfaceRegistry;
 class ChildURLLoaderFactoryGetter;
 class ContextMenuClient;
 class PluginInstanceThrottler;
@@ -167,12 +167,14 @@ class CONTENT_EXPORT RenderFrame : public IPC::Listener,
 
   // Returns the AssociatedInterfaceRegistry this frame can use to expose
   // frame-specific Channel-associated interfaces to the remote RenderFrameHost.
-  virtual AssociatedInterfaceRegistry* GetAssociatedInterfaceRegistry() = 0;
+  virtual blink::AssociatedInterfaceRegistry*
+  GetAssociatedInterfaceRegistry() = 0;
 
   // Returns the AssociatedInterfaceProvider this frame can use to access
-  // frame-specific Channel-assocaited interfaces from the remote
+  // frame-specific Channel-associated interfaces from the remote
   // RenderFrameHost.
-  virtual AssociatedInterfaceProvider* GetRemoteAssociatedInterfaces() = 0;
+  virtual blink::AssociatedInterfaceProvider*
+  GetRemoteAssociatedInterfaces() = 0;
 
 #if BUILDFLAG(ENABLE_PLUGINS)
   // Registers a plugin that has been marked peripheral. If the origin
@@ -253,7 +255,7 @@ class CONTENT_EXPORT RenderFrame : public IPC::Listener,
   virtual bool IsPasting() const = 0;
 
   // Returns the current visibility of the frame.
-  virtual blink::WebPageVisibilityState GetVisibilityState() const = 0;
+  virtual blink::mojom::PageVisibilityState GetVisibilityState() const = 0;
 
   // If PlzNavigate is enabled, returns true in between teh time that Blink
   // requests navigation until the browser responds with the result.

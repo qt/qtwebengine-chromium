@@ -17,22 +17,23 @@
     implemented privately in GrTexture with a inline public method here). */
 class GrTexturePriv {
 public:
-    void dirtyMipMaps(bool mipMapsDirty) {
-        fTexture->dirtyMipMaps(mipMapsDirty);
+    void markMipMapsDirty() {
+        fTexture->markMipMapsDirty();
+    }
+
+    void markMipMapsClean() {
+        fTexture->markMipMapsClean();
     }
 
     bool mipMapsAreDirty() const {
-        return GrTexture::kClean_MipMapsStatus != fTexture->fMipMapsStatus;
+        return GrMipMapsStatus::kValid != fTexture->fMipMapsStatus;
     }
 
-    bool hasMipMaps() const {
-        return GrTexture::kNotAllocated_MipMapsStatus != fTexture->fMipMapsStatus;
-    }
-
-    // Once we no longer support allocating mip levels after creation, we can also require that mips
-    // have been allocated to the valid check.
-    bool mipMapsAreValid() const {
-        return GrTexture::kInvalid_MipMapsStatus != fTexture->fMipMapsStatus;
+    GrMipMapped mipMapped() const {
+        if (GrMipMapsStatus::kNotAllocated != fTexture->fMipMapsStatus) {
+            return GrMipMapped::kYes;
+        }
+        return GrMipMapped::kNo;
     }
 
     void setMaxMipMapLevel(int maxMipMapLevel) const {
@@ -41,14 +42,6 @@ public:
 
     int maxMipMapLevel() const {
         return fTexture->fMaxMipMapLevel;
-    }
-
-    GrSLType imageStorageType() const {
-        if (GrPixelConfigIsSint(fTexture->config())) {
-            return kIImageStorage2D_GrSLType;
-        } else {
-            return kImageStorage2D_GrSLType;
-        }
     }
 
     GrSLType samplerType() const { return fTexture->fSamplerType; }
@@ -64,7 +57,7 @@ public:
     static void ComputeScratchKey(const GrSurfaceDesc&, GrScratchKey*);
     static void ComputeScratchKey(GrPixelConfig config, int width, int height,
                                   bool isRenderTarget, int sampleCnt,
-                                  bool isMipMapped, GrScratchKey* key);
+                                  GrMipMapped, GrScratchKey* key);
 
 
 private:

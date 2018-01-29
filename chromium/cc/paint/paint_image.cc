@@ -18,8 +18,9 @@ base::AtomicSequenceNumber s_next_id_;
 base::AtomicSequenceNumber s_next_content_id_;
 }  // namespace
 
-const int PaintImage::kNonLazyStableId = -1;
+const PaintImage::Id PaintImage::kNonLazyStableId = -1;
 const size_t PaintImage::kDefaultFrameIndex = 0u;
+const PaintImage::Id PaintImage::kInvalidId = -2;
 
 PaintImage::PaintImage() = default;
 PaintImage::PaintImage(const PaintImage& other) = default;
@@ -30,21 +31,51 @@ PaintImage& PaintImage::operator=(const PaintImage& other) = default;
 PaintImage& PaintImage::operator=(PaintImage&& other) = default;
 
 bool PaintImage::operator==(const PaintImage& other) const {
-  return sk_image_ == other.sk_image_ && paint_record_ == other.paint_record_ &&
-         paint_record_rect_ == other.paint_record_rect_ &&
-         paint_record_content_id_ == other.paint_record_content_id_ &&
-         paint_image_generator_ == other.paint_image_generator_ &&
-         id_ == other.id_ && animation_type_ == other.animation_type_ &&
-         completion_state_ == other.completion_state_ &&
-         subset_rect_ == other.subset_rect_ &&
-         frame_index_ == other.frame_index_ &&
-         is_multipart_ == other.is_multipart_;
+  if (sk_image_ != other.sk_image_)
+    return false;
+  if (paint_record_ != other.paint_record_)
+    return false;
+  if (paint_record_rect_ != other.paint_record_rect_)
+    return false;
+  if (paint_record_content_id_ != other.paint_record_content_id_)
+    return false;
+  if (paint_image_generator_ != other.paint_image_generator_)
+    return false;
+  if (id_ != other.id_)
+    return false;
+  if (animation_type_ != other.animation_type_)
+    return false;
+  if (completion_state_ != other.completion_state_)
+    return false;
+  if (subset_rect_ != other.subset_rect_)
+    return false;
+  if (frame_index_ != other.frame_index_)
+    return false;
+  if (is_multipart_ != other.is_multipart_)
+    return false;
+  return true;
 }
 
+// static
+PaintImage::DecodingMode PaintImage::GetConservative(DecodingMode one,
+                                                     DecodingMode two) {
+  if (one == two)
+    return one;
+  if (one == DecodingMode::kSync || two == DecodingMode::kSync)
+    return DecodingMode::kSync;
+  if (one == DecodingMode::kUnspecified || two == DecodingMode::kUnspecified)
+    return DecodingMode::kUnspecified;
+  DCHECK_EQ(one, DecodingMode::kAsync);
+  DCHECK_EQ(two, DecodingMode::kAsync);
+  return DecodingMode::kAsync;
+}
+
+// static
 PaintImage::Id PaintImage::GetNextId() {
   return s_next_id_.GetNext();
 }
 
+// static
 PaintImage::ContentId PaintImage::GetNextContentId() {
   return s_next_content_id_.GetNext();
 }

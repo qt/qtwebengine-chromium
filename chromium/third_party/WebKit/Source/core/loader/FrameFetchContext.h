@@ -72,11 +72,13 @@ class CORE_EXPORT FrameFetchContext final : public BaseFetchContext {
 
   ~FrameFetchContext() override;
 
-  bool IsFrameFetchContext() { return true; }
+  bool IsFrameFetchContext() override { return true; }
+
+  void RecordDataUriWithOctothorpe() override;
 
   void AddAdditionalRequestHeaders(ResourceRequest&,
                                    FetchResourceType) override;
-  WebCachePolicy ResourceRequestCachePolicy(
+  mojom::FetchCacheMode ResourceRequestCachePolicy(
       const ResourceRequest&,
       Resource::Type,
       FetchParameters::DeferOption) const override;
@@ -117,8 +119,7 @@ class CORE_EXPORT FrameFetchContext final : public BaseFetchContext {
                        bool is_internal_request) override;
 
   bool ShouldLoadNewResource(Resource::Type) const override;
-  void RecordLoadingActivity(unsigned long identifier,
-                             const ResourceRequest&,
+  void RecordLoadingActivity(const ResourceRequest&,
                              Resource::Type,
                              const AtomicString& fetch_initiator_name) override;
   void DidLoadResource(Resource*) override;
@@ -152,14 +153,15 @@ class CORE_EXPORT FrameFetchContext final : public BaseFetchContext {
 
   MHTMLArchive* Archive() const override;
 
-  std::unique_ptr<WebURLLoader> CreateURLLoader(const ResourceRequest&,
-                                                WebTaskRunner*) override;
+  std::unique_ptr<WebURLLoader> CreateURLLoader(
+      const ResourceRequest&,
+      scoped_refptr<WebTaskRunner>) override;
 
   bool IsDetached() const override { return frozen_state_; }
 
   FetchContext* Detach() override;
 
-  DECLARE_VIRTUAL_TRACE();
+  void Trace(blink::Visitor*) override;
 
  private:
   struct FrozenState;
@@ -179,7 +181,7 @@ class CORE_EXPORT FrameFetchContext final : public BaseFetchContext {
 
   // FetchContext overrides:
   WebFrameScheduler* GetFrameScheduler() override;
-  RefPtr<WebTaskRunner> GetLoadingTaskRunner() override;
+  scoped_refptr<WebTaskRunner> GetLoadingTaskRunner() override;
 
   // BaseFetchContext overrides:
   KURL GetSiteForCookies() const override;
@@ -214,8 +216,8 @@ class CORE_EXPORT FrameFetchContext final : public BaseFetchContext {
   ContentSettingsClient* GetContentSettingsClient() const;
   Settings* GetSettings() const;
   String GetUserAgent() const;
-  RefPtr<SecurityOrigin> GetRequestorOrigin();
-  RefPtr<SecurityOrigin> GetRequestorOriginForFrameLoading();
+  scoped_refptr<SecurityOrigin> GetRequestorOrigin();
+  scoped_refptr<SecurityOrigin> GetRequestorOriginForFrameLoading();
   ClientHintsPreferences GetClientHintsPreferences() const;
   float GetDevicePixelRatio() const;
   bool ShouldSendClientHint(mojom::WebClientHintsType,
@@ -228,6 +230,11 @@ class CORE_EXPORT FrameFetchContext final : public BaseFetchContext {
 
   Member<DocumentLoader> document_loader_;
   Member<Document> document_;
+
+  // The value of |save_data_enabled_| is read once per frame from
+  // NetworkStateNotifier, which is guarded by a mutex lock, and cached locally
+  // here for performance.
+  const bool save_data_enabled_;
 
   // Non-null only when detached.
   Member<const FrozenState> frozen_state_;

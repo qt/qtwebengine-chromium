@@ -34,6 +34,7 @@
 #include "services/service_manager/public/cpp/interface_provider.h"
 #include "services/service_manager/sandbox/sandbox_type.h"
 #include "ui/base/ui_base_switches.h"
+#include "ui/gl/gl_switches.h"
 
 #if defined(OS_POSIX) && !defined(OS_ANDROID) && !defined(OS_MACOSX)
 #include "content/public/browser/zygote_handle_linux.h"
@@ -52,29 +53,37 @@ class UtilitySandboxedProcessLauncherDelegate
  public:
   UtilitySandboxedProcessLauncherDelegate(
       const base::FilePath& exposed_dir,
-      bool launch_elevated,
       service_manager::SandboxType sandbox_type,
       const base::EnvironmentMap& env)
       : exposed_dir_(exposed_dir),
-#if defined(OS_WIN)
-        launch_elevated_(launch_elevated),
-#elif defined(OS_POSIX)
+#if defined(OS_POSIX)
         env_(env),
-#endif  // OS_WIN
+#endif
         sandbox_type_(sandbox_type) {
-    DCHECK(sandbox_type_ == service_manager::SANDBOX_TYPE_NO_SANDBOX ||
-           sandbox_type_ == service_manager::SANDBOX_TYPE_UTILITY ||
-           sandbox_type_ == service_manager::SANDBOX_TYPE_NETWORK ||
-           sandbox_type_ == service_manager::SANDBOX_TYPE_CDM ||
-           sandbox_type_ == service_manager::SANDBOX_TYPE_PDF_COMPOSITOR ||
-           sandbox_type_ == service_manager::SANDBOX_TYPE_PROFILING ||
-           sandbox_type_ == service_manager::SANDBOX_TYPE_PPAPI);
+#if DCHECK_IS_ON()
+    bool supported_sandbox_type =
+        sandbox_type_ == service_manager::SANDBOX_TYPE_NO_SANDBOX ||
+#if defined(OS_WIN)
+        sandbox_type_ ==
+            service_manager::SANDBOX_TYPE_NO_SANDBOX_AND_ELEVATED_PRIVILEGES ||
+#endif
+        sandbox_type_ == service_manager::SANDBOX_TYPE_UTILITY ||
+        sandbox_type_ == service_manager::SANDBOX_TYPE_NETWORK ||
+        sandbox_type_ == service_manager::SANDBOX_TYPE_CDM ||
+        sandbox_type_ == service_manager::SANDBOX_TYPE_PDF_COMPOSITOR ||
+        sandbox_type_ == service_manager::SANDBOX_TYPE_PROFILING ||
+        sandbox_type_ == service_manager::SANDBOX_TYPE_PPAPI;
+    DCHECK(supported_sandbox_type);
+#endif  // DCHECK_IS_ON()
   }
 
   ~UtilitySandboxedProcessLauncherDelegate() override {}
 
 #if defined(OS_WIN)
-  bool ShouldLaunchElevated() override { return launch_elevated_; }
+  bool ShouldLaunchElevated() override {
+    return sandbox_type_ ==
+           service_manager::SANDBOX_TYPE_NO_SANDBOX_AND_ELEVATED_PRIVILEGES;
+  }
 
   bool PreSpawnTarget(sandbox::TargetPolicy* policy) override {
     if (exposed_dir_.empty())
@@ -99,6 +108,7 @@ class UtilitySandboxedProcessLauncherDelegate
 #if !defined(OS_MACOSX) && !defined(OS_ANDROID) && !defined(OS_FUCHSIA)
   ZygoteHandle GetZygote() override {
     if (service_manager::IsUnsandboxedSandboxType(sandbox_type_) ||
+        sandbox_type_ == service_manager::SANDBOX_TYPE_NETWORK ||
         !exposed_dir_.empty()) {
       return nullptr;
     }
@@ -115,15 +125,13 @@ class UtilitySandboxedProcessLauncherDelegate
  private:
   base::FilePath exposed_dir_;
 
-#if defined(OS_WIN)
-  bool launch_elevated_;
-#elif defined(OS_POSIX)
+#if defined(OS_POSIX)
   base::EnvironmentMap env_;
 #endif  // OS_WIN
   service_manager::SandboxType sandbox_type_;
 };
 
-UtilityMainThreadFactoryFunction g_utility_main_thread_factory = NULL;
+UtilityMainThreadFactoryFunction g_utility_main_thread_factory = nullptr;
 
 UtilityProcessHost* UtilityProcessHost::Create(
     const scoped_refptr<UtilityProcessHostClient>& client,
@@ -142,7 +150,6 @@ UtilityProcessHostImpl::UtilityProcessHostImpl(
     : client_(client),
       client_task_runner_(client_task_runner),
       sandbox_type_(service_manager::SANDBOX_TYPE_UTILITY),
-      run_elevated_(false),
 #if defined(OS_LINUX)
       child_flags_(ChildProcessHost::CHILD_ALLOW_SELF),
 #else
@@ -179,13 +186,6 @@ void UtilityProcessHostImpl::SetSandboxType(
   DCHECK(sandbox_type != service_manager::SANDBOX_TYPE_INVALID);
   sandbox_type_ = sandbox_type;
 }
-
-#if defined(OS_WIN)
-void UtilityProcessHostImpl::ElevatePrivileges() {
-  sandbox_type_ = service_manager::SANDBOX_TYPE_NO_SANDBOX;
-  run_elevated_ = true;
-}
-#endif
 
 const ChildProcessData& UtilityProcessHostImpl::GetData() {
   return process_->GetData();
@@ -251,7 +251,7 @@ bool UtilityProcessHostImpl::StartProcess() {
       // As a workaround skip calling it here, since the executable name is
       // not needed on Android anyway. See crbug.com/500854.
     std::unique_ptr<base::CommandLine> cmd_line =
-        base::MakeUnique<base::CommandLine>(base::CommandLine::NO_PROGRAM);
+        std::make_unique<base::CommandLine>(base::CommandLine::NO_PROGRAM);
     #else
       int child_flags = child_flags_;
 
@@ -270,7 +270,7 @@ bool UtilityProcessHostImpl::StartProcess() {
       }
 
       std::unique_ptr<base::CommandLine> cmd_line =
-          base::MakeUnique<base::CommandLine>(exe_path);
+          std::make_unique<base::CommandLine>(exe_path);
     #endif
 
     cmd_line->AppendSwitchASCII(switches::kProcessType,
@@ -289,15 +289,28 @@ bool UtilityProcessHostImpl::StartProcess() {
     // Browser command-line switches to propagate to the utility process.
     static const char* const kSwitchNames[] = {
       switches::kHostResolverRules,
+      switches::kIgnoreCertificateErrors,
+      switches::kIgnoreCertificateErrorsSPKIList,
       switches::kLogNetLog,
       switches::kNoSandbox,
+      switches::kOverrideUseSoftwareGLForTests,
       switches::kProxyServer,
 #if defined(OS_MACOSX)
       switches::kEnableSandboxLogging,
 #endif
+#if defined(USE_AURA)
+      switches::kMus,
+#endif
       switches::kUseFakeDeviceForMediaStream,
       switches::kUseFileForFakeVideoCapture,
+#if defined(OS_WIN)
+      switches::kForceMediaFoundationVideoCapture,
+#endif  // defined(OS_WIN)
       switches::kUtilityStartupDialog,
+      switches::kUseGL,
+#if defined(OS_ANDROID)
+      switches::kMadviseRandomExecutableCode,
+#endif
     };
     cmd_line->CopySwitchesFrom(browser_command_line, kSwitchNames,
                                arraysize(kSwitchNames));
@@ -317,20 +330,14 @@ bool UtilityProcessHostImpl::StartProcess() {
                                  exposed_dir_);
     }
 
-#if defined(OS_WIN)
-    // Let the utility process know if it is intended to be elevated.
-    if (run_elevated_)
-      cmd_line->AppendSwitch(switches::kUtilityProcessRunningElevated);
-#endif
-
     const bool is_service = service_identity_.has_value();
     if (is_service) {
       GetContentClient()->browser()->AdjustUtilityServiceProcessCommandLine(
           *service_identity_, cmd_line.get());
     }
 
-    process_->Launch(base::MakeUnique<UtilitySandboxedProcessLauncherDelegate>(
-                         exposed_dir_, run_elevated_, sandbox_type_, env_),
+    process_->Launch(std::make_unique<UtilitySandboxedProcessLauncherDelegate>(
+                         exposed_dir_, sandbox_type_, env_),
                      std::move(cmd_line), true);
   }
 

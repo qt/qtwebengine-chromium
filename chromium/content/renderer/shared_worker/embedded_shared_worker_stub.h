@@ -9,13 +9,15 @@
 #include <vector>
 
 #include "base/macros.h"
-#include "content/child/child_message_filter.h"
+#include "base/unguessable_token.h"
 #include "content/child/scoped_child_process_reference.h"
 #include "content/common/shared_worker/shared_worker.mojom.h"
 #include "content/common/shared_worker/shared_worker_host.mojom.h"
 #include "content/common/shared_worker/shared_worker_info.mojom.h"
+#include "content/renderer/child_message_filter.h"
 #include "ipc/ipc_listener.h"
 #include "mojo/public/cpp/bindings/binding.h"
+#include "services/service_manager/public/interfaces/interface_provider.mojom.h"
 #include "third_party/WebKit/public/platform/WebAddressSpace.h"
 #include "third_party/WebKit/public/platform/WebContentSecurityPolicy.h"
 #include "third_party/WebKit/public/platform/WebContentSettingsClient.h"
@@ -56,10 +58,12 @@ class EmbeddedSharedWorkerStub : public IPC::Listener,
   EmbeddedSharedWorkerStub(
       mojom::SharedWorkerInfoPtr info,
       bool pause_on_start,
+      const base::UnguessableToken& devtools_worker_token,
       int route_id,
       blink::mojom::WorkerContentSettingsProxyPtr content_settings,
       mojom::SharedWorkerHostPtr host,
-      mojom::SharedWorkerRequest request);
+      mojom::SharedWorkerRequest request,
+      service_manager::mojom::InterfaceProviderPtr interface_provider);
   ~EmbeddedSharedWorkerStub() override;
 
   // IPC::Listener implementation.

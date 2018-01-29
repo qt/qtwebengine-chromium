@@ -83,12 +83,12 @@ class CXFA_FFField : public CXFA_FFWidget, public IFWL_WidgetDelegate {
   void DrawFocus(CXFA_Graphics* pGS, CFX_Matrix* pMatrix);
   void TranslateFWLMessage(CFWL_Message* pMessage);
   void CapPlacement();
-  void CapTopBottomPlacement(CXFA_Caption caption,
+  void CapTopBottomPlacement(const CXFA_MarginData& marginData,
                              const CFX_RectF& rtWidget,
-                             int32_t iCapPlacement);
-  void CapLeftRightPlacement(CXFA_Caption caption,
+                             XFA_AttributeEnum iCapPlacement);
+  void CapLeftRightPlacement(const CXFA_MarginData& marginData,
                              const CFX_RectF& rtWidget,
-                             int32_t iCapPlacement);
+                             XFA_AttributeEnum iCapPlacement);
   void SetEditScrollOffset();
 
   std::unique_ptr<CFWL_Widget> m_pNormalWidget;

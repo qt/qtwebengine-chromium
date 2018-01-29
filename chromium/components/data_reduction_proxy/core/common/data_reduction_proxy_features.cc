@@ -4,10 +4,12 @@
 
 #include "components/data_reduction_proxy/core/common/data_reduction_proxy_features.h"
 
+#include "build/build_config.h"
+
 namespace data_reduction_proxy {
 namespace features {
 
-// Enables the Data Reduction Proxy footer in the main menu on Android.
+// Enables the Data Reduction Proxy menu item in the main menu on Android.
 const base::Feature kDataReductionMainMenu{"DataReductionProxyMainMenu",
                                            base::FEATURE_DISABLED_BY_DEFAULT};
 
@@ -20,7 +22,13 @@ const base::Feature kDataReductionSiteBreakdown{
 // version required the client to make this decision. The new protocol relies
 // on updates primarily to the Chrome-Proxy-Accept-Transform header.
 const base::Feature kDataReductionProxyDecidesTransform{
-    "DataReductionProxyDecidesTransform", base::FEATURE_ENABLED_BY_DEFAULT};
+    "DataReductionProxyDecidesTransform",
+#if defined(OS_ANDROID)
+    base::FEATURE_ENABLED_BY_DEFAULT
+#else   // !defined(OS_ANDROID)
+    base::FEATURE_DISABLED_BY_DEFAULT
+#endif  // defined(OS_ANDROID)
+};
 
 // Enables the data saver promo for low memory Android devices.
 const base::Feature kDataReductionProxyLowMemoryDevicePromo{

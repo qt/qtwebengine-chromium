@@ -188,9 +188,6 @@ err:
   return ret;
 }
 
-// maximum precomputation table size for *variable* sliding windows
-#define TABLE_SIZE 32
-
 typedef struct bn_recp_ctx_st {
   BIGNUM N;   // the divisor
   BIGNUM Nr;  // the reciprocal
@@ -393,8 +390,8 @@ err:
   return ret;
 }
 
-// BN_window_bits_for_exponent_size -- macro for sliding window mod_exp
-// functions
+// BN_window_bits_for_exponent_size returns sliding window size for mod_exp with
+// a |b| bit exponent.
 //
 // For window size 'w' (w >= 2) and a random 'b' bits exponent, the number of
 // multiplications is a constant plus on average
@@ -416,11 +413,35 @@ err:
 //
 // (with draws in between).  Very small exponents are often selected
 // with low Hamming weight, so we use  w = 1  for b <= 23.
-#define BN_window_bits_for_exponent_size(b) \
-		((b) > 671 ? 6 : \
-		 (b) > 239 ? 5 : \
-		 (b) >  79 ? 4 : \
-		 (b) >  23 ? 3 : 1)
+static int BN_window_bits_for_exponent_size(int b) {
+  if (b > 671) {
+    return 6;
+  }
+  if (b > 239) {
+    return 5;
+  }
+  if (b > 79) {
+    return 4;
+  }
+  if (b > 23) {
+    return 3;
+  }
+  return 1;
+}
+
+// TABLE_SIZE is the maximum precomputation table size for *variable* sliding
+// windows. This must be 2^(max_window - 1), where max_window is the largest
+// value returned from |BN_window_bits_for_exponent_size|.
+#define TABLE_SIZE 32
+
+// TABLE_BITS_SMALL is the smallest value returned from
+// |BN_window_bits_for_exponent_size| when |b| is at most |BN_BITS2| *
+// |BN_SMALL_MAX_WORDS| words.
+#define TABLE_BITS_SMALL 5
+
+// TABLE_SIZE_SMALL is the same as |TABLE_SIZE|, but when |b| is at most
+// |BN_BITS2| * |BN_SMALL_MAX_WORDS|.
+#define TABLE_SIZE_SMALL (1 << (TABLE_BITS_SMALL - 1))
 
 static int mod_exp_recp(BIGNUM *r, const BIGNUM *a, const BIGNUM *p,
                         const BIGNUM *m, BN_CTX *ctx) {
@@ -501,7 +522,7 @@ static int mod_exp_recp(BIGNUM *r, const BIGNUM *a, const BIGNUM *p,
     int wvalue;  // The 'value' of the window
     int wend;  // The bottom bit of the window
 
-    if (BN_is_bit_set(p, wstart) == 0) {
+    if (!BN_is_bit_set(p, wstart)) {
       if (!start) {
         if (!BN_mod_mul_reciprocal(r, r, r, &recp, ctx)) {
           goto err;
@@ -573,19 +594,11 @@ int BN_mod_exp(BIGNUM *r, const BIGNUM *a, const BIGNUM *p, const BIGNUM *m,
 
 int BN_mod_exp_mont(BIGNUM *rr, const BIGNUM *a, const BIGNUM *p,
                     const BIGNUM *m, BN_CTX *ctx, const BN_MONT_CTX *mont) {
-  int i, j, bits, ret = 0, wstart, window;
-  int start = 1;
-  BIGNUM *d, *r;
-  const BIGNUM *aa;
-  // Table of variables obtained from 'ctx'
-  BIGNUM *val[TABLE_SIZE];
-  BN_MONT_CTX *new_mont = NULL;
-
   if (!BN_is_odd(m)) {
     OPENSSL_PUT_ERROR(BN, BN_R_CALLED_WITH_EVEN_MODULUS);
     return 0;
   }
-  bits = BN_num_bits(p);
+  int bits = BN_num_bits(p);
   if (bits == 0) {
     // x**0 mod 1 is still zero.
     if (BN_is_one(m)) {
@@ -595,9 +608,13 @@ int BN_mod_exp_mont(BIGNUM *rr, const BIGNUM *a, const BIGNUM *p,
     return BN_one(rr);
   }
 
+  int ret = 0;
+  BIGNUM *val[TABLE_SIZE];
+  BN_MONT_CTX *new_mont = NULL;
+
   BN_CTX_start(ctx);
-  d = BN_CTX_get(ctx);
-  r = BN_CTX_get(ctx);
+  BIGNUM *d = BN_CTX_get(ctx);
+  BIGNUM *r = BN_CTX_get(ctx);
   val[0] = BN_CTX_get(ctx);
   if (!d || !r || !val[0]) {
     goto err;
@@ -612,6 +629,7 @@ int BN_mod_exp_mont(BIGNUM *rr, const BIGNUM *a, const BIGNUM *p,
     mont = new_mont;
   }
 
+  const BIGNUM *aa;
   if (a->neg || BN_ucmp(a, m) >= 0) {
     if (!BN_nnmod(val[0], a, m, ctx)) {
       goto err;
@@ -626,53 +644,52 @@ int BN_mod_exp_mont(BIGNUM *rr, const BIGNUM *a, const BIGNUM *p,
     ret = 1;
     goto err;
   }
-  if (!BN_to_montgomery(val[0], aa, mont, ctx)) {
-    goto err;  // 1
-  }
 
-  window = BN_window_bits_for_exponent_size(bits);
+  // We exponentiate by looking at sliding windows of the exponent and
+  // precomputing powers of |aa|. Windows may be shifted so they always end on a
+  // set bit, so only precompute odd powers. We compute val[i] = aa^(2*i + 1)
+  // for i = 0 to 2^(window-1), all in Montgomery form.
+  int window = BN_window_bits_for_exponent_size(bits);
+  if (!BN_to_montgomery(val[0], aa, mont, ctx)) {
+    goto err;
+  }
   if (window > 1) {
     if (!BN_mod_mul_montgomery(d, val[0], val[0], mont, ctx)) {
-      goto err;  // 2
+      goto err;
     }
-    j = 1 << (window - 1);
-    for (i = 1; i < j; i++) {
-      if (((val[i] = BN_CTX_get(ctx)) == NULL) ||
+    for (int i = 1; i < 1 << (window - 1); i++) {
+      val[i] = BN_CTX_get(ctx);
+      if (val[i] == NULL ||
           !BN_mod_mul_montgomery(val[i], val[i - 1], d, mont, ctx)) {
         goto err;
       }
     }
   }
 
-  start = 1;  // This is used to avoid multiplication etc
-              // when there is only the value '1' in the
-              // buffer.
-  wstart = bits - 1;  // The top bit of the window
-
-  j = m->top;  // borrow j
-  if (m->d[j - 1] & (((BN_ULONG)1) << (BN_BITS2 - 1))) {
-    if (!bn_wexpand(r, j)) {
+  // Set |r| to one in Montgomery form. If the high bit of |m| is set, |m| is
+  // close to R and we subtract rather than perform Montgomery reduction.
+  if (m->d[m->top - 1] & (((BN_ULONG)1) << (BN_BITS2 - 1))) {
+    if (!bn_wexpand(r, m->top)) {
       goto err;
     }
-    // 2^(top*BN_BITS2) - m
-    r->d[0] = (0 - m->d[0]) & BN_MASK2;
-    for (i = 1; i < j; i++) {
-      r->d[i] = (~m->d[i]) & BN_MASK2;
+    // r = 2^(top*BN_BITS2) - m
+    r->d[0] = 0 - m->d[0];
+    for (int i = 1; i < m->top; i++) {
+      r->d[i] = ~m->d[i];
     }
-    r->top = j;
-    // Upper words will be zero if the corresponding words of 'm'
-    // were 0xfff[...], so decrement r->top accordingly.
+    r->top = m->top;
+    // The upper words will be zero if the corresponding words of |m| were
+    // 0xfff[...], so call |bn_correct_top|.
     bn_correct_top(r);
   } else if (!BN_to_montgomery(r, BN_value_one(), mont, ctx)) {
     goto err;
   }
 
+  int r_is_one = 1;
+  int wstart = bits - 1;  // The top bit of the window.
   for (;;) {
-    int wvalue;  // The 'value' of the window
-    int wend;  // The bottom bit of the window
-
-    if (BN_is_bit_set(p, wstart) == 0) {
-      if (!start && !BN_mod_mul_montgomery(r, r, r, mont, ctx)) {
+    if (!BN_is_bit_set(p, wstart)) {
+      if (!r_is_one && !BN_mod_mul_montgomery(r, r, r, mont, ctx)) {
         goto err;
       }
       if (wstart == 0) {
@@ -682,44 +699,37 @@ int BN_mod_exp_mont(BIGNUM *rr, const BIGNUM *a, const BIGNUM *p,
       continue;
     }
 
-    // We now have wstart on a 'set' bit, we now need to work out how bit a
-    // window to do.  To do this we need to scan forward until the last set bit
-    // before the end of the window
-    wvalue = 1;
-    wend = 0;
-    for (i = 1; i < window; i++) {
-      if (wstart - i < 0) {
-        break;
-      }
+    // We now have wstart on a set bit. Find the largest window we can use.
+    int wvalue = 1;
+    int wsize = 0;
+    for (int i = 1; i < window && i <= wstart; i++) {
       if (BN_is_bit_set(p, wstart - i)) {
-        wvalue <<= (i - wend);
+        wvalue <<= (i - wsize);
         wvalue |= 1;
-        wend = i;
+        wsize = i;
       }
     }
 
-    // wend is the size of the current window
-    j = wend + 1;
-    // add the 'bytes above'
-    if (!start) {
-      for (i = 0; i < j; i++) {
+    // Shift |r| to the end of the window.
+    if (!r_is_one) {
+      for (int i = 0; i < wsize + 1; i++) {
         if (!BN_mod_mul_montgomery(r, r, r, mont, ctx)) {
           goto err;
         }
       }
     }
 
-    // wvalue will be an odd number < 2^window
+    assert(wvalue & 1);
+    assert(wvalue < (1 << window));
     if (!BN_mod_mul_montgomery(r, r, val[wvalue >> 1], mont, ctx)) {
       goto err;
     }
 
-    // move the 'window' down further
-    wstart -= wend + 1;
-    start = 0;
-    if (wstart < 0) {
+    r_is_one = 0;
+    if (wstart == wsize) {
       break;
     }
+    wstart -= wsize + 1;
   }
 
   if (!BN_from_montgomery(rr, r, mont, ctx)) {
@@ -733,12 +743,160 @@ err:
   return ret;
 }
 
-// BN_mod_exp_mont_consttime() stores the precomputed powers in a specific
+int bn_mod_exp_mont_small(BN_ULONG *r, size_t num_r, const BN_ULONG *a,
+                          size_t num_a, const BN_ULONG *p, size_t num_p,
+                          const BN_MONT_CTX *mont) {
+  const BN_ULONG *n = mont->N.d;
+  size_t num_n = mont->N.top;
+  if (num_n != num_a || num_n != num_r || num_n > BN_SMALL_MAX_WORDS) {
+    OPENSSL_PUT_ERROR(BN, ERR_R_SHOULD_NOT_HAVE_BEEN_CALLED);
+    return 0;
+  }
+  if (!BN_is_odd(&mont->N)) {
+    OPENSSL_PUT_ERROR(BN, BN_R_CALLED_WITH_EVEN_MODULUS);
+    return 0;
+  }
+  unsigned bits = 0;
+  if (num_p != 0) {
+    bits = BN_num_bits_word(p[num_p - 1]) + (num_p - 1) * BN_BITS2;
+  }
+  if (bits == 0) {
+    OPENSSL_memset(r, 0, num_r * sizeof(BN_ULONG));
+    if (!BN_is_one(&mont->N)) {
+      r[0] = 1;
+    }
+    return 1;
+  }
+
+  // We exponentiate by looking at sliding windows of the exponent and
+  // precomputing powers of |a|. Windows may be shifted so they always end on a
+  // set bit, so only precompute odd powers. We compute val[i] = a^(2*i + 1) for
+  // i = 0 to 2^(window-1), all in Montgomery form.
+  unsigned window = BN_window_bits_for_exponent_size(bits);
+  if (window > TABLE_BITS_SMALL) {
+    window = TABLE_BITS_SMALL;  // Tolerate excessively large |p|.
+  }
+  int ret = 0;
+  BN_ULONG val[TABLE_SIZE_SMALL][BN_SMALL_MAX_WORDS];
+  OPENSSL_memcpy(val[0], a, num_n * sizeof(BN_ULONG));
+  if (window > 1) {
+    BN_ULONG d[BN_SMALL_MAX_WORDS];
+    if (!bn_mod_mul_montgomery_small(d, num_n, val[0], num_n, val[0], num_n,
+                                     mont)) {
+      goto err;
+    }
+    for (unsigned i = 1; i < 1u << (window - 1); i++) {
+      if (!bn_mod_mul_montgomery_small(val[i], num_n, val[i - 1], num_n, d,
+                                       num_n, mont)) {
+        goto err;
+      }
+    }
+  }
+
+  // Set |r| to one in Montgomery form. If the high bit of |m| is set, |m| is
+  // close to R and we subtract rather than perform Montgomery reduction.
+  if (n[num_n - 1] & (((BN_ULONG)1) << (BN_BITS2 - 1))) {
+    // r = 2^(top*BN_BITS2) - m
+    r[0] = 0 - n[0];
+    for (size_t i = 1; i < num_n; i++) {
+      r[i] = ~n[i];
+    }
+  } else if (!bn_from_montgomery_small(r, num_r, mont->RR.d, mont->RR.top,
+                                       mont)) {
+    goto err;
+  }
+
+  int r_is_one = 1;
+  unsigned wstart = bits - 1;  // The top bit of the window.
+  for (;;) {
+    if (!bn_is_bit_set_words(p, num_p, wstart)) {
+      if (!r_is_one &&
+          !bn_mod_mul_montgomery_small(r, num_r, r, num_r, r, num_r, mont)) {
+        goto err;
+      }
+      if (wstart == 0) {
+        break;
+      }
+      wstart--;
+      continue;
+    }
+
+    // We now have wstart on a set bit. Find the largest window we can use.
+    unsigned wvalue = 1;
+    unsigned wsize = 0;
+    for (unsigned i = 1; i < window && i <= wstart; i++) {
+      if (bn_is_bit_set_words(p, num_p, wstart - i)) {
+        wvalue <<= (i - wsize);
+        wvalue |= 1;
+        wsize = i;
+      }
+    }
+
+    // Shift |r| to the end of the window.
+    if (!r_is_one) {
+      for (unsigned i = 0; i < wsize + 1; i++) {
+        if (!bn_mod_mul_montgomery_small(r, num_r, r, num_r, r, num_r, mont)) {
+          goto err;
+        }
+      }
+    }
+
+    assert(wvalue & 1);
+    assert(wvalue < (1u << window));
+    if (!bn_mod_mul_montgomery_small(r, num_r, r, num_r, val[wvalue >> 1],
+                                     num_n, mont)) {
+      goto err;
+    }
+
+    r_is_one = 0;
+    if (wstart == wsize) {
+      break;
+    }
+    wstart -= wsize + 1;
+  }
+
+  ret = 1;
+
+err:
+  OPENSSL_cleanse(val, sizeof(val));
+  return ret;
+}
+
+int bn_mod_inverse_prime_mont_small(BN_ULONG *r, size_t num_r,
+                                    const BN_ULONG *a, size_t num_a,
+                                    const BN_MONT_CTX *mont) {
+  const BN_ULONG *p = mont->N.d;
+  size_t num_p = mont->N.top;
+  if (num_p > BN_SMALL_MAX_WORDS || num_p == 0) {
+    OPENSSL_PUT_ERROR(BN, ERR_R_SHOULD_NOT_HAVE_BEEN_CALLED);
+    return 0;
+  }
+
+  // Per Fermat's Little Theorem, a^-1 = a^(p-2) (mod p) for p prime.
+  BN_ULONG p_minus_two[BN_SMALL_MAX_WORDS];
+  OPENSSL_memcpy(p_minus_two, p, num_p * sizeof(BN_ULONG));
+  if (p_minus_two[0] >= 2) {
+    p_minus_two[0] -= 2;
+  } else {
+    p_minus_two[0] -= 2;
+    for (size_t i = 1; i < num_p; i++) {
+      if (p_minus_two[i]-- != 0) {
+        break;
+      }
+    }
+  }
+
+  return bn_mod_exp_mont_small(r, num_r, a, num_a, p_minus_two, num_p, mont);
+}
+
+
+// |BN_mod_exp_mont_consttime| stores the precomputed powers in a specific
 // layout so that accessing any of these table values shows the same access
 // pattern as far as cache lines are concerned. The following functions are
 // used to transfer a BIGNUM from/to that table.
-static int copy_to_prebuf(const BIGNUM *b, int top, unsigned char *buf, int idx,
-                          int window) {
+
+static void copy_to_prebuf(const BIGNUM *b, int top, unsigned char *buf,
+                           int idx, int window) {
   int i, j;
   const int width = 1 << window;
   BN_ULONG *table = (BN_ULONG *) buf;
@@ -750,8 +908,6 @@ static int copy_to_prebuf(const BIGNUM *b, int top, unsigned char *buf, int idx,
   for (i = 0, j = idx; i < top; i++, j += width)  {
     table[j] = b->d[i];
   }
-
-  return 1;
 }
 
 static int copy_from_prebuf(BIGNUM *b, int top, unsigned char *buf, int idx,
@@ -963,9 +1119,9 @@ int BN_mod_exp_mont_consttime(BIGNUM *rr, const BIGNUM *a, const BIGNUM *p,
 // by Shay Gueron's suggestion
   if (m->d[top - 1] & (((BN_ULONG)1) << (BN_BITS2 - 1))) {
     // 2^(top*BN_BITS2) - m
-    tmp.d[0] = (0 - m->d[0]) & BN_MASK2;
+    tmp.d[0] = 0 - m->d[0];
     for (i = 1; i < top; i++) {
-      tmp.d[i] = (~m->d[i]) & BN_MASK2;
+      tmp.d[i] = ~m->d[i];
     }
     tmp.top = top;
   } else if (!BN_to_montgomery(&tmp, BN_value_one(), mont, ctx)) {
@@ -1103,26 +1259,27 @@ int BN_mod_exp_mont_consttime(BIGNUM *rr, const BIGNUM *a, const BIGNUM *p,
   } else
 #endif
   {
-    if (!copy_to_prebuf(&tmp, top, powerbuf, 0, window) ||
-        !copy_to_prebuf(&am, top, powerbuf, 1, window)) {
-      goto err;
-    }
+    copy_to_prebuf(&tmp, top, powerbuf, 0, window);
+    copy_to_prebuf(&am, top, powerbuf, 1, window);
 
     // If the window size is greater than 1, then calculate
     // val[i=2..2^winsize-1]. Powers are computed as a*a^(i-1)
     // (even powers could instead be computed as (a^(i/2))^2
     // to use the slight performance advantage of sqr over mul).
     if (window > 1) {
-      if (!BN_mod_mul_montgomery(&tmp, &am, &am, mont, ctx) ||
-          !copy_to_prebuf(&tmp, top, powerbuf, 2, window)) {
+      if (!BN_mod_mul_montgomery(&tmp, &am, &am, mont, ctx)) {
         goto err;
       }
+
+      copy_to_prebuf(&tmp, top, powerbuf, 2, window);
+
       for (i = 3; i < numPowers; i++) {
         // Calculate a^i = a^(i-1) * a
-        if (!BN_mod_mul_montgomery(&tmp, &am, &tmp, mont, ctx) ||
-            !copy_to_prebuf(&tmp, top, powerbuf, i, window)) {
+        if (!BN_mod_mul_montgomery(&tmp, &am, &tmp, mont, ctx)) {
           goto err;
         }
+
+        copy_to_prebuf(&tmp, top, powerbuf, i, window);
       }
     }
 

@@ -51,6 +51,7 @@ const Type &GetTypeInfo(GLenum type);
 struct InternalFormat
 {
     InternalFormat();
+    InternalFormat(const InternalFormat &other);
 
     GLuint computePixelBytes(GLenum formatType) const;
 
@@ -68,8 +69,7 @@ struct InternalFormat
                                             GLint rowLength,
                                             GLint imageHeight) const;
 
-    ErrorOrResult<GLuint> computeCompressedImageSize(GLenum formatType,
-                                                     const Extents &size) const;
+    ErrorOrResult<GLuint> computeCompressedImageSize(const Extents &size) const;
 
     ErrorOrResult<GLuint> computeSkipBytes(GLuint rowPitch,
                                            GLuint depthPitch,

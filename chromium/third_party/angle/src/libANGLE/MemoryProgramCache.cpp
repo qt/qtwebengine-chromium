@@ -42,7 +42,7 @@ void WriteShaderVar(BinaryOutputStream *stream, const sh::ShaderVariable &var)
     stream->writeInt(var.precision);
     stream->writeString(var.name);
     stream->writeString(var.mappedName);
-    stream->writeInt(var.arraySize);
+    stream->writeIntVector(var.arraySizes);
     stream->writeInt(var.staticUse);
     stream->writeString(var.structName);
     ASSERT(var.fields.empty());
@@ -54,7 +54,7 @@ void LoadShaderVar(BinaryInputStream *stream, sh::ShaderVariable *var)
     var->precision  = stream->readInt<GLenum>();
     var->name       = stream->readString();
     var->mappedName = stream->readString();
-    var->arraySize  = stream->readInt<unsigned int>();
+    stream->readIntVector<unsigned int>(&var->arraySizes);
     var->staticUse  = stream->readBool();
     var->structName = stream->readString();
 }
@@ -88,6 +88,38 @@ void LoadShaderVariableBuffer(BinaryInputStream *stream, ShaderVariableBuffer *v
     {
         var->memberIndexes.push_back(stream->readInt<unsigned int>());
     }
+}
+
+void WriteBufferVariable(BinaryOutputStream *stream, const BufferVariable &var)
+{
+    WriteShaderVar(stream, var);
+
+    stream->writeInt(var.bufferIndex);
+    stream->writeInt(var.blockInfo.offset);
+    stream->writeInt(var.blockInfo.arrayStride);
+    stream->writeInt(var.blockInfo.matrixStride);
+    stream->writeInt(var.blockInfo.isRowMajorMatrix);
+    stream->writeInt(var.blockInfo.topLevelArrayStride);
+    stream->writeInt(var.topLevelArraySize);
+    stream->writeInt(var.vertexStaticUse);
+    stream->writeInt(var.fragmentStaticUse);
+    stream->writeInt(var.computeStaticUse);
+}
+
+void LoadBufferVariable(BinaryInputStream *stream, BufferVariable *var)
+{
+    LoadShaderVar(stream, var);
+
+    var->bufferIndex                   = stream->readInt<int>();
+    var->blockInfo.offset              = stream->readInt<int>();
+    var->blockInfo.arrayStride         = stream->readInt<int>();
+    var->blockInfo.matrixStride        = stream->readInt<int>();
+    var->blockInfo.isRowMajorMatrix    = stream->readBool();
+    var->blockInfo.topLevelArrayStride = stream->readInt<int>();
+    var->topLevelArraySize             = stream->readInt<int>();
+    var->vertexStaticUse               = stream->readBool();
+    var->fragmentStaticUse             = stream->readBool();
+    var->computeStaticUse              = stream->readBool();
 }
 
 void WriteInterfaceBlock(BinaryOutputStream *stream, const InterfaceBlock &block)
@@ -238,9 +270,8 @@ LinkResult MemoryProgramCache::Deserialize(const Context *context,
          uniformIndexIndex++)
     {
         VariableLocation variable;
-        stream.readIntVector<unsigned int>(&variable.arrayIndices);
+        stream.readInt(&variable.arrayIndex);
         stream.readInt(&variable.index);
-        stream.readInt(&variable.flattenedArrayOffset);
         stream.readBool(&variable.ignored);
 
         state->mUniformLocations.push_back(variable);
@@ -256,6 +287,15 @@ LinkResult MemoryProgramCache::Deserialize(const Context *context,
         state->mUniformBlocks.push_back(uniformBlock);
 
         state->mActiveUniformBlockBindings.set(uniformBlockIndex, uniformBlock.binding != 0);
+    }
+
+    unsigned int bufferVariableCount = stream.readInt<unsigned int>();
+    ASSERT(state->mBufferVariables.empty());
+    for (unsigned int index = 0; index < bufferVariableCount; ++index)
+    {
+        BufferVariable bufferVariable;
+        LoadBufferVariable(&stream, &bufferVariable);
+        state->mBufferVariables.push_back(bufferVariable);
     }
 
     unsigned int shaderStorageBlockCount = stream.readInt<unsigned int>();
@@ -294,7 +334,7 @@ LinkResult MemoryProgramCache::Deserialize(const Context *context,
          ++transformFeedbackVaryingIndex)
     {
         sh::Varying varying;
-        stream.readInt(&varying.arraySize);
+        stream.readIntVector<unsigned int>(&varying.arraySizes);
         stream.readInt(&varying.type);
         stream.readString(&varying.name);
 
@@ -316,15 +356,14 @@ LinkResult MemoryProgramCache::Deserialize(const Context *context,
     }
 
     unsigned int outputVarCount = stream.readInt<unsigned int>();
+    ASSERT(state->mOutputLocations.empty());
     for (unsigned int outputIndex = 0; outputIndex < outputVarCount; ++outputIndex)
     {
-        int locationIndex = stream.readInt<int>();
         VariableLocation locationData;
-        stream.readIntVector<unsigned int>(&locationData.arrayIndices);
+        stream.readInt(&locationData.arrayIndex);
         stream.readInt(&locationData.index);
-        stream.readInt(&locationData.flattenedArrayOffset);
         stream.readBool(&locationData.ignored);
-        state->mOutputLocations[locationIndex] = locationData;
+        state->mOutputLocations.push_back(locationData);
     }
 
     unsigned int outputTypeCount = stream.readInt<unsigned int>();
@@ -367,6 +406,9 @@ LinkResult MemoryProgramCache::Deserialize(const Context *context,
     unsigned int atomicCounterRangeLow  = stream.readInt<unsigned int>();
     unsigned int atomicCounterRangeHigh = stream.readInt<unsigned int>();
     state->mAtomicCounterUniformRange   = RangeUI(atomicCounterRangeLow, atomicCounterRangeHigh);
+
+    static_assert(SHADER_TYPE_MAX <= sizeof(unsigned long) * 8, "Too many shader types");
+    state->mLinkedShaderStages = stream.readInt<unsigned long>();
 
     return program->getImplementation()->load(context, infoLog, &stream);
 }
@@ -429,9 +471,8 @@ void MemoryProgramCache::Serialize(const Context *context,
     stream.writeInt(state.getUniformLocations().size());
     for (const auto &variable : state.getUniformLocations())
     {
-        stream.writeIntVector(variable.arrayIndices);
+        stream.writeInt(variable.arrayIndex);
         stream.writeIntOrNegOne(variable.index);
-        stream.writeInt(variable.flattenedArrayOffset);
         stream.writeInt(variable.ignored);
     }
 
@@ -439,6 +480,12 @@ void MemoryProgramCache::Serialize(const Context *context,
     for (const InterfaceBlock &uniformBlock : state.getUniformBlocks())
     {
         WriteInterfaceBlock(&stream, uniformBlock);
+    }
+
+    stream.writeInt(state.getBufferVariables().size());
+    for (const BufferVariable &bufferVariable : state.getBufferVariables())
+    {
+        WriteBufferVariable(&stream, bufferVariable);
     }
 
     stream.writeInt(state.getShaderStorageBlocks().size());
@@ -464,7 +511,7 @@ void MemoryProgramCache::Serialize(const Context *context,
     stream.writeInt(state.getLinkedTransformFeedbackVaryings().size());
     for (const auto &var : state.getLinkedTransformFeedbackVaryings())
     {
-        stream.writeInt(var.arraySize);
+        stream.writeIntVector(var.arraySizes);
         stream.writeInt(var.type);
         stream.writeString(var.name);
 
@@ -481,13 +528,11 @@ void MemoryProgramCache::Serialize(const Context *context,
     }
 
     stream.writeInt(state.getOutputLocations().size());
-    for (const auto &outputPair : state.getOutputLocations())
+    for (const auto &outputVar : state.getOutputLocations())
     {
-        stream.writeInt(outputPair.first);
-        stream.writeIntVector(outputPair.second.arrayIndices);
-        stream.writeIntOrNegOne(outputPair.second.index);
-        stream.writeInt(outputPair.second.flattenedArrayOffset);
-        stream.writeInt(outputPair.second.ignored);
+        stream.writeInt(outputVar.arrayIndex);
+        stream.writeIntOrNegOne(outputVar.index);
+        stream.writeInt(outputVar.ignored);
     }
 
     stream.writeInt(state.mOutputVariableTypes.size());
@@ -527,6 +572,8 @@ void MemoryProgramCache::Serialize(const Context *context,
     stream.writeInt(state.getAtomicCounterUniformRange().low());
     stream.writeInt(state.getAtomicCounterUniformRange().high());
 
+    stream.writeInt(state.getLinkedShaderStages().to_ulong());
+
     program->getImplementation()->save(context, &stream);
 
     ASSERT(binaryOut);
@@ -539,9 +586,9 @@ void MemoryProgramCache::ComputeHash(const Context *context,
                                      const Program *program,
                                      ProgramHash *hashOut)
 {
-    auto vertexShader   = program->getAttachedVertexShader();
-    auto fragmentShader = program->getAttachedFragmentShader();
-    auto computeShader  = program->getAttachedComputeShader();
+    const Shader *vertexShader   = program->getAttachedVertexShader();
+    const Shader *fragmentShader = program->getAttachedFragmentShader();
+    const Shader *computeShader  = program->getAttachedComputeShader();
 
     // Compute the program hash. Start with the shader hashes and resource strings.
     HashStream hashStream;

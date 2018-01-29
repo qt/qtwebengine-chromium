@@ -523,10 +523,8 @@ void WindowManagerState::DispatchInputEventToWindowImpl(
   if (target->parent() == nullptr)
     target = GetWindowManagerRootForDisplayRoot(target);
 
-  if (event.IsMousePointerEvent()) {
-    DCHECK(event_dispatcher_.mouse_cursor_source_window());
+  if (event.IsMousePointerEvent())
     UpdateNativeCursorFromDispatcher();
-  }
 
   WindowTree* tree = window_server()->GetTreeWithId(client_id);
   DCHECK(tree);
@@ -590,7 +588,7 @@ void WindowManagerState::ScheduleInputEventTimeout(WindowTree* tree,
                                                    const Event& event,
                                                    EventDispatchPhase phase) {
   std::unique_ptr<InFlightEventDispatchDetails> details =
-      base::MakeUnique<InFlightEventDispatchDetails>(this, tree, display_id,
+      std::make_unique<InFlightEventDispatchDetails>(this, tree, display_id,
                                                      event, phase);
 
   // TODO(sad): Adjust this delay, possibly make this dynamic.
@@ -893,6 +891,16 @@ ServerWindow* WindowManagerState::GetRootWindowForEventDispatch(
   return nullptr;
 }
 
+bool WindowManagerState::IsWindowInDisplayRoot(const ServerWindow* window) {
+  for (auto& display_root_ptr : window_manager_display_roots_) {
+    ServerWindow* client_visible_root =
+        display_root_ptr->GetClientVisibleRoot();
+    if (client_visible_root->Contains(window))
+      return true;
+  }
+  return false;
+}
+
 void WindowManagerState::OnEventTargetNotFound(const ui::Event& event,
                                                int64_t display_id) {
   window_server()->SendToPointerWatchers(event, user_id(), nullptr, /* window */
@@ -919,12 +927,8 @@ viz::HitTestQuery* WindowManagerState::GetHitTestQueryForDisplay(
   if (!display)
     return nullptr;
 
-  const auto& display_hit_test_query_map =
-      window_server()->GetHostFrameSinkManager()->display_hit_test_query();
-  const auto iter =
-      display_hit_test_query_map.find(display->root_window()->frame_sink_id());
-  return (iter != display_hit_test_query_map.end()) ? iter->second.get()
-                                                    : nullptr;
+  return window_server()->GetVizHostProxy()->GetHitTestQuery(
+      display->root_window()->frame_sink_id());
 }
 
 ServerWindow* WindowManagerState::GetWindowFromFrameSinkId(

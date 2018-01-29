@@ -33,10 +33,10 @@ class CORE_EXPORT ImageElementBase : public CanvasImageSource,
                                   Optional<IntRect>,
                                   const ImageBitmapOptions&) override;
 
-  RefPtr<Image> GetSourceImageForCanvas(SourceImageStatus*,
-                                        AccelerationHint,
-                                        SnapshotReason,
-                                        const FloatSize&) override;
+  scoped_refptr<Image> GetSourceImageForCanvas(SourceImageStatus*,
+                                               AccelerationHint,
+                                               SnapshotReason,
+                                               const FloatSize&) override;
 
   bool WouldTaintOrigin(
       SecurityOrigin* destination_security_origin) const override;
@@ -47,9 +47,6 @@ class CORE_EXPORT ImageElementBase : public CanvasImageSource,
 
   bool IsAccelerated() const override;
 
-  int SourceWidth() override;
-  int SourceHeight() override;
-
   bool IsSVGSource() const override;
 
   bool IsOpaque() const override;
@@ -58,8 +55,20 @@ class CORE_EXPORT ImageElementBase : public CanvasImageSource,
 
   ImageResourceContent* CachedImage() const;
 
+  // Returns the decoding mode that should be used when painting this element,
+  // given the PaintImage::Id that will be used to paint it.
+  // Used with HTMLImageElement and SVGImageElement types.
+  Image::ImageDecodingMode GetDecodingModeForPainting(PaintImage::Id);
+
+ protected:
+  Image::ImageDecodingMode decoding_mode_ =
+      Image::ImageDecodingMode::kUnspecifiedDecode;
+
  private:
   const Element& GetElement() const;
+
+  // The id for the PaintImage used the last time this element was painted.
+  PaintImage::Id last_painted_image_id_ = PaintImage::kInvalidId;
 };
 
 }  // namespace blink

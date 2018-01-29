@@ -15,6 +15,7 @@
 #include "content/public/common/browser_side_navigation_policy.h"
 #include "content/public/common/process_type.h"
 #include "net/url_request/url_request.h"
+#include "third_party/WebKit/common/page/page_visibility_state.mojom.h"
 
 namespace content {
 
@@ -42,49 +43,52 @@ const ResourceRequestInfo* ResourceRequestInfo::ForRequest(
 }
 
 // static
-void ResourceRequestInfo::AllocateForTesting(net::URLRequest* request,
-                                             ResourceType resource_type,
-                                             ResourceContext* context,
-                                             int render_process_id,
-                                             int render_view_id,
-                                             int render_frame_id,
-                                             bool is_main_frame,
-                                             bool allow_download,
-                                             bool is_async,
-                                             PreviewsState previews_state) {
+void ResourceRequestInfo::AllocateForTesting(
+    net::URLRequest* request,
+    ResourceType resource_type,
+    ResourceContext* context,
+    int render_process_id,
+    int render_view_id,
+    int render_frame_id,
+    bool is_main_frame,
+    bool allow_download,
+    bool is_async,
+    PreviewsState previews_state,
+    std::unique_ptr<NavigationUIData> navigation_ui_data) {
   // Make sure RESOURCE_TYPE_MAIN_FRAME is declared as being fetched as part of
   // the main frame.
   DCHECK(resource_type != RESOURCE_TYPE_MAIN_FRAME || is_main_frame);
 
   ResourceRequestInfoImpl* info = new ResourceRequestInfoImpl(
       ResourceRequesterInfo::CreateForRendererTesting(
-          render_process_id),                 // resource_requester_info
-      render_view_id,                         // route_id
-      -1,                                     // frame_tree_node_id
-      0,                                      // origin_pid
-      0,                                      // request_id
-      render_frame_id,                        // render_frame_id
-      is_main_frame,                          // is_main_frame
-      resource_type,                          // resource_type
-      ui::PAGE_TRANSITION_LINK,               // transition_type
-      false,                                  // should_replace_current_entry
-      false,                                  // is_download
-      false,                                  // is_stream
-      allow_download,                         // allow_download
-      false,                                  // has_user_gesture
-      false,                                  // enable load timing
-      request->has_upload(),                  // enable upload progress
-      false,                                  // do_not_prompt_for_login
-      false,                                  // keep_alive
-      blink::kWebReferrerPolicyDefault,       // referrer_policy
-      blink::kWebPageVisibilityStateVisible,  // visibility_state
-      context,                                // context
-      false,                                  // report_raw_headers
-      is_async,                               // is_async
-      previews_state,                         // previews_state
-      nullptr,                                // body
-      false);                                 // initiated_in_secure_context
+          render_process_id),              // resource_requester_info
+      render_view_id,                      // route_id
+      -1,                                  // frame_tree_node_id
+      ChildProcessHost::kInvalidUniqueID,  // plugin_child_id
+      0,                                   // request_id
+      render_frame_id,                     // render_frame_id
+      is_main_frame,                       // is_main_frame
+      resource_type,                       // resource_type
+      ui::PAGE_TRANSITION_LINK,            // transition_type
+      false,                               // should_replace_current_entry
+      false,                               // is_download
+      false,                               // is_stream
+      allow_download,                      // allow_download
+      false,                               // has_user_gesture
+      false,                               // enable load timing
+      request->has_upload(),               // enable upload progress
+      false,                               // do_not_prompt_for_login
+      false,                               // keep_alive
+      blink::kWebReferrerPolicyDefault,    // referrer_policy
+      blink::mojom::PageVisibilityState::kVisible,  // visibility_state
+      context,                                      // context
+      false,                                        // report_raw_headers
+      is_async,                                     // is_async
+      previews_state,                               // previews_state
+      nullptr,                                      // body
+      false);  // initiated_in_secure_context
   info->AssociateWithRequest(request);
+  info->set_navigation_ui_data(std::move(navigation_ui_data));
 }
 
 // static
@@ -128,7 +132,7 @@ ResourceRequestInfoImpl::ResourceRequestInfoImpl(
     scoped_refptr<ResourceRequesterInfo> requester_info,
     int route_id,
     int frame_tree_node_id,
-    int origin_pid,
+    int plugin_child_id,
     int request_id,
     int render_frame_id,
     bool is_main_frame,
@@ -144,18 +148,18 @@ ResourceRequestInfoImpl::ResourceRequestInfoImpl(
     bool do_not_prompt_for_login,
     bool keepalive,
     blink::WebReferrerPolicy referrer_policy,
-    blink::WebPageVisibilityState visibility_state,
+    blink::mojom::PageVisibilityState visibility_state,
     ResourceContext* context,
     bool report_raw_headers,
     bool is_async,
     PreviewsState previews_state,
     const scoped_refptr<ResourceRequestBody> body,
     bool initiated_in_secure_context)
-    : detachable_handler_(NULL),
+    : detachable_handler_(nullptr),
       requester_info_(std::move(requester_info)),
       route_id_(route_id),
       frame_tree_node_id_(frame_tree_node_id),
-      origin_pid_(origin_pid),
+      plugin_child_id_(plugin_child_id),
       request_id_(request_id),
       render_frame_id_(render_frame_id),
       is_main_frame_(is_main_frame),
@@ -242,8 +246,8 @@ GlobalRequestID ResourceRequestInfoImpl::GetGlobalRequestID() const {
   return GlobalRequestID(GetChildID(), request_id_);
 }
 
-int ResourceRequestInfoImpl::GetOriginPID() const {
-  return origin_pid_;
+int ResourceRequestInfoImpl::GetPluginChildID() const {
+  return plugin_child_id_;
 }
 
 int ResourceRequestInfoImpl::GetRenderFrameID() const {
@@ -271,8 +275,8 @@ blink::WebReferrerPolicy ResourceRequestInfoImpl::GetReferrerPolicy() const {
   return referrer_policy_;
 }
 
-blink::WebPageVisibilityState
-ResourceRequestInfoImpl::GetVisibilityState() const {
+blink::mojom::PageVisibilityState ResourceRequestInfoImpl::GetVisibilityState()
+    const {
   return visibility_state_;
 }
 
@@ -317,14 +321,12 @@ bool ResourceRequestInfoImpl::CanceledByDevTools() const {
 }
 
 void ResourceRequestInfoImpl::AssociateWithRequest(net::URLRequest* request) {
-  // Added for http://crbug.com/754704; remove when that bug is resolved.
-  CHECK(this);
   request->SetUserData(kResourceRequestInfoImplKey, base::WrapUnique(this));
   int render_process_id;
   int render_frame_id;
   if (GetAssociatedRenderFrame(&render_process_id, &render_frame_id)) {
     request->SetUserData(URLRequestUserData::kUserDataKey,
-                         base::MakeUnique<URLRequestUserData>(render_process_id,
+                         std::make_unique<URLRequestUserData>(render_process_id,
                                                               render_frame_id));
   }
 }
@@ -340,14 +342,13 @@ GlobalRoutingID ResourceRequestInfoImpl::GetGlobalRoutingID() const {
 void ResourceRequestInfoImpl::UpdateForTransfer(
     int route_id,
     int render_frame_id,
-    int origin_pid,
     int request_id,
     ResourceRequesterInfo* requester_info,
     mojom::URLLoaderRequest url_loader_request,
     mojom::URLLoaderClientPtr url_loader_client) {
   route_id_ = route_id;
   render_frame_id_ = render_frame_id;
-  origin_pid_ = origin_pid;
+  plugin_child_id_ = ChildProcessHost::kInvalidUniqueID;
   request_id_ = request_id;
   requester_info_ = requester_info;
 

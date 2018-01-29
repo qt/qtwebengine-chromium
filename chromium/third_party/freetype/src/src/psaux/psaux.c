@@ -25,6 +25,17 @@
 #include "psobjs.c"
 #include "t1cmap.c"
 #include "t1decode.c"
+#include "cffdecode.c"
+
+#include "psarrst.c"
+#include "psblues.c"
+#include "pserror.c"
+#include "psfont.c"
+#include "psft.c"
+#include "pshints.c"
+#include "psintrp.c"
+#include "psread.c"
+#include "psstack.c"
 
 
 /* END */

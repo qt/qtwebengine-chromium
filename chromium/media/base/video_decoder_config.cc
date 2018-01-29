@@ -47,6 +47,8 @@ VideoCodec VideoCodecProfileToVideoCodec(VideoCodecProfile profile) {
       return kCodecDolbyVision;
     case THEORAPROFILE_ANY:
       return kCodecTheora;
+    case AV1PROFILE_PROFILE0:
+      return kCodecAV1;
   }
   NOTREACHED();
   return kUnknownVideoCodec;
@@ -77,7 +79,7 @@ VideoDecoderConfig::VideoDecoderConfig(
 VideoDecoderConfig::VideoDecoderConfig(const VideoDecoderConfig& other) =
     default;
 
-VideoDecoderConfig::~VideoDecoderConfig() {}
+VideoDecoderConfig::~VideoDecoderConfig() = default;
 
 void VideoDecoderConfig::set_color_space_info(
     const VideoColorSpace& color_space_info) {

@@ -744,10 +744,11 @@ class FakePWGRasterConverter : public printing::PWGRasterConverter {
   void Start(base::RefCountedMemory* data,
              const printing::PdfRenderSettings& conversion_settings,
              const printing::PwgRasterSettings& bitmap_settings,
-             const ResultCallback& callback) override {
+             ResultCallback callback) override {
     bitmap_settings_ = bitmap_settings;
     std::string data_str(data->front_as<char>(), data->size());
-    callback.Run(true, base::FilePath().AppendASCII(data_str + "test.pdf"));
+    std::move(callback).Run(
+        true, base::FilePath().AppendASCII(data_str + "test.pdf"));
   }
 
   const printing::PwgRasterSettings& bitmap_settings() {

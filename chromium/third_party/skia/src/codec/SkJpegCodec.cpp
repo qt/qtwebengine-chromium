@@ -45,7 +45,7 @@ static uint32_t get_endian_int(const uint8_t* data, bool littleEndian) {
 const uint32_t kExifHeaderSize = 14;
 const uint32_t kExifMarker = JPEG_APP0 + 1;
 
-static bool is_orientation_marker(jpeg_marker_struct* marker, SkCodec::Origin* orientation) {
+static bool is_orientation_marker(jpeg_marker_struct* marker, SkEncodedOrigin* orientation) {
     if (kExifMarker != marker->marker || marker->data_length < kExifHeaderSize) {
         return false;
     }
@@ -87,8 +87,8 @@ static bool is_orientation_marker(jpeg_marker_struct* marker, SkCodec::Origin* o
         uint32_t count = get_endian_int(data + 4, littleEndian);
         if (kOriginTag == tag && kOriginType == type && 1 == count) {
             uint16_t val = get_endian_short(data + 8, littleEndian);
-            if (0 < val && val <= SkCodec::kLast_Origin) {
-                *orientation = (SkCodec::Origin) val;
+            if (0 < val && val <= kLast_SkEncodedOrigin) {
+                *orientation = (SkEncodedOrigin) val;
                 return true;
             }
         }
@@ -97,15 +97,15 @@ static bool is_orientation_marker(jpeg_marker_struct* marker, SkCodec::Origin* o
     return false;
 }
 
-static SkCodec::Origin get_exif_orientation(jpeg_decompress_struct* dinfo) {
-    SkCodec::Origin orientation;
+static SkEncodedOrigin get_exif_orientation(jpeg_decompress_struct* dinfo) {
+    SkEncodedOrigin orientation;
     for (jpeg_marker_struct* marker = dinfo->marker_list; marker; marker = marker->next) {
         if (is_orientation_marker(marker, &orientation)) {
             return orientation;
         }
     }
 
-    return SkCodec::kDefault_Origin;
+    return kDefault_SkEncodedOrigin;
 }
 
 static bool is_icc_marker(jpeg_marker_struct* marker) {
@@ -122,7 +122,7 @@ static bool is_icc_marker(jpeg_marker_struct* marker) {
  *     (1) Discover all ICC profile markers and verify that they are numbered properly.
  *     (2) Copy the data from each marker into a contiguous ICC profile.
  */
-static sk_sp<SkData> get_icc_profile(jpeg_decompress_struct* dinfo) {
+static sk_sp<SkColorSpace> read_color_space(jpeg_decompress_struct* dinfo) {
     // Note that 256 will be enough storage space since each markerIndex is stored in 8-bits.
     jpeg_marker_struct* markerSequence[256];
     memset(markerSequence, 0, sizeof(markerSequence));
@@ -182,7 +182,7 @@ static sk_sp<SkData> get_icc_profile(jpeg_decompress_struct* dinfo) {
         dst = SkTAddOffset<void>(dst, bytes);
     }
 
-    return iccData;
+    return SkColorSpace::MakeICC(iccData->data(), iccData->size());
 }
 
 SkCodec::Result SkJpegCodec::ReadHeader(SkStream* stream, SkCodec** codecOut,
@@ -227,24 +227,29 @@ SkCodec::Result SkJpegCodec::ReadHeader(SkStream* stream, SkCodec** codecOut,
         // Create image info object and the codec
         SkEncodedInfo info = SkEncodedInfo::Make(color, SkEncodedInfo::kOpaque_Alpha, 8);
 
-        Origin orientation = get_exif_orientation(decoderMgr->dinfo());
-        sk_sp<SkData> iccData = get_icc_profile(decoderMgr->dinfo());
-        sk_sp<SkColorSpace> colorSpace = nullptr;
-        if (iccData) {
-            SkColorSpace_Base::ICCTypeFlag iccType = SkColorSpace_Base::kRGB_ICCTypeFlag;
+        SkEncodedOrigin orientation = get_exif_orientation(decoderMgr->dinfo());
+        sk_sp<SkColorSpace> colorSpace = read_color_space(decoderMgr->dinfo());
+        if (colorSpace) {
             switch (decoderMgr->dinfo()->jpeg_color_space) {
                 case JCS_CMYK:
                 case JCS_YCCK:
-                    iccType = SkColorSpace_Base::kCMYK_ICCTypeFlag;
+                    if (colorSpace->type() != SkColorSpace::kCMYK_Type) {
+                        colorSpace = nullptr;
+                    }
                     break;
                 case JCS_GRAYSCALE:
-                    // Note the "or equals".  We will accept gray or rgb profiles for gray images.
-                    iccType |= SkColorSpace_Base::kGray_ICCTypeFlag;
+                    if (colorSpace->type() != SkColorSpace::kGray_Type &&
+                        colorSpace->type() != SkColorSpace::kRGB_Type)
+                    {
+                        colorSpace = nullptr;
+                    }
                     break;
                 default:
+                    if (colorSpace->type() != SkColorSpace::kRGB_Type) {
+                        colorSpace = nullptr;
+                    }
                     break;
             }
-            colorSpace = SkColorSpace_Base::MakeICC(iccData->data(), iccData->size(), iccType);
         }
         if (!colorSpace) {
             colorSpace = defaultColorSpace;
@@ -284,7 +289,7 @@ std::unique_ptr<SkCodec> SkJpegCodec::MakeFromStream(std::unique_ptr<SkStream> s
 
 SkJpegCodec::SkJpegCodec(int width, int height, const SkEncodedInfo& info,
                          std::unique_ptr<SkStream> stream, JpegDecoderMgr* decoderMgr,
-                         sk_sp<SkColorSpace> colorSpace, Origin origin)
+                         sk_sp<SkColorSpace> colorSpace, SkEncodedOrigin origin)
     : INHERITED(width, height, info, SkColorSpaceXform::kRGBA_8888_ColorFormat, std::move(stream),
                 std::move(colorSpace), origin)
     , fDecoderMgr(decoderMgr)

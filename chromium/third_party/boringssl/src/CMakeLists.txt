@@ -72,6 +72,9 @@ if(CMAKE_COMPILER_IS_GNUCXX OR CLANG)
 
   if(NOT MSVC)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
+    if(APPLE)
+      set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -stdlib=libc++")
+    endif()
     if(NOT BORINGSSL_ALLOW_CXX_RUNTIME)
       set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-exceptions -fno-rtti")
     endif()
@@ -235,6 +238,24 @@ if (ASAN)
   set(OPENSSL_NO_ASM "1")
 endif()
 
+if(CFI)
+  if(NOT CLANG)
+    message(FATAL_ERROR "Cannot enable CFI unless using Clang")
+  endif()
+
+  # TODO(crbug.com/785442): Remove -fsanitize-cfi-icall-generalize-pointers.
+  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fsanitize=cfi -fno-sanitize-trap=cfi -fsanitize-cfi-icall-generalize-pointers -flto")
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsanitize=cfi -fno-sanitize-trap=cfi -fsanitize-cfi-icall-generalize-pointers -flto")
+  # We use Chromium's copy of clang, which requires -fuse-ld=lld if building
+  # with -flto. That, in turn, can't handle -ggdb.
+  set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fuse-ld=lld")
+  string(REPLACE "-ggdb" "-g" CMAKE_C_FLAGS "${CMAKE_C_FLAGS}")
+  string(REPLACE "-ggdb" "-g" CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
+  # -flto causes object files to contain LLVM bitcode. Mixing those with
+  # assembly output in the same static library breaks the linker.
+  set(OPENSSL_NO_ASM "1")
+endif()
+
 if (GCOV)
   set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fprofile-arcs -ftest-coverage")
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fprofile-arcs -ftest-coverage")
@@ -307,7 +328,7 @@ if (ANDROID AND ${ARCH} STREQUAL "arm")
   set(CMAKE_ASM_FLAGS "${CMAKE_ASM_FLAGS} -march=${CMAKE_SYSTEM_PROCESSOR}")
 endif()
 
-if (${ARCH} STREQUAL "x86" AND APPLE)
+if (${ARCH} STREQUAL "x86" AND APPLE AND ${CMAKE_VERSION} VERSION_LESS "3.0")
   # With CMake 2.8.x, ${CMAKE_SYSTEM_PROCESSOR} evalutes to i386 on OS X,
   # but clang defaults to 64-bit builds on OS X unless otherwise told.
   # Set ARCH to x86_64 so clang and CMake agree. This is fixed in CMake 3.
@@ -335,6 +356,7 @@ add_custom_command(
 add_library(crypto_test_data OBJECT crypto_test_data.cc)
 
 add_subdirectory(crypto)
+add_subdirectory(third_party/fiat)
 add_subdirectory(ssl)
 add_subdirectory(ssl/test)
 add_subdirectory(fipstools)

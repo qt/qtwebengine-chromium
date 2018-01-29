@@ -9,13 +9,14 @@
 #include "libANGLE/renderer/d3d/ProgramD3D.h"
 
 #include "common/bitset_utils.h"
+#include "common/string_utils.h"
 #include "common/utilities.h"
 #include "libANGLE/Context.h"
 #include "libANGLE/Framebuffer.h"
 #include "libANGLE/FramebufferAttachment.h"
 #include "libANGLE/Program.h"
+#include "libANGLE/ProgramLinkedResources.h"
 #include "libANGLE/Uniform.h"
-#include "libANGLE/VaryingPacking.h"
 #include "libANGLE/VertexArray.h"
 #include "libANGLE/features.h"
 #include "libANGLE/queryconversions.h"
@@ -72,52 +73,6 @@ void GetDefaultOutputLayoutFromShader(
     {
         outputLayoutOut->push_back(GL_COLOR_ATTACHMENT0 +
                                    static_cast<unsigned int>(shaderOutputVars[0].outputIndex));
-    }
-}
-
-bool IsRowMajorLayout(const sh::InterfaceBlockField &var)
-{
-    return var.isRowMajorLayout;
-}
-
-bool IsRowMajorLayout(const sh::ShaderVariable &var)
-{
-    return false;
-}
-
-template <typename VarT>
-void GetUniformBlockInfo(const std::vector<VarT> &fields,
-                         const std::string &prefix,
-                         sh::BlockLayoutEncoder *encoder,
-                         bool inRowMajorLayout,
-                         std::map<std::string, sh::BlockMemberInfo> *blockInfoOut)
-{
-    for (const VarT &field : fields)
-    {
-        const std::string &fieldName = (prefix.empty() ? field.name : prefix + "." + field.name);
-
-        if (field.isStruct())
-        {
-            bool rowMajorLayout = (inRowMajorLayout || IsRowMajorLayout(field));
-
-            for (unsigned int arrayElement = 0; arrayElement < field.elementCount(); arrayElement++)
-            {
-                encoder->enterAggregateType();
-
-                const std::string uniformElementName =
-                    fieldName + (field.isArray() ? ArrayString(arrayElement) : "");
-                GetUniformBlockInfo(field.fields, uniformElementName, encoder, rowMajorLayout,
-                                    blockInfoOut);
-
-                encoder->exitAggregateType();
-            }
-        }
-        else
-        {
-            bool isRowMajorMatrix = (gl::IsMatrixType(field.type) && inRowMajorLayout);
-            (*blockInfoOut)[fieldName] =
-                encoder->encodeType(field.type, field.arraySize, isRowMajorMatrix);
-        }
     }
 }
 
@@ -244,17 +199,108 @@ void GetMatrixUniform(GLint columns, GLint rows, NonFloatT *dataOut, const NonFl
     UNREACHABLE();
 }
 
+class UniformBlockInfo final : angle::NonCopyable
+{
+  public:
+    UniformBlockInfo() {}
+
+    void getShaderBlockInfo(const gl::Context *context, gl::Shader *shader);
+
+    bool getBlockSize(const std::string &name, const std::string &mappedName, size_t *sizeOut);
+    bool getBlockMemberInfo(const std::string &name,
+                            const std::string &mappedName,
+                            sh::BlockMemberInfo *infoOut);
+
+  private:
+    size_t getBlockInfo(const sh::InterfaceBlock &interfaceBlock);
+
+    std::map<std::string, size_t> mBlockSizes;
+    sh::BlockLayoutMap mBlockLayout;
+};
+
+void UniformBlockInfo::getShaderBlockInfo(const gl::Context *context, gl::Shader *shader)
+{
+    for (const sh::InterfaceBlock &interfaceBlock : shader->getUniformBlocks(context))
+    {
+        if (!interfaceBlock.staticUse && interfaceBlock.layout == sh::BLOCKLAYOUT_PACKED)
+            continue;
+
+        if (mBlockSizes.count(interfaceBlock.name) > 0)
+            continue;
+
+        size_t dataSize                  = getBlockInfo(interfaceBlock);
+        mBlockSizes[interfaceBlock.name] = dataSize;
+    }
+}
+
+size_t UniformBlockInfo::getBlockInfo(const sh::InterfaceBlock &interfaceBlock)
+{
+    ASSERT(interfaceBlock.staticUse || interfaceBlock.layout != sh::BLOCKLAYOUT_PACKED);
+
+    // define member uniforms
+    sh::Std140BlockEncoder std140Encoder;
+    sh::HLSLBlockEncoder hlslEncoder(sh::HLSLBlockEncoder::ENCODE_PACKED, false);
+    sh::BlockLayoutEncoder *encoder = nullptr;
+
+    if (interfaceBlock.layout == sh::BLOCKLAYOUT_STD140)
+    {
+        encoder = &std140Encoder;
+    }
+    else
+    {
+        encoder = &hlslEncoder;
+    }
+
+    sh::GetUniformBlockInfo(interfaceBlock.fields, interfaceBlock.fieldPrefix(), encoder,
+                            interfaceBlock.isRowMajorLayout, &mBlockLayout);
+
+    return encoder->getBlockSize();
+}
+
+bool UniformBlockInfo::getBlockSize(const std::string &name,
+                                    const std::string &mappedName,
+                                    size_t *sizeOut)
+{
+    size_t nameLengthWithoutArrayIndex;
+    gl::ParseArrayIndex(name, &nameLengthWithoutArrayIndex);
+    std::string baseName = name.substr(0u, nameLengthWithoutArrayIndex);
+    auto sizeIter        = mBlockSizes.find(baseName);
+    if (sizeIter == mBlockSizes.end())
+    {
+        *sizeOut = 0;
+        return false;
+    }
+
+    *sizeOut = sizeIter->second;
+    return true;
+};
+
+bool UniformBlockInfo::getBlockMemberInfo(const std::string &name,
+                                          const std::string &mappedName,
+                                          sh::BlockMemberInfo *infoOut)
+{
+    auto infoIter = mBlockLayout.find(name);
+    if (infoIter == mBlockLayout.end())
+    {
+        *infoOut = sh::BlockMemberInfo::getDefaultBlockInfo();
+        return false;
+    }
+
+    *infoOut = infoIter->second;
+    return true;
+};
+
 }  // anonymous namespace
 
 // D3DUniform Implementation
 
 D3DUniform::D3DUniform(GLenum type,
                        const std::string &nameIn,
-                       unsigned int arraySizeIn,
+                       const std::vector<unsigned int> &arraySizesIn,
                        bool defaultBlock)
     : typeInfo(gl::GetUniformTypeInfo(type)),
       name(nameIn),
-      arraySize(arraySizeIn),
+      arraySizes(arraySizesIn),
       vsData(nullptr),
       psData(nullptr),
       csData(nullptr),
@@ -270,7 +316,7 @@ D3DUniform::D3DUniform(GLenum type,
     if (defaultBlock)
     {
         // Use the row count as register count, will work for non-square matrices.
-        registerCount = typeInfo.rowCount * elementCount();
+        registerCount = typeInfo.rowCount * getArraySizeProduct();
     }
 }
 
@@ -278,9 +324,15 @@ D3DUniform::~D3DUniform()
 {
 }
 
+unsigned int D3DUniform::getArraySizeProduct() const
+{
+    return gl::ArraySizeProduct(arraySizes);
+}
+
 const uint8_t *D3DUniform::getDataPtrToElement(size_t elementIndex) const
 {
-    ASSERT((arraySize == 0 && elementIndex == 0) || (arraySize > 0 && elementIndex < arraySize));
+    ASSERT((!isArray() && elementIndex == 0) ||
+           (isArray() && elementIndex < getArraySizeProduct()));
 
     if (isSampler())
     {
@@ -697,7 +749,7 @@ ProgramD3D::SamplerMapping ProgramD3D::updateSamplerMapping()
         if (!d3dUniform->isSampler())
             continue;
 
-        int count = d3dUniform->elementCount();
+        int count = d3dUniform->getArraySizeProduct();
 
         if (d3dUniform->isReferencedByFragmentShader())
         {
@@ -829,7 +881,7 @@ gl::LinkResult ProgramD3D::load(const gl::Context *context,
         const gl::LinkedUniform &linkedUniform = linkedUniforms[uniformIndex];
 
         D3DUniform *d3dUniform =
-            new D3DUniform(linkedUniform.type, linkedUniform.name, linkedUniform.arraySize,
+            new D3DUniform(linkedUniform.type, linkedUniform.name, linkedUniform.arraySizes,
                            linkedUniform.isInDefaultBlock());
         stream->readInt(&d3dUniform->psRegisterIndex);
         stream->readInt(&d3dUniform->vsRegisterIndex);
@@ -915,8 +967,8 @@ gl::LinkResult ProgramD3D::load(const gl::Context *context,
 
         ShaderExecutableD3D *shaderExecutable = nullptr;
 
-        ANGLE_TRY(mRenderer->loadExecutable(vertexShaderFunction, vertexShaderSize, SHADER_VERTEX,
-                                            mStreamOutVaryings, separateAttribs,
+        ANGLE_TRY(mRenderer->loadExecutable(vertexShaderFunction, vertexShaderSize,
+                                            gl::SHADER_VERTEX, mStreamOutVaryings, separateAttribs,
                                             &shaderExecutable));
 
         if (!shaderExecutable)
@@ -950,9 +1002,9 @@ gl::LinkResult ProgramD3D::load(const gl::Context *context,
         const unsigned char *pixelShaderFunction = binary + stream->offset();
         ShaderExecutableD3D *shaderExecutable    = nullptr;
 
-        ANGLE_TRY(mRenderer->loadExecutable(pixelShaderFunction, pixelShaderSize, SHADER_PIXEL,
-                                            mStreamOutVaryings, separateAttribs,
-                                            &shaderExecutable));
+        ANGLE_TRY(mRenderer->loadExecutable(pixelShaderFunction, pixelShaderSize,
+                                            gl::SHADER_FRAGMENT, mStreamOutVaryings,
+                                            separateAttribs, &shaderExecutable));
 
         if (!shaderExecutable)
         {
@@ -980,8 +1032,8 @@ gl::LinkResult ProgramD3D::load(const gl::Context *context,
 
         ShaderExecutableD3D *geometryExecutable = nullptr;
         ANGLE_TRY(mRenderer->loadExecutable(geometryShaderFunction, geometryShaderSize,
-                                            SHADER_GEOMETRY, mStreamOutVaryings, separateAttribs,
-                                            &geometryExecutable));
+                                            gl::SHADER_GEOMETRY, mStreamOutVaryings,
+                                            separateAttribs, &geometryExecutable));
 
         if (!geometryExecutable)
         {
@@ -1001,7 +1053,7 @@ gl::LinkResult ProgramD3D::load(const gl::Context *context,
 
         ShaderExecutableD3D *computeExecutable = nullptr;
         ANGLE_TRY(mRenderer->loadExecutable(computeShaderFunction, computeShaderSize,
-                                            SHADER_COMPUTE, std::vector<D3DVarying>(), false,
+                                            gl::SHADER_COMPUTE, std::vector<D3DVarying>(), false,
                                             &computeExecutable));
 
         if (!computeExecutable)
@@ -1072,10 +1124,6 @@ void ProgramD3D::save(const gl::Context *context, gl::BinaryOutputStream *stream
         stream->writeInt(uniform->registerCount);
         stream->writeInt(uniform->registerElement);
     }
-
-    // Ensure we init the uniform block structure data if we should.
-    // http://anglebug.com/1637
-    ensureUniformBlocksInitialized();
 
     stream->writeInt(mD3DUniformBlocks.size());
     for (const D3DUniformBlock &uniformBlock : mD3DUniformBlocks)
@@ -1213,7 +1261,7 @@ gl::Error ProgramD3D::getPixelExecutableForCachedOutputLayout(ShaderExecutableD3
     gl::InfoLog *currentInfoLog = infoLog ? infoLog : &tempInfoLog;
 
     ANGLE_TRY(mRenderer->compileToExecutable(
-        *currentInfoLog, finalPixelHLSL, SHADER_PIXEL, mStreamOutVaryings,
+        *currentInfoLog, finalPixelHLSL, gl::SHADER_FRAGMENT, mStreamOutVaryings,
         (mState.getTransformFeedbackBufferMode() == GL_SEPARATE_ATTRIBS), mPixelWorkarounds,
         &pixelExecutable));
 
@@ -1254,7 +1302,7 @@ gl::Error ProgramD3D::getVertexExecutableForCachedInputLayout(ShaderExecutableD3
     gl::InfoLog *currentInfoLog = infoLog ? infoLog : &tempInfoLog;
 
     ANGLE_TRY(mRenderer->compileToExecutable(
-        *currentInfoLog, finalVertexHLSL, SHADER_VERTEX, mStreamOutVaryings,
+        *currentInfoLog, finalVertexHLSL, gl::SHADER_VERTEX, mStreamOutVaryings,
         (mState.getTransformFeedbackBufferMode() == GL_SEPARATE_ATTRIBS), mVertexWorkarounds,
         &vertexExecutable));
 
@@ -1311,7 +1359,7 @@ gl::Error ProgramD3D::getGeometryExecutableForPrimitiveType(const gl::Context *c
 
     ShaderExecutableD3D *geometryExecutable = nullptr;
     gl::Error error                         = mRenderer->compileToExecutable(
-        *currentInfoLog, geometryHLSL, SHADER_GEOMETRY, mStreamOutVaryings,
+        *currentInfoLog, geometryHLSL, gl::SHADER_GEOMETRY, mStreamOutVaryings,
         (mState.getTransformFeedbackBufferMode() == GL_SEPARATE_ATTRIBS),
         angle::CompilerWorkaroundsD3D(), &geometryExecutable);
 
@@ -1505,7 +1553,7 @@ gl::LinkResult ProgramD3D::compileComputeExecutable(const gl::Context *context,
     std::string computeShader = mDynamicHLSL->generateComputeShaderLinkHLSL(context, mState);
 
     ShaderExecutableD3D *computeExecutable = nullptr;
-    ANGLE_TRY(mRenderer->compileToExecutable(infoLog, computeShader, SHADER_COMPUTE,
+    ANGLE_TRY(mRenderer->compileToExecutable(infoLog, computeShader, gl::SHADER_COMPUTE,
                                              std::vector<D3DVarying>(), false,
                                              angle::CompilerWorkaroundsD3D(), &computeExecutable));
 
@@ -1525,7 +1573,7 @@ gl::LinkResult ProgramD3D::compileComputeExecutable(const gl::Context *context,
 }
 
 gl::LinkResult ProgramD3D::link(const gl::Context *context,
-                                const gl::VaryingPacking &packing,
+                                const gl::ProgramLinkedResources &resources,
                                 gl::InfoLog &infoLog)
 {
     const auto &data = context->getContextState();
@@ -1550,8 +1598,6 @@ gl::LinkResult ProgramD3D::link(const gl::Context *context,
             infoLog << "Failed to create D3D compute shader.";
             return result;
         }
-
-        initUniformBlockInfo(context, computeShader);
     }
     else
     {
@@ -1580,17 +1626,17 @@ gl::LinkResult ProgramD3D::link(const gl::Context *context,
         // We can fail here because we use one semantic per GLSL varying. D3D11 can pack varyings
         // intelligently, but D3D9 assumes one semantic per register.
         if (mRenderer->getRendererClass() == RENDERER_D3D9 &&
-            packing.getMaxSemanticIndex() > data.getCaps().maxVaryingVectors)
+            resources.varyingPacking.getMaxSemanticIndex() > data.getCaps().maxVaryingVectors)
         {
             infoLog << "Cannot pack these varyings on D3D9.";
             return false;
         }
 
         ProgramD3DMetadata metadata(mRenderer, vertexShaderD3D, fragmentShaderD3D);
-        BuiltinVaryingsD3D builtins(metadata, packing);
+        BuiltinVaryingsD3D builtins(metadata, resources.varyingPacking);
 
-        mDynamicHLSL->generateShaderLinkHLSL(context, mState, metadata, packing, builtins,
-                                             &mPixelHLSL, &mVertexHLSL);
+        mDynamicHLSL->generateShaderLinkHLSL(context, mState, metadata, resources.varyingPacking,
+                                             builtins, &mPixelHLSL, &mVertexHLSL);
 
         mUsesPointSize = vertexShaderD3D->usesPointSize();
         mDynamicHLSL->getPixelShaderOutputKey(data, mState, metadata, &mPixelShaderKey);
@@ -1600,13 +1646,13 @@ gl::LinkResult ProgramD3D::link(const gl::Context *context,
 
         // Cache if we use flat shading
         mUsesFlatInterpolation =
-            (FindFlatInterpolationVarying(fragmentShader->getVaryings(context)) ||
-             FindFlatInterpolationVarying(vertexShader->getVaryings(context)));
+            (FindFlatInterpolationVarying(fragmentShader->getInputVaryings(context)) ||
+             FindFlatInterpolationVarying(vertexShader->getOutputVaryings(context)));
 
         if (mRenderer->getMajorShaderModel() >= 4)
         {
             mGeometryShaderPreamble = mDynamicHLSL->generateGeometryShaderPreamble(
-                packing, builtins, mHasANGLEMultiviewEnabled,
+                resources.varyingPacking, builtins, mHasANGLEMultiviewEnabled,
                 metadata.canSelectViewInVertexShader());
         }
 
@@ -1614,7 +1660,7 @@ gl::LinkResult ProgramD3D::link(const gl::Context *context,
 
         defineUniformsAndAssignRegisters(context);
 
-        gatherTransformFeedbackVaryings(packing, builtins[SHADER_VERTEX]);
+        gatherTransformFeedbackVaryings(resources.varyingPacking, builtins[gl::SHADER_VERTEX]);
 
         gl::LinkResult result = compileProgramExecutables(context, infoLog);
         if (result.isError())
@@ -1627,10 +1673,9 @@ gl::LinkResult ProgramD3D::link(const gl::Context *context,
             infoLog << "Failed to create D3D shaders.";
             return result;
         }
-
-        initUniformBlockInfo(context, vertexShader);
-        initUniformBlockInfo(context, fragmentShader);
     }
+
+    linkResources(context, resources);
 
     return true;
 }
@@ -1641,28 +1686,14 @@ GLboolean ProgramD3D::validate(const gl::Caps & /*caps*/, gl::InfoLog * /*infoLo
     return GL_TRUE;
 }
 
-void ProgramD3D::initUniformBlockInfo(const gl::Context *context, gl::Shader *shader)
+void ProgramD3D::initializeUniformBlocks()
 {
-    for (const sh::InterfaceBlock &interfaceBlock : shader->getUniformBlocks(context))
-    {
-        if (!interfaceBlock.staticUse && interfaceBlock.layout == sh::BLOCKLAYOUT_PACKED)
-            continue;
-
-        if (mBlockDataSizes.count(interfaceBlock.name) > 0)
-            continue;
-
-        size_t dataSize                      = getUniformBlockInfo(interfaceBlock);
-        mBlockDataSizes[interfaceBlock.name] = dataSize;
-    }
-}
-
-void ProgramD3D::ensureUniformBlocksInitialized()
-{
-    // Lazy init.
-    if (mState.getUniformBlocks().empty() || !mD3DUniformBlocks.empty())
+    if (mState.getUniformBlocks().empty())
     {
         return;
     }
+
+    ASSERT(mD3DUniformBlocks.empty());
 
     // Assign registers and update sizes.
     const ShaderD3D *vertexShaderD3D = SafeGetImplAs<ShaderD3D>(mState.getAttachedVertexShader());
@@ -1743,7 +1774,7 @@ void ProgramD3D::initializeUniformStorage()
     {
         if (d3dUniform->isSampler())
         {
-            d3dUniform->mSamplerData.resize(d3dUniform->elementCount(), 0);
+            d3dUniform->mSamplerData.resize(d3dUniform->getArraySizeProduct(), 0);
             continue;
         }
 
@@ -1775,8 +1806,6 @@ void ProgramD3D::updateUniformBufferCache(const gl::Caps &caps,
     {
         return;
     }
-
-    ensureUniformBlocksInitialized();
 
     mVertexUBOCache.clear();
     mFragmentUBOCache.clear();
@@ -2025,7 +2054,17 @@ void ProgramD3D::defineUniformsAndAssignRegisters(const gl::Context *context)
         if (!glUniform.isInDefaultBlock())
             continue;
 
-        auto mapEntry = uniformMap.find(glUniform.name);
+        std::string name = glUniform.name;
+        if (glUniform.isArray())
+        {
+            // In the program state, array uniform names include [0] as in the program resource
+            // spec. Here we don't include it.
+            // TODO(oetuaho@nvidia.com): consider using the same uniform naming here as in the GL
+            // layer.
+            ASSERT(angle::EndsWith(name, "[0]"));
+            name.resize(name.length() - 3);
+        }
+        auto mapEntry = uniformMap.find(name);
         ASSERT(mapEntry != uniformMap.end());
         mD3DUniforms.push_back(mapEntry->second);
     }
@@ -2068,6 +2107,84 @@ D3DUniform *ProgramD3D::getD3DUniformByName(const std::string &name)
     return nullptr;
 }
 
+void ProgramD3D::defineStructUniformFields(GLenum shaderType,
+                                           const std::vector<sh::ShaderVariable> &fields,
+                                           const std::string &namePrefix,
+                                           sh::HLSLBlockEncoder *encoder,
+                                           D3DUniformMap *uniformMap)
+{
+    if (encoder)
+        encoder->enterAggregateType();
+
+    for (size_t fieldIndex = 0; fieldIndex < fields.size(); fieldIndex++)
+    {
+        const sh::ShaderVariable &field  = fields[fieldIndex];
+        const std::string &fieldFullName = (namePrefix + "." + field.name);
+
+        // Samplers get their registers assigned in assignAllSamplerRegisters.
+        // Also they couldn't use the same encoder as the rest of the struct, since they are
+        // extracted out of the struct by the shader translator.
+        if (gl::IsSamplerType(field.type))
+        {
+            defineUniform(shaderType, field, fieldFullName, nullptr, uniformMap);
+        }
+        else
+        {
+            defineUniform(shaderType, field, fieldFullName, encoder, uniformMap);
+        }
+    }
+
+    if (encoder)
+        encoder->exitAggregateType();
+}
+
+void ProgramD3D::defineArrayOfStructsUniformFields(GLenum shaderType,
+                                                   const sh::ShaderVariable &uniform,
+                                                   unsigned int arrayNestingIndex,
+                                                   const std::string &prefix,
+                                                   sh::HLSLBlockEncoder *encoder,
+                                                   D3DUniformMap *uniformMap)
+{
+    // Nested arrays are processed starting from outermost (arrayNestingIndex 0u) and ending at the
+    // innermost.
+    const unsigned int currentArraySize = uniform.getNestedArraySize(arrayNestingIndex);
+    for (unsigned int arrayElement = 0u; arrayElement < currentArraySize; ++arrayElement)
+    {
+        const std::string &elementString = prefix + ArrayString(arrayElement);
+        if (arrayNestingIndex + 1u < uniform.arraySizes.size())
+        {
+            defineArrayOfStructsUniformFields(shaderType, uniform, arrayNestingIndex + 1u,
+                                              elementString, encoder, uniformMap);
+        }
+        else
+        {
+            defineStructUniformFields(shaderType, uniform.fields, elementString, encoder,
+                                      uniformMap);
+        }
+    }
+}
+
+void ProgramD3D::defineArrayUniformElements(GLenum shaderType,
+                                            const sh::ShaderVariable &uniform,
+                                            const std::string &fullName,
+                                            sh::HLSLBlockEncoder *encoder,
+                                            D3DUniformMap *uniformMap)
+{
+    if (encoder)
+        encoder->enterAggregateType();
+
+    sh::ShaderVariable uniformElement = uniform;
+    uniformElement.arraySizes.pop_back();
+    for (unsigned int arrayIndex = 0u; arrayIndex < uniform.getOutermostArraySize(); ++arrayIndex)
+    {
+        std::string elementFullName = fullName + ArrayString(arrayIndex);
+        defineUniform(shaderType, uniformElement, elementFullName, encoder, uniformMap);
+    }
+
+    if (encoder)
+        encoder->exitAggregateType();
+}
+
 void ProgramD3D::defineUniform(GLenum shaderType,
                                const sh::ShaderVariable &uniform,
                                const std::string &fullName,
@@ -2076,34 +2193,20 @@ void ProgramD3D::defineUniform(GLenum shaderType,
 {
     if (uniform.isStruct())
     {
-        for (unsigned int elementIndex = 0; elementIndex < uniform.elementCount(); elementIndex++)
+        if (uniform.isArray())
         {
-            const std::string &elementString = (uniform.isArray() ? ArrayString(elementIndex) : "");
-
-            if (encoder)
-                encoder->enterAggregateType();
-
-            for (size_t fieldIndex = 0; fieldIndex < uniform.fields.size(); fieldIndex++)
-            {
-                const sh::ShaderVariable &field  = uniform.fields[fieldIndex];
-                const std::string &fieldFullName = (fullName + elementString + "." + field.name);
-
-                // Samplers get their registers assigned in assignAllSamplerRegisters.
-                // Also they couldn't use the same encoder as the rest of the struct, since they are
-                // extracted out of the struct by the shader translator.
-                if (gl::IsSamplerType(field.type))
-                {
-                    defineUniform(shaderType, field, fieldFullName, nullptr, uniformMap);
-                }
-                else
-                {
-                    defineUniform(shaderType, field, fieldFullName, encoder, uniformMap);
-                }
-            }
-
-            if (encoder)
-                encoder->exitAggregateType();
+            defineArrayOfStructsUniformFields(shaderType, uniform, 0u, fullName, encoder,
+                                              uniformMap);
         }
+        else
+        {
+            defineStructUniformFields(shaderType, uniform.fields, fullName, encoder, uniformMap);
+        }
+        return;
+    }
+    if (uniform.isArrayOfArrays())
+    {
+        defineArrayUniformElements(shaderType, uniform, fullName, encoder, uniformMap);
         return;
     }
 
@@ -2115,7 +2218,7 @@ void ProgramD3D::defineUniform(GLenum shaderType,
 
     // Advance the uniform offset, to track registers allocation for structs
     sh::BlockMemberInfo blockInfo =
-        encoder ? encoder->encodeType(uniform.type, uniform.arraySize, false)
+        encoder ? encoder->encodeType(uniform.type, uniform.arraySizes, false)
                 : sh::BlockMemberInfo::getDefaultBlockInfo();
 
     auto uniformMapEntry   = uniformMap->find(fullName);
@@ -2127,7 +2230,7 @@ void ProgramD3D::defineUniform(GLenum shaderType,
     }
     else
     {
-        d3dUniform = new D3DUniform(uniform.type, fullName, uniform.arraySize, true);
+        d3dUniform              = new D3DUniform(uniform.type, fullName, uniform.arraySizes, true);
         (*uniformMap)[fullName] = d3dUniform;
     }
 
@@ -2169,7 +2272,7 @@ void ProgramD3D::setUniformImpl(const gl::VariableLocation &locationInfo,
 {
     D3DUniform *targetUniform = mD3DUniforms[locationInfo.index];
     const int components      = targetUniform->typeInfo.componentCount;
-    unsigned int arrayElementOffset = locationInfo.flattenedArrayOffset;
+    const unsigned int arrayElementOffset = locationInfo.arrayIndex;
 
     if (targetUniform->typeInfo.type == uniformType)
     {
@@ -2209,7 +2312,7 @@ void ProgramD3D::setUniformInternal(GLint location, GLsizei count, const T *v, G
     {
         ASSERT(uniformType == GL_INT);
         size_t size = count * sizeof(T);
-        auto dest   = &targetUniform->mSamplerData[locationInfo.flattenedArrayOffset];
+        GLint *dest = &targetUniform->mSamplerData[locationInfo.arrayIndex];
         if (memcmp(dest, v, size) != 0)
         {
             memcpy(dest, v, size);
@@ -2247,8 +2350,8 @@ bool ProgramD3D::setUniformMatrixfvImpl(GLint location,
 {
     D3DUniform *targetUniform = getD3DUniformFromLocation(location);
 
-    unsigned int elementCount = targetUniform->elementCount();
-    unsigned int arrayElementOffset = mState.getUniformLocations()[location].flattenedArrayOffset;
+    unsigned int elementCount       = targetUniform->getArraySizeProduct();
+    unsigned int arrayElementOffset = mState.getUniformLocations()[location].arrayIndex;
     unsigned int count =
         std::min(elementCount - arrayElementOffset, static_cast<unsigned int>(countIn));
 
@@ -2313,74 +2416,62 @@ void ProgramD3D::setUniformMatrixfvInternal(GLint location,
     }
 }
 
-size_t ProgramD3D::getUniformBlockInfo(const sh::InterfaceBlock &interfaceBlock)
-{
-    ASSERT(interfaceBlock.staticUse || interfaceBlock.layout != sh::BLOCKLAYOUT_PACKED);
-
-    // define member uniforms
-    sh::Std140BlockEncoder std140Encoder;
-    sh::HLSLBlockEncoder hlslEncoder(sh::HLSLBlockEncoder::ENCODE_PACKED, false);
-    sh::BlockLayoutEncoder *encoder = nullptr;
-
-    if (interfaceBlock.layout == sh::BLOCKLAYOUT_STANDARD)
-    {
-        encoder = &std140Encoder;
-    }
-    else
-    {
-        encoder = &hlslEncoder;
-    }
-
-    GetUniformBlockInfo(interfaceBlock.fields, interfaceBlock.fieldPrefix(), encoder,
-                        interfaceBlock.isRowMajorLayout, &mBlockInfo);
-
-    return encoder->getBlockSize();
-}
-
 void ProgramD3D::assignAllSamplerRegisters()
 {
-    for (D3DUniform *d3dUniform : mD3DUniforms)
+    for (size_t uniformIndex = 0; uniformIndex < mD3DUniforms.size(); ++uniformIndex)
     {
-        if (d3dUniform->isSampler())
+        if (mD3DUniforms[uniformIndex]->isSampler())
         {
-            assignSamplerRegisters(d3dUniform);
+            assignSamplerRegisters(uniformIndex);
         }
     }
 }
 
-void ProgramD3D::assignSamplerRegisters(D3DUniform *d3dUniform)
+void ProgramD3D::assignSamplerRegisters(size_t uniformIndex)
 {
+    D3DUniform *d3dUniform = mD3DUniforms[uniformIndex];
     ASSERT(d3dUniform->isSampler());
+    // If the uniform is an array of arrays, then we have separate entries for each inner array in
+    // mD3DUniforms. However, the sampler register info is stored in the shader only for the
+    // outermost array.
+    std::vector<unsigned int> subscripts;
+    const std::string baseName  = gl::ParseResourceName(d3dUniform->name, &subscripts);
+    unsigned int registerOffset = mState.getUniforms()[uniformIndex].flattenedOffsetInParentArrays *
+                                  d3dUniform->getArraySizeProduct();
+
     const gl::Shader *computeShader = mState.getAttachedComputeShader();
     if (computeShader)
     {
         const ShaderD3D *computeShaderD3D = GetImplAs<ShaderD3D>(mState.getAttachedComputeShader());
-        ASSERT(computeShaderD3D->hasUniform(d3dUniform));
-        d3dUniform->csRegisterIndex = computeShaderD3D->getUniformRegister(d3dUniform->name);
+        ASSERT(computeShaderD3D->hasUniform(baseName));
+        d3dUniform->csRegisterIndex =
+            computeShaderD3D->getUniformRegister(baseName) + registerOffset;
         ASSERT(d3dUniform->csRegisterIndex != GL_INVALID_INDEX);
-        AssignSamplers(d3dUniform->csRegisterIndex, d3dUniform->typeInfo, d3dUniform->arraySize,
-                       mSamplersCS, &mUsedComputeSamplerRange);
+        AssignSamplers(d3dUniform->csRegisterIndex, d3dUniform->typeInfo,
+                       d3dUniform->getArraySizeProduct(), mSamplersCS, &mUsedComputeSamplerRange);
     }
     else
     {
         const ShaderD3D *vertexShaderD3D = GetImplAs<ShaderD3D>(mState.getAttachedVertexShader());
         const ShaderD3D *fragmentShaderD3D =
             GetImplAs<ShaderD3D>(mState.getAttachedFragmentShader());
-        ASSERT(vertexShaderD3D->hasUniform(d3dUniform) ||
-               fragmentShaderD3D->hasUniform(d3dUniform));
-        if (vertexShaderD3D->hasUniform(d3dUniform))
+        ASSERT(vertexShaderD3D->hasUniform(baseName) || fragmentShaderD3D->hasUniform(baseName));
+        if (vertexShaderD3D->hasUniform(baseName))
         {
-            d3dUniform->vsRegisterIndex = vertexShaderD3D->getUniformRegister(d3dUniform->name);
+            d3dUniform->vsRegisterIndex =
+                vertexShaderD3D->getUniformRegister(baseName) + registerOffset;
             ASSERT(d3dUniform->vsRegisterIndex != GL_INVALID_INDEX);
-            AssignSamplers(d3dUniform->vsRegisterIndex, d3dUniform->typeInfo, d3dUniform->arraySize,
-                           mSamplersVS, &mUsedVertexSamplerRange);
+            AssignSamplers(d3dUniform->vsRegisterIndex, d3dUniform->typeInfo,
+                           d3dUniform->getArraySizeProduct(), mSamplersVS,
+                           &mUsedVertexSamplerRange);
         }
-        if (fragmentShaderD3D->hasUniform(d3dUniform))
+        if (fragmentShaderD3D->hasUniform(baseName))
         {
-            d3dUniform->psRegisterIndex = fragmentShaderD3D->getUniformRegister(d3dUniform->name);
+            d3dUniform->psRegisterIndex =
+                fragmentShaderD3D->getUniformRegister(baseName) + registerOffset;
             ASSERT(d3dUniform->psRegisterIndex != GL_INVALID_INDEX);
-            AssignSamplers(d3dUniform->psRegisterIndex, d3dUniform->typeInfo, d3dUniform->arraySize,
-                           mSamplersPS, &mUsedPixelSamplerRange);
+            AssignSamplers(d3dUniform->psRegisterIndex, d3dUniform->typeInfo,
+                           d3dUniform->getArraySizeProduct(), mSamplersPS, &mUsedPixelSamplerRange);
         }
     }
 }
@@ -2630,39 +2721,6 @@ const D3DUniform *ProgramD3D::getD3DUniformFromLocation(GLint location) const
     return mD3DUniforms[mState.getUniformLocations()[location].index];
 }
 
-bool ProgramD3D::getUniformBlockSize(const std::string &blockName,
-                                     const std::string & /* blockMappedName */,
-                                     size_t *sizeOut) const
-{
-    std::string baseName = blockName;
-    gl::ParseAndStripArrayIndex(&baseName);
-
-    auto sizeIter = mBlockDataSizes.find(baseName);
-    if (sizeIter == mBlockDataSizes.end())
-    {
-        *sizeOut = 0;
-        return false;
-    }
-
-    *sizeOut = sizeIter->second;
-    return true;
-}
-
-bool ProgramD3D::getUniformBlockMemberInfo(const std::string &memberUniformName,
-                                           const std::string & /* memberUniformMappedName */,
-                                           sh::BlockMemberInfo *memberInfoOut) const
-{
-    auto infoIter = mBlockInfo.find(memberUniformName);
-    if (infoIter == mBlockInfo.end())
-    {
-        *memberInfoOut = sh::BlockMemberInfo::getDefaultBlockInfo();
-        return false;
-    }
-
-    *memberInfoOut = infoIter->second;
-    return true;
-}
-
 void ProgramD3D::setPathFragmentInputGen(const std::string &inputName,
                                          GLenum genMode,
                                          GLint components,
@@ -2700,8 +2758,7 @@ void ProgramD3D::getUniformInternal(GLint location, DestT *dataOut) const
     const gl::LinkedUniform &uniform         = mState.getUniforms()[locationInfo.index];
 
     const D3DUniform *targetUniform = getD3DUniformFromLocation(location);
-    const uint8_t *srcPointer       = targetUniform->getDataPtrToElement(
-        locationInfo.arrayIndices.empty() ? 0u : locationInfo.flattenedArrayOffset);
+    const uint8_t *srcPointer       = targetUniform->getDataPtrToElement(locationInfo.arrayIndex);
 
     if (gl::IsMatrixType(uniform.type))
     {
@@ -2753,6 +2810,58 @@ void ProgramD3D::updateCachedPixelExecutableIndex()
             break;
         }
     }
+}
+
+void ProgramD3D::linkResources(const gl::Context *context,
+                               const gl::ProgramLinkedResources &resources)
+{
+    UniformBlockInfo uniformBlockInfo;
+
+    if (mState.getAttachedVertexShader())
+    {
+        uniformBlockInfo.getShaderBlockInfo(context, mState.getAttachedVertexShader());
+    }
+
+    if (mState.getAttachedFragmentShader())
+    {
+        uniformBlockInfo.getShaderBlockInfo(context, mState.getAttachedFragmentShader());
+    }
+
+    if (mState.getAttachedComputeShader())
+    {
+        uniformBlockInfo.getShaderBlockInfo(context, mState.getAttachedComputeShader());
+    }
+
+    // Gather interface block info.
+    auto getUniformBlockSize = [&uniformBlockInfo](const std::string &name,
+                                                   const std::string &mappedName, size_t *sizeOut) {
+        return uniformBlockInfo.getBlockSize(name, mappedName, sizeOut);
+    };
+
+    auto getUniformBlockMemberInfo = [&uniformBlockInfo](const std::string &name,
+                                                         const std::string &mappedName,
+                                                         sh::BlockMemberInfo *infoOut) {
+        return uniformBlockInfo.getBlockMemberInfo(name, mappedName, infoOut);
+    };
+
+    resources.uniformBlockLinker.linkBlocks(getUniformBlockSize, getUniformBlockMemberInfo);
+    initializeUniformBlocks();
+
+    // TODO(jiajia.qin@intel.com): Determine correct shader storage block info.
+    auto getShaderStorageBlockSize = [](const std::string &name, const std::string &mappedName,
+                                        size_t *sizeOut) {
+        *sizeOut = 0;
+        return true;
+    };
+
+    auto getShaderStorageBlockMemberInfo =
+        [](const std::string &name, const std::string &mappedName, sh::BlockMemberInfo *infoOut) {
+            *infoOut = sh::BlockMemberInfo::getDefaultBlockInfo();
+            return true;
+        };
+
+    resources.shaderStorageBlockLinker.linkBlocks(getShaderStorageBlockSize,
+                                                  getShaderStorageBlockMemberInfo);
 }
 
 }  // namespace rx

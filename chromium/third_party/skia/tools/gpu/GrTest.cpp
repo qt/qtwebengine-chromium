@@ -55,24 +55,48 @@ void SetupAlwaysEvictAtlas(GrContext* context) {
 }
 
 GrBackendTexture CreateBackendTexture(GrBackend backend, int width, int height,
-                                      GrPixelConfig config, GrBackendObject handle) {
+                                      GrPixelConfig config, GrMipMapped mipMapped,
+                                      GrBackendObject handle) {
     switch (backend) {
 #ifdef SK_VULKAN
         case kVulkan_GrBackend: {
             GrVkImageInfo* vkInfo = (GrVkImageInfo*)(handle);
+            SkASSERT((GrMipMapped::kYes == mipMapped) == (vkInfo->fLevelCount > 1));
             return GrBackendTexture(width, height, *vkInfo);
         }
 #endif
         case kOpenGL_GrBackend: {
             GrGLTextureInfo* glInfo = (GrGLTextureInfo*)(handle);
-            return GrBackendTexture(width, height, config, *glInfo);
+            return GrBackendTexture(width, height, config, mipMapped, *glInfo);
         }
         case kMock_GrBackend: {
             GrMockTextureInfo* mockInfo = (GrMockTextureInfo*)(handle);
-            return GrBackendTexture(width, height, config, *mockInfo);
+            return GrBackendTexture(width, height, config, mipMapped, *mockInfo);
         }
         default:
             return GrBackendTexture();
+    }
+}
+
+GrBackendRenderTarget CreateBackendRenderTarget(GrBackend backend, int width, int height,
+                                                int sampleCnt, int stencilBits,
+                                                GrPixelConfig config,
+                                                GrBackendObject handle) {
+    switch (backend) {
+#ifdef SK_VULKAN
+        case kVulkan_GrBackend: {
+            GrVkImageInfo* vkInfo = (GrVkImageInfo*)(handle);
+            return GrBackendRenderTarget(width, height, sampleCnt, stencilBits, *vkInfo);
+        }
+#endif
+        case kOpenGL_GrBackend: {
+            GrGLFramebufferInfo glInfo;
+            glInfo.fFBOID = handle;
+            return GrBackendRenderTarget(width, height, sampleCnt, stencilBits, config, glInfo);
+        }
+        case kMock_GrBackend: // fall through
+        default:
+            return GrBackendRenderTarget();
     }
 }
 

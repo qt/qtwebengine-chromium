@@ -33,6 +33,7 @@
 #include "core/CoreExport.h"
 #include "core/editing/Forward.h"
 #include "platform/text/TextDirection.h"
+#include "platform/wtf/Allocator.h"
 #include "platform/wtf/Assertions.h"
 
 namespace blink {
@@ -40,8 +41,10 @@ namespace blink {
 class InlineBox;
 
 struct InlineBoxPosition {
-  InlineBox* inline_box;
-  int offset_in_box;
+  STACK_ALLOCATED();
+
+  const InlineBox* const inline_box;
+  const int offset_in_box;
 
   InlineBoxPosition() : inline_box(nullptr), offset_in_box(0) {}
 
@@ -61,17 +64,15 @@ struct InlineBoxPosition {
   }
 };
 
-CORE_EXPORT InlineBoxPosition ComputeInlineBoxPosition(const Position&,
-                                                       TextAffinity);
 CORE_EXPORT InlineBoxPosition
-ComputeInlineBoxPosition(const Position&,
-                         TextAffinity,
+ComputeInlineBoxPosition(const PositionWithAffinity&);
+CORE_EXPORT InlineBoxPosition
+ComputeInlineBoxPosition(const PositionWithAffinity&,
                          TextDirection primary_direction);
 CORE_EXPORT InlineBoxPosition
-ComputeInlineBoxPosition(const PositionInFlatTree&, TextAffinity);
+ComputeInlineBoxPosition(const PositionInFlatTreeWithAffinity&);
 CORE_EXPORT InlineBoxPosition
-ComputeInlineBoxPosition(const PositionInFlatTree&,
-                         TextAffinity,
+ComputeInlineBoxPosition(const PositionInFlatTreeWithAffinity&,
                          TextDirection primary_direction);
 CORE_EXPORT InlineBoxPosition ComputeInlineBoxPosition(const VisiblePosition&);
 

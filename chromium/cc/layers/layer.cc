@@ -66,8 +66,7 @@ Layer::Inputs::Inputs(int layer_id)
       trilinear_filtering(false),
       hide_layer_and_subtree(false),
       client(nullptr),
-      scroll_boundary_behavior(
-          ScrollBoundaryBehavior::kScrollBoundaryBehaviorTypeAuto) {}
+      overscroll_behavior(OverscrollBehavior::kOverscrollBehaviorTypeAuto) {}
 
 Layer::Inputs::~Inputs() {}
 
@@ -200,13 +199,6 @@ bool Layer::IsPropertyChangeAllowed() const {
   return !layer_tree_host_->in_paint_layer_contents();
 }
 
-void Layer::SetOpacityInternal(float new_opacity) {
-  float old_opacity = inputs_.opacity;
-  inputs_.opacity = new_opacity;
-  if (new_opacity != old_opacity && inputs_.client)
-    inputs_.client->DidChangeLayerOpacity(old_opacity, new_opacity);
-}
-
 sk_sp<SkPicture> Layer::GetPicture() const {
   return nullptr;
 }
@@ -314,18 +306,18 @@ void Layer::SetBounds(const gfx::Size& size) {
   SetNeedsCommit();
 }
 
-void Layer::SetScrollBoundaryBehavior(const ScrollBoundaryBehavior& behavior) {
+void Layer::SetOverscrollBehavior(const OverscrollBehavior& behavior) {
   DCHECK(IsPropertyChangeAllowed());
-  if (scroll_boundary_behavior() == behavior)
+  if (overscroll_behavior() == behavior)
     return;
-  inputs_.scroll_boundary_behavior = behavior;
+  inputs_.overscroll_behavior = behavior;
   if (!layer_tree_host_)
     return;
 
   if (scrollable()) {
     auto& scroll_tree = layer_tree_host_->property_trees()->scroll_tree;
     if (auto* scroll_node = scroll_tree.Node(scroll_tree_index_))
-      scroll_node->scroll_boundary_behavior = behavior;
+      scroll_node->overscroll_behavior = behavior;
     else
       SetPropertyTreesNeedRebuild();
   }
@@ -518,7 +510,7 @@ void Layer::SetOpacity(float opacity) {
   // We need to force a property tree rebuild when opacity changes from 1 to a
   // non-1 value or vice-versa as render surfaces can change.
   bool force_rebuild = opacity == 1.f || inputs_.opacity == 1.f;
-  SetOpacityInternal(opacity);
+  inputs_.opacity = opacity;
   SetSubtreePropertyChanged();
   if (layer_tree_host_ && !force_rebuild) {
     PropertyTrees* property_trees = layer_tree_host_->property_trees();
@@ -695,7 +687,6 @@ void Layer::SetTransform(const gfx::Transform& transform) {
   }
 
   inputs_.transform = transform;
-
   SetNeedsCommit();
 }
 
@@ -1343,7 +1334,7 @@ void Layer::OnFilterAnimated(const FilterOperations& filters) {
 }
 
 void Layer::OnOpacityAnimated(float opacity) {
-  SetOpacityInternal(opacity);
+  inputs_.opacity = opacity;
 }
 
 TransformNode* Layer::GetTransformNode() const {

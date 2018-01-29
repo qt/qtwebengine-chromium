@@ -57,7 +57,7 @@ static_assert(sizeof(ShadowRoot) == sizeof(SameSizeAsShadowRoot),
               "ShadowRoot should stay small");
 
 ShadowRoot::ShadowRoot(Document& document, ShadowRootType type)
-    : DocumentFragment(0, kCreateShadowRoot),
+    : DocumentFragment(nullptr, kCreateShadowRoot),
       TreeScope(*this, document),
       style_sheet_list_(nullptr),
       child_shadow_root_count_(0),
@@ -78,14 +78,6 @@ ShadowRoot* ShadowRoot::OlderShadowRoot() const {
   if (GetType() == ShadowRootType::V0 && shadow_root_rare_data_v0_)
     return shadow_root_rare_data_v0_->OlderShadowRoot();
   return nullptr;
-}
-
-ShadowRoot* ShadowRoot::olderShadowRootForBindings() const {
-  ShadowRoot* older = OlderShadowRoot();
-  while (older && !older->IsOpenOrV0())
-    older = older->OlderShadowRoot();
-  DCHECK(!older || older->IsOpenOrV0());
-  return older;
 }
 
 void ShadowRoot::SetYoungerShadowRoot(ShadowRoot& root) {
@@ -240,6 +232,14 @@ void ShadowRoot::RemovedFrom(ContainerNode* insertion_point) {
   DocumentFragment::RemovedFrom(insertion_point);
 }
 
+void ShadowRoot::SetNeedsAssignmentRecalc() {
+  DCHECK(RuntimeEnabledFeatures::IncrementalShadowDOMEnabled());
+  DCHECK(IsV1());
+  if (!slot_assignment_)
+    return;
+  return slot_assignment_->SetNeedsAssignmentRecalc();
+}
+
 void ShadowRoot::ChildrenChanged(const ChildrenChange& change) {
   ContainerNode::ChildrenChanged(change);
 
@@ -345,7 +345,7 @@ void ShadowRoot::DistributeV1() {
   EnsureSlotAssignment().ResolveDistribution();
 }
 
-DEFINE_TRACE(ShadowRoot) {
+void ShadowRoot::Trace(blink::Visitor* visitor) {
   visitor->Trace(shadow_root_rare_data_v0_);
   visitor->Trace(slot_assignment_);
   visitor->Trace(style_sheet_list_);
@@ -353,7 +353,7 @@ DEFINE_TRACE(ShadowRoot) {
   DocumentFragment::Trace(visitor);
 }
 
-DEFINE_TRACE_WRAPPERS(ShadowRoot) {
+void ShadowRoot::TraceWrappers(const ScriptWrappableVisitor* visitor) const {
   visitor->TraceWrappers(style_sheet_list_);
   DocumentFragment::TraceWrappers(visitor);
 }
@@ -361,16 +361,16 @@ DEFINE_TRACE_WRAPPERS(ShadowRoot) {
 std::ostream& operator<<(std::ostream& ostream, const ShadowRootType& type) {
   switch (type) {
     case ShadowRootType::kUserAgent:
-      ostream << "ShadowRootType::UserAgent";
+      ostream << "UserAgent";
       break;
     case ShadowRootType::V0:
-      ostream << "ShadowRootType::V0";
+      ostream << "V0";
       break;
     case ShadowRootType::kOpen:
-      ostream << "ShadowRootType::Open";
+      ostream << "Open";
       break;
     case ShadowRootType::kClosed:
-      ostream << "ShadowRootType::Closed";
+      ostream << "Closed";
       break;
   }
   return ostream;

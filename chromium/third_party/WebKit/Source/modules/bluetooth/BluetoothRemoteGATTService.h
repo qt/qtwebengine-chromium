@@ -27,9 +27,7 @@ class ScriptState;
 // CallbackPromiseAdapter templatized with this class. See this class's
 // "Interface required by CallbackPromiseAdapter" section and the
 // CallbackPromiseAdapter class comments.
-class BluetoothRemoteGATTService final
-    : public GarbageCollectedFinalized<BluetoothRemoteGATTService>,
-      public ScriptWrappable {
+class BluetoothRemoteGATTService final : public ScriptWrappable {
   DEFINE_WRAPPERTYPEINFO();
 
  public:
@@ -39,7 +37,7 @@ class BluetoothRemoteGATTService final
                              BluetoothDevice*);
 
   // Interface required by garbage collection.
-  DECLARE_VIRTUAL_TRACE();
+  virtual void Trace(blink::Visitor*);
 
   // IDL exposed interface:
   String uuid() { return service_->uuid; }

@@ -30,10 +30,10 @@ BufferNULL::~BufferNULL()
 }
 
 gl::Error BufferNULL::setData(const gl::Context *context,
-                              GLenum target,
+                              gl::BufferBinding target,
                               const void *data,
                               size_t size,
-                              GLenum usage)
+                              gl::BufferUsage usage)
 {
     if (!mAllocationTracker->updateMemoryAllocation(mData.size(), size))
     {
@@ -49,7 +49,7 @@ gl::Error BufferNULL::setData(const gl::Context *context,
 }
 
 gl::Error BufferNULL::setSubData(const gl::Context *context,
-                                 GLenum target,
+                                 gl::BufferBinding target,
                                  const void *data,
                                  size_t size,
                                  size_t offset)

@@ -61,7 +61,7 @@ class SharedWorkerGlobalScope final : public WorkerGlobalScope {
   DEFINE_ATTRIBUTE_EVENT_LISTENER(connect);
   String name() const { return name_; }
 
-  DECLARE_VIRTUAL_TRACE();
+  void Trace(blink::Visitor*) override;
 
  private:
   void ExceptionThrown(ErrorEvent*) override;

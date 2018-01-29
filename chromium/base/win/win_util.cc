@@ -28,6 +28,7 @@
 #include <uiviewsettingsinterop.h>
 #include <windows.ui.viewmanagement.h>
 #include <winstring.h>
+#include <wrl/client.h>
 #include <wrl/wrappers/corewrappers.h>
 
 #include <memory>
@@ -45,7 +46,6 @@
 #include "base/win/core_winrt_util.h"
 #include "base/win/registry.h"
 #include "base/win/scoped_co_mem.h"
-#include "base/win/scoped_comptr.h"
 #include "base/win/scoped_handle.h"
 #include "base/win/scoped_hstring.h"
 #include "base/win/scoped_propvariant.h"
@@ -137,13 +137,14 @@ bool IsWindows10TabletMode(HWND hwnd) {
 
   ScopedHString view_settings_guid = ScopedHString::Create(
       RuntimeClass_Windows_UI_ViewManagement_UIViewSettings);
-  ScopedComPtr<IUIViewSettingsInterop> view_settings_interop;
+  Microsoft::WRL::ComPtr<IUIViewSettingsInterop> view_settings_interop;
   HRESULT hr = base::win::RoGetActivationFactory(
       view_settings_guid.get(), IID_PPV_ARGS(&view_settings_interop));
   if (FAILED(hr))
     return false;
 
-  ScopedComPtr<ABI::Windows::UI::ViewManagement::IUIViewSettings> view_settings;
+  Microsoft::WRL::ComPtr<ABI::Windows::UI::ViewManagement::IUIViewSettings>
+      view_settings;
   hr = view_settings_interop->GetForWindow(hwnd, IID_PPV_ARGS(&view_settings));
   if (FAILED(hr))
     return false;
@@ -372,6 +373,19 @@ bool SetStringValueForPropertyStore(IPropertyStore* property_store,
 
   return SetPropVariantValueForPropertyStore(property_store,
                                              property_key,
+                                             property_value);
+}
+
+bool SetClsidForPropertyStore(IPropertyStore* property_store,
+                              const PROPERTYKEY& property_key,
+                              const CLSID& property_clsid_value) {
+  ScopedPropVariant property_value;
+  if (FAILED(InitPropVariantFromCLSID(property_clsid_value,
+                                      property_value.Receive()))) {
+    return false;
+  }
+
+  return SetPropVariantValueForPropertyStore(property_store, property_key,
                                              property_value);
 }
 

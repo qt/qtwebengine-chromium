@@ -18,8 +18,8 @@
 #include "xfa/fxfa/cxfa_ffwidget.h"
 #include "xfa/fxfa/cxfa_textlayout.h"
 #include "xfa/fxfa/cxfa_textprovider.h"
-#include "xfa/fxgraphics/cxfa_color.h"
-#include "xfa/fxgraphics/cxfa_path.h"
+#include "xfa/fxgraphics/cxfa_gecolor.h"
+#include "xfa/fxgraphics/cxfa_gepath.h"
 
 CXFA_FFPushButton::CXFA_FFPushButton(CXFA_WidgetAcc* pDataAcc)
     : CXFA_FFField(pDataAcc), m_pOldDelegate(nullptr) {}
@@ -69,13 +69,13 @@ bool CXFA_FFPushButton::LoadWidget() {
 void CXFA_FFPushButton::UpdateWidgetProperty() {
   uint32_t dwStyleEx = 0;
   switch (m_pDataAcc->GetButtonHighlight()) {
-    case XFA_ATTRIBUTEENUM_Inverted:
+    case XFA_AttributeEnum::Inverted:
       dwStyleEx = XFA_FWL_PSBSTYLEEXT_HiliteInverted;
       break;
-    case XFA_ATTRIBUTEENUM_Outline:
+    case XFA_AttributeEnum::Outline:
       dwStyleEx = XFA_FWL_PSBSTYLEEXT_HiliteOutLine;
       break;
-    case XFA_ATTRIBUTEENUM_Push:
+    case XFA_AttributeEnum::Push:
       dwStyleEx = XFA_FWL_PSBSTYLEEXT_HilitePush;
       break;
     default:
@@ -97,13 +97,15 @@ bool CXFA_FFPushButton::PerformLayout() {
   CFX_RectF rtWidget = GetRectWithoutRotate();
 
   m_rtUI = rtWidget;
-  if (CXFA_Margin mgWidget = m_pDataAcc->GetMargin())
-    XFA_RectWidthoutMargin(rtWidget, mgWidget);
+  CXFA_MarginData marginData = m_pDataAcc->GetMarginData();
+  if (marginData.HasValidNode())
+    XFA_RectWidthoutMargin(rtWidget, marginData);
 
-  CXFA_Caption caption = m_pDataAcc->GetCaption();
+  CXFA_CaptionData captionData = m_pDataAcc->GetCaptionData();
   m_rtCaption = rtWidget;
-  if (CXFA_Margin mgCap = caption.GetMargin())
-    XFA_RectWidthoutMargin(m_rtCaption, mgCap);
+  CXFA_MarginData captionMarginData = captionData.GetMarginData();
+  if (captionMarginData.HasValidNode())
+    XFA_RectWidthoutMargin(m_rtCaption, captionMarginData);
 
   LayoutHighlightCaption();
   SetFWLRect();
@@ -113,11 +115,12 @@ bool CXFA_FFPushButton::PerformLayout() {
   return true;
 }
 float CXFA_FFPushButton::GetLineWidth() {
-  CXFA_Border border = m_pDataAcc->GetBorder(false);
-  if (border && border.GetPresence() == XFA_ATTRIBUTEENUM_Visible) {
-    CXFA_Edge edge = border.GetEdge(0);
-    return edge.GetThickness();
+  CXFA_BorderData borderData = m_pDataAcc->GetBorderData(false);
+  if (borderData.HasValidNode() &&
+      borderData.GetPresence() == XFA_AttributeEnum::Visible) {
+    return borderData.GetEdgeData(0).GetThickness();
   }
+
   return 0;
 }
 
@@ -130,13 +133,11 @@ FX_ARGB CXFA_FFPushButton::GetFillColor() {
 }
 
 void CXFA_FFPushButton::LoadHighlightCaption() {
-  CXFA_Caption caption = m_pDataAcc->GetCaption();
-  if (!caption || caption.GetPresence() == XFA_ATTRIBUTEENUM_Hidden)
+  CXFA_CaptionData captionData = m_pDataAcc->GetCaptionData();
+  if (!captionData.HasValidNode() || captionData.IsHidden())
     return;
 
-  bool bRichText;
-  WideString wsRollover;
-  if (m_pDataAcc->GetButtonRollover(wsRollover, bRichText)) {
+  if (m_pDataAcc->HasButtonRollover()) {
     if (!m_pRollProvider) {
       m_pRollProvider = pdfium::MakeUnique<CXFA_TextProvider>(
           m_pDataAcc.Get(), XFA_TEXTPROVIDERTYPE_Rollover);
@@ -144,8 +145,8 @@ void CXFA_FFPushButton::LoadHighlightCaption() {
     m_pRolloverTextLayout =
         pdfium::MakeUnique<CXFA_TextLayout>(m_pRollProvider.get());
   }
-  WideString wsDown;
-  if (m_pDataAcc->GetButtonDown(wsDown, bRichText)) {
+
+  if (m_pDataAcc->HasButtonDown()) {
     if (!m_pDownProvider) {
       m_pDownProvider = pdfium::MakeUnique<CXFA_TextProvider>(
           m_pDataAcc.Get(), XFA_TEXTPROVIDERTYPE_Down);
@@ -167,8 +168,8 @@ void CXFA_FFPushButton::LayoutHighlightCaption() {
 void CXFA_FFPushButton::RenderHighlightCaption(CXFA_Graphics* pGS,
                                                CFX_Matrix* pMatrix) {
   CXFA_TextLayout* pCapTextLayout = m_pDataAcc->GetCaptionTextLayout();
-  CXFA_Caption caption = m_pDataAcc->GetCaption();
-  if (!caption || caption.GetPresence() != XFA_ATTRIBUTEENUM_Visible)
+  CXFA_CaptionData captionData = m_pDataAcc->GetCaptionData();
+  if (!captionData.HasValidNode() || !captionData.IsVisible())
     return;
 
   CFX_RenderDevice* pRenderDevice = pGS->GetRenderDevice();
@@ -183,15 +184,15 @@ void CXFA_FFPushButton::RenderHighlightCaption(CXFA_Graphics* pGS,
   uint32_t dwState = m_pNormalWidget->GetStates();
   if (m_pDownTextLayout && (dwState & FWL_STATE_PSB_Pressed) &&
       (dwState & FWL_STATE_PSB_Hovered)) {
-    if (m_pDownTextLayout->DrawString(pRenderDevice, mt, rtClip))
+    if (m_pDownTextLayout->DrawString(pRenderDevice, mt, rtClip, 0))
       return;
   } else if (m_pRolloverTextLayout && (dwState & FWL_STATE_PSB_Hovered)) {
-    if (m_pRolloverTextLayout->DrawString(pRenderDevice, mt, rtClip))
+    if (m_pRolloverTextLayout->DrawString(pRenderDevice, mt, rtClip, 0))
       return;
   }
 
   if (pCapTextLayout)
-    pCapTextLayout->DrawString(pRenderDevice, mt, rtClip);
+    pCapTextLayout->DrawString(pRenderDevice, mt, rtClip, 0);
 }
 
 void CXFA_FFPushButton::OnProcessMessage(CFWL_Message* pMessage) {
@@ -211,9 +212,9 @@ void CXFA_FFPushButton::OnDrawWidget(CXFA_Graphics* pGraphics,
       CFX_RectF rtFill(0, 0, m_pNormalWidget->GetWidgetRect().Size());
       float fLineWith = GetLineWidth();
       rtFill.Deflate(fLineWith, fLineWith);
-      CXFA_Path path;
+      CXFA_GEPath path;
       path.AddRectangle(rtFill.left, rtFill.top, rtFill.width, rtFill.height);
-      pGraphics->SetFillColor(CXFA_Color(FXARGB_MAKE(128, 128, 255, 255)));
+      pGraphics->SetFillColor(CXFA_GEColor(FXARGB_MAKE(128, 128, 255, 255)));
       pGraphics->FillPath(&path, FXFILL_WINDING, &matrix);
     }
     return;
@@ -223,10 +224,10 @@ void CXFA_FFPushButton::OnDrawWidget(CXFA_Graphics* pGraphics,
     if ((m_pNormalWidget->GetStates() & FWL_STATE_PSB_Pressed) &&
         (m_pNormalWidget->GetStates() & FWL_STATE_PSB_Hovered)) {
       float fLineWidth = GetLineWidth();
-      pGraphics->SetStrokeColor(CXFA_Color(FXARGB_MAKE(255, 128, 255, 255)));
+      pGraphics->SetStrokeColor(CXFA_GEColor(FXARGB_MAKE(255, 128, 255, 255)));
       pGraphics->SetLineWidth(fLineWidth);
 
-      CXFA_Path path;
+      CXFA_GEPath path;
       CFX_RectF rect = m_pNormalWidget->GetWidgetRect();
       path.AddRectangle(0, 0, rect.width, rect.height);
       pGraphics->StrokePath(&path, &matrix);

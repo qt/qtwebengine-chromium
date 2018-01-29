@@ -91,7 +91,6 @@
 <translation id="5941711191222866238">Minimise</translation>
 <translation id="5943826764092288734">{HOURS,plural, =1{1 hour}other{# hours}}</translation>
 <translation id="5948410903763073882">Alt+<ph name="KEY_COMBO_NAME" /></translation>
-<translation id="598033046487663418">All Apps</translation>
 <translation id="6012623610530968780">Page <ph name="SELECTED_PAGE" /> of <ph name="TOTAL_PAGE_NUM" /></translation>
 <translation id="6022924867608035986">Clear search box text</translation>
 <translation id="6040143037577758943">Close</translation>
@@ -144,6 +143,7 @@
 <translation id="8352146631962686268">{YEARS,plural, =1{1 year}other{# years}}</translation>
 <translation id="8371695176452482769">Speak now</translation>
 <translation id="838869780401515933">tick</translation>
+<translation id="8393700583063109961">Send message</translation>
 <translation id="8394908167088220973">Media Play/Pause</translation>
 <translation id="8400147561352026160">Shift+<ph name="KEY_COMBO_NAME" /></translation>
 <translation id="8458811141851741261">{YEARS,plural, =1{1y}other{#y}}</translation>

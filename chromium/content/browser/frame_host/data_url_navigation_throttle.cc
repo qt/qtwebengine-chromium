@@ -66,13 +66,13 @@ const char* DataUrlNavigationThrottle::GetNameForLogging() {
 std::unique_ptr<NavigationThrottle>
 DataUrlNavigationThrottle::CreateThrottleForNavigation(
     NavigationHandle* navigation_handle) {
-  if (navigation_handle->GetURL().SchemeIs(url::kDataScheme) &&
-      navigation_handle->IsInMainFrame() &&
+  if (navigation_handle->IsInMainFrame() &&
       navigation_handle->IsRendererInitiated() &&
       !navigation_handle->IsSameDocument() &&
+      navigation_handle->GetURL().SchemeIs(url::kDataScheme) &&
       !base::FeatureList::IsEnabled(
           features::kAllowContentInitiatedDataUrlNavigations)) {
-    return base::MakeUnique<DataUrlNavigationThrottle>(navigation_handle);
+    return std::make_unique<DataUrlNavigationThrottle>(navigation_handle);
   }
   return nullptr;
 }

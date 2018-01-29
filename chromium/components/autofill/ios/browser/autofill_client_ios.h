@@ -49,6 +49,7 @@ class AutofillClientIOS : public AutofillClient {
   syncer::SyncService* GetSyncService() override;
   IdentityProvider* GetIdentityProvider() override;
   ukm::UkmRecorder* GetUkmRecorder() override;
+  AddressNormalizer* GetAddressNormalizer() override;
   SaveCardBubbleController* GetSaveCardBubbleController() override;
   void ShowAutofillSettings() override;
   void ShowUnmaskPrompt(const CreditCard& card,
@@ -84,10 +85,14 @@ class AutofillClientIOS : public AutofillClient {
   void DidFillOrPreviewField(const base::string16& autofilled_value,
                              const base::string16& profile_full_name) override;
   scoped_refptr<AutofillWebDataService> GetDatabase() override;
+  void DidInteractWithNonsecureCreditCardInput() override;
   bool IsContextSecure() override;
   bool ShouldShowSigninPromo() override;
   bool IsAutofillSupported() override;
   void ExecuteCommand(int id) override;
+
+ protected:
+  web::WebState* web_state() { return web_state_; }
 
  private:
   PrefService* pref_service_;

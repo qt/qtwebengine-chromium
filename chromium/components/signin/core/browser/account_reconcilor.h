@@ -4,11 +4,8 @@
 #ifndef COMPONENTS_SIGNIN_CORE_BROWSER_ACCOUNT_RECONCILOR_H_
 #define COMPONENTS_SIGNIN_CORE_BROWSER_ACCOUNT_RECONCILOR_H_
 
-#include <functional>
 #include <memory>
-#include <set>
 #include <string>
-#include <utility>
 #include <vector>
 
 #include "base/callback_forward.h"
@@ -29,14 +26,17 @@
 #include "google_apis/gaia/google_service_auth_error.h"
 #include "google_apis/gaia/oauth2_token_service.h"
 
+namespace signin {
+class AccountReconcilorDelegate;
+}
+
 class ProfileOAuth2TokenService;
 class SigninClient;
 
 class AccountReconcilor : public KeyedService,
                           public content_settings::Observer,
                           public GaiaCookieManagerService::Observer,
-                          public OAuth2TokenService::Observer,
-                          public SigninManagerBase::Observer {
+                          public OAuth2TokenService::Observer {
  public:
   // When an instance of this class exists, the account reconcilor is suspended.
   // It will automatically restart when all instances of Lock have been
@@ -74,18 +74,21 @@ class AccountReconcilor : public KeyedService,
     virtual void OnUnblockReconcile() {}
   };
 
-  AccountReconcilor(ProfileOAuth2TokenService* token_service,
-                    SigninManagerBase* signin_manager,
-                    SigninClient* client,
-                    GaiaCookieManagerService* cookie_manager_service);
+  AccountReconcilor(
+      ProfileOAuth2TokenService* token_service,
+      SigninManagerBase* signin_manager,
+      SigninClient* client,
+      GaiaCookieManagerService* cookie_manager_service,
+      std::unique_ptr<signin::AccountReconcilorDelegate> delegate);
   ~AccountReconcilor() override;
 
+  // Initializes the account reconcilor. Should be called once after
+  // construction.
   void Initialize(bool start_reconcile_if_tokens_available);
 
-  // Signal that the status of the new_profile_management flag has changed.
-  // Pass the new status as an explicit parameter since disabling the flag
-  // doesn't remove it from the CommandLine::ForCurrentProcess().
-  void OnNewProfileManagementFlagChanged(bool new_flag_status);
+  // Enables and disables the reconciliation.
+  void EnableReconcile();
+  void DisableReconcile(bool logout_all_gaia_accounts);
 
   // Signal that an X-Chrome-Manage-Accounts was received from GAIA. Pass the
   // ServiceType specified by GAIA in the 204 response.
@@ -111,12 +114,20 @@ class AccountReconcilor : public KeyedService,
   FRIEND_TEST_ALL_PREFIXES(AccountReconcilorTest, Reauth);
   FRIEND_TEST_ALL_PREFIXES(AccountReconcilorTest, ProfileAlreadyConnected);
   FRIEND_TEST_ALL_PREFIXES(AccountReconcilorTestDice, TableRowTest);
-  FRIEND_TEST_ALL_PREFIXES(AccountReconcilorTest, EnabledWithDice);
+  FRIEND_TEST_ALL_PREFIXES(AccountReconcilorTest, DiceTokenServiceRegistration);
   FRIEND_TEST_ALL_PREFIXES(AccountReconcilorTest, DiceReconcileWhithoutSignin);
   FRIEND_TEST_ALL_PREFIXES(AccountReconcilorTest, DiceReconcileNoop);
   FRIEND_TEST_ALL_PREFIXES(AccountReconcilorTest, DiceLastKnownFirstAccount);
+  FRIEND_TEST_ALL_PREFIXES(AccountReconcilorTest, UnverifiedAccountNoop);
+  FRIEND_TEST_ALL_PREFIXES(AccountReconcilorTest, UnverifiedAccountMerge);
+  FRIEND_TEST_ALL_PREFIXES(AccountReconcilorTest, DiceMigrationAfterNoop);
+  FRIEND_TEST_ALL_PREFIXES(AccountReconcilorTest,
+                           DiceNoMigrationAfterReconcile);
   FRIEND_TEST_ALL_PREFIXES(AccountReconcilorTest,
                            DiceReconcileReuseGaiaFirstAccount);
+  FRIEND_TEST_ALL_PREFIXES(AccountReconcilorTest,
+                           MigrationClearSecondaryTokens);
+  FRIEND_TEST_ALL_PREFIXES(AccountReconcilorTest, MigrationClearAllTokens);
   FRIEND_TEST_ALL_PREFIXES(AccountReconcilorTest, TokensNotLoaded);
   FRIEND_TEST_ALL_PREFIXES(AccountReconcilorTest,
                            StartReconcileCookiesDisabled);
@@ -164,11 +175,6 @@ class AccountReconcilor : public KeyedService,
   void RegisterWithContentSettings();
   void UnregisterWithContentSettings();
 
-  // The reconcilor is enabled if Sync or Dice is enabled.
-  bool IsEnabled();
-  // Returns true if account consistency is enabled (Mirror or Dice).
-  bool IsAccountConsistencyEnabled();
-
   // All actions with side effects, only doing meaningful work if account
   // consistency is enabled. Virtual so that they can be overridden in tests.
   virtual void PerformMergeAction(const std::string& account_id);
@@ -176,24 +182,24 @@ class AccountReconcilor : public KeyedService,
 
   // Used during periodic reconciliation.
   void StartReconcile();
-  void FinishReconcile();
+  // |gaia_accounts| are the accounts in the Gaia cookie.
+  void FinishReconcile(const std::vector<std::string>& chrome_accounts,
+                       std::vector<gaia::ListedAccount>&& gaia_accounts);
   void AbortReconcile();
   void CalculateIfReconcileIsDone();
   void ScheduleStartReconcileIfChromeAccountsChanged();
-  // Revokes tokens for all accounts in chrome_accounts_ but primary_account_.
-  void RevokeAllSecondaryTokens();
+  // Revokes tokens for all accounts in chrome_accounts but primary_account_.
+  void RevokeAllSecondaryTokens(
+      const std::vector<std::string>& chrome_accounts);
 
-  void ValidateAccountsFromTokenService();
+  // Returns the list of valid accounts from the TokenService.
+  std::vector<std::string> LoadValidAccountsFromTokenService() const;
+
   // Note internally that this |account_id| is added to the cookie jar.
   bool MarkAccountAsAddedToCookie(const std::string& account_id);
 
   // The reconcilor only starts when the token service is ready.
   bool IsTokenServiceReady();
-
-  // Returns the first account to add in the Gaia cookie.
-  // If this returns an empty string, the user must be logged out of all
-  // accounts.
-  std::string GetFirstGaiaAccountForReconcile() const;
 
   // Overriden from content_settings::Observer.
   void OnContentSettingChanged(
@@ -215,18 +221,14 @@ class AccountReconcilor : public KeyedService,
   void OnEndBatchChanges() override;
   void OnRefreshTokensLoaded() override;
 
-  // Overriden from SigninManagerBase::Observer.
-  void GoogleSigninSucceeded(const std::string& account_id,
-                             const std::string& username) override;
-  void GoogleSignedOut(const std::string& account_id,
-                       const std::string& username) override;
-
   // Lock related methods.
   void IncrementLockCount();
   void DecrementLockCount();
   void BlockReconcile();
   void UnblockReconcile();
   bool IsReconcileBlocked() const;
+
+  std::unique_ptr<signin::AccountReconcilorDelegate> delegate_;
 
   // The ProfileOAuth2TokenService associated with this reconcilor.
   ProfileOAuth2TokenService* token_service_;
@@ -255,21 +257,15 @@ class AccountReconcilor : public KeyedService,
   // True iff an error occured during the last attempt to reconcile.
   bool error_during_last_reconcile_;
 
-  // Used during reconcile action.
-  // These members are used to validate the gaia cookie.  |gaia_accounts_|
-  // holds the state of google accounts in the gaia cookie.  Each element is
-  // holds the email address, gaia id and validity as returned from GAIA.  The
-  // accounts in the vector are ordered the in same way as the gaia cookie.
-  std::vector<gaia::ListedAccount> gaia_accounts_;
+  // Used for Dice migration: migration can happen if the accounts are
+  // consistent, which is indicated by reconcile being a no-op.
+  bool reconcile_is_noop_;
 
   // Used during reconcile action.
   // These members are used to validate the tokens in OAuth2TokenService.
   std::string primary_account_;
-  std::vector<std::string> chrome_accounts_;
   std::vector<std::string> add_to_cookie_;
   bool chrome_accounts_changed_;
-  // Last known "first account". Used when cookies are lost as a best guess.
-  std::string last_known_first_account_;
 
   // Used for the Lock.
   // StartReconcile() is blocked while this is > 0.

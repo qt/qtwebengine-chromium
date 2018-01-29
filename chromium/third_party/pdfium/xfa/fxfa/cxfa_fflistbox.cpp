@@ -56,7 +56,7 @@ bool CXFA_FFListBox::LoadWidget() {
     pListBox->AddString(label.AsStringView());
 
   uint32_t dwExtendedStyle = FWL_STYLEEXT_LTB_ShowScrollBarFocus;
-  if (m_pDataAcc->GetChoiceListOpen() == XFA_ATTRIBUTEENUM_MultiSelect)
+  if (m_pDataAcc->IsChoiceListMultiSelect())
     dwExtendedStyle |= FWL_STYLEEXT_LTB_MultiSelection;
 
   dwExtendedStyle |= GetAlignment();
@@ -104,22 +104,22 @@ bool CXFA_FFListBox::IsDataChanged() {
 }
 
 uint32_t CXFA_FFListBox::GetAlignment() {
-  CXFA_Para para = m_pDataAcc->GetPara();
-  if (!para)
+  CXFA_ParaData paraData = m_pDataAcc->GetParaData();
+  if (!paraData.HasValidNode())
     return 0;
 
   uint32_t dwExtendedStyle = 0;
-  switch (para.GetHorizontalAlign()) {
-    case XFA_ATTRIBUTEENUM_Center:
+  switch (paraData.GetHorizontalAlign()) {
+    case XFA_AttributeEnum::Center:
       dwExtendedStyle |= FWL_STYLEEXT_LTB_CenterAlign;
       break;
-    case XFA_ATTRIBUTEENUM_Justify:
+    case XFA_AttributeEnum::Justify:
       break;
-    case XFA_ATTRIBUTEENUM_JustifyAll:
+    case XFA_AttributeEnum::JustifyAll:
       break;
-    case XFA_ATTRIBUTEENUM_Radix:
+    case XFA_AttributeEnum::Radix:
       break;
-    case XFA_ATTRIBUTEENUM_Right:
+    case XFA_AttributeEnum::Right:
       dwExtendedStyle |= FWL_STYLEEXT_LTB_RightAlign;
       break;
     default:
@@ -151,7 +151,7 @@ void CXFA_FFListBox::OnSelectChanged(CFWL_Widget* pWidget) {
   CXFA_EventParam eParam;
   eParam.m_eType = XFA_EVENT_Change;
   eParam.m_pTarget = m_pDataAcc.Get();
-  m_pDataAcc->GetValue(eParam.m_wsPrevText, XFA_VALUEPICTURE_Raw);
+  eParam.m_wsPrevText = m_pDataAcc->GetValue(XFA_VALUEPICTURE_Raw);
 
   auto* pListBox = ToListBox(m_pNormalWidget.get());
   int32_t iSels = pListBox->CountSelItems();
@@ -159,7 +159,7 @@ void CXFA_FFListBox::OnSelectChanged(CFWL_Widget* pWidget) {
     CFWL_ListItem* item = pListBox->GetSelItem(0);
     eParam.m_wsNewText = item ? item->GetText() : L"";
   }
-  m_pDataAcc->ProcessEvent(XFA_ATTRIBUTEENUM_Change, &eParam);
+  m_pDataAcc->ProcessEvent(XFA_AttributeEnum::Change, &eParam);
 }
 
 void CXFA_FFListBox::SetItemState(int32_t nIndex, bool bSelected) {

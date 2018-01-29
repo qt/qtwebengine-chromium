@@ -16,6 +16,7 @@
 #include "core/fpdfdoc/cpdf_nametree.h"
 #include "core/fxcrt/cfx_checksumcontext.h"
 #include "core/fxcrt/cfx_memorystream.h"
+#include "core/fxcrt/cfx_seekablemultistream.h"
 #include "core/fxcrt/fx_extension.h"
 #include "core/fxcrt/fx_memory.h"
 #include "core/fxcrt/xml/cfx_xmlelement.h"
@@ -26,7 +27,6 @@
 #include "xfa/fxfa/cxfa_ffdocview.h"
 #include "xfa/fxfa/cxfa_ffnotify.h"
 #include "xfa/fxfa/cxfa_ffwidget.h"
-#include "xfa/fxfa/cxfa_fileread.h"
 #include "xfa/fxfa/cxfa_fontmgr.h"
 #include "xfa/fxfa/parser/cxfa_dataexporter.h"
 #include "xfa/fxfa/parser/cxfa_dataimporter.h"
@@ -160,7 +160,7 @@ CXFA_FFDoc::CXFA_FFDoc(CXFA_FFApp* pApp, IXFA_DocEnvironment* pDocEnvironment)
       m_pApp(pApp),
       m_pNotify(nullptr),
       m_pPDFDoc(nullptr),
-      m_dwDocType(XFA_DocType::Static) {}
+      m_FormType(FormType::kXFAForeground) {}
 
 CXFA_FFDoc::~CXFA_FFDoc() {
   CloseDoc();
@@ -169,7 +169,7 @@ CXFA_FFDoc::~CXFA_FFDoc() {
 int32_t CXFA_FFDoc::StartLoad() {
   m_pNotify = pdfium::MakeUnique<CXFA_FFNotify>(this);
   m_pDocumentParser = pdfium::MakeUnique<CXFA_DocumentParser>(m_pNotify.get());
-  return m_pDocumentParser->StartParse(m_pStream, XFA_XDPPACKET_XDP);
+  return m_pDocumentParser->StartParse(m_pStream, XFA_PacketType::Xdp);
 }
 
 bool XFA_GetPDFContentsFromPDFXML(CFX_XMLNode* pPDFElement,
@@ -225,8 +225,8 @@ void XFA_XPDPacket_MergeRootNode(CXFA_Node* pOriginRoot, CXFA_Node* pNewRoot) {
     } else {
       CXFA_Node* pNextSibling =
           pChildNode->GetNodeItem(XFA_NODEITEM_NextSibling);
-      pNewRoot->RemoveChild(pChildNode);
-      pOriginRoot->InsertChild(pChildNode);
+      pNewRoot->RemoveChild(pChildNode, true);
+      pOriginRoot->InsertChild(pChildNode, nullptr);
       pChildNode = pNextSibling;
       pNextSibling = nullptr;
     }
@@ -244,7 +244,7 @@ void CXFA_FFDoc::StopLoad() {
   m_pPDFFontMgr = pdfium::MakeUnique<CFGAS_PDFFontMgr>(
       GetPDFDoc(), GetApp()->GetFDEFontMgr());
 
-  m_dwDocType = XFA_DocType::Static;
+  m_FormType = FormType::kXFAForeground;
   CXFA_Node* pConfig = ToNode(
       m_pDocumentParser->GetDocument()->GetXFAObject(XFA_HASHCODE_Config));
   if (!pConfig)
@@ -263,9 +263,9 @@ void CXFA_FFDoc::StopLoad() {
   if (!pDynamicRender)
     return;
 
-  WideString wsType;
-  if (pDynamicRender->TryContent(wsType) && wsType == L"required")
-    m_dwDocType = XFA_DocType::Dynamic;
+  WideString wsType = pDynamicRender->JSNode()->GetContent(false);
+  if (wsType == L"required")
+    m_FormType = FormType::kXFAFull;
 }
 
 CXFA_FFDocView* CXFA_FFDoc::CreateDocView() {
@@ -314,7 +314,7 @@ bool CXFA_FFDoc::OpenDoc(CPDF_Document* pPDFDoc) {
     return false;
 
   m_pPDFDoc = pPDFDoc;
-  m_pStream = pdfium::MakeRetain<CXFA_FileRead>(xfaStreams);
+  m_pStream = pdfium::MakeRetain<CFX_SeekableMultiStream>(xfaStreams);
   return true;
 }
 
@@ -391,13 +391,10 @@ RetainPtr<CFX_DIBitmap> CXFA_FFDoc::GetPDFNamedImage(
   return pDibSource;
 }
 
-bool CXFA_FFDoc::SavePackage(XFA_HashCode code,
+bool CXFA_FFDoc::SavePackage(CXFA_Node* pNode,
                              const RetainPtr<IFX_SeekableStream>& pFile,
                              CFX_ChecksumContext* pCSContext) {
-  CXFA_Document* doc = m_pDocumentParser->GetDocument();
-  auto pExport = pdfium::MakeUnique<CXFA_DataExporter>(doc);
-  CXFA_Node* pNode = code == XFA_HASHCODE_Xfa ? doc->GetRoot()
-                                              : ToNode(doc->GetXFAObject(code));
+  auto pExport = pdfium::MakeUnique<CXFA_DataExporter>(GetXFADoc());
   if (!pNode)
     return !!pExport->Export(pFile);
 

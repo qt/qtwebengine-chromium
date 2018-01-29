@@ -21,6 +21,7 @@ class PLATFORM_EXPORT WebViewScheduler {
     virtual ~WebViewSchedulerDelegate() {}
 
     virtual void RequestBeginMainFrameNotExpected(bool new_state) = 0;
+    virtual void SetPageStopped(bool) = 0;
   };
 
   virtual ~WebViewScheduler() {}
@@ -39,14 +40,17 @@ class PLATFORM_EXPORT WebViewScheduler {
 
   // Instructs this WebViewScheduler to use virtual time. When virtual time is
   // enabled the system doesn't actually sleep for the delays between tasks
-  // before executing them. E.g: A-E are delayed tasks
+  // before executing them. Returns the TimeTicks that virtual time offsets will
+  // be relative to.
+  //
+  // E.g: A-E are delayed tasks
   //
   // |    A   B C  D           E  (normal)
   // |-----------------------------> time
   //
   // |ABCDE                       (virtual time)
   // |-----------------------------> time
-  virtual void EnableVirtualTime() = 0;
+  virtual base::TimeTicks EnableVirtualTime() = 0;
 
   // Disables virtual time. Note that this is only used for testing, because
   // there's no reason to do this in production.
@@ -60,20 +64,20 @@ class PLATFORM_EXPORT WebViewScheduler {
     // runs out of immediate work, the virtual timebase will be incremented so
     // that the next sceduled timer may fire.  NOTE Tasks will be run in time
     // order (as usual).
-    ADVANCE,
+    kAdvance,
 
     // In this policy virtual time is not allowed to advance. Delayed tasks
     // posted to WebTaskRunners owned by any child WebFrameSchedulers will be
     // paused, unless their scheduled run time is less than or equal to the
     // current virtual time.  Note non-delayed tasks will run as normal.
-    PAUSE,
+    kPause,
 
     // In this policy virtual time is allowed to advance unless there are
     // pending network fetches associated any child WebFrameScheduler, or a
     // document is being parsed on a background thread. Initially virtual time
     // is not allowed to advance until we have seen at least one load. The aim
     // being to try and make loading (more) deterministic.
-    DETERMINISTIC_LOADING
+    kDeterministicLoading,
   };
 
   // Sets the virtual time policy, which is applied imemdiatly to all child
@@ -107,7 +111,20 @@ class PLATFORM_EXPORT WebViewScheduler {
       base::TimeDelta budget,
       WTF::Closure budget_exhausted_callback) = 0;
 
+  // It's possible for pages to send infinite messages which can arbitrarily
+  // block virtual time.  We can prevent this by setting an upper limit on the
+  // number of tasks that can run before virtual time is advanced.
+  // NB this anti-starvation logic doesn't apply to VirtualTimePolicy::kPause.
+  virtual void SetMaxVirtualTimeTaskStarvationCount(
+      int max_task_starvation_count) = 0;
+
   virtual void AudioStateChanged(bool is_audio_playing) = 0;
+
+  virtual bool IsPlayingAudio() const = 0;
+
+  // Returns true if the page should be exempted from aggressive throttling
+  // (e.g. due to a page maintaining an active connection).
+  virtual bool IsExemptFromBudgetBasedThrottling() const = 0;
 
   virtual bool HasActiveConnectionForTest() const = 0;
 

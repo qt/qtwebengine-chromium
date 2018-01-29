@@ -80,6 +80,7 @@ class ServerWindow : public viz::HostFrameSinkClient {
   const WindowId& id() const { return id_; }
 
   const viz::FrameSinkId& frame_sink_id() const { return frame_sink_id_; }
+  void UpdateFrameSinkId(const viz::FrameSinkId& frame_sink_id);
 
   const base::Optional<viz::LocalSurfaceId>& current_local_surface_id() const {
     return current_local_surface_id_;
@@ -240,6 +241,7 @@ class ServerWindow : public viz::HostFrameSinkClient {
  private:
   // viz::HostFrameSinkClient implementation.
   void OnFirstSurfaceActivation(const viz::SurfaceInfo& surface_info) override;
+  void OnFrameTokenChanged(uint32_t frame_token) override;
 
   // Implementation of removing a window. Doesn't send any notification.
   void RemoveImpl(ServerWindow* window);
@@ -249,6 +251,7 @@ class ServerWindow : public viz::HostFrameSinkClient {
 
   ServerWindowDelegate* const delegate_;
   const WindowId id_;
+  // This may change for embed windows.
   viz::FrameSinkId frame_sink_id_;
   base::Optional<viz::LocalSurfaceId> current_local_surface_id_;
 

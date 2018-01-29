@@ -18,6 +18,7 @@
         cursor: pointer;
         display: flex;
         flex: 1;
+        font-family: inherit;
         font-size: 100%;  /* Specifically for Mac OSX, harmless elsewhere. */
         line-height: 154%;  /* 20px. */
         margin: 0;
@@ -75,7 +76,7 @@
         <div id="subLabel" class="secondary label">[[subLabel]]</div>
       </div>
       <slot></slot>
-      <div id="icon" class$="cr-icon [[iconClass]]" aria-label$="[[label]]">
+      <div id="icon" class$="cr-icon [[iconClass]]" aria-hidden="true">
       </div>
     </div>
   </template>

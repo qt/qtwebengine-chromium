@@ -202,9 +202,32 @@ bool GrContext::init(const GrContextOptions& options) {
     if (options.fDisableDistanceFieldPaths) {
         prcOptions.fGpuPathRenderers &= ~GpuPathRenderers::kSmall;
     }
-    fDrawingManager.reset(new GrDrawingManager(this, prcOptions, &fSingleOwner));
 
-    fAtlasGlyphCache = new GrAtlasGlyphCache(this, options.fGlyphCacheTextureMaximumBytes);
+    GrAtlasTextContext::Options atlasTextContextOptions;
+    atlasTextContextOptions.fMaxDistanceFieldFontSize = options.fGlyphsAsPathsFontSize;
+    atlasTextContextOptions.fMinDistanceFieldFontSize = options.fMinDistanceFieldFontSize;
+
+    fDrawingManager.reset(
+            new GrDrawingManager(this, prcOptions, atlasTextContextOptions, &fSingleOwner));
+
+    GrDrawOpAtlas::AllowMultitexturing allowMultitexturing;
+    switch (options.fAllowMultipleGlyphCacheTextures) {
+        case GrContextOptions::Enable::kDefault:
+#ifdef SK_BUILD_FOR_IOS
+            allowMultitexturing = GrDrawOpAtlas::AllowMultitexturing::kNo;
+#else
+            allowMultitexturing = GrDrawOpAtlas::AllowMultitexturing::kYes;
+#endif
+            break;
+        case GrContextOptions::Enable::kNo:
+            allowMultitexturing = GrDrawOpAtlas::AllowMultitexturing::kNo;
+            break;
+        case GrContextOptions::Enable::kYes:
+            allowMultitexturing = GrDrawOpAtlas::AllowMultitexturing::kYes;
+            break;
+    }
+    fAtlasGlyphCache = new GrAtlasGlyphCache(this, options.fGlyphCacheTextureMaximumBytes,
+                                             allowMultitexturing);
     this->contextPriv().addOnFlushCallbackObject(fAtlasGlyphCache);
 
     fTextBlobCache.reset(new GrTextBlobCache(TextBlobCacheOverBudgetCB, this));
@@ -212,6 +235,8 @@ bool GrContext::init(const GrContextOptions& options) {
     if (options.fExecutor) {
         fTaskGroup = skstd::make_unique<SkTaskGroup>(*options.fExecutor);
     }
+
+    fPersistentCache = options.fPersistentCache;
 
     return true;
 }
@@ -435,9 +460,8 @@ bool GrContextPriv::writeSurfacePixels(GrSurfaceContext* dst,
     // We need to guarantee round-trip conversion if we are reading and writing 8888 non-sRGB data,
     // without any color spaces attached, and the caller wants us to premul.
     bool useConfigConversionEffect =
-                        premul &&
-                        pm_upm_must_round_trip(srcConfig, srcColorSpace) &&
-                        pm_upm_must_round_trip(dstProxy->config(), dst->getColorSpace());
+            premul && pm_upm_must_round_trip(srcConfig, srcColorSpace) &&
+            pm_upm_must_round_trip(dstProxy->config(), dst->colorSpaceInfo().colorSpace());
 
     // Are we going to try to premul as part of a draw? For the non-legacy case, we always allow
     // this. GrConfigConversionEffect fails on some GPUs, so only allow this if it works perfectly.
@@ -491,7 +515,7 @@ bool GrContextPriv::writeSurfacePixels(GrSurfaceContext* dst,
     }
 
     if (tempProxy) {
-        auto fp = GrSimpleTextureEffect::Make(tempProxy, nullptr, SkMatrix::I());
+        auto fp = GrSimpleTextureEffect::Make(tempProxy, SkMatrix::I());
         if (premulOnGpu) {
             fp = fContext->createUPMToPMEffect(std::move(fp), useConfigConversionEffect);
         }
@@ -500,17 +524,21 @@ bool GrContextPriv::writeSurfacePixels(GrSurfaceContext* dst,
             return false;
         }
 
-        if (tempProxy->priv().hasPendingIO()) {
-            this->flush(tempProxy.get());
-        }
         if (!tempProxy->instantiate(fContext->resourceProvider())) {
             return false;
         }
         GrTexture* texture = tempProxy->priv().peekTexture();
+
+        if (tempProxy->priv().hasPendingIO()) {
+            this->flush(tempProxy.get());
+        }
+
         if (!fContext->fGpu->writePixels(texture, tempProxy->origin(), 0, 0, width, height,
                                          tempDrawInfo.fWriteConfig, buffer, rowBytes)) {
             return false;
         }
+        tempProxy = nullptr;
+
         SkMatrix matrix;
         matrix.setTranslate(SkIntToScalar(left), SkIntToScalar(top));
         GrRenderTargetContext* renderTargetContext = dst->asRenderTargetContext();
@@ -520,8 +548,8 @@ bool GrContextPriv::writeSurfacePixels(GrSurfaceContext* dst,
         GrPaint paint;
         paint.addColorFragmentProcessor(std::move(fp));
         paint.setPorterDuffXPFactory(SkBlendMode::kSrc);
-        paint.setAllowSRGBInputs(SkToBool(dst->getColorSpace()) ||
-                                 GrPixelConfigIsSRGB(renderTargetContext->config()));
+        paint.setAllowSRGBInputs(dst->colorSpaceInfo().isGammaCorrect() ||
+                                 GrPixelConfigIsSRGB(dst->colorSpaceInfo().config()));
         SkRect rect = SkRect::MakeWH(SkIntToScalar(width), SkIntToScalar(height));
         renderTargetContext->drawRect(GrNoClip(), std::move(paint), GrAA::kNo, matrix, rect,
                                         nullptr);
@@ -565,9 +593,9 @@ bool GrContextPriv::readSurfacePixels(GrSurfaceContext* src,
     // We need to guarantee round-trip conversion if we are reading and writing 8888 non-sRGB data,
     // without any color spaces attached, and the caller wants us to unpremul.
     bool useConfigConversionEffect =
-                    unpremul &&
-                    pm_upm_must_round_trip(srcProxy->config(), src->getColorSpace()) &&
-                    pm_upm_must_round_trip(dstConfig, dstColorSpace);
+            unpremul &&
+            pm_upm_must_round_trip(srcProxy->config(), src->colorSpaceInfo().colorSpace()) &&
+            pm_upm_must_round_trip(dstConfig, dstColorSpace);
 
     // Are we going to try to unpremul as part of a draw? For the non-legacy case, we always allow
     // this. GrConfigConversionEffect fails on some GPUs, so only allow this if it works perfectly.
@@ -614,12 +642,12 @@ bool GrContextPriv::readSurfacePixels(GrSurfaceContext* src,
                                                            tempDrawInfo.fTempSurfaceDesc.fConfig,
                                                            nullptr,
                                                            tempDrawInfo.fTempSurfaceDesc.fSampleCnt,
-                                                           false,
+                                                           GrMipMapped::kNo,
                                                            tempDrawInfo.fTempSurfaceDesc.fOrigin);
         if (tempRTC) {
             SkMatrix textureMatrix = SkMatrix::MakeTrans(SkIntToScalar(left), SkIntToScalar(top));
             sk_sp<GrTextureProxy> proxy = src->asTextureProxyRef();
-            auto fp = GrSimpleTextureEffect::Make(std::move(proxy), nullptr, textureMatrix);
+            auto fp = GrSimpleTextureEffect::Make(std::move(proxy), textureMatrix);
             if (unpremulOnGpu) {
                 fp = fContext->createPMToUPMEffect(std::move(fp), useConfigConversionEffect);
                 // We no longer need to do this on CPU after the read back.
@@ -747,11 +775,19 @@ sk_sp<GrSurfaceContext> GrContextPriv::makeWrappedSurfaceContext(sk_sp<GrSurface
 }
 
 sk_sp<GrSurfaceContext> GrContextPriv::makeDeferredSurfaceContext(const GrSurfaceDesc& dstDesc,
+                                                                  GrMipMapped mipMapped,
                                                                   SkBackingFit fit,
                                                                   SkBudgeted isDstBudgeted) {
 
-    sk_sp<GrTextureProxy> proxy = GrSurfaceProxy::MakeDeferred(fContext->resourceProvider(),
-                                                               dstDesc, fit, isDstBudgeted);
+    sk_sp<GrTextureProxy> proxy;
+    if (GrMipMapped::kNo == mipMapped) {
+        proxy = GrSurfaceProxy::MakeDeferred(fContext->resourceProvider(), dstDesc, fit,
+                                             isDstBudgeted);
+    } else {
+        SkASSERT(SkBackingFit::kExact == fit);
+        proxy = GrSurfaceProxy::MakeDeferredMipMap(fContext->resourceProvider(), dstDesc,
+                                                   isDstBudgeted);
+    }
     if (!proxy) {
         return nullptr;
     }
@@ -874,7 +910,7 @@ sk_sp<GrRenderTargetContext> GrContext::makeDeferredRenderTargetContextWithFallb
                                                                  GrPixelConfig config,
                                                                  sk_sp<SkColorSpace> colorSpace,
                                                                  int sampleCnt,
-                                                                 bool willNeedMipMaps,
+                                                                 GrMipMapped mipMapped,
                                                                  GrSurfaceOrigin origin,
                                                                  const SkSurfaceProps* surfaceProps,
                                                                  SkBudgeted budgeted) {
@@ -883,7 +919,7 @@ sk_sp<GrRenderTargetContext> GrContext::makeDeferredRenderTargetContextWithFallb
     }
 
     return this->makeDeferredRenderTargetContext(fit, width, height, config, std::move(colorSpace),
-                                                 sampleCnt, willNeedMipMaps, origin, surfaceProps,
+                                                 sampleCnt, mipMapped, origin, surfaceProps,
                                                  budgeted);
 }
 
@@ -893,7 +929,7 @@ sk_sp<GrRenderTargetContext> GrContext::makeDeferredRenderTargetContext(
                                                         GrPixelConfig config,
                                                         sk_sp<SkColorSpace> colorSpace,
                                                         int sampleCnt,
-                                                        bool willNeedMipMaps,
+                                                        GrMipMapped mipMapped,
                                                         GrSurfaceOrigin origin,
                                                         const SkSurfaceProps* surfaceProps,
                                                         SkBudgeted budgeted) {
@@ -910,7 +946,7 @@ sk_sp<GrRenderTargetContext> GrContext::makeDeferredRenderTargetContext(
     desc.fSampleCnt = sampleCnt;
 
     sk_sp<GrTextureProxy> rtp;
-    if (!willNeedMipMaps) {
+    if (GrMipMapped::kNo == mipMapped) {
         rtp = GrSurfaceProxy::MakeDeferred(this->resourceProvider(), desc, fit, budgeted);
     } else {
         rtp = GrSurfaceProxy::MakeDeferredMipMap(this->resourceProvider(), desc, budgeted);
@@ -947,8 +983,7 @@ std::unique_ptr<GrFragmentProcessor> GrContext::createPMToUPMEffect(
         // ...and it should have succeeded
         SkASSERT(this->validPMUPMConversionExists());
 
-        return GrConfigConversionEffect::Make(std::move(fp),
-                                              GrConfigConversionEffect::kToUnpremul_PMConversion);
+        return GrConfigConversionEffect::Make(std::move(fp), PMConversion::kToUnpremul);
     } else {
         // For everything else (sRGB, half-float, etc...), it doesn't make sense to try and
         // explicitly round the results. Just do the obvious, naive thing in the shader.
@@ -966,8 +1001,7 @@ std::unique_ptr<GrFragmentProcessor> GrContext::createUPMToPMEffect(
         // ...and it should have succeeded
         SkASSERT(this->validPMUPMConversionExists());
 
-        return GrConfigConversionEffect::Make(std::move(fp),
-                                              GrConfigConversionEffect::kToPremul_PMConversion);
+        return GrConfigConversionEffect::Make(std::move(fp), PMConversion::kToPremul);
     } else {
         // For everything else (sRGB, half-float, etc...), it doesn't make sense to try and
         // explicitly round the results. Just do the obvious, naive thing in the shader.

@@ -26,11 +26,11 @@
 #define HTMLInputElement_h
 
 #include "base/gtest_prod_util.h"
+#include "bindings/core/v8/ActiveScriptWrappable.h"
 #include "core/CoreExport.h"
 #include "core/html/forms/FileChooser.h"
 #include "core/html/forms/StepRange.h"
 #include "core/html/forms/TextControlElement.h"
-#include "platform/bindings/ActiveScriptWrappable.h"
 
 namespace blink {
 
@@ -56,7 +56,7 @@ class CORE_EXPORT HTMLInputElement
  public:
   static HTMLInputElement* Create(Document&, bool created_by_parser);
   ~HTMLInputElement() override;
-  DECLARE_VIRTUAL_TRACE();
+  void Trace(blink::Visitor*) override;
 
   bool HasPendingActivity() const final;
 
@@ -144,8 +144,7 @@ class CORE_EXPORT HTMLInputElement
 
   String LocalizeValue(const String&) const;
 
-  const String& SuggestedValue() const;
-  void SetSuggestedValue(const String&);
+  void SetSuggestedValue(const String& value) override;
 
   void SetEditingValue(const String&);
 
@@ -181,7 +180,8 @@ class CORE_EXPORT HTMLInputElement
   bool LayoutObjectIsNeeded(const ComputedStyle&) final;
   LayoutObject* CreateLayoutObject(const ComputedStyle&) override;
   void DetachLayoutTree(const AttachContext& = AttachContext()) final;
-  void UpdateFocusAppearance(SelectionBehaviorOnFocus) final;
+  void UpdateFocusAppearanceWithOptions(SelectionBehaviorOnFocus,
+                                        const FocusOptions&) final;
 
   // FIXME: For isActivatedSubmit and setActivatedSubmit, we should use the
   // NVI-idiom here by making it private virtual in all classes and expose a
@@ -293,15 +293,17 @@ class CORE_EXPORT HTMLInputElement
 
   unsigned SizeOfRadioGroup() const;
 
+  bool SupportsPlaceholder() const final;
+  String GetPlaceholderValue() const final;
+
  protected:
   HTMLInputElement(Document&, bool created_by_parser);
 
   void DefaultEventHandler(Event*) override;
+  void CreateShadowSubtree();
 
  private:
   enum AutoCompleteSetting { kUninitialized, kOn, kOff };
-
-  void DidAddUserAgentShadowRoot(ShadowRoot&) final;
 
   void WillChangeForm() final;
   void DidChangeForm() final;
@@ -336,7 +338,7 @@ class CORE_EXPORT HTMLInputElement
   bool IsPresentationAttribute(const QualifiedName&) const final;
   void CollectStyleForPresentationAttribute(const QualifiedName&,
                                             const AtomicString&,
-                                            MutableStylePropertySet*) final;
+                                            MutableCSSPropertyValueSet*) final;
   void FinishParsingChildren() final;
   void ParserDidSetAttributes() final;
 
@@ -364,12 +366,8 @@ class CORE_EXPORT HTMLInputElement
   bool TooLong(const String&, NeedsToCheckDirtyFlag) const;
   bool TooShort(const String&, NeedsToCheckDirtyFlag) const;
 
-  bool SupportsPlaceholder() const final;
   void UpdatePlaceholderText() final;
   bool IsEmptyValue() const final { return InnerEditorValue().IsEmpty(); }
-  bool IsEmptySuggestedValue() const final {
-    return SuggestedValue().IsEmpty();
-  }
   void HandleFocusEvent(Element* old_focused_element, WebFocusType) final;
   void HandleBlurEvent() final;
   void DispatchFocusInEvent(const AtomicString& event_type,
@@ -399,12 +397,11 @@ class CORE_EXPORT HTMLInputElement
   RadioButtonGroupScope* GetRadioButtonGroupScope() const;
   void AddToRadioButtonGroup();
   void RemoveFromRadioButtonGroup();
-  RefPtr<ComputedStyle> CustomStyleForLayoutObject() override;
+  scoped_refptr<ComputedStyle> CustomStyleForLayoutObject() override;
 
   AtomicString name_;
   // The value string in |value| value mode.
   String non_attribute_value_;
-  String suggested_value_;
   int size_;
   // https://html.spec.whatwg.org/multipage/forms.html#concept-input-value-dirty-flag
   unsigned has_dirty_value_ : 1;

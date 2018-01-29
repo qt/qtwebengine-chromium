@@ -150,15 +150,15 @@ class CORE_EXPORT SVGElement : public Element {
 
   void SynchronizeAnimatedSVGAttribute(const QualifiedName&) const;
 
-  RefPtr<ComputedStyle> CustomStyleForLayoutObject() final;
+  scoped_refptr<ComputedStyle> CustomStyleForLayoutObject() final;
   bool LayoutObjectIsNeeded(const ComputedStyle&) override;
 
 #if DCHECK_IS_ON()
   virtual bool IsAnimatableAttribute(const QualifiedName&) const;
 #endif
 
-  MutableStylePropertySet* AnimatedSMILStyleProperties() const;
-  MutableStylePropertySet* EnsureAnimatedSMILStyleProperties();
+  MutableCSSPropertyValueSet* AnimatedSMILStyleProperties() const;
+  MutableCSSPropertyValueSet* EnsureAnimatedSMILStyleProperties();
   void SetUseOverrideComputedStyle(bool);
 
   virtual bool HaveLoadedRequiredResources();
@@ -207,7 +207,7 @@ class CORE_EXPORT SVGElement : public Element {
   void SetNeedsStyleRecalcForInstances(StyleChangeType,
                                        const StyleChangeReasonForTracing&);
 
-  DECLARE_VIRTUAL_TRACE();
+  virtual void Trace(blink::Visitor*);
 
   static const AtomicString& EventParameterName();
 
@@ -222,9 +222,10 @@ class CORE_EXPORT SVGElement : public Element {
   void ParseAttribute(const AttributeModificationParams&) override;
   void AttributeChanged(const AttributeModificationParams&) override;
 
-  void CollectStyleForPresentationAttribute(const QualifiedName&,
-                                            const AtomicString&,
-                                            MutableStylePropertySet*) override;
+  void CollectStyleForPresentationAttribute(
+      const QualifiedName&,
+      const AtomicString&,
+      MutableCSSPropertyValueSet*) override;
 
   InsertionNotificationRequest InsertedInto(ContainerNode*) override;
   void RemovedFrom(ContainerNode*) override;

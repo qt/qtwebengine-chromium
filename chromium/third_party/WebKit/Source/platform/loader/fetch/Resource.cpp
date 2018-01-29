@@ -48,14 +48,13 @@
 #include "platform/network/HTTPParsers.h"
 #include "platform/scheduler/child/web_scheduler.h"
 #include "platform/weborigin/KURL.h"
-#include "platform/wtf/CurrentTime.h"
 #include "platform/wtf/MathExtras.h"
 #include "platform/wtf/StdLibExtras.h"
+#include "platform/wtf/Time.h"
 #include "platform/wtf/Vector.h"
 #include "platform/wtf/text/CString.h"
 #include "platform/wtf/text/StringBuilder.h"
 #include "public/platform/Platform.h"
-#include "public/platform/WebCachePolicy.h"
 #include "public/platform/WebSecurityOrigin.h"
 #include "services/network/public/interfaces/fetch_api.mojom-blink.h"
 
@@ -120,10 +119,10 @@ class Resource::CachedMetadataHandlerImpl : public CachedMetadataHandler {
     return new CachedMetadataHandlerImpl(resource);
   }
   ~CachedMetadataHandlerImpl() override {}
-  DECLARE_VIRTUAL_TRACE();
+  void Trace(blink::Visitor*) override;
   void SetCachedMetadata(uint32_t, const char*, size_t, CacheType) override;
   void ClearCachedMetadata(CacheType) override;
-  RefPtr<CachedMetadata> GetCachedMetadata(uint32_t) const override;
+  scoped_refptr<CachedMetadata> GetCachedMetadata(uint32_t) const override;
   String Encoding() const override;
   // Sets the serialized metadata retrieved from the platform's cache.
   void SetSerializedCachedMetadata(const char*, size_t);
@@ -135,7 +134,7 @@ class Resource::CachedMetadataHandlerImpl : public CachedMetadataHandler {
     return resource_->GetResponse();
   }
 
-  RefPtr<CachedMetadata> cached_metadata_;
+  scoped_refptr<CachedMetadata> cached_metadata_;
 
  private:
   Member<Resource> resource_;
@@ -145,7 +144,7 @@ Resource::CachedMetadataHandlerImpl::CachedMetadataHandlerImpl(
     Resource* resource)
     : resource_(resource) {}
 
-DEFINE_TRACE(Resource::CachedMetadataHandlerImpl) {
+void Resource::CachedMetadataHandlerImpl::Trace(blink::Visitor* visitor) {
   visitor->Trace(resource_);
   CachedMetadataHandler::Trace(visitor);
 }
@@ -171,7 +170,8 @@ void Resource::CachedMetadataHandlerImpl::ClearCachedMetadata(
     SendToPlatform();
 }
 
-RefPtr<CachedMetadata> Resource::CachedMetadataHandlerImpl::GetCachedMetadata(
+scoped_refptr<CachedMetadata>
+Resource::CachedMetadataHandlerImpl::GetCachedMetadata(
     uint32_t data_type_id) const {
   if (!cached_metadata_ || cached_metadata_->DataTypeID() != data_type_id)
     return nullptr;
@@ -214,7 +214,7 @@ class Resource::ServiceWorkerResponseCachedMetadataHandler
                                                           security_origin);
   }
   ~ServiceWorkerResponseCachedMetadataHandler() override {}
-  DECLARE_VIRTUAL_TRACE();
+  void Trace(blink::Visitor*) override;
 
  protected:
   void SendToPlatform() override;
@@ -223,7 +223,7 @@ class Resource::ServiceWorkerResponseCachedMetadataHandler
   explicit ServiceWorkerResponseCachedMetadataHandler(Resource*,
                                                       SecurityOrigin*);
   String cache_storage_cache_name_;
-  RefPtr<SecurityOrigin> security_origin_;
+  scoped_refptr<SecurityOrigin> security_origin_;
 };
 
 Resource::ServiceWorkerResponseCachedMetadataHandler::
@@ -231,7 +231,8 @@ Resource::ServiceWorkerResponseCachedMetadataHandler::
                                                SecurityOrigin* security_origin)
     : CachedMetadataHandlerImpl(resource), security_origin_(security_origin) {}
 
-DEFINE_TRACE(Resource::ServiceWorkerResponseCachedMetadataHandler) {
+void Resource::ServiceWorkerResponseCachedMetadataHandler::Trace(
+    blink::Visitor* visitor) {
   CachedMetadataHandlerImpl::Trace(visitor);
 }
 
@@ -292,7 +293,7 @@ Resource::~Resource() {
   InstanceCounters::DecrementCounter(InstanceCounters::kResourceCounter);
 }
 
-DEFINE_TRACE(Resource) {
+void Resource::Trace(blink::Visitor* visitor) {
   visitor->Trace(loader_);
   visitor->Trace(cache_handler_);
   visitor->Trace(clients_);
@@ -371,16 +372,19 @@ void Resource::AppendData(const char* data, size_t length) {
   TRACE_EVENT0("blink", "Resource::appendData");
   DCHECK(!is_revalidating_);
   DCHECK(!ErrorOccurred());
-  if (options_.data_buffering_policy == kDoNotBufferData)
-    return;
-  if (data_)
-    data_->Append(data, length);
-  else
-    data_ = SharedBuffer::Create(data, length);
-  SetEncodedSize(data_->size());
+  if (options_.data_buffering_policy == kBufferData) {
+    if (data_)
+      data_->Append(data, length);
+    else
+      data_ = SharedBuffer::Create(data, length);
+    SetEncodedSize(data_->size());
+  }
+  ResourceClientWalker<ResourceClient> w(Clients());
+  while (ResourceClient* c = w.Next())
+    c->DataReceived(this, data, length);
 }
 
-void Resource::SetResourceBuffer(RefPtr<SharedBuffer> resource_buffer) {
+void Resource::SetResourceBuffer(scoped_refptr<SharedBuffer> resource_buffer) {
   DCHECK(!is_revalidating_);
   DCHECK(!ErrorOccurred());
   DCHECK_EQ(options_.data_buffering_policy, kBufferData);
@@ -398,7 +402,7 @@ void Resource::TriggerNotificationForFinishObservers(
   if (finish_observers_.IsEmpty())
     return;
 
-  auto new_collections = new HeapHashSet<WeakMember<ResourceFinishObserver>>(
+  auto* new_collections = new HeapHashSet<WeakMember<ResourceFinishObserver>>(
       std::move(finish_observers_));
   finish_observers_.clear();
 
@@ -418,11 +422,10 @@ void Resource::SetDataBufferingPolicy(
 
 void Resource::FinishAsError(const ResourceError& error,
                              WebTaskRunner* task_runner) {
-  DCHECK(!error.IsNull());
   error_ = error;
   is_revalidating_ = false;
 
-  if ((error_.IsCancellation() || !is_unused_preload_) && IsMainThread())
+  if (IsMainThread())
     GetMemoryCache()->Remove(this);
 
   if (!ErrorOccurred())
@@ -511,8 +514,6 @@ static bool CanUseResponse(const ResourceResponse& response,
   if (response.IsNull())
     return false;
 
-  // FIXME: Why isn't must-revalidate considered a reason we can't use the
-  // response?
   if (response.CacheControlContainsNoCache() ||
       response.CacheControlContainsNoStore())
     return false;
@@ -561,7 +562,12 @@ bool Resource::WillFollowRedirect(const ResourceRequest& new_request,
 
 void Resource::SetResponse(const ResourceResponse& response) {
   response_ = response;
-  if (this->GetResponse().WasFetchedViaServiceWorker()) {
+  // Currently we support the metadata caching only for HTTP family.
+  if (!GetResponse().Url().ProtocolIsInHTTPFamily()) {
+    cache_handler_.Clear();
+    return;
+  }
+  if (GetResponse().WasFetchedViaServiceWorker()) {
     cache_handler_ = ServiceWorkerResponseCachedMetadataHandler::Create(
         this, fetcher_security_origin_.get());
   }
@@ -632,6 +638,17 @@ String Resource::ReasonNotDeletable() const {
 }
 
 void Resource::DidAddClient(ResourceClient* c) {
+  if (scoped_refptr<SharedBuffer> data = Data()) {
+    data->ForEachSegment([this, &c](const char* segment, size_t segment_size,
+                                    size_t segment_offset) -> bool {
+      c->DataReceived(this, segment, segment_size);
+
+      // Stop pushing data if the client removed itself.
+      return HasClient(c);
+    });
+  }
+  if (!HasClient(c))
+    return;
   if (IsLoaded()) {
     c->NotifyFinished(this);
     if (clients_.Contains(c)) {
@@ -648,8 +665,6 @@ static bool TypeNeedsSynchronousCacheHit(Resource::Type type) {
   // performance regression.
   // FIXME: Get to the point where we don't need to special-case sync/async
   // behavior for different resource types.
-  if (type == Resource::kImage)
-    return true;
   if (type == Resource::kCSSStyleSheet)
     return true;
   if (type == Resource::kScript)
@@ -756,7 +771,7 @@ void Resource::DidRemoveClientOrObserver() {
 }
 
 void Resource::AllClientsAndObserversRemoved() {
-  if (loader_)
+  if (loader_ && !detachable_)
     loader_->ScheduleCancel();
 }
 
@@ -828,7 +843,7 @@ bool Resource::CanReuse(const FetchParameters& params) const {
       GetResponse().ResponseTypeViaServiceWorker() ==
           network::mojom::FetchResponseType::kOpaque &&
       new_request.GetFetchRequestMode() !=
-          WebURLRequest::kFetchRequestModeNoCORS) {
+          network::mojom::FetchRequestMode::kNoCORS) {
     return false;
   }
 
@@ -900,13 +915,13 @@ bool Resource::CanReuse(const FetchParameters& params) const {
     return false;
 
   switch (new_mode) {
-    case WebURLRequest::kFetchRequestModeNoCORS:
-    case WebURLRequest::kFetchRequestModeNavigate:
+    case network::mojom::FetchRequestMode::kNoCORS:
+    case network::mojom::FetchRequestMode::kNavigate:
       break;
 
-    case WebURLRequest::kFetchRequestModeCORS:
-    case WebURLRequest::kFetchRequestModeSameOrigin:
-    case WebURLRequest::kFetchRequestModeCORSWithForcedPreflight:
+    case network::mojom::FetchRequestMode::kCORS:
+    case network::mojom::FetchRequestMode::kSameOrigin:
+    case network::mojom::FetchRequestMode::kCORSWithForcedPreflight:
       // We have two separate CORS handling logics in DocumentThreadableLoader
       // and ResourceLoader and sharing resources is difficult when they are
       // handled differently.
@@ -1012,7 +1027,7 @@ String Resource::GetMemoryDumpName() const {
 }
 
 void Resource::SetCachePolicyBypassingCache() {
-  resource_request_.SetCachePolicy(WebCachePolicy::kBypassingCache);
+  resource_request_.SetCacheMode(mojom::FetchCacheMode::kBypassCache);
 }
 
 void Resource::SetPreviewsState(WebURLRequest::PreviewsState previews_state) {
@@ -1164,13 +1179,15 @@ static const char* InitiatorTypeNameToString(
     return "Processing instruction";
   if (initiator_type_name == FetchInitiatorTypeNames::texttrack)
     return "Text track";
+  if (initiator_type_name == FetchInitiatorTypeNames::uacss)
+    return "User Agent CSS resource";
   if (initiator_type_name == FetchInitiatorTypeNames::xml)
     return "XML resource";
   if (initiator_type_name == FetchInitiatorTypeNames::xmlhttprequest)
     return "XMLHttpRequest";
 
   static_assert(
-      FetchInitiatorTypeNames::FetchInitiatorTypeNamesCount == 12,
+      FetchInitiatorTypeNames::FetchInitiatorTypeNamesCount == 13,
       "New FetchInitiatorTypeNames should be handled correctly here.");
 
   return "Resource";

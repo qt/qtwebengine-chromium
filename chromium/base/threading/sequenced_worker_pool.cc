@@ -80,7 +80,7 @@ struct SequencedTask {
         sequence_task_number(0),
         shutdown_behavior(SequencedWorkerPool::BLOCK_SHUTDOWN) {}
 
-  ~SequencedTask() {}
+  ~SequencedTask() = default;
 
   SequencedTask(SequencedTask&&) = default;
   SequencedTask& operator=(SequencedTask&&) = default;
@@ -151,8 +151,7 @@ SequencedWorkerPoolTaskRunner::SequencedWorkerPoolTaskRunner(
     SequencedWorkerPool::WorkerShutdown shutdown_behavior)
     : pool_(std::move(pool)), shutdown_behavior_(shutdown_behavior) {}
 
-SequencedWorkerPoolTaskRunner::~SequencedWorkerPoolTaskRunner() {
-}
+SequencedWorkerPoolTaskRunner::~SequencedWorkerPoolTaskRunner() = default;
 
 bool SequencedWorkerPoolTaskRunner::PostDelayedTask(const Location& from_here,
                                                     OnceClosure task,
@@ -578,8 +577,7 @@ SequencedWorkerPool::Worker::Worker(
   Start();
 }
 
-SequencedWorkerPool::Worker::~Worker() {
-}
+SequencedWorkerPool::Worker::~Worker() = default;
 
 void SequencedWorkerPool::Worker::Run() {
   DCHECK_EQ(AllPoolsState::USE_WORKER_POOL, g_all_pools_state);
@@ -745,8 +743,7 @@ bool SequencedWorkerPool::Inner::PostTask(
       if (!PostTaskToTaskScheduler(std::move(sequenced), delay))
         return false;
     } else {
-      SequencedWorkerPool::WorkerShutdown shutdown_behavior =
-          sequenced.shutdown_behavior;
+      shutdown_behavior = sequenced.shutdown_behavior;
       pending_tasks_.insert(std::move(sequenced));
 
       if (shutdown_behavior == BLOCK_SHUTDOWN)
@@ -1462,7 +1459,7 @@ SequencedWorkerPool::SequencedWorkerPool(size_t max_threads,
                        max_threads,
                        thread_name_prefix,
                        task_priority,
-                       NULL)) {}
+                       nullptr)) {}
 
 SequencedWorkerPool::SequencedWorkerPool(size_t max_threads,
                                          const std::string& thread_name_prefix,
@@ -1475,7 +1472,7 @@ SequencedWorkerPool::SequencedWorkerPool(size_t max_threads,
                        task_priority,
                        observer)) {}
 
-SequencedWorkerPool::~SequencedWorkerPool() {}
+SequencedWorkerPool::~SequencedWorkerPool() = default;
 
 void SequencedWorkerPool::OnDestruct() const {
   // Avoid deleting ourselves on a worker thread (which would deadlock).
@@ -1516,7 +1513,7 @@ SequencedWorkerPool::GetTaskRunnerWithShutdownBehavior(
 
 bool SequencedWorkerPool::PostWorkerTask(const Location& from_here,
                                          OnceClosure task) {
-  return inner_->PostTask(NULL, SequenceToken(), BLOCK_SHUTDOWN, from_here,
+  return inner_->PostTask(nullptr, SequenceToken(), BLOCK_SHUTDOWN, from_here,
                           std::move(task), TimeDelta());
 }
 
@@ -1524,14 +1521,14 @@ bool SequencedWorkerPool::PostWorkerTaskWithShutdownBehavior(
     const Location& from_here,
     OnceClosure task,
     WorkerShutdown shutdown_behavior) {
-  return inner_->PostTask(NULL, SequenceToken(), shutdown_behavior, from_here,
-                          std::move(task), TimeDelta());
+  return inner_->PostTask(nullptr, SequenceToken(), shutdown_behavior,
+                          from_here, std::move(task), TimeDelta());
 }
 
 bool SequencedWorkerPool::PostSequencedWorkerTask(SequenceToken sequence_token,
                                                   const Location& from_here,
                                                   OnceClosure task) {
-  return inner_->PostTask(NULL, sequence_token, BLOCK_SHUTDOWN, from_here,
+  return inner_->PostTask(nullptr, sequence_token, BLOCK_SHUTDOWN, from_here,
                           std::move(task), TimeDelta());
 }
 
@@ -1542,7 +1539,7 @@ bool SequencedWorkerPool::PostDelayedSequencedWorkerTask(
     TimeDelta delay) {
   WorkerShutdown shutdown_behavior =
       delay.is_zero() ? BLOCK_SHUTDOWN : SKIP_ON_SHUTDOWN;
-  return inner_->PostTask(NULL, sequence_token, shutdown_behavior, from_here,
+  return inner_->PostTask(nullptr, sequence_token, shutdown_behavior, from_here,
                           std::move(task), delay);
 }
 
@@ -1560,7 +1557,7 @@ bool SequencedWorkerPool::PostSequencedWorkerTaskWithShutdownBehavior(
     const Location& from_here,
     OnceClosure task,
     WorkerShutdown shutdown_behavior) {
-  return inner_->PostTask(NULL, sequence_token, shutdown_behavior, from_here,
+  return inner_->PostTask(nullptr, sequence_token, shutdown_behavior, from_here,
                           std::move(task), TimeDelta());
 }
 

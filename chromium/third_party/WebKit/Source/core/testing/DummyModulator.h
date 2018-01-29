@@ -29,12 +29,12 @@ class DummyModulator : public Modulator {
  public:
   DummyModulator();
   virtual ~DummyModulator();
-  DECLARE_TRACE();
+  void Trace(blink::Visitor*);
 
   ScriptModuleResolver* GetScriptModuleResolver() override;
   WebTaskRunner* TaskRunner() override;
   ReferrerPolicy GetReferrerPolicy() override;
-  SecurityOrigin* GetSecurityOrigin() override;
+  SecurityOrigin* GetSecurityOriginForFetch() override;
   ScriptState* GetScriptState() override;
 
   void FetchTree(const ModuleScriptFetchRequest&, ModuleTreeClient*) override;
@@ -52,12 +52,11 @@ class DummyModulator : public Modulator {
                           const KURL&,
                           const ReferrerScriptInfo&,
                           ScriptPromiseResolver*) override;
+  ModuleImportMeta HostGetImportMetaProperties(ScriptModule) const override;
   ScriptModule CompileModule(const String& script,
                              const String& url_str,
+                             const ScriptFetchOptions&,
                              AccessControlStatus,
-                             WebURLRequest::FetchCredentialsMode,
-                             const String& nonce,
-                             ParserDisposition,
                              const TextPosition&,
                              ExceptionState&) override;
   ScriptValue InstantiateModule(ScriptModule) override;

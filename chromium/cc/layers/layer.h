@@ -17,15 +17,15 @@
 #include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "base/observer_list.h"
-#include "cc/base/filter_operations.h"
 #include "cc/base/region.h"
 #include "cc/benchmarks/micro_benchmark.h"
 #include "cc/cc_export.h"
 #include "cc/input/input_handler.h"
-#include "cc/input/scroll_boundary_behavior.h"
+#include "cc/input/overscroll_behavior.h"
 #include "cc/layers/layer_collections.h"
 #include "cc/layers/layer_position_constraint.h"
 #include "cc/layers/touch_action_region.h"
+#include "cc/paint/filter_operations.h"
 #include "cc/paint/paint_record.h"
 #include "cc/trees/element_id.h"
 #include "cc/trees/mutator_host_client.h"
@@ -118,9 +118,9 @@ class CC_EXPORT Layer : public base::RefCounted<Layer> {
   void SetBounds(const gfx::Size& bounds);
   gfx::Size bounds() const { return inputs_.bounds; }
 
-  void SetScrollBoundaryBehavior(const ScrollBoundaryBehavior& behavior);
-  ScrollBoundaryBehavior scroll_boundary_behavior() const {
-    return inputs_.scroll_boundary_behavior;
+  void SetOverscrollBehavior(const OverscrollBehavior& behavior);
+  OverscrollBehavior overscroll_behavior() const {
+    return inputs_.overscroll_behavior;
   }
 
   void SetMasksToBounds(bool masks_to_bounds);
@@ -477,10 +477,6 @@ class CC_EXPORT Layer : public base::RefCounted<Layer> {
 
   bool IsPropertyChangeAllowed() const;
 
-  // Sets |inputs_.opacity| to |new_opacity| and notifies |inputs_.client| if
-  // the opacity has changed.
-  void SetOpacityInternal(float new_opacity);
-
   // When true, the layer is about to perform an update. Any commit requests
   // will be handled implicitly after the update completes.
   bool ignore_set_needs_commit_;
@@ -630,7 +626,7 @@ class CC_EXPORT Layer : public base::RefCounted<Layer> {
         did_scroll_callback;
     std::vector<std::unique_ptr<viz::CopyOutputRequest>> copy_requests;
 
-    ScrollBoundaryBehavior scroll_boundary_behavior;
+    OverscrollBehavior overscroll_behavior;
   };
 
   Layer* parent_;

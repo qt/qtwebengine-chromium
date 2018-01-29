@@ -30,17 +30,16 @@
 namespace webrtc {
 namespace jni {
 
-DataChannelInit JavaToNativeDataChannelInit(JNIEnv* jni, jobject j_init);
-
 cricket::MediaType JavaToNativeMediaType(JNIEnv* jni, jobject j_media_type);
 
 jobject NativeToJavaMediaType(JNIEnv* jni, cricket::MediaType media_type);
 
 cricket::Candidate JavaToNativeCandidate(JNIEnv* jni, jobject j_candidate);
 
-jobject NativeToJavaCandidate(JNIEnv* jni,
-                              jclass* candidate_class,
-                              const cricket::Candidate& candidate);
+jobject NativeToJavaCandidate(JNIEnv* env, const cricket::Candidate& candidate);
+
+jobject NativeToJavaIceCandidate(JNIEnv* env,
+                                 const IceCandidateInterface& candidate);
 
 jobjectArray NativeToJavaCandidateArray(
     JNIEnv* jni,

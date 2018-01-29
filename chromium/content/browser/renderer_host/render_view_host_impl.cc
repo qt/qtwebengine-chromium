@@ -83,6 +83,7 @@
 #include "ui/base/clipboard/clipboard.h"
 #include "ui/base/device_form_factor.h"
 #include "ui/base/touch/touch_device.h"
+#include "ui/base/ui_base_features.h"
 #include "ui/base/ui_base_switches.h"
 #include "ui/display/display_switches.h"
 #include "ui/gfx/animation/animation.h"
@@ -307,6 +308,8 @@ bool RenderViewHostImpl::CreateRenderView(
     RenderFrameHostImpl* main_rfh = RenderFrameHostImpl::FromID(
         GetProcess()->GetID(), main_frame_routing_id_);
     DCHECK(main_rfh);
+    main_rfh->BindInterfaceProviderRequest(
+        mojo::MakeRequest(&params->main_frame_interface_provider));
     RenderWidgetHostImpl* main_rwh = main_rfh->GetRenderWidgetHost();
     params->main_frame_widget_routing_id = main_rwh->GetRoutingID();
   }
@@ -388,20 +391,16 @@ WebPreferences RenderViewHostImpl::ComputeWebkitPrefs() {
       !command_line.HasSwitch(switches::kDisablePepper3d);
 
   prefs.flash_3d_enabled =
-      GpuProcessHost::gpu_enabled() &&
       !command_line.HasSwitch(switches::kDisableFlash3d);
   prefs.flash_stage3d_enabled =
-      GpuProcessHost::gpu_enabled() &&
       !command_line.HasSwitch(switches::kDisableFlashStage3d);
   prefs.flash_stage3d_baseline_enabled =
-      GpuProcessHost::gpu_enabled() &&
       !command_line.HasSwitch(switches::kDisableFlashStage3d);
 
   prefs.allow_file_access_from_file_urls =
       command_line.HasSwitch(switches::kAllowFileAccessFromFiles);
 
   prefs.accelerated_2d_canvas_enabled =
-      GpuProcessHost::gpu_enabled() &&
       !command_line.HasSwitch(switches::kDisableAccelerated2dCanvas);
   prefs.antialiased_2d_canvas_disabled =
       command_line.HasSwitch(switches::kDisable2dCanvasAntialiasing);
@@ -937,12 +936,20 @@ void RenderViewHostImpl::DisableAutoResize(const gfx::Size& new_size) {
 
 void RenderViewHostImpl::ExecuteMediaPlayerActionAtLocation(
   const gfx::Point& location, const blink::WebMediaPlayerAction& action) {
+  // TODO(wjmaclean): See if coordinate transforms need to be done for OOPIFs
+  // and guest views. https://crbug.com/776807
   Send(new ViewMsg_MediaPlayerActionAt(GetRoutingID(), location, action));
 }
 
 void RenderViewHostImpl::ExecutePluginActionAtLocation(
   const gfx::Point& location, const blink::WebPluginAction& action) {
-  Send(new ViewMsg_PluginActionAt(GetRoutingID(), location, action));
+  // TODO(wjmaclean): See if this needs to be done for OOPIFs as well.
+  // https://crbug.com/776807
+  gfx::PointF local_location_f =
+      GetWidget()->GetView()->TransformRootPointToViewCoordSpace(
+          gfx::PointF(location.x(), location.y()));
+  gfx::Point local_location(local_location_f.x(), local_location_f.y());
+  Send(new ViewMsg_PluginActionAt(GetRoutingID(), local_location, action));
 }
 
 void RenderViewHostImpl::NotifyMoveOrResizeStarted() {

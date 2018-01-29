@@ -114,8 +114,7 @@ VideoCaptureOracle::VideoCaptureOracle(bool enable_auto_throttling)
           << (auto_throttling_enabled_ ? "enabled." : "disabled.");
 }
 
-VideoCaptureOracle::~VideoCaptureOracle() {
-}
+VideoCaptureOracle::~VideoCaptureOracle() = default;
 
 void VideoCaptureOracle::SetMinCapturePeriod(base::TimeDelta period) {
   DCHECK_GT(period, base::TimeDelta());
@@ -332,6 +331,19 @@ bool VideoCaptureOracle::CompleteCapture(int frame_number,
   }
 
   return true;
+}
+
+void VideoCaptureOracle::CancelAllCaptures() {
+  // The following is the desired behavior:
+  //
+  //   for (int i = num_frames_pending_; i > 0; --i) {
+  //     CompleteCapture(next_frame_number_ - i, false, nullptr);
+  //     --num_frames_pending_;
+  //   }
+  //
+  // ...which simplifies to:
+  num_frames_pending_ = 0;
+  source_is_dirty_ = true;
 }
 
 void VideoCaptureOracle::RecordConsumerFeedback(int frame_number,

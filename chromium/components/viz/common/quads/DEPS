@@ -5,13 +5,15 @@ include_rules = [
   "+cc/paint",
 
   "+gpu/command_buffer/common",
-  "+mojo/public/cpp/bindings",
   "+third_party/skia",
   "+ui/latency",
 ]
 
 specific_include_rules = {
+  "texture_mailbox\.cc": [
+    "+third_party/khronos/GLES2",
+  ],
   ".*_unittest\.cc": [
     "+cc/test",
-  ]
+  ],
 }

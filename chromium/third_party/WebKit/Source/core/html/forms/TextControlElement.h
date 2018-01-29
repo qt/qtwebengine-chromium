@@ -131,7 +131,9 @@ class CORE_EXPORT TextControlElement : public HTMLFormControlElementWithState {
       TextControlSetValueSelection =
           TextControlSetValueSelection::kSetSelectionToEnd) = 0;
 
-  HTMLElement* InnerEditorElement() const;
+  HTMLElement* InnerEditorElement() const { return inner_editor_; }
+  HTMLElement* CreateInnerEditorElement();
+  void DropInnerEditorElement() { inner_editor_ = nullptr; }
 
   void SelectionChanged(bool user_triggered);
   bool LastChangeWasUserEdit() const;
@@ -141,10 +143,16 @@ class CORE_EXPORT TextControlElement : public HTMLFormControlElementWithState {
 
   String DirectionForFormData() const;
 
+  virtual void SetSuggestedValue(const String& value);
+  const String& SuggestedValue() const;
+
+  void Trace(Visitor*) override;
+
  protected:
   TextControlElement(const QualifiedName&, Document&);
   bool IsPlaceholderEmpty() const;
   virtual void UpdatePlaceholderText() = 0;
+  virtual String GetPlaceholderValue() const = 0;
 
   void ParseAttribute(const AttributeModificationParams&) override;
 
@@ -182,7 +190,7 @@ class CORE_EXPORT TextControlElement : public HTMLFormControlElementWithState {
   virtual bool IsEmptyValue() const = 0;
   // Returns true if suggested value is empty. Used to check placeholder
   // visibility.
-  virtual bool IsEmptySuggestedValue() const { return true; }
+  bool IsEmptySuggestedValue() const { return SuggestedValue().IsEmpty(); }
   // Called in dispatchFocusEvent(), after placeholder process, before calling
   // parent's dispatchFocusEvent().
   virtual void HandleFocusEvent(Element* /* oldFocusedNode */, WebFocusType) {}
@@ -190,7 +198,15 @@ class CORE_EXPORT TextControlElement : public HTMLFormControlElementWithState {
   // parent's dispatchBlurEvent().
   virtual void HandleBlurEvent() {}
 
+  // Whether the placeholder attribute value should be visible. Does not
+  // necessarily match the placeholder_element visibility because it can be used
+  // for suggested values too.
   bool PlaceholderShouldBeVisible() const;
+
+  // Held directly instead of looked up by ID for speed.
+  // Not only is the lookup faster, but for simple text inputs it avoids
+  // creating a number of TreeScope data structures to track elements by ID.
+  Member<HTMLElement> inner_editor_;
 
   // In m_valueBeforeFirstUserEdit, we distinguish a null String and zero-length
   // String. Null String means the field doesn't have any data yet, and
@@ -201,6 +217,9 @@ class CORE_EXPORT TextControlElement : public HTMLFormControlElementWithState {
   unsigned cached_selection_start_;
   unsigned cached_selection_end_;
   TextFieldSelectionDirection cached_selection_direction_;
+
+  String suggested_value_;
+  String value_before_set_suggested_value_;
 
   FRIEND_TEST_ALL_PREFIXES(TextControlElementTest, IndexForPosition);
 };

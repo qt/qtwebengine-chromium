@@ -84,20 +84,20 @@ class TargetView : public views::View {
 };
 
 std::unique_ptr<ui::PointerEvent> CreateMouseMoveEvent(int x, int y) {
-  return base::MakeUnique<ui::PointerEvent>(ui::MouseEvent(
+  return std::make_unique<ui::PointerEvent>(ui::MouseEvent(
       ui::ET_MOUSE_MOVED, gfx::Point(x, y), gfx::Point(x, y),
       ui::EventTimeForNow(), ui::EF_LEFT_MOUSE_BUTTON, ui::EF_NONE));
 }
 
 std::unique_ptr<ui::PointerEvent> CreateMouseDownEvent(int x, int y) {
-  return base::MakeUnique<ui::PointerEvent>(
+  return std::make_unique<ui::PointerEvent>(
       ui::MouseEvent(ui::ET_MOUSE_PRESSED, gfx::Point(x, y), gfx::Point(x, y),
                      ui::EventTimeForNow(), ui::EF_LEFT_MOUSE_BUTTON,
                      ui::EF_LEFT_MOUSE_BUTTON));
 }
 
 std::unique_ptr<ui::PointerEvent> CreateMouseUpEvent(int x, int y) {
-  return base::MakeUnique<ui::PointerEvent>(
+  return std::make_unique<ui::PointerEvent>(
       ui::MouseEvent(ui::ET_MOUSE_RELEASED, gfx::Point(x, y), gfx::Point(x, y),
                      ui::EventTimeForNow(), ui::EF_LEFT_MOUSE_BUTTON,
                      ui::EF_LEFT_MOUSE_BUTTON));
@@ -151,8 +151,8 @@ TEST_F(DragTestInteractive, DragTest) {
   source_widget->SetContentsView(source_view);
   source_widget->Show();
 
-  aura::test::ChangeCompletionWaiter source_waiter(
-      MusClient::Get()->window_tree_client(), aura::ChangeType::BOUNDS, false);
+  aura::test::ChangeCompletionWaiter source_waiter(aura::ChangeType::BOUNDS,
+                                                   false);
   source_widget->SetBounds(gfx::Rect(0, 0, 20, 20));
   ASSERT_TRUE(source_waiter.Wait());
 
@@ -161,8 +161,8 @@ TEST_F(DragTestInteractive, DragTest) {
   target_widget->SetContentsView(target_view);
   target_widget->Show();
 
-  aura::test::ChangeCompletionWaiter target_waiter(
-      MusClient::Get()->window_tree_client(), aura::ChangeType::BOUNDS, false);
+  aura::test::ChangeCompletionWaiter target_waiter(aura::ChangeType::BOUNDS,
+                                                   false);
   target_widget->SetBounds(gfx::Rect(20, 20, 20, 20));
   ASSERT_TRUE(target_waiter.Wait());
 

@@ -52,7 +52,7 @@ unsigned LayoutThemeDefault::active_selection_foreground_color_ = Color::kBlack;
 unsigned LayoutThemeDefault::inactive_selection_background_color_ = 0xffc8c8c8;
 unsigned LayoutThemeDefault::inactive_selection_foreground_color_ = 0xff323232;
 
-double LayoutThemeDefault::caret_blink_interval_;
+TimeDelta LayoutThemeDefault::caret_blink_interval_;
 
 LayoutThemeDefault::LayoutThemeDefault()
     : LayoutTheme(nullptr), painter_(*this) {
@@ -277,13 +277,13 @@ IntRect Center(const IntRect& original, int width, int height) {
 void LayoutThemeDefault::AdjustButtonStyle(ComputedStyle& style) const {
   if (style.Appearance() == kPushButtonPart) {
     // Ignore line-height.
-    style.SetLineHeight(ComputedStyle::InitialLineHeight());
+    style.SetLineHeight(ComputedStyleInitialValues::InitialLineHeight());
   }
 }
 
 void LayoutThemeDefault::AdjustSearchFieldStyle(ComputedStyle& style) const {
   // Ignore line-height.
-  style.SetLineHeight(ComputedStyle::InitialLineHeight());
+  style.SetLineHeight(ComputedStyleInitialValues::InitialLineHeight());
 }
 
 void LayoutThemeDefault::AdjustSearchFieldCancelButtonStyle(
@@ -300,7 +300,7 @@ void LayoutThemeDefault::AdjustSearchFieldCancelButtonStyle(
 void LayoutThemeDefault::AdjustMenuListStyle(ComputedStyle& style,
                                              Element*) const {
   // Height is locked to auto on all browsers.
-  style.SetLineHeight(ComputedStyle::InitialLineHeight());
+  style.SetLineHeight(ComputedStyleInitialValues::InitialLineHeight());
 }
 
 void LayoutThemeDefault::AdjustMenuListButtonStyle(ComputedStyle& style,

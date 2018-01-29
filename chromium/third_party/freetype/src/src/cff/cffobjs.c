@@ -32,12 +32,15 @@
 #include FT_SERVICE_MULTIPLE_MASTERS_H
 #endif
 
+#include FT_INTERNAL_CFF_OBJECTS_TYPES_H
 #include "cffobjs.h"
 #include "cffload.h"
 #include "cffcmap.h"
 #include "cffpic.h"
 
 #include "cfferrs.h"
+
+#include FT_INTERNAL_POSTSCRIPT_AUX_H
 
 
   /*************************************************************************/
@@ -493,14 +496,16 @@
     SFNT_Service        sfnt;
     FT_Service_PsCMaps  psnames;
     PSHinter_Service    pshinter;
+    PSAux_Service       psaux;
+    FT_Service_CFFLoad  cffload;
     FT_Bool             pure_cff    = 1;
     FT_Bool             cff2        = 0;
     FT_Bool             sfnt_format = 0;
     FT_Library          library     = cffface->driver->root.library;
 
 
-    sfnt = (SFNT_Service)FT_Get_Module_Interface(
-             library, "sfnt" );
+    sfnt = (SFNT_Service)FT_Get_Module_Interface( library,
+                                                  "sfnt" );
     if ( !sfnt )
     {
       FT_ERROR(( "cff_face_init: cannot access `sfnt' module\n" ));
@@ -510,8 +515,20 @@
 
     FT_FACE_FIND_GLOBAL_SERVICE( face, psnames, POSTSCRIPT_CMAPS );
 
-    pshinter = (PSHinter_Service)FT_Get_Module_Interface(
-                 library, "pshinter" );
+    pshinter = (PSHinter_Service)FT_Get_Module_Interface( library,
+                                                          "pshinter" );
+
+    psaux = (PSAux_Service)FT_Get_Module_Interface( library,
+                                                    "psaux" );
+    if ( !psaux )
+    {
+      FT_ERROR(( "cff_face_init: cannot access `psaux' module\n" ));
+      error = FT_THROW( Missing_Module );
+      goto Exit;
+    }
+    face->psaux = psaux;
+
+    FT_FACE_FIND_GLOBAL_SERVICE( face, cffload, CFF_LOAD );
 
     FT_TRACE2(( "CFF driver\n" ));
 
@@ -614,6 +631,7 @@
 
       cff->pshinter = pshinter;
       cff->psnames  = psnames;
+      cff->cffload  = cffload;
 
       cffface->face_index = face_index & 0xFFFF;
 
@@ -690,50 +708,22 @@
 
 #ifdef TT_CONFIG_OPTION_GX_VAR_SUPPORT
       {
-        FT_Service_MultiMasters  mm = (FT_Service_MultiMasters)face->mm;
+        FT_Service_MultiMasters       mm  = (FT_Service_MultiMasters)face->mm;
+        FT_Service_MetricsVariations  var = (FT_Service_MetricsVariations)face->var;
 
-        FT_Int  instance_index = face_index >> 16;
+        FT_UInt  instance_index = (FT_UInt)face_index >> 16;
 
 
         if ( FT_HAS_MULTIPLE_MASTERS( cffface ) &&
              mm                                 &&
              instance_index > 0                 )
         {
-          FT_MM_Var*  mm_var;
-
-
-          error = mm->get_mm_var( cffface, NULL );
+          error = mm->set_instance( cffface, instance_index );
           if ( error )
             goto Exit;
 
-          mm->get_var_blend( cffface, NULL, NULL, NULL, &mm_var );
-
-          if ( mm_var->namedstyle )
-          {
-            FT_Var_Named_Style*  named_style;
-            FT_String*           style_name;
-
-
-            /* in `face_index', the instance index starts with value 1 */
-            named_style = mm_var->namedstyle + instance_index - 1;
-            error = sfnt->get_name( face,
-                                    (FT_UShort)named_style->strid,
-                                    &style_name );
-            if ( error )
-              goto Exit;
-
-            /* set style name; if already set, replace it */
-            if ( face->root.style_name )
-              FT_FREE( face->root.style_name );
-            face->root.style_name = style_name;
-
-            /* finally, select the named instance */
-            error = mm->set_var_design( cffface,
-                                        mm_var->num_axis,
-                                        named_style->coords );
-            if ( error )
-              goto Exit;
-          }
+          if ( var )
+            var->metrics_adjust( cffface );
         }
       }
 #endif /* TT_CONFIG_OPTION_GX_VAR_SUPPORT */
@@ -1165,7 +1155,7 @@
   FT_LOCAL_DEF( FT_Error )
   cff_driver_init( FT_Module  module )        /* CFF_Driver */
   {
-    CFF_Driver  driver = (CFF_Driver)module;
+    PS_Driver  driver = (PS_Driver)module;
 
     FT_UInt32  seed;
 

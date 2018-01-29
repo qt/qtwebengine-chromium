@@ -86,25 +86,26 @@ LayerAnimator* LayerAnimator::CreateImplicitAnimator() {
 // It is worth noting that SetFoo avoids invoking the usual animation machinery
 // if the transition duration is zero -- in this case we just set the property
 // on the layer animation delegate immediately.
-#define ANIMATED_PROPERTY(type, property, name, member_type, member)    \
-  void LayerAnimator::Set##name(type value) {                           \
-    base::TimeDelta duration = GetTransitionDuration();                 \
-    if (duration.is_zero() && delegate() &&                             \
-        (preemption_strategy_ != ENQUEUE_NEW_ANIMATION)) {              \
-      StopAnimatingProperty(LayerAnimationElement::property);           \
-      delegate()->Set##name##FromAnimation(value);                      \
-      return;                                                           \
-    }                                                                   \
-    std::unique_ptr<LayerAnimationElement> element =                    \
-        LayerAnimationElement::Create##name##Element(value, duration);  \
-    element->set_tween_type(tween_type_);                               \
-    StartAnimation(new LayerAnimationSequence(std::move(element)));     \
-  }                                                                     \
-                                                                        \
-  member_type LayerAnimator::GetTarget##name() const {                  \
-    LayerAnimationElement::TargetValue target(delegate());              \
-    GetTargetValue(&target);                                            \
-    return target.member;                                               \
+#define ANIMATED_PROPERTY(type, property, name, member_type, member)   \
+  void LayerAnimator::Set##name(type value) {                          \
+    base::TimeDelta duration = GetTransitionDuration();                \
+    if (duration.is_zero() && delegate() &&                            \
+        (preemption_strategy_ != ENQUEUE_NEW_ANIMATION)) {             \
+      StopAnimatingProperty(LayerAnimationElement::property);          \
+      delegate()->Set##name##FromAnimation(                            \
+          value, PropertyChangeReason::NOT_FROM_ANIMATION);            \
+      return;                                                          \
+    }                                                                  \
+    std::unique_ptr<LayerAnimationElement> element =                   \
+        LayerAnimationElement::Create##name##Element(value, duration); \
+    element->set_tween_type(tween_type_);                              \
+    StartAnimation(new LayerAnimationSequence(std::move(element)));    \
+  }                                                                    \
+                                                                       \
+  member_type LayerAnimator::GetTarget##name() const {                 \
+    LayerAnimationElement::TargetValue target(delegate());             \
+    GetTargetValue(&target);                                           \
+    return target.member;                                              \
   }
 
 ANIMATED_PROPERTY(
@@ -331,11 +332,10 @@ void LayerAnimator::SchedulePauseForProperties(
                             properties_to_pause, duration)));
 }
 
-bool LayerAnimator::IsAnimatingProperty(
-    LayerAnimationElement::AnimatableProperty property) const {
-  for (AnimationQueue::const_iterator queue_iter = animation_queue_.begin();
-       queue_iter != animation_queue_.end(); ++queue_iter) {
-    if ((*queue_iter)->properties() & property)
+bool LayerAnimator::IsAnimatingOnePropertyOf(
+    LayerAnimationElement::AnimatableProperties properties) const {
+  for (auto& layer_animation_sequence : animation_queue_) {
+    if (layer_animation_sequence->properties() & properties)
       return true;
   }
   return false;
@@ -357,8 +357,11 @@ void LayerAnimator::StopAnimatingProperty(
 }
 
 void LayerAnimator::AddObserver(LayerAnimationObserver* observer) {
-  if (!observers_.HasObserver(observer))
+  if (!observers_.HasObserver(observer)) {
     observers_.AddObserver(observer);
+    for (auto& layer_animation_sequence : animation_queue_)
+      layer_animation_sequence->AddObserver(observer);
+  }
 }
 
 void LayerAnimator::RemoveObserver(LayerAnimationObserver* observer) {

@@ -88,7 +88,7 @@ void CPDFSDK_PageView::PageView_OnDraw(CFX_RenderDevice* pDevice,
   if (!pPage)
     return;
 
-  if (pPage->GetContext()->GetDocType() == XFA_DocType::Dynamic) {
+  if (pPage->GetContext()->GetFormType() == FormType::kXFAFull) {
     CFX_RectF rectClip(
         static_cast<float>(pClip.left), static_cast<float>(pClip.top),
         static_cast<float>(pClip.Width()), static_cast<float>(pClip.Height()));
@@ -176,10 +176,8 @@ bool CPDFSDK_PageView::DeleteAnnot(CPDFSDK_Annot* pAnnot) {
     return false;
 
   CPDFXFA_Page* pPage = pAnnot->GetPDFXFAPage();
-  if (!pPage || (pPage->GetContext()->GetDocType() != XFA_DocType::Static &&
-                 pPage->GetContext()->GetDocType() != XFA_DocType::Dynamic)) {
+  if (!pPage || !pPage->GetContext()->ContainsXFAForm())
     return false;
-  }
 
   CPDFSDK_Annot::ObservedPtr pObserved(pAnnot);
   if (GetFocusAnnot() == pAnnot)
@@ -428,7 +426,7 @@ void CPDFSDK_PageView::LoadFXAnnots() {
 
 #ifdef PDF_ENABLE_XFA
   RetainPtr<CPDFXFA_Page> protector(m_page);
-  if (m_pFormFillEnv->GetXFAContext()->GetDocType() == XFA_DocType::Dynamic) {
+  if (m_pFormFillEnv->GetXFAContext()->GetFormType() == FormType::kXFAFull) {
     CXFA_FFPageView* pageView = m_page->GetXFAPageView();
     std::unique_ptr<IXFA_WidgetIterator> pWidgetHandler(
         pageView->CreateWidgetIterator(
@@ -485,20 +483,18 @@ int CPDFSDK_PageView::GetPageIndex() const {
     return -1;
 
 #ifdef PDF_ENABLE_XFA
-  switch (m_page->GetContext()->GetDocType()) {
-    case XFA_DocType::Dynamic: {
+  switch (m_page->GetContext()->GetFormType()) {
+    case FormType::kXFAFull: {
       CXFA_FFPageView* pPageView = m_page->GetXFAPageView();
       return pPageView ? pPageView->GetPageIndex() : -1;
     }
-    case XFA_DocType::Static:
-    case XFA_DocType::PDF:
-      return GetPageIndexForStaticPDF();
-    default:
-      return -1;
+    case FormType::kNone:
+    case FormType::kAcroForm:
+    case FormType::kXFAForeground:
+      break;
   }
-#else   // PDF_ENABLE_XFA
-  return GetPageIndexForStaticPDF();
 #endif  // PDF_ENABLE_XFA
+  return GetPageIndexForStaticPDF();
 }
 
 bool CPDFSDK_PageView::IsValidAnnot(const CPDF_Annot* p) const {

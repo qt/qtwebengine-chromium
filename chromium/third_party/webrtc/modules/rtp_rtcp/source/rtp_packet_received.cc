@@ -13,9 +13,15 @@
 #include <vector>
 
 #include "modules/rtp_rtcp/source/rtp_header_extensions.h"
-#include "rtc_base/safe_conversions.h"
+#include "rtc_base/numerics/safe_conversions.h"
 
 namespace webrtc {
+
+RtpPacketReceived::RtpPacketReceived() = default;
+RtpPacketReceived::RtpPacketReceived(const ExtensionManager* extensions)
+    : RtpPacket(extensions) {}
+
+RtpPacketReceived::~RtpPacketReceived() {}
 
 void RtpPacketReceived::GetHeader(RTPHeader* header) const {
   header->markerBit = Marker();

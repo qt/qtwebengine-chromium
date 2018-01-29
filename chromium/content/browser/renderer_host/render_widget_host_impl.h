@@ -40,12 +40,12 @@
 #include "content/browser/renderer_host/render_widget_host_delegate.h"
 #include "content/browser/renderer_host/render_widget_host_view_base.h"
 #include "content/common/drag_event_source_info.h"
-#include "content/common/input/input_event_ack_state.h"
 #include "content/common/input/input_handler.mojom.h"
 #include "content/common/render_widget_surface_properties.h"
 #include "content/common/view_message_enums.h"
 #include "content/common/widget.mojom.h"
 #include "content/public/browser/render_widget_host.h"
+#include "content/public/common/input_event_ack_state.h"
 #include "content/public/common/page_zoom.h"
 #include "content/public/common/url_constants.h"
 #include "ipc/ipc_listener.h"
@@ -175,6 +175,7 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   RenderWidgetHostViewBase* GetView() const override;
   bool IsLoading() const override;
   void RestartHangMonitorTimeoutIfNecessary() override;
+  bool IsCurrentlyUnresponsive() const override;
   void SetIgnoreInputEvents(bool ignore_input_events) override;
   void WasResized() override;
   void AddKeyPressEventCallback(const KeyPressEventCallback& callback) override;
@@ -190,30 +191,30 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   // |drop_data| must have been filtered. The embedder should call
   // FilterDropData before passing the drop data to RWHI.
   void DragTargetDragEnter(const DropData& drop_data,
-                           const gfx::Point& client_pt,
-                           const gfx::Point& screen_pt,
+                           const gfx::PointF& client_pt,
+                           const gfx::PointF& screen_pt,
                            blink::WebDragOperationsMask operations_allowed,
                            int key_modifiers) override;
   void DragTargetDragEnterWithMetaData(
       const std::vector<DropData::Metadata>& metadata,
-      const gfx::Point& client_pt,
-      const gfx::Point& screen_pt,
+      const gfx::PointF& client_pt,
+      const gfx::PointF& screen_pt,
       blink::WebDragOperationsMask operations_allowed,
       int key_modifiers) override;
-  void DragTargetDragOver(const gfx::Point& client_pt,
-                          const gfx::Point& screen_pt,
+  void DragTargetDragOver(const gfx::PointF& client_pt,
+                          const gfx::PointF& screen_pt,
                           blink::WebDragOperationsMask operations_allowed,
                           int key_modifiers) override;
-  void DragTargetDragLeave(const gfx::Point& client_point,
-                           const gfx::Point& screen_point) override;
+  void DragTargetDragLeave(const gfx::PointF& client_point,
+                           const gfx::PointF& screen_point) override;
   // |drop_data| must have been filtered. The embedder should call
   // FilterDropData before passing the drop data to RWHI.
   void DragTargetDrop(const DropData& drop_data,
-                      const gfx::Point& client_pt,
-                      const gfx::Point& screen_pt,
+                      const gfx::PointF& client_pt,
+                      const gfx::PointF& screen_pt,
                       int key_modifiers) override;
-  void DragSourceEndedAt(const gfx::Point& client_pt,
-                         const gfx::Point& screen_pt,
+  void DragSourceEndedAt(const gfx::PointF& client_pt,
+                         const gfx::PointF& screen_pt,
                          blink::WebDragOperation operation) override;
   void DragSourceSystemDragEnded() override;
   void FilterDropData(DropData* drop_data) override;
@@ -499,6 +500,10 @@ class CONTENT_EXPORT RenderWidgetHostImpl
     return max_size_for_auto_resize_;
   }
 
+  // Called to notify the RenderWidget that a viz::LocalSurfaceId was allocated
+  // for the auto-resize request specified by |sequence_number|.
+  void DidAllocateLocalSurfaceIdForAutoResize(uint64_t sequence_number);
+
   void DidReceiveRendererFrame();
 
   // Returns the ID that uniquely describes this component to the latency
@@ -541,6 +546,10 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   // Sets the |resize_params| that were sent to the renderer bundled with the
   // request to create a new RenderWidget.
   void SetInitialRenderSizeParams(const ResizeParams& resize_params);
+
+  // The RenderWidget was resized and whether the focused node should be
+  // scrolled into view.
+  void WasResized(bool scroll_focused_node_into_view);
 
   // Called when we receive a notification indicating that the renderer process
   // is gone. This will reset our state so that our state will be consistent if
@@ -587,6 +596,10 @@ class CONTENT_EXPORT RenderWidgetHostImpl
     return last_frame_metadata_;
   }
 
+  uint64_t last_auto_resize_request_number() const {
+    return last_auto_resize_request_number_;
+  }
+
   bool HasGestureStopped() override;
 
   // viz::mojom::CompositorFrameSink implementation.
@@ -607,7 +620,8 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   // interface calls processed on the FrameInputHandler to be processed in order
   // with the interface calls processed on the WidgetInputHandler.
   void SetWidgetInputHandler(
-      mojom::WidgetInputHandlerAssociatedPtr widget_input_handler);
+      mojom::WidgetInputHandlerAssociatedPtr widget_input_handler,
+      mojom::WidgetInputHandlerHostRequest host_request);
   void SetWidget(mojom::WidgetPtr widget);
 
   // InputRouterImplClient overrides.
@@ -645,6 +659,7 @@ class CONTENT_EXPORT RenderWidgetHostImpl
                            StopAndStartHangMonitorTimeout);
   FRIEND_TEST_ALL_PREFIXES(RenderWidgetHostTest,
                            ShorterDelayHangMonitorTimeout);
+  FRIEND_TEST_ALL_PREFIXES(RenderWidgetHostViewAuraTest, AutoResizeWithScale);
   FRIEND_TEST_ALL_PREFIXES(DevToolsManagerTest,
                            NoUnresponsiveDialogInInspectedContents);
   friend class MockRenderWidgetHost;
@@ -732,20 +747,25 @@ class CONTENT_EXPORT RenderWidgetHostImpl
 
   // InputAckHandler
   void OnKeyboardEventAck(const NativeWebKeyboardEventWithLatencyInfo& event,
+                          InputEventAckSource ack_source,
                           InputEventAckState ack_result) override;
   void OnMouseEventAck(const MouseEventWithLatencyInfo& event,
+                       InputEventAckSource ack_source,
                        InputEventAckState ack_result) override;
   void OnWheelEventAck(const MouseWheelEventWithLatencyInfo& event,
+                       InputEventAckSource ack_source,
                        InputEventAckState ack_result) override;
   void OnTouchEventAck(const TouchEventWithLatencyInfo& event,
+                       InputEventAckSource ack_source,
                        InputEventAckState ack_result) override;
   void OnGestureEventAck(const GestureEventWithLatencyInfo& event,
+                         InputEventAckSource ack_source,
                          InputEventAckState ack_result) override;
   void OnUnexpectedEventAck(UnexpectedEventAckType type) override;
 
   // Called when there is a new auto resize (using a post to avoid a stack
   // which may get in recursive loops).
-  void DelayedAutoResized(uint64_t sequence_number);
+  void DelayedAutoResized();
 
   void WindowSnapshotReachedScreen(int snapshot_id);
 
@@ -754,7 +774,7 @@ class CONTENT_EXPORT RenderWidgetHostImpl
                                      const SkBitmap& bitmap,
                                      ReadbackResponse response);
 
-  void OnSnapshotReceived(int snapshot_id, const gfx::Image& image);
+  void OnSnapshotReceived(int snapshot_id, gfx::Image image);
 
   // 1. Grants permissions to URL (if any)
   // 2. Grants permissions to filenames
@@ -847,6 +867,8 @@ class CONTENT_EXPORT RenderWidgetHostImpl
 
   // The maximum size for the render widget if auto-resize is enabled.
   gfx::Size max_size_for_auto_resize_;
+
+  uint64_t last_auto_resize_request_number_ = 0ul;
 
   bool waiting_for_screen_rects_ack_;
   gfx::Rect last_view_screen_rect_;
@@ -1028,6 +1050,7 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   } saved_frame_;
 
   bool enable_surface_synchronization_ = false;
+  bool enable_viz_ = false;
 
   // If the |associated_widget_input_handler_| is set it should always be
   // used to ensure in order delivery of related messages that may occur

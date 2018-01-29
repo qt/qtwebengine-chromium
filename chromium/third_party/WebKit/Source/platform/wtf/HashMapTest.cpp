@@ -26,9 +26,9 @@
 #include "platform/wtf/HashMap.h"
 
 #include <memory>
+#include "base/memory/scoped_refptr.h"
 #include "platform/wtf/PtrUtil.h"
 #include "platform/wtf/RefCounted.h"
-#include "platform/wtf/RefPtr.h"
 #include "platform/wtf/Vector.h"
 #include "platform/wtf/WTFTestHelper.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -128,9 +128,10 @@ TEST(HashMapTest, OwnPtrAsValue) {
 TEST(HashMapTest, RefPtrAsKey) {
   bool is_deleted = false;
   DummyRefCounted::ref_invokes_count_ = 0;
-  RefPtr<DummyRefCounted> ptr = WTF::AdoptRef(new DummyRefCounted(is_deleted));
+  scoped_refptr<DummyRefCounted> ptr =
+      base::AdoptRef(new DummyRefCounted(is_deleted));
   EXPECT_EQ(0, DummyRefCounted::ref_invokes_count_);
-  HashMap<RefPtr<DummyRefCounted>, int> map;
+  HashMap<scoped_refptr<DummyRefCounted>, int> map;
   map.insert(ptr, 1);
   // Referenced only once (to store a copy in the container).
   EXPECT_EQ(1, DummyRefCounted::ref_invokes_count_);
@@ -157,10 +158,11 @@ TEST(HashMaptest, RemoveAdd) {
   DummyRefCounted::ref_invokes_count_ = 0;
   bool is_deleted = false;
 
-  typedef HashMap<int, RefPtr<DummyRefCounted>> Map;
+  typedef HashMap<int, scoped_refptr<DummyRefCounted>> Map;
   Map map;
 
-  RefPtr<DummyRefCounted> ptr = WTF::AdoptRef(new DummyRefCounted(is_deleted));
+  scoped_refptr<DummyRefCounted> ptr =
+      base::AdoptRef(new DummyRefCounted(is_deleted));
   EXPECT_EQ(0, DummyRefCounted::ref_invokes_count_);
 
   map.insert(1, ptr);
@@ -179,8 +181,8 @@ TEST(HashMaptest, RemoveAdd) {
   // Add and remove until the deleted slot is reused.
   for (int i = 1; i < 100; i++) {
     bool is_deleted2 = false;
-    RefPtr<DummyRefCounted> ptr2 =
-        WTF::AdoptRef(new DummyRefCounted(is_deleted2));
+    scoped_refptr<DummyRefCounted> ptr2 =
+        base::AdoptRef(new DummyRefCounted(is_deleted2));
     map.insert(i, ptr2);
     EXPECT_FALSE(is_deleted2);
     ptr2 = nullptr;
@@ -205,7 +207,7 @@ TEST(HashMapTest, AddResult) {
   IntSimpleMap::AddResult result = map.insert(1, nullptr);
   EXPECT_TRUE(result.is_new_entry);
   EXPECT_EQ(1, result.stored_value->key);
-  EXPECT_EQ(0, result.stored_value->value.get());
+  EXPECT_EQ(nullptr, result.stored_value->value.get());
 
   SimpleClass* simple1 = new SimpleClass(1);
   result.stored_value->value = WTF::WrapUnique(simple1);

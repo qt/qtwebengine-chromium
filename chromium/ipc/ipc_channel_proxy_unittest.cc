@@ -219,7 +219,7 @@ class MessageCountFilter : public IPC::MessageFilter {
   FilterEvent last_filter_event() const { return last_filter_event_; }
 
  private:
-  ~MessageCountFilter() override {}
+  ~MessageCountFilter() override = default;
 
   size_t messages_received_;
   uint32_t supported_message_class_;
@@ -231,8 +231,8 @@ class MessageCountFilter : public IPC::MessageFilter {
 
 class IPCChannelProxyTest : public IPCChannelMojoTestBase {
  public:
-  IPCChannelProxyTest() {}
-  ~IPCChannelProxyTest() override {}
+  IPCChannelProxyTest() = default;
+  ~IPCChannelProxyTest() override = default;
 
   void SetUp() override {
     IPCChannelMojoTestBase::SetUp();
@@ -247,7 +247,7 @@ class IPCChannelProxyTest : public IPCChannelMojoTestBase {
     listener_.reset(new QuitListener());
     channel_proxy_ = IPC::ChannelProxy::Create(
         TakeHandle().release(), IPC::Channel::MODE_SERVER, listener_.get(),
-        thread_->task_runner());
+        thread_->task_runner(), base::ThreadTaskRunnerHandle::Get());
   }
 
   void TearDown() override {

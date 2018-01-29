@@ -4,8 +4,8 @@
 
 #include "third_party/WebKit/common/origin_trials/trial_token_validator.h"
 
+#include <memory>
 #include "base/feature_list.h"
-#include "base/memory/ptr_util.h"
 #include "base/time/time.h"
 #include "net/http/http_response_headers.h"
 #include "net/url_request/url_request.h"
@@ -15,7 +15,9 @@
 namespace blink {
 
 TrialTokenValidator::TrialTokenValidator(std::unique_ptr<TrialPolicy> policy)
-    : policy_(std::move(policy)) {}
+    : policy_(std::move(policy)) {
+  DCHECK(policy_.get());
+}
 TrialTokenValidator::~TrialTokenValidator() {}
 
 OriginTrialTokenStatus TrialTokenValidator::ValidateToken(
@@ -23,7 +25,7 @@ OriginTrialTokenStatus TrialTokenValidator::ValidateToken(
     const url::Origin& origin,
     std::string* feature_name,
     base::Time current_time) const {
-  if (!policy_ || !policy_->IsOriginTrialsSupported())
+  if (!policy_->IsOriginTrialsSupported())
     return OriginTrialTokenStatus::kNotSupported;
 
   // TODO(iclelland): Allow for multiple signing keys, and iterate over all
@@ -67,7 +69,7 @@ bool TrialTokenValidator::RequestEnablesFeature(
   if (!IsTrialPossibleOnOrigin(request_url))
     return false;
 
-  url::Origin origin(request_url);
+  url::Origin origin = url::Origin::Create(request_url);
   size_t iter = 0;
   std::string token;
   while (response_headers->EnumerateHeader(&iter, "Origin-Trial", &token)) {
@@ -87,7 +89,7 @@ TrialTokenValidator::GetValidTokensFromHeaders(
     const net::HttpResponseHeaders* headers,
     base::Time current_time) const {
   std::unique_ptr<FeatureToTokensMap> tokens(
-      base::MakeUnique<FeatureToTokensMap>());
+      std::make_unique<FeatureToTokensMap>());
   if (!IsTrialPossibleOnOrigin(origin))
     return tokens;
 
@@ -109,7 +111,7 @@ TrialTokenValidator::GetValidTokens(const url::Origin& origin,
                                     const FeatureToTokensMap& tokens,
                                     base::Time current_time) const {
   std::unique_ptr<FeatureToTokensMap> out_tokens(
-      base::MakeUnique<FeatureToTokensMap>());
+      std::make_unique<FeatureToTokensMap>());
   if (!IsTrialPossibleOnOrigin(origin))
     return out_tokens;
 

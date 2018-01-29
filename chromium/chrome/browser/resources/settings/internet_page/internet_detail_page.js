@@ -120,12 +120,10 @@ Polymer({
     proxyExpanded_: Boolean,
   },
 
-  /**
-   * Listener function for chrome.networkingPrivate.onNetworksChanged event.
-   * @type {?function(!Array<string>)}
-   * @private
-   */
-  networksChangedListener_: null,
+  listeners: {
+    'network-list-changed': 'checkNetworkExists_',
+    'networks-changed': 'updateNetworkDetails_',
+  },
 
   /** @private {boolean} */
   didSetFocus_: false,
@@ -133,6 +131,8 @@ Polymer({
   /**
    * Set to true to once the initial properties have been received. This
    * prevents setProperties from being called when setting default properties.
+   * This will also be set to false if the network no longer exists in the
+   * list of networks (e.g. it goes out of range).
    * @private {boolean}
    */
   networkPropertiesReceived_: false,
@@ -145,6 +145,14 @@ Polymer({
    */
   shouldShowConfigureWhenNetworkLoaded_: false,
 
+  /** @private  {settings.InternetPageBrowserProxy} */
+  browserProxy_: null,
+
+  /** @override */
+  created: function() {
+    this.browserProxy_ = settings.InternetPageBrowserProxyImpl.getInstance();
+  },
+
   /**
    * settings.RouteObserverBehavior
    * @param {!settings.Route} route
@@ -152,19 +160,9 @@ Polymer({
    * @protected
    */
   currentRouteChanged: function(route, oldRoute) {
-    if (route != settings.routes.NETWORK_DETAIL) {
-      if (this.networksChangedListener_) {
-        this.networkingPrivate.onNetworksChanged.removeListener(
-            this.networksChangedListener_);
-        this.networksChangedListener_ = null;
-      }
+    if (route != settings.routes.NETWORK_DETAIL)
       return;
-    }
-    if (!this.networksChangedListener_) {
-      this.networksChangedListener_ = this.onNetworksChangedEvent_.bind(this);
-      this.networkingPrivate.onNetworksChanged.addListener(
-          this.networksChangedListener_);
-    }
+
     var queryParams = settings.getQueryParameters();
     this.guid = queryParams.get('guid') || '';
     if (!this.guid) {
@@ -193,10 +191,9 @@ Polymer({
 
   /** @private */
   close_: function() {
+    this.guid = '';
     // Delay navigating to allow other subpages to load first.
-    requestAnimationFrame(function() {
-      settings.navigateToPreviousRoute();
-    });
+    requestAnimationFrame(() => settings.navigateToPreviousRoute());
   },
 
   /** @private */
@@ -263,11 +260,20 @@ Polymer({
   },
 
   /**
-   * networkingPrivate.onNetworksChanged event callback.
-   * @param {!Array<string>} networkIds The list of changed network GUIDs.
+   * @param {{detail: !Array<string>}} event
    * @private
    */
-  onNetworksChangedEvent_: function(networkIds) {
+  checkNetworkExists_: function(event) {
+    var networkIds = event.detail;
+    this.networkPropertiesReceived_ = networkIds.indexOf(this.guid) != -1;
+  },
+
+  /**
+   * @param {{detail: !Array<string>}} event
+   * @private
+   */
+  updateNetworkDetails_: function(event) {
+    var networkIds = event.detail;
     if (networkIds.indexOf(this.guid) != -1)
       this.getNetworkDetails_();
   },
@@ -305,11 +311,23 @@ Polymer({
       this.close_();
       return;
     }
+
+    // Details page was closed while request was in progress, ignore the result.
+    if (!this.guid)
+      return;
+
     if (!properties) {
       console.error('No properties for: ' + this.guid);
       this.close_();
       return;
     }
+
+    // Detail page should not be shown when Arc VPN is not connected.
+    if (this.isArcVpn_(properties) && !this.isConnectedState_(properties)) {
+      this.guid = '';
+      this.close_();
+    }
+
     this.networkProperties = properties;
     this.networkPropertiesReceived_ = true;
   },
@@ -435,6 +453,11 @@ Polymer({
   showConnect_: function(networkProperties, globalPolicy) {
     if (this.connectNotAllowed_(networkProperties, globalPolicy))
       return false;
+    // TODO(lgcheng@) support connect Arc VPN from UI once Android support API
+    // to initiate a VPN session.
+    if (this.isArcVpn_(networkProperties))
+      return false;
+
     return networkProperties.Type != CrOnc.Type.ETHERNET &&
         networkProperties.ConnectionState ==
         CrOnc.ConnectionState.NOT_CONNECTED;
@@ -459,6 +482,8 @@ Polymer({
   showForget_: function(networkProperties) {
     var type = networkProperties.Type;
     if (type != CrOnc.Type.WI_FI && type != CrOnc.Type.VPN)
+      return false;
+    if (this.isArcVpn_(networkProperties))
       return false;
     return !this.isPolicySource(networkProperties.Source) &&
         this.isRemembered_(networkProperties);
@@ -492,6 +517,10 @@ Polymer({
     if ((type == CrOnc.Type.WI_FI || type == CrOnc.Type.WI_MAX) &&
         networkProperties.ConnectionState !=
             CrOnc.ConnectionState.NOT_CONNECTED) {
+      return false;
+    }
+    if (this.isArcVpn_(networkProperties) &&
+        !this.isConnectedState_(networkProperties)) {
       return false;
     }
     return true;
@@ -535,11 +564,16 @@ Polymer({
    * @param {!CrOnc.NetworkProperties} networkProperties
    * @param {?CrOnc.NetworkStateProperties} defaultNetwork
    * @param {!chrome.networkingPrivate.GlobalPolicy} globalPolicy
+   * @param {boolean} networkPropertiesReceived
    * @return {boolean} Whether or not to enable the network connect button.
    * @private
    */
-  enableConnect_: function(networkProperties, defaultNetwork, globalPolicy) {
+  enableConnect_: function(
+      networkProperties, defaultNetwork, globalPolicy,
+      networkPropertiesReceived) {
     if (!this.showConnect_(networkProperties, globalPolicy))
+      return false;
+    if (!networkPropertiesReceived)
       return false;
     if ((networkProperties.Type == CrOnc.Type.CELLULAR) &&
         (CrOnc.isSimLocked(networkProperties) ||
@@ -597,6 +631,11 @@ Polymer({
 
   /** @private */
   onConfigureTap_: function() {
+    if (this.networkProperties && this.isArcVpn_(this.networkProperties)) {
+      this.browserProxy_.showNetworkConfigure(this.guid);
+      return;
+    }
+
     if (loadTimeData.getBoolean('networkSettingsConfig'))
       this.fire('show-config', this.networkProperties);
     else
@@ -788,7 +827,8 @@ Polymer({
    */
   showAutoConnect_: function(networkProperties) {
     return networkProperties.Type != CrOnc.Type.ETHERNET &&
-        this.isRemembered_(networkProperties);
+        this.isRemembered_(networkProperties) &&
+        !this.isArcVpn_(networkProperties);
   },
 
   /**
@@ -824,7 +864,8 @@ Polymer({
   showPreferNetwork_: function(networkProperties) {
     // TODO(stevenjb): Resolve whether or not we want to allow "preferred" for
     // networkProperties.Type == CrOnc.Type.ETHERNET.
-    return this.isRemembered_(networkProperties);
+    return this.isRemembered_(networkProperties) &&
+        !this.isArcVpn_(networkProperties);
   },
 
   /**
@@ -868,6 +909,8 @@ Polymer({
       var vpnType = CrOnc.getActiveValue(this.networkProperties.VPN.Type);
       if (vpnType == 'ThirdPartyVPN') {
         fields.push('VPN.ThirdPartyVPN.ProviderName');
+      } else if (vpnType == 'ARCVPN') {
+        fields.push('VPN.Type');
       } else {
         fields.push('VPN.Host', 'VPN.Type');
         if (vpnType == 'OpenVPN')
@@ -952,7 +995,8 @@ Polymer({
       return false;
     }
     return this.hasAdvancedFields_() || this.hasDeviceFields_() ||
-        this.isRememberedOrConnected_(networkProperties);
+        (networkProperties.Type != CrOnc.Type.VPN &&
+         this.isRememberedOrConnected_(networkProperties));
   },
 
   /**
@@ -1019,12 +1063,29 @@ Polymer({
   },
 
   /**
+   * @param {!CrOnc.NetworkProperties} networkProperties
+   * @return {boolean}
+   * @private
+   */
+  isArcVpn_: function(networkProperties) {
+    return !!networkProperties.VPN &&
+        CrOnc.getActiveValue(networkProperties.VPN.Type) == 'ARCVPN';
+  },
+
+  /**
    * @param {string} ipAddress
    * @param {!CrOnc.NetworkProperties} networkProperties
    * @return {boolean}
    * @private
    */
   showIpAddress_: function(ipAddress, networkProperties) {
+    // Arc Vpn does not currently pass IP configuration to ChromeOS. IP address
+    // property holds an internal IP address Android uses to talk to ChromeOS.
+    // TODO(lgcheng@) Show correct IP address when we implement IP configuration
+    // correclty.
+    if (this.isArcVpn_(networkProperties))
+      return false;
+
     return !!ipAddress && this.isConnectedState_(networkProperties);
   },
 

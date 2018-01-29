@@ -786,6 +786,9 @@ static void dealloc_compressor_data(VP9_COMP *cpi) {
   vpx_free(cpi->prev_partition);
   cpi->prev_partition = NULL;
 
+  vpx_free(cpi->svc.prev_partition_svc);
+  cpi->svc.prev_partition_svc = NULL;
+
   vpx_free(cpi->prev_segment_id);
   cpi->prev_segment_id = NULL;
 
@@ -3438,8 +3441,7 @@ static void encode_without_recode_loop(VP9_COMP *cpi, size_t *size,
   // Flag to check if its valid to compute the source sad (used for
   // scene detection and for superblock content state in CBR mode).
   // The flag may get reset below based on SVC or resizing state.
-  cpi->compute_source_sad_onepass =
-      cpi->oxcf.mode == REALTIME && cm->show_frame;
+  cpi->compute_source_sad_onepass = cpi->oxcf.mode == REALTIME;
 
   vpx_clear_system_state();
 
@@ -3532,7 +3534,7 @@ static void encode_without_recode_loop(VP9_COMP *cpi, size_t *size,
   // For other cases (e.g., CBR mode) use it for 5 <= speed < 8 for now
   // (need to check encoding time cost for doing this for speed 8).
   cpi->rc.high_source_sad = 0;
-  if (cpi->compute_source_sad_onepass &&
+  if (cpi->compute_source_sad_onepass && cm->show_frame &&
       (cpi->oxcf.rc_mode == VPX_VBR ||
        cpi->oxcf.content == VP9E_CONTENT_SCREEN ||
        (cpi->oxcf.speed >= 5 && cpi->oxcf.speed < 8 && !cpi->use_svc)))
@@ -3550,6 +3552,16 @@ static void encode_without_recode_loop(VP9_COMP *cpi, size_t *size,
   set_size_dependent_vars(cpi, &q, &bottom_index, &top_index);
 
   if (cpi->sf.copy_partition_flag) alloc_copy_partition_data(cpi);
+
+  if (cpi->sf.svc_use_lowres_part &&
+      cpi->svc.spatial_layer_id == cpi->svc.number_spatial_layers - 2) {
+    if (cpi->svc.prev_partition_svc == NULL) {
+      CHECK_MEM_ERROR(
+          cm, cpi->svc.prev_partition_svc,
+          (BLOCK_SIZE *)vpx_calloc(cm->mi_stride * cm->mi_rows,
+                                   sizeof(*cpi->svc.prev_partition_svc)));
+    }
+  }
 
   if (cpi->oxcf.speed >= 5 && cpi->oxcf.pass == 0 &&
       cpi->oxcf.rc_mode == VPX_CBR &&
@@ -3635,6 +3647,7 @@ static int get_qstep_adj(int rate_excess, int rate_limit) {
 
 static void encode_with_recode_loop(VP9_COMP *cpi, size_t *size,
                                     uint8_t *dest) {
+  const VP9EncoderConfig *const oxcf = &cpi->oxcf;
   VP9_COMMON *const cm = &cpi->common;
   RATE_CONTROL *const rc = &cpi->rc;
   int bottom_index, top_index;
@@ -3671,9 +3684,8 @@ static void encode_with_recode_loop(VP9_COMP *cpi, size_t *size,
         qrange_adj = VPXMAX(1, (top_index - bottom_index) / 2);
 
         bottom_index =
-            VPXMAX(bottom_index - qrange_adj / 2, cpi->oxcf.best_allowed_q);
-        top_index =
-            VPXMIN(cpi->oxcf.worst_allowed_q, top_index + qrange_adj / 2);
+            VPXMAX(bottom_index - qrange_adj / 2, oxcf->best_allowed_q);
+        top_index = VPXMIN(oxcf->worst_allowed_q, top_index + qrange_adj / 2);
       }
 #endif
       // TODO(agrange) Scale cpi->max_mv_magnitude if frame-size has changed.
@@ -3701,7 +3713,7 @@ static void encode_with_recode_loop(VP9_COMP *cpi, size_t *size,
 
     cpi->Source =
         vp9_scale_if_required(cm, cpi->un_scaled_source, &cpi->scaled_source,
-                              (cpi->oxcf.pass == 0), EIGHTTAP, 0);
+                              (oxcf->pass == 0), EIGHTTAP, 0);
 
     // Unfiltered raw source used in metrics calculation if the source
     // has been filtered.
@@ -3710,7 +3722,7 @@ static void encode_with_recode_loop(VP9_COMP *cpi, size_t *size,
       if (is_spatial_denoise_enabled(cpi)) {
         cpi->raw_source_frame = vp9_scale_if_required(
             cm, &cpi->raw_unscaled_source, &cpi->raw_scaled_source,
-            (cpi->oxcf.pass == 0), EIGHTTAP, 0);
+            (oxcf->pass == 0), EIGHTTAP, 0);
       } else {
         cpi->raw_source_frame = cpi->Source;
       }
@@ -3720,9 +3732,9 @@ static void encode_with_recode_loop(VP9_COMP *cpi, size_t *size,
     }
 
     if (cpi->unscaled_last_source != NULL)
-      cpi->Last_Source = vp9_scale_if_required(
-          cm, cpi->unscaled_last_source, &cpi->scaled_last_source,
-          (cpi->oxcf.pass == 0), EIGHTTAP, 0);
+      cpi->Last_Source = vp9_scale_if_required(cm, cpi->unscaled_last_source,
+                                               &cpi->scaled_last_source,
+                                               (oxcf->pass == 0), EIGHTTAP, 0);
 
     if (frame_is_intra_only(cm) == 0) {
       if (loop_count > 0) {
@@ -3737,13 +3749,13 @@ static void encode_with_recode_loop(VP9_COMP *cpi, size_t *size,
 
     // Variance adaptive and in frame q adjustment experiments are mutually
     // exclusive.
-    if (cpi->oxcf.aq_mode == VARIANCE_AQ) {
+    if (oxcf->aq_mode == VARIANCE_AQ) {
       vp9_vaq_frame_setup(cpi);
-    } else if (cpi->oxcf.aq_mode == EQUATOR360_AQ) {
+    } else if (oxcf->aq_mode == EQUATOR360_AQ) {
       vp9_360aq_frame_setup(cpi);
-    } else if (cpi->oxcf.aq_mode == COMPLEXITY_AQ) {
+    } else if (oxcf->aq_mode == COMPLEXITY_AQ) {
       vp9_setup_in_frame_q_adj(cpi);
-    } else if (cpi->oxcf.aq_mode == LOOKAHEAD_AQ) {
+    } else if (oxcf->aq_mode == LOOKAHEAD_AQ) {
       vp9_alt_ref_aq_setup_map(cpi->alt_ref_aq, cpi);
     }
 
@@ -3767,7 +3779,7 @@ static void encode_with_recode_loop(VP9_COMP *cpi, size_t *size,
       if (frame_over_shoot_limit == 0) frame_over_shoot_limit = 1;
     }
 
-    if (cpi->oxcf.rc_mode == VPX_Q) {
+    if (oxcf->rc_mode == VPX_Q) {
       loop = 0;
     } else {
       if ((cm->frame_type == KEY_FRAME) && rc->this_key_frame_forced &&
@@ -3904,7 +3916,7 @@ static void encode_with_recode_loop(VP9_COMP *cpi, size_t *size,
             // This should only trigger where there is very substantial
             // undershoot on a frame and the auto cq level is above
             // the user passsed in value.
-            if (cpi->oxcf.rc_mode == VPX_CQ && q < q_low) {
+            if (oxcf->rc_mode == VPX_CQ && q < q_low) {
               q_low = q;
             }
 
@@ -3948,7 +3960,7 @@ static void encode_with_recode_loop(VP9_COMP *cpi, size_t *size,
 #ifdef AGGRESSIVE_VBR
   if (two_pass_first_group_inter(cpi)) {
     cpi->twopass.active_worst_quality =
-        VPXMIN(q + qrange_adj, cpi->oxcf.worst_allowed_q);
+        VPXMIN(q + qrange_adj, oxcf->worst_allowed_q);
   } else if (!frame_is_kf_gf_arf(cpi)) {
 #else
   if (!frame_is_kf_gf_arf(cpi)) {
@@ -3957,6 +3969,10 @@ static void encode_with_recode_loop(VP9_COMP *cpi, size_t *size,
     // rate miss. If so adjust the active maxQ for the subsequent frames.
     if (q > cpi->twopass.active_worst_quality) {
       cpi->twopass.active_worst_quality = q;
+    } else if (oxcf->vbr_corpus_complexity && q == q_low &&
+               rc->projected_frame_size < rc->this_frame_target) {
+      cpi->twopass.active_worst_quality =
+          VPXMAX(q, cpi->twopass.active_worst_quality - 1);
     }
   }
 

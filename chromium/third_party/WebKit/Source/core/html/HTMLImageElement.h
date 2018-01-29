@@ -24,12 +24,12 @@
 #ifndef HTMLImageElement_h
 #define HTMLImageElement_h
 
+#include "bindings/core/v8/ActiveScriptWrappable.h"
 #include "core/CoreExport.h"
 #include "core/html/HTMLElement.h"
 #include "core/html/HTMLImageLoader.h"
 #include "core/html/canvas/ImageElementBase.h"
 #include "core/html/forms/FormAssociated.h"
-#include "platform/bindings/ActiveScriptWrappable.h"
 #include "platform/graphics/GraphicsTypes.h"
 #include "platform/heap/HeapAllocator.h"
 #include "platform/loader/fetch/FetchParameters.h"
@@ -61,7 +61,7 @@ class CORE_EXPORT HTMLImageElement final
                                                   unsigned height);
 
   ~HTMLImageElement() override;
-  DECLARE_VIRTUAL_TRACE();
+  virtual void Trace(blink::Visitor*);
 
   unsigned width();
   unsigned height();
@@ -79,7 +79,7 @@ class CORE_EXPORT HTMLImageElement final
   String AltText() const final;
 
   ImageResourceContent* CachedImage() const {
-    return GetImageLoader().GetImage();
+    return GetImageLoader().GetContent();
   }
   ImageResource* CachedImageResourceForImageDocument() const {
     return GetImageLoader().ImageResourceForImageDocument();
@@ -136,8 +136,6 @@ class CORE_EXPORT HTMLImageElement final
   FormAssociated* ToFormAssociatedOrNull() override { return this; };
   void AssociateWith(HTMLFormElement*) override;
 
-  Image::ImageDecodingMode GetDecodingMode() const { return decoding_mode_; }
-
  protected:
   // Controls how an image element appears in the layout. See:
   // https://html.spec.whatwg.org/multipage/embedded-content.html#image-request
@@ -160,16 +158,17 @@ class CORE_EXPORT HTMLImageElement final
   void DidMoveToNewDocument(Document& old_document) override;
 
   void DidAddUserAgentShadowRoot(ShadowRoot&) override;
-  RefPtr<ComputedStyle> CustomStyleForLayoutObject() override;
+  scoped_refptr<ComputedStyle> CustomStyleForLayoutObject() override;
 
  private:
   bool AreAuthorShadowsAllowed() const override { return false; }
 
   void ParseAttribute(const AttributeModificationParams&) override;
   bool IsPresentationAttribute(const QualifiedName&) const override;
-  void CollectStyleForPresentationAttribute(const QualifiedName&,
-                                            const AtomicString&,
-                                            MutableStylePropertySet*) override;
+  void CollectStyleForPresentationAttribute(
+      const QualifiedName&,
+      const AtomicString&,
+      MutableCSSPropertyValueSet*) override;
   void SetLayoutDisposition(LayoutDisposition, bool force_reattach = false);
 
   void AttachLayoutTree(AttachContext&) override;
@@ -194,6 +193,7 @@ class CORE_EXPORT HTMLImageElement final
   void ResetFormOwner();
   ImageCandidate FindBestFitImageFromPictureParent();
   void SetBestFitURLAndDPRFromImageCandidate(const ImageCandidate&);
+  LayoutSize DensityCorrectedIntrinsicDimensions() const;
   HTMLImageLoader& GetImageLoader() const override { return *image_loader_; }
   void NotifyViewportChanged();
   void CreateMediaQueryListIfDoesNotExist();
@@ -205,7 +205,6 @@ class CORE_EXPORT HTMLImageElement final
   float image_device_pixel_ratio_;
   Member<HTMLSourceElement> source_;
   LayoutDisposition layout_disposition_;
-  Image::ImageDecodingMode decoding_mode_;
   unsigned form_was_set_by_parser_ : 1;
   unsigned element_created_by_parser_ : 1;
   unsigned is_fallback_image_ : 1;

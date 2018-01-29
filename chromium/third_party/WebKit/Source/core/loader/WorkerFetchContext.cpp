@@ -4,7 +4,6 @@
 
 #include "core/loader/WorkerFetchContext.h"
 
-#include "core/dom/TaskRunnerHelper.h"
 #include "core/frame/Deprecation.h"
 #include "core/frame/UseCounter.h"
 #include "core/loader/MixedContentChecker.h"
@@ -17,11 +16,15 @@
 #include "platform/WebTaskRunner.h"
 #include "platform/exported/WrappedResourceRequest.h"
 #include "platform/loader/fetch/ResourceFetcher.h"
+#include "platform/network/NetworkStateNotifier.h"
+#include "platform/network/NetworkUtils.h"
 #include "platform/runtime_enabled_features.h"
 #include "platform/weborigin/SecurityPolicy.h"
 #include "public/platform/Platform.h"
+#include "public/platform/TaskType.h"
 #include "public/platform/WebMixedContent.h"
 #include "public/platform/WebMixedContentContextType.h"
+#include "public/platform/WebURLLoaderFactory.h"
 #include "public/platform/WebURLRequest.h"
 #include "public/platform/WebWorkerFetchContext.h"
 
@@ -53,7 +56,9 @@ class WorkerFetchContextHolder final
     return std::move(web_context_);
   }
 
-  DEFINE_INLINE_VIRTUAL_TRACE() { Supplement<WorkerClients>::Trace(visitor); }
+  void Trace(blink::Visitor* visitor) override {
+    Supplement<WorkerClients>::Trace(visitor);
+  }
 
  private:
   std::unique_ptr<WebWorkerFetchContext> web_context_;
@@ -85,9 +90,9 @@ WorkerFetchContext::WorkerFetchContext(
     : global_scope_(global_scope),
       web_context_(std::move(web_context)),
       loading_task_runner_(
-          TaskRunnerHelper::Get(TaskType::kUnspecedLoading, global_scope_)) {
-  web_context_->InitializeOnWorkerThread(
-      loading_task_runner_->ToSingleThreadTaskRunner());
+          global_scope_->GetTaskRunner(TaskType::kUnspecedLoading)),
+      save_data_enabled_(GetNetworkStateNotifier().SaveDataEnabled()) {
+  web_context_->InitializeOnWorkerThread(loading_task_runner_);
   std::unique_ptr<blink::WebDocumentSubresourceFilter> web_filter =
       web_context_->TakeSubresourceFilter();
   if (web_filter) {
@@ -217,11 +222,12 @@ SecurityOrigin* WorkerFetchContext::GetSecurityOrigin() const {
 
 std::unique_ptr<WebURLLoader> WorkerFetchContext::CreateURLLoader(
     const ResourceRequest& request,
-    WebTaskRunner* task_runner) {
+    scoped_refptr<WebTaskRunner> task_runner) {
   CountUsage(WebFeature::kOffMainThreadFetch);
+  if (!url_loader_factory_)
+    url_loader_factory_ = web_context_->CreateURLLoaderFactory();
   WrappedResourceRequest wrapped(request);
-  return web_context_->CreateURLLoader(wrapped,
-                                       task_runner->ToSingleThreadTaskRunner());
+  return url_loader_factory_->CreateURLLoader(wrapped, task_runner);
 }
 
 bool WorkerFetchContext::IsControlledByServiceWorker() const {
@@ -252,7 +258,7 @@ void WorkerFetchContext::AddAdditionalRequestHeaders(ResourceRequest& request,
   if (!request.Url().IsEmpty() && !request.Url().ProtocolIsInHTTPFamily())
     return;
 
-  if (web_context_->IsDataSaverEnabled())
+  if (save_data_enabled_)
     request.SetHTTPHeaderField(HTTPNames::Save_Data, "on");
 }
 
@@ -313,6 +319,9 @@ void WorkerFetchContext::DispatchDidFail(unsigned long identifier,
                                          int64_t encoded_data_length,
                                          bool is_internal_request) {
   probe::didFailLoading(global_scope_, identifier, nullptr, error);
+  if (NetworkUtils::IsCertificateTransparencyRequiredError(error.ErrorCode())) {
+    CountUsage(WebFeature::kCertificateTransparencyRequiredErrorOnResourceLoad);
+  }
 }
 
 void WorkerFetchContext::AddResourceTiming(const ResourceTimingInfo& info) {
@@ -340,11 +349,11 @@ void WorkerFetchContext::SetFirstPartyCookieAndRequestorOrigin(
     out_request.SetRequestorOrigin(GetSecurityOrigin());
 }
 
-RefPtr<WebTaskRunner> WorkerFetchContext::GetLoadingTaskRunner() {
+scoped_refptr<WebTaskRunner> WorkerFetchContext::GetLoadingTaskRunner() {
   return loading_task_runner_;
 }
 
-DEFINE_TRACE(WorkerFetchContext) {
+void WorkerFetchContext::Trace(blink::Visitor* visitor) {
   visitor->Trace(global_scope_);
   visitor->Trace(subresource_filter_);
   visitor->Trace(resource_fetcher_);

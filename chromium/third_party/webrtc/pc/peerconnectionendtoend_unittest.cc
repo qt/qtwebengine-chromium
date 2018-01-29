@@ -10,6 +10,10 @@
 
 #include <memory>
 
+#include "api/audio_codecs/L16/audio_decoder_L16.h"
+#include "api/audio_codecs/L16/audio_encoder_L16.h"
+#include "api/audio_codecs/audio_decoder_factory_template.h"
+#include "api/audio_codecs/audio_encoder_factory_template.h"
 #include "api/audio_codecs/builtin_audio_decoder_factory.h"
 #include "api/audio_codecs/builtin_audio_encoder_factory.h"
 #include "rtc_base/gunit.h"
@@ -69,10 +73,11 @@ class PeerConnectionEndToEndTest
 #endif
   }
 
-  void CreatePcs(
-      const MediaConstraintsInterface* pc_constraints,
-      rtc::scoped_refptr<webrtc::AudioEncoderFactory> audio_encoder_factory,
-      rtc::scoped_refptr<webrtc::AudioDecoderFactory> audio_decoder_factory) {
+  void CreatePcs(const MediaConstraintsInterface* pc_constraints,
+                 const rtc::scoped_refptr<webrtc::AudioEncoderFactory>&
+                     audio_encoder_factory,
+                 const rtc::scoped_refptr<webrtc::AudioDecoderFactory>&
+                     audio_decoder_factory) {
     EXPECT_TRUE(caller_->CreatePc(
         pc_constraints, config_, audio_encoder_factory, audio_decoder_factory));
     EXPECT_TRUE(callee_->CreatePc(
@@ -91,8 +96,10 @@ class PeerConnectionEndToEndTest
     GetAndAddUserMedia(true, audio_constraints, true, video_constraints);
   }
 
-  void GetAndAddUserMedia(bool audio, FakeConstraints audio_constraints,
-                          bool video, FakeConstraints video_constraints) {
+  void GetAndAddUserMedia(bool audio,
+                          const FakeConstraints& audio_constraints,
+                          bool video,
+                          const FakeConstraints& video_constraints) {
     caller_->GetAndAddUserMedia(audio, audio_constraints,
                                 video, video_constraints);
     callee_->GetAndAddUserMedia(audio, audio_constraints,
@@ -174,11 +181,13 @@ class PeerConnectionEndToEndTest
   webrtc::PeerConnectionInterface::RTCConfiguration config_;
 };
 
+namespace {
+
 std::unique_ptr<webrtc::AudioDecoder> CreateForwardingMockDecoder(
     std::unique_ptr<webrtc::AudioDecoder> real_decoder) {
   class ForwardingMockDecoder : public StrictMock<webrtc::MockAudioDecoder> {
    public:
-    ForwardingMockDecoder(std::unique_ptr<AudioDecoder> decoder)
+    explicit ForwardingMockDecoder(std::unique_ptr<AudioDecoder> decoder)
         : decoder_(std::move(decoder)) {}
 
    private:
@@ -257,12 +266,84 @@ CreateForwardingMockDecoderFactory(
   return mock_decoder_factory;
 }
 
+struct AudioEncoderUnicornSparklesRainbow {
+  using Config = webrtc::AudioEncoderL16::Config;
+  static rtc::Optional<Config> SdpToConfig(webrtc::SdpAudioFormat format) {
+    if (STR_CASE_CMP(format.name.c_str(), "UnicornSparklesRainbow") == 0) {
+      const webrtc::SdpAudioFormat::Parameters expected_params = {
+          {"num_horns", "1"}};
+      EXPECT_EQ(expected_params, format.parameters);
+      format.parameters.clear();
+      format.name = "L16";
+      return webrtc::AudioEncoderL16::SdpToConfig(format);
+    } else {
+      return rtc::nullopt;
+    }
+  }
+  static void AppendSupportedEncoders(
+      std::vector<webrtc::AudioCodecSpec>* specs) {
+    std::vector<webrtc::AudioCodecSpec> new_specs;
+    webrtc::AudioEncoderL16::AppendSupportedEncoders(&new_specs);
+    for (auto& spec : new_specs) {
+      spec.format.name = "UnicornSparklesRainbow";
+      EXPECT_TRUE(spec.format.parameters.empty());
+      spec.format.parameters.emplace("num_horns", "1");
+      specs->push_back(spec);
+    }
+  }
+  static webrtc::AudioCodecInfo QueryAudioEncoder(const Config& config) {
+    return webrtc::AudioEncoderL16::QueryAudioEncoder(config);
+  }
+  static std::unique_ptr<webrtc::AudioEncoder> MakeAudioEncoder(
+      const Config& config,
+      int payload_type) {
+    return webrtc::AudioEncoderL16::MakeAudioEncoder(config, payload_type);
+  }
+};
+
+struct AudioDecoderUnicornSparklesRainbow {
+  using Config = webrtc::AudioDecoderL16::Config;
+  static rtc::Optional<Config> SdpToConfig(webrtc::SdpAudioFormat format) {
+    if (STR_CASE_CMP(format.name.c_str(), "UnicornSparklesRainbow") == 0) {
+      const webrtc::SdpAudioFormat::Parameters expected_params = {
+          {"num_horns", "1"}};
+      EXPECT_EQ(expected_params, format.parameters);
+      format.parameters.clear();
+      format.name = "L16";
+      return webrtc::AudioDecoderL16::SdpToConfig(format);
+    } else {
+      return rtc::nullopt;
+    }
+  }
+  static void AppendSupportedDecoders(
+      std::vector<webrtc::AudioCodecSpec>* specs) {
+    std::vector<webrtc::AudioCodecSpec> new_specs;
+    webrtc::AudioDecoderL16::AppendSupportedDecoders(&new_specs);
+    for (auto& spec : new_specs) {
+      spec.format.name = "UnicornSparklesRainbow";
+      EXPECT_TRUE(spec.format.parameters.empty());
+      spec.format.parameters.emplace("num_horns", "1");
+      specs->push_back(spec);
+    }
+  }
+  static std::unique_ptr<webrtc::AudioDecoder> MakeAudioDecoder(
+      const Config& config) {
+    return webrtc::AudioDecoderL16::MakeAudioDecoder(config);
+  }
+};
+
+}  // namespace
+
 // Disabled for TSan v2, see
 // https://bugs.chromium.org/p/webrtc/issues/detail?id=4719 for details.
 // Disabled for Mac, see
 // https://bugs.chromium.org/p/webrtc/issues/detail?id=5231 for details.
-#if !defined(THREAD_SANITIZER) && !defined(WEBRTC_MAC)
-TEST_F(PeerConnectionEndToEndTest, Call) {
+#if defined(THREAD_SANITIZER) || defined(WEBRTC_MAC)
+#define MAYBE_Call DISABLED_Call
+#else
+#define MAYBE_Call Call
+#endif
+TEST_F(PeerConnectionEndToEndTest, MAYBE_Call) {
   rtc::scoped_refptr<webrtc::AudioDecoderFactory> real_decoder_factory =
       webrtc::CreateBuiltinAudioDecoderFactory();
   CreatePcs(nullptr, webrtc::CreateBuiltinAudioEncoderFactory(),
@@ -271,7 +352,6 @@ TEST_F(PeerConnectionEndToEndTest, Call) {
   Negotiate();
   WaitForCallEstablished();
 }
-#endif // if !defined(THREAD_SANITIZER) && !defined(WEBRTC_MAC)
 
 #if !defined(ADDRESS_SANITIZER)
 TEST_F(PeerConnectionEndToEndTest, CallWithLegacySdp) {
@@ -285,6 +365,16 @@ TEST_F(PeerConnectionEndToEndTest, CallWithLegacySdp) {
   WaitForCallEstablished();
 }
 #endif  // !defined(ADDRESS_SANITIZER)
+
+TEST_F(PeerConnectionEndToEndTest, CallWithCustomCodec) {
+  CreatePcs(
+      nullptr,
+      webrtc::CreateAudioEncoderFactory<AudioEncoderUnicornSparklesRainbow>(),
+      webrtc::CreateAudioDecoderFactory<AudioDecoderUnicornSparklesRainbow>());
+  GetAndAddUserMedia();
+  Negotiate();
+  WaitForCallEstablished();
+}
 
 #ifdef HAVE_SCTP
 // Verifies that a DataChannel created before the negotiation can transition to
@@ -408,85 +498,7 @@ TEST_F(PeerConnectionEndToEndTest,
   EXPECT_EQ(1U, dc_1_observer->received_message_count());
   EXPECT_EQ(1U, dc_2_observer->received_message_count());
 }
-#endif  // HAVE_SCTP
 
-#ifdef HAVE_QUIC
-// Test that QUIC data channels can be used and that messages go to the correct
-// remote data channel when both peers want to use QUIC. It is assumed that the
-// application has externally negotiated the data channel parameters.
-TEST_F(PeerConnectionEndToEndTest, MessageTransferBetweenQuicDataChannels) {
-  config_.enable_quic = true;
-  CreatePcs();
-
-  webrtc::DataChannelInit init_1;
-  init_1.id = 0;
-  init_1.ordered = false;
-  init_1.reliable = true;
-
-  webrtc::DataChannelInit init_2;
-  init_2.id = 1;
-  init_2.ordered = false;
-  init_2.reliable = true;
-
-  rtc::scoped_refptr<DataChannelInterface> caller_dc_1(
-      caller_->CreateDataChannel("data", init_1));
-  ASSERT_NE(nullptr, caller_dc_1);
-  rtc::scoped_refptr<DataChannelInterface> caller_dc_2(
-      caller_->CreateDataChannel("data", init_2));
-  ASSERT_NE(nullptr, caller_dc_2);
-  rtc::scoped_refptr<DataChannelInterface> callee_dc_1(
-      callee_->CreateDataChannel("data", init_1));
-  ASSERT_NE(nullptr, callee_dc_1);
-  rtc::scoped_refptr<DataChannelInterface> callee_dc_2(
-      callee_->CreateDataChannel("data", init_2));
-  ASSERT_NE(nullptr, callee_dc_2);
-
-  Negotiate();
-  WaitForConnection();
-  EXPECT_TRUE_WAIT(caller_dc_1->state() == webrtc::DataChannelInterface::kOpen,
-                   kMaxWait);
-  EXPECT_TRUE_WAIT(callee_dc_1->state() == webrtc::DataChannelInterface::kOpen,
-                   kMaxWait);
-  EXPECT_TRUE_WAIT(caller_dc_2->state() == webrtc::DataChannelInterface::kOpen,
-                   kMaxWait);
-  EXPECT_TRUE_WAIT(callee_dc_2->state() == webrtc::DataChannelInterface::kOpen,
-                   kMaxWait);
-
-  std::unique_ptr<webrtc::MockDataChannelObserver> dc_1_observer(
-      new webrtc::MockDataChannelObserver(callee_dc_1.get()));
-
-  std::unique_ptr<webrtc::MockDataChannelObserver> dc_2_observer(
-      new webrtc::MockDataChannelObserver(callee_dc_2.get()));
-
-  const std::string message_1 = "hello 1";
-  const std::string message_2 = "hello 2";
-
-  // Send data from caller to callee.
-  caller_dc_1->Send(webrtc::DataBuffer(message_1));
-  EXPECT_EQ_WAIT(message_1, dc_1_observer->last_message(), kMaxWait);
-
-  caller_dc_2->Send(webrtc::DataBuffer(message_2));
-  EXPECT_EQ_WAIT(message_2, dc_2_observer->last_message(), kMaxWait);
-
-  EXPECT_EQ(1U, dc_1_observer->received_message_count());
-  EXPECT_EQ(1U, dc_2_observer->received_message_count());
-
-  // Send data from callee to caller.
-  dc_1_observer.reset(new webrtc::MockDataChannelObserver(caller_dc_1.get()));
-  dc_2_observer.reset(new webrtc::MockDataChannelObserver(caller_dc_2.get()));
-
-  callee_dc_1->Send(webrtc::DataBuffer(message_1));
-  EXPECT_EQ_WAIT(message_1, dc_1_observer->last_message(), kMaxWait);
-
-  callee_dc_2->Send(webrtc::DataBuffer(message_2));
-  EXPECT_EQ_WAIT(message_2, dc_2_observer->last_message(), kMaxWait);
-
-  EXPECT_EQ(1U, dc_1_observer->received_message_count());
-  EXPECT_EQ(1U, dc_2_observer->received_message_count());
-}
-#endif  // HAVE_QUIC
-
-#ifdef HAVE_SCTP
 // Verifies that a DataChannel added from an OPEN message functions after
 // a channel has been previously closed (webrtc issue 3778).
 // This previously failed because the new channel re-uses the ID of the closed

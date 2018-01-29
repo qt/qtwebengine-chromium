@@ -7,9 +7,9 @@
 #include <map>
 
 #include "base/guid.h"
-#include "content/public/child/worker_thread.h"
 #include "content/public/renderer/render_frame.h"
 #include "content/public/renderer/render_thread.h"
+#include "content/public/renderer/worker_thread.h"
 #include "extensions/common/constants.h"
 #include "extensions/common/extension_messages.h"
 #include "extensions/common/features/feature.h"
@@ -133,8 +133,12 @@ class MainThreadIPCMessageSender : public IPCMessageSender {
         break;
       }
       case MessageTarget::TAB:
-      case MessageTarget::NATIVE_APP:
         NOTIMPLEMENTED();
+        break;
+      case MessageTarget::NATIVE_APP:
+        render_frame->Send(new ExtensionHostMsg_OpenChannelToNativeApp(
+            routing_id, *target.native_application_name, port_id));
+        break;
     }
   }
 

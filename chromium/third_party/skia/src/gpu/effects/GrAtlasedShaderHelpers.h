@@ -11,7 +11,7 @@
 #include "glsl/GrGLSLPrimitiveProcessor.h"
 #include "glsl/GrGLSLFragmentShaderBuilder.h"
 #include "glsl/GrGLSLVarying.h"
-#include "glsl/GrGLSLVertexShaderBuilder.h"
+#include "glsl/GrGLSLVertexGeoBuilder.h"
 
 static void append_index_uv_varyings(GrGLSLPrimitiveProcessor::EmitArgs& args,
                                      const char* inTexCoordsName,
@@ -29,14 +29,14 @@ static void append_index_uv_varyings(GrGLSLPrimitiveProcessor::EmitArgs& args,
     args.fVertBuilder->codeAppend("half texIdx = 2.0*diff.x + diff.y;");
 
     // Multiply by 1/atlasSize to get normalized texture coordinates
-    args.fVaryingHandler->addVarying("TextureCoords", uv, kHigh_GrSLPrecision);
+    args.fVaryingHandler->addVarying("TextureCoords", uv);
     args.fVertBuilder->codeAppendf("%s = intCoords * %s;", uv->vsOut(), atlasSizeInvName);
 
     args.fVaryingHandler->addVarying("TexIndex", texIdx);
     args.fVertBuilder->codeAppendf("%s = texIdx;", texIdx->vsOut());
 
     if (st) {
-        args.fVaryingHandler->addVarying("IntTextureCoords", st, kHigh_GrSLPrecision);
+        args.fVaryingHandler->addVarying("IntTextureCoords", st);
         args.fVertBuilder->codeAppendf("%s = intCoords;", st->vsOut());
     }
 }

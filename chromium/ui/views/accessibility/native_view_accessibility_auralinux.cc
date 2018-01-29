@@ -128,9 +128,9 @@ class AuraLinuxApplication
  private:
   friend struct base::DefaultSingletonTraits<AuraLinuxApplication>;
 
-  AuraLinuxApplication()
-      : platform_node_(ui::AXPlatformNode::Create(this)) {
+  AuraLinuxApplication() {
     data_.role = ui::AX_ROLE_APPLICATION;
+    platform_node_ = ui::AXPlatformNode::Create(this);
     if (ViewsDelegate::GetInstance()) {
       data_.AddStringAttribute(
           ui::AX_ATTR_NAME,
@@ -160,7 +160,7 @@ class AuraLinuxApplication
 std::unique_ptr<NativeViewAccessibility> NativeViewAccessibility::Create(
     View* view) {
   AuraLinuxApplication::GetInstance()->RegisterWidget(view->GetWidget());
-  return base::MakeUnique<NativeViewAccessibilityAuraLinux>(view);
+  return std::make_unique<NativeViewAccessibilityAuraLinux>(view);
 }
 
 NativeViewAccessibilityAuraLinux::NativeViewAccessibilityAuraLinux(View* view)

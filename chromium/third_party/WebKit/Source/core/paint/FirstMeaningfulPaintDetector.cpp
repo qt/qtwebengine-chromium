@@ -5,13 +5,13 @@
 #include "core/paint/FirstMeaningfulPaintDetector.h"
 
 #include "core/css/FontFaceSetDocument.h"
-#include "core/dom/TaskRunnerHelper.h"
 #include "core/paint/PaintTiming.h"
 #include "core/probe/CoreProbes.h"
+#include "platform/CrossThreadFunctional.h"
 #include "platform/Histogram.h"
 #include "platform/instrumentation/tracing/TraceEvent.h"
 #include "platform/loader/fetch/ResourceFetcher.h"
-#include "platform/wtf/Functional.h"
+#include "public/platform/TaskType.h"
 #include "public/platform/WebLayerTreeView.h"
 
 namespace blink {
@@ -34,11 +34,11 @@ FirstMeaningfulPaintDetector::FirstMeaningfulPaintDetector(
     Document& document)
     : paint_timing_(paint_timing),
       network0_quiet_timer_(
-          TaskRunnerHelper::Get(TaskType::kUnspecedTimer, &document),
+          document.GetTaskRunner(TaskType::kUnspecedTimer),
           this,
           &FirstMeaningfulPaintDetector::Network0QuietTimerFired),
       network2_quiet_timer_(
-          TaskRunnerHelper::Get(TaskType::kUnspecedTimer, &document),
+          document.GetTaskRunner(TaskType::kUnspecedTimer),
           this,
           &FirstMeaningfulPaintDetector::Network2QuietTimerFired) {}
 
@@ -247,8 +247,8 @@ void FirstMeaningfulPaintDetector::ReportHistograms() {
 void FirstMeaningfulPaintDetector::RegisterNotifySwapTime(PaintEvent event) {
   ++outstanding_swap_promise_count_;
   paint_timing_->RegisterNotifySwapTime(
-      event, WTF::Bind(&FirstMeaningfulPaintDetector::ReportSwapTime,
-                       WrapCrossThreadWeakPersistent(this), event));
+      event, CrossThreadBind(&FirstMeaningfulPaintDetector::ReportSwapTime,
+                             WrapCrossThreadWeakPersistent(this), event));
 }
 
 void FirstMeaningfulPaintDetector::ReportSwapTime(
@@ -321,7 +321,7 @@ void FirstMeaningfulPaintDetector::SetFirstMeaningfulPaint(double stamp,
       had_user_input_before_provisional_first_meaningful_paint_);
 }
 
-DEFINE_TRACE(FirstMeaningfulPaintDetector) {
+void FirstMeaningfulPaintDetector::Trace(blink::Visitor* visitor) {
   visitor->Trace(paint_timing_);
 }
 

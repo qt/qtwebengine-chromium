@@ -23,11 +23,15 @@
 #include "content/network/cache_url_loader.h"
 #include "content/network/http_server_properties_pref_delegate.h"
 #include "content/network/network_service_impl.h"
-#include "content/network/network_service_url_loader_factory_impl.h"
-#include "content/network/restricted_cookie_manager_impl.h"
-#include "content/network/url_loader_impl.h"
+#include "content/network/network_service_url_loader_factory.h"
+#include "content/network/restricted_cookie_manager.h"
+#include "content/network/throttling/network_conditions.h"
+#include "content/network/throttling/throttling_controller.h"
+#include "content/network/throttling/throttling_network_transaction_factory.h"
+#include "content/network/url_loader.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/content_switches.h"
+#include "content/public/network/ignore_errors_cert_verifier.h"
 #include "mojo/public/cpp/bindings/strong_binding.h"
 #include "net/dns/host_resolver.h"
 #include "net/dns/mapped_host_resolver.h"
@@ -51,7 +55,7 @@ NetworkContext::NetworkContext(NetworkServiceImpl* network_service,
   owned_url_request_context_ = MakeURLRequestContext(params_.get());
   url_request_context_ = owned_url_request_context_.get();
   cookie_manager_ =
-      base::MakeUnique<CookieManagerImpl>(url_request_context_->cookie_store());
+      std::make_unique<CookieManager>(url_request_context_->cookie_store());
   network_service_->RegisterNetworkContext(this);
   binding_.set_connection_error_handler(base::BindOnce(
       &NetworkContext::OnConnectionError, base::Unretained(this)));
@@ -71,27 +75,27 @@ NetworkContext::NetworkContext(
   if (params_ && params_->http_cache_path) {
     // Only sample 0.1% of NetworkContexts that get created.
     if (base::RandUint64() % 1000 == 0)
-      disk_checker_ = base::MakeUnique<DiskChecker>(*params_->http_cache_path);
+      disk_checker_ = std::make_unique<DiskChecker>(*params_->http_cache_path);
   }
   network_service_->RegisterNetworkContext(this);
   ApplyContextParamsToBuilder(builder.get(), params_.get());
   owned_url_request_context_ = builder->Build();
   url_request_context_ = owned_url_request_context_.get();
   cookie_manager_ =
-      base::MakeUnique<CookieManagerImpl>(url_request_context_->cookie_store());
+      std::make_unique<CookieManager>(url_request_context_->cookie_store());
 }
 
 NetworkContext::NetworkContext(mojom::NetworkContextRequest request,
                                net::URLRequestContext* url_request_context)
     : network_service_(nullptr),
       binding_(this, std::move(request)),
-      cookie_manager_(base::MakeUnique<CookieManagerImpl>(
+      cookie_manager_(std::make_unique<CookieManager>(
           url_request_context->cookie_store())) {
   url_request_context_ = url_request_context;
 }
 
 NetworkContext::~NetworkContext() {
-  // Call each URLLoaderImpl and ask it to release its net::URLRequest, as the
+  // Call each URLLoader and ask it to release its net::URLRequest, as the
   // corresponding net::URLRequestContext is going away with this
   // NetworkContext. The loaders can be deregistering themselves in Cleanup(),
   // so have to be careful.
@@ -107,12 +111,12 @@ std::unique_ptr<NetworkContext> NetworkContext::CreateForTesting() {
   return base::WrapUnique(new NetworkContext);
 }
 
-void NetworkContext::RegisterURLLoader(URLLoaderImpl* url_loader) {
+void NetworkContext::RegisterURLLoader(URLLoader* url_loader) {
   DCHECK(url_loaders_.count(url_loader) == 0);
   url_loaders_.insert(url_loader);
 }
 
-void NetworkContext::DeregisterURLLoader(URLLoaderImpl* url_loader) {
+void NetworkContext::DeregisterURLLoader(URLLoader* url_loader) {
   size_t removed_count = url_loaders_.erase(url_loader);
   DCHECK(removed_count);
 }
@@ -121,7 +125,7 @@ void NetworkContext::CreateURLLoaderFactory(
     mojom::URLLoaderFactoryRequest request,
     uint32_t process_id) {
   loader_factory_bindings_.AddBinding(
-      base::MakeUnique<NetworkServiceURLLoaderFactoryImpl>(this, process_id),
+      std::make_unique<NetworkServiceURLLoaderFactory>(this, process_id),
       std::move(request));
 }
 
@@ -139,10 +143,10 @@ void NetworkContext::GetRestrictedCookieManager(
     network::mojom::RestrictedCookieManagerRequest request,
     int32_t render_process_id,
     int32_t render_frame_id) {
-  // TODO(crbug.com/729800): RestrictedCookieManagerImpl should own its bindings
-  //     and NetworkContext should own the RestrictedCookieManagerImpl
+  // TODO(crbug.com/729800): RestrictedCookieManager should own its bindings
+  //     and NetworkContext should own the RestrictedCookieManager
   //     instances.
-  mojo::MakeStrongBinding(base::MakeUnique<RestrictedCookieManagerImpl>(
+  mojo::MakeStrongBinding(std::make_unique<RestrictedCookieManager>(
                               url_request_context_->cookie_store(),
                               render_process_id, render_frame_id),
                           std::move(request));
@@ -220,11 +224,17 @@ std::unique_ptr<net::URLRequestContext> NetworkContext::MakeURLRequestContext(
     config.proxy_rules().ParseFromString(
         command_line->GetSwitchValueASCII(switches::kProxyServer));
     std::unique_ptr<net::ProxyConfigService> fixed_config_service =
-        base::MakeUnique<net::ProxyConfigServiceFixed>(config);
+        std::make_unique<net::ProxyConfigServiceFixed>(config);
     builder.set_proxy_config_service(std::move(fixed_config_service));
   } else {
     builder.set_proxy_service(net::ProxyService::CreateDirect());
   }
+
+  std::unique_ptr<net::CertVerifier> cert_verifier =
+      net::CertVerifier::CreateDefault();
+  builder.SetCertVerifier(
+      content::IgnoreErrorsCertVerifier::MaybeWrapCertVerifier(
+          *command_line, nullptr, std::move(cert_verifier)));
 
   ApplyContextParamsToBuilder(&builder, network_context_params);
 
@@ -235,7 +245,7 @@ void NetworkContext::ApplyContextParamsToBuilder(
     net::URLRequestContextBuilder* builder,
     mojom::NetworkContextParams* network_context_params) {
   // |network_service_| may be nullptr in tests.
-  if (!builder->net_log() && network_service_)
+  if (network_service_)
     builder->set_net_log(network_service_->net_log());
 
   builder->set_enable_brotli(network_context_params->enable_brotli);
@@ -276,7 +286,7 @@ void NetworkContext::ApplyContextParamsToBuilder(
         std::make_unique<net::HttpServerPropertiesManager>(
             std::make_unique<HttpServerPropertiesPrefDelegate>(
                 pref_service_.get()),
-            builder->net_log()));
+            network_service_->net_log()));
   }
 
   builder->set_data_enabled(network_context_params->enable_data_url_support);
@@ -304,6 +314,11 @@ void NetworkContext::ApplyContextParamsToBuilder(
       network_context_params->http_09_on_non_default_ports_enabled;
 
   builder->set_http_network_session_params(session_params);
+  builder->SetCreateHttpTransactionFactoryCallback(
+      base::BindOnce([](net::HttpNetworkSession* session)
+                         -> std::unique_ptr<net::HttpTransactionFactory> {
+        return std::make_unique<ThrottlingNetworkTransactionFactory>(session);
+      }));
 }
 
 void NetworkContext::ClearNetworkingHistorySince(
@@ -319,6 +334,19 @@ void NetworkContext::ClearNetworkingHistorySince(
 
   url_request_context_->http_server_properties()->Clear();
   std::move(completion_callback).Run();
+}
+
+void NetworkContext::SetNetworkConditions(
+    const std::string& profile_id,
+    mojom::NetworkConditionsPtr conditions) {
+  std::unique_ptr<NetworkConditions> network_conditions;
+  if (conditions) {
+    network_conditions.reset(new NetworkConditions(
+        conditions->offline, conditions->latency.InMillisecondsF(),
+        conditions->download_throughput, conditions->upload_throughput));
+  }
+  ThrottlingController::SetConditions(profile_id,
+                                      std::move(network_conditions));
 }
 
 }  // namespace content

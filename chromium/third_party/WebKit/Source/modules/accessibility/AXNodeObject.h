@@ -49,7 +49,7 @@ class MODULES_EXPORT AXNodeObject : public AXObject {
  public:
   static AXNodeObject* Create(Node*, AXObjectCacheImpl&);
   ~AXNodeObject() override;
-  DECLARE_VIRTUAL_TRACE();
+  virtual void Trace(blink::Visitor*);
 
  protected:
   bool children_dirty_;
@@ -97,6 +97,7 @@ class MODULES_EXPORT AXNodeObject : public AXObject {
   bool IsControllingVideoElement() const;
   bool IsMultiline() const override;
   bool IsEditable() const override { return IsNativeTextControl(); }
+  bool ComputeIsEditableRoot() const override;
   bool IsEmbeddedObject() const final;
   bool IsFieldset() const final;
   bool IsHeading() const final;
@@ -151,6 +152,7 @@ class MODULES_EXPORT AXNodeObject : public AXObject {
   bool ValueForRange(float* out_value) const override;
   bool MaxValueForRange(float* out_value) const override;
   bool MinValueForRange(float* out_value) const override;
+  bool StepValueForRange(float* out_value) const override;
   String StringValue() const override;
 
   // ARIA attributes.
@@ -176,7 +178,8 @@ class MODULES_EXPORT AXNodeObject : public AXObject {
   // Location
   void GetRelativeBounds(AXObject** out_container,
                          FloatRect& out_bounds_in_container,
-                         SkMatrix44& out_container_transform) const override;
+                         SkMatrix44& out_container_transform,
+                         bool* clips_children = nullptr) const override;
 
   // High-level accessibility tree access.
   AXObject* ComputeParent() const override;
@@ -206,7 +209,6 @@ class MODULES_EXPORT AXNodeObject : public AXObject {
   void ChildrenChanged() override;
   void SelectionChanged() final;
   void TextChanged() override;
-  void UpdateAccessibilityRole() final;
 
   // Position in set and Size of set
   int PosInSet() const override;
@@ -232,7 +234,6 @@ class MODULES_EXPORT AXNodeObject : public AXObject {
                                AXRelatedObjectVector*,
                                NameSources*,
                                bool* found_text_alternative) const;
-  float StepValueForRange() const;
   bool IsDescendantOfElementType(HashSet<QualifiedName>& tag_names) const;
   String PlaceholderFromNativeAttribute() const;
 };

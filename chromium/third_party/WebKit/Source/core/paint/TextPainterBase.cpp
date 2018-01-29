@@ -110,7 +110,7 @@ TextPaintStyle TextPainterBase::TextPaintingStyle(const Document& document,
   TextPaintStyle text_style;
   bool is_printing = paint_info.IsPrinting();
 
-  if (paint_info.phase == kPaintPhaseTextClip) {
+  if (paint_info.phase == PaintPhase::kTextClip) {
     // When we use the text as a clip, we only care about the alpha, thus we
     // make all the colors black.
     text_style.current_color = Color::kBlack;
@@ -393,8 +393,8 @@ void TextPainterBase::PaintDecorationUnderOrOverLine(
     float decoration_offset) {
   AppliedDecorationPainter decoration_painter(
       context, decoration_info, line_offset, decoration, decoration_offset, 1);
-  if (EnumHasFlags(decoration_info.style->GetTextDecorationSkip(),
-                   TextDecorationSkip::kInk)) {
+  if (decoration_info.style->TextDecorationSkipInk() ==
+      ETextDecorationSkipInk::kAuto) {
     FloatRect decoration_bounds = decoration_painter.Bounds();
     ClipDecorationsStripe(-decoration_info.baseline + decoration_bounds.Y() -
                               decoration_info.local_origin.Y(),

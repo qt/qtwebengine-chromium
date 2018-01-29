@@ -207,7 +207,9 @@ class NET_EXPORT URLRequestJob : public base::PowerObserver {
 
   // The number of bytes read before passing to the filter. This value reflects
   // bytes read even when there is no filter.
-  int64_t prefilter_bytes_read() const { return prefilter_bytes_read_; }
+  // TODO(caseq): this is only virtual because of StreamURLRequestJob.
+  // Consider removing virtual when StreamURLRequestJob is gone.
+  virtual int64_t prefilter_bytes_read() const;
 
   // These methods are not applicable to all connections.
   virtual bool GetMimeType(std::string* mime_type) const;
@@ -259,7 +261,7 @@ class NET_EXPORT URLRequestJob : public base::PowerObserver {
   bool CanGetCookies(const CookieList& cookie_list) const;
 
   // Delegates to URLRequest::Delegate.
-  bool CanSetCookie(const std::string& cookie_line,
+  bool CanSetCookie(const net::CanonicalCookie& cookie,
                     CookieOptions* options) const;
 
   // Delegates to URLRequest::Delegate.

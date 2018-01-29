@@ -207,12 +207,7 @@ IdentityAndInfo CreateFakeIdentityAndInfoFromDers(
 
 class SSLIdentityTest : public testing::Test {
  public:
-  SSLIdentityTest() {}
-
-  ~SSLIdentityTest() {
-  }
-
-  virtual void SetUp() {
+  void SetUp() override {
     identity_rsa1_.reset(SSLIdentity::Generate("test1", rtc::KT_RSA));
     identity_rsa2_.reset(SSLIdentity::Generate("test2", rtc::KT_RSA));
     identity_ecdsa1_.reset(SSLIdentity::Generate("test3", rtc::KT_ECDSA));
@@ -499,7 +494,7 @@ class SSLIdentityExpirationTest : public testing::Test {
     // Set use of the test RNG to get deterministic expiration timestamp.
     rtc::SetRandomTestMode(true);
   }
-  ~SSLIdentityExpirationTest() {
+  ~SSLIdentityExpirationTest() override {
     // Put it back for the next test.
     rtc::SetRandomTestMode(false);
   }
@@ -568,7 +563,7 @@ class SSLIdentityExpirationTest : public testing::Test {
       memcpy(buf, entry.string, length);    // Copy the ASN1 string...
       buf[length] = rtc::CreateRandomId();  // ...and terminate it with junk.
       int64_t res = rtc::ASN1TimeToSec(buf, length, entry.long_format);
-      LOG(LS_VERBOSE) << entry.string;
+      RTC_LOG(LS_VERBOSE) << entry.string;
       ASSERT_EQ(entry.want, res);
     }
     // Run all examples again, but with an invalid length.
@@ -577,7 +572,7 @@ class SSLIdentityExpirationTest : public testing::Test {
       memcpy(buf, entry.string, length);    // Copy the ASN1 string...
       buf[length] = rtc::CreateRandomId();  // ...and terminate it with junk.
       int64_t res = rtc::ASN1TimeToSec(buf, length - 1, entry.long_format);
-      LOG(LS_VERBOSE) << entry.string;
+      RTC_LOG(LS_VERBOSE) << entry.string;
       ASSERT_EQ(-1, res);
     }
   }

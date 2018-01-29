@@ -328,6 +328,7 @@ ONC_EXPORT extern const char kServerCAPEMs[];
 ONC_EXPORT extern const char kServerCARef[];
 ONC_EXPORT extern const char kServerCARefs[];
 ONC_EXPORT extern const char kSubjectMatch[];
+ONC_EXPORT extern const char kTLSVersionMax[];
 ONC_EXPORT extern const char kUseSystemCAs[];
 ONC_EXPORT extern const char kUseProactiveKeyCaching[];
 }  // namespace eap
@@ -374,6 +375,7 @@ ONC_EXPORT extern const char kAuth[];
 ONC_EXPORT extern const char kCipher[];
 ONC_EXPORT extern const char kCompLZO[];
 ONC_EXPORT extern const char kCompNoAdapt[];
+ONC_EXPORT extern const char kExtraHosts[];
 ONC_EXPORT extern const char kIgnoreDefaultRoute[];
 ONC_EXPORT extern const char kInteract[];
 ONC_EXPORT extern const char kKeyDirection[];

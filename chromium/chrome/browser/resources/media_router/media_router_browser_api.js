@@ -312,6 +312,15 @@ cr.define('media_router.browserApi', function() {
     chrome.send('hangouts.setLocalPresent', [localPresent]);
   }
 
+  /**
+   * Sends a command to change the Media Remoting enabled value associated with
+   * current route.
+   * @param {boolean} enabled
+   */
+  function setMediaRemotingEnabled(enabled) {
+    chrome.send('setMediaRemotingEnabled', [enabled]);
+  }
+
   return {
     acknowledgeFirstRunFlow: acknowledgeFirstRunFlow,
     actOnIssue: actOnIssue,
@@ -344,6 +353,7 @@ cr.define('media_router.browserApi', function() {
     selectLocalMediaFile: selectLocalMediaFile,
     setCurrentMediaMute: setCurrentMediaMute,
     setCurrentMediaVolume: setCurrentMediaVolume,
-    setHangoutsLocalPresent: setHangoutsLocalPresent
+    setHangoutsLocalPresent: setHangoutsLocalPresent,
+    setMediaRemotingEnabled: setMediaRemotingEnabled
   };
 });

@@ -16,7 +16,7 @@
 #include "content/public/common/content_features.h"
 #include "content/public/common/content_switches.h"
 #include "media/capture/video/fake_video_capture_device.h"
-#include "third_party/WebKit/public/platform/WebFeaturePolicyFeature.h"
+#include "third_party/WebKit/common/feature_policy/feature_policy_feature.h"
 #include "url/gurl.h"
 #include "url/origin.h"
 
@@ -24,7 +24,7 @@ namespace content {
 
 bool IsFeatureEnabled(RenderFrameHost* rfh,
                       bool tests_use_fake_render_frame_hosts,
-                      blink::WebFeaturePolicyFeature feature) {
+                      blink::FeaturePolicyFeature feature) {
   if (!base::FeatureList::IsEnabled(features::kUseFeaturePolicyForPermissions))
     return true;
 
@@ -45,13 +45,13 @@ void SetAndCheckAncestorFlag(MediaStreamRequest* request) {
       RenderFrameHostImpl::FromID(request->render_process_id,
                                   request->render_frame_id);
 
-  if (rfh == NULL) {
+  if (rfh == nullptr) {
     // RenderFrame destroyed before the request is handled?
     return;
   }
   FrameTreeNode* node = rfh->frame_tree_node();
 
-  while (node->parent() != NULL) {
+  while (node->parent() != nullptr) {
     if (!node->HasSameOrigin(*node->parent())) {
       request->all_ancestors_have_same_origin =  false;
       return;
@@ -152,13 +152,13 @@ void MediaStreamUIProxy::Core::ProcessAccessRequestResponse(
   for (const MediaStreamDevice& device : devices) {
     if (device.type == MEDIA_DEVICE_AUDIO_CAPTURE &&
         !IsFeatureEnabled(host, tests_use_fake_render_frame_hosts_,
-                          blink::WebFeaturePolicyFeature::kMicrophone)) {
+                          blink::FeaturePolicyFeature::kMicrophone)) {
       continue;
     }
 
     if (device.type == MEDIA_DEVICE_VIDEO_CAPTURE &&
         !IsFeatureEnabled(host, tests_use_fake_render_frame_hosts_,
-                          blink::WebFeaturePolicyFeature::kCamera)) {
+                          blink::FeaturePolicyFeature::kCamera)) {
       continue;
     }
 
@@ -189,12 +189,12 @@ RenderFrameHostDelegate* MediaStreamUIProxy::Core::GetRenderFrameHostDelegate(
     return test_render_delegate_;
   RenderFrameHostImpl* host =
       RenderFrameHostImpl::FromID(render_process_id, render_frame_id);
-  return host ? host->delegate() : NULL;
+  return host ? host->delegate() : nullptr;
 }
 
 // static
 std::unique_ptr<MediaStreamUIProxy> MediaStreamUIProxy::Create() {
-  return std::unique_ptr<MediaStreamUIProxy>(new MediaStreamUIProxy(NULL));
+  return std::unique_ptr<MediaStreamUIProxy>(new MediaStreamUIProxy(nullptr));
 }
 
 // static

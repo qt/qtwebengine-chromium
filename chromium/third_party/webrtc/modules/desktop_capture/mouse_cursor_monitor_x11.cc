@@ -39,8 +39,8 @@ Window GetTopLevelWindow(Display* display, Window window) {
     unsigned int num_children;
     if (!XQueryTree(display, window, &root, &parent, &children,
                     &num_children)) {
-      LOG(LS_ERROR) << "Failed to query for child windows although window"
-                    << "does not have a valid WM_STATE.";
+      RTC_LOG(LS_ERROR) << "Failed to query for child windows although window"
+                        << "does not have a valid WM_STATE.";
       return None;
     }
     if (children)
@@ -148,7 +148,7 @@ void MouseCursorMonitorX11::Init(Callback* callback, Mode mode) {
 
     CaptureCursor();
   } else {
-    LOG(LS_INFO) << "X server does not support XFixes.";
+    RTC_LOG(LS_INFO) << "X server does not support XFixes.";
   }
 }
 
@@ -201,12 +201,11 @@ void MouseCursorMonitorX11::Capture() {
       }
     }
 
-    const DesktopVector position(win_x, win_y);
     // TODO(zijiehe): Remove this overload.
-    callback_->OnMouseCursorPosition(state, position);
+    callback_->OnMouseCursorPosition(state, DesktopVector(win_x, win_y));
     // X11 always starts the coordinate from (0, 0), so we do not need to
     // translate here.
-    callback_->OnMouseCursorPosition(position);
+    callback_->OnMouseCursorPosition(DesktopVector(root_x, root_y));
   }
 }
 

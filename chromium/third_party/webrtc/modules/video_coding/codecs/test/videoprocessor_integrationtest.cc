@@ -21,6 +21,8 @@
 #include "modules/video_coding/codecs/test/objc_codec_h264_test.h"
 #endif
 
+#include "common_types.h"  // NOLINT(build/include)
+#include "media/base/h264_profile_level_id.h"
 #include "media/engine/internaldecoderfactory.h"
 #include "media/engine/internalencoderfactory.h"
 #include "media/engine/videodecodersoftwarefallbackwrapper.h"
@@ -29,14 +31,13 @@
 #include "modules/video_coding/include/video_codec_interface.h"
 #include "modules/video_coding/include/video_coding.h"
 #include "rtc_base/checks.h"
+#include "rtc_base/cpu_time.h"
 #include "rtc_base/event.h"
 #include "rtc_base/file.h"
-#include "rtc_base/logging.h"
 #include "rtc_base/ptr_util.h"
 #include "system_wrappers/include/sleep.h"
 #include "test/testsupport/fileutils.h"
 #include "test/testsupport/metrics/video_metrics.h"
-#include "test/video_codec_settings.h"
 
 namespace webrtc {
 namespace test {
@@ -44,40 +45,144 @@ namespace test {
 namespace {
 
 const int kMaxBitrateMismatchPercent = 20;
-const int kBaseKeyFrameInterval = 3000;
 
 // Parameters from VP8 wrapper, which control target size of key frames.
 const float kInitialBufferSize = 0.5f;
 const float kOptimalBufferSize = 0.6f;
 const float kScaleKeyFrameSize = 0.5f;
 
-void VerifyQuality(const QualityMetricsResult& psnr_result,
-                   const QualityMetricsResult& ssim_result,
-                   const QualityThresholds& quality_thresholds) {
-  EXPECT_GT(psnr_result.average, quality_thresholds.min_avg_psnr);
-  EXPECT_GT(psnr_result.min, quality_thresholds.min_min_psnr);
-  EXPECT_GT(ssim_result.average, quality_thresholds.min_avg_ssim);
-  EXPECT_GT(ssim_result.min, quality_thresholds.min_min_ssim);
+bool RunEncodeInRealTime(const TestConfig& config) {
+  if (config.measure_cpu) {
+    return true;
+  }
+#if defined(WEBRTC_ANDROID)
+  // In order to not overwhelm the OpenMAX buffers in the Android MediaCodec.
+  return (config.hw_encoder || config.hw_decoder);
+#else
+  return false;
+#endif
 }
 
-void PrintQualityMetrics(const QualityMetricsResult& psnr_result,
-                         const QualityMetricsResult& ssim_result) {
-  printf("PSNR avg: %f, min: %f\n", psnr_result.average, psnr_result.min);
-  printf("SSIM avg: %f, min: %f\n", ssim_result.average, ssim_result.min);
-  printf("\n");
-}
+// An internal encoder factory in the old WebRtcVideoEncoderFactory format.
+// TODO(magjed): Update these tests to use new webrtc::VideoEncoderFactory
+// instead.
+class LegacyInternalEncoderFactory : public cricket::WebRtcVideoEncoderFactory {
+ public:
+  LegacyInternalEncoderFactory() {
+    for (const SdpVideoFormat& format :
+         InternalEncoderFactory().GetSupportedFormats()) {
+      supported_codecs_.push_back(cricket::VideoCodec(format));
+    }
+  }
 
-int NumberOfTemporalLayers(const VideoCodec& codec_settings) {
-  if (codec_settings.codecType == kVideoCodecVP8) {
-    return codec_settings.VP8().numberOfTemporalLayers;
-  } else if (codec_settings.codecType == kVideoCodecVP9) {
-    return codec_settings.VP9().numberOfTemporalLayers;
+  // WebRtcVideoEncoderFactory implementation.
+  VideoEncoder* CreateVideoEncoder(const cricket::VideoCodec& codec) override {
+    return InternalEncoderFactory()
+        .CreateVideoEncoder(SdpVideoFormat(codec.name, codec.params))
+        .release();
+  }
+
+  const std::vector<cricket::VideoCodec>& supported_codecs() const override {
+    return supported_codecs_;
+  }
+
+  bool EncoderTypeHasInternalSource(
+      webrtc::VideoCodecType type) const override {
+    return false;
+  }
+
+  void DestroyVideoEncoder(VideoEncoder* encoder) override { delete encoder; }
+
+ private:
+  std::vector<cricket::VideoCodec> supported_codecs_;
+};
+
+// An internal decoder factory in the old WebRtcVideoDecoderFactory format.
+// TODO(magjed): Update these tests to use new webrtc::VideoDecoderFactory
+// instead.
+class LegacyInternalDecoderFactory : public cricket::WebRtcVideoDecoderFactory {
+ public:
+  // WebRtcVideoDecoderFactory implementation.
+  VideoDecoder* CreateVideoDecoderWithParams(
+      const cricket::VideoCodec& codec,
+      cricket::VideoDecoderParams params) override {
+    return InternalDecoderFactory()
+        .CreateVideoDecoder(SdpVideoFormat(codec.name, codec.params))
+        .release();
+  }
+
+  void DestroyVideoDecoder(VideoDecoder* decoder) override { delete decoder; }
+};
+
+}  // namespace
+
+void VideoProcessorIntegrationTest::H264KeyframeChecker::CheckEncodedFrame(
+    webrtc::VideoCodecType codec,
+    const EncodedImage& encoded_frame) const {
+  EXPECT_EQ(kVideoCodecH264, codec);
+  bool contains_sps = false;
+  bool contains_pps = false;
+  bool contains_idr = false;
+  const std::vector<webrtc::H264::NaluIndex> nalu_indices =
+      webrtc::H264::FindNaluIndices(encoded_frame._buffer,
+                                    encoded_frame._length);
+  for (const webrtc::H264::NaluIndex& index : nalu_indices) {
+    webrtc::H264::NaluType nalu_type = webrtc::H264::ParseNaluType(
+        encoded_frame._buffer[index.payload_start_offset]);
+    if (nalu_type == webrtc::H264::NaluType::kSps) {
+      contains_sps = true;
+    } else if (nalu_type == webrtc::H264::NaluType::kPps) {
+      contains_pps = true;
+    } else if (nalu_type == webrtc::H264::NaluType::kIdr) {
+      contains_idr = true;
+    }
+  }
+  if (encoded_frame._frameType == kVideoFrameKey) {
+    EXPECT_TRUE(contains_sps) << "Keyframe should contain SPS.";
+    EXPECT_TRUE(contains_pps) << "Keyframe should contain PPS.";
+    EXPECT_TRUE(contains_idr) << "Keyframe should contain IDR.";
+  } else if (encoded_frame._frameType == kVideoFrameDelta) {
+    EXPECT_FALSE(contains_sps) << "Delta frame should not contain SPS.";
+    EXPECT_FALSE(contains_pps) << "Delta frame should not contain PPS.";
+    EXPECT_FALSE(contains_idr) << "Delta frame should not contain IDR.";
   } else {
-    return 1;
+    RTC_NOTREACHED();
   }
 }
 
-}  // namespace
+class VideoProcessorIntegrationTest::CpuProcessTime final {
+ public:
+  explicit CpuProcessTime(const TestConfig& config) : config_(config) {}
+  ~CpuProcessTime() {}
+
+  void Start() {
+    if (config_.measure_cpu) {
+      cpu_time_ -= rtc::GetProcessCpuTimeNanos();
+      wallclock_time_ -= rtc::SystemTimeNanos();
+    }
+  }
+  void Stop() {
+    if (config_.measure_cpu) {
+      cpu_time_ += rtc::GetProcessCpuTimeNanos();
+      wallclock_time_ += rtc::SystemTimeNanos();
+    }
+  }
+  void Print() const {
+    if (config_.measure_cpu) {
+      printf("CPU usage %%: %f\n", GetUsagePercent() / config_.NumberOfCores());
+      printf("\n");
+    }
+  }
+
+ private:
+  double GetUsagePercent() const {
+    return static_cast<double>(cpu_time_) / wallclock_time_ * 100.0;
+  }
+
+  const TestConfig config_;
+  int64_t cpu_time_ = 0;
+  int64_t wallclock_time_ = 0;
+};
 
 VideoProcessorIntegrationTest::VideoProcessorIntegrationTest() {
 #if defined(WEBRTC_ANDROID)
@@ -87,137 +192,54 @@ VideoProcessorIntegrationTest::VideoProcessorIntegrationTest() {
 
 VideoProcessorIntegrationTest::~VideoProcessorIntegrationTest() = default;
 
-void VideoProcessorIntegrationTest::SetCodecSettings(TestConfig* config,
-                                                     VideoCodecType codec_type,
-                                                     int num_temporal_layers,
-                                                     bool error_concealment_on,
-                                                     bool denoising_on,
-                                                     bool frame_dropper_on,
-                                                     bool spatial_resize_on,
-                                                     bool resilience_on,
-                                                     int width,
-                                                     int height) {
-  webrtc::test::CodecSettings(codec_type, &config->codec_settings);
-
-  // TODO(brandtr): Move the setting of |width| and |height| to the tests, and
-  // DCHECK that they are set before initializing the codec instead.
-  config->codec_settings.width = width;
-  config->codec_settings.height = height;
-
-  switch (config->codec_settings.codecType) {
-    case kVideoCodecVP8:
-      config->codec_settings.VP8()->resilience =
-          resilience_on ? kResilientStream : kResilienceOff;
-      config->codec_settings.VP8()->numberOfTemporalLayers =
-          num_temporal_layers;
-      config->codec_settings.VP8()->denoisingOn = denoising_on;
-      config->codec_settings.VP8()->errorConcealmentOn = error_concealment_on;
-      config->codec_settings.VP8()->automaticResizeOn = spatial_resize_on;
-      config->codec_settings.VP8()->frameDroppingOn = frame_dropper_on;
-      config->codec_settings.VP8()->keyFrameInterval = kBaseKeyFrameInterval;
-      break;
-    case kVideoCodecVP9:
-      config->codec_settings.VP9()->resilienceOn = resilience_on;
-      config->codec_settings.VP9()->numberOfTemporalLayers =
-          num_temporal_layers;
-      config->codec_settings.VP9()->denoisingOn = denoising_on;
-      config->codec_settings.VP9()->frameDroppingOn = frame_dropper_on;
-      config->codec_settings.VP9()->keyFrameInterval = kBaseKeyFrameInterval;
-      config->codec_settings.VP9()->automaticResizeOn = spatial_resize_on;
-      break;
-    case kVideoCodecH264:
-      config->codec_settings.H264()->frameDroppingOn = frame_dropper_on;
-      config->codec_settings.H264()->keyFrameInterval = kBaseKeyFrameInterval;
-      break;
-    default:
-      RTC_NOTREACHED();
-      break;
-  }
-}
-
-void VideoProcessorIntegrationTest::SetRateProfile(
-    RateProfile* rate_profile,
-    int rate_update_index,
-    int bitrate_kbps,
-    int framerate_fps,
-    int frame_index_rate_update) {
-  rate_profile->target_bit_rate[rate_update_index] = bitrate_kbps;
-  rate_profile->input_frame_rate[rate_update_index] = framerate_fps;
-  rate_profile->frame_index_rate_update[rate_update_index] =
-      frame_index_rate_update;
-}
-
-void VideoProcessorIntegrationTest::AddRateControlThresholds(
-    int max_num_dropped_frames,
-    int max_key_framesize_mismatch_percent,
-    int max_delta_framesize_mismatch_percent,
-    int max_bitrate_mismatch_percent,
-    int max_num_frames_to_hit_target,
-    int num_spatial_resizes,
-    int num_key_frames,
-    std::vector<RateControlThresholds>* rc_thresholds) {
-  RTC_DCHECK(rc_thresholds);
-
-  rc_thresholds->emplace_back();
-  RateControlThresholds* rc_threshold = &rc_thresholds->back();
-  rc_threshold->max_num_dropped_frames = max_num_dropped_frames;
-  rc_threshold->max_key_framesize_mismatch_percent =
-      max_key_framesize_mismatch_percent;
-  rc_threshold->max_delta_framesize_mismatch_percent =
-      max_delta_framesize_mismatch_percent;
-  rc_threshold->max_bitrate_mismatch_percent = max_bitrate_mismatch_percent;
-  rc_threshold->max_num_frames_to_hit_target = max_num_frames_to_hit_target;
-  rc_threshold->num_spatial_resizes = num_spatial_resizes;
-  rc_threshold->num_key_frames = num_key_frames;
-}
-
 // Processes all frames in the clip and verifies the result.
 void VideoProcessorIntegrationTest::ProcessFramesAndMaybeVerify(
-    const RateProfile& rate_profile,
+    const std::vector<RateProfile>& rate_profiles,
     const std::vector<RateControlThresholds>* rc_thresholds,
     const QualityThresholds* quality_thresholds,
     const BitstreamThresholds* bs_thresholds,
     const VisualizationParams* visualization_params) {
+  RTC_DCHECK(!rate_profiles.empty());
   // The Android HW codec needs to be run on a task queue, so we simply always
   // run the test on a task queue.
   rtc::TaskQueue task_queue("VidProc TQ");
   rtc::Event sync_event(false, false);
 
-  SetUpAndInitObjects(&task_queue, rate_profile.target_bit_rate[0],
-                      rate_profile.input_frame_rate[0], visualization_params);
+  SetUpAndInitObjects(&task_queue, rate_profiles[0].target_kbps,
+                      rate_profiles[0].input_fps, visualization_params);
+  PrintSettings();
 
   // Set initial rates.
   int rate_update_index = 0;
-  task_queue.PostTask([this, &rate_profile, rate_update_index] {
-    processor_->SetRates(rate_profile.target_bit_rate[rate_update_index],
-                         rate_profile.input_frame_rate[rate_update_index]);
+  task_queue.PostTask([this, &rate_profiles, rate_update_index] {
+    processor_->SetRates(rate_profiles[rate_update_index].target_kbps,
+                         rate_profiles[rate_update_index].input_fps);
   });
+
+  cpu_process_time_->Start();
 
   // Process all frames.
   int frame_number = 0;
-  const int num_frames = rate_profile.num_frames;
+  const int num_frames = config_.num_frames;
   RTC_DCHECK_GE(num_frames, 1);
   while (frame_number < num_frames) {
-    // In order to not overwhelm the OpenMAX buffers in the Android
-    // MediaCodec API, we roughly pace the frames here. The downside
-    // of this is that the encode run will be done in real-time.
-#if defined(WEBRTC_ANDROID)
-    if (config_.hw_encoder || config_.hw_decoder) {
+    if (RunEncodeInRealTime(config_)) {
+      // Roughly pace the frames.
       SleepMs(rtc::kNumMillisecsPerSec /
-              rate_profile.input_frame_rate[rate_update_index]);
+              rate_profiles[rate_update_index].input_fps);
     }
-#endif
 
     task_queue.PostTask([this] { processor_->ProcessFrame(); });
     ++frame_number;
 
     if (frame_number ==
-        rate_profile.frame_index_rate_update[rate_update_index + 1]) {
+        rate_profiles[rate_update_index].frame_index_rate_update) {
       ++rate_update_index;
+      RTC_DCHECK_GT(rate_profiles.size(), rate_update_index);
 
-      task_queue.PostTask([this, &rate_profile, rate_update_index] {
-        processor_->SetRates(rate_profile.target_bit_rate[rate_update_index],
-                             rate_profile.input_frame_rate[rate_update_index]);
+      task_queue.PostTask([this, &rate_profiles, rate_update_index] {
+        processor_->SetRates(rate_profiles[rate_update_index].target_kbps,
+                             rate_profiles[rate_update_index].input_fps);
       });
     }
   }
@@ -227,9 +249,8 @@ void VideoProcessorIntegrationTest::ProcessFramesAndMaybeVerify(
   if (config_.hw_encoder || config_.hw_decoder) {
     SleepMs(1 * rtc::kNumMillisecsPerSec);
   }
-  ReleaseAndCloseObjects(&task_queue);
+  cpu_process_time_->Stop();
 
-  // Calculate and print rate control statistics.
   std::vector<int> num_dropped_frames;
   std::vector<int> num_spatial_resizes;
   sync_event.Reset();
@@ -241,11 +262,19 @@ void VideoProcessorIntegrationTest::ProcessFramesAndMaybeVerify(
       });
   sync_event.Wait(rtc::Event::kForever);
 
+  ReleaseAndCloseObjects(&task_queue);
+
+  // Calculate and print rate control statistics.
   rate_update_index = 0;
   frame_number = 0;
-  ResetRateControlMetrics(rate_update_index, rate_profile);
+  quality_ = QualityMetrics();
+  ResetRateControlMetrics(rate_update_index, rate_profiles);
   while (frame_number < num_frames) {
     UpdateRateControlMetrics(frame_number);
+
+    if (quality_thresholds) {
+      UpdateQualityMetrics(frame_number);
+    }
 
     if (bs_thresholds) {
       VerifyBitstream(frame_number, *bs_thresholds);
@@ -254,13 +283,13 @@ void VideoProcessorIntegrationTest::ProcessFramesAndMaybeVerify(
     ++frame_number;
 
     if (frame_number ==
-        rate_profile.frame_index_rate_update[rate_update_index + 1]) {
+        rate_profiles[rate_update_index].frame_index_rate_update) {
       PrintRateControlMetrics(rate_update_index, num_dropped_frames,
                               num_spatial_resizes);
       VerifyRateControlMetrics(rate_update_index, rc_thresholds,
                                num_dropped_frames, num_spatial_resizes);
       ++rate_update_index;
-      ResetRateControlMetrics(rate_update_index, rate_profile);
+      ResetRateControlMetrics(rate_update_index, rate_profiles);
     }
   }
 
@@ -269,27 +298,14 @@ void VideoProcessorIntegrationTest::ProcessFramesAndMaybeVerify(
   VerifyRateControlMetrics(rate_update_index, rc_thresholds, num_dropped_frames,
                            num_spatial_resizes);
 
+  if (quality_thresholds) {
+    VerifyQualityMetrics(*quality_thresholds);
+  }
+
   // Calculate and print other statistics.
   EXPECT_EQ(num_frames, static_cast<int>(stats_.size()));
   stats_.PrintSummary();
-
-  // Calculate and print image quality statistics.
-  // TODO(marpan): Should compute these quality metrics per SetRates update.
-  QualityMetricsResult psnr_result, ssim_result;
-  EXPECT_EQ(0, I420MetricsFromFiles(config_.input_filename.c_str(),
-                                    config_.output_filename.c_str(),
-                                    config_.codec_settings.width,
-                                    config_.codec_settings.height, &psnr_result,
-                                    &ssim_result));
-  if (quality_thresholds) {
-    VerifyQuality(psnr_result, ssim_result, *quality_thresholds);
-  }
-  PrintQualityMetrics(psnr_result, ssim_result);
-
-  // Remove analysis file.
-  if (remove(config_.output_filename.c_str()) < 0) {
-    fprintf(stderr, "Failed to remove temporary file!\n");
-  }
+  cpu_process_time_->Print();
 }
 
 void VideoProcessorIntegrationTest::CreateEncoderAndDecoder() {
@@ -305,7 +321,7 @@ void VideoProcessorIntegrationTest::CreateEncoderAndDecoder() {
     RTC_NOTREACHED() << "Only support HW encoder on Android and iOS.";
 #endif
   } else {
-    encoder_factory.reset(new cricket::InternalEncoderFactory());
+    encoder_factory.reset(new LegacyInternalEncoderFactory());
   }
 
   std::unique_ptr<cricket::WebRtcVideoDecoderFactory> decoder_factory;
@@ -320,7 +336,7 @@ void VideoProcessorIntegrationTest::CreateEncoderAndDecoder() {
     RTC_NOTREACHED() << "Only support HW decoder on Android and iOS.";
 #endif
   } else {
-    decoder_factory.reset(new cricket::InternalDecoderFactory());
+    decoder_factory.reset(new LegacyInternalDecoderFactory());
   }
 
   cricket::VideoCodec codec;
@@ -339,12 +355,27 @@ void VideoProcessorIntegrationTest::CreateEncoderAndDecoder() {
           decoder_factory->CreateVideoDecoderWithParams(codec, decoder_params));
       break;
     case kVideoCodecH264:
-      // TODO(brandtr): Generalize so that we support multiple profiles here.
       codec = cricket::VideoCodec(cricket::kH264CodecName);
-      if (config_.packetization_mode == H264PacketizationMode::NonInterleaved) {
+      if (config_.h264_codec_settings.profile ==
+          H264::kProfileConstrainedHigh) {
+        const H264::ProfileLevelId constrained_high_profile(
+            H264::kProfileConstrainedHigh, H264::kLevel3_1);
+        codec.SetParam(cricket::kH264FmtpProfileLevelId,
+                       *H264::ProfileLevelIdToString(constrained_high_profile));
+      } else {
+        RTC_CHECK_EQ(config_.h264_codec_settings.profile,
+                     H264::kProfileConstrainedBaseline);
+        const H264::ProfileLevelId constrained_baseline_profile(
+            H264::kProfileConstrainedBaseline, H264::kLevel3_1);
+        codec.SetParam(
+            cricket::kH264FmtpProfileLevelId,
+            *H264::ProfileLevelIdToString(constrained_baseline_profile));
+      }
+      if (config_.h264_codec_settings.packetization_mode ==
+          H264PacketizationMode::NonInterleaved) {
         codec.SetParam(cricket::kH264FmtpPacketizationMode, "1");
       } else {
-        RTC_CHECK_EQ(config_.packetization_mode,
+        RTC_CHECK_EQ(config_.h264_codec_settings.packetization_mode,
                      H264PacketizationMode::SingleNalUnit);
         codec.SetParam(cricket::kH264FmtpPacketizationMode, "0");
       }
@@ -359,11 +390,15 @@ void VideoProcessorIntegrationTest::CreateEncoderAndDecoder() {
 
   if (config_.sw_fallback_encoder) {
     encoder_ = rtc::MakeUnique<VideoEncoderSoftwareFallbackWrapper>(
-        codec, std::move(encoder_));
+        InternalEncoderFactory().CreateVideoEncoder(
+            SdpVideoFormat(codec.name, codec.params)),
+        std::move(encoder_));
   }
   if (config_.sw_fallback_decoder) {
     decoder_ = rtc::MakeUnique<VideoDecoderSoftwareFallbackWrapper>(
-        config_.codec_settings.codecType, std::move(decoder_));
+        InternalDecoderFactory().CreateVideoDecoder(
+            SdpVideoFormat(codec.name, codec.params)),
+        std::move(decoder_));
   }
 
   EXPECT_TRUE(encoder_) << "Encoder not successfully created.";
@@ -382,6 +417,10 @@ void VideoProcessorIntegrationTest::SetUpAndInitObjects(
     const VisualizationParams* visualization_params) {
   CreateEncoderAndDecoder();
 
+  config_.codec_settings.minBitrate = 0;
+  config_.codec_settings.startBitrate = initial_bitrate_kbps;
+  config_.codec_settings.maxFramerate = initial_framerate_fps;
+
   // Create file objects for quality analysis.
   analysis_frame_reader_.reset(new YuvFrameReaderImpl(
       config_.input_filename, config_.codec_settings.width,
@@ -393,15 +432,8 @@ void VideoProcessorIntegrationTest::SetUpAndInitObjects(
   EXPECT_TRUE(analysis_frame_writer_->Init());
 
   if (visualization_params) {
-    const std::string codec_name =
-        CodecTypeToPayloadString(config_.codec_settings.codecType);
-    const std::string implementation_type = config_.hw_encoder ? "hw" : "sw";
-    // clang-format off
     const std::string output_filename_base =
-        OutputPath() + config_.filename + "-" +
-        codec_name + "-" + implementation_type + "-" +
-        std::to_string(initial_bitrate_kbps);
-    // clang-format on
+        OutputPath() + config_.FilenameWithParams();
     if (visualization_params->save_encoded_ivf) {
       rtc::File post_encode_file =
           rtc::File::Create(output_filename_base + ".ivf");
@@ -416,20 +448,16 @@ void VideoProcessorIntegrationTest::SetUpAndInitObjects(
     }
   }
 
+  cpu_process_time_.reset(new CpuProcessTime(config_));
   packet_manipulator_.reset(new PacketManipulatorImpl(
-      &packet_reader_, config_.networking_config, config_.verbose));
-
-  config_.codec_settings.minBitrate = 0;
-  config_.codec_settings.startBitrate = initial_bitrate_kbps;
-  config_.codec_settings.maxFramerate = initial_framerate_fps;
+      &packet_reader_, config_.networking_config, false));
 
   rtc::Event sync_event(false, false);
   task_queue->PostTask([this, &sync_event]() {
     processor_ = rtc::MakeUnique<VideoProcessor>(
         encoder_.get(), decoder_.get(), analysis_frame_reader_.get(),
-        analysis_frame_writer_.get(), packet_manipulator_.get(), config_,
-        &stats_, encoded_frame_writer_.get(), decoded_frame_writer_.get());
-    processor_->Init();
+        packet_manipulator_.get(), config_, &stats_,
+        encoded_frame_writer_.get(), decoded_frame_writer_.get());
     sync_event.Set();
   });
   sync_event.Wait(rtc::Event::kForever);
@@ -439,17 +467,15 @@ void VideoProcessorIntegrationTest::ReleaseAndCloseObjects(
     rtc::TaskQueue* task_queue) {
   rtc::Event sync_event(false, false);
   task_queue->PostTask([this, &sync_event]() {
-    processor_->Release();
+    processor_.reset();
     sync_event.Set();
   });
   sync_event.Wait(rtc::Event::kForever);
 
-  // The VideoProcessor must be ::Release()'d before we destroy the codecs.
+  // The VideoProcessor must be destroyed before the codecs.
   DestroyEncoderAndDecoder();
 
-  // Close the analysis files before we use them for SSIM/PSNR calculations.
   analysis_frame_reader_->Close();
-  analysis_frame_writer_->Close();
 
   // Close visualization files.
   if (encoded_frame_writer_) {
@@ -464,7 +490,7 @@ void VideoProcessorIntegrationTest::ReleaseAndCloseObjects(
 void VideoProcessorIntegrationTest::UpdateRateControlMetrics(int frame_number) {
   RTC_CHECK_GE(frame_number, 0);
 
-  const int tl_idx = TemporalLayerIndexForFrame(frame_number);
+  const int tl_idx = config_.TemporalLayerForFrame(frame_number);
   ++actual_.num_frames_layer[tl_idx];
   ++actual_.num_frames;
 
@@ -528,8 +554,7 @@ void VideoProcessorIntegrationTest::VerifyRateControlMetrics(
   EXPECT_LE(actual_.BitrateMismatchPercent(target_.kbps),
             rc_threshold.max_bitrate_mismatch_percent);
 
-  const int num_temporal_layers =
-      NumberOfTemporalLayers(config_.codec_settings);
+  const int num_temporal_layers = config_.NumberOfTemporalLayers();
   for (int i = 0; i < num_temporal_layers; ++i) {
     EXPECT_LE(actual_.DeltaFrameSizeMismatchPercent(i),
               rc_threshold.max_delta_framesize_mismatch_percent);
@@ -538,38 +563,72 @@ void VideoProcessorIntegrationTest::VerifyRateControlMetrics(
   }
 }
 
+void VideoProcessorIntegrationTest::UpdateQualityMetrics(int frame_number) {
+  FrameStatistic* frame_stat = stats_.GetFrame(frame_number);
+  if (frame_stat->decoding_successful) {
+    ++quality_.num_decoded_frames;
+    quality_.total_psnr += frame_stat->psnr;
+    quality_.total_ssim += frame_stat->ssim;
+    if (frame_stat->psnr < quality_.min_psnr)
+      quality_.min_psnr = frame_stat->psnr;
+    if (frame_stat->ssim < quality_.min_ssim)
+      quality_.min_ssim = frame_stat->ssim;
+  }
+}
+
 void VideoProcessorIntegrationTest::PrintRateControlMetrics(
     int rate_update_index,
     const std::vector<int>& num_dropped_frames,
     const std::vector<int>& num_spatial_resizes) const {
+  if (rate_update_index == 0) {
+    printf("Rate control statistics\n==\n");
+  }
+
   printf("Rate update #%d:\n", rate_update_index);
-  printf(" Target bitrate         : %d\n", target_.kbps);
-  printf(" Encoded bitrate        : %f\n", actual_.kbps);
-  printf(" Frame rate             : %d\n", target_.fps);
-  printf(" # processed frames     : %d\n", actual_.num_frames);
-  printf(" # frames to convergence: %d\n", actual_.num_frames_to_hit_target);
-  printf(" # dropped frames       : %d\n",
+  printf(" Target bitrate          : %d\n", target_.kbps);
+  printf(" Encoded bitrate         : %f\n", actual_.kbps);
+  printf(" Frame rate              : %d\n", target_.fps);
+  printf(" # processed frames      : %d\n", actual_.num_frames);
+  printf(" # frames to convergence : %d\n", actual_.num_frames_to_hit_target);
+  printf(" # dropped frames        : %d\n",
          num_dropped_frames[rate_update_index]);
-  printf(" # spatial resizes      : %d\n",
+  printf(" # spatial resizes       : %d\n",
          num_spatial_resizes[rate_update_index]);
-  printf(" # key frames           : %d\n", actual_.num_key_frames);
-  printf(" Key frame rate mismatch: %d\n",
+  printf(" # key frames            : %d\n", actual_.num_key_frames);
+  printf(" Key frame rate mismatch : %d\n",
          actual_.KeyFrameSizeMismatchPercent());
 
-  const int num_temporal_layers =
-      NumberOfTemporalLayers(config_.codec_settings);
+  const int num_temporal_layers = config_.NumberOfTemporalLayers();
   for (int i = 0; i < num_temporal_layers; ++i) {
     printf(" Temporal layer #%d:\n", i);
-    printf("  Layer target bitrate        : %f\n", target_.kbps_layer[i]);
-    printf("  Layer frame rate            : %f\n", target_.fps_layer[i]);
-    printf("  Layer per frame bandwidth   : %f\n",
-           target_.framesize_kbits_layer[i]);
-    printf("  Layer encoded bitrate       : %f\n", actual_.kbps_layer[i]);
-    printf("  Layer frame size %% mismatch : %d\n",
+    printf("  TL%d target bitrate        : %f\n", i, target_.kbps_layer[i]);
+    printf("  TL%d encoded bitrate       : %f\n", i, actual_.kbps_layer[i]);
+    printf("  TL%d frame rate            : %f\n", i, target_.fps_layer[i]);
+    printf("  TL%d # processed frames    : %d\n", i,
+           actual_.num_frames_layer[i]);
+    printf("  TL%d frame size %% mismatch : %d\n", i,
            actual_.DeltaFrameSizeMismatchPercent(i));
-    printf("  Layer bitrate %% mismatch    : %d\n",
+    printf("  TL%d bitrate %% mismatch    : %d\n", i,
            actual_.BitrateMismatchPercent(i, target_.kbps_layer[i]));
-    printf("  # processed frames per layer: %d\n", actual_.num_frames_layer[i]);
+    printf("  TL%d per-frame bitrate     : %f\n", i,
+           target_.framesize_kbits_layer[i]);
+  }
+  printf("\n");
+}
+
+void VideoProcessorIntegrationTest::PrintSettings() const {
+  printf("VideoProcessor settings\n==\n");
+  printf(" Total # of frames: %d", analysis_frame_reader_->NumberOfFrames());
+  printf("%s\n", config_.ToString().c_str());
+
+  printf("VideoProcessorIntegrationTest settings\n==\n");
+  const char* encoder_name = encoder_->ImplementationName();
+  printf(" Encoder implementation name: %s\n", encoder_name);
+  const char* decoder_name = decoder_->ImplementationName();
+  printf(" Decoder implementation name: %s\n", decoder_name);
+  if (strcmp(encoder_name, decoder_name) == 0) {
+    printf(" Codec implementation name : %s_%s\n", config_.CodecName().c_str(),
+           encoder_name);
   }
   printf("\n");
 }
@@ -582,45 +641,25 @@ void VideoProcessorIntegrationTest::VerifyBitstream(
   EXPECT_LE(*(frame_stat->max_nalu_length), bs_thresholds.max_nalu_length);
 }
 
-// Temporal layer index corresponding to frame number, for up to 3 layers.
-int VideoProcessorIntegrationTest::TemporalLayerIndexForFrame(
-    int frame_number) const {
-  int tl_idx = -1;
-  switch (NumberOfTemporalLayers(config_.codec_settings)) {
-    case 1:
-      tl_idx = 0;
-      break;
-    case 2:
-      // temporal layer 0:  0     2     4 ...
-      // temporal layer 1:     1     3
-      tl_idx = (frame_number % 2 == 0) ? 0 : 1;
-      break;
-    case 3:
-      // temporal layer 0:  0            4            8 ...
-      // temporal layer 1:        2            6
-      // temporal layer 2:     1      3     5      7
-      if (frame_number % 4 == 0) {
-        tl_idx = 0;
-      } else if ((frame_number + 2) % 4 == 0) {
-        tl_idx = 1;
-      } else if ((frame_number + 1) % 2 == 0) {
-        tl_idx = 2;
-      }
-      break;
-    default:
-      RTC_NOTREACHED();
-      break;
-  }
-  return tl_idx;
+void VideoProcessorIntegrationTest::VerifyQualityMetrics(
+    const QualityThresholds& quality_thresholds) {
+  EXPECT_GT(quality_.num_decoded_frames, 0);
+  EXPECT_GT(quality_.total_psnr / quality_.num_decoded_frames,
+            quality_thresholds.min_avg_psnr);
+  EXPECT_GT(quality_.min_psnr, quality_thresholds.min_min_psnr);
+  EXPECT_GT(quality_.total_ssim / quality_.num_decoded_frames,
+            quality_thresholds.min_avg_ssim);
+  EXPECT_GT(quality_.min_ssim, quality_thresholds.min_min_ssim);
 }
 
 // Reset quantities before each encoder rate update.
 void VideoProcessorIntegrationTest::ResetRateControlMetrics(
     int rate_update_index,
-    const RateProfile& rate_profile) {
+    const std::vector<RateProfile>& rate_profiles) {
+  RTC_DCHECK_GT(rate_profiles.size(), rate_update_index);
   // Set new rates.
-  target_.kbps = rate_profile.target_bit_rate[rate_update_index];
-  target_.fps = rate_profile.input_frame_rate[rate_update_index];
+  target_.kbps = rate_profiles[rate_update_index].target_kbps;
+  target_.fps = rate_profiles[rate_update_index].input_fps;
   SetRatesPerTemporalLayer();
 
   // Set key frame target sizes.
@@ -642,12 +681,11 @@ void VideoProcessorIntegrationTest::ResetRateControlMetrics(
   // Reset rate control metrics.
   actual_ = TestResults();
   actual_.num_frames_to_hit_target =  // Set to max number of frames.
-      rate_profile.frame_index_rate_update[rate_update_index + 1];
+      rate_profiles[rate_update_index].frame_index_rate_update;
 }
 
 void VideoProcessorIntegrationTest::SetRatesPerTemporalLayer() {
-  const int num_temporal_layers =
-      NumberOfTemporalLayers(config_.codec_settings);
+  const int num_temporal_layers = config_.NumberOfTemporalLayers();
   RTC_DCHECK_LE(num_temporal_layers, kMaxNumTemporalLayers);
 
   for (int i = 0; i < num_temporal_layers; ++i) {

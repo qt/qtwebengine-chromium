@@ -59,15 +59,27 @@ public:
     virtual void writeRegion(const SkRegion& region) = 0;
     virtual void writePath(const SkPath& path) = 0;
     virtual size_t writeStream(SkStream* stream, size_t length) = 0;
-    virtual void writeBitmap(const SkBitmap& bitmap) = 0;
     virtual void writeImage(const SkImage*) = 0;
     virtual void writeTypeface(SkTypeface* typeface) = 0;
     virtual void writePaint(const SkPaint& paint) = 0;
 
     void setDeduper(SkDeduper* deduper) { fDeduper = deduper; }
 
+    /**
+     *  Return a client specified context pointer. This is not interpreted by the writebuffer.
+     *  It defaults to nullptr, but may be set with setClientContext(...).
+     */
+    void* getClientContext() const { return fClientCtx; }
+
+    /**
+     *  Set the client specified context pointer. This is not interpreted by the writebuffer.
+     *  It defaults to nullptr. It can be inspected by calling getClientContext().
+     */
+    void setClientContext(void* ctx) { fClientCtx = ctx; }
+
 protected:
     SkDeduper* fDeduper = nullptr;
+    void*      fClientCtx = nullptr;
 };
 
 /**
@@ -119,7 +131,6 @@ public:
     void writeRegion(const SkRegion& region) override;
     void writePath(const SkPath& path) override;
     size_t writeStream(SkStream* stream, size_t length) override;
-    void writeBitmap(const SkBitmap& bitmap) override;
     void writeImage(const SkImage*) override;
     void writeTypeface(SkTypeface* typeface) override;
     void writePaint(const SkPaint& paint) override;

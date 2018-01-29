@@ -19,6 +19,8 @@
 #include "SkMakeUnique.h"
 #include "SkMaskGamma.h"
 #include "SkMatrix22.h"
+#include "SkOnce.h"
+#include "SkOTTable_OS_2.h"
 #include "SkOTTable_maxp.h"
 #include "SkOTTable_name.h"
 #include "SkOTUtils.h"
@@ -58,7 +60,7 @@ typedef uint32_t SkGdiRGB;
 // for rotated text, regardless of GDI's notions.
 //#define SK_ENFORCE_ROTATED_TEXT_AA_ON_WINDOWS
 
-static bool isLCD(const SkScalerContext::Rec& rec) {
+static bool isLCD(const SkScalerContextRec& rec) {
     return SkMask::kLCD16_Format == rec.fMaskFormat;
 }
 
@@ -67,13 +69,13 @@ static bool bothZero(SkScalar a, SkScalar b) {
 }
 
 // returns false if there is any non-90-rotation or skew
-static bool isAxisAligned(const SkScalerContext::Rec& rec) {
+static bool isAxisAligned(const SkScalerContextRec& rec) {
     return 0 == rec.fPreSkewX &&
            (bothZero(rec.fPost2x2[0][1], rec.fPost2x2[1][0]) ||
             bothZero(rec.fPost2x2[0][0], rec.fPost2x2[1][1]));
 }
 
-static bool needToRenderWithSkia(const SkScalerContext::Rec& rec) {
+static bool needToRenderWithSkia(const SkScalerContextRec& rec) {
 #ifdef SK_ENFORCE_ROTATED_TEXT_AA_ON_WINDOWS
     // What we really want to catch is when GDI will ignore the AA request and give
     // us BW instead. Smallish rotated text is one heuristic, so this code is just
@@ -591,7 +593,7 @@ static inline float FIXED2float(FIXED x) {
     return SkFixedToFloat(SkFIXEDToFixed(x));
 }
 
-static BYTE compute_quality(const SkScalerContext::Rec& rec) {
+static BYTE compute_quality(const SkScalerContextRec& rec) {
     switch (rec.fMaskFormat) {
         case SkMask::kBW_Format:
             return NONANTIALIASED_QUALITY;
@@ -1045,24 +1047,11 @@ static void build_power_table(uint8_t table[], float ee) {
  *  that shifting into other color spaces is imprecise.
  */
 static const uint8_t* getInverseGammaTableGDI() {
-    // Since build_power_table is idempotent, many threads can build gTableGdi
-    // simultaneously.
-
-    // Microsoft Specific:
-    // Making gInited volatile provides read-aquire and write-release in vc++.
-    // In VS2012, see compiler option /volatile:(ms|iso).
-    // Replace with C++11 atomics when possible.
-    static volatile bool gInited;
+    static SkOnce once;
     static uint8_t gTableGdi[256];
-    if (gInited) {
-        // Need a L/L (read) barrier (full acquire not needed). If gInited is observed
-        // true then gTableGdi is observable, but it must be requested.
-    } else {
+    once([]{
         build_power_table(gTableGdi, 2.3f);
-        // Need a S/S (write) barrier (full release not needed) here so that this
-        // write to gInited becomes observable after gTableGdi.
-        gInited = true;
-    }
+    });
     return gTableGdi;
 }
 
@@ -1074,29 +1063,16 @@ static const uint8_t* getInverseGammaTableGDI() {
  *  If this value is not specified, the default is a gamma of 1.4.
  */
 static const uint8_t* getInverseGammaTableClearType() {
-    // We don't expect SPI_GETFONTSMOOTHINGCONTRAST to ever change, so building
-    // gTableClearType with build_power_table is effectively idempotent.
-
-    // Microsoft Specific:
-    // Making gInited volatile provides read-aquire and write-release in vc++.
-    // In VS2012, see compiler option /volatile:(ms|iso).
-    // Replace with C++11 atomics when possible.
-    static volatile bool gInited;
+    static SkOnce once;
     static uint8_t gTableClearType[256];
-    if (gInited) {
-        // Need a L/L (read) barrier (acquire not needed). If gInited is observed
-        // true then gTableClearType is observable, but it must be requested.
-    } else {
+    once([]{
         UINT level = 0;
         if (!SystemParametersInfo(SPI_GETFONTSMOOTHINGCONTRAST, 0, &level, 0) || !level) {
             // can't get the data, so use a default
             level = 1400;
         }
         build_power_table(gTableClearType, level / 1000.0f);
-        // Need a S/S (write) barrier (release not needed) here so that this
-        // write to gInited becomes observable after gTableClearType.
-        gInited = true;
-    }
+    });
     return gTableClearType;
 }
 
@@ -1758,11 +1734,20 @@ std::unique_ptr<SkAdvancedTypefaceMetrics> LogFontTypeface::onGetAdvancedMetrics
 
     info.reset(new SkAdvancedTypefaceMetrics);
     tchar_to_skstring(lf.lfFaceName, &info->fFontName);
-    // If bit 1 is set, the font may not be embedded in a document.
-    // If bit 1 is clear, the font can be embedded.
-    // If bit 2 is set, the embedding is read-only.
-    if (otm.otmfsType & 0x1) {
-        info->fFlags |= SkAdvancedTypefaceMetrics::kNotEmbeddable_FontFlag;
+
+    SkOTTableOS2_V4::Type fsType;
+    if (sizeof(fsType) == this->getTableData(SkTEndian_SwapBE32(SkOTTableOS2::TAG),
+                                             offsetof(SkOTTableOS2_V4, fsType),
+                                             sizeof(fsType),
+                                             &fsType)) {
+        SkOTUtils::SetAdvancedTypefaceFlags(fsType, info.get());
+    } else {
+        // If bit 1 is set, the font may not be embedded in a document.
+        // If bit 1 is clear, the font can be embedded.
+        // If bit 2 is set, the embedding is read-only.
+        if (otm.otmfsType & 0x1) {
+            info->fFlags |= SkAdvancedTypefaceMetrics::kNotEmbeddable_FontFlag;
+        }
     }
 
     populate_glyph_to_unicode(hdc, glyphCount, &(info->fGlyphToUnicode));

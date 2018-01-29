@@ -147,6 +147,7 @@ void NativeWidgetMac::InitNativeWidget(const Widget::InitParams& params) {
 
 void NativeWidgetMac::OnWidgetInitDone() {
   OnSizeConstraintsChanged();
+  bridge_->OnWidgetInitDone();
 }
 
 NonClientFrameView* NativeWidgetMac::CreateNonClientFrameView() {
@@ -631,6 +632,19 @@ NativeWidgetMacNSWindow* NativeWidgetMac::CreateNSWindow(
 
 ////////////////////////////////////////////////////////////////////////////////
 // Widget, public:
+
+// static
+void Widget::CloseAllSecondaryWidgets() {
+  // Create a copy of [NSApp windows] to increase every window's retain count.
+  // -[NSWindow dealloc] won't be invoked on any windows until this array goes
+  // out of scope.
+  base::scoped_nsobject<NSArray> starting_windows([[NSApp windows] copy]);
+  for (NSWindow* window in starting_windows.get()) {
+    Widget* widget = GetWidgetForNativeWindow(window);
+    if (widget && widget->is_secondary_widget())
+      [window close];
+  }
+}
 
 bool Widget::ConvertRect(const Widget* source,
                          const Widget* target,

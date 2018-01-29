@@ -32,6 +32,7 @@
 #include "content/public/common/resource_type.h"
 #include "extensions/browser/api/activity_log/web_request_constants.h"
 #include "extensions/browser/api/declarative/rules_registry_service.h"
+#include "extensions/browser/api/declarative_net_request/ruleset_manager.h"
 #include "extensions/browser/api/declarative_webrequest/request_stage.h"
 #include "extensions/browser/api/declarative_webrequest/webrequest_constants.h"
 #include "extensions/browser/api/declarative_webrequest/webrequest_rules_registry.h"
@@ -43,6 +44,7 @@
 #include "extensions/browser/api/web_request/web_request_resource_type.h"
 #include "extensions/browser/api/web_request/web_request_time_tracker.h"
 #include "extensions/browser/api_activity_monitor.h"
+#include "extensions/browser/device_local_account_util.h"
 #include "extensions/browser/event_router.h"
 #include "extensions/browser/extension_navigation_ui_data.h"
 #include "extensions/browser/extension_prefs.h"
@@ -631,6 +633,28 @@ int ExtensionWebRequestEventRouter::OnBeforeRequest(
   request_time_tracker_->LogRequestStartTime(request->identifier(),
                                              base::Time::Now());
 
+  const bool is_incognito_context = IsIncognitoBrowserContext(browser_context);
+
+  // Handle Declarative Net Request API rules. This gets preference over the Web
+  // Request and Declarative Web Request APIs. Only checking the rules in the
+  // OnBeforeRequest stage works, since the rules currently only depend on the
+  // request url, initiator and resource type, which should stay the same during
+  // the diffierent network request stages. A redirect should cause another
+  // OnBeforeRequest call.
+  // |extension_info_map| is null for system level requests.
+  if (extension_info_map) {
+    // Give priority to blocking rules over redirect rules.
+    if (extension_info_map->GetRulesetManager()->ShouldBlockRequest(
+            *request, is_incognito_context)) {
+      return net::ERR_BLOCKED_BY_CLIENT;
+    }
+
+    if (extension_info_map->GetRulesetManager()->ShouldRedirectRequest(
+            *request, is_incognito_context, new_url)) {
+      return net::OK;
+    }
+  }
+
   // Whether to initialized |blocked_requests_|.
   bool initialize_blocked_requests = false;
 
@@ -659,7 +683,7 @@ int ExtensionWebRequestEventRouter::OnBeforeRequest(
 
   BlockedRequest& blocked_request = blocked_requests_[request->identifier()];
   blocked_request.event = kOnBeforeRequest;
-  blocked_request.is_incognito |= IsIncognitoBrowserContext(browser_context);
+  blocked_request.is_incognito |= is_incognito_context;
   blocked_request.request = request;
   blocked_request.callback = callback;
   blocked_request.new_url = new_url;
@@ -1175,12 +1199,7 @@ void ExtensionWebRequestEventRouter::DispatchEventToListeners(
       cross_browser_context ? &listeners_[cross_browser_context][event_name]
                             : nullptr;
 
-  // In Public Sessions we want to restrict access to security or privacy
-  // sensitive data. Data is filtered for *all* listeners, not only extensions
-  // which are force-installed by policy.
-  if (IsPublicSession()) {
-    event_details->FilterForPublicSession();
-  }
+  std::unique_ptr<WebRequestEventDetails> event_details_filtered_copy;
 
   for (const EventListener::ID& id : *listener_ids) {
     // It's possible that the listener is no longer present. Check to make sure
@@ -1200,7 +1219,20 @@ void ExtensionWebRequestEventRouter::DispatchEventToListeners(
     std::unique_ptr<base::ListValue> args_filtered(new base::ListValue);
     void* cross_browser_context = GetCrossBrowserContext(browser_context);
 
-    args_filtered->Append(event_details->GetFilteredDict(
+    // In Public Sessions we want to restrict access to security or privacy
+    // sensitive data. Data is filtered for *all* listeners, not only extensions
+    // which are force-installed by policy. Whitelisted extensions are exempt
+    // from this filtering.
+    WebRequestEventDetails* custom_event_details = event_details.get();
+    if (IsPublicSession() &&
+        !extensions::IsWhitelistedForPublicSession(listener->id.extension_id)) {
+      if (!event_details_filtered_copy) {
+        event_details_filtered_copy =
+            event_details->CreatePublicSessionCopy();
+      }
+      custom_event_details = event_details_filtered_copy.get();
+    }
+    args_filtered->Append(custom_event_details->GetFilteredDict(
         listener->extra_info_spec, extension_info_map,
         listener->id.extension_id, (cross_browser_context != 0)));
 
@@ -2277,8 +2309,10 @@ WebRequestInternalEventHandledFunction::Run() {
           extension_id_safe(), install_time));
     }
 
-    // In Public Session we only want to allow "cancel".
+    // In Public Session we only want to allow "cancel" (except for whitelisted
+    // extensions which have no such restrictions).
     if (IsPublicSession() &&
+        !extensions::IsWhitelistedForPublicSession(extension_id_safe()) &&
         (value->HasKey("redirectUrl") ||
          value->HasKey(keys::kAuthCredentialsKey) ||
          value->HasKey("requestHeaders") ||

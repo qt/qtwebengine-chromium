@@ -2,7 +2,6 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//build/config/linux/pangocairo/pangocairo.gni")
 import("//build/config/ui.gni")
 import("//device/vr/features/features.gni")
 import("//testing/test.gni")
@@ -219,7 +218,6 @@ component("gfx") {
       "skia_paint_util.cc",
       "skia_paint_util.h",
     ]
-    deps += [ "//build/config/linux/pangocairo:features" ]
   }
 
   configs += [
@@ -387,10 +385,6 @@ component("gfx") {
     sources -= [ "path_x11.cc" ]
   }
 
-  if (use_pangocairo) {
-    configs += [ "//build/config/linux/pangocairo" ]
-  }
-
   if (is_fuchsia) {
     sources += [
       "font_fallback_fuchsia.cc",
@@ -409,7 +403,6 @@ component("color_space") {
     "color_space_win.h",
     "icc_profile.cc",
     "icc_profile.h",
-    "icc_profile_mac.mm",
     "skia_color_space_util.cc",
     "skia_color_space_util.h",
   ]
@@ -528,8 +521,6 @@ source_set("memory_buffer_sources") {
     "generic_shared_memory_id.cc",
     "generic_shared_memory_id.h",
     "gfx_export.h",
-    "mac/io_surface.cc",
-    "mac/io_surface.h",
     "native_pixmap.h",
     "native_pixmap_handle.cc",
     "native_pixmap_handle.h",
@@ -564,6 +555,15 @@ source_set("memory_buffer_sources") {
     ]
 
     deps += [ "//third_party/libdrm" ]
+  }
+
+  if (is_mac) {
+    sources += [
+      "mac/io_surface.cc",
+      "mac/io_surface.h",
+    ]
+
+    public_deps += [ "//ui/gfx:color_space" ]
   }
 }
 
@@ -669,6 +669,7 @@ test("gfx_unittests") {
       "color_space_unittest.cc",
       "color_transform_unittest.cc",
       "color_utils_unittest.cc",
+      "font_fallback_linux_unittest.cc",
       "font_fallback_mac_unittest.cc",
       "font_list_unittest.cc",
       "geometry/axis_transform2d_unittest.cc",
@@ -812,8 +813,12 @@ fuzzer_test("color_transform_fuzzer") {
   sources = [
     "color_transform_fuzzer.cc",
   ]
+
+  dict = "//testing/libfuzzer/fuzzers/dicts/icc.dict"
+
   deps = [
     ":gfx",
   ]
-  libfuzzer_options = [ "max_len=1024" ]
+
+  libfuzzer_options = [ "max_len=4194304" ]
 }

@@ -140,9 +140,6 @@ class CORE_EXPORT LayoutView final : public LayoutBlockFlow {
 
   void InvalidatePaintForViewAndCompositedLayers();
 
-  PaintInvalidationReason InvalidatePaint(
-      const PaintInvalidatorContext&) const override;
-
   void Paint(const PaintInfo&, const LayoutPoint&) const override;
   void PaintBoxDecorationBackground(const PaintInfo&,
                                     const LayoutPoint&) const override;
@@ -267,7 +264,8 @@ class CORE_EXPORT LayoutView final : public LayoutBlockFlow {
 
   bool CanHaveChildren() const override;
 
-  void LayoutContent();
+  void UpdateBlockLayout(bool relayout_children) override;
+
 #if DCHECK_IS_ON()
   void CheckLayoutState();
 #endif
@@ -299,7 +297,7 @@ class CORE_EXPORT LayoutView final : public LayoutBlockFlow {
 
   std::unique_ptr<ViewFragmentationContext> fragmentation_context_;
   std::unique_ptr<PaintLayerCompositor> compositor_;
-  RefPtr<IntervalArena> interval_arena_;
+  scoped_refptr<IntervalArena> interval_arena_;
 
   LayoutQuote* layout_quote_head_;
   unsigned layout_counter_count_;

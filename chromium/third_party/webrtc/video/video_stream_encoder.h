@@ -11,6 +11,7 @@
 #ifndef VIDEO_VIDEO_STREAM_ENCODER_H_
 #define VIDEO_VIDEO_STREAM_ENCODER_H_
 
+#include <atomic>
 #include <map>
 #include <memory>
 #include <string>
@@ -29,14 +30,12 @@
 #include "rtc_base/event.h"
 #include "rtc_base/sequenced_task_checker.h"
 #include "rtc_base/task_queue.h"
-#include "system_wrappers/include/atomic32.h"
 #include "typedefs.h"  // NOLINT(build/include)
 #include "video/overuse_frame_detector.h"
 #include "call/video_send_stream.h"
 
 namespace webrtc {
 
-class ProcessThread;
 class SendStatisticsProxy;
 class VideoBitrateAllocationObserver;
 
@@ -79,12 +78,6 @@ class VideoStreamEncoder : public rtc::VideoSinkInterface<VideoFrame>,
                      EncodedFrameObserver* encoder_timing,
                      std::unique_ptr<OveruseFrameDetector> overuse_detector);
   ~VideoStreamEncoder();
-  // RegisterProcessThread register |module_process_thread| with those objects
-  // that use it. Registration has to happen on the thread where
-  // |module_process_thread| was created (libjingle's worker thread).
-  // TODO(perkj): Replace the use of |module_process_thread| with a TaskQueue.
-  void RegisterProcessThread(ProcessThread* module_process_thread);
-  void DeRegisterProcessThread();
 
   // Sets the source that will provide I420 video frames.
   // |degradation_preference| control whether or not resolution or frame rate
@@ -159,6 +152,7 @@ class VideoStreamEncoder : public rtc::VideoSinkInterface<VideoFrame>,
 
   // Implements VideoSinkInterface.
   void OnFrame(const VideoFrame& video_frame) override;
+  void OnDiscardedFrame() override;
 
   void EncodeVideoFrame(const VideoFrame& frame,
                         int64_t time_when_posted_in_ms);
@@ -169,7 +163,7 @@ class VideoStreamEncoder : public rtc::VideoSinkInterface<VideoFrame>,
       const CodecSpecificInfo* codec_specific_info,
       const RTPFragmentationHeader* fragmentation) override;
 
-  void OnDroppedFrame() override;
+  void OnDroppedFrame(EncodedImageCallback::DropReason reason) override;
 
   bool EncoderPaused() const;
   void TraceFrameDropStart();
@@ -235,8 +229,6 @@ class VideoStreamEncoder : public rtc::VideoSinkInterface<VideoFrame>,
 
   SendStatisticsProxy* const stats_proxy_;
   rtc::VideoSinkInterface<VideoFrame>* const pre_encode_callback_;
-  ProcessThread* module_process_thread_;
-  rtc::ThreadChecker module_process_thread_checker_;
   // |thread_checker_| checks that public methods that are related to lifetime
   // of VideoStreamEncoder are called on the same thread.
   rtc::ThreadChecker thread_checker_;
@@ -286,7 +278,7 @@ class VideoStreamEncoder : public rtc::VideoSinkInterface<VideoFrame>,
 
   rtc::RaceChecker incoming_frame_race_checker_
       RTC_GUARDED_BY(incoming_frame_race_checker_);
-  Atomic32 posted_frames_waiting_for_encode_;
+  std::atomic<int> posted_frames_waiting_for_encode_;
   // Used to make sure incoming time stamp is increasing for every frame.
   int64_t last_captured_timestamp_ RTC_GUARDED_BY(incoming_frame_race_checker_);
   // Delta used for translating between NTP and internal timestamps.

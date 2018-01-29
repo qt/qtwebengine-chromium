@@ -33,6 +33,9 @@ class WideString {
   using const_iterator = const CharType*;
   using const_reverse_iterator = std::reverse_iterator<const_iterator>;
 
+  static WideString Format(const wchar_t* lpszFormat, ...);
+  static WideString FormatV(const wchar_t* lpszFormat, va_list argList);
+
   WideString();
   WideString(const WideString& other);
   WideString(WideString&& other) noexcept;
@@ -114,7 +117,9 @@ class WideString {
   bool operator!=(const WideStringView& str) const { return !(*this == str); }
   bool operator!=(const WideString& other) const { return !(*this == other); }
 
-  bool operator<(const WideString& str) const;
+  bool operator<(const wchar_t* ptr) const;
+  bool operator<(const WideStringView& str) const;
+  bool operator<(const WideString& other) const;
 
   CharType operator[](const size_t index) const {
     ASSERT(IsValidIndex(index));
@@ -139,19 +144,20 @@ class WideString {
   size_t InsertAtBack(wchar_t ch) { return Insert(GetLength(), ch); }
   size_t Delete(size_t index, size_t count = 1);
 
-  void Format(const wchar_t* lpszFormat, ...);
-  void FormatV(const wchar_t* lpszFormat, va_list argList);
-
   void MakeLower();
   void MakeUpper();
 
-  void TrimRight();
-  void TrimRight(wchar_t chTarget);
-  void TrimRight(const WideStringView& pTargets);
+  void Trim();
+  void Trim(wchar_t target);
+  void Trim(const WideStringView& targets);
 
   void TrimLeft();
-  void TrimLeft(wchar_t chTarget);
-  void TrimLeft(const WideStringView& pTargets);
+  void TrimLeft(wchar_t target);
+  void TrimLeft(const WideStringView& targets);
+
+  void TrimRight();
+  void TrimRight(wchar_t target);
+  void TrimRight(const WideStringView& targets);
 
   void Reserve(size_t len);
   wchar_t* GetBuffer(size_t len);
@@ -176,6 +182,10 @@ class WideString {
   size_t Remove(wchar_t ch);
 
   ByteString UTF8Encode() const;
+
+  // This method will add \0\0 to the end of the string to represent the
+  // wide string terminator. These values are in the string, not just the data,
+  // so GetLength() will include them.
   ByteString UTF16LE_Encode() const;
 
  protected:
@@ -186,9 +196,6 @@ class WideString {
   void AllocCopy(WideString& dest, size_t nCopyLen, size_t nCopyIndex) const;
   void AssignCopy(const wchar_t* pSrcData, size_t nSrcLen);
   void Concat(const wchar_t* lpszSrcData, size_t nSrcLen);
-
-  // Returns true unless we ran out of space.
-  bool TryVSWPrintf(size_t size, const wchar_t* format, va_list argList);
 
   RetainPtr<StringData> m_pData;
 
@@ -246,6 +253,9 @@ inline bool operator!=(const wchar_t* lhs, const WideString& rhs) {
 }
 inline bool operator!=(const WideStringView& lhs, const WideString& rhs) {
   return rhs != lhs;
+}
+inline bool operator<(const wchar_t* lhs, const WideString& rhs) {
+  return rhs.Compare(lhs) > 0;
 }
 
 std::wostream& operator<<(std::wostream& os, const WideString& str);

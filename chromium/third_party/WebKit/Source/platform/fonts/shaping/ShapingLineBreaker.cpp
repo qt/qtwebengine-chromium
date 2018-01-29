@@ -176,13 +176,13 @@ unsigned ShapingLineBreaker::NextBreakOpportunity(unsigned offset,
   return break_iterator_->NextBreakOpportunity(offset);
 }
 
-inline RefPtr<ShapeResult> ShapingLineBreaker::Shape(TextDirection direction,
+inline scoped_refptr<ShapeResult> ShapingLineBreaker::Shape(TextDirection direction,
                                                      unsigned start,
                                                      unsigned end) {
   if (!spacing_ || !spacing_->HasSpacing())
     return shaper_->Shape(font_, direction, start, end);
 
-  RefPtr<ShapeResult> result = shaper_->Shape(font_, direction, start, end);
+  scoped_refptr<ShapeResult> result = shaper_->Shape(font_, direction, start, end);
   result->ApplySpacing(*spacing_);
   return result;
 }
@@ -216,7 +216,7 @@ inline RefPtr<ShapeResult> ShapingLineBreaker::Shape(TextDirection direction,
 //   If we further assume that the font kerns with space then even though it's a
 //   valid break opportunity reshaping is required as the combined width of the
 //   two segments "Line " and "breaking" may be different from "Line breaking".
-RefPtr<ShapeResult> ShapingLineBreaker::ShapeLine(
+scoped_refptr<ShapeResult> ShapingLineBreaker::ShapeLine(
     unsigned start,
     LayoutUnit available_space,
     ShapingLineBreaker::Result* result_out) {
@@ -285,12 +285,15 @@ RefPtr<ShapeResult> ShapingLineBreaker::ShapeLine(
   // If the start offset is not at a safe-to-break boundary the content between
   // the start and the next safe-to-break boundary needs to be reshaped and the
   // available space adjusted to take the reshaping into account.
-  RefPtr<ShapeResult> line_start_result;
+  scoped_refptr<ShapeResult> line_start_result;
   unsigned first_safe = result_->NextSafeToBreakOffset(start);
   DCHECK_GE(first_safe, start);
-  // Reshape takes place only when first_safe is before the break opportunity.
-  // Otherwise reshape will be part of line_end_result.
-  if (first_safe != start && first_safe < break_opportunity) {
+  if (first_safe != start) {
+    if (first_safe >= break_opportunity) {
+      // There is no safe-to-break, reshape the whole range.
+      result_out->break_offset = break_opportunity;
+      return Shape(direction, start, break_opportunity);
+    }
     LayoutUnit original_width =
         FlipRtl(SnapEnd(result_->PositionForOffset(first_safe - range_start),
                         direction) -
@@ -300,7 +303,7 @@ RefPtr<ShapeResult> ShapingLineBreaker::ShapeLine(
     available_space += line_start_result->SnappedWidth() - original_width;
   }
 
-  RefPtr<ShapeResult> line_end_result;
+  scoped_refptr<ShapeResult> line_end_result;
   unsigned last_safe = break_opportunity;
   while (break_opportunity > start) {
     // If the previous valid break opportunity is not at a safe-to-break
@@ -349,7 +352,7 @@ RefPtr<ShapeResult> ShapingLineBreaker::ShapeLine(
 
   // Create shape results for the line by copying from the re-shaped result (if
   // reshaping was needed) and the original shape results.
-  RefPtr<ShapeResult> line_result = ShapeResult::Create(font_, 0, direction);
+  scoped_refptr<ShapeResult> line_result = ShapeResult::Create(font_, 0, direction);
   unsigned max_length = std::numeric_limits<unsigned>::max();
   if (line_start_result)
     line_start_result->CopyRange(0, max_length, line_result.get());
@@ -373,13 +376,13 @@ RefPtr<ShapeResult> ShapingLineBreaker::ShapeLine(
 
 // Shape from the specified offset to the end of the ShapeResult.
 // If |start| is safe-to-break, this copies the subset of the result.
-RefPtr<ShapeResult> ShapingLineBreaker::ShapeToEnd(unsigned start,
+scoped_refptr<ShapeResult> ShapingLineBreaker::ShapeToEnd(unsigned start,
                                                    LayoutUnit start_position,
                                                    unsigned range_end) {
   unsigned first_safe = result_->NextSafeToBreakOffset(start);
   DCHECK_GE(first_safe, start);
 
-  RefPtr<ShapeResult> line_result;
+  scoped_refptr<ShapeResult> line_result;
   TextDirection direction = result_->Direction();
   if (first_safe == start) {
     // If |start| is safe-to-break no reshape is needed.

@@ -77,7 +77,7 @@ TreeView::TreeView()
       controller_(NULL),
       root_shown_(true),
       row_height_(font_list_.GetHeight() + kTextVerticalPadding * 2),
-      drawing_provider_(base::MakeUnique<TreeViewDrawingProvider>()) {
+      drawing_provider_(std::make_unique<TreeViewDrawingProvider>()) {
   // Always focusable, even on Mac (consistent with NSOutlineView).
   SetFocusBehavior(FocusBehavior::ALWAYS);
 #if defined(OS_MACOSX)
@@ -440,7 +440,7 @@ void TreeView::TreeNodesAdded(TreeModel* model,
   if (!parent_node || !parent_node->loaded_children())
     return;
   for (int i = 0; i < count; ++i) {
-    std::unique_ptr<InternalNode> child = base::MakeUnique<InternalNode>();
+    std::unique_ptr<InternalNode> child = std::make_unique<InternalNode>();
     ConfigureInternalNode(model_->GetChild(parent, start + i), child.get());
     parent_node->Add(std::move(child), start + i);
   }
@@ -681,7 +681,7 @@ void TreeView::LoadChildren(InternalNode* node) {
   node->set_loaded_children(true);
   for (int i = 0, child_count = model_->GetChildCount(node->model_node());
        i < child_count; ++i) {
-    std::unique_ptr<InternalNode> child = base::MakeUnique<InternalNode>();
+    std::unique_ptr<InternalNode> child = std::make_unique<InternalNode>();
     ConfigureInternalNode(model_->GetChild(node->model_node(), i), child.get());
     node->Add(std::move(child), node->child_count());
   }
@@ -711,9 +711,10 @@ void TreeView::UpdatePreferredSize() {
   if (!model_)
     return;
 
-  preferred_size_.SetSize(root_.GetMaxWidth(text_offset_, root_shown_ ? 1 : 0) +
-                              kTextHorizontalPadding * 2,
-                          row_height_ * GetRowCount());
+  preferred_size_.SetSize(
+      root_.GetMaxWidth(this, text_offset_, root_shown_ ? 1 : 0) +
+          kTextHorizontalPadding * 2,
+      row_height_ * GetRowCount());
 }
 
 void TreeView::LayoutEditor() {
@@ -741,7 +742,7 @@ void TreeView::LayoutEditor() {
 void TreeView::SchedulePaintForNode(InternalNode* node) {
   if (!node)
     return;  // Explicitly allow NULL to be passed in.
-  SchedulePaintInRect(GetBackgroundBoundsForNode(node));
+  SchedulePaintInRect(GetBoundsForNode(node));
 }
 
 void TreeView::PaintRows(gfx::Canvas* canvas,
@@ -780,24 +781,8 @@ void TreeView::PaintRow(gfx::Canvas* canvas,
   if (model_->GetChildCount(node->model_node()))
     PaintExpandControl(canvas, bounds, node->is_expanded());
 
-  // Paint the icon.
-  gfx::ImageSkia icon;
-  int icon_index = model_->GetIconIndex(node->model_node());
-  if (icon_index != -1)
-    icon = icons_[icon_index];
-  else if (node == selected_node_)
-    icon = open_icon_;
-  else
-    icon = closed_icon_;
-  int icon_x = kArrowRegionSize + kImagePadding +
-               (open_icon_.width() - icon.width()) / 2;
-  if (base::i18n::IsRTL())
-    icon_x = bounds.right() - icon_x - open_icon_.width();
-  else
-    icon_x += bounds.x();
-  canvas->DrawImageInt(
-      icon, icon_x,
-      bounds.y() + (bounds.height() - icon.height()) / 2);
+  if (drawing_provider()->ShouldDrawIconForNode(this, node->model_node()))
+    PaintNodeIcon(canvas, node, bounds);
 
   // Paint the text background and text. In edit mode, the selected node is a
   // separate editing control, so it does not need to be painted here.
@@ -863,6 +848,27 @@ void TreeView::PaintExpandControl(gfx::Canvas* canvas,
                        arrow_bounds.y());
 }
 
+void TreeView::PaintNodeIcon(gfx::Canvas* canvas,
+                             InternalNode* node,
+                             const gfx::Rect& bounds) {
+  gfx::ImageSkia icon;
+  int icon_index = model_->GetIconIndex(node->model_node());
+  if (icon_index != -1)
+    icon = icons_[icon_index];
+  else if (node->is_expanded())
+    icon = open_icon_;
+  else
+    icon = closed_icon_;
+  int icon_x = kArrowRegionSize + kImagePadding +
+               (open_icon_.width() - icon.width()) / 2;
+  if (base::i18n::IsRTL())
+    icon_x = bounds.right() - icon_x - open_icon_.width();
+  else
+    icon_x += bounds.x();
+  canvas->DrawImageInt(icon, icon_x,
+                       bounds.y() + (bounds.height() - icon.height()) / 2);
+}
+
 TreeView::InternalNode* TreeView::GetInternalNodeForModelNode(
     ui::TreeModelNode* model_node,
     GetInternalNodeCreateType create_type) {
@@ -884,8 +890,7 @@ TreeView::InternalNode* TreeView::GetInternalNodeForModelNode(
 gfx::Rect TreeView::GetBoundsForNode(InternalNode* node) {
   int row, ignored_depth;
   row = GetRowForInternalNode(node, &ignored_depth);
-  return gfx::Rect(bounds().x(), row * row_height_, bounds().width(),
-                   row_height_);
+  return gfx::Rect(0, row * row_height_, width(), row_height_);
 }
 
 gfx::Rect TreeView::GetBackgroundBoundsForNode(InternalNode* node) {
@@ -902,7 +907,10 @@ gfx::Rect TreeView::GetForegroundBoundsForNode(InternalNode* node) {
 
 gfx::Rect TreeView::GetTextBoundsForNode(InternalNode* node) {
   gfx::Rect bounds(GetForegroundBoundsForNode(node));
-  bounds.Inset(text_offset_, 0, 0, 0);
+  if (drawing_provider()->ShouldDrawIconForNode(this, node->model_node()))
+    bounds.Inset(text_offset_, 0, 0, 0);
+  else
+    bounds.Inset(kArrowRegionSize, 0, 0, 0);
   return bounds;
 }
 
@@ -918,7 +926,7 @@ gfx::Rect TreeView::GetAuxiliaryTextBoundsForNode(InternalNode* node) {
   if (width < 0)
     return gfx::Rect();
   int x = base::i18n::IsRTL()
-              ? bounds().x() + kTextHorizontalPadding
+              ? kTextHorizontalPadding
               : bounds().right() - width - kTextHorizontalPadding;
   return gfx::Rect(x, text_bounds.y(), width, text_bounds.height());
 }
@@ -926,8 +934,12 @@ gfx::Rect TreeView::GetAuxiliaryTextBoundsForNode(InternalNode* node) {
 gfx::Rect TreeView::GetForegroundBoundsForNodeImpl(InternalNode* node,
                                                    int row,
                                                    int depth) {
-  gfx::Rect rect(depth * kIndent + kHorizontalInset, row * row_height_,
-                 text_offset_ + node->text_width() + kTextHorizontalPadding * 2,
+  int width =
+      drawing_provider()->ShouldDrawIconForNode(this, node->model_node())
+          ? text_offset_ + node->text_width() + kTextHorizontalPadding * 2
+          : kArrowRegionSize + node->text_width() + kTextHorizontalPadding * 2;
+
+  gfx::Rect rect(depth * kIndent + kHorizontalInset, row * row_height_, width,
                  row_height_);
   rect.set_x(GetMirroredXWithWidthInView(rect.x(), rect.width()));
   return rect;
@@ -1085,10 +1097,10 @@ bool TreeView::IsPointInExpandControl(InternalNode* node,
   int row = GetRowForInternalNode(node, &depth);
 
   int arrow_dx = depth * kIndent + kHorizontalInset;
-  gfx::Rect arrow_bounds(bounds().x() + arrow_dx, row * row_height_,
-                         kArrowRegionSize, row_height_);
+  gfx::Rect arrow_bounds(arrow_dx, row * row_height_, kArrowRegionSize,
+                         row_height_);
   if (base::i18n::IsRTL())
-    arrow_bounds.set_x(bounds().width() - arrow_dx - kArrowRegionSize);
+    arrow_bounds.set_x(width() - arrow_dx - kArrowRegionSize);
   return arrow_bounds.Contains(point);
 }
 
@@ -1129,13 +1141,15 @@ int TreeView::InternalNode::NumExpandedNodes() const {
   return result;
 }
 
-int TreeView::InternalNode::GetMaxWidth(int indent, int depth) {
-  int max_width = text_width_ + indent * depth;
+int TreeView::InternalNode::GetMaxWidth(TreeView* tree, int indent, int depth) {
+  bool has_icon =
+      tree->drawing_provider()->ShouldDrawIconForNode(tree, model_node());
+  int max_width = (has_icon ? text_width_ : kArrowRegionSize) + indent * depth;
   if (!is_expanded_)
     return max_width;
   for (int i = 0; i < child_count(); ++i) {
-    max_width = std::max(max_width,
-                         GetChild(i)->GetMaxWidth(indent, depth + 1));
+    max_width =
+        std::max(max_width, GetChild(i)->GetMaxWidth(tree, indent, depth + 1));
   }
   return max_width;
 }

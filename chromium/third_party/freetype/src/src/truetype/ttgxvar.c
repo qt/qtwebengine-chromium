@@ -2057,7 +2057,7 @@
     /* `num_instances' holds the number of all named instances, */
     /* including the default instance which might be missing    */
     /* in fvar's table of named instances                       */
-    num_instances = face->root.style_flags >> 16;
+    num_instances = (FT_UInt)face->root.style_flags >> 16;
 
     /* prepare storage area for MM data; this cannot overflow   */
     /* 32-bit arithmetic because of the size limits used in the */
@@ -2348,10 +2348,9 @@
     FT_Error    error = FT_Err_Ok;
     GX_Blend    blend;
     FT_MM_Var*  mmvar;
-    FT_UInt     i, j;
+    FT_UInt     i;
 
-    FT_Bool     is_default_instance = TRUE;
-    FT_Bool     all_design_coords   = FALSE;
+    FT_Bool     all_design_coords = FALSE;
 
     FT_Memory   memory = face->root.memory;
 
@@ -2396,9 +2395,6 @@
         error = FT_THROW( Invalid_Argument );
         goto Exit;
       }
-
-      if ( coords[i] != 0 )
-        is_default_instance = FALSE;
     }
 
     FT_TRACE5(( "\n" ));
@@ -2493,32 +2489,6 @@
       }
     }
 
-    /* check whether the current variation tuple coincides */
-    /* with a named instance                               */
-
-    for ( i = 0; i < blend->mmvar->num_namedstyles; i++ )
-    {
-      FT_Fixed*  nsc = blend->normalized_stylecoords + i * blend->num_axis;
-      FT_Fixed*  ns  = blend->normalizedcoords;
-
-
-      for ( j = 0; j < blend->num_axis; j++, nsc++, ns++ )
-      {
-        if ( *nsc != *ns )
-          break;
-      }
-
-      if ( j == blend->num_axis )
-        break;
-    }
-
-    /* adjust named instance index */
-    face->root.face_index &= 0xFFFF;
-    if ( i < blend->mmvar->num_namedstyles )
-      face->root.face_index |= ( i + 1 ) << 16;
-
-    face->is_default_instance = is_default_instance;
-
     /* enforce recomputation of the PostScript name; */
     FT_FREE( face->postscript_name );
     face->postscript_name = NULL;
@@ -2558,7 +2528,19 @@
                    FT_UInt    num_coords,
                    FT_Fixed*  coords )
   {
-    return tt_set_mm_blend( face, num_coords, coords, 1 );
+    FT_Error  error;
+
+
+    error = tt_set_mm_blend( face, num_coords, coords, 1 );
+    if ( error )
+      return error;
+
+    if ( num_coords )
+      face->root.face_flags |= FT_FACE_FLAG_VARIATION;
+    else
+      face->root.face_flags &= ~FT_FACE_FLAG_VARIATION;
+
+    return FT_Err_Ok;
   }
 
 
@@ -2674,9 +2656,7 @@
     FT_UInt     i;
     FT_Memory   memory = face->root.memory;
 
-    FT_Var_Axis*  a;
-    FT_Fixed*     c;
-
+    FT_Fixed*  c;
     FT_Fixed*  normalized = NULL;
 
 
@@ -2707,10 +2687,31 @@
                  coords,
                  num_coords * sizeof ( FT_Fixed ) );
 
-    a = mmvar->axis + num_coords;
     c = blend->coords + num_coords;
-    for ( i = num_coords; i < mmvar->num_axis; i++, a++, c++ )
-      *c = a->def;
+
+    if ( FT_IS_NAMED_INSTANCE( FT_FACE( face ) ) )
+    {
+      FT_UInt              instance_index;
+      FT_Var_Named_Style*  named_style;
+      FT_Fixed*            n;
+
+
+      instance_index = (FT_UInt)face->root.face_index >> 16;
+      named_style    = mmvar->namedstyle + instance_index - 1;
+
+      n = named_style->coords + num_coords;
+      for ( i = num_coords; i < mmvar->num_axis; i++, n++, c++ )
+        *c = *n;
+    }
+    else
+    {
+      FT_Var_Axis*  a;
+
+
+      a = mmvar->axis + num_coords;
+      for ( i = num_coords; i < mmvar->num_axis; i++, a++, c++ )
+        *c = a->def;
+    }
 
     if ( FT_NEW_ARRAY( normalized, mmvar->num_axis ) )
       goto Exit;
@@ -2721,6 +2722,13 @@
     ft_var_to_normalized( face, num_coords, blend->coords, normalized );
 
     error = tt_set_mm_blend( face, mmvar->num_axis, normalized, 0 );
+    if ( error )
+      goto Exit;
+
+    if ( num_coords )
+      face->root.face_flags |= FT_FACE_FLAG_VARIATION;
+    else
+      face->root.face_flags &= ~FT_FACE_FLAG_VARIATION;
 
   Exit:
     FT_FREE( normalized );
@@ -2800,6 +2808,90 @@
       coords[i] = 0;
 
     return FT_Err_Ok;
+  }
+
+
+  /*************************************************************************/
+  /*                                                                       */
+  /* <Function>                                                            */
+  /*    TT_Set_Named_Instance                                              */
+  /*                                                                       */
+  /* <Description>                                                         */
+  /*    Set the given named instance, also resetting any further           */
+  /*    variation.                                                         */
+  /*                                                                       */
+  /* <Input>                                                               */
+  /*    face           :: A handle to the source face.                     */
+  /*                                                                       */
+  /*    instance_index :: The instance index, starting with value 1.       */
+  /*                      Value 0 indicates to not use an instance.        */
+  /*                                                                       */
+  /* <Return>                                                              */
+  /*    FreeType error code.  0~means success.                             */
+  /*                                                                       */
+  FT_LOCAL_DEF( FT_Error )
+  TT_Set_Named_Instance( TT_Face  face,
+                         FT_UInt  instance_index )
+  {
+    FT_Error    error = FT_ERR( Invalid_Argument );
+    GX_Blend    blend;
+    FT_MM_Var*  mmvar;
+
+    FT_UInt  num_instances;
+
+
+    if ( !face->blend )
+    {
+      if ( FT_SET_ERROR( TT_Get_MM_Var( face, NULL ) ) )
+        goto Exit;
+    }
+
+    blend = face->blend;
+    mmvar = blend->mmvar;
+
+    num_instances = (FT_UInt)face->root.style_flags >> 16;
+
+    /* `instance_index' starts with value 1, thus `>' */
+    if ( instance_index > num_instances )
+      goto Exit;
+
+    if ( instance_index > 0 && mmvar->namedstyle )
+    {
+      FT_Memory     memory = face->root.memory;
+      SFNT_Service  sfnt   = (SFNT_Service)face->sfnt;
+
+      FT_Var_Named_Style*  named_style;
+      FT_String*           style_name;
+
+
+      named_style = mmvar->namedstyle + instance_index - 1;
+
+      error = sfnt->get_name( face,
+                              (FT_UShort)named_style->strid,
+                              &style_name );
+      if ( error )
+        goto Exit;
+
+      /* set (or replace) style name */
+      FT_FREE( face->root.style_name );
+      face->root.style_name = style_name;
+
+      /* finally, select the named instance */
+      error = TT_Set_Var_Design( face,
+                                 mmvar->num_axis,
+                                 named_style->coords );
+      if ( error )
+        goto Exit;
+    }
+    else
+      error = TT_Set_Var_Design( face, 0, NULL );
+
+    face->root.face_index  = ( instance_index << 16 )             |
+                             ( face->root.face_index & 0xFFFFL );
+    face->root.face_flags &= ~FT_FACE_FLAG_VARIATION;
+
+  Exit:
+    return error;
   }
 
 

@@ -107,7 +107,7 @@ class PLATFORM_EXPORT MediaStreamComponent final
   }
   void GetSettings(WebMediaStreamTrack::Settings&);
 
-  DECLARE_TRACE();
+  void Trace(blink::Visitor*);
 
  private:
   MediaStreamComponent(const String& id, MediaStreamSource*);
@@ -123,7 +123,7 @@ class PLATFORM_EXPORT MediaStreamComponent final
   class PLATFORM_EXPORT AudioSourceProviderImpl final
       : public AudioSourceProvider {
    public:
-    AudioSourceProviderImpl() : web_audio_source_provider_(0) {}
+    AudioSourceProviderImpl() : web_audio_source_provider_(nullptr) {}
 
     ~AudioSourceProviderImpl() override {}
 

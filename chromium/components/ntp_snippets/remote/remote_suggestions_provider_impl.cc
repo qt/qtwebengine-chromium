@@ -385,6 +385,7 @@ RemoteSuggestionsProviderImpl::RemoteSuggestionsProviderImpl(
       image_fetcher_(std::move(image_fetcher), pref_service, database_.get()),
       status_service_(std::move(status_service)),
       clear_history_dependent_state_when_initialized_(false),
+      clear_cached_suggestions_when_initialized_(false),
       clock_(base::MakeUnique<base::DefaultClock>()),
       prefetched_pages_tracker_(std::move(prefetched_pages_tracker)),
       breaking_news_raw_data_provider_(
@@ -565,8 +566,11 @@ void RemoteSuggestionsProviderImpl::FetchSuggestions(
     FetchStatusCallback callback) {
   debug_logger_->Log(FROM_HERE, /*message=*/std::string());
   if (!ready()) {
-    std::move(callback).Run(Status(StatusCode::TEMPORARY_ERROR,
-                                   "RemoteSuggestionsProvider is not ready!"));
+    if (callback) {
+      std::move(callback).Run(
+          Status(StatusCode::TEMPORARY_ERROR,
+                 "RemoteSuggestionsProvider is not ready!"));
+    }
     return;
   }
 
@@ -721,31 +725,6 @@ void RemoteSuggestionsProviderImpl::ClearHistory(
   // because it is not known which history entries were used for the suggestions
   // personalization.
   ClearHistoryDependentState();
-}
-
-void RemoteSuggestionsProviderImpl::ClearCachedSuggestions(Category category) {
-  if (!initialized()) {
-    return;
-  }
-
-  auto content_it = category_contents_.find(category);
-  if (content_it == category_contents_.end()) {
-    return;
-  }
-  CategoryContent* content = &content_it->second;
-  // TODO(tschumann): We do the unnecessary checks for .empty() in many places
-  // before calling database methods. Change the RemoteSuggestionsDatabase to
-  // return early for those and remove the many if statements in this file.
-  if (!content->suggestions.empty()) {
-    database_->DeleteSnippets(GetSuggestionIDVector(content->suggestions));
-    database_->DeleteImages(GetSuggestionIDVector(content->suggestions));
-    content->suggestions.clear();
-  }
-  if (!content->archived.empty()) {
-    database_->DeleteSnippets(GetSuggestionIDVector(content->archived));
-    database_->DeleteImages(GetSuggestionIDVector(content->archived));
-    content->archived.clear();
-  }
 }
 
 void RemoteSuggestionsProviderImpl::OnSignInStateChanged() {
@@ -1200,7 +1179,31 @@ void RemoteSuggestionsProviderImpl::PrependArticleSuggestion(
   std::vector<std::unique_ptr<RemoteSuggestion>> suggestions;
   suggestions.push_back(std::move(remote_suggestion));
 
-  SanitizeReceivedSuggestions(content->dismissed, &suggestions);
+  // Ignore the pushed suggestion if:
+  //
+  // - Incomplete.
+  // - Has been dismissed.
+  // - Present in the current suggestions.
+  // - Possibly shown on older surfaces (i.e. archived).
+  //
+  // We do not check the database, because it just persists current suggestions.
+
+  RemoveIncompleteSuggestions(&suggestions);
+  EraseMatchingSuggestions(&suggestions, content->dismissed);
+  EraseMatchingSuggestions(&suggestions, content->suggestions);
+
+  // Check archived suggestions.
+  base::EraseIf(
+      suggestions,
+      [&content](const std::unique_ptr<RemoteSuggestion>& suggestion) {
+        const std::vector<std::string>& ids = suggestion->GetAllIDs();
+        for (const auto& archived_suggestion : content->archived) {
+          if (base::ContainsValue(ids, archived_suggestion->id())) {
+            return true;
+          }
+        }
+        return false;
+      });
 
   if (!suggestions.empty()) {
     content->suggestions.insert(content->suggestions.begin(),
@@ -1220,6 +1223,11 @@ void RemoteSuggestionsProviderImpl::PrependArticleSuggestion(
 
     database_->SaveSnippets(content->suggestions);
   }
+}
+
+void RemoteSuggestionsProviderImpl::
+    RefreshSuggestionsUponPushToRefreshRequest() {
+  RefetchInTheBackground({});
 }
 
 void RemoteSuggestionsProviderImpl::DismissSuggestionFromCategoryContent(
@@ -1288,10 +1296,12 @@ void RemoteSuggestionsProviderImpl::ClearExpiredDismissedSuggestions() {
     }
     RemoveNullPointers(&content->dismissed);
 
-    // Delete the images.
-    database_->DeleteImages(GetSuggestionIDVector(to_delete));
-    // Delete the removed article suggestions from the DB.
-    database_->DeleteSnippets(GetSuggestionIDVector(to_delete));
+    if (!to_delete.empty()) {
+      // Delete the images.
+      database_->DeleteImages(GetSuggestionIDVector(to_delete));
+      // Delete the removed article suggestions from the DB.
+      database_->DeleteSnippets(GetSuggestionIDVector(to_delete));
+    }
 
     if (content->suggestions.empty() && content->dismissed.empty() &&
         category != articles_category_ &&
@@ -1328,24 +1338,41 @@ void RemoteSuggestionsProviderImpl::ClearHistoryDependentState() {
   remote_suggestions_scheduler_->OnHistoryCleared();
 }
 
-void RemoteSuggestionsProviderImpl::ClearSuggestions() {
-  DCHECK(initialized());
+void RemoteSuggestionsProviderImpl::ClearCachedSuggestions() {
+  if (!initialized()) {
+    clear_cached_suggestions_when_initialized_ = true;
+    return;
+  }
 
   NukeAllSuggestions();
   remote_suggestions_scheduler_->OnSuggestionsCleared();
 }
 
 void RemoteSuggestionsProviderImpl::NukeAllSuggestions() {
+  DCHECK(initialized());
   // TODO(tschumann): Should Nuke also cancel outstanding requests? Or should we
   // only block the results of such outstanding requests?
-  for (const auto& item : category_contents_) {
+  for (auto& item : category_contents_) {
     Category category = item.first;
-    const CategoryContent& content = item.second;
+    CategoryContent* content = &item.second;
 
-    ClearCachedSuggestions(category);
+    // TODO(tschumann): We do the unnecessary checks for .empty() in many places
+    // before calling database methods. Change the RemoteSuggestionsDatabase to
+    // return early for those and remove the many if statements in this file.
+    if (!content->suggestions.empty()) {
+      database_->DeleteSnippets(GetSuggestionIDVector(content->suggestions));
+      database_->DeleteImages(GetSuggestionIDVector(content->suggestions));
+      content->suggestions.clear();
+    }
+    if (!content->archived.empty()) {
+      database_->DeleteSnippets(GetSuggestionIDVector(content->archived));
+      database_->DeleteImages(GetSuggestionIDVector(content->archived));
+      content->archived.clear();
+    }
+
     // Update listeners about the new (empty) state.
-    if (IsCategoryStatusAvailable(content.status)) {
-      NotifyNewSuggestions(category, content.suggestions);
+    if (IsCategoryStatusAvailable(content->status)) {
+      NotifyNewSuggestions(category, content->suggestions);
     }
     // TODO(tschumann): We should not call debug code from production code.
     ClearDismissedSuggestionsForDebugging(category);
@@ -1403,6 +1430,9 @@ void RemoteSuggestionsProviderImpl::
     if (!breaking_news_raw_data_provider_->IsListening()) {
       breaking_news_raw_data_provider_->StartListening(
           base::Bind(&RemoteSuggestionsProviderImpl::PrependArticleSuggestion,
+                     base::Unretained(this)),
+          base::Bind(&RemoteSuggestionsProviderImpl::
+                         RefreshSuggestionsUponPushToRefreshRequest,
                      base::Unretained(this)));
     }
   } else {
@@ -1440,7 +1470,7 @@ void RemoteSuggestionsProviderImpl::OnStatusChanged(
         DCHECK(state_ == State::READY);
         // Clear nonpersonalized suggestions (and notify the scheduler there are
         // no suggestions).
-        ClearSuggestions();
+        ClearCachedSuggestions();
       } else {
         EnterState(State::READY);
       }
@@ -1451,7 +1481,7 @@ void RemoteSuggestionsProviderImpl::OnStatusChanged(
         DCHECK(state_ == State::READY);
         // Clear personalized suggestions (and notify the scheduler there are
         // no suggestions).
-        ClearSuggestions();
+        ClearCachedSuggestions();
       } else {
         EnterState(State::READY);
       }
@@ -1490,6 +1520,11 @@ void RemoteSuggestionsProviderImpl::EnterState(State state) {
              category_contents_.end());
 
       UpdateAllCategoryStatus(CategoryStatus::AVAILABLE);
+
+      if (clear_cached_suggestions_when_initialized_) {
+        ClearCachedSuggestions();
+        clear_cached_suggestions_when_initialized_ = false;
+      }
       if (clear_history_dependent_state_when_initialized_) {
         clear_history_dependent_state_when_initialized_ = false;
         ClearHistoryDependentState();
@@ -1513,7 +1548,9 @@ void RemoteSuggestionsProviderImpl::EnterState(State state) {
         clear_history_dependent_state_when_initialized_ = false;
         ClearHistoryDependentState();
       }
-      ClearSuggestions();
+      ClearCachedSuggestions();
+      clear_cached_suggestions_when_initialized_ = false;
+
       if (breaking_news_raw_data_provider_ &&
           breaking_news_raw_data_provider_->IsListening()) {
         breaking_news_raw_data_provider_->StopListening();

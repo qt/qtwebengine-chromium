@@ -27,7 +27,7 @@
 
 #include <stdio.h>
 #include "bindings/core/v8/ExceptionState.h"
-#include "core/css/StylePropertySet.h"
+#include "core/css/CSSPropertyValueSet.h"
 #include "core/dom/AXObjectCache.h"
 #include "core/dom/CharacterData.h"
 #include "core/dom/Document.h"
@@ -146,7 +146,7 @@ ContainerNode* RootEditableElementOrTreeScopeRootNodeOf(
     return selection_root;
 
   Node* const node = position.ComputeContainerNode();
-  return node ? &node->GetTreeScope().RootNode() : 0;
+  return node ? &node->GetTreeScope().RootNode() : nullptr;
 }
 
 VisibleSelection FrameSelection::ComputeVisibleSelectionInDOMTreeDeprecated()
@@ -344,8 +344,7 @@ bool FrameSelection::Modify(SelectionModifyAlteration alter,
                             SelectionModifyDirection direction,
                             TextGranularity granularity,
                             SetSelectionBy set_selection_by) {
-  SelectionModifier selection_modifier(*GetFrame(),
-                                       ComputeVisibleSelectionInDOMTree(),
+  SelectionModifier selection_modifier(*GetFrame(), GetSelectionInDOMTree(),
                                        x_pos_for_vertical_arrow_navigation_);
   const bool modified =
       selection_modifier.Modify(alter, direction, granularity);
@@ -502,9 +501,43 @@ bool FrameSelection::ShouldPaintCaret(const LayoutBlock& block) const {
   return result;
 }
 
-IntRect FrameSelection::AbsoluteCaretBounds() {
+IntRect FrameSelection::AbsoluteCaretBounds() const {
   DCHECK(ComputeVisibleSelectionInDOMTree().IsValidFor(*frame_->GetDocument()));
   return frame_caret_->AbsoluteCaretBounds();
+}
+
+bool FrameSelection::ComputeAbsoluteBounds(IntRect& anchor,
+                                           IntRect& focus) const {
+  if (!IsAvailable() || GetSelectionInDOMTree().IsNone())
+    return false;
+
+  // TODO(editing-dev): The use of updateStyleAndLayoutIgnorePendingStylesheets
+  // needs to be audited.  See http://crbug.com/590369 for more details.
+  frame_->GetDocument()->UpdateStyleAndLayoutIgnorePendingStylesheets();
+  if (ComputeVisibleSelectionInDOMTree().IsNone()) {
+    // plugins/mouse-capture-inside-shadow.html reaches here.
+    return false;
+  }
+
+  DocumentLifecycle::DisallowTransitionScope disallow_transition(
+      frame_->GetDocument()->Lifecycle());
+
+  if (ComputeVisibleSelectionInDOMTree().IsCaret()) {
+    anchor = focus = AbsoluteCaretBounds();
+  } else {
+    const EphemeralRange selected_range =
+        ComputeVisibleSelectionInDOMTree().ToNormalizedEphemeralRange();
+    if (selected_range.IsNull())
+      return false;
+    anchor = frame_->GetEditor().FirstRectForRange(
+        EphemeralRange(selected_range.StartPosition()));
+    focus = frame_->GetEditor().FirstRectForRange(
+        EphemeralRange(selected_range.EndPosition()));
+  }
+
+  if (!ComputeVisibleSelectionInDOMTree().IsBaseFirst())
+    std::swap(anchor, focus);
+  return true;
 }
 
 void FrameSelection::PaintCaret(GraphicsContext& context,
@@ -900,6 +933,7 @@ String FrameSelection::SelectedTextForClipboard() const {
                  .SetEmitsImageAltText(
                      frame_->GetSettings() &&
                      frame_->GetSettings()->GetSelectionIncludesAltImageText())
+                 .SetSkipsUnselectableContent(true)
                  .Build());
 }
 
@@ -1004,7 +1038,7 @@ void FrameSelection::ShowTreeForThis() const {
 
 #endif
 
-DEFINE_TRACE(FrameSelection) {
+void FrameSelection::Trace(blink::Visitor* visitor) {
   visitor->Trace(frame_);
   visitor->Trace(layout_selection_);
   visitor->Trace(selection_editor_);
@@ -1060,7 +1094,7 @@ GranularityStrategy* FrameSelection::GetGranularityStrategy() {
   // initialize it right in the constructor - the correct settings may not be
   // set yet.
   SelectionStrategy strategy_type = SelectionStrategy::kCharacter;
-  Settings* settings = frame_ ? frame_->GetSettings() : 0;
+  Settings* settings = frame_ ? frame_->GetSettings() : nullptr;
   if (settings &&
       settings->GetSelectionStrategy() == SelectionStrategy::kDirection)
     strategy_type = SelectionStrategy::kDirection;
@@ -1070,9 +1104,9 @@ GranularityStrategy* FrameSelection::GetGranularityStrategy() {
     return granularity_strategy_.get();
 
   if (strategy_type == SelectionStrategy::kDirection)
-    granularity_strategy_ = WTF::MakeUnique<DirectionGranularityStrategy>();
+    granularity_strategy_ = std::make_unique<DirectionGranularityStrategy>();
   else
-    granularity_strategy_ = WTF::MakeUnique<CharacterGranularityStrategy>();
+    granularity_strategy_ = std::make_unique<CharacterGranularityStrategy>();
   return granularity_strategy_.get();
 }
 
@@ -1156,10 +1190,10 @@ void FrameSelection::ClearDocumentCachedRange() {
   selection_editor_->ClearDocumentCachedRange();
 }
 
-base::Optional<int> FrameSelection::LayoutSelectionStart() const {
+WTF::Optional<unsigned> FrameSelection::LayoutSelectionStart() const {
   return layout_selection_->SelectionStart();
 }
-base::Optional<int> FrameSelection::LayoutSelectionEnd() const {
+WTF::Optional<unsigned> FrameSelection::LayoutSelectionEnd() const {
   return layout_selection_->SelectionEnd();
 }
 

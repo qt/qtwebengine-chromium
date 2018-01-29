@@ -654,6 +654,18 @@ void LayoutBlockFlow::DetermineLogicalLeftPositionForChild(LayoutBox& child) {
         StartOffsetForLine(LogicalTopForChild(child), kDoNotIndentText,
                            LogicalHeightForChild(child));
 
+    // This section of code is just for a use counter. It counts if something
+    // that avoids floats may have been affected by a float with shape-outside.
+    if (!ShapeOutsideInfo::IsEmpty()) {
+      LayoutUnit alternate_position_to_avoid_floats =
+          StartOffsetForAvoidingFloats(LogicalTopForChild(child),
+                                       LogicalHeightForChild(child));
+      if (alternate_position_to_avoid_floats != position_to_avoid_floats) {
+        UseCounter::Count(GetDocument(),
+                          WebFeature::kShapeOutsideMaybeAffectedInlinePosition);
+      }
+    }
+
     // If the child has an offset from the content edge to avoid floats then use
     // that, otherwise let any negative margin pull it back over the content
     // edge or any positive margin push it out.
@@ -965,7 +977,7 @@ LayoutUnit LayoutBlockFlow::AdjustBlockChildForPagination(
     BlockChildrenLayoutInfo& layout_info,
     bool at_before_side_of_block) {
   LayoutBlockFlow* child_block_flow =
-      child.IsLayoutBlockFlow() ? ToLayoutBlockFlow(&child) : 0;
+      child.IsLayoutBlockFlow() ? ToLayoutBlockFlow(&child) : nullptr;
 
   // See if we need a soft (unforced) break in front of this child, and set the
   // pagination strut in that case. An unforced break may come from two sources:
@@ -1488,7 +1500,7 @@ void LayoutBlockFlow::LayoutBlockChildren(bool relayout_children,
   // TODO(foolip): Speculative CHECKs to crash if any non-LayoutBox
   // children ever appear, the childrenInline() check at the call site
   // should make this impossible. crbug.com/632848
-  LayoutObject* first_child = this->FirstChild();
+  LayoutObject* first_child = FirstChild();
   CHECK(!first_child || first_child->IsBox());
   LayoutBox* next = ToLayoutBox(first_child);
   LayoutBox* last_normal_flow_child = nullptr;
@@ -1604,7 +1616,7 @@ LayoutBlockFlow::MarginValues LayoutBlockFlow::MarginValuesForChild(
   LayoutUnit after_margin;
 
   LayoutBlockFlow* child_layout_block_flow =
-      child.IsLayoutBlockFlow() ? ToLayoutBlockFlow(&child) : 0;
+      child.IsLayoutBlockFlow() ? ToLayoutBlockFlow(&child) : nullptr;
 
   // If the child has the same directionality as we do, then we can just return
   // its margins in the same direction.
@@ -2287,7 +2299,7 @@ void LayoutBlockFlow::SetMustDiscardMarginBefore(bool value) {
     return;
 
   if (!rare_data_)
-    rare_data_ = WTF::MakeUnique<LayoutBlockFlowRareData>(this);
+    rare_data_ = std::make_unique<LayoutBlockFlowRareData>(this);
 
   rare_data_->discard_margin_before_ = value;
 }
@@ -2302,7 +2314,7 @@ void LayoutBlockFlow::SetMustDiscardMarginAfter(bool value) {
     return;
 
   if (!rare_data_)
-    rare_data_ = WTF::MakeUnique<LayoutBlockFlowRareData>(this);
+    rare_data_ = std::make_unique<LayoutBlockFlowRareData>(this);
 
   rare_data_->discard_margin_after_ = value;
 }
@@ -2365,7 +2377,7 @@ void LayoutBlockFlow::SetMaxMarginBeforeValues(LayoutUnit pos, LayoutUnit neg) {
     if (pos == LayoutBlockFlowRareData::PositiveMarginBeforeDefault(this) &&
         neg == LayoutBlockFlowRareData::NegativeMarginBeforeDefault(this))
       return;
-    rare_data_ = WTF::MakeUnique<LayoutBlockFlowRareData>(this);
+    rare_data_ = std::make_unique<LayoutBlockFlowRareData>(this);
   }
   rare_data_->margins_.SetPositiveMarginBefore(pos);
   rare_data_->margins_.SetNegativeMarginBefore(neg);
@@ -2376,7 +2388,7 @@ void LayoutBlockFlow::SetMaxMarginAfterValues(LayoutUnit pos, LayoutUnit neg) {
     if (pos == LayoutBlockFlowRareData::PositiveMarginAfterDefault(this) &&
         neg == LayoutBlockFlowRareData::NegativeMarginAfterDefault(this))
       return;
-    rare_data_ = WTF::MakeUnique<LayoutBlockFlowRareData>(this);
+    rare_data_ = std::make_unique<LayoutBlockFlowRareData>(this);
   }
   rare_data_->margins_.SetPositiveMarginAfter(pos);
   rare_data_->margins_.SetNegativeMarginAfter(neg);
@@ -2838,7 +2850,7 @@ void LayoutBlockFlow::WillBeDestroyed() {
   // The reason we don't destroy it before anonymous children is that they may
   // have continuations of their own that are anonymous children of our
   // continuation.
-  LayoutBoxModelObject* continuation = this->Continuation();
+  LayoutBoxModelObject* continuation = Continuation();
   if (continuation) {
     continuation->Destroy();
     SetContinuation(nullptr);
@@ -2986,7 +2998,7 @@ void LayoutBlockFlow::SetStaticInlinePositionForChild(
 }
 
 LayoutInline* LayoutBlockFlow::InlineElementContinuation() const {
-  LayoutBoxModelObject* continuation = this->Continuation();
+  LayoutBoxModelObject* continuation = Continuation();
   return continuation && continuation->IsInline() ? ToLayoutInline(continuation)
                                                   : nullptr;
 }
@@ -3012,29 +3024,22 @@ void LayoutBlockFlow::AddChild(LayoutObject* new_child,
   // children as blocks.
   // So, if our children are currently inline and a block child has to be
   // inserted, we move all our inline children into anonymous block boxes.
-  bool child_is_block_level = !new_child->IsInline();
-
-  // ** LayoutNG **
-  // We want to use the block layout for out of flow positioned
-  // objects when they go in front of inline blocks or if they are just
-  // standalone objects.
-  // Example 1:
-  //   <div id="zero"><div id="oof"></div></div>
-  //   Legacy Layout: #oof is in inline context.
-  //   LayoutNG: #oof is in block context.
-  //
-  // Example 2:
-  //   <div id=container><oof></oof>Hello!</div>
-  //   Legacy Layout: oof is in inline context.
-  //   LayoutNG: oof is in block context.
-  //
-  // Example 3:
-  //   <div id=container>Hello!<oof></oof></div>
-  //   Legacy Layout: oof is in inline context.
-  //   LayoutNG: oof is in inline context.
+  bool child_is_block_level;
   bool layout_ng_enabled = RuntimeEnabledFeatures::LayoutNGEnabled();
-  if (new_child->IsFloatingOrOutOfFlowPositioned())
-    child_is_block_level = layout_ng_enabled && !FirstChild();
+  if (layout_ng_enabled && !FirstChild() &&
+      (new_child->IsFloating() ||
+       (new_child->IsOutOfFlowPositioned() &&
+        !new_child->StyleRef().IsOriginalDisplayInlineType()))) {
+    // TODO(kojii): We once forced all floats and OOF to create a block
+    // container in LayoutNG, which turned out to be not a great way, but
+    // completely turning this off breaks too much. When an OOF is an inline
+    // type, we need to disable this so that we can compute the inline static
+    // position. crbug.com/734554
+    child_is_block_level = true;
+  } else {
+    child_is_block_level =
+        !new_child->IsInline() && !new_child->IsFloatingOrOutOfFlowPositioned();
+  }
 
   if (ChildrenInline()) {
     if (child_is_block_level) {
@@ -3952,7 +3957,7 @@ void LayoutBlockFlow::AddOverhangingFloats(LayoutBlockFlow* child,
        child_it != child_end; ++child_it) {
     FloatingObject& floating_object = *child_it->get();
     LayoutUnit logical_bottom_for_float =
-        std::min(this->LogicalBottomForFloat(floating_object),
+        std::min(LogicalBottomForFloat(floating_object),
                  LayoutUnit::Max() - child_logical_top);
     LayoutUnit logical_bottom = child_logical_top + logical_bottom_for_float;
 
@@ -4155,11 +4160,44 @@ LayoutUnit LayoutBlockFlow::LogicalRightFloatOffsetForLine(
   return fixed_offset;
 }
 
+LayoutUnit LayoutBlockFlow::LogicalLeftFloatOffsetForAvoidingFloats(
+    LayoutUnit logical_top,
+    LayoutUnit fixed_offset,
+    LayoutUnit logical_height) const {
+  if (floating_objects_ && floating_objects_->HasLeftObjects()) {
+    return floating_objects_->LogicalLeftOffsetForAvoidingFloats(
+        fixed_offset, logical_top, logical_height);
+  }
+
+  return fixed_offset;
+}
+
+LayoutUnit LayoutBlockFlow::LogicalRightFloatOffsetForAvoidingFloats(
+    LayoutUnit logical_top,
+    LayoutUnit fixed_offset,
+    LayoutUnit logical_height) const {
+  if (floating_objects_ && floating_objects_->HasRightObjects()) {
+    return floating_objects_->LogicalRightOffsetForAvoidingFloats(
+        fixed_offset, logical_top, logical_height);
+  }
+
+  return fixed_offset;
+}
+
 void LayoutBlockFlow::UpdateAncestorShouldPaintFloatingObject(
     const LayoutBox& float_box) {
+  // Normally, the ShouldPaint flags of FloatingObjects should have been set
+  // during layout, based on overhaning, intruding, self-painting status, etc.
+  // However, sometimes a layer's self painting status is affected by its
+  // compositing status, so we need to call this method during compositing
+  // update when we find a layer changes self painting status. This doesn't
+  // apply to SPv2 in which a layer's self painting status no longer depends on
+  // compositing status.
+  DCHECK(!RuntimeEnabledFeatures::SlimmingPaintV2Enabled());
   DCHECK(float_box.IsFloating());
   bool float_box_is_self_painting_layer =
       float_box.HasLayer() && float_box.Layer()->IsSelfPaintingLayer();
+  bool found_painting_ancestor = false;
   for (LayoutObject* ancestor = float_box.Parent();
        ancestor && ancestor->IsLayoutBlockFlow();
        ancestor = ancestor->Parent()) {
@@ -4176,17 +4214,21 @@ void LayoutBlockFlow::UpdateAncestorShouldPaintFloatingObject(
       break;
 
     FloatingObject& floating_object = **it;
-    if (!float_box_is_self_painting_layer) {
-      // This repeats the logic in addOverhangingFloats() about shouldPaint
-      // flag:
+    if (!found_painting_ancestor && !float_box_is_self_painting_layer) {
+      // This tries to repeat the logic in AddOverhangingFloats() about
+      // ShouldPaint flag with the following rules:
       // - The nearest enclosing block in which the float doesn't overhang
       //   paints the float;
       // - Or even if the float overhangs, if the ancestor block has
       //   self-painting layer, it paints the float.
+      // However it is not fully consistent with AddOverhangingFloats() when
+      // a float doesn't overhang in an ancestor but overhangs in an ancestor
+      // of the ancestor. This results different ancestor painting the float,
+      // but there seems no problem for now.
       if (ancestor_block->HasSelfPaintingLayer() ||
           !ancestor_block->IsOverhangingFloat(floating_object)) {
         floating_object.SetShouldPaint(true);
-        return;
+        found_painting_ancestor = true;
       }
     } else {
       floating_object.SetShouldPaint(false);
@@ -4214,7 +4256,7 @@ bool LayoutBlockFlow::AllowsPaginationStrut() const {
     // But currently we have no mechanism in place to handle this.
     return false;
   }
-  const LayoutBlock* containing_block = this->ContainingBlock();
+  const LayoutBlock* containing_block = ContainingBlock();
   if (!containing_block || !containing_block->IsLayoutBlockFlow())
     return false;
   const LayoutBlockFlow* containing_block_flow =
@@ -4246,7 +4288,7 @@ void LayoutBlockFlow::SetPaginationStrutPropagatedFromChild(LayoutUnit strut) {
   if (!rare_data_) {
     if (!strut)
       return;
-    rare_data_ = WTF::MakeUnique<LayoutBlockFlowRareData>(this);
+    rare_data_ = std::make_unique<LayoutBlockFlowRareData>(this);
   }
   rare_data_->pagination_strut_propagated_from_child_ = strut;
 }
@@ -4255,7 +4297,7 @@ void LayoutBlockFlow::SetFirstForcedBreakOffset(LayoutUnit block_offset) {
   if (!rare_data_) {
     if (!block_offset)
       return;
-    rare_data_ = WTF::MakeUnique<LayoutBlockFlowRareData>(this);
+    rare_data_ = std::make_unique<LayoutBlockFlowRareData>(this);
   }
   rare_data_->first_forced_break_offset_ = block_offset;
 }
@@ -4315,6 +4357,12 @@ bool LayoutBlockFlow::CreatesNewFormattingContext() const {
     // to our ancestors.
     return true;
   }
+
+  // NGBlockNode cannot compute margin collapsing across NG/non-NG boundary.
+  // Create a new formatting context for non-NG node to prevent margin
+  // collapsing.
+  if (RuntimeEnabledFeatures::LayoutNGEnabled())
+    return StyleRef().UserModify() != EUserModify::kReadOnly;
 
   return false;
 }
@@ -4461,7 +4509,7 @@ LayoutBlockFlow::LayoutBlockFlowRareData& LayoutBlockFlow::EnsureRareData() {
   if (rare_data_)
     return *rare_data_;
 
-  rare_data_ = WTF::MakeUnique<LayoutBlockFlowRareData>(this);
+  rare_data_ = std::make_unique<LayoutBlockFlowRareData>(this);
   return *rare_data_;
 }
 
@@ -4486,12 +4534,13 @@ void LayoutBlockFlow::PositionDialog() {
     return;
   }
 
-  LocalFrameView* frame_view = GetDocument().View();
-  LayoutUnit top = LayoutUnit((Style()->GetPosition() == EPosition::kFixed)
-                                  ? 0
-                                  : frame_view->ScrollOffsetInt().Height());
-  int visible_height =
-      frame_view->VisibleContentRect(kIncludeScrollbars).Height();
+  auto* scrollable_area = GetDocument().View()->LayoutViewportScrollableArea();
+  LayoutUnit top =
+      LayoutUnit((Style()->GetPosition() == EPosition::kFixed)
+                     ? 0
+                     : scrollable_area->ScrollOffsetInt().Height());
+
+  int visible_height = GetDocument().View()->Height();
   if (Size().Height() < visible_height)
     top += (visible_height - Size().Height()) / 2;
   SetY(top);
@@ -4536,9 +4585,11 @@ bool LayoutBlockFlow::RecalcInlineChildrenOverflowAfterStyleChange() {
     LayoutObject* layout_object = walker.Current().GetLayoutObject();
     if (RecalcNormalFlowChildOverflowIfNeeded(layout_object)) {
       children_overflow_changed = true;
-      if (InlineBox* inline_box_wrapper =
-              ToLayoutBlock(layout_object)->InlineBoxWrapper())
-        line_boxes.insert(&inline_box_wrapper->Root());
+      if (layout_object->IsLayoutBlock()) {
+        if (InlineBox* inline_box_wrapper =
+                ToLayoutBlock(layout_object)->InlineBoxWrapper())
+          line_boxes.insert(&inline_box_wrapper->Root());
+      }
     }
   }
 
@@ -4706,8 +4757,7 @@ void LayoutBlockFlow::AddOutlineRects(
   // For blocks inside inlines, we go ahead and include margins so that we run
   // right up to the inline boxes above and below us (thus getting merged with
   // them to form a single irregular shape).
-  const LayoutInline* inline_element_continuation =
-      this->InlineElementContinuation();
+  const LayoutInline* inline_element_continuation = InlineElementContinuation();
   if (inline_element_continuation) {
     // FIXME: This check really isn't accurate.
     bool next_inline_has_line_box = inline_element_continuation->FirstLineBox();

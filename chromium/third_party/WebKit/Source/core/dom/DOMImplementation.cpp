@@ -39,13 +39,13 @@
 #include "core/frame/UseCounter.h"
 #include "core/html/HTMLDocument.h"
 #include "core/html/HTMLHeadElement.h"
-#include "core/html/HTMLMediaElement.h"
 #include "core/html/HTMLTitleElement.h"
 #include "core/html/HTMLViewSourceDocument.h"
 #include "core/html/ImageDocument.h"
 #include "core/html/PluginDocument.h"
 #include "core/html/TextDocument.h"
 #include "core/html/custom/V0CustomElementRegistrationContext.h"
+#include "core/html/media/HTMLMediaElement.h"
 #include "core/html/media/MediaDocument.h"
 #include "core/html_names.h"
 #include "core/loader/FrameLoader.h"
@@ -241,7 +241,7 @@ Document* DOMImplementation::createDocument(const String& type,
     // init.frame()->tree().top()->securityContext() returns nullptr.
     // For that reason, the origin must be retrieved directly from init.url().
     if (init.GetFrame()->IsMainFrame()) {
-      RefPtr<SecurityOrigin> origin = SecurityOrigin::Create(init.Url());
+      scoped_refptr<SecurityOrigin> origin = SecurityOrigin::Create(init.Url());
       plugin_data = init.GetFrame()->GetPage()->GetPluginData(origin.get());
     } else {
       plugin_data =
@@ -285,8 +285,9 @@ Document* DOMImplementation::createDocument(const String& type,
   return HTMLDocument::Create(init);
 }
 
-DEFINE_TRACE(DOMImplementation) {
+void DOMImplementation::Trace(blink::Visitor* visitor) {
   visitor->Trace(document_);
+  ScriptWrappable::Trace(visitor);
 }
 
 }  // namespace blink

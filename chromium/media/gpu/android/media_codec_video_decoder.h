@@ -18,6 +18,7 @@
 #include "media/gpu/android/avda_codec_allocator.h"
 #include "media/gpu/android/codec_wrapper.h"
 #include "media/gpu/android/device_info.h"
+#include "media/gpu/android/surface_chooser_helper.h"
 #include "media/gpu/android/video_frame_factory.h"
 #include "media/gpu/media_gpu_export.h"
 #include "services/service_manager/public/cpp/service_context_ref.h"
@@ -81,6 +82,17 @@ class MEDIA_GPU_EXPORT MediaCodecVideoDecoder
  protected:
   // Protected for testing.
   ~MediaCodecVideoDecoder() override;
+
+  // Set up |cdm_context| as part of initialization.  Guarantees that |init_cb|
+  // will be called depending on the outcome, though not necessarily before this
+  // function returns.
+  void SetCdm(CdmContext* cdm_context, const InitCB& init_cb);
+
+  // Called when the Cdm provides |media_crypto|.  Will signal |init_cb| based
+  // on the result, and set the codec config properly.
+  void OnMediaCryptoReady(const InitCB& init_cb,
+                          JavaObjectPtr media_crypto,
+                          bool requires_secure_video_codec);
 
  private:
   // The test has access for PumpCodec().
@@ -174,12 +186,21 @@ class MEDIA_GPU_EXPORT MediaCodecVideoDecoder
   // Releases |codec_| if it's not null.
   void ReleaseCodec();
 
+  // Return true if we have a codec that's outputting to an overlay.
+  bool IsUsingOverlay() const;
+
+  // Notify us about a promotion hint.
+  void NotifyPromotionHint(PromotionHintAggregator::Hint hint);
+
+  // Update |cached_frame_information_|.
+  void CacheFrameInformation();
+
   // Creates an overlay factory cb based on the value of overlay_info_.
   AndroidOverlayFactoryCB CreateOverlayFactoryCb();
 
   // Create a callback that will handle promotion hints, and set the overlay
   // position if required.
-  PromotionHintAggregator::NotifyPromotionHintCB CreatePromotionHintCB() const;
+  PromotionHintAggregator::NotifyPromotionHintCB CreatePromotionHintCB();
 
   State state_ = State::kInitializing;
 
@@ -234,12 +255,8 @@ class MEDIA_GPU_EXPORT MediaCodecVideoDecoder
   // The current overlay info, which possibly specifies an overlay to render to.
   OverlayInfo overlay_info_;
 
-  // The surface chooser we use to decide which kind of surface to configure the
-  // codec with.
-  std::unique_ptr<AndroidVideoSurfaceChooser> surface_chooser_;
-
-  // Current state for the chooser.
-  AndroidVideoSurfaceChooser::State chooser_state_;
+  // The helper which manages our surface chooser for us.
+  SurfaceChooserHelper surface_chooser_helper_;
 
   // The factory for creating VideoFrames from CodecOutputBuffers.
   std::unique_ptr<VideoFrameFactory> video_frame_factory_;
@@ -249,6 +266,27 @@ class MEDIA_GPU_EXPORT MediaCodecVideoDecoder
 
   DeviceInfo* device_info_;
   bool enable_threaded_texture_mailboxes_;
+
+  // Most recently cached frame information, so that we can dispatch it without
+  // recomputing it on every frame.  It changes very rarely.
+  SurfaceChooserHelper::FrameInformation cached_frame_information_ =
+      SurfaceChooserHelper::FrameInformation::SURFACETEXTURE_INSECURE;
+
+  // CDM related stuff.
+
+  // CDM context that knowns about MediaCrypto. Owned by CDM which is external
+  // to this decoder.
+  MediaDrmBridgeCdmContext* media_drm_bridge_cdm_context_ = nullptr;
+
+  // MediaDrmBridge requires registration/unregistration of the player, this
+  // registration id is used for this.
+  int cdm_registration_id_ = 0;
+
+  // Do we need a hw-secure codec?
+  bool requires_secure_codec_ = false;
+
+  // Optional crypto object from the Cdm.
+  base::android::ScopedJavaGlobalRef<jobject> media_crypto_;
 
   // If we're running in a service context this ref lets us keep the service
   // thread alive until destruction.

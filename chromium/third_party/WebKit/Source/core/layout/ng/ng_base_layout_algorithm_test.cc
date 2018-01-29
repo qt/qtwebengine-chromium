@@ -14,31 +14,29 @@
 
 namespace blink {
 
-NGBaseLayoutAlgorithmTest::NGBaseLayoutAlgorithmTest() {
-  RuntimeEnabledFeatures::SetLayoutNGEnabled(true);
-}
-
-NGBaseLayoutAlgorithmTest::~NGBaseLayoutAlgorithmTest() {
-  RuntimeEnabledFeatures::SetLayoutNGEnabled(false);
-}
-
 void NGBaseLayoutAlgorithmTest::SetUp() {
-  RenderingTest::SetUp();
+  NGLayoutTest::SetUp();
   EnableCompositing();
 }
 
-std::pair<RefPtr<NGPhysicalBoxFragment>, RefPtr<NGConstraintSpace>>
+std::pair<scoped_refptr<NGPhysicalBoxFragment>,
+          scoped_refptr<NGConstraintSpace>>
 NGBaseLayoutAlgorithmTest::RunBlockLayoutAlgorithmForElement(Element* element) {
-  LayoutNGBlockFlow* block_flow =
-      ToLayoutNGBlockFlow(element->GetLayoutObject());
+  LayoutBlockFlow* block_flow = ToLayoutBlockFlow(element->GetLayoutObject());
   NGBlockNode node(block_flow);
-  RefPtr<NGConstraintSpace> space =
+  scoped_refptr<NGConstraintSpace> space =
       NGConstraintSpace::CreateFromLayoutObject(*block_flow);
 
-  RefPtr<NGLayoutResult> result = NGBlockLayoutAlgorithm(node, *space).Layout();
+  scoped_refptr<NGLayoutResult> result =
+      NGBlockLayoutAlgorithm(node, *space).Layout();
   return std::make_pair(
       ToNGPhysicalBoxFragment(result->PhysicalFragment().get()),
       std::move(space));
+}
+
+const NGPhysicalBoxFragment* NGBaseLayoutAlgorithmTest::CurrentFragmentFor(
+    const LayoutNGBlockFlow* block_flow) {
+  return block_flow->CurrentFragment();
 }
 
 const NGPhysicalBoxFragment* FragmentChildIterator::NextChild() {
@@ -55,8 +53,8 @@ const NGPhysicalBoxFragment* FragmentChildIterator::NextChild() {
   return ToNGPhysicalBoxFragment(parent_->Children()[index_++].get());
 }
 
-RefPtr<NGConstraintSpace> ConstructBlockLayoutTestConstraintSpace(
-    NGWritingMode writing_mode,
+scoped_refptr<NGConstraintSpace> ConstructBlockLayoutTestConstraintSpace(
+    WritingMode writing_mode,
     TextDirection direction,
     NGLogicalSize size,
     bool shrink_to_fit,

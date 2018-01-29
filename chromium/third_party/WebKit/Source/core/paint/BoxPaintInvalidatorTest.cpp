@@ -36,9 +36,14 @@ class BoxPaintInvalidatorTest : public PaintControllerPaintTest {
       const LayoutBox& box,
       const LayoutRect& old_visual_rect,
       const LayoutPoint& old_location) {
+    FragmentData fragment_data;
     PaintInvalidatorContext context;
     context.old_visual_rect = old_visual_rect;
     context.old_location = old_location;
+    fragment_data_.SetVisualRect(box.FirstFragment().VisualRect());
+    fragment_data_.SetLocationInBacking(
+        box.FirstFragment().LocationInBacking());
+    context.fragment_data = &fragment_data_;
     return BoxPaintInvalidator(box, context).ComputePaintInvalidationReason();
   }
 
@@ -51,8 +56,8 @@ class BoxPaintInvalidatorTest : public PaintControllerPaintTest {
     GetDocument().View()->UpdateAllLifecyclePhases();
     auto& target = *GetDocument().getElementById("target");
     const auto& box = *ToLayoutBox(target.GetLayoutObject());
-    LayoutRect visual_rect = box.VisualRect();
-    LayoutPoint location = box.LocationInBacking();
+    LayoutRect visual_rect = box.FirstFragment().VisualRect();
+    LayoutPoint location = box.FirstFragment().LocationInBacking();
 
     // No geometry change.
     EXPECT_EQ(PaintInvalidationReason::kNone,
@@ -75,41 +80,43 @@ class BoxPaintInvalidatorTest : public PaintControllerPaintTest {
     RenderingTest::SetUp();
     GetDocument().SetCompatibilityMode(Document::kNoQuirksMode);
     EnableCompositing();
-    SetBodyInnerHTML(
-        "<style>"
-        "  body {"
-        "    margin: 0;"
-        "    height: 0;"
-        "  }"
-        "  ::-webkit-scrollbar { display: none }"
-        "  #target {"
-        "    width: 50px;"
-        "    height: 100px;"
-        "    transform-origin: 0 0;"
-        "  }"
-        "  .border {"
-        "    border-width: 20px 10px;"
-        "    border-style: solid;"
-        "    border-color: red;"
-        "  }"
-        "  .solid-composited-scroller {"
-        "    overflow: scroll;"
-        "    will-change: transform;"
-        "    background: #ccc;"
-        "  }"
-        "  .local-background {"
-        "    background-attachment: local;"
-        "    overflow: scroll;"
-        "  }"
-        "  .gradient {"
-        "    background-image: linear-gradient(blue, yellow)"
-        "  }"
-        "  .transform {"
-        "    transform: scale(2);"
-        "  }"
-        "</style>"
-        "<div id='target' class='border'></div>");
+    SetBodyInnerHTML(R"HTML(
+      <style>
+        body {
+          margin: 0;
+          height: 0;
+        }
+        ::-webkit-scrollbar { display: none }
+        #target {
+          width: 50px;
+          height: 100px;
+          transform-origin: 0 0;
+        }
+        .border {
+          border-width: 20px 10px;
+          border-style: solid;
+          border-color: red;
+        }
+        .solid-composited-scroller {
+          overflow: scroll;
+          will-change: transform;
+          background: #ccc;
+        }
+        .local-background {
+          background-attachment: local;
+          overflow: scroll;
+        }
+        .gradient {
+          background-image: linear-gradient(blue, yellow)
+        }
+        .transform {
+          transform: scale(2);
+        }
+      </style>
+      <div id='target' class='border'></div>
+    )HTML");
   }
+  FragmentData fragment_data_;
 };
 
 INSTANTIATE_TEST_CASE_P(All,
@@ -140,7 +147,8 @@ TEST_P(BoxPaintInvalidatorTest, SlowMapToVisualRectInAncestorSpaceLayoutView) {
             EnclosingIntRect(ToHTMLFrameOwnerElement(target)
                                  .contentDocument()
                                  ->GetLayoutView()
-                                 ->VisualRect()));
+                                 ->FirstFragment()
+                                 .VisualRect()));
 }
 
 TEST_P(BoxPaintInvalidatorTest, ComputePaintInvalidationReasonPaintingNothing) {
@@ -153,7 +161,7 @@ TEST_P(BoxPaintInvalidatorTest, ComputePaintInvalidationReasonPaintingNothing) {
   GetDocument().View()->UpdateAllLifecyclePhases();
 
   EXPECT_TRUE(box.PaintedOutputOfObjectHasNoEffectRegardlessOfSize());
-  LayoutRect visual_rect = box.VisualRect();
+  LayoutRect visual_rect = box.FirstFragment().VisualRect();
   EXPECT_EQ(LayoutRect(0, 0, 50, 100), visual_rect);
 
   // No geometry change.
@@ -190,7 +198,7 @@ TEST_P(BoxPaintInvalidatorTest, ComputePaintInvalidationReasonBasic) {
   GetDocument().View()->UpdateAllLifecyclePhases();
 
   box.SetMayNeedPaintInvalidation();
-  LayoutRect visual_rect = box.VisualRect();
+  LayoutRect visual_rect = box.FirstFragment().VisualRect();
   EXPECT_EQ(LayoutRect(0, 0, 50, 100), visual_rect);
 
   // No geometry change.
@@ -218,7 +226,8 @@ TEST_P(BoxPaintInvalidatorTest, ComputePaintInvalidationReasonBasic) {
   // Visual rect size change, with location in backing different from location
   // of visual rect.
   LayoutPoint fake_location = visual_rect.Location() + LayoutSize(10, 20);
-  box.GetMutableForPainting().SetLocationInBacking(fake_location);
+  box.GetMutableForPainting().FirstFragment().SetLocationInBacking(
+      fake_location);
   EXPECT_EQ(
       PaintInvalidationReason::kGeometry,
       ComputePaintInvalidationReason(box, old_visual_rect, fake_location));
@@ -383,7 +392,8 @@ TEST_P(BoxPaintInvalidatorTest, SubpixelVisualRectChangeWithTransform) {
 TEST_P(BoxPaintInvalidatorTest, SubpixelWithinPixelsChange) {
   Element* target = GetDocument().getElementById("target");
   LayoutObject* target_object = target->GetLayoutObject();
-  EXPECT_EQ(LayoutRect(0, 0, 70, 140), target_object->VisualRect());
+  EXPECT_EQ(LayoutRect(0, 0, 70, 140),
+            target_object->FirstFragment().VisualRect());
 
   GetDocument().View()->SetTracksPaintInvalidations(true);
   target->setAttribute(HTMLNames::styleAttr,
@@ -391,7 +401,7 @@ TEST_P(BoxPaintInvalidatorTest, SubpixelWithinPixelsChange) {
   GetDocument().View()->UpdateAllLifecyclePhases();
   EXPECT_EQ(LayoutRect(LayoutUnit(), LayoutUnit(0.6), LayoutUnit(70),
                        LayoutUnit(139.3)),
-            target_object->VisualRect());
+            target_object->FirstFragment().VisualRect());
   const auto* raster_invalidations =
       &GetRasterInvalidationTracking()->Invalidations();
   ASSERT_EQ(1u, raster_invalidations->size());
@@ -406,7 +416,7 @@ TEST_P(BoxPaintInvalidatorTest, SubpixelWithinPixelsChange) {
   GetDocument().View()->UpdateAllLifecyclePhases();
   EXPECT_EQ(LayoutRect(LayoutUnit(), LayoutUnit(0.6), LayoutUnit(69.3),
                        LayoutUnit(138.5)),
-            target_object->VisualRect());
+            target_object->FirstFragment().VisualRect());
   raster_invalidations = &GetRasterInvalidationTracking()->Invalidations();
   ASSERT_EQ(2u, raster_invalidations->size());
   EXPECT_EQ(IntRect(59, 0, 11, 140), (*raster_invalidations)[0].rect);
@@ -534,18 +544,20 @@ TEST_P(BoxPaintInvalidatorTest, CompositedLayoutViewGradientResize) {
 }
 
 TEST_P(BoxPaintInvalidatorTest, NonCompositedLayoutViewResize) {
-  SetBodyInnerHTML(
-      "<style>"
-      "  body { margin: 0 }"
-      "  iframe { display: block; width: 100px; height: 100px; border: none; }"
-      "</style>"
-      "<iframe id='iframe'></iframe>");
-  SetChildFrameHTML(
-      "<style>"
-      "  ::-webkit-scrollbar { display: none }"
-      "  body { margin: 0; background: green; height: 0 }"
-      "</style>"
-      "<div id='content' style='width: 200px; height: 200px'></div>");
+  SetBodyInnerHTML(R"HTML(
+    <style>
+      body { margin: 0 }
+      iframe { display: block; width: 100px; height: 100px; border: none; }
+    </style>
+    <iframe id='iframe'></iframe>
+  )HTML");
+  SetChildFrameHTML(R"HTML(
+    <style>
+      ::-webkit-scrollbar { display: none }
+      body { margin: 0; background: green; height: 0 }
+    </style>
+    <div id='content' style='width: 200px; height: 200px'></div>
+  )HTML");
   GetDocument().View()->UpdateAllLifecyclePhases();
   Element* iframe = GetDocument().getElementById("iframe");
   Element* content = ChildDocument().getElementById("content");
@@ -582,22 +594,24 @@ TEST_P(BoxPaintInvalidatorTest, NonCompositedLayoutViewResize) {
 }
 
 TEST_P(BoxPaintInvalidatorTest, NonCompositedLayoutViewGradientResize) {
-  SetBodyInnerHTML(
-      "<style>"
-      "  body { margin: 0 }"
-      "  iframe { display: block; width: 100px; height: 100px; border: none; }"
-      "</style>"
-      "<iframe id='iframe'></iframe>");
-  SetChildFrameHTML(
-      "<style>"
-      "  ::-webkit-scrollbar { display: none }"
-      "  body {"
-      "    margin: 0;"
-      "    height: 0;"
-      "    background-image: linear-gradient(blue, yellow);"
-      "  }"
-      "</style>"
-      "<div id='content' style='width: 200px; height: 200px'></div>");
+  SetBodyInnerHTML(R"HTML(
+    <style>
+      body { margin: 0 }
+      iframe { display: block; width: 100px; height: 100px; border: none; }
+    </style>
+    <iframe id='iframe'></iframe>
+  )HTML");
+  SetChildFrameHTML(R"HTML(
+    <style>
+      ::-webkit-scrollbar { display: none }
+      body {
+        margin: 0;
+        height: 0;
+        background-image: linear-gradient(blue, yellow);
+      }
+    </style>
+    <div id='content' style='width: 200px; height: 200px'></div>
+  )HTML");
   GetDocument().View()->UpdateAllLifecyclePhases();
   Element* iframe = GetDocument().getElementById("iframe");
   Element* content = ChildDocument().getElementById("content");
@@ -633,7 +647,7 @@ TEST_P(BoxPaintInvalidatorTest, NonCompositedLayoutViewGradientResize) {
   EXPECT_EQ(static_cast<const DisplayItemClient*>(frame_layout_view),
             (*raster_invalidations)[1].client);
   EXPECT_EQ(IntRect(0, 0, 100, 200), (*raster_invalidations)[1].rect);
-  EXPECT_EQ(PaintInvalidationReason::kBackground,
+  EXPECT_EQ(PaintInvalidationReason::kGeometry,
             (*raster_invalidations)[1].reason);
   GetDocument().View()->SetTracksPaintInvalidations(false);
 }

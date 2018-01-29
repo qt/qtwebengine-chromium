@@ -628,19 +628,19 @@ void MergeRGBRow_NEON(const uint8* src_r,
       );
 }
 
-// Copy multiple of 32.  vld4.8  allow unaligned and is fastest on a15.
+// Copy multiple of 32.
 void CopyRow_NEON(const uint8* src, uint8* dst, int count) {
   asm volatile(
       "1:                                        \n"
-      "ld1        {v0.8b,v1.8b,v2.8b,v3.8b}, [%0], #32       \n"  // load 32
+      "ldp        q0, q1, [%0], #32              \n"
       "subs       %w2, %w2, #32                  \n"  // 32 processed per loop
-      "st1        {v0.8b,v1.8b,v2.8b,v3.8b}, [%1], #32       \n"  // store 32
+      "stp        q0, q1, [%1], #32              \n"
       "b.gt       1b                             \n"
-      : "+r"(src),                              // %0
-        "+r"(dst),                              // %1
-        "+r"(count)                             // %2  // Output registers
-      :                                         // Input registers
-      : "cc", "memory", "v0", "v1", "v2", "v3"  // Clobber List
+      : "+r"(src),                  // %0
+        "+r"(dst),                  // %1
+        "+r"(count)                 // %2  // Output registers
+      :                             // Input registers
+      : "cc", "memory", "v0", "v1"  // Clobber List
       );
 }
 
@@ -2646,11 +2646,11 @@ float ScaleMaxSamples_NEON(const float* src,
       "b.gt       1b                             \n"
       "fmax       v5.4s, v5.4s, v6.4s            \n"  // max
       "fmaxv      %s3, v5.4s                     \n"  // signed max acculator
-      : "+r"(src),    // %0
-        "+r"(dst),    // %1
-        "+r"(width),  // %2
-        "=w"(fmax)    // %3
-      : "w"(scale)    // %4
+      : "+r"(src),                                    // %0
+        "+r"(dst),                                    // %1
+        "+r"(width),                                  // %2
+        "=w"(fmax)                                    // %3
+      : "w"(scale)                                    // %4
       : "cc", "memory", "v1", "v2", "v3", "v4", "v5", "v6");
   return fmax;
 }
@@ -2676,11 +2676,11 @@ float ScaleSumSamples_NEON(const float* src,
       "faddp      v5.4s, v5.4s, v6.4s            \n"
       "faddp      v5.4s, v5.4s, v5.4s            \n"
       "faddp      %3.4s, v5.4s, v5.4s            \n"  // sum
-      : "+r"(src),    // %0
-        "+r"(dst),    // %1
-        "+r"(width),  // %2
-        "=w"(fsum)    // %3
-      : "w"(scale)    // %4
+      : "+r"(src),                                    // %0
+        "+r"(dst),                                    // %1
+        "+r"(width),                                  // %2
+        "=w"(fsum)                                    // %3
+      : "w"(scale)                                    // %4
       : "cc", "memory", "v1", "v2", "v3", "v4", "v5", "v6");
   return fsum;
 }

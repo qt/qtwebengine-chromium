@@ -198,7 +198,7 @@ TreeScopeEventContext* EventPath::EnsureTreeScopeEventContext(
 
     TreeScopeEventContext* parent_tree_scope_event_context =
         EnsureTreeScopeEventContext(
-            0, tree_scope->OlderShadowRootOrParentTreeScope());
+            nullptr, tree_scope->OlderShadowRootOrParentTreeScope());
     if (parent_tree_scope_event_context &&
         parent_tree_scope_event_context->Target()) {
       tree_scope_event_context->SetTarget(
@@ -312,7 +312,7 @@ void EventPath::ShrinkForRelatedTarget(const Node& target) {
   }
 }
 
-void EventPath::AdjustForTouchEvent(TouchEvent& touch_event) {
+void EventPath::AdjustForTouchEvent(const TouchEvent& touch_event) {
   HeapVector<Member<TouchList>> adjusted_touches;
   HeapVector<Member<TouchList>> adjusted_target_touches;
   HeapVector<Member<TouchList>> adjusted_changed_touches;
@@ -327,6 +327,8 @@ void EventPath::AdjustForTouchEvent(TouchEvent& touch_event) {
     tree_scopes.push_back(&tree_scope_event_context->GetTreeScope());
   }
 
+  // TODO(mustaq): The following adjustments to local vars seems suspicious.
+  // Only used for DCHECK?
   AdjustTouchList(touch_event.touches(), adjusted_touches, tree_scopes);
   AdjustTouchList(touch_event.targetTouches(), adjusted_target_touches,
                   tree_scopes);
@@ -346,7 +348,7 @@ void EventPath::AdjustForTouchEvent(TouchEvent& touch_event) {
 }
 
 void EventPath::AdjustTouchList(
-    const TouchList* touch_list,
+    const TouchList* const touch_list,
     HeapVector<Member<TouchList>> adjusted_touch_list,
     const HeapVector<Member<TreeScope>>& tree_scopes) {
   if (!touch_list)
@@ -403,7 +405,7 @@ void EventPath::CheckReachability(TreeScope& tree_scope,
 }
 #endif
 
-DEFINE_TRACE(EventPath) {
+void EventPath::Trace(blink::Visitor* visitor) {
   visitor->Trace(node_event_contexts_);
   visitor->Trace(node_);
   visitor->Trace(event_);

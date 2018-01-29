@@ -141,7 +141,7 @@ bool IsChromeWindow(CGWindowID id) {
 }  // namespace
 
 FullScreenChromeWindowDetector::FullScreenChromeWindowDetector()
-    : ref_count_(0), last_update_time_ns_(0) {}
+    : last_update_time_ns_(0) {}
 
 FullScreenChromeWindowDetector::~FullScreenChromeWindowDetector() {}
 
@@ -160,7 +160,7 @@ CGWindowID FullScreenChromeWindowDetector::FindFullScreenWindow(
     if (static_cast<CGWindowID>(window.id) != full_screen_window_id)
       continue;
 
-    LOG(LS_WARNING) << "The full-screen window exists in the list.";
+    RTC_LOG(LS_WARNING) << "The full-screen window exists in the list.";
     return kCGNullWindowID;
   }
 

@@ -1,4 +1,4 @@
-// Copyright 2016 PDFium Authors. All rights reserved.
+// Copyright 2017 PDFium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,19 +7,12 @@
 #ifndef XFA_FXFA_PARSER_CXFA_LINE_H_
 #define XFA_FXFA_PARSER_CXFA_LINE_H_
 
-#include "core/fxcrt/fx_system.h"
-#include "xfa/fxfa/parser/cxfa_data.h"
-#include "xfa/fxfa/parser/cxfa_edge.h"
+#include "xfa/fxfa/parser/cxfa_node.h"
 
-class CXFA_Node;
-
-class CXFA_Line : public CXFA_Data {
+class CXFA_Line : public CXFA_Node {
  public:
-  explicit CXFA_Line(CXFA_Node* pNode) : CXFA_Data(pNode) {}
-
-  int32_t GetHand();
-  bool GetSlope();
-  CXFA_Edge GetEdge();
+  CXFA_Line(CXFA_Document* doc, XFA_PacketType packet);
+  ~CXFA_Line() override;
 };
 
 #endif  // XFA_FXFA_PARSER_CXFA_LINE_H_

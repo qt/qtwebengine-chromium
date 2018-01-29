@@ -155,7 +155,7 @@ class TextureGL : public TextureImpl
                                     GLsizei samples,
                                     GLint internalFormat,
                                     const gl::Extents &size,
-                                    GLboolean fixedSampleLocations) override;
+                                    bool fixedSampleLocations) override;
 
     gl::Error setImageExternal(const gl::Context *context,
                                GLenum target,
@@ -209,6 +209,7 @@ class TextureGL : public TextureImpl
                                             GLenum format,
                                             GLenum type,
                                             const gl::PixelUnpackState &unpack,
+                                            const gl::Buffer *unpackBuffer,
                                             const uint8_t *pixels);
 
     gl::Error setSubImagePaddingWorkaround(const gl::Context *context,
@@ -218,6 +219,7 @@ class TextureGL : public TextureImpl
                                            GLenum format,
                                            GLenum type,
                                            const gl::PixelUnpackState &unpack,
+                                           const gl::Buffer *unpackBuffer,
                                            const uint8_t *pixels);
 
     void syncTextureStateSwizzle(const FunctionsGL *functions,

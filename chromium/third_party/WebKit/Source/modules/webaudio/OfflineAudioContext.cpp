@@ -92,7 +92,7 @@ OfflineAudioContext* OfflineAudioContext::Create(
   OfflineAudioContext* audio_context =
       new OfflineAudioContext(document, number_of_channels, number_of_frames,
                               sample_rate, exception_state);
-  audio_context->SuspendIfNeeded();
+  audio_context->PauseIfNeeded();
 
 #if DEBUG_AUDIONODE_REFERENCES
   fprintf(stderr, "[%16p]: OfflineAudioContext::OfflineAudioContext()\n",
@@ -151,7 +151,7 @@ OfflineAudioContext::~OfflineAudioContext() {
 #endif
 }
 
-DEFINE_TRACE(OfflineAudioContext) {
+void OfflineAudioContext::Trace(blink::Visitor* visitor) {
   visitor->Trace(complete_resolver_);
   visitor->Trace(scheduled_suspends_);
   BaseAudioContext::Trace(visitor);

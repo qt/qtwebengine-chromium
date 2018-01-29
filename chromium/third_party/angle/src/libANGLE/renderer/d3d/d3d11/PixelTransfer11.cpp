@@ -153,7 +153,8 @@ gl::Error PixelTransfer11::copyBufferToTexture(const gl::Context *context,
            destArea.y >= 0 && destArea.y + destArea.height <= destSize.height &&
            destArea.z >= 0 && destArea.z + destArea.depth  <= destSize.depth  );
 
-    const gl::Buffer &sourceBuffer = *unpack.pixelBuffer.get();
+    const gl::Buffer &sourceBuffer =
+        *context->getGLState().getTargetBuffer(gl::BufferBinding::PixelUnpack);
 
     ASSERT(mRenderer->supportsFastCopyBufferToTexture(destinationFormat));
 
@@ -187,7 +188,7 @@ gl::Error PixelTransfer11::copyBufferToTexture(const gl::Context *context,
 
     // Are we doing a 2D or 3D copy?
     const auto *geometryShader = ((destSize.depth > 1) ? &mBufferToTextureGS : nullptr);
-    auto stateManager          = mRenderer->getStateManager();
+    StateManager11 *stateManager = mRenderer->getStateManager();
 
     stateManager->setDrawShaders(&mBufferToTextureVS, geometryShader, pixelShader);
     stateManager->setShaderResource(gl::SAMPLER_PIXEL, 0, bufferSRV);

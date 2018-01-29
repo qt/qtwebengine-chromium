@@ -192,7 +192,7 @@ class WebRtcVoiceMediaChannel final : public VoiceMediaChannel,
   bool RemoveSendStream(uint32_t ssrc) override;
   bool AddRecvStream(const StreamParams& sp) override;
   bool RemoveRecvStream(uint32_t ssrc) override;
-  bool GetActiveStreams(AudioInfo::StreamList* actives) override;
+  bool GetActiveStreams(StreamList* actives) override;
   int GetOutputLevel() override;
   // SSRC=0 will apply the new volume to current and future unsignaled streams.
   bool SetOutputVolume(uint32_t ssrc, double volume) override;
@@ -207,7 +207,6 @@ class WebRtcVoiceMediaChannel final : public VoiceMediaChannel,
   void OnNetworkRouteChanged(const std::string& transport_name,
                              const rtc::NetworkRoute& network_route) override;
   void OnReadyToSend(bool ready) override;
-  void OnTransportOverheadChanged(int transport_overhead_per_packet) override;
   bool GetStats(VoiceMediaInfo* info) override;
 
   // SSRC=0 will set the audio sink on the latest unsignaled stream, future or

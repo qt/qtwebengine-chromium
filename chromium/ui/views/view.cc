@@ -834,13 +834,12 @@ void View::Paint(const PaintInfo& parent_paint_info) {
   if (!ShouldPaint())
     return;
 
-  const gfx::Rect& parent_bounds = !parent()
-                                       ? GetPaintRecordingBounds()
-                                       : parent()->GetPaintRecordingBounds();
+  const gfx::Rect& parent_bounds =
+      !parent() ? GetMirroredBounds() : parent()->GetMirroredBounds();
 
   PaintInfo paint_info = PaintInfo::CreateChildPaintInfo(
-      parent_paint_info, GetPaintRecordingBounds(), parent_bounds.size(),
-      GetPaintScaleType());
+      parent_paint_info, GetMirroredBounds(), parent_bounds.size(),
+      GetPaintScaleType(), !!layer());
 
   const ui::PaintContext& context = paint_info.context();
   bool is_invalidated = true;
@@ -1176,7 +1175,7 @@ ui::EventTarget* View::GetParentTarget() {
 }
 
 std::unique_ptr<ui::EventTargetIterator> View::GetChildIterator() const {
-  return base::MakeUnique<ui::EventTargetIteratorPtrImpl<View>>(children_);
+  return std::make_unique<ui::EventTargetIteratorPtrImpl<View>>(children_);
 }
 
 ui::EventTargeter* View::GetEventTargeter() {
@@ -1465,7 +1464,11 @@ void View::NotifyAccessibilityEvent(
     if (native_view_accessibility_)
       native_view_accessibility_->NotifyAccessibilityEvent(event_type);
   }
+
+  OnAccessibilityEvent(event_type);
 }
+
+void View::OnAccessibilityEvent(ui::AXEvent event_type) {}
 
 // Scrolling -------------------------------------------------------------------
 
@@ -1702,10 +1705,6 @@ void View::UpdateChildLayerBounds(const LayerOffsetData& offset_data) {
 
 void View::OnPaintLayer(const ui::PaintContext& context) {
   PaintFromPaintRoot(context);
-}
-
-void View::OnDelegatedFrameDamage(
-    const gfx::Rect& damage_rect_in_dip) {
 }
 
 void View::OnDeviceScaleFactorChanged(float old_device_scale_factor,
@@ -2003,14 +2002,6 @@ bool View::ShouldPaint() const {
   return visible_ && !size().IsEmpty();
 }
 
-gfx::Rect View::GetPaintRecordingBounds() const {
-  // If the View has a layer() then it is a paint root and no offset information
-  // is needed. Otherwise, we need bounds that includes an offset from the
-  // parent to add to the total offset from the paint root.
-  DCHECK(layer() || parent() || origin() == gfx::Point());
-  return layer() ? GetLocalBounds() : GetMirroredBounds();
-}
-
 void View::SetupTransformRecorderForPainting(
     const gfx::Vector2d& offset_from_parent,
     ui::TransformRecorder* recorder) const {
@@ -2051,11 +2042,11 @@ void View::PaintDebugRects(const PaintInfo& parent_paint_info) {
     return;
 
   const gfx::Rect& parent_bounds = (layer() || !parent())
-                                       ? GetPaintRecordingBounds()
-                                       : parent()->GetPaintRecordingBounds();
+                                       ? GetMirroredBounds()
+                                       : parent()->GetMirroredBounds();
   PaintInfo paint_info = PaintInfo::CreateChildPaintInfo(
-      parent_paint_info, GetPaintRecordingBounds(), parent_bounds.size(),
-      GetPaintScaleType());
+      parent_paint_info, GetMirroredBounds(), parent_bounds.size(),
+      GetPaintScaleType(), !!layer());
 
   const ui::PaintContext& context = paint_info.context();
 
@@ -2073,6 +2064,13 @@ void View::PaintDebugRects(const PaintInfo& parent_paint_info) {
   gfx::Canvas* canvas = recorder.canvas();
   const float scale = canvas->UndoDeviceScaleFactor();
   gfx::RectF outline_rect(ScaleToEnclosedRect(GetLocalBounds(), scale));
+  gfx::RectF content_outline_rect(
+      ScaleToEnclosedRect(GetContentsBounds(), scale));
+  if (content_outline_rect != outline_rect) {
+    content_outline_rect.Inset(0.5f, 0.5f);
+    const SkColor content_color = SkColorSetARGB(0x30, 0, 0, 0xff);
+    canvas->DrawRect(content_outline_rect, content_color);
+  }
   outline_rect.Inset(0.5f, 0.5f);
   const SkColor color = SkColorSetARGB(0x30, 0xff, 0, 0);
   canvas->DrawRect(outline_rect, color);
@@ -2282,6 +2280,8 @@ void View::BoundsChanged(const gfx::Rect& previous_bounds) {
   }
 
   OnBoundsChanged(previous_bounds);
+  if (bounds_ != previous_bounds)
+    NotifyAccessibilityEvent(ui::AX_EVENT_LOCATION_CHANGED, false);
 
   if (needs_layout_ || previous_bounds.size() != size()) {
     needs_layout_ = false;
@@ -2428,7 +2428,7 @@ void View::CreateLayer(ui::LayerType layer_type) {
       child->UpdateChildLayerVisibility(true);
   }
 
-  SetLayer(base::MakeUnique<ui::Layer>(layer_type));
+  SetLayer(std::make_unique<ui::Layer>(layer_type));
   layer()->set_delegate(this);
   layer()->set_name(GetClassName());
 

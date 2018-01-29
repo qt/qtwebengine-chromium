@@ -26,7 +26,6 @@
 
 #include "core/dom/AXObjectCache.h"
 #include "core/dom/ElementTraversal.h"
-#include "core/dom/TaskRunnerHelper.h"
 #include "core/dom/events/Event.h"
 #include "core/frame/UseCounter.h"
 #include "core/html/forms/HTMLDataListElement.h"
@@ -44,6 +43,7 @@
 #include "platform/loader/fetch/ResourceFetcher.h"
 #include "platform/text/BidiTextRun.h"
 #include "platform/wtf/Vector.h"
+#include "public/platform/TaskType.h"
 
 namespace blink {
 
@@ -54,6 +54,7 @@ HTMLFormControlElement::HTMLFormControlElement(const QualifiedName& tag_name,
     : LabelableElement(tag_name, document),
       ancestor_disabled_state_(kAncestorDisabledStateUnknown),
       data_list_ancestor_state_(kUnknown),
+      may_have_field_set_ancestor_(true),
       is_autofilled_(false),
       has_validation_message_(false),
       will_validate_initialized_(false),
@@ -67,7 +68,7 @@ HTMLFormControlElement::HTMLFormControlElement(const QualifiedName& tag_name,
 
 HTMLFormControlElement::~HTMLFormControlElement() {}
 
-DEFINE_TRACE(HTMLFormControlElement) {
+void HTMLFormControlElement::Trace(blink::Visitor* visitor) {
   ListedElement::Trace(visitor);
   LabelableElement::Trace(visitor);
 }
@@ -111,14 +112,22 @@ bool HTMLFormControlElement::FormNoValidate() const {
 }
 
 void HTMLFormControlElement::UpdateAncestorDisabledState() const {
+  if (!may_have_field_set_ancestor_) {
+    ancestor_disabled_state_ = kAncestorDisabledStateEnabled;
+    return;
+  }
+  may_have_field_set_ancestor_ = false;
   HTMLFieldSetElement* highest_disabled_field_set_ancestor = nullptr;
   ContainerNode* highest_legend_ancestor = nullptr;
   for (HTMLElement* ancestor = Traversal<HTMLElement>::FirstAncestor(*this);
        ancestor; ancestor = Traversal<HTMLElement>::FirstAncestor(*ancestor)) {
     if (IsHTMLLegendElement(*ancestor))
       highest_legend_ancestor = ancestor;
-    if (IsHTMLFieldSetElement(*ancestor) && ancestor->IsDisabledFormControl())
-      highest_disabled_field_set_ancestor = ToHTMLFieldSetElement(ancestor);
+    if (IsHTMLFieldSetElement(*ancestor)) {
+      may_have_field_set_ancestor_ = true;
+      if (ancestor->IsDisabledFormControl())
+        highest_disabled_field_set_ancestor = ToHTMLFieldSetElement(ancestor);
+    }
   }
   ancestor_disabled_state_ =
       (highest_disabled_field_set_ancestor &&
@@ -269,6 +278,8 @@ void HTMLFormControlElement::DidMoveToNewDocument(Document& old_document) {
 Node::InsertionNotificationRequest HTMLFormControlElement::InsertedInto(
     ContainerNode* insertion_point) {
   ancestor_disabled_state_ = kAncestorDisabledStateUnknown;
+  // Force traversal to find ancestor
+  may_have_field_set_ancestor_ = true;
   data_list_ancestor_state_ = kUnknown;
   SetNeedsWillValidateCheck();
   HTMLElement::InsertedInto(insertion_point);
@@ -317,6 +328,8 @@ void HTMLFormControlElement::FormOwnerSetNeedsValidityCheck() {
 void HTMLFormControlElement::FieldSetAncestorsSetNeedsValidityCheck(
     Node* node) {
   if (!node)
+    return;
+  if (!may_have_field_set_ancestor_)
     return;
   for (HTMLFieldSetElement* field_set =
            Traversal<HTMLFieldSetElement>::FirstAncestorOrSelf(*node);
@@ -608,7 +621,8 @@ void HTMLFormControlElement::SetNeedsValidityCheck() {
   if (IsValidationMessageVisible()) {
     // Calls UpdateVisibleValidationMessage() even if is_valid_ is not
     // changed because a validation message can be changed.
-    TaskRunnerHelper::Get(TaskType::kDOMManipulation, &GetDocument())
+    GetDocument()
+        .GetTaskRunner(TaskType::kDOMManipulation)
         ->PostTask(
             BLINK_FROM_HERE,
             WTF::Bind(&HTMLFormControlElement::UpdateVisibleValidationMessage,
@@ -636,8 +650,9 @@ bool HTMLFormControlElement::IsSuccessfulSubmitButton() const {
   return CanBeSuccessfulSubmitButton() && !IsDisabledFormControl();
 }
 
-HTMLFormControlElement* HTMLFormControlElement::EnclosingFormControlElement(
-    Node* node) {
+// static
+const HTMLFormControlElement*
+HTMLFormControlElement::EnclosingFormControlElement(const Node* node) {
   if (!node)
     return nullptr;
   return Traversal<HTMLFormControlElement>::FirstAncestorOrSelf(*node);

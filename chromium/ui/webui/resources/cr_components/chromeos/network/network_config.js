@@ -8,11 +8,9 @@
  * and existing networks.
  */
 
-(function() {
-'use strict';
-
 /**
  * Combinaiton of CrOnc.VPNType + AuthenticationType for IPsec.
+ * Note: closure does not always recognize this if inside function() {}.
  * @enum {string}
  */
 var VPNConfigType = {
@@ -20,6 +18,9 @@ var VPNConfigType = {
   L2TP_IPSEC_CERT: 'L2TP_IPsec_Cert',
   OPEN_VPN: 'OpenVPN',
 };
+
+(function() {
+'use strict';
 
 /** @const */ var DEFAULT_HASH = 'default';
 /** @const */ var DO_NOT_CHECK_HASH = 'do-not-check';
@@ -36,6 +37,9 @@ Polymer({
      */
     networkingPrivate: Object,
 
+    /** @type {!chrome.networkingPrivate.GlobalPolicy|undefined} */
+    globalPolicy: Object,
+
     /**
      * The GUID when an existing network is being configured. This will be
      * empty when configuring a new network.
@@ -49,16 +53,25 @@ Polymer({
      */
     type: String,
 
+    /** Set by embedder if saveOrConnect should always connect. */
+    connectOnSave: Boolean,
+
+    /** True if the user configuring the network can toggle the shared state. */
+    shareAllowEnable: Boolean,
+
+    /** The default shared state. */
+    shareDefault: Boolean,
+
     /** @private */
     enableConnect: {
-      type: String,
+      type: Boolean,
       notify: true,
       computed: 'computeEnableConnect_(isConfigured_, propertiesSent_)',
     },
 
     /** @private */
     enableSave: {
-      type: String,
+      type: Boolean,
       notify: true,
       computed: 'computeEnableSave_(isConfigured_, propertiesReceived_)',
     },
@@ -68,7 +81,10 @@ Polymer({
      * This will be undefined when configuring a new network.
      * @private {!chrome.networkingPrivate.NetworkProperties|undefined}
      */
-    networkProperties: Object,
+    networkProperties: {
+      type: Object,
+      notify: true,
+    },
 
     /** Set if |guid| is not empty once networkProperties are received. */
     propertiesReceived_: Boolean,
@@ -203,6 +219,9 @@ Polymer({
       value: null,
     },
 
+    /** @private */
+    error_: String,
+
     /**
      * Object providing network type values for data binding. Note: Currently
      * we only support WiFi, but support for other types will be following
@@ -224,15 +243,12 @@ Polymer({
     /**
      * Array of values for the EAP Method (Outer) dropdown.
      * @private {!Array<string>}
-     * @const
      */
     eapOuterItems_: {
       type: Array,
       readOnly: true,
-      value: [
-        CrOnc.EAPType.LEAP, CrOnc.EAPType.PEAP, CrOnc.EAPType.EAP_TLS,
-        CrOnc.EAPType.EAP_TTLS
-      ],
+      computed: 'computeEapOuterItems_(' +
+          'guid, shareNetwork_, shareAllowEnable, shareDefault)',
     },
 
     /**
@@ -341,13 +357,23 @@ Polymer({
     if (this.propertiesSent_)
       return;
     this.propertiesSent_ = true;
-    if (!this.guid) {
+    this.error_ = '';
+
+    var propertiesToSet = this.getPropertiesToSet_();
+    if (!this.guid || this.getSource_() == CrOnc.Source.NONE) {
+      // New network configurations default to 'AutoConnect' unless prohibited
+      // by policy.
+      CrOnc.setTypeProperty(
+          propertiesToSet, 'AutoConnect',
+          !(this.globalPolicy &&
+            this.globalPolicy.AllowOnlyPolicyNetworksToConnect));
+
       // Create the configuration, then connect to it in the callback.
       this.networkingPrivate.createNetwork(
-          this.shareNetwork_, this.configProperties_,
+          this.shareNetwork_, propertiesToSet,
           this.createNetworkCallback_.bind(this));
     } else {
-      var propertiesToSet = this.getPropertiesToSet_();
+      propertiesToSet.GUID = this.guid;
       this.networkingPrivate.setProperties(
           this.guid, propertiesToSet, this.setPropertiesCallback_.bind(this));
     }
@@ -366,6 +392,16 @@ Polymer({
     return !!this.guid;
   },
 
+  /**
+   * Returns a valid CrOnc.Source.
+   * @private
+   * @return {!CrOnc.Source}
+   */
+  getSource_: function() {
+    var source = this.networkProperties.Source;
+    return source ? /** @type {!CrOnc.Source} */ (source) : CrOnc.Source.NONE;
+  },
+
   /** @private */
   onCertificateListsChanged_: function() {
     this.networkingPrivate.getCertificateLists(function(certificateLists) {
@@ -377,11 +413,12 @@ Polymer({
       this.set('serverCaCerts_', caCerts);
 
       var userCerts = certificateLists.userCertificates.slice();
-      if (userCerts.empty) {
+      if (!userCerts.length) {
         userCerts = [this.getDefaultCert_(
             this.i18n('networkCertificateNoneInstalled'), '')];
       }
       this.set('userCerts_', userCerts);
+      this.updateCertError_();
     }.bind(this));
   },
 
@@ -407,13 +444,17 @@ Polymer({
       this.close_();
       return;
     }
-    this.propertiesReceived_ = true;
-    this.networkProperties = properties;
 
-    // Set the current shareNetwork_ value when porperties are received.
-    var source = properties.Source;
-    this.shareNetwork_ =
-        source == CrOnc.Source.DEVICE || source == CrOnc.Source.DEVICE_POLICY;
+    if (properties.Type == CrOnc.Type.ETHERNET &&
+        this.get('Ethernet.Authentication', properties) !=
+            CrOnc.Authentication.WEP_8021X) {
+      // Ethernet may have EAP properties set in a separate EthernetEap
+      // configuration. Request that before calling |setNetworkProperties_|.
+      this.networkingPrivate.getNetworks(
+          {networkType: CrOnc.Type.ETHERNET, visible: false, configured: true},
+          this.getEthernetEap_.bind(this, properties));
+      return;
+    }
 
     if (properties.Type == CrOnc.Type.VPN) {
       this.vpnSaveCredentials_ =
@@ -421,6 +462,56 @@ Polymer({
           !!this.get('VPN.IPsec.SaveCredentials', properties) ||
           !!this.get('VPN.L2TP.SaveCredentials', properties);
     }
+
+    this.setNetworkProperties_(properties);
+  },
+
+  /**
+   * @param {!chrome.networkingPrivate.NetworkProperties} properties
+   * @private
+   */
+  setNetworkProperties_: function(properties) {
+    this.propertiesReceived_ = true;
+    this.networkProperties = properties;
+    this.error_ = properties.ErrorState || '';
+
+    // Set the current shareNetwork_ value when porperties are received.
+    this.setShareNetwork_();
+  },
+
+  /**
+   * networkingPrivate.getNetworks callback. Expects an array of Ethernet
+   * networks and looks for an EAP configuration to apply.
+   * @param {!chrome.networkingPrivate.NetworkProperties} properties
+   * @param {!Array<chrome.networkingPrivate.NetworkStateProperties>} networks
+   * @private
+   */
+  getEthernetEap_: function(properties, networks) {
+    if (this.getRuntimeError_()) {
+      this.setNetworkProperties_(properties);
+      return;
+    }
+
+    // Look for an existing EAP configuration. This may be stored in a
+    // separate 'Ethernet EAP Parameters' configuration.
+    var ethernetEap = networks.find(function(network) {
+      return !!network.Ethernet &&
+          network.Ethernet.Authentication == CrOnc.Authentication.WEP_8021X;
+    });
+    if (!ethernetEap) {
+      this.setNetworkProperties_(properties);
+      return;
+    }
+
+    this.networkingPrivate.getProperties(ethernetEap.GUID, (eapProperties) => {
+      if (!this.getRuntimeError_() && eapProperties.Ethernet.EAP) {
+        this.guid = eapProperties.GUID;
+        this.security_ = CrOnc.Security.WPA_EAP;
+        properties.GUID = eapProperties.GUID;
+        properties.Ethernet.EAP = eapProperties.Ethernet.EAP;
+      }
+      this.setNetworkProperties_(properties);
+    });
   },
 
   /**
@@ -435,6 +526,32 @@ Polymer({
       ];
     }
     return [CrOnc.Security.NONE, CrOnc.Security.WPA_EAP];
+  },
+
+  /** @private */
+  setShareNetwork_: function() {
+    if (this.guid) {
+      // Configured networks can not change whether they are shared.
+      var source = this.getSource_();
+      this.shareNetwork_ =
+          source == CrOnc.Source.DEVICE || source == CrOnc.Source.DEVICE_POLICY;
+      return;
+    }
+    if (this.shareAllowEnable) {
+      // New insecure WiFi networks are always shared.
+      if (this.networkProperties.Type == CrOnc.Type.WI_FI &&
+          this.security_ == CrOnc.Security.NONE) {
+        this.shareNetwork_ = true;
+        return;
+      }
+      // Networks requiring a user certificate cannot be shared.
+      var eap = this.eapProperties_;
+      if (eap && eap.Outer == CrOnc.EAPType.EAP_TLS) {
+        this.shareNetwork_ = false;
+        return;
+      }
+    }
+    this.shareNetwork_ = this.shareDefault;
   },
 
   /**
@@ -472,11 +589,6 @@ Polymer({
           };
         }
         this.security_ = configProperties.WiFi.Security || CrOnc.Security.NONE;
-        if (!this.guid && this.security_ == CrOnc.Security.NONE) {
-          // Insecure WiFi networks are always shared (regardless of policy).
-          // TODO(stevenjb): also check login state.
-          this.shareNetwork_ = true;
-        }
         // updateSecurity_ will ensure that EAP properties are set correctly.
         break;
       case CrOnc.Type.ETHERNET:
@@ -532,6 +644,7 @@ Polymer({
             L2TP: {Username: ''},
           };
         }
+        this.security_ = CrOnc.Security.NONE;
         break;
     }
     this.configProperties_ = configProperties;
@@ -548,9 +661,16 @@ Polymer({
    * @private
    */
   updateSecurity_: function() {
-    if (this.type == CrOnc.Type.WI_FI)
+    if (this.type == CrOnc.Type.WI_FI) {
       this.set('WiFi.Security', this.security_, this.configProperties_);
-
+      // Set the share value to its default when the security type changes.
+      this.setShareNetwork_();
+    } else if (this.type == CrOnc.Type.ETHERNET) {
+      var auth = this.security_ == CrOnc.Security.WPA_EAP ?
+          CrOnc.Authentication.WEP_8021X :
+          CrOnc.Authentication.NONE;
+      this.set('Ethernet.Authentication', auth, this.configProperties_);
+    }
     if (this.security_ == CrOnc.Security.WPA_EAP) {
       var eap = this.getEap_(this.configProperties_, true);
       eap.Outer = eap.Outer || CrOnc.EAPType.LEAP;
@@ -576,9 +696,8 @@ Polymer({
     } else {
       this.set('eapProperties_.Inner', undefined);
     }
-    // Networks requiring a user certificate cannot be shared.
-    if (eap.Outer == CrOnc.EAPType.EAP_TLS)
-      this.shareNetwork_ = false;
+    // Set the share vaule to its default when the EAP.Outer value changes.
+    this.setShareNetwork_();
   },
 
   /** @private */
@@ -597,9 +716,9 @@ Polymer({
   updateShowEap_: function() {
     if (!this.eapProperties_ || this.security_ == CrOnc.Security.NONE) {
       this.showEap_ = null;
+      this.updateCertError_();
       return;
     }
-
     var outer = this.eapProperties_.Outer;
     switch (this.type) {
       case CrOnc.Type.WI_MAX:
@@ -623,6 +742,7 @@ Polymer({
         };
         break;
     }
+    this.updateCertError_();
   },
 
   /**
@@ -689,6 +809,7 @@ Polymer({
     var vpn = this.configProperties_.VPN;
     if (!vpn) {
       this.showVpn_ = null;
+      this.updateCertError_();
       return;
     }
     switch (this.vpnType_) {
@@ -714,6 +835,7 @@ Polymer({
         this.showVpn_ = {Cert: true, OpenVPN: true};
         break;
     }
+    this.updateCertError_();
   },
 
   /** @private */
@@ -747,23 +869,45 @@ Polymer({
     this.setSelectedCerts_(pem, certId);
   },
 
+  /** @private */
+  updateCertError_: function() {
+    /** @const */ var certError = 'networkErrorNoUserCertificate';
+    if (this.error_ && this.error_ != certError)
+      return;
+
+    var requireCerts = (this.showEap_ && this.showEap_.UserCert) ||
+        (this.showVpn_ && this.showVpn_.UserCert);
+    if (requireCerts && !this.userCerts_.length)
+      this.error_ = certError;
+    else
+      this.error_ = '';
+  },
+
   /**
    * @param {string|undefined} pem
    * @param {string|undefined} certId
    * @private
    */
   setSelectedCerts_: function(pem, certId) {
-    var serverCa = (!!pem && this.serverCaCerts_.find(function(cert) {
-                     return cert.pem == pem;
-                   })) ||
-        this.serverCaCerts_[0];
-    this.selectedServerCaHash_ = (serverCa && serverCa.hash) || '';
+    if (pem) {
+      var serverCa = this.serverCaCerts_.find(function(cert) {
+        return cert.pem == pem;
+      });
+      if (serverCa)
+        this.selectedServerCaHash_ = serverCa.hash;
+    }
+    if (!this.selectedServerCaHash_ && this.serverCaCerts_[0])
+      this.selectedServerCaHash_ = this.serverCaCerts_[0].hash;
 
-    var userCert = (!!certId && this.userCerts_.find(function(cert) {
-                     return cert.PKCS11Id == certId;
-                   })) ||
-        this.userCerts_[0];
-    this.selectedUserCertHash_ = (userCert && userCert.hash) || '';
+    if (certId) {
+      var userCert = this.userCerts_.find(function(cert) {
+        return cert.PKCS11Id == certId;
+      });
+      if (userCert)
+        this.selectedUserCertHash_ = userCert.hash;
+    }
+    if (!this.selectedUserCertHash_ && this.userCerts_[0])
+      this.selectedUserCertHash_ = this.userCerts_[0].hash;
   },
 
   /**
@@ -771,6 +915,9 @@ Polymer({
    * @private
    */
   getIsConfigured_: function() {
+    if (this.configProperties_.Type == CrOnc.Type.VPN)
+      return this.vpnIsConfigured_();
+
     if (this.type == CrOnc.Type.WI_FI) {
       if (!this.get('WiFi.SSID', this.configProperties_))
         return false;
@@ -782,8 +929,6 @@ Polymer({
     }
     if (this.security_ == CrOnc.Security.WPA_EAP)
       return this.eapIsConfigured_();
-    if (this.configProperties_.Type == CrOnc.Type.VPN)
-      return this.vpnIsConfigured_();
     return true;
   },
 
@@ -819,6 +964,30 @@ Polymer({
   },
 
   /**
+   * @param {string} guid
+   * @param {boolean} shareNetwork
+   * @param {boolean} shareAllowEnable
+   * @param {boolean} shareDefault
+   * @return {!Array<string>}
+   * @private
+   */
+  computeEapOuterItems_: function(
+      guid, shareNetwork, shareAllowEnable, shareDefault) {
+    // If a network must be shared, hide the TLS option. Otherwise selecting
+    // TLS will turn off and disable the shared state. NOTE: Ethernet EAP may
+    // be set at the Device level, but will be saved as a User configuration.
+    if (this.type != CrOnc.Type.ETHERNET &&
+        ((this.getSource_() != CrOnc.Source.NONE && shareNetwork) ||
+         (!shareAllowEnable && shareDefault))) {
+      return [CrOnc.EAPType.LEAP, CrOnc.EAPType.PEAP, CrOnc.EAPType.EAP_TTLS];
+    }
+    return [
+      CrOnc.EAPType.LEAP, CrOnc.EAPType.PEAP, CrOnc.EAPType.EAP_TLS,
+      CrOnc.EAPType.EAP_TTLS
+    ];
+  },
+
+  /**
    * @return {boolean}
    * @private
    */
@@ -848,12 +1017,8 @@ Polymer({
    * @private
    */
   shareIsEnabled_: function() {
-    if (this.networkProperties &&
-            this.networkProperties.Source == CrOnc.Source.DEVICE ||
-        this.networkProperties.Source == CrOnc.Source.DEVICE_POLICY) {
+    if (!this.shareAllowEnable || this.getSource_() != CrOnc.Source.NONE)
       return false;
-    }
-    // TODO(stevenjb): Check login state.
 
     if (this.security_ == CrOnc.Security.WPA_EAP) {
       var eap = this.getEap_(this.configProperties_);
@@ -906,7 +1071,6 @@ Polymer({
   /** @private */
   getPropertiesToSet_: function() {
     var propertiesToSet = Object.assign({}, this.configProperties_);
-    propertiesToSet.GUID = this.guid;
     var eap = this.getEap_(propertiesToSet);
     if (eap)
       this.setEapProperties_(eap);
@@ -998,16 +1162,32 @@ Polymer({
     assert(vpn.IPsec);
     if (vpn.IPsec.AuthenticationType == CrOnc.IPsecAuthenticationType.CERT)
       vpn.IPsec.ClientCertPKCS11Id = this.getUserCertPkcs11Id_();
+    vpn.IPsec.IKEVersion = 1;
     vpn.IPsec.SaveCredentials = this.vpnSaveCredentials_;
     vpn.L2TP.SaveCredentials = this.vpnSaveCredentials_;
   },
 
+  /**
+   * @return {string}
+   * @private
+   */
+  getRuntimeError_: function() {
+    return (chrome.runtime.lastError && chrome.runtime.lastError.message) || '';
+  },
+
   /** @private */
   setPropertiesCallback_: function() {
-    var error = chrome.runtime.lastError && chrome.runtime.lastError.message;
-    if (error) {
-      console.error(
-          'Error setting network properties: ' + this.guid + ': ' + error);
+    this.error_ = this.getRuntimeError_();
+    if (this.error_) {
+      console.error('setProperties error: ' + this.guid + ': ' + this.error_);
+      return;
+    }
+    var connectState = this.networkProperties.ConnectionState;
+    if (this.connectOnSave &&
+        (!connectState ||
+         connectState == CrOnc.ConnectionState.NOT_CONNECTED)) {
+      this.startConnect_(this.guid);
+      return;
     }
     this.close_();
   },
@@ -1017,25 +1197,35 @@ Polymer({
    * @private
    */
   createNetworkCallback_: function(guid) {
-    var error = chrome.runtime.lastError && chrome.runtime.lastError.message;
-    if (error) {
-      // TODO(stevenjb): Display error message.
+    this.error_ = this.getRuntimeError_();
+    if (this.error_) {
       console.error(
-          'Error creating network type: ' + this.networkProperties.Type + ': ' +
-          error);
+          'createNetworkError, type: ' + this.networkProperties.Type + ': ' +
+          'error: ' + this.error_);
       return;
     }
+    this.startConnect_(guid);
+  },
+
+  /**
+   * @param {string} guid
+   * @private
+   */
+  startConnect_: function(guid) {
     this.networkingPrivate.startConnect(guid, () => {
-      error = chrome.runtime.lastError && chrome.runtime.lastError.message;
-      if (error) {
-        if (error == 'connecting' || error == 'connected' ||
-            error == 'connect-canceled') {
-          return;
-        }
-        // TODO(stevenjb): Display error message.
-        console.error('Error connecting to network: ' + error);
+      var error = this.getRuntimeError_();
+      if (!error || error == 'connected' || error == 'connect-canceled') {
+        this.close_();  // Connect completed or canceled, close the dialog.
+        return;
       }
-      this.close_();
+      if (error == 'connecting') {
+        // Keep the dialog open while connecting. TODO(stevenjb): Add a listener
+        // for the network properties and close the dialog if connected or show
+        // an error if not.
+        return;
+      }
+      this.error_ = error;
+      console.error('Error connecting to network: ' + error);
     });
   },
 
@@ -1063,5 +1253,28 @@ Polymer({
       return this.eapInnerItemsTtls_;
     return [];
   },
+
+  /**
+   * @param {!chrome.networkingPrivate.NetworkConfigProperties} properties
+   * @return {!CrOnc.NetworkStateProperties}
+   * @private
+   */
+  getIconState_: function(properties) {
+    return {
+      ConnectionState: CrOnc.ConnectionState.CONNECTING,
+      GUID: properties.GUID || '',
+      Type: this.type,
+    };
+  },
+
+  /**
+   * @return {string}
+   * @private
+   */
+  getError_: function() {
+    if (this.i18nExists(this.error_))
+      return this.i18n(this.error_);
+    return this.i18n('networkErrorUnknown');
+  }
 });
 })();

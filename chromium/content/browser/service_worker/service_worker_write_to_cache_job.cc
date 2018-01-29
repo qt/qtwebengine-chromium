@@ -120,7 +120,7 @@ void ServiceWorkerWriteToCacheJob::StartAsync() {
     copy_reader =
         context_->storage()->CreateResponseReader(incumbent_resource_id_);
   }
-  cache_writer_ = base::MakeUnique<ServiceWorkerCacheWriter>(
+  cache_writer_ = std::make_unique<ServiceWorkerCacheWriter>(
       std::move(compare_reader), std::move(copy_reader),
       context_->storage()->CreateResponseWriter(resource_id_));
 
@@ -237,7 +237,7 @@ void ServiceWorkerWriteToCacheJob::InitNetRequest(
   net_request_->set_initiator(request()->initiator());
   net_request_->SetReferrer(request()->referrer());
   net_request_->SetUserData(URLRequestServiceWorkerData::kUserDataKey,
-                            base::MakeUnique<URLRequestServiceWorkerData>());
+                            std::make_unique<URLRequestServiceWorkerData>());
   if (extra_load_flags)
     net_request_->SetLoadFlags(net_request_->load_flags() | extra_load_flags);
 
@@ -303,10 +303,13 @@ void ServiceWorkerWriteToCacheJob::OnSSLCertificateError(
   DCHECK_EQ(net_request_.get(), request);
   TRACE_EVENT0("ServiceWorker",
                "ServiceWorkerWriteToCacheJob::OnSSLCertificateError");
-  if (ShouldIgnoreSSLError(request))
+  if (ShouldIgnoreSSLError(request)) {
     request->ContinueDespiteLastError();
-  else
-    NotifyStartErrorHelper(net::ERR_INSECURE_RESPONSE, kSSLError);
+  } else {
+    NotifyStartErrorHelper(
+        net::Error(net::MapCertStatusToNetError(ssl_info.cert_status)),
+        kSSLError);
+  }
 }
 
 void ServiceWorkerWriteToCacheJob::OnResponseStarted(net::URLRequest* request,
@@ -331,7 +334,9 @@ void ServiceWorkerWriteToCacheJob::OnResponseStarted(net::URLRequest* request,
   // So we check cert_status here.
   if (net::IsCertStatusError(request->ssl_info().cert_status) &&
       !ShouldIgnoreSSLError(request)) {
-    NotifyStartErrorHelper(net::ERR_INSECURE_RESPONSE, kSSLError);
+    NotifyStartErrorHelper(net::Error(net::MapCertStatusToNetError(
+                               request->ssl_info().cert_status)),
+                           kSSLError);
     return;
   }
 

@@ -16,8 +16,7 @@ namespace content {
 // static
 std::unique_ptr<ServiceWorkerFetchRequest>
 ServiceWorkerLoaderHelpers::CreateFetchRequest(const ResourceRequest& request) {
-  std::unique_ptr<ServiceWorkerFetchRequest> new_request =
-      base::MakeUnique<ServiceWorkerFetchRequest>();
+  auto new_request = std::make_unique<ServiceWorkerFetchRequest>();
   new_request->mode = request.fetch_request_mode;
   new_request->is_main_resource_load =
       ServiceWorkerUtils::IsMainResourceType(request.resource_type);
@@ -31,7 +30,10 @@ ServiceWorkerLoaderHelpers::CreateFetchRequest(const ResourceRequest& request) {
   new_request->blob_uuid.clear();
   new_request->blob_size = 0;
   new_request->credentials_mode = request.fetch_credentials_mode;
+  new_request->cache_mode =
+      ServiceWorkerFetchRequest::GetCacheModeFromLoadFlags(request.load_flags);
   new_request->redirect_mode = request.fetch_redirect_mode;
+  new_request->keepalive = request.keepalive;
   new_request->is_reload = ui::PageTransitionCoreTypeIs(
       request.transition_type, ui::PAGE_TRANSITION_RELOAD);
   new_request->referrer =
@@ -74,7 +76,6 @@ void ServiceWorkerLoaderHelpers::SaveResponseInfo(
     const ServiceWorkerResponse& response,
     ResourceResponseHead* out_head) {
   out_head->was_fetched_via_service_worker = true;
-  out_head->was_fetched_via_foreign_fetch = false;
   out_head->was_fallback_required_by_service_worker = false;
   out_head->url_list_via_service_worker = response.url_list;
   out_head->response_type_via_service_worker = response.response_type;
@@ -82,6 +83,36 @@ void ServiceWorkerLoaderHelpers::SaveResponseInfo(
   out_head->cache_storage_cache_name = response.cache_storage_cache_name;
   out_head->cors_exposed_header_names = response.cors_exposed_header_names;
   out_head->did_service_worker_navigation_preload = false;
+}
+
+// static
+base::Optional<net::RedirectInfo>
+ServiceWorkerLoaderHelpers::ComputeRedirectInfo(
+    const ResourceRequest& original_request,
+    const ResourceResponseHead& response_head,
+    bool token_binding_negotiated) {
+  std::string new_location;
+  if (!response_head.headers->IsRedirect(&new_location))
+    return base::nullopt;
+
+  std::string referrer_string;
+  net::URLRequest::ReferrerPolicy referrer_policy;
+  Referrer::ComputeReferrerInfo(
+      &referrer_string, &referrer_policy,
+      Referrer(original_request.referrer, original_request.referrer_policy));
+
+  // If the request is a MAIN_FRAME request, the first-party URL gets
+  // updated on redirects.
+  const net::URLRequest::FirstPartyURLPolicy first_party_url_policy =
+      original_request.resource_type == RESOURCE_TYPE_MAIN_FRAME
+          ? net::URLRequest::UPDATE_FIRST_PARTY_URL_ON_REDIRECT
+          : net::URLRequest::NEVER_CHANGE_FIRST_PARTY_URL;
+  return net::RedirectInfo::ComputeRedirectInfo(
+      original_request.method, original_request.url,
+      original_request.site_for_cookies, first_party_url_policy,
+      referrer_policy, referrer_string, response_head.headers.get(),
+      response_head.headers->response_code(),
+      original_request.url.Resolve(new_location), token_binding_negotiated);
 }
 
 }  // namespace content

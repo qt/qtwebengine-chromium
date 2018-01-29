@@ -735,7 +735,7 @@ class RunTest(unittest.TestCase, StreamTestingMixin):
 
         host = MockHost()
         details, err, _ = logging_run(['--debug-rwt-logging', 'failures/unexpected'], tests_included=True, host=host)
-        self.assertEqual(details.exit_code, test.UNEXPECTED_FAILURES - 7)  # FIXME: This should be a constant in test.py .
+        self.assertEqual(details.exit_code, test.UNEXPECTED_NON_VIRTUAL_FAILURES)
         self.assertIn('Retrying', err.getvalue())
 
     def test_retrying_default_value_test_list(self):
@@ -751,7 +751,7 @@ class RunTest(unittest.TestCase, StreamTestingMixin):
         filename = '/tmp/foo.txt'
         host.filesystem.write_text_file(filename, 'failures')
         details, err, _ = logging_run(['--debug-rwt-logging', '--test-list=%s' % filename], tests_included=True, host=host)
-        self.assertEqual(details.exit_code, test.UNEXPECTED_FAILURES - 7)
+        self.assertEqual(details.exit_code, test.UNEXPECTED_NON_VIRTUAL_FAILURES)
         self.assertIn('Retrying', err.getvalue())
 
     def test_retrying_and_flaky_tests(self):
@@ -1166,7 +1166,7 @@ class RebaselineTest(unittest.TestCase, StreamTestingMixin):
             'failures/unexpected/missing_render_tree_dump',
             expected_extensions=['.txt'])
 
-    def test_reset_results_add_platform_exceptions(self):
+    def test_copy_baselines(self):
         # Test that we update the baselines in the version-specific directories
         # if the new baseline is different from the fallback baseline.
         host = MockHost()
@@ -1179,7 +1179,34 @@ class RebaselineTest(unittest.TestCase, StreamTestingMixin):
             'text-image-checksum_fail-txt')
         details, log_stream, _ = logging_run(
             [
-                '--reset-results', '--add-platform-exceptions',
+                '--copy-baselines',
+                'failures/unexpected/text-image-checksum.html'
+            ],
+            tests_included=True, host=host)
+        file_list = host.filesystem.written_files.keys()
+        self.assertEqual(details.exit_code, 1)
+        self.assertEqual(len(file_list), 11)
+        self.assert_contains(
+            log_stream,
+            'Copying baseline to "platform/test-mac-mac10.10/failures/unexpected/text-image-checksum-expected.png"')
+        self.assert_contains(
+            log_stream,
+            'Not copying baseline to "platform/test-mac-mac10.10/failures/unexpected/text-image-checksum-expected.txt"')
+
+    def test_reset_results_with_copy_baselines(self):
+        # Test that we update the baselines in the version-specific directories
+        # if the new baseline is different from the fallback baseline.
+        host = MockHost()
+        host.filesystem.write_text_file(
+            test.LAYOUT_TEST_DIR +
+            '/failures/unexpected/text-image-checksum-expected.txt',
+            # This value is the same as actual text result of the test defined
+            # in webkitpy.layout_tests.port.test. This is added so that we also
+            # check that the text baseline isn't written if it matches.
+            'text-image-checksum_fail-txt')
+        details, log_stream, _ = logging_run(
+            [
+                '--reset-results', '--copy-baselines',
                 'failures/unexpected/text-image-checksum.html'
             ],
             tests_included=True, host=host)
@@ -1233,7 +1260,7 @@ class RebaselineTest(unittest.TestCase, StreamTestingMixin):
             'text-image-checksum_fail-txt')
         details, log_stream, _ = logging_run(
             ['--additional-driver-flag=--flag',
-             '--new-flag-specific-baseline',
+             '--reset-results',
              'failures/unexpected/text-image-checksum.html'],
             tests_included=True, host=host)
         file_list = host.filesystem.written_files.keys()
@@ -1244,6 +1271,32 @@ class RebaselineTest(unittest.TestCase, StreamTestingMixin):
             file_list, log_stream,
             'flag-specific/flag/failures/unexpected/text-image-checksum',
             expected_extensions=['.png'])
+
+    def test_copy_flag_specific_baseline(self):
+        # Test writing new baselines under flag-specific directory if the actual
+        # results are different from the current baselines.
+        host = MockHost()
+        host.filesystem.write_text_file(
+            test.LAYOUT_TEST_DIR +
+            '/failures/unexpected/text-image-checksum-expected.txt',
+            # This value is the same as actual text result of the test defined
+            # in webkitpy.layout_tests.port.test. This is added so that we also
+            # check that the text baseline isn't written if it matches.
+            'text-image-checksum_fail-txt')
+        details, log_stream, _ = logging_run(
+            ['--additional-driver-flag=--flag',
+             '--copy-baselines',
+             'failures/unexpected/text-image-checksum.html'],
+            tests_included=True, host=host)
+        file_list = host.filesystem.written_files.keys()
+        self.assertEqual(details.exit_code, 1)
+        self.assertEqual(len(file_list), 11)
+        self.assert_contains(
+            log_stream,
+            'Copying baseline to "flag-specific/flag/failures/unexpected/text-image-checksum-expected.png"')
+        self.assert_contains(
+            log_stream,
+            'Not copying baseline to "flag-specific/flag/failures/unexpected/text-image-checksum-expected.txt"')
 
     def test_new_flag_specific_baseline_optimize(self):
         # Test removing existing baselines under flag-specific directory if the
@@ -1265,7 +1318,7 @@ class RebaselineTest(unittest.TestCase, StreamTestingMixin):
 
         details, log_stream, _ = logging_run(
             ['--additional-driver-flag=--flag',
-             '--new-flag-specific-baseline',
+             '--reset-results',
              'failures/unexpected/text-image-checksum.html'],
             tests_included=True, host=host)
         self.assertEqual(details.exit_code, 0)
@@ -1278,6 +1331,64 @@ class RebaselineTest(unittest.TestCase, StreamTestingMixin):
         self.assert_baselines(
             file_list, log_stream,
             'flag-specific/flag/failures/unexpected/text-image-checksum',
+            expected_extensions=['.png'])
+
+    def test_new_virtual_baseline(self):
+        # Test writing new baselines under virtual test directory if the actual
+        # results are different from the current baselines.
+        host = MockHost()
+        host.filesystem.write_text_file(
+            test.LAYOUT_TEST_DIR +
+            '/failures/unexpected/text-image-checksum-expected.txt',
+            # This value is the same as actual text result of the test defined
+            # in webkitpy.layout_tests.port.test. This is added so that we also
+            # check that the text baseline isn't written if it matches.
+            'text-image-checksum_fail-txt')
+        details, log_stream, _ = logging_run(
+            ['--reset-results',
+             'virtual/virtual_failures/failures/unexpected/text-image-checksum.html'],
+            tests_included=True, host=host)
+        file_list = host.filesystem.written_files.keys()
+        self.assertEqual(details.exit_code, 0)
+        self.assertEqual(len(file_list), 7)
+        # We should create new image baseline only.
+        self.assert_baselines(
+            file_list, log_stream,
+            'virtual/virtual_failures/failures/unexpected/text-image-checksum',
+            expected_extensions=['.png'])
+
+    def test_new_virtual_baseline_optimize(self):
+        # Test removing existing baselines under flag-specific directory if the
+        # actual results are the same as the fallback baselines.
+        host = MockHost()
+        host.filesystem.write_text_file(
+            test.LAYOUT_TEST_DIR +
+            '/failures/unexpected/text-image-checksum-expected.txt',
+            # This value is the same as actual text result of the test defined
+            # in webkitpy.layout_tests.port.test. This is added so that we check
+            # that the flag-specific text baseline is removed if the actual
+            # result is the same as this fallback baseline.
+            'text-image-checksum_fail-txt')
+        virtual_baseline_txt = (
+            test.LAYOUT_TEST_DIR +
+            '/virtual/virtual_failures/failures/unexpected/text-image-checksum-expected.txt')
+        host.filesystem.write_text_file(
+            virtual_baseline_txt, 'existing-baseline-different-from-fallback')
+
+        details, log_stream, _ = logging_run(
+            ['--reset-results',
+             'virtual/virtual_failures/failures/unexpected/text-image-checksum.html'],
+            tests_included=True, host=host)
+        self.assertEqual(details.exit_code, 0)
+        self.assertFalse(host.filesystem.exists(virtual_baseline_txt))
+        file_list = host.filesystem.written_files.keys()
+        # Exclude the removed file.
+        file_list.remove(virtual_baseline_txt)
+        self.assertEqual(len(file_list), 7)
+        # We should create new image baseline only.
+        self.assert_baselines(
+            file_list, log_stream,
+            'virtual/virtual_failures/failures/unexpected/text-image-checksum',
             expected_extensions=['.png'])
 
 

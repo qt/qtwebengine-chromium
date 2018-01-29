@@ -10,7 +10,6 @@
  */
 #include "GrArithmeticFP.h"
 #if SK_SUPPORT_GPU
-#include "glsl/GrGLSLColorSpaceXformHelper.h"
 #include "glsl/GrGLSLFragmentProcessor.h"
 #include "glsl/GrGLSLFragmentShaderBuilder.h"
 #include "glsl/GrGLSLProgramBuilder.h"
@@ -23,6 +22,16 @@ public:
         GrGLSLFPFragmentBuilder* fragBuilder = args.fFragBuilder;
         const GrArithmeticFP& _outer = args.fFp.cast<GrArithmeticFP>();
         (void)_outer;
+        auto k1 = _outer.k1();
+        (void)k1;
+        auto k2 = _outer.k2();
+        (void)k2;
+        auto k3 = _outer.k3();
+        (void)k3;
+        auto k4 = _outer.k4();
+        (void)k4;
+        auto enforcePMColor = _outer.enforcePMColor();
+        (void)enforcePMColor;
         fKVar = args.fUniformHandler->addUniform(kFragment_GrShaderFlag, kFloat4_GrSLType,
                                                  kDefault_GrSLPrecision, "k");
         SkString _child0("_child0");
@@ -67,7 +76,7 @@ GrGLSLFragmentProcessor* GrArithmeticFP::onCreateGLSLInstance() const {
 }
 void GrArithmeticFP::onGetGLSLProcessorKey(const GrShaderCaps& caps,
                                            GrProcessorKeyBuilder* b) const {
-    b->add32(fEnforcePMColor);
+    b->add32((int32_t)fEnforcePMColor);
 }
 bool GrArithmeticFP::onIsEqual(const GrFragmentProcessor& other) const {
     const GrArithmeticFP& that = other.cast<GrArithmeticFP>();

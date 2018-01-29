@@ -65,8 +65,8 @@
 #include "platform/loader/fetch/ResourceRequest.h"
 #include "platform/network/ContentSecurityPolicyResponseHeaders.h"
 #include "platform/weborigin/KURL.h"
-#include "platform/wtf/CurrentTime.h"
 #include "platform/wtf/PtrUtil.h"
+#include "platform/wtf/Time.h"
 #include "public/platform/Platform.h"
 #include "public/platform/WebURL.h"
 
@@ -85,7 +85,7 @@ ServiceWorkerGlobalScope* ServiceWorkerGlobalScope::Create(
     // CSP headers, referrer policy, and origin trial tokens will be provided by
     // the InstalledScriptsManager in EvaluateClassicScript().
     DCHECK(creation_params->content_security_policy_parsed_headers->IsEmpty());
-    DCHECK(creation_params->referrer_policy.IsEmpty());
+    DCHECK_EQ(kReferrerPolicyDefault, creation_params->referrer_policy);
     DCHECK(creation_params->origin_trial_tokens->IsEmpty());
   }
   return new ServiceWorkerGlobalScope(std::move(creation_params), thread,
@@ -116,18 +116,10 @@ void ServiceWorkerGlobalScope::EvaluateClassicScript(
     InstalledScriptsManager::ScriptData script_data;
     InstalledScriptsManager::ScriptStatus status =
         installed_scripts_manager->GetScriptData(script_url, &script_data);
-    switch (status) {
-      case InstalledScriptsManager::ScriptStatus::kTaken:
-        // kTaken should not be returned since requesting the main script should
-        // be the first and no script has been taken until here.
-        NOTREACHED();
-        return;
-      case InstalledScriptsManager::ScriptStatus::kFailed:
-        // This eventually terminates the worker thread.
-        ReportingProxy().DidEvaluateWorkerScript(false);
-        return;
-      case InstalledScriptsManager::ScriptStatus::kSuccess:
-        break;
+    if (status == InstalledScriptsManager::ScriptStatus::kFailed) {
+      // This eventually terminates the worker thread.
+      ReportingProxy().DidEvaluateWorkerScript(false);
+      return;
     }
 
     DCHECK(source_code.IsEmpty());
@@ -235,7 +227,7 @@ ScriptPromise ServiceWorkerGlobalScope::skipWaiting(ScriptState* script_state) {
 
   ServiceWorkerGlobalScopeClient::From(execution_context)
       ->SkipWaiting(
-          WTF::MakeUnique<CallbackPromiseAdapter<void, void>>(resolver));
+          std::make_unique<CallbackPromiseAdapter<void, void>>(resolver));
   return promise;
 }
 
@@ -291,7 +283,7 @@ void ServiceWorkerGlobalScope::DispatchExtendableEventWithRespondWith(
   wait_until_observer->DidDispatchEvent(false /* event_dispatch_failed */);
 }
 
-DEFINE_TRACE(ServiceWorkerGlobalScope) {
+void ServiceWorkerGlobalScope::Trace(blink::Visitor* visitor) {
   visitor->Trace(clients_);
   visitor->Trace(registration_);
   WorkerGlobalScope::Trace(visitor);
@@ -320,6 +312,58 @@ void ServiceWorkerGlobalScope::ExceptionThrown(ErrorEvent* event) {
   if (WorkerThreadDebugger* debugger =
           WorkerThreadDebugger::From(GetThread()->GetIsolate()))
     debugger->ExceptionThrown(GetThread(), event);
+}
+
+void ServiceWorkerGlobalScope::CountCacheStorageInstalledScript(
+    uint64_t script_size,
+    uint64_t script_metadata_size) {
+  ++cache_storage_installed_script_count_;
+  cache_storage_installed_script_total_size_ += script_size;
+  cache_storage_installed_script_metadata_total_size_ += script_metadata_size;
+
+  DEFINE_THREAD_SAFE_STATIC_LOCAL(
+      CustomCountHistogram, script_size_histogram,
+      ("ServiceWorker.CacheStorageInstalledScript.ScriptSize", 1000, 5000000,
+       50));
+  script_size_histogram.Count(script_size);
+
+  if (script_metadata_size) {
+    DEFINE_THREAD_SAFE_STATIC_LOCAL(
+        CustomCountHistogram, script_metadata_size_histogram,
+        ("ServiceWorker.CacheStorageInstalledScript.CachedMetadataSize", 1000,
+         50000000, 50));
+    script_metadata_size_histogram.Count(script_metadata_size);
+  }
+}
+
+void ServiceWorkerGlobalScope::SetIsInstalling(bool is_installing) {
+  is_installing_ = is_installing;
+  if (is_installing)
+    return;
+
+  // Installing phase is finished; record the stats for the scripts that are
+  // stored in Cache storage during installation.
+  DEFINE_THREAD_SAFE_STATIC_LOCAL(
+      CustomCountHistogram, cache_storage_installed_script_count_histogram,
+      ("ServiceWorker.CacheStorageInstalledScript.Count", 1, 1000, 50));
+  cache_storage_installed_script_count_histogram.Count(
+      cache_storage_installed_script_count_);
+  DEFINE_THREAD_SAFE_STATIC_LOCAL(
+      CustomCountHistogram, cache_storage_installed_script_total_size_histogram,
+      ("ServiceWorker.CacheStorageInstalledScript.ScriptTotalSize", 1000,
+       50000000, 50));
+  cache_storage_installed_script_total_size_histogram.Count(
+      cache_storage_installed_script_total_size_);
+
+  if (cache_storage_installed_script_metadata_total_size_) {
+    DEFINE_THREAD_SAFE_STATIC_LOCAL(
+        CustomCountHistogram,
+        cache_storage_installed_script_metadata_total_size_histogram,
+        ("ServiceWorker.CacheStorageInstalledScript.CachedMetadataTotalSize",
+         1000, 50000000, 50));
+    cache_storage_installed_script_metadata_total_size_histogram.Count(
+        cache_storage_installed_script_metadata_total_size_);
+  }
 }
 
 }  // namespace blink

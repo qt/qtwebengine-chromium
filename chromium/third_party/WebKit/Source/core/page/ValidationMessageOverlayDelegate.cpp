@@ -28,7 +28,7 @@ class ValidationMessageChromeClient : public EmptyChromeClient {
         anchor_view_(anchor_view),
         overlay_(overlay) {}
 
-  DEFINE_INLINE_TRACE() {
+  void Trace(blink::Visitor* visitor) {
     visitor->Trace(main_chrome_client_);
     visitor->Trace(anchor_view_);
     EmptyChromeClient::Trace(visitor);
@@ -147,7 +147,7 @@ void ValidationMessageOverlayDelegate::EnsurePage(const PageOverlay& overlay,
   frame->View()->SetBaseBackgroundColor(Color::kTransparent);
   page_->GetVisualViewport().SetSize(view_size);
 
-  RefPtr<SharedBuffer> data = SharedBuffer::Create();
+  scoped_refptr<SharedBuffer> data = SharedBuffer::Create();
   WriteDocument(data.get());
   float zoom_factor = anchor_->GetDocument().GetFrame()->PageZoomFactor();
   frame->SetPageZoomFactor(zoom_factor);

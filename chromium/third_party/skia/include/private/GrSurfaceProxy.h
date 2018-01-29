@@ -130,6 +130,7 @@ protected:
     void transferRefs() {
         SkASSERT(fTarget);
 
+        SkASSERT(fTarget->fRefCnt > 0);
         fTarget->fRefCnt += (fRefCnt-1); // don't xfer the proxy's creation ref
         fTarget->fPendingReads += fPendingReads;
         fTarget->fPendingWrites += fPendingWrites;
@@ -326,12 +327,12 @@ public:
     // Helper function that creates a temporary SurfaceContext to perform the copy
     // It always returns a kExact-backed proxy bc it is used when converting an SkSpecialImage
     // to an SkImage. The copy is is not a render target and not multisampled.
-    static sk_sp<GrTextureProxy> Copy(GrContext*, GrSurfaceProxy* src,
+    static sk_sp<GrTextureProxy> Copy(GrContext*, GrSurfaceProxy* src, GrMipMapped,
                                       SkIRect srcRect, SkBudgeted);
 
     // Copy the entire 'src'
     // It always returns a kExact-backed proxy bc it is used in SkGpuDevice::snapSpecial
-    static sk_sp<GrTextureProxy> Copy(GrContext* context, GrSurfaceProxy* src,
+    static sk_sp<GrTextureProxy> Copy(GrContext* context, GrSurfaceProxy* src, GrMipMapped,
                                       SkBudgeted budgeted);
 
     // Test-only entry point - should decrease in use as proxies propagate
@@ -384,11 +385,11 @@ protected:
     void assign(sk_sp<GrSurface> surface);
 
     sk_sp<GrSurface> createSurfaceImpl(GrResourceProvider*, int sampleCnt, bool needsStencil,
-                                       GrSurfaceFlags flags, bool isMipMapped,
+                                       GrSurfaceFlags flags, GrMipMapped mipMapped,
                                        SkDestinationSurfaceColorMode mipColorMode) const;
 
     bool instantiateImpl(GrResourceProvider* resourceProvider, int sampleCnt, bool needsStencil,
-                         GrSurfaceFlags flags, bool isMipMapped,
+                         GrSurfaceFlags flags, GrMipMapped mipMapped,
                          SkDestinationSurfaceColorMode mipColorMode, const GrUniqueKey*);
 
     // For wrapped resources, 'fConfig', 'fWidth', 'fHeight', and 'fOrigin; will always be filled in

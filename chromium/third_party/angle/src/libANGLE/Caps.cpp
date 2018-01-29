@@ -35,6 +35,10 @@ TextureCaps::TextureCaps()
 {
 }
 
+TextureCaps::TextureCaps(const TextureCaps &other) = default;
+
+TextureCaps::~TextureCaps() = default;
+
 GLuint TextureCaps::getMaxSamples() const
 {
     return !sampleCounts.empty() ? *sampleCounts.rbegin() : 0;
@@ -84,59 +88,55 @@ TextureCaps GenerateMinimumTextureCaps(GLenum sizedInternalFormat,
     return caps;
 }
 
-void TextureCapsMap::insert(GLenum internalFormat, const TextureCaps &caps)
+TextureCapsMap::TextureCapsMap()
 {
-    mCapsMap[internalFormat] = caps;
 }
 
-void TextureCapsMap::remove(GLenum internalFormat)
+TextureCapsMap::~TextureCapsMap()
 {
-    InternalFormatToCapsMap::iterator i = mCapsMap.find(internalFormat);
-    if (i != mCapsMap.end())
-    {
-        mCapsMap.erase(i);
-    }
+}
+
+void TextureCapsMap::insert(GLenum internalFormat, const TextureCaps &caps)
+{
+    angle::Format::ID formatID = angle::Format::InternalFormatToID(internalFormat);
+    get(formatID)              = caps;
 }
 
 void TextureCapsMap::clear()
 {
-    mCapsMap.clear();
+    mFormatData.fill(TextureCaps());
 }
 
 const TextureCaps &TextureCapsMap::get(GLenum internalFormat) const
 {
-    static TextureCaps defaultUnsupportedTexture;
-    InternalFormatToCapsMap::const_iterator iter = mCapsMap.find(internalFormat);
-    return (iter != mCapsMap.end()) ? iter->second : defaultUnsupportedTexture;
+    angle::Format::ID formatID = angle::Format::InternalFormatToID(internalFormat);
+    return get(formatID);
 }
 
-TextureCapsMap::const_iterator TextureCapsMap::begin() const
+const TextureCaps &TextureCapsMap::get(angle::Format::ID formatID) const
 {
-    return mCapsMap.begin();
+    return mFormatData[static_cast<size_t>(formatID)];
 }
 
-TextureCapsMap::const_iterator TextureCapsMap::end() const
+TextureCaps &TextureCapsMap::get(angle::Format::ID formatID)
 {
-    return mCapsMap.end();
+    return mFormatData[static_cast<size_t>(formatID)];
 }
 
-size_t TextureCapsMap::size() const
+void TextureCapsMap::set(angle::Format::ID formatID, const TextureCaps &caps)
 {
-    return mCapsMap.size();
+    get(formatID) = caps;
 }
 
-TextureCapsMap GenerateMinimumTextureCapsMap(const Version &clientVersion,
-                                             const Extensions &extensions)
+void InitMinimumTextureCapsMap(const Version &clientVersion,
+                               const Extensions &extensions,
+                               TextureCapsMap *capsMap)
 {
-    TextureCapsMap capsMap;
-
     for (GLenum internalFormat : GetAllSizedInternalFormats())
     {
-        capsMap.insert(internalFormat,
-                       GenerateMinimumTextureCaps(internalFormat, clientVersion, extensions));
+        capsMap->insert(internalFormat,
+                        GenerateMinimumTextureCaps(internalFormat, clientVersion, extensions));
     }
-
-    return capsMap;
 }
 
 Extensions::Extensions()
@@ -227,7 +227,10 @@ Extensions::Extensions()
       clientArrays(false),
       robustResourceInitialization(false),
       programCacheControl(false),
-      textureRectangle(false)
+      textureRectangle(false),
+      geometryShader(false),
+      maxGeometryOutputVertices(0),
+      maxGeometryShaderInvocations(0)
 {
 }
 
@@ -616,9 +619,9 @@ const ExtensionInfoMap &GetExtensionInfoMap()
         ExtensionInfoMap map;
         map["GL_OES_element_index_uint"] = enableableExtension(&Extensions::elementIndexUint);
         map["GL_OES_packed_depth_stencil"] = esOnlyExtension(&Extensions::packedDepthStencil);
-        map["GL_OES_get_program_binary"] = esOnlyExtension(&Extensions::getProgramBinary);
-        map["GL_OES_rgb8_rgba8"] = esOnlyExtension(&Extensions::rgb8rgba8);
-        map["GL_EXT_texture_format_BGRA8888"] = esOnlyExtension(&Extensions::textureFormatBGRA8888);
+        map["GL_OES_get_program_binary"] = enableableExtension(&Extensions::getProgramBinary);
+        map["GL_OES_rgb8_rgba8"] = enableableExtension(&Extensions::rgb8rgba8);
+        map["GL_EXT_texture_format_BGRA8888"] = enableableExtension(&Extensions::textureFormatBGRA8888);
         map["GL_EXT_read_format_bgra"] = esOnlyExtension(&Extensions::readFormatBGRA);
         map["GL_NV_pixel_buffer_object"] = enableableExtension(&Extensions::pixelBufferObject);
         map["GL_OES_mapbuffer"] = enableableExtension(&Extensions::mapBuffer);
@@ -628,15 +631,15 @@ const ExtensionInfoMap &GetExtensionInfoMap()
         map["GL_OES_texture_half_float_linear"] = enableableExtension(&Extensions::textureHalfFloatLinear);
         map["GL_OES_texture_float"] = enableableExtension(&Extensions::textureFloat);
         map["GL_OES_texture_float_linear"] = enableableExtension(&Extensions::textureFloatLinear);
-        map["GL_EXT_texture_rg"] = esOnlyExtension(&Extensions::textureRG);
-        map["GL_EXT_texture_compression_dxt1"] = esOnlyExtension(&Extensions::textureCompressionDXT1);
-        map["GL_ANGLE_texture_compression_dxt3"] = esOnlyExtension(&Extensions::textureCompressionDXT3);
-        map["GL_ANGLE_texture_compression_dxt5"] = esOnlyExtension(&Extensions::textureCompressionDXT5);
-        map["GL_EXT_texture_compression_s3tc_srgb"] = esOnlyExtension(&Extensions::textureCompressionS3TCsRGB);
-        map["GL_KHR_texture_compression_astc_hdr"] = esOnlyExtension(&Extensions::textureCompressionASTCHDR);
-        map["GL_KHR_texture_compression_astc_ldr"] = esOnlyExtension(&Extensions::textureCompressionASTCLDR);
-        map["GL_OES_compressed_ETC1_RGB8_texture"] = esOnlyExtension(&Extensions::compressedETC1RGB8Texture);
-        map["GL_EXT_sRGB"] = esOnlyExtension(&Extensions::sRGB);
+        map["GL_EXT_texture_rg"] = enableableExtension(&Extensions::textureRG);
+        map["GL_EXT_texture_compression_dxt1"] = enableableExtension(&Extensions::textureCompressionDXT1);
+        map["GL_ANGLE_texture_compression_dxt3"] = enableableExtension(&Extensions::textureCompressionDXT3);
+        map["GL_ANGLE_texture_compression_dxt5"] = enableableExtension(&Extensions::textureCompressionDXT5);
+        map["GL_EXT_texture_compression_s3tc_srgb"] = enableableExtension(&Extensions::textureCompressionS3TCsRGB);
+        map["GL_KHR_texture_compression_astc_hdr"] = enableableExtension(&Extensions::textureCompressionASTCHDR);
+        map["GL_KHR_texture_compression_astc_ldr"] = enableableExtension(&Extensions::textureCompressionASTCLDR);
+        map["GL_OES_compressed_ETC1_RGB8_texture"] = enableableExtension(&Extensions::compressedETC1RGB8Texture);
+        map["GL_EXT_sRGB"] = enableableExtension(&Extensions::sRGB);
         map["GL_ANGLE_depth_texture"] = esOnlyExtension(&Extensions::depthTextures);
         map["GL_OES_depth32"] = esOnlyExtension(&Extensions::depth32);
         map["GL_EXT_texture_storage"] = esOnlyExtension(&Extensions::textureStorage);
@@ -649,7 +652,7 @@ const ExtensionInfoMap &GetExtensionInfoMap()
         map["GL_EXT_robustness"] = esOnlyExtension(&Extensions::robustness);
         map["GL_KHR_robust_buffer_access_behavior"] = esOnlyExtension(&Extensions::robustBufferAccessBehavior);
         map["GL_EXT_blend_minmax"] = enableableExtension(&Extensions::blendMinMax);
-        map["GL_ANGLE_framebuffer_blit"] = esOnlyExtension(&Extensions::framebufferBlit);
+        map["GL_ANGLE_framebuffer_blit"] = enableableExtension(&Extensions::framebufferBlit);
         map["GL_ANGLE_framebuffer_multisample"] = enableableExtension(&Extensions::framebufferMultisample);
         map["GL_ANGLE_instanced_arrays"] = enableableExtension(&Extensions::instancedArrays);
         map["GL_ANGLE_pack_reverse_row_order"] = enableableExtension(&Extensions::packReverseRowOrder);
@@ -657,7 +660,7 @@ const ExtensionInfoMap &GetExtensionInfoMap()
         map["GL_EXT_shader_texture_lod"] = enableableExtension(&Extensions::shaderTextureLOD);
         map["GL_EXT_frag_depth"] = enableableExtension(&Extensions::fragDepth);
         map["GL_ANGLE_multiview"] = enableableExtension(&Extensions::multiview);
-        map["GL_ANGLE_texture_usage"] = esOnlyExtension(&Extensions::textureUsage);
+        map["GL_ANGLE_texture_usage"] = enableableExtension(&Extensions::textureUsage);
         map["GL_ANGLE_translated_shader_source"] = esOnlyExtension(&Extensions::translatedShaderSource);
         map["GL_OES_fbo_render_mipmap"] = enableableExtension(&Extensions::fboRenderMipmap);
         map["GL_EXT_discard_framebuffer"] = esOnlyExtension(&Extensions::discardFramebuffer);
@@ -673,7 +676,7 @@ const ExtensionInfoMap &GetExtensionInfoMap()
         map["GL_KHR_debug"] = esOnlyExtension(&Extensions::debug);
         // TODO(jmadill): Enable this when complete.
         //map["GL_KHR_no_error"] = esOnlyExtension(&Extensions::noError);
-        map["GL_ANGLE_lossy_etc_decode"] = esOnlyExtension(&Extensions::lossyETCDecode);
+        map["GL_ANGLE_lossy_etc_decode"] = enableableExtension(&Extensions::lossyETCDecode);
         map["GL_CHROMIUM_bind_uniform_location"] = esOnlyExtension(&Extensions::bindUniformLocation);
         map["GL_CHROMIUM_sync_query"] = enableableExtension(&Extensions::syncQuery);
         map["GL_CHROMIUM_copy_texture"] = esOnlyExtension(&Extensions::copyTexture);
@@ -695,6 +698,7 @@ const ExtensionInfoMap &GetExtensionInfoMap()
         map["GL_ANGLE_robust_resource_initialization"] = esOnlyExtension(&Extensions::robustResourceInitialization);
         map["GL_ANGLE_program_cache_control"] = esOnlyExtension(&Extensions::programCacheControl);
         map["GL_ANGLE_texture_rectangle"] = enableableExtension(&Extensions::textureRectangle);
+        map["GL_EXT_geometry_shader"] = enableableExtension(&Extensions::geometryShader);
         // clang-format on
 
         return map;
@@ -707,6 +711,8 @@ const ExtensionInfoMap &GetExtensionInfoMap()
 TypePrecision::TypePrecision() : range({{0, 0}}), precision(0)
 {
 }
+
+TypePrecision::TypePrecision(const TypePrecision &other) = default;
 
 void TypePrecision::setIEEEFloat()
 {
@@ -844,7 +850,6 @@ Caps::Caps()
 
       // Table 20.49
       maxSamples(0)
-
 {
     for (size_t i = 0; i < 3; ++i)
     {
@@ -853,7 +858,10 @@ Caps::Caps()
     }
 }
 
-Caps GenerateMinimumCaps(const Version &clientVersion)
+Caps::Caps(const Caps &other) = default;
+Caps::~Caps()                 = default;
+
+Caps GenerateMinimumCaps(const Version &clientVersion, const Extensions &extensions)
 {
     Caps caps;
 
@@ -1040,6 +1048,11 @@ Caps GenerateMinimumCaps(const Version &clientVersion)
         caps.shaderStorageBufferOffsetAlignment = 256;
     }
 
+    if (extensions.textureRectangle)
+    {
+        caps.maxRectangleTextureSize = 64;
+    }
+
     return caps;
 }
 }
@@ -1170,6 +1183,8 @@ ClientExtensions::ClientExtensions()
       clientGetAllProcAddresses(false)
 {
 }
+
+ClientExtensions::ClientExtensions(const ClientExtensions &other) = default;
 
 std::vector<std::string> ClientExtensions::getStrings() const
 {

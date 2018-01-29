@@ -26,7 +26,7 @@
 #include "core/layout/LayoutVideo.h"
 
 #include "core/dom/Document.h"
-#include "core/html/HTMLVideoElement.h"
+#include "core/html/media/HTMLVideoElement.h"
 #include "core/html_names.h"
 #include "core/layout/LayoutBlockFlow.h"
 #include "core/layout/LayoutFullScreen.h"
@@ -108,8 +108,10 @@ LayoutSize LayoutVideo::CalculateIntrinsicSize() {
   return DefaultSize();
 }
 
-void LayoutVideo::ImageChanged(WrappedImagePtr new_image, const IntRect* rect) {
-  LayoutMedia::ImageChanged(new_image, rect);
+void LayoutVideo::ImageChanged(WrappedImagePtr new_image,
+                               CanDeferInvalidation defer,
+                               const IntRect* rect) {
+  LayoutMedia::ImageChanged(new_image, defer, rect);
 
   // Cache the image intrinsic size so we can continue to use it to draw the
   // image correctly even if we know the video intrinsic size but aren't able to
@@ -201,7 +203,7 @@ static const LayoutBlock* LayoutObjectPlaceholder(
     return nullptr;
 
   LayoutFullScreen* full_screen =
-      parent->IsLayoutFullScreen() ? ToLayoutFullScreen(parent) : 0;
+      parent->IsLayoutFullScreen() ? ToLayoutFullScreen(parent) : nullptr;
   if (!full_screen)
     return nullptr;
 

@@ -13,7 +13,7 @@ if (is_android) {
   import("//build/config/android/rules.gni")
 }
 
-source_set("browser") {
+cast_source_set("browser") {
   sources = [
     "cast_browser_context.cc",
     "cast_browser_context.h",
@@ -48,8 +48,6 @@ source_set("browser") {
     "devtools/cast_devtools_manager_delegate.h",
     "devtools/remote_debugging_server.cc",
     "devtools/remote_debugging_server.h",
-    "geolocation/cast_access_token_store.cc",
-    "geolocation/cast_access_token_store.h",
     "media/media_caps_impl.cc",
     "media/media_caps_impl.h",
     "media/supported_codec_finder.cc",
@@ -96,6 +94,7 @@ source_set("browser") {
     "//chromecast/graphics",
     "//chromecast/media",
     "//chromecast/media:libcast_media",
+    "//chromecast/media/base:video_plane_controller",
     "//chromecast/media/service",
     "//chromecast/net",
     "//chromecast/service",
@@ -254,7 +253,7 @@ grit("resources") {
   ]
 }
 
-source_set("test_support") {
+cast_source_set("test_support") {
   testonly = true
   sources = [
     "test/cast_browser_test.cc",
@@ -275,7 +274,7 @@ source_set("test_support") {
   ]
 }
 
-source_set("browsertests") {
+cast_source_set("browsertests") {
   testonly = true
   sources = [
     "cast_media_blocker_browsertest.cc",
@@ -297,7 +296,7 @@ source_set("browsertests") {
   ]
 }
 
-source_set("unittests") {
+cast_source_set("unittests") {
   testonly = true
 
   sources = [

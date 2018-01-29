@@ -11,11 +11,14 @@
 namespace blink {
 namespace scheduler {
 
-TaskQueue::TaskQueue(std::unique_ptr<internal::TaskQueueImpl> impl)
+TaskQueue::TaskQueue(std::unique_ptr<internal::TaskQueueImpl> impl,
+                     const TaskQueue::Spec& spec)
     : impl_(std::move(impl)),
       thread_id_(base::PlatformThread::CurrentId()),
       task_queue_manager_(impl_ ? impl_->GetTaskQueueManagerWeakPtr()
-                                : nullptr) {}
+                                : nullptr),
+      graceful_queue_shutdown_helper_(
+          impl_ ? impl_->GetGracefulQueueShutdownHelper() : nullptr) {}
 
 TaskQueue::~TaskQueue() {
   // scoped_refptr guarantees us that this object isn't used.
@@ -23,7 +26,8 @@ TaskQueue::~TaskQueue() {
     return;
   if (impl_->IsUnregistered())
     return;
-  DCHECK(false) << "task queue must be unregistered before deletion";
+  graceful_queue_shutdown_helper_->GracefullyShutdownTaskQueue(
+      TakeTaskQueueImpl());
 }
 
 TaskQueue::Task::Task(TaskQueue::PostedTask task,
@@ -31,18 +35,21 @@ TaskQueue::Task::Task(TaskQueue::PostedTask task,
     : PendingTask(task.posted_from,
                   std::move(task.callback),
                   desired_run_time,
-                  task.nestable) {}
+                  task.nestable),
+      task_type_(task.task_type) {}
 
 TaskQueue::PostedTask::PostedTask(base::OnceClosure callback,
                                   base::Location posted_from,
                                   base::TimeDelta delay,
-                                  base::Nestable nestable)
+                                  base::Nestable nestable,
+                                  base::Optional<TaskType> task_type)
     : callback(std::move(callback)),
       posted_from(posted_from),
       delay(delay),
-      nestable(nestable) {}
+      nestable(nestable),
+      task_type(task_type) {}
 
-void TaskQueue::UnregisterTaskQueue() {
+void TaskQueue::ShutdownTaskQueue() {
   DCHECK_CALLED_ON_VALID_THREAD(main_thread_checker_);
   base::AutoLock lock(impl_lock_);
   if (!impl_)
@@ -52,7 +59,7 @@ void TaskQueue::UnregisterTaskQueue() {
     return;
   }
   impl_->SetBlameContext(nullptr);
-  task_queue_manager_->UnregisterTaskQueueImpl(std::move(impl_));
+  task_queue_manager_->UnregisterTaskQueueImpl(TakeTaskQueueImpl());
 }
 
 bool TaskQueue::RunsTasksInCurrentSequence() const {
@@ -139,7 +146,7 @@ void TaskQueue::SetQueuePriority(TaskQueue::QueuePriority priority) {
 TaskQueue::QueuePriority TaskQueue::GetQueuePriority() const {
   DCHECK_CALLED_ON_VALID_THREAD(main_thread_checker_);
   if (!impl_)
-    return TaskQueue::QueuePriority::LOW_PRIORITY;
+    return TaskQueue::QueuePriority::kLowPriority;
   return impl_->GetQueuePriority();
 }
 
@@ -199,11 +206,11 @@ void TaskQueue::RemoveFence() {
   impl_->RemoveFence();
 }
 
-bool TaskQueue::HasFence() const {
+bool TaskQueue::HasActiveFence() {
   DCHECK_CALLED_ON_VALID_THREAD(main_thread_checker_);
   if (!impl_)
     return false;
-  return impl_->HasFence();
+  return impl_->HasActiveFence();
 }
 
 bool TaskQueue::BlockedByFence() const {
@@ -245,6 +252,15 @@ base::Optional<MoveableAutoLock> TaskQueue::AcquireImplReadLockIfNeeded()
   if (IsOnMainThread())
     return base::nullopt;
   return MoveableAutoLock(impl_lock_);
+}
+
+std::unique_ptr<internal::TaskQueueImpl> TaskQueue::TakeTaskQueueImpl() {
+  DCHECK(impl_);
+  impl_->SetOnTaskStartedHandler(
+      internal::TaskQueueImpl::OnTaskStartedHandler());
+  impl_->SetOnTaskCompletedHandler(
+      internal::TaskQueueImpl::OnTaskCompletedHandler());
+  return std::move(impl_);
 }
 
 }  // namespace scheduler

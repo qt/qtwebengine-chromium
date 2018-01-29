@@ -104,6 +104,10 @@ bool StreamInterfaceChannel::OnPacketReceived(const char* data, size_t size) {
   return ret;
 }
 
+rtc::StreamState StreamInterfaceChannel::GetState() const {
+  return state_;
+}
+
 void StreamInterfaceChannel::Close() {
   packets_.Clear();
   state_ = rtc::SS_CLOSED;
@@ -120,6 +124,7 @@ DtlsTransport::DtlsTransport(IceTransportInternal* ice_transport,
       ssl_role_(rtc::SSL_CLIENT),
       ssl_max_version_(rtc::SSL_PROTOCOL_DTLS_12),
       crypto_options_(crypto_options) {
+  RTC_DCHECK(ice_transport_);
   ice_transport_->SignalWritableState.connect(this,
                                               &DtlsTransport::OnWritableState);
   ice_transport_->SignalReadPacket.connect(this, &DtlsTransport::OnReadPacket);
@@ -128,9 +133,31 @@ DtlsTransport::DtlsTransport(IceTransportInternal* ice_transport,
                                             &DtlsTransport::OnReadyToSend);
   ice_transport_->SignalReceivingState.connect(
       this, &DtlsTransport::OnReceivingState);
+  ice_transport_->SignalNetworkRouteChanged.connect(
+      this, &DtlsTransport::OnNetworkRouteChanged);
 }
 
-DtlsTransport::~DtlsTransport() {}
+DtlsTransport::~DtlsTransport() = default;
+
+const rtc::CryptoOptions& DtlsTransport::crypto_options() const {
+  return crypto_options_;
+}
+
+DtlsTransportState DtlsTransport::dtls_state() const {
+  return dtls_state_;
+}
+
+const std::string& DtlsTransport::transport_name() const {
+  return transport_name_;
+}
+
+int DtlsTransport::component() const {
+  return component_;
+}
+
+bool DtlsTransport::IsDtlsActive() const {
+  return dtls_active_;
+}
 
 bool DtlsTransport::SetLocalCertificate(
     const rtc::scoped_refptr<rtc::RTCCertificate>& certificate) {
@@ -162,8 +189,8 @@ rtc::scoped_refptr<rtc::RTCCertificate> DtlsTransport::GetLocalCertificate()
 
 bool DtlsTransport::SetSslMaxProtocolVersion(rtc::SSLProtocolVersion version) {
   if (dtls_active_) {
-    LOG(LS_ERROR) << "Not changing max. protocol version "
-                  << "while DTLS is negotiating";
+    RTC_LOG(LS_ERROR) << "Not changing max. protocol version "
+                      << "while DTLS is negotiating";
     return false;
   }
 
@@ -174,7 +201,8 @@ bool DtlsTransport::SetSslMaxProtocolVersion(rtc::SSLProtocolVersion version) {
 bool DtlsTransport::SetSslRole(rtc::SSLRole role) {
   if (dtls_) {
     if (ssl_role_ != role) {
-      LOG(LS_ERROR) << "SSL Role can't be reversed after the session is setup.";
+      RTC_LOG(LS_ERROR)
+          << "SSL Role can't be reversed after the session is setup.";
       return false;
     }
     return true;
@@ -276,6 +304,18 @@ std::unique_ptr<rtc::SSLCertificate> DtlsTransport::GetRemoteSSLCertificate()
   return dtls_->GetPeerCertificate();
 }
 
+bool DtlsTransport::ExportKeyingMaterial(const std::string& label,
+                                         const uint8_t* context,
+                                         size_t context_len,
+                                         bool use_context,
+                                         uint8_t* result,
+                                         size_t result_len) {
+  return (dtls_.get())
+             ? dtls_->ExportKeyingMaterial(label, context, context_len,
+                                           use_context, result, result_len)
+             : false;
+}
+
 bool DtlsTransport::SetupDtls() {
   StreamInterfaceChannel* downward = new StreamInterfaceChannel(ice_transport_);
 
@@ -371,8 +411,36 @@ int DtlsTransport::SendPacket(const char* data,
   }
 }
 
+IceTransportInternal* DtlsTransport::ice_transport() {
+  return ice_transport_;
+}
+
 bool DtlsTransport::IsDtlsConnected() {
   return dtls_ && dtls_->IsTlsConnected();
+}
+
+bool DtlsTransport::receiving() const {
+  return receiving_;
+}
+
+bool DtlsTransport::writable() const {
+  return writable_;
+}
+
+int DtlsTransport::GetError() {
+  return ice_transport_->GetError();
+}
+
+rtc::Optional<rtc::NetworkRoute> DtlsTransport::network_route() const {
+  return ice_transport_->network_route();
+}
+
+bool DtlsTransport::GetOption(rtc::Socket::Option opt, int* value) {
+  return ice_transport_->GetOption(opt, value);
+}
+
+int DtlsTransport::SetOption(rtc::Socket::Option opt, int value) {
+  return ice_transport_->SetOption(opt, value);
 }
 
 // The state transition logic here is as follows:
@@ -568,6 +636,11 @@ void DtlsTransport::OnDtlsEvent(rtc::StreamInterface* dtls, int sig, int err) {
       set_dtls_state(DTLS_TRANSPORT_FAILED);
     }
   }
+}
+
+void DtlsTransport::OnNetworkRouteChanged(
+    rtc::Optional<rtc::NetworkRoute> network_route) {
+  SignalNetworkRouteChanged(network_route);
 }
 
 void DtlsTransport::MaybeStartDtls() {

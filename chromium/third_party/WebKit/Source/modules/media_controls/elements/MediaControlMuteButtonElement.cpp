@@ -5,7 +5,7 @@
 #include "modules/media_controls/elements/MediaControlMuteButtonElement.h"
 
 #include "core/dom/events/Event.h"
-#include "core/html/HTMLMediaElement.h"
+#include "core/html/media/HTMLMediaElement.h"
 #include "core/input_type_names.h"
 #include "modules/media_controls/MediaControlsImpl.h"
 #include "public/platform/Platform.h"
@@ -15,7 +15,6 @@ namespace blink {
 MediaControlMuteButtonElement::MediaControlMuteButtonElement(
     MediaControlsImpl& media_controls)
     : MediaControlInputElement(media_controls, kMediaMuteButton) {
-  EnsureUserAgentShadowRoot();
   setType(InputTypeNames::button);
   SetShadowPseudoId(AtomicString("-webkit-media-controls-mute-button"));
 }

@@ -166,7 +166,8 @@ var countLoad = function() {
     swapInNewTiles();
     logEvent(LOG_TYPE.NTP_ALL_TILES_LOADED);
     window.parent.postMessage({cmd: 'loaded'}, DOMAIN_ORIGIN);
-    // TODO(treib): Why do we reset to 1 here?
+    // Reset to 1, so that any further 'show' message will cause us to swap in
+    // fresh tiles.
     loadedCounter = 1;
   }
 };
@@ -222,41 +223,8 @@ var showTiles = function(info) {
  * @param {object} info Data received in the message.
  */
 var updateTheme = function(info) {
-  var themeStyle = [];
-
-  if (info.isThemeDark) {
-    themeStyle.push(
-        '.mv-tile, .mv-empty-tile { ' +
-        'background: rgb(51,51,51); }');
-    themeStyle.push(
-        '.mv-thumb.failed-img { ' +
-        'background-color: #555; }');
-    themeStyle.push(
-        '.mv-thumb.failed-img::after { ' +
-        'border-color: #333; }');
-    themeStyle.push(
-        '.mv-x { ' +
-        'background: linear-gradient(to left, ' +
-        'rgb(51,51,51) 60%, transparent); }');
-    themeStyle.push(
-        'html[dir=rtl] .mv-x { ' +
-        'background: linear-gradient(to right, ' +
-        'rgb(51,51,51) 60%, transparent); }');
-    themeStyle.push(
-        '.mv-x::after { ' +
-        'background-color: rgba(255,255,255,0.7); }');
-    themeStyle.push(
-        '.mv-x:hover::after { ' +
-        'background-color: #fff; }');
-    themeStyle.push(
-        '.mv-x:active::after { ' +
-        'background-color: rgba(255,255,255,0.5); }');
-  }
-  if (info.tileTitleColor) {
-    themeStyle.push('body { color: ' + info.tileTitleColor + '; }');
-  }
-
-  document.querySelector('#custom-theme').textContent = themeStyle.join('\n');
+  document.body.style.setProperty('--tile-title-color', info.tileTitleColor);
+  document.body.classList.toggle('dark-theme', info.isThemeDark);
 };
 
 
@@ -399,7 +367,7 @@ var renderTile = function(data) {
   var html = [];
   html.push('<div class="mv-favicon"></div>');
   html.push('<div class="mv-title"></div><div class="mv-thumb"></div>');
-  html.push('<div class="mv-x" role="button"></div>');
+  html.push('<button class="mv-x"></button>');
   tile.innerHTML = html.join('');
   tile.lastElementChild.title = queryArgs['removeTooltip'] || '';
 
@@ -496,8 +464,9 @@ var renderTile = function(data) {
   var favicon = tile.querySelector('.mv-favicon');
   var fi = document.createElement('img');
   fi.src = data.faviconUrl;
-  // Set the title to empty so screen readers won't say the image name.
+  // Set title and alt to empty so screen readers won't say the image name.
   fi.title = '';
+  fi.alt = '';
   loadedCounter += 1;
   fi.addEventListener('load', countLoad);
   fi.addEventListener('error', countLoad);
@@ -512,6 +481,12 @@ var renderTile = function(data) {
     blacklistTile(tile);
     ev.preventDefault();
     ev.stopPropagation();
+  });
+
+  // Don't allow the event to bubble out to the containing tile, as that would
+  // trigger navigation to the tile URL.
+  mvx.addEventListener('keydown', function(event) {
+    event.stopPropagation();
   });
 
   return tile;

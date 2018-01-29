@@ -8,7 +8,6 @@
 #include "base/metrics/histogram_macros.h"
 #include "base/process/process_handle.h"
 #include "content/browser/histogram_subscriber.h"
-#include "content/common/child_process_messages.h"
 #include "content/common/histogram_fetcher.mojom.h"
 #include "content/public/browser/browser_child_process_host_iterator.h"
 #include "content/public/browser/browser_thread.h"
@@ -25,8 +24,7 @@ HistogramController* HistogramController::GetInstance() {
                                                   HistogramController>>::get();
 }
 
-HistogramController::HistogramController() : subscriber_(NULL) {
-}
+HistogramController::HistogramController() : subscriber_(nullptr) {}
 
 HistogramController::~HistogramController() {
 }
@@ -95,7 +93,7 @@ void HistogramController::Register(HistogramSubscriber* subscriber) {
 void HistogramController::Unregister(
     const HistogramSubscriber* subscriber) {
   DCHECK_EQ(subscriber_, subscriber);
-  subscriber_ = NULL;
+  subscriber_ = nullptr;
 }
 
 template <class T>

@@ -78,7 +78,7 @@ SVGComponentTransferFunctionElement::SVGComponentTransferFunctionElement(
   AddToPropertyMap(type_);
 }
 
-DEFINE_TRACE(SVGComponentTransferFunctionElement) {
+void SVGComponentTransferFunctionElement::Trace(blink::Visitor* visitor) {
   visitor->Trace(table_values_);
   visitor->Trace(slope_);
   visitor->Trace(intercept_);
@@ -99,8 +99,7 @@ void SVGComponentTransferFunctionElement::SvgAttributeChanged(
       attr_name == SVGNames::exponentAttr ||
       attr_name == SVGNames::offsetAttr) {
     SVGElement::InvalidationGuard invalidation_guard(this);
-
-    InvalidateFilterPrimitiveParent(this);
+    InvalidateFilterPrimitiveParent(*this);
     return;
   }
 

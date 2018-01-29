@@ -174,7 +174,7 @@ void vp9_update_layer_context_change_config(VP9_COMP *const cpi,
         RATE_CONTROL *const lrc = &lc->rc;
 
         lc->spatial_layer_target_bandwidth = spatial_layer_target;
-        bitrate_alloc = (float)lc->target_bandwidth / spatial_layer_target;
+        bitrate_alloc = (float)lc->target_bandwidth / target_bandwidth;
         lrc->starting_buffer_level =
             (int64_t)(rc->starting_buffer_level * bitrate_alloc);
         lrc->optimal_buffer_level =
@@ -606,6 +606,7 @@ int vp9_one_pass_cbr_svc_start_layer(VP9_COMP *const cpi) {
   LAYER_CONTEXT *lc = NULL;
   if (cpi->svc.number_spatial_layers > 1) cpi->svc.use_base_mv = 1;
   cpi->svc.force_zero_mode_spatial_ref = 1;
+  cpi->svc.mi_stride[cpi->svc.spatial_layer_id] = cpi->common.mi_stride;
 
   if (cpi->svc.temporal_layering_mode == VP9E_TEMPORAL_LAYERING_MODE_0212) {
     set_flags_and_fb_idx_for_temporal_mode3(cpi);

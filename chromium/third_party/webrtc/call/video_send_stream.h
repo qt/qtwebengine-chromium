@@ -63,6 +63,10 @@ class VideoSendStream {
     int avg_encode_time_ms = 0;
     int encode_usage_percent = 0;
     uint32_t frames_encoded = 0;
+    uint32_t frames_dropped_by_capturer = 0;
+    uint32_t frames_dropped_by_encoder_queue = 0;
+    uint32_t frames_dropped_by_rate_limiter = 0;
+    uint32_t frames_dropped_by_encoder = 0;
     rtc::Optional<uint64_t> qp_sum;
     // Bitrate the encoder is currently configured to use due to bandwidth
     // limitations.
@@ -81,6 +85,7 @@ class VideoSendStream {
     // CPU/quality adaptation.
     int number_of_cpu_adapt_changes = 0;
     int number_of_quality_adapt_changes = 0;
+    bool has_entered_low_resolution = false;
     std::map<uint32_t, StreamStats> substreams;
     webrtc::VideoContentType content_type =
         webrtc::VideoContentType::UNSPECIFIED;
@@ -219,6 +224,9 @@ class VideoSendStream {
 
     // Enables periodic bandwidth probing in application-limited region.
     bool periodic_alr_bandwidth_probing = false;
+
+    // Track ID as specified during track creation.
+    std::string track_id;
 
    private:
     // Access to the copy constructor is private to force use of the Copy()

@@ -19,6 +19,7 @@
 #include "GrTest.h"
 #include "SkColorPriv.h"
 #include "SkGeometry.h"
+#include "SkPointPriv.h"
 #include "SkTLList.h"
 #include "effects/GrConvexPolyEffect.h"
 #include "ops/GrMeshDrawOp.h"
@@ -85,7 +86,8 @@ private:
             return;
         }
 
-        fRect.toQuad(verts);
+        SkPointPriv::SetRectTriStrip(verts, fRect.fLeft, fRect.fTop, fRect.fRight, fRect.fBottom,
+                               sizeof(SkPoint));
 
         helper.recordDraw(
                 target, gp.get(),
@@ -190,12 +192,12 @@ protected:
             const SkPath* path = iter.get();
             SkScalar x = 0;
 
-            for (int et = 0; et < kGrProcessorEdgeTypeCnt; ++et) {
+            for (int et = 0; et < kGrClipEdgeTypeCnt; ++et) {
                 const SkMatrix m = SkMatrix::MakeTrans(x, y);
                 SkPath p;
                 path->transform(m, &p);
 
-                GrPrimitiveEdgeType edgeType = (GrPrimitiveEdgeType) et;
+                GrClipEdgeType edgeType = (GrClipEdgeType) et;
                 std::unique_ptr<GrFragmentProcessor> fp(GrConvexPolyEffect::Make(edgeType, p));
                 if (!fp) {
                     continue;
@@ -232,10 +234,10 @@ protected:
 
             SkScalar x = 0;
 
-            for (int et = 0; et < kGrProcessorEdgeTypeCnt; ++et) {
+            for (int et = 0; et < kGrClipEdgeTypeCnt; ++et) {
                 SkRect rect = *iter.get();
                 rect.offset(x, y);
-                GrPrimitiveEdgeType edgeType = (GrPrimitiveEdgeType) et;
+                GrClipEdgeType edgeType = (GrClipEdgeType) et;
                 std::unique_ptr<GrFragmentProcessor> fp(GrConvexPolyEffect::Make(edgeType, rect));
                 if (!fp) {
                     continue;

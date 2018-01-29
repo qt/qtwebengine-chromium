@@ -10,7 +10,7 @@
 #include "base/threading/thread_task_runner_handle.h"
 #include "mojo/public/cpp/system/message_pipe.h"
 #include "third_party/WebKit/common/message_port/message_port.mojom.h"
-#include "third_party/WebKit/common/message_port/message_port_message_struct_traits.h"
+#include "third_party/WebKit/common/message_port/transferable_message_struct_traits.h"
 
 namespace blink {
 
@@ -60,10 +60,10 @@ std::vector<MessagePortChannel> MessagePortChannel::CreateFromHandles(
 void MessagePortChannel::PostMessage(const uint8_t* encoded_message,
                                      size_t encoded_message_size,
                                      std::vector<MessagePortChannel> ports) {
-  MessagePortMessage msg;
+  TransferableMessage msg;
   msg.encoded_message = base::make_span(encoded_message, encoded_message_size);
-  msg.ports = ReleaseHandles(ports);
-  PostMojoMessage(mojom::MessagePortMessage::SerializeAsMessage(&msg));
+  msg.ports = std::move(ports);
+  PostMojoMessage(mojom::TransferableMessage::SerializeAsMessage(&msg));
 }
 
 void MessagePortChannel::PostMojoMessage(mojo::Message message) {
@@ -82,14 +82,14 @@ bool MessagePortChannel::GetMessage(std::vector<uint8_t>* encoded_message,
   if (!success)
     return false;
 
-  MessagePortMessage msg;
-  success = mojom::MessagePortMessage::DeserializeFromMessage(
+  TransferableMessage msg;
+  success = mojom::TransferableMessage::DeserializeFromMessage(
       std::move(message), &msg);
   if (!success)
     return false;
 
   *encoded_message = std::move(msg.owned_encoded_message);
-  *ports = CreateFromHandles(std::move(msg.ports));
+  *ports = std::move(msg.ports);
 
   return true;
 }
@@ -106,9 +106,11 @@ bool MessagePortChannel::GetMojoMessage(mojo::Message* message) {
   return true;
 }
 
-void MessagePortChannel::SetCallback(const base::Closure& callback) {
+void MessagePortChannel::SetCallback(
+    const base::Closure& callback,
+    scoped_refptr<base::SingleThreadTaskRunner> task_runner) {
   state_->StopWatching();
-  state_->StartWatching(callback);
+  state_->StartWatching(callback, task_runner);
 }
 
 void MessagePortChannel::ClearCallback() {
@@ -120,11 +122,15 @@ MessagePortChannel::State::State() {}
 MessagePortChannel::State::State(mojo::ScopedMessagePipeHandle handle)
     : handle_(std::move(handle)) {}
 
-void MessagePortChannel::State::StartWatching(const base::Closure& callback) {
+void MessagePortChannel::State::StartWatching(
+    const base::Closure& callback,
+    scoped_refptr<base::SingleThreadTaskRunner> task_runner) {
   base::AutoLock lock(lock_);
   DCHECK(!callback_);
   DCHECK(handle_.is_valid());
+  DCHECK(task_runner);
   callback_ = callback;
+  task_runner_ = task_runner;
 
   DCHECK(!watcher_handle_.is_valid());
   MojoResult rv = CreateWatcher(&State::CallOnHandleReady, &watcher_handle_);
@@ -152,6 +158,7 @@ void MessagePortChannel::State::StopWatching() {
     base::AutoLock lock(lock_);
     watcher_handle = std::move(watcher_handle_);
     callback_.Reset();
+    task_runner_ = nullptr;
   }
 }
 
@@ -186,7 +193,7 @@ void MessagePortChannel::State::ArmWatcher() {
 
   if (ready_result == MOJO_RESULT_OK) {
     // The handle is already signaled, so we trigger a callback now.
-    base::ThreadTaskRunnerHandle::Get()->PostTask(
+    task_runner_->PostTask(
         FROM_HERE, base::BindOnce(&State::OnHandleReady, this, MOJO_RESULT_OK));
     return;
   }

@@ -9,7 +9,8 @@
 #include <string>
 #include <vector>
 
-#include "components/signin/core/common/signin_features.h"
+#include "components/prefs/pref_member.h"
+#include "components/signin/core/browser/signin_features.h"
 #include "url/gurl.h"
 
 namespace content_settings {
@@ -27,7 +28,7 @@ enum ProfileMode {
   PROFILE_MODE_DEFAULT = 0,
   // Incognito mode disabled by enterprise policy or by parental controls.
   PROFILE_MODE_INCOGNITO_DISABLED = 1 << 0,
-  // Adding account disabled in the Android-for-EDU mode.
+  // Adding account disabled in the Android-for-EDU mode and for child accounts.
   PROFILE_MODE_ADD_ACCOUNT_DISABLED = 1 << 1
 };
 
@@ -50,8 +51,9 @@ enum GAIAServiceType {
 
 enum class DiceAction {
   NONE,
-  SIGNIN,                 // Sign in an account.
-  SIGNOUT,                // Sign out of all sessions.
+  SIGNIN,      // Sign in an account.
+  SIGNOUT,     // Sign out of all sessions.
+  ENABLE_SYNC  // Enable Sync on a signed-in account.
 };
 
 // Struct describing the parameters received in the manage account header.
@@ -74,43 +76,72 @@ struct ManageAccountsParams {
 
 // Struct describing the parameters received in the Dice response header.
 struct DiceResponseParams {
+  struct AccountInfo {
+    AccountInfo();
+    AccountInfo(const std::string& gaia_id,
+                const std::string& email,
+                int session_index);
+    ~AccountInfo();
+    AccountInfo(const AccountInfo&);
+
+    // Gaia ID of the account.
+    std::string gaia_id;
+    // Email of the account.
+    std::string email;
+    // Session index for the account.
+    int session_index;
+  };
+
+  // Parameters for the SIGNIN action.
   struct SigninInfo {
     SigninInfo();
     SigninInfo(const SigninInfo&);
     ~SigninInfo();
-    // Gaia ID of the account signed in.
-    std::string gaia_id;
-    // Email of the account signed in.
-    std::string email;
-    // Session index for the account signed in.
-    int session_index;
+
+    // AccountInfo of the account signed in.
+    AccountInfo account_info;
     // Authorization code to fetch a refresh token.
     std::string authorization_code;
   };
 
+  // Parameters for the SIGNOUT action.
   struct SignoutInfo {
     SignoutInfo();
     SignoutInfo(const SignoutInfo&);
     ~SignoutInfo();
-    // Gaia IDs of the accounts signed out.
-    std::vector<std::string> gaia_id;
-    // Emails of the accounts signed out.
-    std::vector<std::string> email;
-    // Session indices for the accounts signed out.
-    std::vector<int> session_index;
+
+    // Account infos for the accounts signed out.
+    std::vector<AccountInfo> account_infos;
+  };
+
+  // Parameters for the ENABLE_SYNC action.
+  struct EnableSyncInfo {
+    EnableSyncInfo();
+    EnableSyncInfo(const EnableSyncInfo&);
+    ~EnableSyncInfo();
+
+    // AccountInfo of the account enabling Sync.
+    AccountInfo account_info;
   };
 
   DiceResponseParams();
   ~DiceResponseParams();
-  DiceResponseParams(const DiceResponseParams& other);
+  DiceResponseParams(DiceResponseParams&&);
+  DiceResponseParams& operator=(DiceResponseParams&&);
 
-  DiceAction user_intention;
+  DiceAction user_intention = DiceAction::NONE;
 
   // Populated when |user_intention| is SIGNIN.
-  SigninInfo signin_info;
+  std::unique_ptr<SigninInfo> signin_info;
 
   // Populated when |user_intention| is SIGNOUT.
-  SignoutInfo signout_info;
+  std::unique_ptr<SignoutInfo> signout_info;
+
+  // Populated when |user_intention| is ENABLE_SYNC.
+  std::unique_ptr<EnableSyncInfo> enable_sync_info;
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(DiceResponseParams);
 };
 
 // Base class for managing the signin headers (Dice and Chrome-Connected).
@@ -166,6 +197,7 @@ void AppendOrRemoveMirrorRequestHeader(
     const GURL& redirect_url,
     const std::string& account_id,
     const content_settings::CookieSettings* cookie_settings,
+    bool is_mirror_enabled,
     int profile_mode_mask);
 
 // Adds the Dice to all Gaia requests from a connected profile, with the
@@ -178,6 +210,7 @@ bool AppendOrRemoveDiceRequestHeader(
     const std::string& account_id,
     bool sync_enabled,
     bool sync_has_auth_error,
+    BooleanPrefMember* dice_pref_member,
     const content_settings::CookieSettings* cookie_settings);
 
 // Returns the parameters contained in the X-Chrome-Manage-Accounts response

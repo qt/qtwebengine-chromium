@@ -28,6 +28,7 @@
 #include "net/dns/mock_host_resolver.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
 #include "net/test/embedded_test_server/http_request.h"
+#include "third_party/WebKit/common/page/page_visibility_state.mojom.h"
 
 namespace content {
 
@@ -39,25 +40,25 @@ class PrerenderTestContentBrowserClient : public TestContentBrowserClient {
  public:
   PrerenderTestContentBrowserClient()
       : override_enabled_(false),
-        visibility_override_(blink::kWebPageVisibilityStateVisible) {}
+        visibility_override_(blink::mojom::PageVisibilityState::kVisible) {}
   ~PrerenderTestContentBrowserClient() override {}
 
   void EnableVisibilityOverride(
-      blink::WebPageVisibilityState visibility_override) {
+      blink::mojom::PageVisibilityState visibility_override) {
     override_enabled_ = true;
     visibility_override_ = visibility_override;
   }
 
   void OverridePageVisibilityState(
       RenderFrameHost* render_frame_host,
-      blink::WebPageVisibilityState* visibility_state) override {
+      blink::mojom::PageVisibilityState* visibility_state) override {
     if (override_enabled_)
       *visibility_state = visibility_override_;
   }
 
  private:
   bool override_enabled_;
-  blink::WebPageVisibilityState visibility_override_;
+  blink::mojom::PageVisibilityState visibility_override_;
 
   DISALLOW_COPY_AND_ASSIGN(PrerenderTestContentBrowserClient);
 };
@@ -148,11 +149,11 @@ IN_PROC_BROWSER_TEST_F(RenderFrameHostImplBrowserTest,
   WebContents* web_contents = shell()->web_contents();
 
   web_contents->WasShown();
-  EXPECT_EQ(blink::kWebPageVisibilityStateVisible,
+  EXPECT_EQ(blink::mojom::PageVisibilityState::kVisible,
             web_contents->GetMainFrame()->GetVisibilityState());
 
   web_contents->WasHidden();
-  EXPECT_EQ(blink::kWebPageVisibilityStateHidden,
+  EXPECT_EQ(blink::mojom::PageVisibilityState::kHidden,
             web_contents->GetMainFrame()->GetVisibilityState());
 }
 
@@ -166,11 +167,12 @@ IN_PROC_BROWSER_TEST_F(RenderFrameHostImplBrowserTest,
   ContentBrowserClient* old_client = SetBrowserClientForTesting(&new_client);
 
   web_contents->WasShown();
-  EXPECT_EQ(blink::kWebPageVisibilityStateVisible,
+  EXPECT_EQ(blink::mojom::PageVisibilityState::kVisible,
             web_contents->GetMainFrame()->GetVisibilityState());
 
-  new_client.EnableVisibilityOverride(blink::kWebPageVisibilityStatePrerender);
-  EXPECT_EQ(blink::kWebPageVisibilityStatePrerender,
+  new_client.EnableVisibilityOverride(
+      blink::mojom::PageVisibilityState::kPrerender);
+  EXPECT_EQ(blink::mojom::PageVisibilityState::kPrerender,
             web_contents->GetMainFrame()->GetVisibilityState());
 
   SetBrowserClientForTesting(old_client);
@@ -181,7 +183,8 @@ namespace {
 class TestJavaScriptDialogManager : public JavaScriptDialogManager,
                                     public WebContentsDelegate {
  public:
-  TestJavaScriptDialogManager() : message_loop_runner_(new MessageLoopRunner) {}
+  TestJavaScriptDialogManager()
+      : message_loop_runner_(new MessageLoopRunner), url_invalidate_count_(0) {}
   ~TestJavaScriptDialogManager() override {}
 
   void Wait() {
@@ -209,6 +212,7 @@ class TestJavaScriptDialogManager : public JavaScriptDialogManager,
                            bool* did_suppress_message) override {}
 
   void RunBeforeUnloadDialog(WebContents* web_contents,
+                             RenderFrameHost* render_frame_host,
                              bool is_reload,
                              DialogClosedCallback callback) override {
     callback_ = std::move(callback);
@@ -223,11 +227,25 @@ class TestJavaScriptDialogManager : public JavaScriptDialogManager,
 
   void CancelDialogs(WebContents* web_contents, bool reset_state) override {}
 
+  // Keep track of whether the tab has notified us of a navigation state change
+  // which invalidates the displayed URL.
+  void NavigationStateChanged(WebContents* source,
+                              InvalidateTypes changed_flags) override {
+    if (changed_flags & INVALIDATE_TYPE_URL)
+      url_invalidate_count_++;
+  }
+
+  int url_invalidate_count() { return url_invalidate_count_; }
+  void reset_url_invalidate_count() { url_invalidate_count_ = 0; }
+
  private:
   DialogClosedCallback callback_;
 
   // The MessageLoopRunner used to spin the message loop.
   scoped_refptr<MessageLoopRunner> message_loop_runner_;
+
+  // The number of times NavigationStateChanged has been called.
+  int url_invalidate_count_;
 
   DISALLOW_COPY_AND_ASSIGN(TestJavaScriptDialogManager);
 };
@@ -335,6 +353,43 @@ IN_PROC_BROWSER_TEST_F(RenderFrameHostImplBrowserTest,
   // there should be no beforeunload dialog.
   shell()->LoadURL(GURL("about:blank"));
   EXPECT_TRUE(WaitForLoadStop(wc));
+
+  wc->SetDelegate(nullptr);
+  wc->SetJavaScriptDialogManagerForTesting(nullptr);
+}
+
+// Test for crbug.com/80401.  Canceling a beforeunload dialog should reset
+// the URL to the previous page's URL.
+IN_PROC_BROWSER_TEST_F(RenderFrameHostImplBrowserTest,
+                       CancelBeforeUnloadResetsURL) {
+  WebContentsImpl* wc = static_cast<WebContentsImpl*>(shell()->web_contents());
+  TestJavaScriptDialogManager dialog_manager;
+  wc->SetDelegate(&dialog_manager);
+
+  GURL url(GetTestUrl("render_frame_host", "beforeunload.html"));
+  EXPECT_TRUE(NavigateToURL(shell(), url));
+  PrepContentsForBeforeUnloadTest(wc);
+
+  // Navigate to a page that triggers a cross-site transition.
+  GURL url2(embedded_test_server()->GetURL("foo.com", "/title1.html"));
+  shell()->LoadURL(url2);
+  dialog_manager.Wait();
+
+  // Cancel the dialog.
+  dialog_manager.reset_url_invalidate_count();
+  std::move(dialog_manager.callback()).Run(false, base::string16());
+  EXPECT_FALSE(wc->IsLoading());
+
+  // Verify there are no pending history items after the dialog is cancelled.
+  // (see crbug.com/93858)
+  NavigationEntry* entry = wc->GetController().GetPendingEntry();
+  EXPECT_EQ(nullptr, entry);
+  EXPECT_EQ(url, wc->GetVisibleURL());
+
+  // There should have been at least one NavigationStateChange event for
+  // invalidating the URL in the address bar, to avoid leaving the stale URL
+  // visible.
+  EXPECT_GE(dialog_manager.url_invalidate_count(), 1);
 
   wc->SetDelegate(nullptr);
   wc->SetJavaScriptDialogManagerForTesting(nullptr);
@@ -752,6 +807,72 @@ IN_PROC_BROWSER_TEST_F(ContentBrowserTest,
     main_document_response.Done();
     EXPECT_EQ(document_loaded_title, watcher.WaitAndGetTitle());
   }
+}
+
+// Test that a same-document browser-initiated navigation doesn't prevent a
+// document from loading. See https://crbug.com/769645.
+IN_PROC_BROWSER_TEST_F(
+    ContentBrowserTest,
+    SameDocumentBrowserInitiatedNavigationWhileDocumentIsLoading) {
+  ControllableHttpResponse response(embedded_test_server(), "/main_document");
+  EXPECT_TRUE(embedded_test_server()->Start());
+
+  // 1) Load a new document. It reaches the ReadyToCommit stage and then is slow
+  //    to load.
+  GURL url(embedded_test_server()->GetURL("/main_document"));
+  TestNavigationManager observer_new_document(shell()->web_contents(), url);
+  shell()->LoadURL(url);
+
+  // The navigation starts
+  EXPECT_TRUE(observer_new_document.WaitForRequestStart());
+  observer_new_document.ResumeNavigation();
+
+  // The server sends the first part of the response and waits.
+  response.WaitForRequest();
+  response.Send(
+      "HTTP/1.1 200 OK\r\n"
+      "Content-Type: text/html; charset=utf-8\r\n"
+      "\r\n"
+      "<html>"
+      "  <body>"
+      "    <div id=\"anchor\"></div>"
+      "    <script>"
+      "      domAutomationController.send('First part received')"
+      "    </script>");
+
+  // The browser reaches the ReadyToCommit stage.
+  EXPECT_TRUE(observer_new_document.WaitForResponse());
+  RenderFrameHostImpl* main_rfh = static_cast<RenderFrameHostImpl*>(
+      shell()->web_contents()->GetMainFrame());
+  DOMMessageQueue dom_message_queue(WebContents::FromRenderFrameHost(main_rfh));
+  observer_new_document.ResumeNavigation();
+
+  // Wait for the renderer to load the first part of the response.
+  std::string first_part_received;
+  EXPECT_TRUE(dom_message_queue.WaitForMessage(&first_part_received));
+  EXPECT_EQ("\"First part received\"", first_part_received);
+
+  // 2) In the meantime, a browser-initiated same-document navigation commits.
+  GURL anchor_url(url.spec() + "#anchor");
+  TestNavigationManager observer_same_document(shell()->web_contents(),
+                                               anchor_url);
+  shell()->LoadURL(anchor_url);
+  observer_same_document.WaitForNavigationFinished();
+
+  // 3) The last part of the response is received.
+  response.Send(
+      "    <script>"
+      "      domAutomationController.send('Second part received')"
+      "    </script>"
+      "  </body>"
+      "</html>");
+  response.Done();
+  EXPECT_TRUE(WaitForLoadStop(shell()->web_contents()));
+
+  // The renderer should be able to load the end of the response.
+  std::string second_part_received;
+  EXPECT_TRUE(dom_message_queue.WaitForMessage(&second_part_received));
+  EXPECT_EQ("\"Second part received\"", second_part_received);
 }
 
 }  // namespace content

@@ -32,17 +32,21 @@
 #define CrossThreadCopier_h
 
 #include <memory>
+#include "base/memory/scoped_refptr.h"
 #include "mojo/public/cpp/bindings/interface_ptr_info.h"
 #include "mojo/public/cpp/bindings/interface_request.h"
 #include "platform/PlatformExport.h"
 #include "platform/wtf/Assertions.h"
 #include "platform/wtf/Forward.h"
 #include "platform/wtf/Functional.h"  // FunctionThreadAffinity
-#include "platform/wtf/RefPtr.h"
-#include "platform/wtf/ThreadSafeRefCounted.h"
 #include "platform/wtf/TypeTraits.h"
 #include "platform/wtf/WeakPtr.h"
 #include "third_party/WebKit/common/message_port/message_port_channel.h"
+
+namespace base {
+template <typename, typename>
+class RefCountedThreadSafe;
+}
 
 class SkRefCnt;
 template <typename T>
@@ -97,20 +101,20 @@ struct CrossThreadCopier
 template <typename T>
 struct CrossThreadCopier<WTF::RetainedRefWrapper<T>> {
   STATIC_ONLY(CrossThreadCopier);
-  static_assert(WTF::IsSubclassOfTemplate<T, ThreadSafeRefCounted>::value,
-                "RefPtr<T> can be passed across threads only if T is "
-                "ThreadSafeRefCounted.");
+  static_assert(WTF::IsSubclassOfTemplate<T, base::RefCountedThreadSafe>::value,
+                "scoped_refptr<T> can be passed across threads only if T is "
+                "WTF::ThreadSafeRefCounted or base::RefCountedThreadSafe.");
   using Type = WTF::RetainedRefWrapper<T>;
   static Type Copy(Type pointer) { return pointer; }
 };
 template <typename T>
-struct CrossThreadCopier<RefPtr<T>> {
+struct CrossThreadCopier<scoped_refptr<T>> {
   STATIC_ONLY(CrossThreadCopier);
-  static_assert(WTF::IsSubclassOfTemplate<T, ThreadSafeRefCounted>::value,
-                "RefPtr<T> can be passed across threads only if T is "
-                "ThreadSafeRefCounted.");
-  using Type = RefPtr<T>;
-  static RefPtr<T> Copy(RefPtr<T> pointer) { return pointer; }
+  static_assert(WTF::IsSubclassOfTemplate<T, base::RefCountedThreadSafe>::value,
+                "scoped_refptr<T> can be passed across threads only if T is "
+                "WTF::ThreadSafeRefCounted or base::RefCountedThreadSafe.");
+  using Type = scoped_refptr<T>;
+  static scoped_refptr<T> Copy(scoped_refptr<T> pointer) { return pointer; }
 };
 template <typename T>
 struct CrossThreadCopier<sk_sp<T>>
@@ -181,9 +185,9 @@ struct CrossThreadCopier<CrossThreadWeakPersistent<T>>
 };
 
 template <typename T>
-struct CrossThreadCopier<WTF::UnretainedWrapper<T, WTF::kCrossThreadAffinity>>
+struct CrossThreadCopier<WTF::CrossThreadUnretainedWrapper<T>>
     : public CrossThreadCopierPassThrough<
-          WTF::UnretainedWrapper<T, WTF::kCrossThreadAffinity>> {
+          WTF::CrossThreadUnretainedWrapper<T>> {
   STATIC_ONLY(CrossThreadCopier);
 };
 
@@ -203,9 +207,9 @@ struct CrossThreadCopier<WTF::PassedWrapper<T>> {
 };
 
 template <typename Signature>
-struct CrossThreadCopier<WTF::Function<Signature, WTF::kCrossThreadAffinity>> {
+struct CrossThreadCopier<WTF::CrossThreadFunction<Signature>> {
   STATIC_ONLY(CrossThreadCopier);
-  using Type = WTF::Function<Signature, WTF::kCrossThreadAffinity>;
+  using Type = WTF::CrossThreadFunction<Signature>;
   static Type Copy(Type&& value) { return std::move(value); }
 };
 

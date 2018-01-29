@@ -84,6 +84,7 @@
 #include "chromeos/chromeos_switches.h"
 #include "components/arc/arc_util.h"
 #else  // !defined(OS_CHROMEOS)
+#include "chrome/browser/ui/webui/settings/printing_handler.h"
 #include "chrome/browser/ui/webui/settings/settings_default_browser_handler.h"
 #include "chrome/browser/ui/webui/settings/settings_manage_profile_handler.h"
 #include "chrome/browser/ui/webui/settings/system_handler.h"
@@ -180,36 +181,44 @@ MdSettingsUI::MdSettingsUI(content::WebUI* web_ui)
   AddSettingsPageUIHandler(
       base::MakeUnique<chromeos::settings::StylusHandler>());
   AddSettingsPageUIHandler(
-      base::MakeUnique<chromeos::settings::InternetHandler>());
+      base::MakeUnique<chromeos::settings::InternetHandler>(profile));
 #else
   AddSettingsPageUIHandler(base::MakeUnique<DefaultBrowserHandler>(web_ui));
   AddSettingsPageUIHandler(base::MakeUnique<ManageProfileHandler>(profile));
   AddSettingsPageUIHandler(base::MakeUnique<SystemHandler>());
+  AddSettingsPageUIHandler(base::MakeUnique<PrintingHandler>());
 #endif
 
   content::WebUIDataSource* html_source =
       content::WebUIDataSource::Create(chrome::kChromeUISettingsHost);
 
 #if defined(OS_WIN)
-  if (base::FeatureList::IsEnabled(safe_browsing::kInBrowserCleanerUIFeature)) {
-    AddSettingsPageUIHandler(base::MakeUnique<ChromeCleanupHandler>(profile));
+  bool chromeCleanupEnabled = false;
+  bool userInitiatedCleanupsEnabled = false;
 
-    safe_browsing::ChromeCleanerController* cleaner_controller =
-        safe_browsing::ChromeCleanerController::GetInstance();
-    if (cleaner_controller->ShouldShowCleanupInSettingsUI())
-      html_source->AddBoolean("chromeCleanupEnabled", true);
+  AddSettingsPageUIHandler(base::MakeUnique<ChromeCleanupHandler>(profile));
+
+  safe_browsing::ChromeCleanerController* cleaner_controller =
+      safe_browsing::ChromeCleanerController::GetInstance();
+  chromeCleanupEnabled = cleaner_controller->ShouldShowCleanupInSettingsUI();
+  userInitiatedCleanupsEnabled = safe_browsing::UserInitiatedCleanupsEnabled();
 
 #if defined(GOOGLE_CHROME_BUILD)
-    if (cleaner_controller->IsPoweredByPartner())
-      html_source->AddBoolean("cleanupPoweredByPartner", true);
+  if (cleaner_controller->IsPoweredByPartner())
+    html_source->AddBoolean("cleanupPoweredByPartner", true);
 
-    html_source->AddResourcePath("partner-logo.svg",
-                                 IDR_CHROME_CLEANUP_PARTNER);
+  html_source->AddResourcePath("partner-logo.svg", IDR_CHROME_CLEANUP_PARTNER);
 #if BUILDFLAG(OPTIMIZE_WEBUI)
-    exclude_from_gzip.push_back("partner-logo.svg");
+  exclude_from_gzip.push_back("partner-logo.svg");
 #endif
 #endif  // defined(GOOGLE_CHROME_BUILD)
-  }
+
+  html_source->AddBoolean("chromeCleanupEnabled", chromeCleanupEnabled);
+  // Don't need to save this variable in UpdateCleanupDataSource() because it
+  // should never change while Chrome is open.
+  html_source->AddBoolean("userInitiatedCleanupsEnabled",
+                          userInitiatedCleanupsEnabled);
+
 #endif  // defined(OS_WIN)
 
 #if defined(SAFE_BROWSING_DB_LOCAL)
@@ -266,10 +275,13 @@ MdSettingsUI::MdSettingsUI(content::WebUI* web_ui)
   }
 #endif
 
-  html_source->AddBoolean(
-      "showImportExportPasswords",
-      base::FeatureList::IsEnabled(
-          password_manager::features::kPasswordImportExport));
+  html_source->AddBoolean("showExportPasswords",
+                          base::FeatureList::IsEnabled(
+                              password_manager::features::kPasswordExport));
+
+  html_source->AddBoolean("showImportPasswords",
+                          base::FeatureList::IsEnabled(
+                              password_manager::features::kPasswordImport));
 
   AddSettingsPageUIHandler(
       base::WrapUnique(AboutHandler::Create(html_source, profile)));
@@ -304,11 +316,9 @@ MdSettingsUI::MdSettingsUI(content::WebUI* web_ui)
 #if defined(OS_WIN)
   // This needs to be below content::WebUIDataSource::Add to make sure there
   // is a WebUIDataSource to update if the observer is immediately notified.
-  if (base::FeatureList::IsEnabled(safe_browsing::kInBrowserCleanerUIFeature)) {
-    cleanup_observer_.reset(
-        new safe_browsing::ChromeCleanerStateChangeObserver(base::Bind(
-            &MdSettingsUI::UpdateCleanupDataSource, base::Unretained(this))));
-  }
+  cleanup_observer_.reset(
+      new safe_browsing::ChromeCleanerStateChangeObserver(base::Bind(
+          &MdSettingsUI::UpdateCleanupDataSource, base::Unretained(this))));
 #endif  // defined(OS_WIN)
 }
 

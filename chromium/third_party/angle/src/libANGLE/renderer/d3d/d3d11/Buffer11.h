@@ -51,7 +51,7 @@ class Buffer11 : public BufferD3D
 {
   public:
     Buffer11(const gl::BufferState &state, Renderer11 *renderer);
-    virtual ~Buffer11();
+    ~Buffer11() override;
 
     gl::ErrorOrResult<ID3D11Buffer *> getBuffer(const gl::Context *context, BufferUsage usage);
     gl::ErrorOrResult<ID3D11Buffer *> getEmulatedIndexedBuffer(const gl::Context *context,
@@ -73,7 +73,7 @@ class Buffer11 : public BufferD3D
     size_t getTotalCPUBufferMemoryBytes() const;
 
     // BufferD3D implementation
-    size_t getSize() const override { return mSize; }
+    size_t getSize() const override;
     bool supportsDirectBinding() const override;
     gl::Error getData(const gl::Context *context, const uint8_t **outData) override;
     void initializeStaticData(const gl::Context *context) override;
@@ -81,12 +81,12 @@ class Buffer11 : public BufferD3D
 
     // BufferImpl implementation
     gl::Error setData(const gl::Context *context,
-                      GLenum target,
+                      gl::BufferBinding target,
                       const void *data,
                       size_t size,
-                      GLenum usage) override;
+                      gl::BufferUsage usage) override;
     gl::Error setSubData(const gl::Context *context,
-                         GLenum target,
+                         gl::BufferBinding target,
                          const void *data,
                          size_t size,
                          size_t offset) override;
@@ -152,12 +152,21 @@ class Buffer11 : public BufferD3D
     // For some cases of uniform buffer storage, we can't deallocate system memory storage.
     bool canDeallocateSystemMemory() const;
 
+    // Updates data revisions and latest storage.
+    void onCopyStorage(BufferStorage *dest, BufferStorage *source);
+    void onStorageUpdate(BufferStorage *updatedStorage);
+
     Renderer11 *mRenderer;
     size_t mSize;
 
     BufferStorage *mMappedStorage;
 
+    // Buffer storages are sorted by usage. It's important that the latest buffer storage picks
+    // the lowest usage in the case where two storages are tied on data revision - this ensures
+    // we never do anything dangerous like map a uniform buffer over a staging or system memory
+    // copy.
     std::array<BufferStorage *, BUFFER_USAGE_COUNT> mBufferStorages;
+    BufferStorage *mLatestBufferStorage;
 
     // These two arrays are used to track when to free unused storage.
     std::array<unsigned int, BUFFER_USAGE_COUNT> mDeallocThresholds;

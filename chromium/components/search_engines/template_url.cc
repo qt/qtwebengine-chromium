@@ -23,7 +23,6 @@
 #include "base/strings/utf_string_conversions.h"
 #include "build/build_config.h"
 #include "components/google/core/browser/google_util.h"
-#include "components/metrics/proto/omnibox_input_type.pb.h"
 #include "components/search_engines/search_engines_switches.h"
 #include "components/search_engines/search_terms_data.h"
 #include "components/search_engines/template_url_prepopulate_data.h"
@@ -31,6 +30,7 @@
 #include "google_apis/google_api_keys.h"
 #include "net/base/escape.h"
 #include "net/base/mime_util.h"
+#include "third_party/metrics_proto/omnibox_input_type.pb.h"
 #include "ui/base/device_form_factor.h"
 #include "url/gurl.h"
 
@@ -893,8 +893,8 @@ std::string TemplateURLRef::HandleReplacements(
           // See TemplateURLRef::SearchTermsArgs for more details.
           SearchTermsArgs search_terms_args_without_aqs(search_terms_args);
           search_terms_args_without_aqs.assisted_query_stats.clear();
-          GURL base_url(ReplaceSearchTerms(
-              search_terms_args_without_aqs, search_terms_data, NULL));
+          GURL base_url(ReplaceSearchTerms(search_terms_args_without_aqs,
+                                           search_terms_data, nullptr));
           if (base_url.SchemeIsCryptographic()) {
             HandleReplacement(
                 "aqs", search_terms_args.assisted_query_stats, *i, &url);
@@ -1071,7 +1071,8 @@ std::string TemplateURLRef::HandleReplacements(
       case GOOGLE_IMAGE_THUMBNAIL:
         HandleReplacement(
             std::string(), search_terms_args.image_thumbnail_content, *i, &url);
-        post_params_[i->index].content_type = "image/jpeg";
+        if (i->is_post_param)
+          post_params_[i->index].content_type = "image/jpeg";
         break;
 
       case GOOGLE_IMAGE_URL:
@@ -1298,7 +1299,8 @@ bool TemplateURL::ExtractSearchTermsFromURL(
     const GURL& url,
     const SearchTermsData& search_terms_data,
     base::string16* search_terms) const {
-  return FindSearchTermsInURL(url, search_terms_data, search_terms, NULL, NULL);
+  return FindSearchTermsInURL(url, search_terms_data, search_terms, nullptr,
+                              nullptr);
 }
 
 bool TemplateURL::IsSearchURL(const GURL& url,
@@ -1398,7 +1400,7 @@ GURL TemplateURL::GenerateSearchURL(
   return GURL(url_ref_->ReplaceSearchTerms(
       TemplateURLRef::SearchTermsArgs(
           base::ASCIIToUTF16("blah.blah.blah.blah.blah")),
-      search_terms_data, NULL));
+      search_terms_data, nullptr));
 }
 
 void TemplateURL::CopyFrom(const TemplateURL& other) {

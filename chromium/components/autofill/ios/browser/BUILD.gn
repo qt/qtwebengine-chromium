@@ -40,6 +40,24 @@ source_set("browser") {
   ]
 }
 
+source_set("test_support") {
+  testonly = true
+  configs += [ "//build/config/compiler:enable_arc" ]
+  sources = [
+    "fake_autofill_agent.h",
+    "fake_autofill_agent.mm",
+    "fake_js_autofill_manager.h",
+    "fake_js_autofill_manager.mm",
+  ]
+  public_deps = [
+    ":browser",
+  ]
+  deps = [
+    "//base",
+    "//ios/web/public",
+  ]
+}
+
 js_compile_checked("injected_js") {
   visibility = [ ":browser" ]
   sources = [

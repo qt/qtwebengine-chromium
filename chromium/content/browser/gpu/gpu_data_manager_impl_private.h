@@ -81,9 +81,6 @@ class CONTENT_EXPORT GpuDataManagerImplPrivate {
 
   void UpdateGpuPreferences(gpu::GpuPreferences* gpu_preferences) const;
 
-  std::string GetBlacklistVersion() const;
-  std::string GetDriverBugListVersion() const;
-
   void GetBlacklistReasons(base::ListValue* reasons) const;
 
   std::vector<std::string> GetDriverBugWorkarounds() const;
@@ -98,7 +95,6 @@ class CONTENT_EXPORT GpuDataManagerImplPrivate {
 
   void HandleGpuSwitch();
 
-  bool CanUseGpuBrowserCompositor() const;
   bool ShouldDisableAcceleratedVideoDecode(
       const base::CommandLine* command_line) const;
 

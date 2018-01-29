@@ -96,7 +96,7 @@ class CPDF_RenderStatus {
                          FX_ARGB mask_argb,
                          int bitmap_alpha,
                          int blend_mode,
-                         int bIsolated);
+                         int iTransparency);
 
  private:
   bool ProcessTransparency(CPDF_PageObject* PageObj,
@@ -142,9 +142,9 @@ class CPDF_RenderStatus {
                    const CFX_Matrix* pObj2Device);
   RetainPtr<CFX_DIBitmap> GetBackdrop(const CPDF_PageObject* pObj,
                                       const FX_RECT& rect,
-                                      int& left,
-                                      int& top,
-                                      bool bBackAlphaRequired);
+                                      bool bBackAlphaRequired,
+                                      int* left,
+                                      int* top);
   RetainPtr<CFX_DIBitmap> LoadSMask(CPDF_Dictionary* pSMaskDict,
                                     FX_RECT* pClipRect,
                                     const CFX_Matrix* pMatrix);
@@ -176,7 +176,7 @@ class CPDF_RenderStatus {
   CPDF_GraphicStates m_InitialStates;
   std::unique_ptr<CPDF_ImageRenderer> m_pImageRenderer;
   bool m_bPrint;
-  int m_Transparency;
+  int m_iTransparency;
   bool m_bDropObjects;
   bool m_bStdCS;
   uint32_t m_GroupFamily;

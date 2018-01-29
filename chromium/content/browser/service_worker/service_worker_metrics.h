@@ -18,7 +18,7 @@
 #include "content/common/service_worker/service_worker_types.h"
 #include "content/public/browser/service_worker_context.h"
 #include "content/public/common/service_worker_modes.h"
-#include "third_party/WebKit/public/platform/modules/serviceworker/WebServiceWorkerResponseError.h"
+#include "services/network/public/interfaces/fetch_api.mojom.h"
 #include "ui/base/page_transition_types.h"
 
 class GURL;
@@ -333,10 +333,11 @@ class ServiceWorkerMetrics {
   // status zero to a fetch request.
   static void RecordStatusZeroResponseError(
       bool is_main_resource,
-      blink::WebServiceWorkerResponseError error);
+      blink::mojom::ServiceWorkerResponseError error);
 
   // Records the mode of request that was fallbacked to the network.
-  static void RecordFallbackedRequestMode(FetchRequestMode mode);
+  static void RecordFallbackedRequestMode(
+      network::mojom::FetchRequestMode mode);
 
   // Called at the beginning of each ServiceWorkerVersion::Dispatch*Event
   // function. Records the time elapsed since idle (generally the time since the

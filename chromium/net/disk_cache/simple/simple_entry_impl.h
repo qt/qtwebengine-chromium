@@ -37,8 +37,9 @@ namespace disk_cache {
 
 class BackendCleanupTracker;
 class SimpleBackendImpl;
-class SimpleSynchronousEntry;
 class SimpleEntryStat;
+class SimpleFileTracker;
+class SimpleSynchronousEntry;
 struct SimpleEntryCreationResults;
 
 // SimpleEntryImpl is the IO thread interface to an entry in the very simple
@@ -67,6 +68,7 @@ class NET_EXPORT_PRIVATE SimpleEntryImpl : public Entry,
                   uint64_t entry_hash,
                   OperationsMode operations_mode,
                   SimpleBackendImpl* backend,
+                  SimpleFileTracker* file_tracker,
                   net::NetLog* net_log);
 
   void SetActiveEntryProxy(
@@ -90,6 +92,12 @@ class NET_EXPORT_PRIVATE SimpleEntryImpl : public Entry,
   // alone. In that case, the SimpleSynchronousEntry will read the key from disk
   // and it will be set.
   void SetKey(const std::string& key);
+
+  // SetCreatePendingDoom() should be called before CreateEntry() if the
+  // creation should suceed optimistically but not do any I/O until
+  // NotifyDoomBeforeCreateComplete() is called.
+  void SetCreatePendingDoom();
+  void NotifyDoomBeforeCreateComplete();
 
   // From Entry:
   void Doom() override;
@@ -338,6 +346,7 @@ class NET_EXPORT_PRIVATE SimpleEntryImpl : public Entry,
   base::ThreadChecker io_thread_checker_;
 
   const base::WeakPtr<SimpleBackendImpl> backend_;
+  SimpleFileTracker* const file_tracker_;
   const net::CacheType cache_type_;
   const scoped_refptr<base::TaskRunner> worker_pool_;
   const base::FilePath path_;
@@ -360,6 +369,12 @@ class NET_EXPORT_PRIVATE SimpleEntryImpl : public Entry,
   int open_count_;
 
   bool doomed_;
+
+  enum {
+    CREATE_NORMAL,
+    CREATE_OPTIMISTIC_PENDING_DOOM,
+    CREATE_OPTIMISTIC_PENDING_DOOM_FOLLOWED_BY_DOOM,
+  } optimistic_create_pending_doom_state_;
 
   State state_;
 

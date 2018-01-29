@@ -802,7 +802,7 @@ class CORE_EXPORT LayoutBox : public LayoutBoxModelObject {
   void SetSpannerPlaceholder(LayoutMultiColumnSpannerPlaceholder&);
   void ClearSpannerPlaceholder();
   LayoutMultiColumnSpannerPlaceholder* SpannerPlaceholder() const final {
-    return rare_data_ ? rare_data_->spanner_placeholder_ : 0;
+    return rare_data_ ? rare_data_->spanner_placeholder_ : nullptr;
   }
 
   // A pagination strut is the amount of space needed to push an in-flow block-
@@ -1073,7 +1073,9 @@ class CORE_EXPORT LayoutBox : public LayoutBoxModelObject {
   virtual void PaintBoxDecorationBackground(const PaintInfo&,
                                             const LayoutPoint&) const;
   virtual void PaintMask(const PaintInfo&, const LayoutPoint&) const;
-  void ImageChanged(WrappedImagePtr, const IntRect* = nullptr) override;
+  void ImageChanged(WrappedImagePtr,
+                    CanDeferInvalidation,
+                    const IntRect* = nullptr) override;
   ResourcePriority ComputeResourcePriority() const final;
 
   void LogicalExtentAfterUpdatingLogicalWidth(const LayoutUnit& logical_top,
@@ -1268,7 +1270,7 @@ class CORE_EXPORT LayoutBox : public LayoutBoxModelObject {
       return false;
 
     LayoutRect layout_overflow_rect = overflow_->LayoutOverflowRect();
-    LayoutRect no_overflow_rect = this->NoOverflowRect();
+    LayoutRect no_overflow_rect = NoOverflowRect();
     return layout_overflow_rect.X() < no_overflow_rect.X() ||
            layout_overflow_rect.MaxX() > no_overflow_rect.MaxX();
   }
@@ -1278,7 +1280,7 @@ class CORE_EXPORT LayoutBox : public LayoutBoxModelObject {
       return false;
 
     LayoutRect layout_overflow_rect = overflow_->LayoutOverflowRect();
-    LayoutRect no_overflow_rect = this->NoOverflowRect();
+    LayoutRect no_overflow_rect = NoOverflowRect();
     return layout_overflow_rect.Y() < no_overflow_rect.Y() ||
            layout_overflow_rect.MaxY() > no_overflow_rect.MaxY();
   }
@@ -1580,7 +1582,7 @@ class CORE_EXPORT LayoutBox : public LayoutBoxModelObject {
 
   LayoutBoxRareData& EnsureRareData() {
     if (!rare_data_)
-      rare_data_ = WTF::MakeUnique<LayoutBoxRareData>();
+      rare_data_ = std::make_unique<LayoutBoxRareData>();
     return *rare_data_.get();
   }
 

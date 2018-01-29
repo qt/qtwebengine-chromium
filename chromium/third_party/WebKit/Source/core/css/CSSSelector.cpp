@@ -426,7 +426,7 @@ static CSSSelector::PseudoType NameToPseudoType(const AtomicString& name,
     pseudo_type_map_end = kPseudoTypeWithoutArgumentsMap +
                           WTF_ARRAY_LENGTH(kPseudoTypeWithoutArgumentsMap);
   }
-  NameToPseudoStruct dummy_key = {0, CSSSelector::kPseudoUnknown};
+  NameToPseudoStruct dummy_key = {nullptr, CSSSelector::kPseudoUnknown};
   const NameToPseudoStruct* match =
       std::lower_bound(pseudo_type_map, pseudo_type_map_end, dummy_key,
                        NameToPseudoCompare(name));
@@ -1057,7 +1057,7 @@ CSSSelector::RareData::RareData(const AtomicString& value)
       attribute_(AnyQName()),
       argument_(g_null_atom) {}
 
-CSSSelector::RareData::~RareData() {}
+CSSSelector::RareData::~RareData() = default;
 
 // a helper function for checking nth-arguments
 bool CSSSelector::RareData::MatchNth(unsigned unsigned_count) {

@@ -1,4 +1,4 @@
-// Copyright 2016 PDFium Authors. All rights reserved.
+// Copyright 2017 PDFium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,25 +7,12 @@
 #ifndef XFA_FXFA_PARSER_CXFA_FILL_H_
 #define XFA_FXFA_PARSER_CXFA_FILL_H_
 
-#include "core/fxcrt/fx_system.h"
-#include "core/fxge/fx_dib.h"
-#include "xfa/fxfa/parser/cxfa_data.h"
+#include "xfa/fxfa/parser/cxfa_node.h"
 
-class CXFA_Node;
-
-class CXFA_Fill : public CXFA_Data {
+class CXFA_Fill : public CXFA_Node {
  public:
-  explicit CXFA_Fill(CXFA_Node* pNode);
-  ~CXFA_Fill();
-
-  int32_t GetPresence();
-  FX_ARGB GetColor(bool bText = false);
-  XFA_Element GetFillType();
-  int32_t GetPattern(FX_ARGB& foreColor);
-  int32_t GetStipple(FX_ARGB& stippleColor);
-  int32_t GetLinear(FX_ARGB& endColor);
-  int32_t GetRadial(FX_ARGB& endColor);
-  void SetColor(FX_ARGB color);
+  CXFA_Fill(CXFA_Document* doc, XFA_PacketType packet);
+  ~CXFA_Fill() override;
 };
 
 #endif  // XFA_FXFA_PARSER_CXFA_FILL_H_

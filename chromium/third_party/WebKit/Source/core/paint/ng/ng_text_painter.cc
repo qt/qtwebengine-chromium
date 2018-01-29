@@ -16,6 +16,7 @@
 #include "platform/fonts/NGTextFragmentPaintInfo.h"
 #include "platform/graphics/GraphicsContext.h"
 #include "platform/graphics/GraphicsContextStateSaver.h"
+#include "platform/graphics/paint/PaintController.h"
 #include "platform/wtf/Assertions.h"
 #include "platform/wtf/text/CharacterNames.h"
 
@@ -56,6 +57,9 @@ void NGTextPainter::PaintInternalFragment(
     DCHECK(step == kPaintText);
     graphics_context_.DrawText(font_, fragment_paint_info,
                                FloatPoint(text_origin_));
+    // TODO(npm): Check that there are non-whitespace characters. See
+    // crbug.com/788444.
+    graphics_context_.GetPaintController().SetTextPainted();
   }
 }
 
@@ -82,7 +86,7 @@ void NGTextPainter::PaintInternal(unsigned start_offset,
 void NGTextPainter::ClipDecorationsStripe(float upper,
                                           float stripe_width,
                                           float dilation) {
-  if (!fragment_.Length())
+  if (!fragment_.Length() || !fragment_.TextShapeResult())
     return;
 
   NGTextFragmentPaintInfo fragment_paint_info = fragment_.PaintInfo();

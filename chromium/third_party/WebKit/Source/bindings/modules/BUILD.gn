@@ -48,7 +48,6 @@ generate_event_interfaces("modules_bindings_generated_event_interfaces") {
     "//third_party/WebKit/Source/modules/serviceworkers/ExtendableEvent.idl",
     "//third_party/WebKit/Source/modules/serviceworkers/ExtendableMessageEvent.idl",
     "//third_party/WebKit/Source/modules/serviceworkers/FetchEvent.idl",
-    "//third_party/WebKit/Source/modules/serviceworkers/ForeignFetchEvent.idl",
     "//third_party/WebKit/Source/modules/serviceworkers/InstallEvent.idl",
     "//third_party/WebKit/Source/modules/speech/SpeechRecognitionError.idl",
     "//third_party/WebKit/Source/modules/speech/SpeechRecognitionEvent.idl",
@@ -98,8 +97,10 @@ make_names("event_target_modules_names") {
 # ------------------------------------------------------------------------------
 
 compute_interfaces_info_individual("interfaces_info_individual_modules") {
-  sources = modules_definition_idl_files + modules_static_dependency_idl_files +
+  sources = modules_static_interface_idl_files + modules_definition_idl_files +
+            modules_static_dependency_idl_files +
             modules_generated_dependency_idl_files
+
   interfaces_info_file =
       "$bindings_modules_output_dir/InterfacesInfoOverallIndividual.pickle"
   component_info_file =

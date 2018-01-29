@@ -13,6 +13,7 @@
 #include "core/events/MessageEvent.h"
 #include "core/frame/UseCounter.h"
 #include "core/frame/WebLocalFrameImpl.h"
+#include "core/inspector/MainThreadDebugger.h"
 #include "core/probe/CoreProbes.h"
 #include "core/workers/DedicatedWorkerMessagingProxy.h"
 #include "core/workers/WorkerClients.h"
@@ -20,8 +21,10 @@
 #include "core/workers/WorkerScriptLoader.h"
 #include "platform/bindings/ScriptState.h"
 #include "platform/loader/fetch/ResourceFetcher.h"
+#include "platform/weborigin/SecurityPolicy.h"
 #include "public/platform/WebContentSettingsClient.h"
 #include "public/web/WebFrameClient.h"
+#include "services/network/public/interfaces/fetch_api.mojom-blink.h"
 
 namespace blink {
 
@@ -63,7 +66,7 @@ DedicatedWorker::~DedicatedWorker() {
 }
 
 void DedicatedWorker::postMessage(ScriptState* script_state,
-                                  RefPtr<SerializedScriptValue> message,
+                                  scoped_refptr<SerializedScriptValue> message,
                                   const MessagePortArray& ports,
                                   ExceptionState& exception_state) {
   DCHECK(IsMainThread());
@@ -72,28 +75,33 @@ void DedicatedWorker::postMessage(ScriptState* script_state,
       ExecutionContext::From(script_state), ports, exception_state);
   if (exception_state.HadException())
     return;
+  v8_inspector::V8StackTraceId stack_id =
+      MainThreadDebugger::Instance()->StoreCurrentStackTrace(
+          "Worker.postMessage");
   context_proxy_->PostMessageToWorkerGlobalScope(std::move(message),
-                                                 std::move(channels));
+                                                 std::move(channels), stack_id);
 }
 
 void DedicatedWorker::Start() {
   DCHECK(IsMainThread());
-  WebURLRequest::FetchRequestMode fetch_request_mode =
-      WebURLRequest::kFetchRequestModeSameOrigin;
-  WebURLRequest::FetchCredentialsMode fetch_credentials_mode =
-      WebURLRequest::kFetchCredentialsModeSameOrigin;
+  network::mojom::FetchRequestMode fetch_request_mode =
+      network::mojom::FetchRequestMode::kSameOrigin;
+  network::mojom::FetchCredentialsMode fetch_credentials_mode =
+      network::mojom::FetchCredentialsMode::kSameOrigin;
   if (script_url_.ProtocolIsData()) {
-    fetch_request_mode = WebURLRequest::kFetchRequestModeNoCORS;
-    fetch_credentials_mode = WebURLRequest::kFetchCredentialsModeInclude;
+    fetch_request_mode = network::mojom::FetchRequestMode::kNoCORS;
+    fetch_credentials_mode = network::mojom::FetchCredentialsMode::kInclude;
   }
 
+  v8_inspector::V8StackTraceId stack_id =
+      MainThreadDebugger::Instance()->StoreCurrentStackTrace("Worker Created");
   script_loader_ = WorkerScriptLoader::Create();
   script_loader_->LoadAsynchronously(
       *GetExecutionContext(), script_url_, WebURLRequest::kRequestContextWorker,
       fetch_request_mode, fetch_credentials_mode,
       GetExecutionContext()->GetSecurityContext().AddressSpace(),
       WTF::Bind(&DedicatedWorker::OnResponse, WrapPersistent(this)),
-      WTF::Bind(&DedicatedWorker::OnFinished, WrapPersistent(this)));
+      WTF::Bind(&DedicatedWorker::OnFinished, WrapPersistent(this), stack_id));
 }
 
 void DedicatedWorker::terminate() {
@@ -138,16 +146,22 @@ void DedicatedWorker::OnResponse() {
                                   script_loader_->Identifier());
 }
 
-void DedicatedWorker::OnFinished() {
+void DedicatedWorker::OnFinished(const v8_inspector::V8StackTraceId& stack_id) {
   DCHECK(IsMainThread());
   if (script_loader_->Canceled()) {
     // Do nothing.
   } else if (script_loader_->Failed()) {
     DispatchEvent(Event::CreateCancelable(EventTypeNames::error));
   } else {
+    ReferrerPolicy referrer_policy = kReferrerPolicyDefault;
+    if (!script_loader_->GetReferrerPolicy().IsNull()) {
+      SecurityPolicy::ReferrerPolicyFromHeaderValue(
+          script_loader_->GetReferrerPolicy(),
+          kDoNotSupportReferrerPolicyLegacyKeywords, &referrer_policy);
+    }
     context_proxy_->StartWorkerGlobalScope(
         script_loader_->Url(), GetExecutionContext()->UserAgent(),
-        script_loader_->SourceText(), script_loader_->GetReferrerPolicy());
+        script_loader_->SourceText(), referrer_policy, stack_id);
     probe::scriptImported(GetExecutionContext(), script_loader_->Identifier(),
                           script_loader_->SourceText());
   }
@@ -158,7 +172,7 @@ const AtomicString& DedicatedWorker::InterfaceName() const {
   return EventTargetNames::Worker;
 }
 
-DEFINE_TRACE(DedicatedWorker) {
+void DedicatedWorker::Trace(blink::Visitor* visitor) {
   visitor->Trace(context_proxy_);
   AbstractWorker::Trace(visitor);
 }

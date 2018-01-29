@@ -13,10 +13,8 @@
 #include "platform/bindings/ScriptWrappable.h"
 #include "platform/bindings/TraceWrapperV8Reference.h"
 #include "platform/heap/Handle.h"
-#include "platform/loader/fetch/ResourceLoaderOptions.h"
 #include "platform/weborigin/KURL.h"
 #include "platform/wtf/text/TextPosition.h"
-#include "public/platform/WebURLRequest.h"
 
 namespace blink {
 
@@ -29,20 +27,17 @@ class CORE_EXPORT ModuleScript final : public Script, public TraceWrapperBase {
       const String& source_text,
       Modulator*,
       const KURL& base_url,
-      const String& nonce,
-      ParserDisposition,
-      WebURLRequest::FetchCredentialsMode,
+      const ScriptFetchOptions&,
       AccessControlStatus,
       const TextPosition& start_position = TextPosition::MinimumPosition());
 
   // Mostly corresponds to Create() but accepts ScriptModule as the argument
   // and allows null ScriptModule.
-  static ModuleScript* CreateForTest(Modulator*,
-                                     ScriptModule,
-                                     const KURL& base_url,
-                                     const String& nonce,
-                                     ParserDisposition,
-                                     WebURLRequest::FetchCredentialsMode);
+  static ModuleScript* CreateForTest(
+      Modulator*,
+      ScriptModule,
+      const KURL& base_url,
+      const ScriptFetchOptions& = ScriptFetchOptions());
 
   ~ModuleScript() override = default;
 
@@ -66,24 +61,16 @@ class CORE_EXPORT ModuleScript final : public Script, public TraceWrapperBase {
     return preinstantiation_error_.NewLocal(isolate);
   }
 
-  ParserDisposition ParserState() const { return parser_state_; }
-  WebURLRequest::FetchCredentialsMode CredentialsMode() const {
-    return credentials_mode_;
-  }
-  const String& Nonce() const { return nonce_; }
-
   const TextPosition& StartPosition() const { return start_position_; }
 
-  DECLARE_TRACE();
-  DECLARE_TRACE_WRAPPERS();
+  void Trace(blink::Visitor*);
+  void TraceWrappers(const ScriptWrappableVisitor*) const;
 
  private:
   ModuleScript(Modulator* settings_object,
                ScriptModule record,
                const KURL& base_url,
-               const String& nonce,
-               ParserDisposition parser_state,
-               WebURLRequest::FetchCredentialsMode credentials_mode,
+               const ScriptFetchOptions&,
                const String& source_text,
                const TextPosition& start_position);
 
@@ -91,9 +78,7 @@ class CORE_EXPORT ModuleScript final : public Script, public TraceWrapperBase {
                                       Modulator*,
                                       ScriptModule,
                                       const KURL& base_url,
-                                      const String& nonce,
-                                      ParserDisposition,
-                                      WebURLRequest::FetchCredentialsMode,
+                                      const ScriptFetchOptions&,
                                       const TextPosition&);
 
   ScriptType GetScriptType() const override { return ScriptType::kModule; }
@@ -145,15 +130,6 @@ class CORE_EXPORT ModuleScript final : public Script, public TraceWrapperBase {
   // All the classes/references on the graphs above should be
   // TraceWrapperBase/TraceWrapperMember<>/etc.,
   TraceWrapperV8Reference<v8::Value> preinstantiation_error_;
-
-  // https://html.spec.whatwg.org/multipage/webappapis.html#concept-module-script-nonce
-  const String nonce_;
-
-  // https://html.spec.whatwg.org/multipage/webappapis.html#concept-module-script-parser
-  const ParserDisposition parser_state_;
-
-  // https://html.spec.whatwg.org/multipage/webappapis.html#concept-module-script-credentials-mode
-  const WebURLRequest::FetchCredentialsMode credentials_mode_;
 
   // For CSP check.
   const String source_text_;

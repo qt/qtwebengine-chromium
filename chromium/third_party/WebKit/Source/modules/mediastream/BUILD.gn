@@ -34,8 +34,6 @@ blink_modules_sources("mediastream") {
     "NavigatorMediaStream.h",
     "NavigatorUserMedia.cpp",
     "NavigatorUserMedia.h",
-    "NavigatorUserMediaError.cpp",
-    "NavigatorUserMediaError.h",
     "NavigatorUserMediaErrorCallback.h",
     "NavigatorUserMediaSuccessCallback.h",
     "OverconstrainedError.cpp",
@@ -48,5 +46,9 @@ blink_modules_sources("mediastream") {
     "UserMediaController.h",
     "UserMediaRequest.cpp",
     "UserMediaRequest.h",
+  ]
+
+  deps = [
+    "//third_party/WebKit/public:media_devices_mojo_bindings_blink",
   ]
 }

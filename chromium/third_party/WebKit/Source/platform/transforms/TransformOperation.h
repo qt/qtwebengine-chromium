@@ -25,11 +25,11 @@
 #ifndef TransformOperation_h
 #define TransformOperation_h
 
+#include "base/memory/scoped_refptr.h"
 #include "platform/geometry/FloatSize.h"
 #include "platform/transforms/TransformationMatrix.h"
 #include "platform/wtf/Noncopyable.h"
 #include "platform/wtf/RefCounted.h"
-#include "platform/wtf/RefPtr.h"
 
 namespace blink {
 
@@ -76,10 +76,11 @@ class PLATFORM_EXPORT TransformOperation
   virtual void Apply(TransformationMatrix&,
                      const FloatSize& border_box_size) const = 0;
 
-  virtual RefPtr<TransformOperation> Blend(const TransformOperation* from,
-                                           double progress,
-                                           bool blend_to_identity = false) = 0;
-  virtual RefPtr<TransformOperation> Zoom(double factor) = 0;
+  virtual scoped_refptr<TransformOperation> Blend(
+      const TransformOperation* from,
+      double progress,
+      bool blend_to_identity = false) = 0;
+  virtual scoped_refptr<TransformOperation> Zoom(double factor) = 0;
 
   virtual OperationType GetType() const = 0;
 

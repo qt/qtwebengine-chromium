@@ -8,8 +8,8 @@
 #include "core/frame/LocalFrameClient.h"
 #include "platform/Histogram.h"
 #include "platform/wtf/Assertions.h"
-#include "platform/wtf/CurrentTime.h"
 #include "platform/wtf/StdLibExtras.h"
+#include "platform/wtf/Time.h"
 
 namespace blink {
 
@@ -95,7 +95,8 @@ void UserGestureIndicator::UpdateRootToken() {
   }
 }
 
-UserGestureIndicator::UserGestureIndicator(RefPtr<UserGestureToken> token) {
+UserGestureIndicator::UserGestureIndicator(
+    scoped_refptr<UserGestureToken> token) {
   if (!IsMainThread() || !token || token == root_token_)
     return;
   token_ = std::move(token);
@@ -106,7 +107,7 @@ UserGestureIndicator::UserGestureIndicator(RefPtr<UserGestureToken> token) {
 UserGestureIndicator::UserGestureIndicator(UserGestureToken::Status status) {
   if (!IsMainThread())
     return;
-  token_ = WTF::AdoptRef(new UserGestureToken(status));
+  token_ = base::AdoptRef(new UserGestureToken(status));
   UpdateRootToken();
 }
 

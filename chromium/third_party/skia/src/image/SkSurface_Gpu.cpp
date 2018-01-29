@@ -110,7 +110,7 @@ sk_sp<SkImage> SkSurface_Gpu::onNewImageSnapshot() {
     if (!srcProxy || rtc->priv().refsWrappedObjects()) {
         SkASSERT(rtc->origin() == rtc->asSurfaceProxy()->origin());
 
-        srcProxy = GrSurfaceProxy::Copy(ctx, rtc->asSurfaceProxy(), budgeted);
+        srcProxy = GrSurfaceProxy::Copy(ctx, rtc->asSurfaceProxy(), rtc->mipMapped(), budgeted);
     }
 
     const SkImageInfo info = fDevice->imageInfo();
@@ -163,18 +163,16 @@ bool SkSurface_Gpu::onWait(int numSemaphores, const GrBackendSemaphore* waitSema
 bool SkSurface_Gpu::onCharacterize(SkSurfaceCharacterization* data) const {
     GrRenderTargetContext* rtc = fDevice->accessRenderTargetContext();
 
-    data->set(rtc->origin(), rtc->width(), rtc->height(),
-              rtc->config(), rtc->numColorSamples());
+    data->set(rtc->origin(), rtc->width(), rtc->height(), rtc->colorSpaceInfo().config(),
+              rtc->numColorSamples());
     return true;
 }
 
 bool SkSurface_Gpu::isCompatible(const SkSurfaceCharacterization& data) const {
     GrRenderTargetContext* rtc = fDevice->accessRenderTargetContext();
 
-    return data.origin() == rtc->origin() &&
-           data.width() == rtc->width() &&
-           data.height() == rtc->height() &&
-           data.config() == rtc->config() &&
+    return data.origin() == rtc->origin() && data.width() == rtc->width() &&
+           data.height() == rtc->height() && data.config() == rtc->colorSpaceInfo().config() &&
            data.sampleCount() == rtc->numColorSamples();
 }
 
@@ -223,13 +221,24 @@ bool SkSurface_Gpu::Valid(GrContext* context, GrPixelConfig config, SkColorSpace
 
 sk_sp<SkSurface> SkSurface::MakeRenderTarget(GrContext* ctx, SkBudgeted budgeted,
                                              const SkImageInfo& info, int sampleCount,
-                                             GrSurfaceOrigin origin, const SkSurfaceProps* props) {
+                                             GrSurfaceOrigin origin, const SkSurfaceProps* props,
+                                             bool shouldCreateWithMips) {
+    if (!ctx) {
+        return nullptr;
+    }
     if (!SkSurface_Gpu::Valid(info)) {
         return nullptr;
     }
 
+    GrMipMapped mipMapped = shouldCreateWithMips ? GrMipMapped::kYes : GrMipMapped::kNo;
+
+    if (!ctx->caps()->mipMapSupport()) {
+        mipMapped = GrMipMapped::kNo;
+    }
+
     sk_sp<SkGpuDevice> device(SkGpuDevice::Make(
-            ctx, budgeted, info, sampleCount, origin, props, SkGpuDevice::kClear_InitContents));
+            ctx, budgeted, info, sampleCount, origin, props, mipMapped,
+            SkGpuDevice::kClear_InitContents));
     if (!device) {
         return nullptr;
     }

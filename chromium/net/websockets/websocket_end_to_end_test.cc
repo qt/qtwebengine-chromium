@@ -207,7 +207,7 @@ void ConnectTestingEventInterface::QuitNestedEventLoop() {
 // OnResolveProxy callback and records the information passed to it.
 class TestProxyDelegateWithProxyInfo : public ProxyDelegate {
  public:
-  TestProxyDelegateWithProxyInfo() {}
+  TestProxyDelegateWithProxyInfo() = default;
 
   struct ResolvedProxyInfo {
     GURL url;
@@ -221,7 +221,7 @@ class TestProxyDelegateWithProxyInfo : public ProxyDelegate {
  protected:
   void OnResolveProxy(const GURL& url,
                       const std::string& method,
-                      const ProxyService& proxy_service,
+                      const ProxyRetryInfoMap& proxy_retry_info,
                       ProxyInfo* result) override {
     resolved_proxy_info_.url = url;
     resolved_proxy_info_.proxy_info = *result;
@@ -277,7 +277,7 @@ class WebSocketEndToEndTest : public ::testing::Test {
     if (!initialised_context_) {
       InitialiseContext();
     }
-    url::Origin origin(GURL("http://localhost"));
+    url::Origin origin = url::Origin::Create(GURL("http://localhost"));
     GURL site_for_cookies("http://localhost/");
     event_interface_ = new ConnectTestingEventInterface;
     channel_.reset(

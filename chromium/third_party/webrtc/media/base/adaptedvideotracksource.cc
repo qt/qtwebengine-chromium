@@ -95,7 +95,7 @@ bool AdaptedVideoTrackSource::AdaptFrame(int width,
                                          int* crop_y) {
   {
     rtc::CritScope lock(&stats_crit_);
-    stats_ = rtc::Optional<Stats>({width, height});
+    stats_ = Stats{width, height};
   }
 
   if (!broadcaster_.frame_wanted()) {
@@ -105,6 +105,7 @@ bool AdaptedVideoTrackSource::AdaptFrame(int width,
   if (!video_adapter_.AdaptFrameResolution(
           width, height, time_us * rtc::kNumNanosecsPerMicrosec,
           crop_width, crop_height, out_width, out_height)) {
+    broadcaster_.OnDiscardedFrame();
     // VideoAdapter dropped the frame.
     return false;
   }

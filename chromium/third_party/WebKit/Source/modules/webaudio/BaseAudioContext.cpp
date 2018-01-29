@@ -29,18 +29,15 @@
 #include "bindings/core/v8/ExceptionMessages.h"
 #include "bindings/core/v8/ExceptionState.h"
 #include "bindings/core/v8/ScriptPromiseResolver.h"
-#include "bindings/modules/v8/v8_decode_error_callback.h"
-#include "bindings/modules/v8/v8_decode_success_callback.h"
 #include "core/dom/DOMException.h"
 #include "core/dom/Document.h"
 #include "core/dom/ExceptionCode.h"
-#include "core/dom/TaskRunnerHelper.h"
-#include "core/dom/UserGestureIndicator.h"
 #include "core/frame/Settings.h"
-#include "core/html/HTMLMediaElement.h"
 #include "core/html/media/AutoplayPolicy.h"
+#include "core/html/media/HTMLMediaElement.h"
 #include "core/inspector/ConsoleMessage.h"
 #include "core/inspector/ConsoleTypes.h"
+#include "core/origin_trials/origin_trials.h"
 #include "modules/mediastream/MediaStream.h"
 #include "modules/webaudio/AnalyserNode.h"
 #include "modules/webaudio/AudioBuffer.h"
@@ -73,13 +70,13 @@
 #include "modules/webaudio/ScriptProcessorNode.h"
 #include "modules/webaudio/StereoPannerNode.h"
 #include "modules/webaudio/WaveShaperNode.h"
-#include "modules/webaudio/WindowAudioWorklet.h"
 #include "platform/CrossThreadFunctional.h"
 #include "platform/Histogram.h"
 #include "platform/audio/IIRFilter.h"
 #include "platform/bindings/ScriptState.h"
 #include "platform/wtf/text/WTFString.h"
 #include "public/platform/Platform.h"
+#include "public/platform/TaskType.h"
 
 namespace blink {
 
@@ -93,7 +90,7 @@ BaseAudioContext* BaseAudioContext::Create(
 // Constructor for rendering to the audio hardware.
 BaseAudioContext::BaseAudioContext(Document* document,
                                    enum ContextType context_type)
-    : SuspendableObject(document),
+    : PausableObject(document),
       destination_node_(nullptr),
       is_cleared_(false),
       is_resolving_resume_promises_(false),
@@ -138,9 +135,6 @@ BaseAudioContext::BaseAudioContext(Document* document,
 
 BaseAudioContext::~BaseAudioContext() {
   GetDeferredTaskHandler().ContextWillBeDestroyed();
-  // AudioNodes keep a reference to their context, so there should be no way to
-  // be in the destructor if there are still AudioNodes around.
-  DCHECK(!IsDestinationInitialized());
   DCHECK(!active_source_nodes_.size());
   DCHECK(!is_resolving_resume_promises_);
   DCHECK(!resume_resolvers_.size());
@@ -153,19 +147,19 @@ void BaseAudioContext::Initialize() {
 
   FFTFrame::Initialize();
 
+  if (OriginTrials::audioWorkletEnabled(GetExecutionContext())) {
+    // Worklet requires a valid Frame object, but GetFrame() from the window
+    // can be nullptr. Block out such case. See: crbug.com/792108
+    if (GetExecutionContext()->ExecutingWindow()->GetFrame()) {
+      audio_worklet_ = AudioWorklet::Create(this);
+    }
+  }
+
   if (destination_node_) {
     destination_node_->Handler().Initialize();
     // The AudioParams in the listener need access to the destination node, so
     // only create the listener if the destination node exists.
     listener_ = AudioListener::Create(*this);
-  }
-
-  // Check if a document or a frame supports AudioWorklet. If not, AudioWorklet
-  // cannot be accessed.
-  if (RuntimeEnabledFeatures::AudioWorkletEnabled()) {
-    AudioWorklet* audioWorklet = WindowAudioWorklet::audioWorklet(this);
-    if (audioWorklet)
-      audioWorklet->RegisterContext(this);
   }
 }
 
@@ -179,16 +173,6 @@ void BaseAudioContext::Clear() {
 
 void BaseAudioContext::Uninitialize() {
   DCHECK(IsMainThread());
-
-  // AudioWorklet may be destroyed before the context goes away. So we have to
-  // check the pointer. See: crbug.com/503845
-  if (RuntimeEnabledFeatures::AudioWorkletEnabled()) {
-    AudioWorklet* audioWorklet = WindowAudioWorklet::audioWorklet(this);
-    if (audioWorklet) {
-      audioWorklet->UnregisterContext(this);
-      worklet_messaging_proxy_.Clear();
-    }
-  }
 
   if (!IsDestinationInitialized())
     return;
@@ -208,6 +192,9 @@ void BaseAudioContext::Uninitialize() {
   listener_->WaitForHRTFDatabaseLoaderThreadCompletion();
 
   RecordAutoplayStatus();
+
+  // TODO(crbug.com/764396): Remove this when fixed.
+  RecordValueSetterStatistics();
 
   Clear();
 }
@@ -350,7 +337,7 @@ ScriptPromise BaseAudioContext::decodeAudioData(
         kDataCloneError, "Cannot decode detached ArrayBuffer");
     resolver->Reject(error);
     if (error_callback) {
-      error_callback->call(this, error);
+      error_callback->InvokeAndReportException(this, error);
     }
   }
 
@@ -368,14 +355,14 @@ void BaseAudioContext::HandleDecodeAudioData(
     // Resolve promise successfully and run the success callback
     resolver->Resolve(audio_buffer);
     if (success_callback)
-      success_callback->call(this, audio_buffer);
+      success_callback->InvokeAndReportException(this, audio_buffer);
   } else {
     // Reject the promise and run the error callback
     DOMException* error =
         DOMException::Create(kEncodingError, "Unable to decode audio data");
     resolver->Reject(error);
     if (error_callback)
-      error_callback->call(this, error);
+      error_callback->InvokeAndReportException(this, error);
   }
 
   // We've resolved the promise.  Remove it now.
@@ -697,7 +684,8 @@ void BaseAudioContext::SetContextState(AudioContextState new_state) {
 
   // Notify context that state changed
   if (GetExecutionContext())
-    TaskRunnerHelper::Get(TaskType::kMediaElementEvent, GetExecutionContext())
+    GetExecutionContext()
+        ->GetTaskRunner(TaskType::kMediaElementEvent)
         ->PostTask(BLINK_FROM_HERE,
                    WTF::Bind(&BaseAudioContext::NotifyStateChange,
                              WrapPersistent(this)));
@@ -732,7 +720,8 @@ bool BaseAudioContext::AreAutoplayRequirementsFulfilled() const {
       return true;
     case AutoplayPolicy::Type::kUserGestureRequired:
     case AutoplayPolicy::Type::kUserGestureRequiredForCrossOrigin:
-      return UserGestureIndicator::ProcessingUserGesture();
+      return Frame::HasTransientUserActivation(
+          GetDocument() ? GetDocument()->GetFrame() : nullptr);
     case AutoplayPolicy::Type::kDocumentUserActivationRequired:
       return AutoplayPolicy::IsDocumentAllowedToPlay(*GetDocument());
   }
@@ -775,7 +764,7 @@ void BaseAudioContext::HandlePreRenderTasks(
   if (TryLock()) {
     GetDeferredTaskHandler().HandleDeferredTasks();
 
-    ResolvePromisesForResume();
+    ResolvePromisesForUnpause();
 
     // Check to see if source nodes can be stopped because the end time has
     // passed.
@@ -883,7 +872,7 @@ void BaseAudioContext::ScheduleMainThreadCleanup() {
   has_posted_cleanup_task_ = true;
 }
 
-void BaseAudioContext::ResolvePromisesForResume() {
+void BaseAudioContext::ResolvePromisesForUnpause() {
   // This runs inside the BaseAudioContext's lock when handling pre-render
   // tasks.
   DCHECK(IsAudioThread());
@@ -977,7 +966,7 @@ const AtomicString& BaseAudioContext::InterfaceName() const {
 }
 
 ExecutionContext* BaseAudioContext::GetExecutionContext() const {
-  return SuspendableObject::GetExecutionContext();
+  return PausableObject::GetExecutionContext();
 }
 
 void BaseAudioContext::StartRendering() {
@@ -994,34 +983,19 @@ void BaseAudioContext::StartRendering() {
   }
 }
 
-DEFINE_TRACE(BaseAudioContext) {
+void BaseAudioContext::Trace(blink::Visitor* visitor) {
   visitor->Trace(destination_node_);
   visitor->Trace(listener_);
   visitor->Trace(active_source_nodes_);
   visitor->Trace(resume_resolvers_);
-  visitor->Trace(success_callbacks_);
-  visitor->Trace(error_callbacks_);
   visitor->Trace(decode_audio_resolvers_);
   visitor->Trace(periodic_wave_sine_);
   visitor->Trace(periodic_wave_square_);
   visitor->Trace(periodic_wave_sawtooth_);
   visitor->Trace(periodic_wave_triangle_);
-  visitor->Trace(worklet_messaging_proxy_);
+  visitor->Trace(audio_worklet_);
   EventTargetWithInlineData::Trace(visitor);
-  SuspendableObject::Trace(visitor);
-}
-
-DEFINE_TRACE_WRAPPERS(BaseAudioContext) {
-  EventTargetWithInlineData::TraceWrappers(visitor);
-
-  // Inform V8's GC that we have references to these objects so they
-  // don't get collected until we're done with them.
-  for (auto callback : success_callbacks_) {
-    visitor->TraceWrappers(callback);
-  }
-  for (auto callback : error_callbacks_) {
-    visitor->TraceWrappers(callback);
-  }
+  PausableObject::Trace(visitor);
 }
 
 SecurityOrigin* BaseAudioContext::GetSecurityOrigin() const {
@@ -1031,22 +1005,19 @@ SecurityOrigin* BaseAudioContext::GetSecurityOrigin() const {
   return nullptr;
 }
 
-bool BaseAudioContext::HasWorkletMessagingProxy() const {
-  return has_worklet_messaging_proxy_;
+AudioWorklet* BaseAudioContext::audioWorklet() const {
+  return audio_worklet_.Get();
 }
 
-void BaseAudioContext::SetWorkletMessagingProxy(
-    AudioWorkletMessagingProxy* proxy) {
-  DCHECK(!worklet_messaging_proxy_);
-  worklet_messaging_proxy_ = proxy;
-  has_worklet_messaging_proxy_ = true;
-  // TODO(hongchan): If the context was already running, stop the destination
-  // and restart the context with the worklet thread.
-}
+void BaseAudioContext::NotifyWorkletIsReady() {
+  DCHECK(audioWorklet()->IsReady());
 
-AudioWorkletMessagingProxy* BaseAudioContext::WorkletMessagingProxy() {
-  DCHECK(worklet_messaging_proxy_);
-  return worklet_messaging_proxy_;
+  // If the context is running or suspended, restart the destination to switch
+  // the render thread with the worklet thread. Note that restarting can happen
+  // right after the context construction.
+  if (ContextState() != kClosed) {
+    destination()->GetAudioDestinationHandler().RestartRendering();
+  }
 }
 
 }  // namespace blink

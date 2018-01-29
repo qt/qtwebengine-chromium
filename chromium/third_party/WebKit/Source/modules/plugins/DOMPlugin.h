@@ -20,20 +20,18 @@
 #ifndef DOMPlugin_h
 #define DOMPlugin_h
 
+#include "base/memory/scoped_refptr.h"
 #include "core/dom/ContextLifecycleObserver.h"
 #include "modules/plugins/DOMMimeType.h"
 #include "platform/bindings/ScriptWrappable.h"
 #include "platform/heap/Handle.h"
 #include "platform/wtf/Forward.h"
-#include "platform/wtf/RefPtr.h"
 
 namespace blink {
 
 class ExceptionState;
 
-class DOMPlugin final : public GarbageCollected<DOMPlugin>,
-                        public ScriptWrappable,
-                        public ContextClient {
+class DOMPlugin final : public ScriptWrappable, public ContextClient {
   USING_GARBAGE_COLLECTED_MIXIN(DOMPlugin);
   DEFINE_WRAPPERTYPEINFO();
 
@@ -53,7 +51,7 @@ class DOMPlugin final : public GarbageCollected<DOMPlugin>,
   void NamedPropertyEnumerator(Vector<String>&, ExceptionState&) const;
   bool NamedPropertyQuery(const AtomicString&, ExceptionState&) const;
 
-  DECLARE_VIRTUAL_TRACE();
+  void Trace(blink::Visitor*) override;
 
  private:
   DOMPlugin(LocalFrame*, const PluginInfo&);

@@ -16,7 +16,7 @@
 #include "call/rtp_transport_controller_send_interface.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/logging.h"
-#include "rtc_base/safe_minmax.h"
+#include "rtc_base/numerics/safe_minmax.h"
 #include "voice_engine/channel.h"
 
 namespace webrtc {
@@ -296,7 +296,7 @@ void ChannelProxy::SetMinimumPlayoutDelay(int delay_ms) {
   delay_ms = rtc::SafeClamp(delay_ms, 0, 10000);
   int error = channel()->SetMinimumPlayoutDelay(delay_ms);
   if (0 != error) {
-    LOG(LS_WARNING) << "Error setting minimum playout delay.";
+    RTC_LOG(LS_WARNING) << "Error setting minimum playout delay.";
   }
 }
 

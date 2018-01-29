@@ -251,14 +251,6 @@ group("gn_all") {
     ]
   }
 
-  if (use_ash) {
-    deps += [
-      "//ash:ash_content_unittests",
-      "//ash:ash_shell_with_content",
-      "//ash:ash_unittests",
-    ]
-  }
-
   if (use_aura) {
     deps += [
       "//ui/aura:aura_unittests",
@@ -312,13 +304,14 @@ group("gn_all") {
       "//testing/android/junit:junit_unit_tests",
       "//third_party/android_async_task:android_async_task_java",
       "//third_party/catapult/devil",
-      "//third_party/errorprone:chromium_errorprone",
+      "//third_party/errorprone:errorprone_java",
       "//third_party/smhasher:murmurhash3",
       "//tools/android:android_tools",
       "//tools/android:memconsumer",
       "//tools/android:push_apps_to_background",
       "//tools/android/audio_focus_grabber:audio_focus_grabber_apk",
       "//tools/android/customtabs_benchmark:customtabs_benchmark_apk",
+      "//tools/android/errorprone_plugin:errorprone_plugin_java",
       "//tools/android/kerberos/SpnegoAuthenticator:spnego_authenticator_apk",
       "//tools/cygprofile:cygprofile_unittests",
       "//ui/android:ui_junit_tests",
@@ -379,6 +372,9 @@ group("gn_all") {
 
   if (is_chromeos) {
     deps += [
+      "//ash:ash_content_unittests",
+      "//ash:ash_shell_with_content",
+      "//ash:ash_unittests",
       "//chromeos:chromeos_unittests",
       "//chromeos/components:chromeos_components_unittests",
       "//components/session_manager/core",
@@ -397,8 +393,10 @@ group("gn_all") {
     ]
   }
 
-  if (is_win || is_mac) {
+  # Accessibility API debugging tools.
+  if (is_win) {
     deps += [ "//tools/accessibility/inspect:ax_dump_events" ]
+    deps += [ "//tools/accessibility/inspect:ax_dump_tree" ]
   }
 
   if (is_linux) {
@@ -449,6 +447,7 @@ group("gn_all") {
       "//device:device_unittests",
       "//gin:gin_shell",
       "//gin:gin_unittests",
+      "//gpu:command_buffer_perftests",
       "//gpu:gl_tests",
       "//gpu:gpu_perftests",
       "//ipc:ipc_perftests",
@@ -604,6 +603,7 @@ group("gn_all") {
 
   if (is_mac || is_win) {
     deps += [
+      "//third_party/crashpad/crashpad:crashpad_tests",
       "//third_party/crashpad/crashpad/handler:crashpad_handler",
       "//third_party/crashpad/crashpad/tools:crashpad_database_util",
     ]
@@ -688,10 +688,10 @@ group("gn_all") {
       if (!is_android) {
         deps += [ "//chrome/test:load_library_perf_tests" ]
       }
-      deps += [
-        "//native_client/src/trusted/platform_qualify:vcpuid",
-        "//third_party/libjpeg_turbo:simd_asm",
-      ]
+      if (enable_nacl) {
+        deps += [ "//native_client/src/trusted/platform_qualify:vcpuid" ]
+      }
+      deps += [ "//third_party/libjpeg_turbo:simd_asm" ]
     }
     if (is_linux && current_toolchain == host_toolchain) {
       deps += [ "//v8:v8_shell" ]
@@ -720,7 +720,11 @@ group("gn_all") {
   }
 
   if (enable_vr) {
-    deps += [ "//chrome/browser/vr:vr_common_unittests" ]
+    deps += [
+      "//chrome/browser/vr:vr_common_perftests",
+      "//chrome/browser/vr:vr_common_unittests",
+      "//chrome/browser/vr:vr_pixeltests",
+    ]
     if (is_linux && use_ozone) {
       deps += [ "//chrome/browser/vr/testapp:vr_testapp" ]
     }
@@ -935,10 +939,6 @@ if (!is_ios && !is_fuchsia) {
       ]
     }
 
-    if (is_win) {
-      data_deps += [ "//content/shell:content_shell_crash_service" ]
-    }
-
     if (!is_win && !is_android) {
       data_deps +=
           [ "//third_party/breakpad:minidump_stackwalk($host_toolchain)" ]
@@ -1038,6 +1038,7 @@ group("chromium_builder_perf") {
       "//chrome/test:load_library_perf_tests",
       "//chrome/test:telemetry_perf_tests",
       "//components/tracing:tracing_perftests",
+      "//gpu:command_buffer_perftests",
       "//gpu:gpu_perftests",
       "//media:media_perftests",
       "//tools/perf/chrome_telemetry_build:telemetry_chrome_test",
@@ -1062,13 +1063,13 @@ group("chromium_builder_perf") {
     }
 
     if (is_win) {
-      data_deps += [
-        "//chrome/installer/mini_installer:mini_installer",
-        "//chrome/test:angle_perftests",
-      ]
+      data_deps += [ "//chrome/installer/mini_installer:mini_installer" ]
     } else {
       data_deps +=
           [ "//third_party/breakpad:minidump_stackwalk($host_toolchain)" ]
+    }
+    if (is_win || is_android) {
+      data_deps += [ "//chrome/test:angle_perftests" ]
     }
   }
 }
@@ -1144,6 +1145,16 @@ template("assert_valid_out_dir") {
   assert(
       sources == invoker.actual_sources,
       "Do not use a platform name in your output directory (found \"$root_build_dir\"). http://crbug.com/548283")
+}
+
+if (!is_win || !is_clang) {
+  group("webui_closure_compile") {
+    data_deps = []
+    if (is_chromeos) {
+      data_deps +=
+          [ "//chrome/browser/resources/chromeos/login:closure_compile" ]
+    }
+  }
 }
 
 assert_valid_out_dir("_unused") {

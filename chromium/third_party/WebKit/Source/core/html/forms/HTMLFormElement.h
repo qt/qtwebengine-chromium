@@ -46,7 +46,7 @@ class CORE_EXPORT HTMLFormElement final : public HTMLElement {
  public:
   static HTMLFormElement* Create(Document&);
   ~HTMLFormElement() override;
-  DECLARE_VIRTUAL_TRACE();
+  void Trace(blink::Visitor*) override;
 
   HTMLFormControlsCollection* elements();
   void GetNamedElements(const AtomicString&, HeapVector<Member<Element>>&);

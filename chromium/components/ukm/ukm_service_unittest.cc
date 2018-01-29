@@ -17,8 +17,6 @@
 #include "base/threading/platform_thread.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "base/time/time.h"
-#include "components/metrics/proto/ukm/report.pb.h"
-#include "components/metrics/proto/ukm/source.pb.h"
 #include "components/metrics/test_metrics_provider.h"
 #include "components/metrics/test_metrics_service_client.h"
 #include "components/prefs/testing_pref_service.h"
@@ -29,6 +27,8 @@
 #include "services/metrics/public/cpp/ukm_builders.h"
 #include "services/metrics/public/cpp/ukm_entry_builder.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "third_party/metrics_proto/ukm/report.pb.h"
+#include "third_party/metrics_proto/ukm/source.pb.h"
 #include "third_party/zlib/google/compression_utils.h"
 
 namespace ukm {
@@ -36,11 +36,11 @@ namespace ukm {
 // A small shim exposing UkmRecorder methods to tests.
 class TestRecordingHelper {
  public:
-  TestRecordingHelper(UkmRecorder* recorder) : recorder_(recorder) {}
+  explicit TestRecordingHelper(UkmRecorder* recorder) : recorder_(recorder) {}
 
   void UpdateSourceURL(SourceId source_id, const GURL& url) {
     recorder_->UpdateSourceURL(source_id, url);
-  };
+  }
 
   std::unique_ptr<UkmEntryBuilder> GetEntryBuilder(SourceId source_id,
                                                    const char* event_name) {
@@ -49,6 +49,8 @@ class TestRecordingHelper {
 
  private:
   UkmRecorder* recorder_;
+
+  DISALLOW_COPY_AND_ASSIGN(TestRecordingHelper);
 };
 
 namespace {
@@ -668,8 +670,8 @@ TEST_F(UkmServiceTest, UnreferencedNonWhitelistedSources) {
       }
 
       ids.push_back(GetNonWhitelistedSourceId(i));
-      recorder.UpdateSourceURL(
-          ids.back(), GURL("https://google.com/foobar" + base::IntToString(i)));
+      recorder.UpdateSourceURL(ids.back(), GURL("https://google.com/foobar" +
+                                                base::NumberToString(i)));
       last_time = base::TimeTicks::Now();
     }
 
@@ -717,6 +719,118 @@ TEST_F(UkmServiceTest, UnreferencedNonWhitelistedSources) {
       EXPECT_EQ(ids[4], proto_report.sources(1).id());
       EXPECT_EQ("https://google.com/foobar4", proto_report.sources(1).url());
     }
+  }
+}
+
+TEST_F(UkmServiceTest, UnsupportedSchemes) {
+  struct {
+    const char* url;
+    bool expected_kept;
+  } test_cases[] = {
+      {"http://google.ca/", true},
+      {"https://google.ca/", true},
+      {"ftp://google.ca/", true},
+      {"about:blank", true},
+      {"chrome://version/", true},
+      {"file:///tmp/", false},
+      {"chrome-extension://bhcnanendmgjjeghamaccjnochlnhcgj", false},
+      {"abc://google.ca/", false},
+      {"www.google.ca/", false},
+  };
+
+  base::FieldTrialList field_trial_list(nullptr /* entropy_provider */);
+  ScopedUkmFeatureParams params(base::FeatureList::OVERRIDE_ENABLE_FEATURE, {});
+  UkmService service(&prefs_, &client_);
+  TestRecordingHelper recorder(&service);
+
+  EXPECT_EQ(GetPersistedLogCount(), 0);
+  service.Initialize();
+  task_runner_->RunUntilIdle();
+  service.EnableRecording();
+  service.EnableReporting();
+
+  int64_t id_counter = 1;
+  int expected_kept_count = 0;
+  for (const auto& test : test_cases) {
+    auto source_id = GetWhitelistedSourceId(id_counter++);
+    recorder.UpdateSourceURL(source_id, GURL(test.url));
+    recorder.GetEntryBuilder(source_id, "FakeEntry");
+    if (test.expected_kept)
+      ++expected_kept_count;
+  }
+
+  service.Flush();
+  EXPECT_EQ(GetPersistedLogCount(), 1);
+  Report proto_report = GetPersistedReport();
+
+  EXPECT_EQ(expected_kept_count, proto_report.sources_size());
+  for (const auto& test : test_cases) {
+    bool found = false;
+    for (int i = 0; i < proto_report.sources_size(); ++i) {
+      if (proto_report.sources(i).url() == test.url) {
+        found = true;
+        break;
+      }
+    }
+    EXPECT_EQ(test.expected_kept, found) << test.url;
+  }
+}
+
+TEST_F(UkmServiceTest, SanitizeUrlAuthParams) {
+  UkmService service(&prefs_, &client_);
+  TestRecordingHelper recorder(&service);
+  EXPECT_EQ(0, GetPersistedLogCount());
+  service.Initialize();
+  task_runner_->RunUntilIdle();
+  service.EnableRecording();
+  service.EnableReporting();
+
+  auto id = GetWhitelistedSourceId(0);
+  recorder.UpdateSourceURL(id, GURL("https://username:password@example.com/"));
+
+  service.Flush();
+  EXPECT_EQ(1, GetPersistedLogCount());
+
+  auto proto_report = GetPersistedReport();
+  ASSERT_EQ(1, proto_report.sources_size());
+  const Source& proto_source = proto_report.sources(0);
+  EXPECT_EQ("https://example.com/", proto_source.url());
+}
+
+TEST_F(UkmServiceTest, SanitizeChromeUrlParams) {
+  struct {
+    const char* url;
+    const char* expected_url;
+  } test_cases[] = {
+      {"chrome://version/?foo=bar", "chrome://version/"},
+      {"about:blank?foo=bar", "about:blank"},
+      {"chrome://histograms/Variations", "chrome://histograms/Variations"},
+      {"http://google.ca/?foo=bar", "http://google.ca/?foo=bar"},
+      {"https://google.ca/?foo=bar", "https://google.ca/?foo=bar"},
+      {"ftp://google.ca/?foo=bar", "ftp://google.ca/?foo=bar"},
+  };
+
+  for (const auto& test : test_cases) {
+    ClearPrefs();
+
+    UkmService service(&prefs_, &client_);
+    TestRecordingHelper recorder(&service);
+    EXPECT_EQ(0, GetPersistedLogCount());
+    service.Initialize();
+    task_runner_->RunUntilIdle();
+    service.EnableRecording();
+    service.EnableReporting();
+
+    auto id = GetWhitelistedSourceId(0);
+    recorder.UpdateSourceURL(id, GURL(test.url));
+
+    service.Flush();
+    EXPECT_EQ(1, GetPersistedLogCount());
+
+    auto proto_report = GetPersistedReport();
+    ASSERT_EQ(1, proto_report.sources_size());
+    const Source& proto_source = proto_report.sources(0);
+    EXPECT_EQ(test.expected_url, proto_source.url());
   }
 }
 

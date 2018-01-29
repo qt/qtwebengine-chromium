@@ -109,7 +109,7 @@ TextFieldInputType::TextFieldInputType(HTMLInputElement& element)
 
 TextFieldInputType::~TextFieldInputType() {}
 
-DEFINE_TRACE(TextFieldInputType) {
+void TextFieldInputType::Trace(blink::Visitor* visitor) {
   InputTypeView::Trace(visitor);
   InputType::Trace(visitor);
 }
@@ -285,8 +285,7 @@ void TextFieldInputType::CreateShadowSubtree() {
   bool creates_container = should_have_spin_button ||
                            should_have_data_list_indicator || NeedsContainer();
 
-  TextControlInnerEditorElement* inner_editor =
-      TextControlInnerEditorElement::Create(document);
+  HTMLElement* inner_editor = GetElement().CreateInnerEditorElement();
   if (!creates_container) {
     shadow_root->AppendChild(inner_editor);
     return;
@@ -460,7 +459,7 @@ void TextFieldInputType::UpdatePlaceholderText() {
   if (!SupportsPlaceholder())
     return;
   HTMLElement* placeholder = GetElement().PlaceholderElement();
-  String placeholder_text = GetElement().StrippedPlaceholder();
+  String placeholder_text = GetElement().GetPlaceholderValue();
   if (placeholder_text.IsEmpty()) {
     if (placeholder)
       placeholder->remove(ASSERT_NO_EXCEPTION);
@@ -525,10 +524,8 @@ void TextFieldInputType::SpinButtonStepUp() {
 }
 
 void TextFieldInputType::UpdateView() {
-  if (!GetElement().SuggestedValue().IsNull()) {
-    GetElement().SetInnerEditorValue(GetElement().SuggestedValue());
-    GetElement().UpdatePlaceholderVisibility();
-  } else if (GetElement().NeedsToUpdateViewValue()) {
+  if (GetElement().SuggestedValue().IsEmpty() &&
+      GetElement().NeedsToUpdateViewValue()) {
     // Update the view only if needsToUpdateViewValue is true. It protects
     // an unacceptable view value from being overwritten with the DOM value.
     //

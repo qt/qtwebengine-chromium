@@ -36,14 +36,17 @@
 namespace blink {
 
 class Event;
+class HTMLVideoElement;
 class MediaControlsMediaEventListener;
 class MediaControlsOrientationLockDelegate;
 class MediaControlsRotateToFullscreenDelegate;
 class MediaControlsWindowEventListener;
+class MediaControlButtonPanelElement;
 class MediaControlCastButtonElement;
 class MediaControlCurrentTimeDisplayElement;
 class MediaControlDownloadButtonElement;
 class MediaControlFullscreenButtonElement;
+class MediaControlLoadingPanelElement;
 class MediaControlMuteButtonElement;
 class MediaControlOverflowMenuButtonElement;
 class MediaControlOverflowMenuListElement;
@@ -70,6 +73,9 @@ class MODULES_EXPORT MediaControlsImpl final : public HTMLDivElement,
  public:
   static MediaControlsImpl* Create(HTMLMediaElement&, ShadowRoot&);
   ~MediaControlsImpl() = default;
+
+  // Returns whether the ModernMediaControlsEnabled runtime flag is on.
+  static bool IsModern();
 
   // Node override.
   Node::InsertionNotificationRequest InsertedInto(ContainerNode*) override;
@@ -125,7 +131,31 @@ class MODULES_EXPORT MediaControlsImpl final : public HTMLDivElement,
 
   void MaybeRecordOverflowTimeToAction();
 
-  DECLARE_VIRTUAL_TRACE();
+  virtual void Trace(blink::Visitor*);
+
+  // Track the state of the controls.
+  enum ControlsState {
+    // There is no video source.
+    kNoSource,
+
+    // Metadata has not been loaded.
+    kNotLoaded,
+
+    // Metadata is being loaded.
+    kLoadingMetadata,
+
+    // Metadata is loaded and the media is ready to play. This can be when the
+    // media is paused, when it has ended or before the media has started
+    // playing.
+    kStopped,
+
+    // The media is playing.
+    kPlaying,
+
+    // Playback has stopped to buffer.
+    kBuffering,
+  };
+  ControlsState State() const;
 
  private:
   // MediaControlsMediaEventListener is a component that is listening to events
@@ -159,29 +189,9 @@ class MODULES_EXPORT MediaControlsImpl final : public HTMLDivElement,
   // Update the CSS class when we think the state has updated.
   void UpdateCSSClassFromState();
 
-  // Track the state of the controls.
-  enum ControlsState {
-    // There is no video source.
-    kNoSource,
-
-    // Metadata has not been loaded.
-    kNotLoaded,
-
-    // Metadata is being loaded.
-    kLoadingMetadata,
-
-    // Metadata is loaded and the media is ready to play. This can be when the
-    // media is paused, when it has ended or before the media has started
-    // playing.
-    kStopped,
-
-    // The media is playing.
-    kPlaying,
-
-    // Playback has stopped to buffer.
-    kBuffering,
-  };
-  ControlsState State() const;
+  // Get the HTMLVideoElement that the controls are attached to. The caller must
+  // check that the element is a video element first.
+  HTMLVideoElement& VideoElement();
 
   explicit MediaControlsImpl(HTMLMediaElement&);
 
@@ -219,6 +229,9 @@ class MODULES_EXPORT MediaControlsImpl final : public HTMLDivElement,
   // current.
   void ComputeWhichControlsFit();
 
+  void UpdateOverflowMenuWanted() const;
+  void MaybeRecordElementsDisplayed() const;
+
   // Takes a popup menu (caption, overflow) and position on the screen. This is
   // used because these menus use a fixed position in order to appear over all
   // content.
@@ -253,6 +266,7 @@ class MODULES_EXPORT MediaControlsImpl final : public HTMLDivElement,
   void OnMediaKeyboardEvent(Event* event) { DefaultEventHandler(event); }
   void OnWaiting();
   void OnLoadingProgress();
+  void OnLoadedData();
 
   // Media control elements.
   Member<MediaControlOverlayEnclosureElement> overlay_enclosure_;
@@ -271,7 +285,8 @@ class MODULES_EXPORT MediaControlsImpl final : public HTMLDivElement,
   Member<MediaControlTextTrackListElement> text_track_list_;
   Member<MediaControlOverflowMenuButtonElement> overflow_menu_;
   Member<MediaControlOverflowMenuListElement> overflow_list_;
-  Member<HTMLDivElement> media_button_panel_;
+  Member<MediaControlButtonPanelElement> media_button_panel_;
+  Member<MediaControlLoadingPanelElement> loading_panel_;
 
   Member<MediaControlCastButtonElement> cast_button_;
   Member<MediaControlFullscreenButtonElement> fullscreen_button_;

@@ -39,9 +39,10 @@ MessageChannel::MessageChannel(ExecutionContext* context)
   port2_->Entangle(std::move(pipe.handle1));
 }
 
-DEFINE_TRACE(MessageChannel) {
+void MessageChannel::Trace(blink::Visitor* visitor) {
   visitor->Trace(port1_);
   visitor->Trace(port2_);
+  ScriptWrappable::Trace(visitor);
 }
 
 }  // namespace blink

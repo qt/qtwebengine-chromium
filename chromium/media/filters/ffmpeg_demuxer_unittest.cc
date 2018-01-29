@@ -21,6 +21,7 @@
 #include "base/test/scoped_task_environment.h"
 #include "base/threading/thread.h"
 #include "base/threading/thread_task_runner_handle.h"
+#include "build/build_config.h"
 #include "media/base/decrypt_config.h"
 #include "media/base/media_log.h"
 #include "media/base/media_tracks.h"
@@ -139,7 +140,7 @@ static void EosOnReadDone(bool* got_eos_buffer,
 // FFmpeg, pipeline and filter host mocks.
 class FFmpegDemuxerTest : public testing::Test {
  protected:
-  FFmpegDemuxerTest() {}
+  FFmpegDemuxerTest() = default;
 
   virtual ~FFmpegDemuxerTest() { Shutdown(); }
 
@@ -432,6 +433,8 @@ TEST_F(FFmpegDemuxerTest, Initialize_Successful) {
   EXPECT_EQ(2u, demuxer_->GetAllStreams().size());
 }
 
+// Android has no Theora support, so this test doesn't work.
+#if !defined(OS_ANDROID)
 TEST_F(FFmpegDemuxerTest, Initialize_Multitrack) {
   // Open a file containing the following streams:
   //   Stream #0: Video (VP8)
@@ -470,6 +473,7 @@ TEST_F(FFmpegDemuxerTest, Initialize_Multitrack) {
   EXPECT_EQ(DemuxerStream::AUDIO, stream->type());
   EXPECT_EQ(kCodecPCM, stream->audio_decoder_config().codec());
 }
+#endif
 
 TEST_F(FFmpegDemuxerTest, Initialize_MultitrackText) {
   // Open a file containing the following streams:
@@ -771,6 +775,9 @@ TEST_F(FFmpegDemuxerTest,
 // Same test above, but using sync2.ogv which has video stream muxed before the
 // audio stream, so seeking based only on start time will fail since ffmpeg is
 // essentially just seeking based on file position.
+//
+// Android has no Theora support, so this test doesn't work.
+#if !defined(OS_ANDROID)
 TEST_F(FFmpegDemuxerTest, Read_AudioNegativeStartTimeAndOggDiscard_Sync) {
   // Many ogg files have negative starting timestamps, so ensure demuxing and
   // seeking work correctly with a negative start time.
@@ -811,6 +818,7 @@ TEST_F(FFmpegDemuxerTest, Read_AudioNegativeStartTimeAndOggDiscard_Sync) {
     event.RunAndWaitForStatus(PIPELINE_OK);
   }
 }
+#endif
 
 // Similar to the test above, but using an opus clip with a large amount of
 // pre-skip, which ffmpeg encodes as negative timestamps.
@@ -920,7 +928,8 @@ TEST_F(FFmpegDemuxerTest, Read_DiscardDisabledVideoStream) {
   EXPECT_LT(bytes_read_with_video_disabled, bytes_read_with_video_enabled);
 }
 
-TEST_F(FFmpegDemuxerTest, Read_DiscardDisabledTextStream) {
+// WebM text track discarding doesn't work in ffmpeg. http://crbug.com/681886.
+TEST_F(FFmpegDemuxerTest, DISABLED_Read_DiscardDisabledTextStream) {
   // This test case reads the same video frame twice, first with the text track
   // enabled, then with the text track disabled. When the text track is
   // disabled, FFmpegDemuxer sets the AVDISCARD_ALL flag on the corresponding
@@ -1123,11 +1132,11 @@ TEST_F(FFmpegDemuxerTest, SeekText) {
   base::RunLoop().Run();
 
   // Text read #1.
-  text_stream->Read(NewReadCB(FROM_HERE, 19, 500000, true));
+  text_stream->Read(NewReadCB(FROM_HERE, 19, 1000000, true));
   base::RunLoop().Run();
 
   // Text read #2.
-  text_stream->Read(NewReadCB(FROM_HERE, 19, 1000000, true));
+  text_stream->Read(NewReadCB(FROM_HERE, 19, 1500000, true));
   base::RunLoop().Run();
 }
 
@@ -1228,13 +1237,15 @@ TEST_F(FFmpegDemuxerTest, Mp3WithVideoStreamID3TagData) {
 #endif
 
 // Ensure a video with an unsupported audio track still results in the video
-// stream being demuxed.
+// stream being demuxed. Because we disable the speex parser for ogg, the audio
+// track won't even show up to the demuxer.
+//
+// Android has no Theora support, so this test doesn't work.
+#if !defined(OS_ANDROID)
 TEST_F(FFmpegDemuxerTest, UnsupportedAudioSupportedVideoDemux) {
   CreateDemuxerWithStrictMediaLog("speex_audio_vorbis_video.ogv");
 
   EXPECT_MEDIA_LOG(SimpleCreatedFFmpegDemuxerStream("video"));
-  EXPECT_MEDIA_LOG(FailedToCreateValidDecoderConfigFromStream("audio"));
-  EXPECT_MEDIA_LOG(SkippingUnsupportedStream("audio"));
 
   // TODO(wolenetz): Use a matcher that verifies more of the event parameters
   // than FoundStream. See https://crbug.com/749178.
@@ -1245,6 +1256,7 @@ TEST_F(FFmpegDemuxerTest, UnsupportedAudioSupportedVideoDemux) {
   EXPECT_TRUE(GetStream(DemuxerStream::VIDEO));
   EXPECT_FALSE(GetStream(DemuxerStream::AUDIO));
 }
+#endif
 
 // Ensure a video with an unsupported video track still results in the audio
 // stream being demuxed.

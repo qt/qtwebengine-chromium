@@ -39,6 +39,8 @@
 #include "net/log/net_log_event_type.h"
 #include "net/log/net_log_source.h"
 #include "net/log/net_log_source_type.h"
+#include "net/quic/chromium/bidirectional_stream_quic_impl.h"
+#include "net/quic/chromium/quic_http_stream.h"
 #include "net/socket/client_socket_handle.h"
 #include "net/socket/client_socket_pool.h"
 #include "net/socket/client_socket_pool_manager.h"
@@ -47,6 +49,7 @@
 #include "net/socket/ssl_client_socket_pool.h"
 #include "net/socket/stream_socket.h"
 #include "net/spdy/chromium/bidirectional_stream_spdy_impl.h"
+#include "net/spdy/chromium/http2_push_promise_index.h"
 #include "net/spdy/chromium/spdy_http_stream.h"
 #include "net/spdy/chromium/spdy_session.h"
 #include "net/spdy/chromium/spdy_session_pool.h"
@@ -904,10 +907,10 @@ int HttpStreamFactoryImpl::Job::DoInitConnectionImpl() {
       destination = destination_;
       ssl_config = &server_ssl_config_;
     }
-    int rv = quic_request_.Request(
-        destination, quic_version_, request_info_.privacy_mode,
-        ssl_config->GetCertVerifyFlags(), url, request_info_.method, net_log_,
-        &net_error_details_, io_callback_);
+    int rv = quic_request_.Request(destination, quic_version_,
+                                   request_info_.privacy_mode, priority_,
+                                   ssl_config->GetCertVerifyFlags(), url,
+                                   net_log_, &net_error_details_, io_callback_);
     if (rv == OK) {
       using_existing_quic_session_ = true;
     } else {
@@ -925,21 +928,21 @@ int HttpStreamFactoryImpl::Job::DoInitConnectionImpl() {
   // connection this request can pool to.  If so, then go straight to using
   // that.
   if (CanUseExistingSpdySession()) {
-    base::WeakPtr<SpdySession> spdy_session =
+    existing_spdy_session_ =
         session_->spdy_session_pool()->push_promise_index()->Find(
             spdy_session_key_, origin_url_);
-    if (!spdy_session) {
-      spdy_session = session_->spdy_session_pool()->FindAvailableSession(
-          spdy_session_key_, enable_ip_based_pooling_, net_log_);
+    if (!existing_spdy_session_) {
+      existing_spdy_session_ =
+          session_->spdy_session_pool()->FindAvailableSession(
+              spdy_session_key_, enable_ip_based_pooling_, net_log_);
     }
-    if (spdy_session) {
+    if (existing_spdy_session_) {
       // If we're preconnecting, but we already have a SpdySession, we don't
       // actually need to preconnect any sockets, so we're done.
       if (job_type_ == PRECONNECT)
         return OK;
       using_spdy_ = true;
       next_state_ = STATE_CREATE_STREAM;
-      existing_spdy_session_ = spdy_session;
       return OK;
     }
   }
@@ -988,8 +991,9 @@ int HttpStreamFactoryImpl::Job::DoInitConnectionImpl() {
   return InitSocketHandleForHttpRequest(
       GetSocketGroup(), destination_, request_info_.extra_headers,
       request_info_.load_flags, priority_, session_, proxy_info_, expect_spdy_,
-      server_ssl_config_, proxy_ssl_config_, request_info_.privacy_mode,
-      net_log_, connection_.get(), resolution_callback, io_callback_);
+      quic_version_, server_ssl_config_, proxy_ssl_config_,
+      request_info_.privacy_mode, net_log_, connection_.get(),
+      resolution_callback, io_callback_);
 }
 
 int HttpStreamFactoryImpl::Job::DoInitConnectionComplete(int result) {
@@ -1086,18 +1090,22 @@ int HttpStreamFactoryImpl::Job::DoInitConnectionComplete(int result) {
       return result;
 
     if (stream_type_ == HttpStreamRequest::BIDIRECTIONAL_STREAM) {
-      bidirectional_stream_impl_ =
-          quic_request_.CreateBidirectionalStreamImpl();
-      if (!bidirectional_stream_impl_) {
+      std::unique_ptr<QuicChromiumClientSession::Handle> session =
+          quic_request_.ReleaseSessionHandle();
+      if (!session) {
         // Quic session is closed before stream can be created.
         return ERR_CONNECTION_CLOSED;
       }
+      bidirectional_stream_impl_.reset(
+          new BidirectionalStreamQuicImpl(std::move(session)));
     } else {
-      stream_ = quic_request_.CreateStream();
-      if (!stream_) {
+      std::unique_ptr<QuicChromiumClientSession::Handle> session =
+          quic_request_.ReleaseSessionHandle();
+      if (!session) {
         // Quic session is closed before stream can be created.
         return ERR_CONNECTION_CLOSED;
       }
+      stream_.reset(new QuicHttpStream(std::move(session)));
     }
     next_state_ = STATE_NONE;
     return OK;
@@ -1200,15 +1208,15 @@ int HttpStreamFactoryImpl::Job::DoCreateStream() {
     existing_spdy_session_ =
         session_->spdy_session_pool()->push_promise_index()->Find(
             spdy_session_key_, origin_url_);
+    // It is also possible that an HTTP/2 connection has been established since
+    // last time Job checked above.
+    if (!existing_spdy_session_) {
+      existing_spdy_session_ =
+          session_->spdy_session_pool()->FindAvailableSession(
+              spdy_session_key_, enable_ip_based_pooling_, net_log_);
+    }
   }
-  // It is also possible that an HTTP/2 connection has been established since
-  // last time Job checked above.
-  if (!existing_spdy_session_) {
-    existing_spdy_session_ =
-        session_->spdy_session_pool()->FindAvailableSession(
-            spdy_session_key_, enable_ip_based_pooling_, net_log_);
-  }
-  if (existing_spdy_session_.get()) {
+  if (existing_spdy_session_) {
     // We picked up an existing session, so we don't need our socket.
     if (connection_->socket())
       connection_->socket()->Disconnect();
@@ -1448,9 +1456,9 @@ void HttpStreamFactoryImpl::Job::
   delegate_->AddConnectionAttemptsToRequest(this, socket_attempts);
 }
 
-HttpStreamFactoryImpl::JobFactory::JobFactory() {}
+HttpStreamFactoryImpl::JobFactory::JobFactory() = default;
 
-HttpStreamFactoryImpl::JobFactory::~JobFactory() {}
+HttpStreamFactoryImpl::JobFactory::~JobFactory() = default;
 
 std::unique_ptr<HttpStreamFactoryImpl::Job>
 HttpStreamFactoryImpl::JobFactory::CreateMainJob(

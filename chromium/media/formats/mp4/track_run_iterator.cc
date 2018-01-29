@@ -10,6 +10,9 @@
 #include <memory>
 
 #include "base/macros.h"
+#include "base/numerics/checked_math.h"
+#include "base/numerics/safe_conversions.h"
+#include "media/base/demuxer_memory_limit.h"
 #include "media/base/timestamp_constants.h"
 #include "media/formats/mp4/rcheck.h"
 #include "media/formats/mp4/sample_to_group_iterator.h"
@@ -65,7 +68,7 @@ TrackRunInfo::TrackRunInfo()
       aux_info_default_size(-1),
       aux_info_total_size(-1) {
 }
-TrackRunInfo::~TrackRunInfo() {}
+TrackRunInfo::~TrackRunInfo() = default;
 
 base::TimeDelta TimeDeltaFromRational(int64_t numer, int64_t denom) {
   // TODO(sandersd): Change all callers to pass a |denom| as a uint32_t. This is
@@ -115,7 +118,7 @@ TrackRunIterator::TrackRunIterator(const Movie* moov, MediaLog* media_log)
   CHECK(moov);
 }
 
-TrackRunIterator::~TrackRunIterator() {}
+TrackRunIterator::~TrackRunIterator() = default;
 
 static std::string HexFlags(uint32_t flags) {
   std::stringstream stream;
@@ -149,12 +152,13 @@ static bool PopulateSampleInfo(const TrackExtends& trex,
     sample_info->duration = trex.default_sample_duration;
   }
 
-  if (i < trun.sample_composition_time_offsets.size()) {
-    sample_info->cts_offset = trun.sample_composition_time_offsets[i];
-  } else {
-    sample_info->cts_offset = 0;
+  auto cts_offset = -base::CheckedNumeric<int64_t>(edit_list_offset);
+  if (i < trun.sample_composition_time_offsets.size())
+    cts_offset += trun.sample_composition_time_offsets[i];
+  if (!cts_offset.AssignIfValid(&sample_info->cts_offset)) {
+    MEDIA_LOG(ERROR, media_log) << "PTS offset exceeds representable range.";
+    return false;
   }
-  sample_info->cts_offset += edit_list_offset;
 
   uint32_t flags;
   if (i < trun.sample_flags.size()) {
@@ -316,7 +320,7 @@ bool TrackRunIterator::Init(const MovieFragment& moof) {
       if (edits[0].media_time < 0) {
         DVLOG(1) << "Empty edit list entry ignored.";
       } else {
-        edit_list_offset = -edits[0].media_time;
+        edit_list_offset = edits[0].media_time;
       }
     }
 
@@ -390,6 +394,12 @@ bool TrackRunIterator::Init(const MovieFragment& moof) {
         tri.aux_info_total_size = 0;
       }
 
+      // Avoid allocating insane sample counts for invalid media.
+      const size_t max_sample_count =
+          kDemuxerMemoryLimit / sizeof(decltype(tri.samples)::value_type);
+      RCHECK_MEDIA_LOGGED(
+          base::strict_cast<size_t>(trun.sample_count) <= max_sample_count,
+          media_log_, "Metadata overhead exceeds storage limit.");
       tri.samples.resize(trun.sample_count);
       for (size_t k = 0; k < trun.sample_count; k++) {
         if (!PopulateSampleInfo(*trex, traf.header, trun, edit_list_offset, k,
@@ -474,27 +484,48 @@ bool TrackRunIterator::Init(const MovieFragment& moof) {
 
   std::sort(runs_.begin(), runs_.end(), CompareMinTrackRunDataOffset());
   run_itr_ = runs_.begin();
-  ResetRun();
+  return ResetRun();
+}
+
+bool TrackRunIterator::UpdateCts() {
+  // TODO(sandersd): Should |sample_cts_| be cleared in this case?
+  if (!IsSampleValid())
+    return true;
+  auto cts = base::CheckAdd(sample_dts_, sample_itr_->cts_offset);
+  if (!cts.AssignIfValid(&sample_cts_)) {
+    MEDIA_LOG(ERROR, media_log_) << "Sample PTS exceeds representable range.";
+    return false;
+  }
   return true;
 }
 
-void TrackRunIterator::AdvanceRun() {
+bool TrackRunIterator::AdvanceRun() {
   ++run_itr_;
-  ResetRun();
+  return ResetRun();
 }
 
-void TrackRunIterator::ResetRun() {
-  if (!IsRunValid()) return;
+bool TrackRunIterator::ResetRun() {
+  // TODO(sandersd): Should we clear all the values if the run is not valid?
+  if (!IsRunValid())
+    return true;
   sample_dts_ = run_itr_->start_dts;
   sample_offset_ = run_itr_->sample_start_offset;
   sample_itr_ = run_itr_->samples.begin();
+  // UpdateCts() must run after |sample_itr_| is updated to the current run.
+  return UpdateCts();
 }
 
-void TrackRunIterator::AdvanceSample() {
+bool TrackRunIterator::AdvanceSample() {
   DCHECK(IsSampleValid());
-  sample_dts_ += sample_itr_->duration;
+  auto dts = base::CheckAdd(sample_dts_, sample_itr_->duration);
+  if (!dts.AssignIfValid(&sample_dts_)) {
+    MEDIA_LOG(ERROR, media_log_) << "Sample DTS exceeds representable range.";
+    return false;
+  }
   sample_offset_ += sample_itr_->size;
   ++sample_itr_;
+  // UpdateCts() must run after |sample_itr_| is updated to the current sample.
+  return UpdateCts();
 }
 
 // This implementation only indicates a need for caching if CENC auxiliary
@@ -626,8 +657,7 @@ DecodeTimestamp TrackRunIterator::dts() const {
 
 base::TimeDelta TrackRunIterator::cts() const {
   DCHECK(IsSampleValid());
-  return TimeDeltaFromRational(sample_dts_ + sample_itr_->cts_offset,
-                               run_itr_->timescale);
+  return TimeDeltaFromRational(sample_cts_, run_itr_->timescale);
 }
 
 base::TimeDelta TrackRunIterator::duration() const {

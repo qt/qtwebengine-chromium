@@ -14,6 +14,7 @@
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/test/mock_entropy_provider.h"
+#include "base/test/scoped_task_environment.h"
 #include "base/third_party/dynamic_annotations/dynamic_annotations.h"
 #include "base/threading/platform_thread.h"
 #include "base/threading/thread_restrictions.h"
@@ -42,6 +43,7 @@
 #include "net/disk_cache/simple/simple_test_util.h"
 #include "net/disk_cache/simple/simple_util.h"
 #include "net/test/gtest_util.h"
+#include "net/test/net_test_suite.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -3256,8 +3258,9 @@ TEST_F(DiskCacheBackendTest, MemoryOnlyBackendEviction) {
   BackendEviction();
 }
 
-// TODO(gavinp): Enable BackendEviction test for simple cache after performance
-// problems are addressed. See crbug.com/588184 for more information.
+// TODO(morlovich): Enable BackendEviction test for simple cache after
+// performance problems are addressed. See crbug.com/588184 for more
+// information.
 
 // This overly specific looking test is a regression test aimed at
 // crbug.com/589186.
@@ -3905,7 +3908,7 @@ TEST_F(DiskCacheBackendTest, SimpleCacheOverBlockfileCache) {
 
   // Check that the |SimpleBackendImpl| does not favor this structure.
   disk_cache::SimpleBackendImpl* simple_cache =
-      new disk_cache::SimpleBackendImpl(cache_path_, nullptr, 0,
+      new disk_cache::SimpleBackendImpl(cache_path_, nullptr, nullptr, 0,
                                         net::DISK_CACHE, nullptr, nullptr);
   net::TestCompletionCallback cb;
   int rv = simple_cache->Init(cb.callback());
@@ -4013,15 +4016,11 @@ TEST_F(DiskCacheBackendTest, SimpleCacheEnumerationWhileDoomed) {
   EXPECT_TRUE(keys_to_match.empty());
 }
 
-// This test is flaky on Android Marshmallow crbug.com/638891.
-#if !defined(OS_ANDROID)
 // Tests that enumerations are not affected by corrupt files.
 TEST_F(DiskCacheBackendTest, SimpleCacheEnumerationCorruption) {
   SetSimpleCacheMode();
   InitCache();
-  // Create a corrupt entry. The write/read sequence ensures that the entry will
-  // have been created before corrupting the platform files, in the case of
-  // optimistic operations.
+  // Create a corrupt entry.
   const std::string key = "the key";
   disk_cache::Entry* corrupted_entry;
 
@@ -4034,6 +4033,8 @@ TEST_F(DiskCacheBackendTest, SimpleCacheEnumerationCorruption) {
             WriteData(corrupted_entry, 0, 0, buffer.get(), kSize, false));
   ASSERT_EQ(kSize, ReadData(corrupted_entry, 0, 0, buffer.get(), kSize));
   corrupted_entry->Close();
+  // Let all I/O finish so it doesn't race with corrupting the file below.
+  NetTestSuite::GetScopedTaskEnvironment()->RunUntilIdle();
 
   std::set<std::string> key_pool;
   ASSERT_TRUE(CreateSetOfRandomEntries(&key_pool));
@@ -4052,7 +4053,6 @@ TEST_F(DiskCacheBackendTest, SimpleCacheEnumerationCorruption) {
   EXPECT_EQ(key_pool.size(), count);
   EXPECT_TRUE(keys_to_match.empty());
 }
-#endif
 
 // Tests that enumerations don't leak memory when the backend is destructed
 // mid-enumeration.

@@ -20,14 +20,15 @@
 #include "chrome/browser/chromeos/language_preferences.h"
 #include "chrome/browser/chromeos/login/lock_screen_utils.h"
 #include "chrome/browser/chromeos/login/screens/network_error.h"
+#include "chrome/browser/chromeos/login/signin_partition_manager.h"
 #include "chrome/browser/chromeos/login/ui/user_adding_screen.h"
 #include "chrome/browser/chromeos/login/users/chrome_user_manager.h"
 #include "chrome/browser/chromeos/net/network_portal_detector_impl.h"
 #include "chrome/browser/chromeos/policy/browser_policy_connector_chromeos.h"
-#include "chrome/browser/chromeos/policy/proto/chrome_device_policy.pb.h"
 #include "chrome/browser/chromeos/profiles/profile_helper.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
 #include "chrome/browser/io_thread.h"
+#include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/webui/chromeos/login/active_directory_password_change_screen_handler.h"
 #include "chrome/browser/ui/webui/chromeos/login/enrollment_screen_handler.h"
 #include "chrome/browser/ui/webui/chromeos/login/signin_screen_handler.h"
@@ -44,6 +45,7 @@
 #include "chromeos/system/devicetype.h"
 #include "chromeos/system/version_loader.h"
 #include "components/login/localized_values_builder.h"
+#include "components/policy/proto/chrome_device_policy.pb.h"
 #include "components/prefs/pref_service.h"
 #include "components/strings/grit/components_strings.h"
 #include "components/user_manager/known_user.h"
@@ -296,22 +298,37 @@ void GaiaScreenHandler::DisableRestrictiveProxyCheckForTest() {
 }
 
 void GaiaScreenHandler::LoadGaia(const GaiaContext& context) {
+  // Start a new session with SigninPartitionManager, generating a unique
+  // StoragePartition.
+  login::SigninPartitionManager* signin_partition_manager =
+      login::SigninPartitionManager::Factory::GetForBrowserContext(
+          Profile::FromWebUI(web_ui()));
+  signin_partition_manager->StartSigninSession(
+      web_ui()->GetWebContents(),
+      base::BindOnce(&GaiaScreenHandler::LoadGaiaWithPartition,
+                     weak_factory_.GetWeakPtr(), context));
+}
+
+void GaiaScreenHandler::LoadGaiaWithPartition(
+    const GaiaContext& context,
+    const std::string& partition_name) {
   std::unique_ptr<std::string> version = std::make_unique<std::string>();
   std::unique_ptr<bool> consent = std::make_unique<bool>();
   base::OnceClosure get_version_and_consent =
       base::BindOnce(&GetVersionAndConsent, base::Unretained(version.get()),
                      base::Unretained(consent.get()));
   base::OnceClosure load_gaia = base::BindOnce(
-      &GaiaScreenHandler::LoadGaiaWithVersionAndConsent,
-      weak_factory_.GetWeakPtr(), context, base::Owned(version.release()),
-      base::Owned(consent.release()));
+      &GaiaScreenHandler::LoadGaiaWithPartitionAndVersionAndConsent,
+      weak_factory_.GetWeakPtr(), context, partition_name,
+      base::Owned(version.release()), base::Owned(consent.release()));
   base::PostTaskWithTraitsAndReply(
       FROM_HERE, {base::MayBlock(), base::TaskPriority::USER_VISIBLE},
       std::move(get_version_and_consent), std::move(load_gaia));
 }
 
-void GaiaScreenHandler::LoadGaiaWithVersionAndConsent(
+void GaiaScreenHandler::LoadGaiaWithPartitionAndVersionAndConsent(
     const GaiaContext& context,
+    const std::string& partition_name,
     const std::string* platform_version,
     const bool* collect_stats_consent) {
   base::DictionaryValue params;
@@ -389,6 +406,8 @@ void GaiaScreenHandler::LoadGaiaWithVersionAndConsent(
   // sending device statistics.
   if (*collect_stats_consent)
     params.SetString("lsbReleaseBoard", base::SysInfo::GetLsbReleaseBoard());
+
+  params.SetString("webviewPartitionName", partition_name);
 
   frame_state_ = FRAME_STATE_LOADING;
   CallJS("loadAuthExtension", params);

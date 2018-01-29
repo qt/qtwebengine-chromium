@@ -36,12 +36,6 @@ if (rtc_include_tests) {
   rtc_source_set("desktop_capture_modules_tests") {
     testonly = true
 
-    # Skip restricting visibility on mobile platforms since the tests on those
-    # gets additional generated targets which would require many lines here to
-    # cover (which would be confusing to read and hard to maintain).
-    if (!is_android && !is_ios) {
-      visibility = [ "..:modules_tests" ]
-    }
     sources = []
     deps = []
     if (rtc_desktop_capture_supported) {
@@ -66,12 +60,6 @@ if (rtc_include_tests) {
   rtc_source_set("desktop_capture_unittests") {
     testonly = true
 
-    # Skip restricting visibility on mobile platforms since the tests on those
-    # gets additional generated targets which would require many lines here to
-    # cover (which would be confusing to read and hard to maintain).
-    if (!is_android && !is_ios) {
-      visibility = [ "..:modules_unittests" ]
-    }
     sources = [
       "blank_detector_desktop_capturer_wrapper_unittest.cc",
       "cropped_desktop_frame_unittest.cc",
@@ -151,10 +139,6 @@ if (rtc_include_tests) {
     ]
 
     sources = [
-      "desktop_frame_generator.cc",
-      "desktop_frame_generator.h",
-      "fake_desktop_capturer.cc",
-      "fake_desktop_capturer.h",
       "mock_desktop_capturer_callback.cc",
       "mock_desktop_capturer_callback.h",
     ]
@@ -226,12 +210,16 @@ rtc_static_library("desktop_capture_generic") {
     "desktop_capturer_differ_wrapper.h",
     "desktop_capturer_wrapper.cc",
     "desktop_capturer_wrapper.h",
+    "desktop_frame_generator.cc",
+    "desktop_frame_generator.h",
     "desktop_frame_rotation.cc",
     "desktop_frame_rotation.h",
     "desktop_frame_win.cc",
     "desktop_frame_win.h",
     "differ_block.cc",
     "differ_block.h",
+    "fake_desktop_capturer.cc",
+    "fake_desktop_capturer.h",
     "fallback_desktop_capturer_wrapper.cc",
     "fallback_desktop_capturer_wrapper.h",
     "mac/desktop_configuration.h",
@@ -293,6 +281,7 @@ rtc_static_library("desktop_capture_generic") {
     "win/window_capture_utils.cc",
     "win/window_capture_utils.h",
     "window_capturer_win.cc",
+    "window_finder.cc",
     "window_finder.h",
     "window_finder_win.cc",
     "window_finder_win.h",
@@ -337,6 +326,7 @@ rtc_static_library("desktop_capture_generic") {
   deps = [
     ":primitives",
     "../..:webrtc_common",
+    "../../api:refcountedbase",
     "../../rtc_base:rtc_base",  # TODO(kjellander): Cleanup in bugs.webrtc.org/3806.
     "../../system_wrappers",
     "//third_party/libyuv",

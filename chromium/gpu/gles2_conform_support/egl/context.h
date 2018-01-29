@@ -40,7 +40,7 @@ class Surface;
 class Config;
 
 class Context : public base::RefCountedThreadSafe<Context>,
-                private gpu::GpuControl {
+                public gpu::GpuControl {
  public:
   Context(Display* display, const Config* config);
   bool is_current_in_some_thread() const { return is_current_in_some_thread_; }
@@ -80,8 +80,7 @@ class Context : public base::RefCountedThreadSafe<Context>,
                        const base::Closure& callback) override;
   void WaitSyncTokenHint(const gpu::SyncToken& sync_token) override;
   bool CanWaitUnverifiedSyncToken(const gpu::SyncToken& sync_token) override;
-  void AddLatencyInfo(
-      const std::vector<ui::LatencyInfo>& latency_info) override;
+  void SetSnapshotRequested() override;
 
   // Called by ThreadState to set the needed global variables when this context
   // is current.

@@ -17,6 +17,7 @@
 #include "base/memory/weak_ptr.h"
 #include "components/discardable_memory/public/interfaces/discardable_shared_memory_manager.mojom.h"
 #include "services/service_manager/public/cpp/binder_registry.h"
+#include "services/service_manager/public/cpp/connector.h"
 #include "services/service_manager/public/cpp/service.h"
 #include "services/service_manager/public/cpp/service_runner.h"
 #include "services/ui/ime/ime_driver_bridge.h"
@@ -30,16 +31,21 @@
 #include "services/ui/public/interfaces/remote_event_dispatcher.mojom.h"
 #include "services/ui/public/interfaces/user_access_manager.mojom.h"
 #include "services/ui/public/interfaces/user_activity_monitor.mojom.h"
+#include "services/ui/public/interfaces/video_detector.mojom.h"
 #include "services/ui/public/interfaces/window_manager_window_tree_factory.mojom.h"
 #include "services/ui/public/interfaces/window_server_test.mojom.h"
 #include "services/ui/public/interfaces/window_tree.mojom.h"
-#include "services/ui/public/interfaces/window_tree_host.mojom.h"
+#include "services/ui/public/interfaces/window_tree_host_factory.mojom.h"
 #include "services/ui/ws/user_id.h"
 #include "services/ui/ws/window_server_delegate.h"
 
 #if defined(USE_OZONE)
 #include "ui/ozone/public/client_native_pixmap_factory_ozone.h"
 #endif
+
+#if defined(OS_CHROMEOS)
+#include "services/ui/public/interfaces/arc.mojom.h"
+#endif  // defined(OS_CHROMEOS)
 
 namespace discardable_memory {
 class DiscardableSharedMemoryManager;
@@ -83,6 +89,10 @@ class Service : public service_manager::Service,
     // If null Service creates a DiscardableSharedMemoryManager.
     discardable_memory::DiscardableSharedMemoryManager* memory_manager =
         nullptr;
+
+    // Whether mus should host viz, or whether an external client (e.g. the
+    // window manager) would be responsible for hosting viz.
+    bool should_host_viz = true;
 
    private:
     DISALLOW_COPY_AND_ASSIGN(InProcessConfig);
@@ -177,6 +187,12 @@ class Service : public service_manager::Service,
   void BindRemoteEventDispatcherRequest(
       mojom::RemoteEventDispatcherRequest request);
 
+  void BindVideoDetectorRequest(mojom::VideoDetectorRequest request);
+
+#if defined(OS_CHROMEOS)
+  void BindArcRequest(mojom::ArcRequest request);
+#endif  // defined(OS_CHROMEOS)
+
   std::unique_ptr<ws::WindowServer> window_server_;
   std::unique_ptr<PlatformEventSource> event_source_;
   using PendingRequests = std::vector<std::unique_ptr<PendingRequest>>;
@@ -219,6 +235,8 @@ class Service : public service_manager::Service,
   // running in-process.
   std::unique_ptr<discardable_memory::DiscardableSharedMemoryManager>
       owned_discardable_shared_memory_manager_;
+
+  const bool should_host_viz_;
 
   service_manager::BinderRegistryWithArgs<
       const service_manager::BindSourceInfo&>

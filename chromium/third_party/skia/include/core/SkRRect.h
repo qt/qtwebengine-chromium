@@ -234,15 +234,11 @@ public:
     }
 
     friend bool operator==(const SkRRect& a, const SkRRect& b) {
-        return a.fRect == b.fRect &&
-               SkScalarsEqual(a.fRadii[0].asScalars(),
-                              b.fRadii[0].asScalars(), 8);
+        return a.fRect == b.fRect && SkScalarsEqual(&a.fRadii[0].fX, &b.fRadii[0].fX, 8);
     }
 
     friend bool operator!=(const SkRRect& a, const SkRRect& b) {
-        return a.fRect != b.fRect ||
-               !SkScalarsEqual(a.fRadii[0].asScalars(),
-                               b.fRadii[0].asScalars(), 8);
+        return a.fRect != b.fRect || !SkScalarsEqual(&a.fRadii[0].fX, &b.fRadii[0].fX, 8);
     }
 
     /**
@@ -327,7 +323,7 @@ public:
      *      scale and/or translate, or this call will fail.
      *  @param dst SkRRect to store the result. It is an error to use this,
      *      which would make this function no longer const.
-     *  @return true on success, false on failure. If false, dst is unmodified.
+     *  @return true on success, false on failure.
      */
     bool transform(const SkMatrix& matrix, SkRRect* dst) const;
 

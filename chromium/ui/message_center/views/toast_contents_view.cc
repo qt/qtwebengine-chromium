@@ -357,26 +357,20 @@ void ToastContentsView::RemoveNotification(
     collection_->RemoveNotification(notification_id, by_user);
 }
 
-std::unique_ptr<ui::MenuModel> ToastContentsView::CreateMenuModel(
-    const Notification& notification) {
-  // Should not reach, the context menu should be handled in
-  // MessagePopupCollection.
-  NOTREACHED();
-  return nullptr;
-}
-
-bool ToastContentsView::HasClickedListener(
-    const std::string& notification_id) {
-  if (!collection_)
-    return false;
-  return collection_->HasClickedListener(notification_id);
-}
-
 void ToastContentsView::ClickOnNotificationButton(
     const std::string& notification_id,
     int button_index) {
   if (collection_)
     collection_->ClickOnNotificationButton(notification_id, button_index);
+}
+
+void ToastContentsView::ClickOnNotificationButtonWithReply(
+    const std::string& notification_id,
+    int button_index,
+    const base::string16& reply) {
+  if (collection_)
+    collection_->ClickOnNotificationButtonWithReply(notification_id,
+                                                    button_index, reply);
 }
 
 void ToastContentsView::CreateWidget(

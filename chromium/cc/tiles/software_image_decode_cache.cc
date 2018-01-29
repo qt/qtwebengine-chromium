@@ -20,6 +20,7 @@
 #include "base/threading/thread_task_runner_handle.h"
 #include "base/trace_event/memory_dump_manager.h"
 #include "cc/base/devtools_instrumentation.h"
+#include "cc/base/histograms.h"
 #include "cc/raster/tile_task.h"
 #include "cc/tiles/mipmap_util.h"
 #include "third_party/skia/include/core/SkCanvas.h"
@@ -37,9 +38,9 @@ namespace {
 // if more items are locked. That is, locked items ignore this limit.
 // Depending on the memory state of the system, we limit the amount of items
 // differently.
-const size_t kNormalMaxItemsInCache = 1000;
-const size_t kThrottledMaxItemsInCache = 100;
-const size_t kSuspendedMaxItemsInCache = 0;
+const size_t kNormalMaxItemsInCacheForSoftware = 1000;
+const size_t kThrottledMaxItemsInCacheForSoftware = 100;
+const size_t kSuspendedMaxItemsInCacheForSoftware = 0;
 
 // If the size of the original sized image breaches kMemoryRatioToSubrect but we
 // don't need to scale the image, consider caching only the needed subrect.
@@ -90,13 +91,14 @@ class AutoDrawWithImageFinished {
   const DecodedDrawImage& decoded_draw_image_;
 };
 
-class ImageDecodeTaskImpl : public TileTask {
+class SoftwareImageDecodeTaskImpl : public TileTask {
  public:
-  ImageDecodeTaskImpl(SoftwareImageDecodeCache* cache,
-                      const SoftwareImageDecodeCache::ImageKey& image_key,
-                      const DrawImage& image,
-                      SoftwareImageDecodeCache::DecodeTaskType task_type,
-                      const ImageDecodeCache::TracingInfo& tracing_info)
+  SoftwareImageDecodeTaskImpl(
+      SoftwareImageDecodeCache* cache,
+      const SoftwareImageDecodeCache::ImageKey& image_key,
+      const DrawImage& image,
+      SoftwareImageDecodeCache::DecodeTaskType task_type,
+      const ImageDecodeCache::TracingInfo& tracing_info)
       : TileTask(true),
         cache_(cache),
         image_key_(image_key),
@@ -106,7 +108,7 @@ class ImageDecodeTaskImpl : public TileTask {
 
   // Overridden from Task:
   void RunOnWorkerThread() override {
-    TRACE_EVENT2("cc", "ImageDecodeTaskImpl::RunOnWorkerThread", "mode",
+    TRACE_EVENT2("cc", "SoftwareImageDecodeTaskImpl::RunOnWorkerThread", "mode",
                  "software", "source_prepare_tiles_id",
                  tracing_info_.prepare_tiles_id);
     devtools_instrumentation::ScopedImageDecodeTask image_decode_task(
@@ -122,7 +124,7 @@ class ImageDecodeTaskImpl : public TileTask {
   }
 
  protected:
-  ~ImageDecodeTaskImpl() override {}
+  ~SoftwareImageDecodeTaskImpl() override {}
 
  private:
   SoftwareImageDecodeCache* cache_;
@@ -131,7 +133,7 @@ class ImageDecodeTaskImpl : public TileTask {
   SoftwareImageDecodeCache::DecodeTaskType task_type_;
   const ImageDecodeCache::TracingInfo tracing_info_;
 
-  DISALLOW_COPY_AND_ASSIGN(ImageDecodeTaskImpl);
+  DISALLOW_COPY_AND_ASSIGN(SoftwareImageDecodeTaskImpl);
 };
 
 SkSize GetScaleAdjustment(const ImageDecodeCacheKey& key) {
@@ -196,7 +198,7 @@ SoftwareImageDecodeCache::SoftwareImageDecodeCache(
       at_raster_decoded_images_(ImageMRUCache::NO_AUTO_EVICT),
       locked_images_budget_(locked_memory_limit_bytes),
       color_type_(color_type),
-      max_items_in_cache_(kNormalMaxItemsInCache) {
+      max_items_in_cache_(kNormalMaxItemsInCacheForSoftware) {
   // In certain cases, ThreadTaskRunnerHandle isn't set (Android Webview).
   // Don't register a dump provider in these cases.
   if (base::ThreadTaskRunnerHandle::IsSet()) {
@@ -218,6 +220,17 @@ SoftwareImageDecodeCache::~SoftwareImageDecodeCache() {
       this);
   // Unregister this component with memory_coordinator::ClientRegistry.
   base::MemoryCoordinatorClientRegistry::GetInstance()->Unregister(this);
+
+  // TODO(vmpstr): If we don't have a client name, it may cause problems in
+  // unittests, since most tests don't set the name but some do. The UMA system
+  // expects the name to be always the same. This assertion is violated in the
+  // tests that do set the name.
+  if (GetClientNameForMetrics()) {
+    UMA_HISTOGRAM_CUSTOM_COUNTS(
+        base::StringPrintf("Compositing.%s.CachedImagesCount.Software",
+                           GetClientNameForMetrics()),
+        lifetime_max_items_in_cache_, 1, 1000, 20);
+  }
 }
 
 ImageDecodeCache::TaskResult SoftwareImageDecodeCache::GetTaskForImageAndRef(
@@ -315,7 +328,7 @@ SoftwareImageDecodeCache::GetTaskForImageAndRefInternal(
   // Actually create the task. RefImage will account for memory on the first
   // ref.
   RefImage(key);
-  existing_task = base::MakeRefCounted<ImageDecodeTaskImpl>(
+  existing_task = base::MakeRefCounted<SoftwareImageDecodeTaskImpl>(
       this, key, image, task_type, tracing_info);
   return TaskResult(existing_task);
 }
@@ -627,7 +640,7 @@ SoftwareImageDecodeCache::GetSubrectImageDecode(const ImageKey& key,
   ImageKey exact_size_key =
       ImageKey::FromDrawImage(exact_size_draw_image, color_type_);
 
-  // Sanity checks.
+// Sanity checks.
 #if DCHECK_IS_ON()
   SkISize exact_target_size =
       SkISize::Make(exact_size_key.target_size().width(),
@@ -701,7 +714,7 @@ SoftwareImageDecodeCache::GetScaledImageDecode(const ImageKey& key,
   ImageKey exact_size_key =
       ImageKey::FromDrawImage(exact_size_draw_image, color_type_);
 
-  // Sanity checks.
+// Sanity checks.
 #if DCHECK_IS_ON()
   SkISize exact_target_size =
       SkISize::Make(exact_size_key.target_size().width(),
@@ -835,7 +848,10 @@ void SoftwareImageDecodeCache::UnrefAtRasterImage(const ImageKey& key) {
 }
 
 void SoftwareImageDecodeCache::ReduceCacheUsageUntilWithinLimit(size_t limit) {
-  TRACE_EVENT0("cc", "SoftwareImageDecodeCache::ReduceCacheUsage");
+  TRACE_EVENT0("cc",
+               "SoftwareImageDecodeCache::ReduceCacheUsageUntilWithinLimit");
+  lifetime_max_items_in_cache_ =
+      std::max(lifetime_max_items_in_cache_, decoded_images_.size());
   size_t num_to_remove =
       (decoded_images_.size() > limit) ? (decoded_images_.size() - limit) : 0;
   for (auto it = decoded_images_.rbegin();
@@ -1206,13 +1222,13 @@ void SoftwareImageDecodeCache::OnMemoryStateChange(base::MemoryState state) {
     base::AutoLock hold(lock_);
     switch (state) {
       case base::MemoryState::NORMAL:
-        max_items_in_cache_ = kNormalMaxItemsInCache;
+        max_items_in_cache_ = kNormalMaxItemsInCacheForSoftware;
         break;
       case base::MemoryState::THROTTLED:
-        max_items_in_cache_ = kThrottledMaxItemsInCache;
+        max_items_in_cache_ = kThrottledMaxItemsInCacheForSoftware;
         break;
       case base::MemoryState::SUSPENDED:
-        max_items_in_cache_ = kSuspendedMaxItemsInCache;
+        max_items_in_cache_ = kSuspendedMaxItemsInCacheForSoftware;
         break;
       case base::MemoryState::UNKNOWN:
         NOTREACHED();

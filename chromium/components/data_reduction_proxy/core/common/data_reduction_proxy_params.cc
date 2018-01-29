@@ -39,9 +39,6 @@ const char kQuicFieldTrial[] = "DataReductionProxyUseQuic";
 const char kLoFiFieldTrial[] = "DataCompressionProxyLoFi";
 const char kLoFiFlagFieldTrial[] = "DataCompressionProxyLoFiFlag";
 
-const char kBlackListTransitionFieldTrial[] =
-    "DataReductionProxyPreviewsBlackListTransition";
-
 // Default URL for retrieving the Data Reduction Proxy configuration.
 const char kClientConfigURL[] =
     "https://datasaver.googleapis.com/v1/clientConfigs";
@@ -151,17 +148,8 @@ bool IsIncludedInServerExperimentsFieldTrial() {
 }
 
 bool FetchWarmupURLEnabled() {
-  // Fetching of the warmup URL can be enabled only for Enabled* and Control*
-  // groups.
-  if (!IsIncludedInQuicFieldTrial())
-    return false;
-
-  std::map<std::string, std::string> params;
-  variations::GetVariationParams(GetQuicFieldTrialName(), &params);
   return !base::CommandLine::ForCurrentProcess()->HasSwitch(
-             switches::kDisableDataReductionProxyWarmupURLFetch) &&
-         GetStringValueForVariationParamWithDefaultValue(
-             params, "enable_warmup", "true") != "false";
+      switches::kDisableDataReductionProxyWarmupURLFetch);
 }
 
 GURL GetWarmupURL() {
@@ -289,12 +277,6 @@ bool IsConfigClientEnabled() {
   return !base::StartsWith(
       base::FieldTrialList::FindFullName("DataReductionProxyConfigService"),
       kDisabled, base::CompareCase::SENSITIVE);
-}
-
-bool IsBlackListEnabledForServerPreviews() {
-  return base::StartsWith(
-      base::FieldTrialList::FindFullName(kBlackListTransitionFieldTrial),
-      kEnabled, base::CompareCase::SENSITIVE);
 }
 
 GURL GetConfigServiceURL() {

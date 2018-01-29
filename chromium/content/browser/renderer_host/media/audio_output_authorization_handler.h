@@ -11,6 +11,7 @@
 
 #include "base/callback_forward.h"
 #include "base/memory/weak_ptr.h"
+#include "base/time/time.h"
 #include "content/browser/media/media_devices_permission_checker.h"
 #include "content/browser/renderer_host/media/media_stream_manager.h"
 #include "media/audio/audio_device_description.h"
@@ -45,8 +46,7 @@ class CONTENT_EXPORT AudioOutputAuthorizationHandler {
 
   AudioOutputAuthorizationHandler(media::AudioSystem* audio_system,
                                   MediaStreamManager* media_stream_manager,
-                                  int render_process_id_,
-                                  const std::string& salt);
+                                  int render_process_id_);
 
   ~AudioOutputAuthorizationHandler();
 
@@ -63,19 +63,24 @@ class CONTENT_EXPORT AudioOutputAuthorizationHandler {
   // always return |override_value|.
   void OverridePermissionsForTesting(bool override_value);
 
+  static void UMALogDeviceAuthorizationTime(base::TimeTicks auth_start_time);
+
  private:
-  void HashDeviceId(AuthorizationCompletedCallback cb,
-                    const std::string& raw_device_id,
-                    const media::AudioParameters& params,
-                    const url::Origin& origin) const;
+  void HashDeviceId(
+      AuthorizationCompletedCallback cb,
+      const std::string& raw_device_id,
+      const media::AudioParameters& params,
+      const std::pair<std::string, url::Origin>& salt_and_origin) const;
 
   void AccessChecked(AuthorizationCompletedCallback cb,
                      const std::string& device_id,
+                     std::string salt,
                      const url::Origin& security_origin,
                      bool has_access) const;
 
   void TranslateDeviceID(AuthorizationCompletedCallback cb,
                          const std::string& device_id,
+                         const std::string& salt,
                          const url::Origin& security_origin,
                          const MediaDeviceEnumeration& enumeration) const;
 
@@ -91,7 +96,6 @@ class CONTENT_EXPORT AudioOutputAuthorizationHandler {
   media::AudioSystem* const audio_system_;
   MediaStreamManager* const media_stream_manager_;
   const int render_process_id_;
-  const std::string salt_;
   bool override_permissions_ = false;
   bool permissions_override_value_ = false;
 

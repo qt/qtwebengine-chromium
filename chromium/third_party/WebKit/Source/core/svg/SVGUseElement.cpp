@@ -31,7 +31,6 @@
 #include "core/dom/ElementTraversal.h"
 #include "core/dom/IdTargetObserver.h"
 #include "core/dom/ShadowRoot.h"
-#include "core/dom/TaskRunnerHelper.h"
 #include "core/dom/events/Event.h"
 #include "core/layout/svg/LayoutSVGTransformableContainer.h"
 #include "core/svg/SVGGElement.h"
@@ -46,6 +45,7 @@
 #include "platform/loader/fetch/ResourceFetcher.h"
 #include "platform/loader/fetch/ResourceLoaderOptions.h"
 #include "platform/wtf/Vector.h"
+#include "public/platform/TaskType.h"
 
 namespace blink {
 
@@ -92,7 +92,7 @@ void SVGUseElement::Dispose() {
   SetDocumentResource(nullptr);
 }
 
-DEFINE_TRACE(SVGUseElement) {
+void SVGUseElement::Trace(blink::Visitor* visitor) {
   visitor->Trace(x_);
   visitor->Trace(y_);
   visitor->Trace(width_);
@@ -102,7 +102,7 @@ DEFINE_TRACE(SVGUseElement) {
   visitor->Trace(resource_);
   SVGGraphicsElement::Trace(visitor);
   SVGURIReference::Trace(visitor);
-  DocumentResourceClient::Trace(visitor);
+  ResourceClient::Trace(visitor);
 }
 
 #if DCHECK_IS_ON()
@@ -180,7 +180,7 @@ static void TransferUseWidthAndHeightIfNeeded(
 void SVGUseElement::CollectStyleForPresentationAttribute(
     const QualifiedName& name,
     const AtomicString& value,
-    MutableStylePropertySet* style) {
+    MutableCSSPropertyValueSet* style) {
   SVGAnimatedPropertyBase* property = PropertyFromAttribute(name);
   if (property == x_) {
     AddPropertyToPresentationAttributeStyle(style, property->CssPropertyId(),
@@ -305,7 +305,8 @@ void SVGUseElement::ClearResourceReference() {
 Element* SVGUseElement::ResolveTargetElement(ObserveBehavior observe_behavior) {
   if (!element_url_.HasFragmentIdentifier())
     return nullptr;
-  AtomicString element_identifier(element_url_.FragmentIdentifier());
+  AtomicString element_identifier(
+      DecodeURLEscapeSequences(element_url_.FragmentIdentifier()));
   if (!IsStructurallyExternal()) {
     if (observe_behavior == kDontAddObserver)
       return GetTreeScope().getElementById(element_identifier);
@@ -565,7 +566,7 @@ bool SVGUseElement::HasCycleUseReferencing(SVGUseElement& use,
                                            const ContainerNode& target_instance,
                                            SVGElement*& new_target) const {
   Element* target_element = use.ResolveTargetElement(kDontAddObserver);
-  new_target = 0;
+  new_target = nullptr;
   if (target_element && target_element->IsSVGElement())
     new_target = ToSVGElement(target_element);
 
@@ -721,7 +722,8 @@ void SVGUseElement::NotifyFinished(Resource* resource) {
       return;
     DCHECK(!have_fired_load_event_);
     have_fired_load_event_ = true;
-    TaskRunnerHelper::Get(TaskType::kDOMManipulation, &GetDocument())
+    GetDocument()
+        .GetTaskRunner(TaskType::kDOMManipulation)
         ->PostTask(BLINK_FROM_HERE,
                    WTF::Bind(&SVGUseElement::DispatchPendingEvent,
                              WrapPersistent(this)));

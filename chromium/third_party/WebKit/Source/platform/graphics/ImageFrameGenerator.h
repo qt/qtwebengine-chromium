@@ -27,13 +27,13 @@
 #define ImageFrameGenerator_h
 
 #include <memory>
+#include "base/memory/scoped_refptr.h"
 #include "platform/PlatformExport.h"
 #include "platform/image-decoders/ImageDecoder.h"
 #include "platform/image-decoders/SegmentReader.h"
 #include "platform/wtf/Allocator.h"
 #include "platform/wtf/Noncopyable.h"
 #include "platform/wtf/RefCounted.h"
-#include "platform/wtf/RefPtr.h"
 #include "platform/wtf/ThreadSafeRefCounted.h"
 #include "platform/wtf/ThreadingPrimitives.h"
 #include "platform/wtf/Vector.h"
@@ -62,12 +62,12 @@ class PLATFORM_EXPORT ImageFrameGenerator final
   WTF_MAKE_NONCOPYABLE(ImageFrameGenerator);
 
  public:
-  static RefPtr<ImageFrameGenerator> Create(
+  static scoped_refptr<ImageFrameGenerator> Create(
       const SkISize& full_size,
       bool is_multi_frame,
       const ColorBehavior& color_behavior,
       std::vector<SkISize> supported_sizes) {
-    return WTF::AdoptRef(new ImageFrameGenerator(
+    return base::AdoptRef(new ImageFrameGenerator(
         full_size, is_multi_frame, color_behavior, std::move(supported_sizes)));
   }
 

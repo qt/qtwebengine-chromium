@@ -119,7 +119,7 @@ int H264DecoderImpl::AVGetBuffer2(
   int ret = av_image_check_size(static_cast<unsigned int>(width),
                                 static_cast<unsigned int>(height), 0, nullptr);
   if (ret < 0) {
-    LOG(LS_ERROR) << "Invalid picture size " << width << "x" << height;
+    RTC_LOG(LS_ERROR) << "Invalid picture size " << width << "x" << height;
     decoder->ReportError();
     return ret;
   }
@@ -239,21 +239,19 @@ int32_t H264DecoderImpl::InitDecode(const VideoCodec* codec_settings,
   // |get_buffer2| is called with the context, there |opaque| can be used to get
   // a pointer |this|.
   av_context_->opaque = this;
-  // Use ref counted frames (av_frame_unref).
-  av_context_->refcounted_frames = 1;  // true
 
   AVCodec* codec = avcodec_find_decoder(av_context_->codec_id);
   if (!codec) {
     // This is an indication that FFmpeg has not been initialized or it has not
     // been compiled/initialized with the correct set of codecs.
-    LOG(LS_ERROR) << "FFmpeg H.264 decoder not found.";
+    RTC_LOG(LS_ERROR) << "FFmpeg H.264 decoder not found.";
     Release();
     ReportError();
     return WEBRTC_VIDEO_CODEC_ERROR;
   }
   int res = avcodec_open2(av_context_.get(), codec, nullptr);
   if (res < 0) {
-    LOG(LS_ERROR) << "avcodec_open2 error: " << res;
+    RTC_LOG(LS_ERROR) << "avcodec_open2 error: " << res;
     Release();
     ReportError();
     return WEBRTC_VIDEO_CODEC_ERROR;
@@ -285,8 +283,9 @@ int32_t H264DecoderImpl::Decode(const EncodedImage& input_image,
     return WEBRTC_VIDEO_CODEC_UNINITIALIZED;
   }
   if (!decoded_image_callback_) {
-    LOG(LS_WARNING) << "InitDecode() has been called, but a callback function "
-        "has not been set with RegisterDecodeCompleteCallback()";
+    RTC_LOG(LS_WARNING)
+        << "InitDecode() has been called, but a callback function "
+           "has not been set with RegisterDecodeCompleteCallback()";
     ReportError();
     return WEBRTC_VIDEO_CODEC_UNINITIALIZED;
   }
@@ -320,31 +319,26 @@ int32_t H264DecoderImpl::Decode(const EncodedImage& input_image,
     return WEBRTC_VIDEO_CODEC_ERROR;
   }
   packet.size = static_cast<int>(input_image._length);
-  av_context_->reordered_opaque = input_image.ntp_time_ms_ * 1000;  // ms -> μs
+  int64_t frame_timestamp_us = input_image.ntp_time_ms_ * 1000;  // ms -> μs
+  av_context_->reordered_opaque = frame_timestamp_us;
 
-  int frame_decoded = 0;
-  int result = avcodec_decode_video2(av_context_.get(),
-                                     av_frame_.get(),
-                                     &frame_decoded,
-                                     &packet);
+  int result = avcodec_send_packet(av_context_.get(), &packet);
   if (result < 0) {
-    LOG(LS_ERROR) << "avcodec_decode_video2 error: " << result;
-    ReportError();
-    return WEBRTC_VIDEO_CODEC_ERROR;
-  }
-  // |result| is number of bytes used, which should be all of them.
-  if (result != packet.size) {
-    LOG(LS_ERROR) << "avcodec_decode_video2 consumed " << result << " bytes "
-        "when " << packet.size << " bytes were expected.";
+    RTC_LOG(LS_ERROR) << "avcodec_send_packet error: " << result;
     ReportError();
     return WEBRTC_VIDEO_CODEC_ERROR;
   }
 
-  if (!frame_decoded) {
-    LOG(LS_WARNING) << "avcodec_decode_video2 successful but no frame was "
-        "decoded.";
-    return WEBRTC_VIDEO_CODEC_OK;
+  result = avcodec_receive_frame(av_context_.get(), av_frame_.get());
+  if (result < 0) {
+    RTC_LOG(LS_ERROR) << "avcodec_receive_frame error: " << result;
+    ReportError();
+    return WEBRTC_VIDEO_CODEC_ERROR;
   }
+
+  // We don't expect reordering. Decoded frame tamestamp should match
+  // the input one.
+  RTC_DCHECK_EQ(av_frame_->reordered_opaque, frame_timestamp_us);
 
   // Obtain the |video_frame| containing the decoded image.
   VideoFrame* video_frame = static_cast<VideoFrame*>(

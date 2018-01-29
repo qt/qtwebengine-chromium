@@ -7,6 +7,7 @@
 #include "core/editing/FrameSelection.h"
 #include "core/editing/SelectionTemplate.h"
 #include "core/editing/testing/EditingTestBase.h"
+#include "core/editing/testing/SelectionSample.h"
 
 namespace blink {
 
@@ -186,6 +187,59 @@ TEST_F(InsertTextCommandTest, WhitespaceFixupAfterParagraph) {
   // it from being collapsed.
   EXPECT_EQ("<div contenteditable><p>baz</p>|\xC2\xA0qux</div>",
             GetSelectionTextFromBody(Selection().GetSelectionInDOMTree()));
+}
+
+// http://crbug.com/779376
+TEST_F(InsertTextCommandTest, NoVisibleSelectionAfterDeletingSelection) {
+  InsertStyleElement(
+      "ruby {display: inline-block; height: 100%}"
+      "navi {float: left}");
+  Selection().SetSelection(
+      SetSelectionTextToBody("<div contenteditable>"
+                             "  <ruby><strike>"
+                             "    <navi></navi>"
+                             "    <rtc>^&#xbbc3;&#xff17;&#x8e99;&#x1550;</rtc>"
+                             "  </strike></ruby>"
+                             "  <hr>|"
+                             "</div>"));
+  // Shouldn't crash inside
+  GetDocument().execCommand("insertText", false, "x", ASSERT_NO_EXCEPTION);
+  // This is only for recording the current behavior, which can be changed.
+  EXPECT_EQ(
+      "<div contenteditable>"
+      "  <ruby><strike>"
+      "    <navi></navi>"
+      "    ^</strike></ruby>"
+      "|</div>",
+      GetSelectionTextFromBody(Selection().GetSelectionInDOMTree()));
+}
+
+// http://crbug.com/778901
+TEST_F(InsertTextCommandTest, CheckTabSpanElementNoCrash) {
+  InsertStyleElement(
+      "head {-webkit-text-stroke-color: black; display: list-item;}");
+  Element* head = GetDocument().QuerySelector("head");
+  Element* style = GetDocument().QuerySelector("style");
+  Element* body = GetDocument().body();
+  body->parentNode()->appendChild(style);
+  GetDocument().setDesignMode("on");
+
+  Selection().SetSelection(SelectionInDOMTree::Builder()
+                               .Collapse(Position(head, 0))
+                               .Extend(Position(body, 0))
+                               .Build());
+
+  // Shouldn't crash inside
+  GetDocument().execCommand("insertText", false, "\t", ASSERT_NO_EXCEPTION);
+
+  // This only records the current behavior, which is not necessarily correct.
+  EXPECT_EQ(
+      "<body><span style=\"white-space:pre\">\t|</span></body>"
+      "<style>"
+      "head {-webkit-text-stroke-color: black; display: list-item;}"
+      "</style>",
+      SelectionSample::GetSelectionText(*GetDocument().documentElement(),
+                                        Selection().GetSelectionInDOMTree()));
 }
 
 }  // namespace blink

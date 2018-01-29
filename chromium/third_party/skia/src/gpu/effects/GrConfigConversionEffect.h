@@ -18,15 +18,8 @@
 #include "GrRenderTargetContext.h"
 #include "GrFragmentProcessor.h"
 #include "GrCoordTransform.h"
-#include "GrColorSpaceXform.h"
 class GrConfigConversionEffect : public GrFragmentProcessor {
 public:
-    enum PMConversion {
-        kToPremul_PMConversion = 0,
-        kToUnpremul_PMConversion = 1,
-        kPMConversionCnt = 2
-    };
-
     static bool TestForPreservingPMConversions(GrContext* context) {
         static constexpr int kSize = 256;
         static constexpr GrPixelConfig kConfig = kRGBA_8888_GrPixelConfig;
@@ -80,11 +73,11 @@ public:
         GrPaint paint2;
         GrPaint paint3;
         std::unique_ptr<GrFragmentProcessor> pmToUPM(
-                new GrConfigConversionEffect(kToUnpremul_PMConversion));
+                new GrConfigConversionEffect(PMConversion::kToUnpremul));
         std::unique_ptr<GrFragmentProcessor> upmToPM(
-                new GrConfigConversionEffect(kToPremul_PMConversion));
+                new GrConfigConversionEffect(PMConversion::kToPremul));
 
-        paint1.addColorTextureProcessor(dataProxy, nullptr, SkMatrix::I());
+        paint1.addColorTextureProcessor(dataProxy, SkMatrix::I());
         paint1.addColorFragmentProcessor(pmToUPM->clone());
         paint1.setPorterDuffXPFactory(SkBlendMode::kSrc);
 
@@ -94,14 +87,14 @@ public:
             return false;
         }
 
-        paint2.addColorTextureProcessor(readRTC->asTextureProxyRef(), nullptr, SkMatrix::I());
+        paint2.addColorTextureProcessor(readRTC->asTextureProxyRef(), SkMatrix::I());
         paint2.addColorFragmentProcessor(std::move(upmToPM));
         paint2.setPorterDuffXPFactory(SkBlendMode::kSrc);
 
         tempRTC->fillRectToRect(GrNoClip(), std::move(paint2), GrAA::kNo, SkMatrix::I(), kRect,
                                 kRect);
 
-        paint3.addColorTextureProcessor(tempRTC->asTextureProxyRef(), nullptr, SkMatrix::I());
+        paint3.addColorTextureProcessor(tempRTC->asTextureProxyRef(), SkMatrix::I());
         paint3.addColorFragmentProcessor(std::move(pmToUPM));
         paint3.setPorterDuffXPFactory(SkBlendMode::kSrc);
 
@@ -122,7 +115,7 @@ public:
 
         return true;
     }
-    int pmConversion() const { return fPmConversion; }
+    PMConversion pmConversion() const { return fPmConversion; }
 
     static std::unique_ptr<GrFragmentProcessor> Make(std::unique_ptr<GrFragmentProcessor> fp,
                                                      PMConversion pmConversion) {
@@ -138,14 +131,14 @@ public:
     const char* name() const override { return "ConfigConversionEffect"; }
 
 private:
-    GrConfigConversionEffect(int pmConversion)
+    GrConfigConversionEffect(PMConversion pmConversion)
             : INHERITED(kGrConfigConversionEffect_ClassID, kNone_OptimizationFlags)
             , fPmConversion(pmConversion) {}
     GrGLSLFragmentProcessor* onCreateGLSLInstance() const override;
     void onGetGLSLProcessorKey(const GrShaderCaps&, GrProcessorKeyBuilder*) const override;
     bool onIsEqual(const GrFragmentProcessor&) const override;
     GR_DECLARE_FRAGMENT_PROCESSOR_TEST
-    int fPmConversion;
+    PMConversion fPmConversion;
     typedef GrFragmentProcessor INHERITED;
 };
 #endif

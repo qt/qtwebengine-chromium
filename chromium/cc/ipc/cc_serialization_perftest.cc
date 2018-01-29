@@ -13,6 +13,7 @@
 #include "gpu/ipc/common/mailbox_struct_traits.h"
 #include "gpu/ipc/common/sync_token_struct_traits.h"
 #include "ipc/ipc_message.h"
+#include "mojo/common/time_struct_traits.h"
 #include "mojo/public/cpp/bindings/message.h"
 #include "services/viz/public/cpp/compositing/compositor_frame_metadata_struct_traits.h"
 #include "services/viz/public/cpp/compositing/compositor_frame_struct_traits.h"
@@ -23,7 +24,6 @@
 #include "services/viz/public/interfaces/compositing/compositor_frame.mojom.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "testing/perf/perf_test.h"
-#include "third_party/skia/include/effects/SkBlurImageFilter.h"
 #include "ui/gfx/geometry/mojo/geometry.mojom.h"
 #include "ui/gfx/geometry/mojo/geometry_struct_traits.h"
 #include "ui/gfx/mojo/selection_bound_struct_traits.h"
@@ -252,24 +252,15 @@ class CCSerializationPerfTest : public testing::Test {
     arbitrary_matrix2.Translate(20, 3);
     arbitrary_matrix2.Rotate(24);
     gfx::Rect arbitrary_rect1(-5, 9, 3, 15);
-    gfx::Rect arbitrary_rect1_inside_rect1(-4, 12, 2, 8);
-    gfx::Rect arbitrary_rect2_inside_rect1(-5, 11, 1, 2);
     gfx::Rect arbitrary_rect2(40, 23, 11, 7);
     gfx::Rect arbitrary_rect1_inside_rect2(44, 23, 4, 2);
-    gfx::Rect arbitrary_rect2_inside_rect2(41, 25, 3, 5);
     gfx::Rect arbitrary_rect3(7, -53, 22, 19);
-    gfx::Rect arbitrary_rect1_inside_rect3(10, -40, 6, 3);
     gfx::Rect arbitrary_rect2_inside_rect3(12, -51, 5, 12);
     gfx::Size arbitrary_size1(15, 19);
     gfx::Size arbitrary_size2(3, 99);
-    gfx::Size arbitrary_size3(75, 1281);
     gfx::RectF arbitrary_rectf1(4.2f, -922.1f, 15.6f, 29.5f);
-    gfx::RectF arbitrary_rectf2(2.1f, -411.05f, 7.8f, 14.75f);
-    gfx::SizeF arbitrary_sizef1(15.2f, 104.6f);
     gfx::PointF arbitrary_pointf1(31.4f, 15.9f);
     gfx::PointF arbitrary_pointf2(26.5f, -35.8f);
-    gfx::Vector2dF arbitrary_vector2df1(16.2f, -85.1f);
-    gfx::Vector2dF arbitrary_vector2df2(-8.3f, 0.47f);
     float arbitrary_float1 = 0.7f;
     float arbitrary_float2 = 0.3f;
     float arbitrary_float3 = 0.9f;
@@ -298,8 +289,10 @@ class CCSerializationPerfTest : public testing::Test {
     FilterOperations arbitrary_filters1;
     arbitrary_filters1.Append(
         FilterOperation::CreateGrayscaleFilter(arbitrary_float1));
-    arbitrary_filters1.Append(FilterOperation::CreateReferenceFilter(
-        SkBlurImageFilter::Make(arbitrary_sigma, arbitrary_sigma, nullptr)));
+    arbitrary_filters1.Append(
+        FilterOperation::CreateReferenceFilter(sk_make_sp<BlurPaintFilter>(
+            arbitrary_sigma, arbitrary_sigma,
+            BlurPaintFilter::TileMode::kClampToBlack_TileMode, nullptr)));
 
     FilterOperations arbitrary_filters2;
     arbitrary_filters2.Append(

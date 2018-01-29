@@ -91,20 +91,28 @@ ui::EventDispatchDetails InputMethodMus::DispatchKeyEvent(ui::KeyEvent* event) {
 }
 
 void InputMethodMus::OnTextInputTypeChanged(const ui::TextInputClient* client) {
-  if (IsTextInputClientFocused(client))
-    UpdateTextInputType();
   InputMethodBase::OnTextInputTypeChanged(client);
+  if (!IsTextInputClientFocused(client))
+    return;
+
+  UpdateTextInputType();
 
   if (input_method_)
     input_method_->OnTextInputTypeChanged(client->GetTextInputType());
 }
 
 void InputMethodMus::OnCaretBoundsChanged(const ui::TextInputClient* client) {
+  if (!IsTextInputClientFocused(client))
+    return;
+
   if (input_method_)
     input_method_->OnCaretBoundsChanged(client->GetCaretBounds());
 }
 
 void InputMethodMus::CancelComposition(const ui::TextInputClient* client) {
+  if (!IsTextInputClientFocused(client))
+    return;
+
   if (input_method_)
     input_method_->CancelComposition();
 }
@@ -115,7 +123,9 @@ void InputMethodMus::OnInputLocaleChanged() {
 }
 
 bool InputMethodMus::IsCandidatePopupOpen() const {
-  return text_input_client_->is_candidate_window_visible();
+  // TODO(moshayedi): crbug.com/637416. Implement this properly when we have a
+  // mean for displaying candidate list popup.
+  return false;
 }
 
 ui::EventDispatchDetails InputMethodMus::SendKeyEventToInputMethod(
@@ -150,7 +160,7 @@ void InputMethodMus::OnDidChangeFocusedClient(
     return;
 
   text_input_client_ =
-      base::MakeUnique<TextInputClientImpl>(focused, delegate());
+      std::make_unique<TextInputClientImpl>(focused, delegate());
 
   // We are about to close the pipe with pending callbacks. Closing the pipe
   // results in none of the callbacks being run. We have to run the callbacks
@@ -160,7 +170,8 @@ void InputMethodMus::OnDidChangeFocusedClient(
   if (ime_driver_) {
     ui::mojom::StartSessionDetailsPtr details =
         ui::mojom::StartSessionDetails::New();
-    details->client = text_input_client_->CreateInterfacePtrAndBind();
+    details->client =
+        text_input_client_->CreateInterfacePtrAndBind().PassInterface();
     details->input_method_request = MakeRequest(&input_method_ptr_);
     input_method_ = input_method_ptr_.get();
     details->text_input_type = focused->GetTextInputType();
@@ -174,8 +185,8 @@ void InputMethodMus::OnDidChangeFocusedClient(
 
 void InputMethodMus::UpdateTextInputType() {
   ui::TextInputType type = GetTextInputType();
-  mojo::TextInputStatePtr state = mojo::TextInputState::New();
-  state->type = mojo::ConvertTo<mojo::TextInputType>(type);
+  ui::mojom::TextInputStatePtr state = ui::mojom::TextInputState::New();
+  state->type = mojo::ConvertTo<ui::mojom::TextInputType>(type);
   if (window_) {
     WindowPortMus* window_impl_mus = WindowPortMus::Get(window_);
     if (type != ui::TEXT_INPUT_TYPE_NONE)

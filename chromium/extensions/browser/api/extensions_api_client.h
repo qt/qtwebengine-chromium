@@ -42,6 +42,7 @@ class ExtensionOptionsGuestDelegate;
 class FeedbackPrivateDelegate;
 class FileSystemDelegate;
 class ManagementAPIDelegate;
+class MediaPerceptionAPIDelegate;
 class MessagingDelegate;
 class MetricsPrivateDelegate;
 class MimeHandlerViewGuest;
@@ -92,6 +93,10 @@ class ExtensionsAPIClient {
   // Returns true if the header should be hidden to extensions.
   virtual bool ShouldHideResponseHeader(const GURL& url,
                                         const std::string& header_name) const;
+
+  // Returns true if a request from the given URL from the browser context
+  // should be hidden from extensions.
+  virtual bool ShouldHideBrowserNetworkRequest(const GURL& url) const;
 
   // Creates the AppViewGuestDelegate.
   virtual AppViewGuestDelegate* CreateAppViewGuestDelegate() const;
@@ -161,6 +166,10 @@ class ExtensionsAPIClient {
   // If supported by the embedder, returns a delegate for querying non-native
   // file systems.
   virtual NonNativeFileSystemDelegate* GetNonNativeFileSystemDelegate();
+
+  // Returns a delegate for embedder-specific chrome.mediaPerceptionPrivate API
+  // behavior.
+  virtual MediaPerceptionAPIDelegate* GetMediaPerceptionAPIDelegate();
 
   // Saves image data on clipboard.
   virtual void SaveImageDataToClipboard(

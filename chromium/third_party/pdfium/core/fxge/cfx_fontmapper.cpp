@@ -337,9 +337,7 @@ void CFX_FontMapper::AddInstalledFont(const ByteString& name, int charset) {
   if (bLocalized) {
     void* hFont = m_pFontInfo->GetFont(name.c_str());
     if (!hFont) {
-      int iExact;
-      hFont = m_pFontInfo->MapFont(0, 0, FX_CHARSET_Default, 0, name.c_str(),
-                                   iExact);
+      hFont = m_pFontInfo->MapFont(0, 0, FX_CHARSET_Default, 0, name.c_str());
       if (!hFont)
         return;
     }
@@ -554,7 +552,6 @@ FXFT_Face CFX_FontMapper::FindSubstFont(const ByteString& name,
   if (FontStyleIsItalic(nStyle))
     bItalic = true;
 
-  int iExact = 0;
   int Charset = FX_CHARSET_ANSI;
   if (WindowCP)
     Charset = GetCharsetFromCodePage(WindowCP);
@@ -622,11 +619,8 @@ FXFT_Face CFX_FontMapper::FindSubstFont(const ByteString& name,
   } else if (FontStyleIsItalic(flags)) {
     bItalic = true;
   }
-  iExact = !match.IsEmpty();
   void* hFont = m_pFontInfo->MapFont(weight, bItalic, Charset, PitchFamily,
-                                     family.c_str(), iExact);
-  if (iExact)
-    pSubstFont->m_bFlagExact = true;
+                                     family.c_str());
   if (!hFont) {
 #ifdef PDF_ENABLE_XFA
     if (flags & FXFONT_EXACTMATCH)
@@ -769,7 +763,6 @@ FXFT_Face CFX_FontMapper::GetCachedTTCFace(void* hFont,
                                            const uint32_t tableTTCF,
                                            uint32_t ttc_size,
                                            uint32_t font_size) {
-  FXFT_Face face;
   uint8_t buffer[1024];
   m_pFontInfo->GetFontData(hFont, tableTTCF, buffer, FX_ArraySize(buffer));
   uint32_t* pBuffer = reinterpret_cast<uint32_t*>(buffer);
@@ -777,8 +770,8 @@ FXFT_Face CFX_FontMapper::GetCachedTTCFace(void* hFont,
   for (int i = 0; i < 256; i++)
     checksum += pBuffer[i];
   uint8_t* pFontData;
-  face = m_pFontMgr->GetCachedTTCFace(ttc_size, checksum, ttc_size - font_size,
-                                      pFontData);
+  FXFT_Face face = m_pFontMgr->GetCachedTTCFace(
+      ttc_size, checksum, ttc_size - font_size, &pFontData);
   if (!face) {
     pFontData = FX_Alloc(uint8_t, ttc_size);
     m_pFontInfo->GetFontData(hFont, tableTTCF, pFontData, ttc_size);
@@ -793,9 +786,9 @@ FXFT_Face CFX_FontMapper::GetCachedFace(void* hFont,
                                         int weight,
                                         bool bItalic,
                                         uint32_t font_size) {
-  FXFT_Face face;
   uint8_t* pFontData;
-  face = m_pFontMgr->GetCachedFace(SubstName, weight, bItalic, pFontData);
+  FXFT_Face face =
+      m_pFontMgr->GetCachedFace(SubstName, weight, bItalic, &pFontData);
   if (!face) {
     pFontData = FX_Alloc(uint8_t, font_size);
     m_pFontInfo->GetFontData(hFont, 0, pFontData, font_size);

@@ -34,11 +34,11 @@
 #include "core/css/CSSFontFaceSrcValue.h"
 #include "core/css/CSSImageValue.h"
 #include "core/css/CSSImportRule.h"
+#include "core/css/CSSPropertyValueSet.h"
 #include "core/css/CSSRuleList.h"
 #include "core/css/CSSStyleDeclaration.h"
 #include "core/css/CSSStyleRule.h"
 #include "core/css/CSSValueList.h"
-#include "core/css/StylePropertySet.h"
 #include "core/css/StyleRule.h"
 #include "core/css/StyleSheetContents.h"
 #include "core/dom/Document.h"
@@ -335,7 +335,7 @@ void FrameSerializer::SerializeFrame(const LocalFrame& frame) {
     } else if (auto* input = ToHTMLInputElementOrNull(element)) {
       if (input->type() == InputTypeNames::image && input->ImageLoader()) {
         KURL url = input->Src();
-        ImageResourceContent* cached_image = input->ImageLoader()->GetImage();
+        ImageResourceContent* cached_image = input->ImageLoader()->GetContent();
         AddImageToResources(cached_image, url);
       }
     } else if (auto* link = ToHTMLLinkElementOrNull(element)) {
@@ -507,7 +507,7 @@ bool FrameSerializer::ShouldAddURL(const KURL& url) {
 void FrameSerializer::AddToResources(
     const String& mime_type,
     ResourceHasCacheControlNoStoreHeader has_cache_control_no_store_header,
-    RefPtr<const SharedBuffer> data,
+    scoped_refptr<const SharedBuffer> data,
     const KURL& url) {
   if (delegate_.ShouldSkipResource(has_cache_control_no_store_header))
     return;
@@ -536,7 +536,7 @@ void FrameSerializer::AddImageToResources(ImageResourceContent* image,
                "type", "image", "url", url.ElidedString().Utf8().data());
   double image_start_time = MonotonicallyIncreasingTime();
 
-  RefPtr<const SharedBuffer> data = image->GetImage()->Data();
+  scoped_refptr<const SharedBuffer> data = image->GetImage()->Data();
   AddToResources(image->GetResponse().MimeType(),
                  image->HasCacheControlNoStoreHeader()
                      ? kHasCacheControlNoStoreHeader
@@ -562,7 +562,7 @@ void FrameSerializer::AddFontToResources(FontResource* font) {
   if (!font || !font->IsLoaded() || !font->ResourceBuffer())
     return;
 
-  RefPtr<const SharedBuffer> data(font->ResourceBuffer());
+  scoped_refptr<const SharedBuffer> data(font->ResourceBuffer());
 
   AddToResources(font->GetResponse().MimeType(),
                  font->HasCacheControlNoStoreHeader()
@@ -572,7 +572,7 @@ void FrameSerializer::AddFontToResources(FontResource* font) {
 }
 
 void FrameSerializer::RetrieveResourcesForProperties(
-    const StylePropertySet* style_declaration,
+    const CSSPropertyValueSet* style_declaration,
     Document& document) {
   if (!style_declaration)
     return;

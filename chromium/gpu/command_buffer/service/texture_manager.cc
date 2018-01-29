@@ -364,13 +364,21 @@ bool SizedFormatAvailable(const FeatureInfo* feature_info,
 
   // TODO(dshwang): check if it's possible to remove
   // CHROMIUM_color_buffer_float_rgb. crbug.com/329605
-  if ((feature_info->feature_flags().chromium_color_buffer_float_rgb &&
-       internal_format == GL_RGB32F) ||
-      (feature_info->feature_flags().chromium_color_buffer_float_rgba &&
-       internal_format == GL_RGBA32F)) {
+  if (feature_info->feature_flags().chromium_color_buffer_float_rgb &&
+      internal_format == GL_RGB32F) {
     return true;
   }
-
+  if (feature_info->feature_flags().chromium_color_buffer_float_rgba &&
+      internal_format == GL_RGBA32F) {
+    return true;
+  }
+  // RGBA16F textures created as WebGL 2 backbuffers (in GLES3 contexts) may be
+  // shared with compositor GLES2 contexts for compositing.
+  // https://crbug.com/777750
+  if (feature_info->feature_flags().enable_texture_half_float_linear &&
+      internal_format == GL_RGBA16F) {
+    return true;
+  }
   return feature_info->IsWebGL2OrES3Context();
 }
 
@@ -443,9 +451,11 @@ TextureManager::~TextureManager() {
       this);
 }
 
-void TextureManager::Destroy(bool have_context) {
-  have_context_ = have_context;
+void TextureManager::MarkContextLost() {
+  have_context_ = false;
+}
 
+void TextureManager::Destroy() {
   // Retreive any outstanding unlocked textures from the discardable manager so
   // we can clean them up here.
   discardable_manager_->OnTextureManagerDestruction(this);
@@ -461,7 +471,7 @@ void TextureManager::Destroy(bool have_context) {
       progress_reporter_->ReportProgress();
   }
 
-  if (have_context) {
+  if (have_context_) {
     glDeleteTextures(arraysize(black_texture_ids_), black_texture_ids_);
   }
 
@@ -2009,7 +2019,7 @@ void TextureManager::RemoveFramebufferManager(
   NOTREACHED();
 }
 
-bool TextureManager::Initialize() {
+void TextureManager::Initialize() {
   // Reset PIXEL_UNPACK_BUFFER to avoid unrelated GL error on some GL drivers.
   if (feature_info_->gl_version_info().is_es3_capable) {
     glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
@@ -2048,8 +2058,6 @@ bool TextureManager::Initialize() {
     base::trace_event::MemoryDumpManager::GetInstance()->RegisterDumpProvider(
         this, "gpu::TextureManager", base::ThreadTaskRunnerHandle::Get());
   }
-
-  return true;
 }
 
 scoped_refptr<TextureRef>

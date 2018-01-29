@@ -73,7 +73,8 @@ class FrameInputHandlerImpl : public mojom::FrameInputHandler {
   void ScrollFocusedEditableNodeIntoRect(const gfx::Rect& rect) override;
   void MoveCaret(const gfx::Point& point) override;
   void GetWidgetInputHandler(
-      mojom::WidgetInputHandlerAssociatedRequest interface_request) override;
+      mojom::WidgetInputHandlerAssociatedRequest interface_request,
+      mojom::WidgetInputHandlerHostPtr host) override;
 
  private:
   ~FrameInputHandlerImpl() override;
@@ -81,11 +82,12 @@ class FrameInputHandlerImpl : public mojom::FrameInputHandler {
 
   class HandlingState {
    public:
-    HandlingState(RenderFrameImpl* render_frame, UpdateState state);
+    HandlingState(const base::WeakPtr<RenderFrameImpl>& render_frame,
+                  UpdateState state);
     ~HandlingState();
 
    private:
-    RenderFrameImpl* render_frame_;
+    base::WeakPtr<RenderFrameImpl> render_frame_;
     bool original_select_range_value_;
     bool original_pasting_value_;
   };

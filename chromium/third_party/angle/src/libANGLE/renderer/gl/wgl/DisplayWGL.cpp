@@ -44,7 +44,7 @@ class FunctionsGLWindows : public FunctionsGL
     ~FunctionsGLWindows() override {}
 
   private:
-    void *loadProcAddress(const std::string &function) override
+    void *loadProcAddress(const std::string &function) const override
     {
         void *proc = reinterpret_cast<void*>(mGetProcAddressWGL(function.c_str()));
         if (!proc)
@@ -277,7 +277,7 @@ egl::Error DisplayWGL::initialize(egl::Display *display)
     mCurrentDC = mDeviceContext;
 
     mFunctionsGL = new FunctionsGLWindows(mOpenGLModule, mFunctionsWGL->getProcAddress);
-    mFunctionsGL->initialize();
+    mFunctionsGL->initialize(displayAttributes);
 
     mHasRobustness = mFunctionsGL->getGraphicsResetStatus != nullptr;
     if (mHasWGLCreateContextRobustness != mHasRobustness)

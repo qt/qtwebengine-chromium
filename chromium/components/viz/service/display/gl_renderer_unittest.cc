@@ -30,16 +30,14 @@
 #include "components/viz/common/frame_sinks/copy_output_request.h"
 #include "components/viz/common/frame_sinks/copy_output_result.h"
 #include "components/viz/common/quads/texture_draw_quad.h"
+#include "components/viz/common/resources/transferable_resource.h"
 #include "components/viz/service/display/overlay_strategy_single_on_top.h"
 #include "components/viz/service/display/overlay_strategy_underlay.h"
-#include "components/viz/service/display/texture_mailbox_deleter.h"
 #include "gpu/GLES2/gl2extchromium.h"
 #include "gpu/command_buffer/client/context_support.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/skia/include/core/SkImageFilter.h"
 #include "third_party/skia/include/core/SkMatrix.h"
-#include "third_party/skia/include/effects/SkColorFilterImageFilter.h"
 #include "third_party/skia/include/effects/SkColorMatrixFilter.h"
 #include "ui/gfx/transform.h"
 #include "ui/latency/latency_info.h"
@@ -51,7 +49,9 @@ using testing::AtLeast;
 using testing::ElementsAre;
 using testing::Expectation;
 using testing::InSequence;
+using testing::Invoke;
 using testing::Mock;
+using testing::Pointee;
 using testing::Return;
 using testing::StrictMock;
 
@@ -376,14 +376,15 @@ class FakeRendererGL : public GLRenderer {
                  cc::DisplayResourceProvider* resource_provider)
       : GLRenderer(settings, output_surface, resource_provider, nullptr) {}
 
-  FakeRendererGL(const RendererSettings* settings,
-                 OutputSurface* output_surface,
-                 cc::DisplayResourceProvider* resource_provider,
-                 TextureMailboxDeleter* texture_mailbox_deleter)
+  FakeRendererGL(
+      const RendererSettings* settings,
+      OutputSurface* output_surface,
+      cc::DisplayResourceProvider* resource_provider,
+      scoped_refptr<base::SingleThreadTaskRunner> current_task_runner)
       : GLRenderer(settings,
                    output_surface,
                    resource_provider,
-                   texture_mailbox_deleter) {}
+                   std::move(current_task_runner)) {}
 
   void SetOverlayProcessor(OverlayProcessor* processor) {
     overlay_processor_.reset(processor);
@@ -890,7 +891,7 @@ TEST_F(GLRendererTest, ActiveTextureState) {
 
   auto child_context_provider =
       cc::TestContextProvider::Create(std::move(child_context_owned));
-  ASSERT_TRUE(child_context_provider->BindToCurrentThread());
+  child_context_provider->BindToCurrentThread();
   auto child_resource_provider =
       cc::FakeResourceProvider::CreateLayerTreeResourceProvider(
           child_context_provider.get(), shared_bitmap_manager.get());
@@ -1515,7 +1516,7 @@ TEST_F(GLRendererShaderTest, DrawRenderPassQuadShaderPermutations) {
   RenderPass* root_pass;
 
   ResourceId mask = resource_provider_->CreateResource(
-      gfx::Size(20, 12), cc::DisplayResourceProvider::TEXTURE_HINT_DEFAULT,
+      gfx::Size(20, 12), ResourceTextureHint::kDefault,
       resource_provider_->best_texture_format(), gfx::ColorSpace());
   resource_provider_->AllocateForTesting(mask);
 
@@ -1536,8 +1537,8 @@ TEST_F(GLRendererShaderTest, DrawRenderPassQuadShaderPermutations) {
   matrix[15] = matrix[16] = matrix[17] = matrix[19] = 0;
   matrix[18] = 1;
   cc::FilterOperations filters;
-  filters.Append(
-      cc::FilterOperation::CreateReferenceFilter(SkColorFilterImageFilter::Make(
+  filters.Append(cc::FilterOperation::CreateReferenceFilter(
+      sk_make_sp<cc::ColorFilterPaintFilter>(
           SkColorFilter::MakeMatrixFilterRowMajor255(matrix), nullptr)));
 
   gfx::Transform transform_causing_aa;
@@ -1891,8 +1892,9 @@ class TestOverlayProcessor : public OverlayProcessor {
  public:
   class Strategy : public OverlayProcessor::Strategy {
    public:
-    Strategy() {}
-    ~Strategy() override {}
+    Strategy() = default;
+    ~Strategy() override = default;
+
     MOCK_METHOD4(Attempt,
                  bool(cc::DisplayResourceProvider* resource_provider,
                       RenderPass* render_pass,
@@ -1919,13 +1921,13 @@ class TestOverlayProcessor : public OverlayProcessor {
 
   explicit TestOverlayProcessor(OutputSurface* surface)
       : OverlayProcessor(surface) {}
-  ~TestOverlayProcessor() override {}
+  ~TestOverlayProcessor() override = default;
+
   void Initialize() override {
-    strategy_ = new Strategy();
-    strategies_.push_back(base::WrapUnique(strategy_));
+    strategies_.push_back(std::make_unique<Strategy>());
   }
 
-  Strategy* strategy_;
+  Strategy& strategy() { return static_cast<Strategy&>(*strategies_.back()); }
 };
 
 void MailboxReleased(const gpu::SyncToken& sync_token, bool lost_resource) {}
@@ -1946,22 +1948,20 @@ TEST_F(GLRendererTest, DontOverlayWithCopyRequests) {
   auto parent_resource_provider =
       cc::FakeResourceProvider::CreateDisplayResourceProvider(
           output_surface->context_provider(), shared_bitmap_manager.get());
-  std::unique_ptr<TextureMailboxDeleter> mailbox_deleter(
-      new TextureMailboxDeleter(base::ThreadTaskRunnerHandle::Get()));
 
   auto child_context_provider = cc::TestContextProvider::Create();
-  ASSERT_TRUE(child_context_provider->BindToCurrentThread());
+  child_context_provider->BindToCurrentThread();
   auto child_resource_provider =
       cc::FakeResourceProvider::CreateLayerTreeResourceProvider(
           child_context_provider.get(), shared_bitmap_manager.get());
 
-  TextureMailbox mailbox(gpu::Mailbox::Generate(), gpu::SyncToken(),
-                         GL_TEXTURE_2D, gfx::Size(256, 256), true);
+  auto transfer_resource = TransferableResource::MakeGLOverlay(
+      gpu::Mailbox::Generate(), GL_LINEAR, GL_TEXTURE_2D, gpu::SyncToken(),
+      gfx::Size(256, 256), true);
   auto release_callback =
       SingleReleaseCallback::Create(base::Bind(&MailboxReleased));
-  ResourceId resource_id =
-      child_resource_provider->CreateResourceFromTextureMailbox(
-          mailbox, std::move(release_callback));
+  ResourceId resource_id = child_resource_provider->ImportResource(
+      transfer_resource, std::move(release_callback));
 
   std::vector<ReturnedResource> returned_to_child;
   int child_id = parent_resource_provider->CreateChild(
@@ -1973,12 +1973,16 @@ TEST_F(GLRendererTest, DontOverlayWithCopyRequests) {
   std::vector<TransferableResource> list;
   child_resource_provider->PrepareSendToParent(resource_ids_to_transfer, &list);
   parent_resource_provider->ReceiveFromChild(child_id, list);
-  ResourceId parent_resource_id = list[0].id;
+
+  // In DisplayResourceProvider's namespace, use the mapped resource id.
+  cc::ResourceProvider::ResourceIdMap resource_map =
+      parent_resource_provider->GetChildToParentMap(child_id);
+  ResourceId parent_resource_id = resource_map[list[0].id];
 
   RendererSettings settings;
   FakeRendererGL renderer(&settings, output_surface.get(),
                           parent_resource_provider.get(),
-                          mailbox_deleter.get());
+                          base::ThreadTaskRunnerHandle::Get());
   renderer.Initialize();
   renderer.SetVisible(true);
 
@@ -2016,11 +2020,11 @@ TEST_F(GLRendererTest, DontOverlayWithCopyRequests) {
   // added a fake strategy, so checking for Attempt calls checks if there was
   // any attempt to overlay, which there shouldn't be. We can't use the quad
   // list because the render pass is cleaned up by DrawFrame.
-  EXPECT_CALL(*processor->strategy_, Attempt(_, _, _, _)).Times(0);
+  EXPECT_CALL(processor->strategy(), Attempt(_, _, _, _)).Times(0);
   EXPECT_CALL(*validator, AllowCALayerOverlays()).Times(0);
   EXPECT_CALL(*validator, AllowDCLayerOverlays()).Times(0);
   DrawFrame(&renderer, viewport_size);
-  Mock::VerifyAndClearExpectations(processor->strategy_);
+  Mock::VerifyAndClearExpectations(&processor->strategy());
   Mock::VerifyAndClearExpectations(validator.get());
 
   // Without a copy request Attempt() should be called once.
@@ -2041,7 +2045,7 @@ TEST_F(GLRendererTest, DontOverlayWithCopyRequests) {
   EXPECT_CALL(*validator, AllowDCLayerOverlays())
       .Times(1)
       .WillOnce(::testing::Return(false));
-  EXPECT_CALL(*processor->strategy_, Attempt(_, _, _, _)).Times(1);
+  EXPECT_CALL(processor->strategy(), Attempt(_, _, _, _)).Times(1);
   DrawFrame(&renderer, viewport_size);
 
   // If the CALayerOverlay path is taken, then the ordinary overlay path should
@@ -2060,7 +2064,7 @@ TEST_F(GLRendererTest, DontOverlayWithCopyRequests) {
   EXPECT_CALL(*validator, AllowCALayerOverlays())
       .Times(1)
       .WillOnce(::testing::Return(true));
-  EXPECT_CALL(*processor->strategy_, Attempt(_, _, _, _)).Times(0);
+  EXPECT_CALL(processor->strategy(), Attempt(_, _, _, _)).Times(0);
   DrawFrame(&renderer, viewport_size);
 
   // Transfer resources back from the parent to the child. Set no resources as
@@ -2136,24 +2140,22 @@ TEST_F(GLRendererTest, OverlaySyncTokensAreProcessed) {
   auto parent_resource_provider =
       cc::FakeResourceProvider::CreateDisplayResourceProvider(
           output_surface->context_provider(), shared_bitmap_manager.get());
-  std::unique_ptr<TextureMailboxDeleter> mailbox_deleter(
-      new TextureMailboxDeleter(base::ThreadTaskRunnerHandle::Get()));
 
   auto child_context_provider = cc::TestContextProvider::Create();
-  ASSERT_TRUE(child_context_provider->BindToCurrentThread());
+  child_context_provider->BindToCurrentThread();
   auto child_resource_provider =
       cc::FakeResourceProvider::CreateLayerTreeResourceProvider(
           child_context_provider.get(), shared_bitmap_manager.get());
 
   gpu::SyncToken sync_token(gpu::CommandBufferNamespace::GPU_IO, 0,
                             gpu::CommandBufferId::FromUnsafeValue(0x123), 29);
-  TextureMailbox mailbox(gpu::Mailbox::Generate(), sync_token, GL_TEXTURE_2D,
-                         gfx::Size(256, 256), true);
+  auto transfer_resource = TransferableResource::MakeGLOverlay(
+      gpu::Mailbox::Generate(), GL_LINEAR, GL_TEXTURE_2D, sync_token,
+      gfx::Size(256, 256), true);
   auto release_callback =
       SingleReleaseCallback::Create(base::Bind(&MailboxReleased));
-  ResourceId resource_id =
-      child_resource_provider->CreateResourceFromTextureMailbox(
-          mailbox, std::move(release_callback));
+  ResourceId resource_id = child_resource_provider->ImportResource(
+      transfer_resource, std::move(release_callback));
 
   std::vector<ReturnedResource> returned_to_child;
   int child_id = parent_resource_provider->CreateChild(
@@ -2165,12 +2167,16 @@ TEST_F(GLRendererTest, OverlaySyncTokensAreProcessed) {
   std::vector<TransferableResource> list;
   child_resource_provider->PrepareSendToParent(resource_ids_to_transfer, &list);
   parent_resource_provider->ReceiveFromChild(child_id, list);
-  ResourceId parent_resource_id = list[0].id;
+
+  // In DisplayResourceProvider's namespace, use the mapped resource id.
+  cc::ResourceProvider::ResourceIdMap resource_map =
+      parent_resource_provider->GetChildToParentMap(child_id);
+  ResourceId parent_resource_id = resource_map[list[0].id];
 
   RendererSettings settings;
   FakeRendererGL renderer(&settings, output_surface.get(),
                           parent_resource_provider.get(),
-                          mailbox_deleter.get());
+                          base::ThreadTaskRunnerHandle::Get());
   renderer.Initialize();
   renderer.SetVisible(true);
 
@@ -2380,18 +2386,18 @@ TEST_F(GLRendererTest, DCLayerOverlaySwitch) {
           output_surface->context_provider(), nullptr);
 
   auto child_context_provider = cc::TestContextProvider::Create();
-  ASSERT_TRUE(child_context_provider->BindToCurrentThread());
+  child_context_provider->BindToCurrentThread();
   auto child_resource_provider =
       cc::FakeResourceProvider::CreateLayerTreeResourceProvider(
           child_context_provider.get(), nullptr);
 
-  TextureMailbox mailbox(gpu::Mailbox::Generate(), gpu::SyncToken(),
-                         GL_TEXTURE_2D, gfx::Size(256, 256), true);
+  auto transfer_resource = TransferableResource::MakeGLOverlay(
+      gpu::Mailbox::Generate(), GL_LINEAR, GL_TEXTURE_2D, gpu::SyncToken(),
+      gfx::Size(256, 256), true);
   auto release_callback =
       SingleReleaseCallback::Create(base::Bind(&MailboxReleased));
-  ResourceId resource_id =
-      child_resource_provider->CreateResourceFromTextureMailbox(
-          mailbox, std::move(release_callback));
+  ResourceId resource_id = child_resource_provider->ImportResource(
+      transfer_resource, std::move(release_callback));
 
   std::vector<ReturnedResource> returned_to_child;
   int child_id = parent_resource_provider->CreateChild(
@@ -2403,7 +2409,10 @@ TEST_F(GLRendererTest, DCLayerOverlaySwitch) {
   std::vector<TransferableResource> list;
   child_resource_provider->PrepareSendToParent(resource_ids_to_transfer, &list);
   parent_resource_provider->ReceiveFromChild(child_id, list);
-  ResourceId parent_resource_id = list[0].id;
+  // In DisplayResourceProvider's namespace, use the mapped resource id.
+  cc::ResourceProvider::ResourceIdMap resource_map =
+      parent_resource_provider->GetChildToParentMap(child_id);
+  ResourceId parent_resource_id = resource_map[list[0].id];
 
   RendererSettings settings;
   settings.partial_swap_enabled = true;
@@ -2438,7 +2447,7 @@ TEST_F(GLRendererTest, DCLayerOverlaySwitch) {
       quad->SetNew(shared_state, rect, rect, needs_blending, tex_coord_rect,
                    tex_coord_rect, rect.size(), rect.size(), parent_resource_id,
                    parent_resource_id, parent_resource_id, parent_resource_id,
-                   YUVVideoDrawQuad::REC_601, gfx::ColorSpace(), 0, 1.0, 8);
+                   gfx::ColorSpace::CreateREC601(), 0, 1.0, 8);
     }
 
     // A bunch of initialization that happens.
@@ -2489,7 +2498,8 @@ class GLRendererWithMockContextTest : public ::testing::Test {
     context_support_ptr_ = context_support.get();
     auto context_provider = cc::TestContextProvider::Create(
         cc::TestWebGraphicsContext3D::Create(), std::move(context_support));
-    context_provider->BindToCurrentThread();
+    ASSERT_EQ(context_provider->BindToCurrentThread(),
+              gpu::ContextResult::kSuccess);
     output_surface_ =
         cc::FakeOutputSurface::Create3d(std::move(context_provider));
     output_surface_->BindToClient(&output_surface_client_);
@@ -2533,7 +2543,8 @@ class ContentBoundsOverlayProcessor : public OverlayProcessor {
    public:
     explicit Strategy(const std::vector<gfx::Rect>& content_bounds)
         : content_bounds_(content_bounds) {}
-    ~Strategy() override {}
+    ~Strategy() override = default;
+
     bool Attempt(cc::DisplayResourceProvider* resource_provider,
                  RenderPass* render_pass,
                  cc::OverlayCandidateList* candidates,
@@ -2543,6 +2554,7 @@ class ContentBoundsOverlayProcessor : public OverlayProcessor {
       return true;
     }
 
+   private:
     const std::vector<gfx::Rect> content_bounds_;
   };
 
@@ -2551,12 +2563,14 @@ class ContentBoundsOverlayProcessor : public OverlayProcessor {
       : OverlayProcessor(surface), content_bounds_(content_bounds) {}
 
   void Initialize() override {
-    strategy_ = new Strategy(content_bounds_);
-    strategies_.push_back(base::WrapUnique(strategy_));
+    strategies_.push_back(
+        std::make_unique<Strategy>(std::move(content_bounds_)));
   }
 
-  Strategy* strategy_;
-  const std::vector<gfx::Rect> content_bounds_;
+  Strategy& strategy() { return static_cast<Strategy&>(*strategies_.back()); }
+
+ private:
+  std::vector<gfx::Rect> content_bounds_;
 };
 
 class GLRendererSwapWithBoundsTest : public GLRendererTest {
@@ -2618,6 +2632,277 @@ TEST_F(GLRendererSwapWithBoundsTest, NonEmpty) {
   content_bounds.push_back(gfx::Rect(0, 0, 10, 10));
   content_bounds.push_back(gfx::Rect(20, 20, 30, 30));
   RunTest(content_bounds);
+}
+
+class CALayerValidator : public OverlayCandidateValidator {
+ public:
+  void GetStrategies(OverlayProcessor::StrategyList* strategies) override {}
+  bool AllowCALayerOverlays() override { return true; }
+  bool AllowDCLayerOverlays() override { return false; }
+  void CheckOverlaySupport(cc::OverlayCandidateList* surfaces) override {}
+};
+
+class MockCALayerGLES2Interface : public cc::TestGLES2Interface {
+ public:
+  MOCK_METHOD5(ScheduleCALayerSharedStateCHROMIUM,
+               void(GLfloat opacity,
+                    GLboolean is_clipped,
+                    const GLfloat* clip_rect,
+                    GLint sorting_context_id,
+                    const GLfloat* transform));
+  MOCK_METHOD6(ScheduleCALayerCHROMIUM,
+               void(GLuint contents_texture_id,
+                    const GLfloat* contents_rect,
+                    GLuint background_color,
+                    GLuint edge_aa_mask,
+                    const GLfloat* bounds_rect,
+                    GLuint filter));
+};
+
+TEST_F(GLRendererTest, CALayerOverlaysWithAllQuadsPromoted) {
+  gfx::Size viewport_size(10, 10);
+
+  // A mock GLES2Interface that can watch CALayer stuff happen.
+  auto gles2_interface = std::make_unique<MockCALayerGLES2Interface>();
+  auto* gl = gles2_interface.get();
+
+  // The context capabilities include |commit_overlay_planes| which will
+  // allow the renderer to make an empty SwapBuffers - skipping even the
+  // root RenderPass.
+  auto provider = cc::TestContextProvider::Create(std::move(gles2_interface));
+  provider->UnboundTestContext3d()->set_have_commit_overlay_planes(true);
+  provider->BindToCurrentThread();
+
+  cc::FakeOutputSurfaceClient output_surface_client;
+  auto output_surface = cc::FakeOutputSurface::Create3d(std::move(provider));
+  output_surface->BindToClient(&output_surface_client);
+
+  auto parent_resource_provider =
+      cc::FakeResourceProvider::CreateDisplayResourceProvider(
+          output_surface->context_provider(), nullptr);
+
+  RendererSettings settings;
+  FakeRendererGL renderer(&settings, output_surface.get(),
+                          parent_resource_provider.get(),
+                          base::ThreadTaskRunnerHandle::Get());
+  renderer.Initialize();
+  renderer.SetVisible(true);
+
+  TestOverlayProcessor* processor =
+      new TestOverlayProcessor(output_surface.get());
+  processor->Initialize();
+  renderer.SetOverlayProcessor(processor);
+
+  // This validator allows the renderer to make CALayer overlays. If all
+  // quads can be turned into CALayer overlays, then all damage is removed and
+  // we can skip the root RenderPass, swapping empty.
+  auto validator = std::make_unique<CALayerValidator>();
+  output_surface->SetOverlayCandidateValidator(validator.get());
+
+  // This frame has a root pass with a RenderPassDrawQuad pointing to a child
+  // pass that is at 1,2 to make it identifiable.
+  RenderPassId child_pass_id = 2;
+  RenderPassId root_pass_id = 1;
+  {
+    RenderPass* child_pass =
+        cc::AddRenderPass(&render_passes_in_draw_order_, child_pass_id,
+                          gfx::Rect(viewport_size) + gfx::Vector2d(1, 2),
+                          gfx::Transform(), cc::FilterOperations());
+    RenderPass* root_pass = cc::AddRenderPass(
+        &render_passes_in_draw_order_, root_pass_id, gfx::Rect(viewport_size),
+        gfx::Transform(), cc::FilterOperations());
+    cc::AddRenderPassQuad(root_pass, child_pass, 0, gfx::Transform(),
+                          SkBlendMode::kSrcOver);
+  }
+
+  renderer.DecideRenderPassAllocationsForFrame(render_passes_in_draw_order_);
+
+  // The child pass is drawn, promoted to an overlay, and scheduled as a
+  // CALayer.
+  {
+    InSequence sequence;
+    EXPECT_CALL(*gl, ScheduleCALayerSharedStateCHROMIUM(_, _, _, _, _));
+    EXPECT_CALL(*gl, ScheduleCALayerCHROMIUM(_, _, _, _, _, _))
+        .WillOnce(
+            Invoke([](GLuint contents_texture_id, const GLfloat* contents_rect,
+                      GLuint background_color, GLuint edge_aa_mask,
+                      const GLfloat* bounds_rect, GLuint filter) {
+              // This is the child RenderPassDrawQuad.
+              EXPECT_EQ(1, bounds_rect[0]);
+              EXPECT_EQ(2, bounds_rect[1]);
+            }));
+  }
+  DrawFrame(&renderer, viewport_size);
+  Mock::VerifyAndClearExpectations(gl);
+
+  renderer.SwapBuffers(std::vector<ui::LatencyInfo>());
+
+  // The damage was eliminated when everything was promoted to CALayers.
+  ASSERT_TRUE(output_surface->last_sent_frame()->sub_buffer_rect);
+  EXPECT_TRUE(output_surface->last_sent_frame()->sub_buffer_rect->IsEmpty());
+
+  // Frame number 2. Same inputs, except...
+  {
+    RenderPass* child_pass =
+        cc::AddRenderPass(&render_passes_in_draw_order_, child_pass_id,
+                          gfx::Rect(viewport_size) + gfx::Vector2d(1, 2),
+                          gfx::Transform(), cc::FilterOperations());
+    RenderPass* root_pass = cc::AddRenderPass(
+        &render_passes_in_draw_order_, root_pass_id, gfx::Rect(viewport_size),
+        gfx::Transform(), cc::FilterOperations());
+    cc::AddRenderPassQuad(root_pass, child_pass, 0, gfx::Transform(),
+                          SkBlendMode::kSrcOver);
+
+    // Use a cached RenderPass for the child.
+    child_pass->cache_render_pass = true;
+  }
+
+  renderer.DecideRenderPassAllocationsForFrame(render_passes_in_draw_order_);
+
+  // The child RenderPassDrawQuad gets promoted again, but importantly it
+  // did not itself have to be drawn this time as it can use the cached texture.
+  // Because we can skip the child pass, and the root pass (all quads were
+  // promoted), this exposes edge cases in GLRenderer if it assumes we draw
+  // at least one RenderPass. This still works, doesn't crash, etc, and the
+  // RenderPassDrawQuad is emitted.
+  {
+    InSequence sequence;
+    EXPECT_CALL(*gl, ScheduleCALayerSharedStateCHROMIUM(_, _, _, _, _));
+    EXPECT_CALL(*gl, ScheduleCALayerCHROMIUM(_, _, _, _, _, _));
+  }
+  DrawFrame(&renderer, viewport_size);
+  Mock::VerifyAndClearExpectations(gl);
+
+  renderer.SwapBuffers(std::vector<ui::LatencyInfo>());
+}
+
+class FramebufferWatchingGLRenderer : public FakeRendererGL {
+ public:
+  FramebufferWatchingGLRenderer(RendererSettings* settings,
+                                OutputSurface* output_surface,
+                                cc::DisplayResourceProvider* resource_provider)
+      : FakeRendererGL(settings, output_surface, resource_provider) {}
+
+  void BindFramebufferToOutputSurface() override {
+    ++bind_root_framebuffer_calls_;
+    FakeRendererGL::BindFramebufferToOutputSurface();
+  }
+
+  void BindFramebufferToTexture(const RenderPassId render_pass_id) override {
+    ++bind_child_framebuffer_calls_;
+    FakeRendererGL::BindFramebufferToTexture(render_pass_id);
+  }
+
+  int bind_root_framebuffer_calls() const {
+    return bind_root_framebuffer_calls_;
+  }
+  int bind_child_framebuffer_calls() const {
+    return bind_child_framebuffer_calls_;
+  }
+
+  void ResetBindCalls() {
+    bind_root_framebuffer_calls_ = bind_child_framebuffer_calls_ = 0;
+  }
+
+ private:
+  int bind_root_framebuffer_calls_ = 0;
+  int bind_child_framebuffer_calls_ = 0;
+};
+
+TEST_F(GLRendererTest, UndamagedRenderPassStillDrawnWhenNoPartialSwap) {
+  auto provider = cc::TestContextProvider::Create();
+  provider->UnboundTestContext3d()->set_have_post_sub_buffer(true);
+  provider->BindToCurrentThread();
+
+  cc::FakeOutputSurfaceClient output_surface_client;
+  auto output_surface = cc::FakeOutputSurface::Create3d(std::move(provider));
+  output_surface->BindToClient(&output_surface_client);
+
+  std::unique_ptr<cc::DisplayResourceProvider> resource_provider =
+      cc::FakeResourceProvider::CreateDisplayResourceProvider(
+          output_surface->context_provider(), nullptr);
+
+  for (int i = 0; i < 2; ++i) {
+    bool use_partial_swap = i == 0;
+    SCOPED_TRACE(use_partial_swap);
+
+    RendererSettings settings;
+    settings.partial_swap_enabled = use_partial_swap;
+    FramebufferWatchingGLRenderer renderer(&settings, output_surface.get(),
+                                           resource_provider.get());
+    renderer.Initialize();
+    EXPECT_EQ(use_partial_swap, renderer.use_partial_swap());
+    renderer.SetVisible(true);
+
+    gfx::Size viewport_size(100, 100);
+    gfx::Rect child_rect(10, 10);
+
+    // First frame, the child and root RenderPass each have damage.
+    RenderPass* child_pass =
+        cc::AddRenderPass(&render_passes_in_draw_order_, 2, child_rect,
+                          gfx::Transform(), cc::FilterOperations());
+    cc::AddQuad(child_pass, child_rect, SK_ColorGREEN);
+    child_pass->damage_rect = child_rect;
+
+    RenderPass* root_pass = cc::AddRenderPass(
+        &render_passes_in_draw_order_, 1, gfx::Rect(viewport_size),
+        gfx::Transform(), cc::FilterOperations());
+    cc::AddQuad(root_pass, gfx::Rect(viewport_size), SK_ColorRED);
+    cc::AddRenderPassQuad(root_pass, child_pass, 0, gfx::Transform(),
+                          SkBlendMode::kSrcOver);
+    root_pass->damage_rect = gfx::Rect(viewport_size);
+
+    EXPECT_EQ(0, renderer.bind_root_framebuffer_calls());
+    EXPECT_EQ(0, renderer.bind_child_framebuffer_calls());
+
+    renderer.DecideRenderPassAllocationsForFrame(render_passes_in_draw_order_);
+    DrawFrame(&renderer, viewport_size);
+
+    // We had to draw the root, and the child.
+    EXPECT_EQ(1, renderer.bind_child_framebuffer_calls());
+    // When the RenderPassDrawQuad in the root is drawn, we may re-bind the root
+    // framebuffer. So it can be bound more than once.
+    EXPECT_GE(renderer.bind_root_framebuffer_calls(), 1);
+
+    // Reset counting.
+    renderer.ResetBindCalls();
+
+    // Second frame, the child RenderPass has no damage in it.
+    child_pass = cc::AddRenderPass(&render_passes_in_draw_order_, 2, child_rect,
+                                   gfx::Transform(), cc::FilterOperations());
+    cc::AddQuad(child_pass, child_rect, SK_ColorGREEN);
+    child_pass->damage_rect = gfx::Rect();
+
+    // Root RenderPass has some damage that doesn't intersect the child.
+    root_pass = cc::AddRenderPass(&render_passes_in_draw_order_, 1,
+                                  gfx::Rect(viewport_size), gfx::Transform(),
+                                  cc::FilterOperations());
+    cc::AddQuad(root_pass, gfx::Rect(viewport_size), SK_ColorRED);
+    cc::AddRenderPassQuad(root_pass, child_pass, 0, gfx::Transform(),
+                          SkBlendMode::kSrcOver);
+    root_pass->damage_rect = gfx::Rect(child_rect.right(), 0, 10, 10);
+
+    EXPECT_EQ(0, renderer.bind_root_framebuffer_calls());
+    EXPECT_EQ(0, renderer.bind_child_framebuffer_calls());
+
+    renderer.DecideRenderPassAllocationsForFrame(render_passes_in_draw_order_);
+    DrawFrame(&renderer, viewport_size);
+
+    if (use_partial_swap) {
+      // Without damage overlapping the child, it didn't need to be drawn (it
+      // may choose to anyway but that'd be a waste). So we don't check for
+      // |bind_child_framebuffer_calls|. But the root should have been drawn.
+      EXPECT_EQ(renderer.bind_root_framebuffer_calls(), 1);
+    } else {
+      // Without partial swap, we have to draw the child still, this means
+      // the child is bound as the framebuffer.
+      EXPECT_EQ(1, renderer.bind_child_framebuffer_calls());
+      // When the RenderPassDrawQuad in the root is drawn, as it must be since
+      // we must draw the entire output, we may re-bind the root framebuffer. So
+      // it can be bound more than once.
+      EXPECT_GE(renderer.bind_root_framebuffer_calls(), 1);
+    }
+  }
 }
 
 }  // namespace

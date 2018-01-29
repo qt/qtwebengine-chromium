@@ -32,9 +32,9 @@ TransmitMixer::Create(TransmitMixer*& mixer)
     mixer = new TransmitMixer();
     if (mixer == NULL)
     {
-        LOG(LS_ERROR) << "TransmitMixer::Create() unable to allocate memory "
-                         "for mixer";
-        return -1;
+      RTC_DLOG(LS_ERROR) <<
+          "TransmitMixer::Create() unable to allocate memory for mixer";
+      return -1;
     }
     return 0;
 }
@@ -70,16 +70,10 @@ void TransmitMixer::GetSendCodecInfo(int* max_sample_rate,
        it.Increment()) {
     Channel* channel = it.GetChannel();
     if (channel->Sending()) {
-      CodecInst codec;
-      // TODO(ossu): Investigate how this could happen. b/62909493
-      if (channel->GetSendCodec(codec) == 0) {
-        *max_sample_rate = std::max(*max_sample_rate, codec.plfreq);
-        *max_channels = std::max(*max_channels, codec.channels);
-      } else {
-        LOG(LS_WARNING) << "Unable to get send codec for channel "
-                        << channel->ChannelId();
-        RTC_NOTREACHED();
-      }
+      const auto props = channel->GetEncoderProps();
+      RTC_CHECK(props);
+      *max_sample_rate = std::max(*max_sample_rate, props->sample_rate_hz);
+      *max_channels = std::max(*max_channels, props->num_channels);
     }
   }
 }
@@ -193,8 +187,8 @@ void TransmitMixer::ProcessAudio(int delay_ms, int clock_drift,
 
   GainControl* agc = audioproc_->gain_control();
   if (agc->set_stream_analog_level(current_mic_level) != 0) {
-    LOG(LS_ERROR) << "set_stream_analog_level failed: current_mic_level = "
-                  << current_mic_level;
+    RTC_DLOG(LS_ERROR) << "set_stream_analog_level failed: current_mic_level = "
+                       << current_mic_level;
     assert(false);
   }
 
@@ -207,7 +201,7 @@ void TransmitMixer::ProcessAudio(int delay_ms, int clock_drift,
 
   int err = audioproc_->ProcessStream(&_audioFrame);
   if (err != 0) {
-    LOG(LS_ERROR) << "ProcessStream() error: " << err;
+    RTC_DLOG(LS_ERROR) << "ProcessStream() error: " << err;
     assert(false);
   }
 

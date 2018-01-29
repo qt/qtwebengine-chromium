@@ -36,7 +36,6 @@
 #include "media/cdm/api/content_decryption_module.h"
 #include "media/cdm/cdm_adapter.h"
 #include "media/cdm/cdm_auxiliary_helper.h"
-#include "media/cdm/cdm_file_io.h"
 #include "media/cdm/external_clear_key_test_helper.h"
 #include "media/cdm/mock_helpers.h"
 #include "media/cdm/simple_cdm_allocator.h"
@@ -274,9 +273,7 @@ class AesDecryptorTest : public testing::TestWithParam<TestType> {
 
       // Enable use of External Clear Key CDM.
       scoped_feature_list_.InitWithFeatures(
-          {media::kExternalClearKeyForTesting,
-           media::kSupportExperimentalCdmInterface},
-          {});
+          {media::kExternalClearKeyForTesting}, {});
 
       helper_.reset(new ExternalClearKeyTestHelper());
 
@@ -496,13 +493,6 @@ class AesDecryptorTest : public testing::TestWithParam<TestType> {
         break;
     }
   }
-
-#if BUILDFLAG(ENABLE_LIBRARY_CDMS)
-  std::unique_ptr<CdmFileIO> CreateCdmFileIO(cdm::FileIOClient* client) {
-    ADD_FAILURE() << "Should never be called";
-    return nullptr;
-  }
-#endif
 
   // Must be the first member to be initialized first and destroyed last.
   base::test::ScopedTaskEnvironment scoped_task_environment_;

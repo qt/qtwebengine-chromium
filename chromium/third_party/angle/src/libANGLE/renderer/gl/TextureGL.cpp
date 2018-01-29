@@ -15,6 +15,7 @@
 #include "libANGLE/State.h"
 #include "libANGLE/angletypes.h"
 #include "libANGLE/formatutils.h"
+#include "libANGLE/queryconversions.h"
 #include "libANGLE/renderer/gl/BlitGL.h"
 #include "libANGLE/renderer/gl/BufferGL.h"
 #include "libANGLE/renderer/gl/FramebufferGL.h"
@@ -172,7 +173,10 @@ gl::Error TextureGL::setImage(const gl::Context *context,
                               const gl::PixelUnpackState &unpack,
                               const uint8_t *pixels)
 {
-    if (mWorkarounds.unpackOverlappingRowsSeparatelyUnpackBuffer && unpack.pixelBuffer.get() &&
+    const gl::Buffer *unpackBuffer =
+        context->getGLState().getTargetBuffer(gl::BufferBinding::PixelUnpack);
+
+    if (mWorkarounds.unpackOverlappingRowsSeparatelyUnpackBuffer && unpackBuffer &&
         unpack.rowLength != 0 && unpack.rowLength < size.width)
     {
         // The rows overlap in unpack memory. Upload the texture row by row to work around
@@ -186,15 +190,16 @@ gl::Error TextureGL::setImage(const gl::Context *context,
 
         gl::Box area(0, 0, 0, size.width, size.height, size.depth);
         return setSubImageRowByRowWorkaround(context, target, level, area, format, type, unpack,
-                                             pixels);
+                                             unpackBuffer, pixels);
     }
 
     if (mWorkarounds.unpackLastRowSeparatelyForPaddingInclusion)
     {
         bool apply;
-        ANGLE_TRY_RESULT(ShouldApplyLastRowPaddingWorkaround(size, unpack, format, type,
-                                                             UseTexImage3D(getTarget()), pixels),
-                         apply);
+        ANGLE_TRY_RESULT(
+            ShouldApplyLastRowPaddingWorkaround(size, unpack, unpackBuffer, format, type,
+                                                UseTexImage3D(getTarget()), pixels),
+            apply);
 
         // The driver will think the pixel buffer doesn't have enough data, work around this bug
         // by uploading the last row (and last level if 3D) separately.
@@ -209,7 +214,7 @@ gl::Error TextureGL::setImage(const gl::Context *context,
 
             gl::Box area(0, 0, 0, size.width, size.height, size.depth);
             return setSubImagePaddingWorkaround(context, target, level, area, format, type, unpack,
-                                                pixels);
+                                                unpackBuffer, pixels);
         }
     }
 
@@ -261,8 +266,7 @@ void TextureGL::reserveTexImageToBeFilled(GLenum target,
                                           GLenum format,
                                           GLenum type)
 {
-    gl::PixelUnpackState unpack;
-    mStateManager->setPixelUnpackState(unpack);
+    mStateManager->setPixelUnpackBuffer(nullptr);
     setImageHelper(target, level, internalFormat, size, format, type, nullptr);
 }
 
@@ -276,6 +280,8 @@ gl::Error TextureGL::setSubImage(const gl::Context *context,
                                  const uint8_t *pixels)
 {
     ASSERT(CompatibleTextureTarget(getTarget(), target));
+    const gl::Buffer *unpackBuffer =
+        context->getGLState().getTargetBuffer(gl::BufferBinding::PixelUnpack);
 
     nativegl::TexSubImageFormat texSubImageFormat =
         nativegl::GetTexSubImageFormat(mFunctions, mWorkarounds, format, type);
@@ -284,11 +290,11 @@ gl::Error TextureGL::setSubImage(const gl::Context *context,
            GetLevelInfo(format, texSubImageFormat.format).lumaWorkaround.enabled);
 
     mStateManager->bindTexture(getTarget(), mTextureID);
-    if (mWorkarounds.unpackOverlappingRowsSeparatelyUnpackBuffer && unpack.pixelBuffer.get() &&
+    if (mWorkarounds.unpackOverlappingRowsSeparatelyUnpackBuffer && unpackBuffer &&
         unpack.rowLength != 0 && unpack.rowLength < area.width)
     {
         return setSubImageRowByRowWorkaround(context, target, level, area, format, type, unpack,
-                                             pixels);
+                                             unpackBuffer, pixels);
     }
 
     if (mWorkarounds.unpackLastRowSeparatelyForPaddingInclusion)
@@ -296,16 +302,17 @@ gl::Error TextureGL::setSubImage(const gl::Context *context,
         gl::Extents size(area.width, area.height, area.depth);
 
         bool apply;
-        ANGLE_TRY_RESULT(ShouldApplyLastRowPaddingWorkaround(size, unpack, format, type,
-                                                             UseTexImage3D(getTarget()), pixels),
-                         apply);
+        ANGLE_TRY_RESULT(
+            ShouldApplyLastRowPaddingWorkaround(size, unpack, unpackBuffer, format, type,
+                                                UseTexImage3D(getTarget()), pixels),
+            apply);
 
         // The driver will think the pixel buffer doesn't have enough data, work around this bug
         // by uploading the last row (and last level if 3D) separately.
         if (apply)
         {
             return setSubImagePaddingWorkaround(context, target, level, area, format, type, unpack,
-                                                pixels);
+                                                unpackBuffer, pixels);
         }
     }
 
@@ -334,13 +341,13 @@ gl::Error TextureGL::setSubImageRowByRowWorkaround(const gl::Context *context,
                                                    GLenum format,
                                                    GLenum type,
                                                    const gl::PixelUnpackState &unpack,
+                                                   const gl::Buffer *unpackBuffer,
                                                    const uint8_t *pixels)
 {
     gl::PixelUnpackState directUnpack;
-    directUnpack.pixelBuffer.set(context, unpack.pixelBuffer.get());
     directUnpack.alignment   = 1;
     mStateManager->setPixelUnpackState(directUnpack);
-    directUnpack.pixelBuffer.set(context, nullptr);
+    mStateManager->setPixelUnpackBuffer(unpackBuffer);
 
     const gl::InternalFormat &glFormat   = gl::GetInternalFormatInfo(format, type);
     GLuint rowBytes                      = 0;
@@ -391,6 +398,7 @@ gl::Error TextureGL::setSubImagePaddingWorkaround(const gl::Context *context,
                                                   GLenum format,
                                                   GLenum type,
                                                   const gl::PixelUnpackState &unpack,
+                                                  const gl::Buffer *unpackBuffer,
                                                   const uint8_t *pixels)
 {
     const gl::InternalFormat &glFormat = gl::GetInternalFormatInfo(format, type);
@@ -406,9 +414,9 @@ gl::Error TextureGL::setSubImagePaddingWorkaround(const gl::Context *context,
                      skipBytes);
 
     mStateManager->setPixelUnpackState(unpack);
+    mStateManager->setPixelUnpackBuffer(unpackBuffer);
 
     gl::PixelUnpackState directUnpack;
-    directUnpack.pixelBuffer.set(context, unpack.pixelBuffer.get());
     directUnpack.alignment   = 1;
 
     if (useTexImage3D)
@@ -463,8 +471,6 @@ gl::Error TextureGL::setSubImagePaddingWorkaround(const gl::Context *context,
                                   area.y + area.height - 1, area.width, 1, format, type,
                                   lastRowPixels);
     }
-
-    directUnpack.pixelBuffer.set(context, nullptr);
 
     return gl::NoError();
 }
@@ -581,7 +587,12 @@ gl::Error TextureGL::copyImage(const gl::Context *context,
         angle::MemoryBuffer *zero;
         ANGLE_TRY(context->getZeroFilledBuffer(
             origSourceArea.width * origSourceArea.height * pixelBytes, &zero));
-        mStateManager->setPixelUnpackState(gl::PixelUnpackState(1, 0));
+
+        gl::PixelUnpackState unpack;
+        unpack.alignment = 1;
+        mStateManager->setPixelUnpackState(unpack);
+        mStateManager->setPixelUnpackBuffer(nullptr);
+
         mFunctions->texImage2D(target, static_cast<GLint>(level), copyTexImageFormat.internalFormat,
                                origSourceArea.width, origSourceArea.height, 0,
                                gl::GetUnsizedFormat(copyTexImageFormat.internalFormat), type,
@@ -819,7 +830,7 @@ gl::Error TextureGL::setStorage(const gl::Context *context,
         else
         {
             // Make sure no pixel unpack buffer is bound
-            mStateManager->bindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
+            mStateManager->bindBuffer(gl::BufferBinding::PixelUnpack, 0);
 
             const gl::InternalFormat &internalFormatInfo =
                 gl::GetSizedInternalFormatInfo(internalFormat);
@@ -842,8 +853,7 @@ gl::Error TextureGL::setStorage(const gl::Context *context,
                                                                      internalFormat);
 
                         GLuint dataSize = 0;
-                        ANGLE_TRY_RESULT(internalFormatInfo.computeCompressedImageSize(
-                                             GL_UNSIGNED_BYTE, levelSize),
+                        ANGLE_TRY_RESULT(internalFormatInfo.computeCompressedImageSize(levelSize),
                                          dataSize);
                         mFunctions->compressedTexImage2D(target, static_cast<GLint>(level),
                                                          compressedTexImageFormat.format,
@@ -873,8 +883,7 @@ gl::Error TextureGL::setStorage(const gl::Context *context,
                                                                          internalFormat);
 
                             GLuint dataSize = 0;
-                            ANGLE_TRY_RESULT(internalFormatInfo.computeCompressedImageSize(
-                                                 GL_UNSIGNED_BYTE, levelSize),
+                            ANGLE_TRY_RESULT(internalFormatInfo.computeCompressedImageSize(levelSize),
                                              dataSize);
                             mFunctions->compressedTexImage2D(
                                 face, static_cast<GLint>(level), compressedTexImageFormat.format,
@@ -912,7 +921,7 @@ gl::Error TextureGL::setStorage(const gl::Context *context,
         else
         {
             // Make sure no pixel unpack buffer is bound
-            mStateManager->bindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
+            mStateManager->bindBuffer(gl::BufferBinding::PixelUnpack, 0);
 
             const gl::InternalFormat &internalFormatInfo =
                 gl::GetSizedInternalFormatInfo(internalFormat);
@@ -934,7 +943,7 @@ gl::Error TextureGL::setStorage(const gl::Context *context,
 
                     GLuint dataSize = 0;
                     ANGLE_TRY_RESULT(
-                        internalFormatInfo.computeCompressedImageSize(GL_UNSIGNED_BYTE, levelSize),
+                        internalFormatInfo.computeCompressedImageSize(levelSize),
                         dataSize);
                     mFunctions->compressedTexImage3D(target, i, compressedTexImageFormat.format,
                                                      levelSize.width, levelSize.height,
@@ -969,7 +978,7 @@ gl::Error TextureGL::setStorageMultisample(const gl::Context *context,
                                            GLsizei samples,
                                            GLint internalFormat,
                                            const gl::Extents &size,
-                                           GLboolean fixedSampleLocations)
+                                           bool fixedSampleLocations)
 {
     nativegl::TexStorageFormat texStorageFormat =
         nativegl::GetTexStorageFormat(mFunctions, mWorkarounds, internalFormat);
@@ -979,7 +988,8 @@ gl::Error TextureGL::setStorageMultisample(const gl::Context *context,
     ASSERT(size.depth == 1);
 
     mFunctions->texStorage2DMultisample(target, samples, texStorageFormat.internalFormat,
-                                        size.width, size.height, fixedSampleLocations);
+                                        size.width, size.height,
+                                        gl::ConvertToGLBoolean(fixedSampleLocations));
 
     setLevelInfo(target, 0, 1, GetLevelInfo(internalFormat, texStorageFormat.internalFormat));
 
@@ -1145,6 +1155,8 @@ void TextureGL::syncState(const gl::Texture::DirtyBits &dirtyBits)
                 mFunctions->texParameteri(getTarget(), GL_TEXTURE_MAX_LEVEL, mAppliedMaxLevel);
                 break;
             case gl::Texture::DIRTY_BIT_USAGE:
+                break;
+            case gl::Texture::DIRTY_BIT_LABEL:
                 break;
 
             default:
@@ -1336,13 +1348,7 @@ void TextureGL::setLevelInfo(GLenum target,
 {
     ASSERT(levelCount > 0);
 
-    GLuint baseLevel              = mState.getEffectiveBaseLevel();
-    bool needsResync              = level <= baseLevel && level + levelCount >= baseLevel &&
-                       (levelInfo.depthStencilWorkaround || levelInfo.lumaWorkaround.enabled);
-    if (needsResync)
-    {
-        mLocalDirtyBits |= GetLevelWorkaroundDirtyBits();
-    }
+    bool updateWorkarounds = levelInfo.depthStencilWorkaround || levelInfo.lumaWorkaround.enabled;
 
     for (size_t i = level; i < level + levelCount; i++)
     {
@@ -1353,15 +1359,30 @@ void TextureGL::setLevelInfo(GLenum target,
             {
                 size_t index = GetLevelInfoIndex(face, level);
                 ASSERT(index < mLevelInfo.size());
-                mLevelInfo[index] = levelInfo;
+                auto &curLevelInfo = mLevelInfo[index];
+
+                updateWorkarounds |= curLevelInfo.depthStencilWorkaround;
+                updateWorkarounds |= curLevelInfo.lumaWorkaround.enabled;
+
+                curLevelInfo = levelInfo;
             }
         }
         else
         {
             size_t index = GetLevelInfoIndex(target, level);
             ASSERT(index < mLevelInfo.size());
-            mLevelInfo[index] = levelInfo;
+            auto &curLevelInfo = mLevelInfo[index];
+
+            updateWorkarounds |= curLevelInfo.depthStencilWorkaround;
+            updateWorkarounds |= curLevelInfo.lumaWorkaround.enabled;
+
+            curLevelInfo = levelInfo;
         }
+    }
+
+    if (updateWorkarounds)
+    {
+        mLocalDirtyBits |= GetLevelWorkaroundDirtyBits();
     }
 }
 

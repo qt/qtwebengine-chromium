@@ -23,12 +23,12 @@
 #include "components/pref_registry/pref_registry_syncable.h"
 #include "components/prefs/pref_service.h"
 #include "components/signin/core/browser/account_tracker_service.h"
+#include "components/signin/core/browser/profile_management_switches.h"
 #include "components/signin/core/browser/profile_oauth2_token_service.h"
 #include "components/signin/core/browser/signin_client.h"
 #include "components/signin/core/browser/signin_internals_util.h"
 #include "components/signin/core/browser/signin_manager.h"
-#include "components/signin/core/common/profile_management_switches.h"
-#include "components/signin/core/common/signin_switches.h"
+#include "components/signin/core/browser/signin_switches.h"
 #include "google_apis/gaia/oauth2_token_service_delegate.h"
 #include "net/base/backoff_entry.h"
 
@@ -169,6 +169,13 @@ std::string GetAccountConsistencyDescription() {
       return "Mirror";
     case signin::AccountConsistencyMethod::kDiceFixAuthErrors:
       return "DICE fixing auth errors";
+    case signin::AccountConsistencyMethod::kDicePrepareMigration:
+      return "DICE preparing migration";
+    case signin::AccountConsistencyMethod::
+        kDicePrepareMigrationChromeSyncEndpoint:
+      return "DICE preparing migration with Chrome sync Gaia endpoint";
+    case signin::AccountConsistencyMethod::kDiceMigration:
+      return "DICE migration";
     case signin::AccountConsistencyMethod::kDice:
       return "DICE";
   }
@@ -187,7 +194,7 @@ AboutSigninInternals::AboutSigninInternals(
     : token_service_(token_service),
       account_tracker_(account_tracker),
       signin_manager_(signin_manager),
-      client_(NULL),
+      client_(nullptr),
       signin_error_controller_(signin_error_controller),
       cookie_manager_service_(cookie_manager_service) {}
 
@@ -302,21 +309,19 @@ void AboutSigninInternals::NotifyObservers() {
   if (!signin_observers_.might_have_observers())
     return;
 
-  const std::string product_version = client_->GetProductVersion();
-
   std::unique_ptr<base::DictionaryValue> signin_status_value =
       signin_status_.ToValue(account_tracker_, signin_manager_,
                              signin_error_controller_, token_service_,
-                             cookie_manager_service_, product_version);
+                             cookie_manager_service_, client_);
 
   for (auto& observer : signin_observers_)
     observer.OnSigninStateChanged(signin_status_value.get());
 }
 
 std::unique_ptr<base::DictionaryValue> AboutSigninInternals::GetSigninStatus() {
-  return signin_status_.ToValue(
-      account_tracker_, signin_manager_, signin_error_controller_,
-      token_service_, cookie_manager_service_, client_->GetProductVersion());
+  return signin_status_.ToValue(account_tracker_, signin_manager_,
+                                signin_error_controller_, token_service_,
+                                cookie_manager_service_, client_);
 }
 
 void AboutSigninInternals::OnAccessTokenRequested(
@@ -515,15 +520,16 @@ AboutSigninInternals::SigninStatus::ToValue(
     SigninManagerBase* signin_manager,
     SigninErrorController* signin_error_controller,
     ProfileOAuth2TokenService* token_service,
-    GaiaCookieManagerService* cookie_manager_service_,
-    const std::string& product_version) {
+    GaiaCookieManagerService* cookie_manager_service,
+    SigninClient* signin_client) {
   auto signin_status = base::MakeUnique<base::DictionaryValue>();
   auto signin_info = base::MakeUnique<base::ListValue>();
 
   // A summary of signin related info first.
   base::ListValue* basic_info =
       AddSection(signin_info.get(), "Basic Information");
-  AddSectionEntry(basic_info, "Chrome Version", product_version);
+  AddSectionEntry(basic_info, "Chrome Version",
+                  signin_client->GetProductVersion());
   AddSectionEntry(basic_info, "Account Consistency",
                   GetAccountConsistencyDescription());
   AddSectionEntry(basic_info, "Signin Status",
@@ -577,7 +583,7 @@ AboutSigninInternals::SigninStatus::ToValue(
   }
 
   const net::BackoffEntry* cookie_manager_backoff_entry =
-      cookie_manager_service_->GetBackoffEntry();
+      cookie_manager_service->GetBackoffEntry();
 
   if (cookie_manager_backoff_entry->ShouldRejectRequest()) {
     Time next_retry_time = Time::NowFromSystemTime() +
@@ -642,7 +648,7 @@ AboutSigninInternals::SigninStatus::ToValue(
   signin_status->Set("accountInfo", std::move(account_info));
 
 #if BUILDFLAG(ENABLE_DICE_SUPPORT)
-  if (signin::IsAccountConsistencyDiceEnabled()) {
+  if (signin::IsDiceEnabledForProfile(signin_client->GetPrefs())) {
     auto dice_info = base::MakeUnique<base::DictionaryValue>();
     dice_info->SetBoolean("isSignedIn", signin_manager->IsAuthenticated());
     signin_status->Set("dice", std::move(dice_info));

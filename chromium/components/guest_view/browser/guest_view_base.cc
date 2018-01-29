@@ -447,10 +447,6 @@ WebContents* GuestViewBase::GetOwnerWebContents() const {
   return owner_web_contents_;
 }
 
-void GuestViewBase::GuestSizeChanged(const gfx::Size& new_size) {
-  UpdateGuestSize(new_size, auto_size_enabled_);
-}
-
 const GURL& GuestViewBase::GetOwnerSiteURL() const {
   return owner_web_contents()->GetLastCommittedURL();
 }
@@ -656,7 +652,7 @@ content::ColorChooser* GuestViewBase::OpenColorChooser(
 
 void GuestViewBase::ResizeDueToAutoResize(WebContents* web_contents,
                                           const gfx::Size& new_size) {
-  guest_host_->GuestResizeDueToAutoResize(new_size);
+  UpdateGuestSize(new_size, auto_size_enabled_);
 }
 
 void GuestViewBase::RunFileChooser(content::RenderFrameHost* render_frame_host,
@@ -871,14 +867,16 @@ void GuestViewBase::StartTrackingEmbedderZoomLevel() {
 }
 
 void GuestViewBase::StopTrackingEmbedderZoomLevel() {
-  if (!attached() || !ZoomPropagatesFromEmbedderToGuest())
-    return;
+  // TODO(wjmaclean): Remove the observer any time the GuestWebView transitions
+  // from propagating to not-propagating the zoom from the embedder.
 
   auto* embedder_zoom_controller =
       zoom::ZoomController::FromWebContents(owner_web_contents());
   // Chrome Apps do not have a ZoomController.
   if (!embedder_zoom_controller)
     return;
+
+  // It is safe to remove an observer that was never registed.
   embedder_zoom_controller->RemoveObserver(this);
 }
 

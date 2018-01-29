@@ -35,6 +35,17 @@
 
 namespace blink {
 
+enum DataU8ColorType {
+  kRGBAColorType,
+  kN32ColorType,
+};
+
+enum ImageDataStorageFormat {
+  kUint8ClampedArrayStorageFormat,
+  kUint16ArrayStorageFormat,
+  kFloat32ArrayStorageFormat,
+};
+
 enum StrokeStyle {
   kNoStroke,
   kSolidStroke,
@@ -48,11 +59,10 @@ enum InterpolationQuality {
   kInterpolationNone = kNone_SkFilterQuality,
   kInterpolationLow = kLow_SkFilterQuality,
   kInterpolationMedium = kMedium_SkFilterQuality,
-  kInterpolationHigh = kHigh_SkFilterQuality,
 #if defined(WTF_USE_LOW_QUALITY_IMAGE_INTERPOLATION)
   kInterpolationDefault = kInterpolationLow,
 #else
-  kInterpolationDefault = kInterpolationHigh,
+  kInterpolationDefault = kInterpolationMedium,
 #endif
 };
 
@@ -103,6 +113,7 @@ enum SnapshotReason {
   kSnapshotReasonWebGLDrawImageIntoBuffer,
   kSnapshotReasonCopyToClipboard,
   kSnapshotReasonCreateImageBitmap,
+  kSnapshotReasonLowLatencyFrame,
 };
 
 // Note: enum used directly for histogram, values must not change
@@ -117,12 +128,6 @@ enum DisableDeferralReason {
   kDisableDeferralDrawImageWithTextureBackedSourceImage = 6,
   kDisableDeferralReasonLowEndDevice = 7,
   kDisableDeferralReasonCount,
-};
-
-enum FlushReason {
-  kFlushReasonUnknown,
-  kFlushReasonInitialClear,
-  kFlushReasonDrawImageOfWebGL,
 };
 
 enum MailboxSyncMode {

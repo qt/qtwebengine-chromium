@@ -6,7 +6,6 @@
 
 #include <string>
 
-#include "base/feature_list.h"
 #include "base/memory/ref_counted_memory.h"
 #include "base/strings/string16.h"
 #include "base/strings/string_number_conversions.h"
@@ -25,7 +24,6 @@
 #include "chrome/browser/ui/bookmarks/bookmark_bar_constants.h"
 #include "chrome/browser/ui/webui/app_launcher_login_handler.h"
 #include "chrome/browser/ui/webui/ntp/app_launcher_handler.h"
-#include "chrome/common/chrome_features.h"
 #include "chrome/common/features.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
@@ -150,17 +148,6 @@ NTPResourceCache::NTPResourceCache(Profile* profile)
   profile_pref_change_registrar_.Add(prefs::kSignInPromoShowNTPBubble,
                                      callback);
   profile_pref_change_registrar_.Add(prefs::kHideWebStoreIcon, callback);
-
-  // Some tests don't have a local state.
-#if BUILDFLAG(ENABLE_APP_LIST)
-  if (g_browser_process->local_state()) {
-    local_state_pref_change_registrar_.Init(g_browser_process->local_state());
-    local_state_pref_change_registrar_.Add(prefs::kShowAppLauncherPromo,
-                                           callback);
-    local_state_pref_change_registrar_.Add(
-        prefs::kAppLauncherHasBeenEnabled, callback);
-  }
-#endif
 }
 
 NTPResourceCache::~NTPResourceCache() {}
@@ -258,9 +245,6 @@ void NTPResourceCache::Invalidate() {
 }
 
 void NTPResourceCache::CreateNewTabIncognitoHTML() {
-  const bool is_md_incognito_ntp_enabled =
-      base::FeatureList::IsEnabled(features::kMaterialDesignIncognitoNTP);
-
   ui::TemplateReplacements replacements;
   // Note: there's specific rules in CSS that look for this attribute's content
   // being equal to "true" as a string.
@@ -269,27 +253,16 @@ void NTPResourceCache::CreateNewTabIncognitoHTML() {
           ? "true"
           : "false";
 
-  if (is_md_incognito_ntp_enabled) {
-    replacements["incognitoTabDescription"] =
-        l10n_util::GetStringUTF8(IDS_NEW_TAB_OTR_SUBTITLE);
-    replacements["incognitoTabHeading"] =
-        l10n_util::GetStringUTF8(IDS_NEW_TAB_OTR_TITLE);
-    replacements["incognitoTabWarning"] =
-        l10n_util::GetStringUTF8(IDS_NEW_TAB_OTR_VISIBLE);
-    replacements["learnMore"] =
-        l10n_util::GetStringUTF8(IDS_NEW_TAB_OTR_LEARN_MORE_LINK);
-    replacements["incognitoTabFeatures"] =
-        l10n_util::GetStringUTF8(IDS_NEW_TAB_OTR_NOT_SAVED);
-  } else {
-    replacements["incognitoTabDescription"] =
-        l10n_util::GetStringUTF8(IDS_NEW_TAB_OTR_DESCRIPTION);
-    replacements["incognitoTabHeading"] =
-        l10n_util::GetStringUTF8(IDS_NEW_TAB_OTR_HEADING);
-    replacements["incognitoTabWarning"] =
-        l10n_util::GetStringUTF8(IDS_NEW_TAB_OTR_MESSAGE_WARNING);
-    replacements["learnMore"] =
-        l10n_util::GetStringUTF8(IDS_NEW_TAB_OTR_LEARN_MORE_LINK);
-  }
+  replacements["incognitoTabDescription"] =
+      l10n_util::GetStringUTF8(IDS_NEW_TAB_OTR_SUBTITLE);
+  replacements["incognitoTabHeading"] =
+      l10n_util::GetStringUTF8(IDS_NEW_TAB_OTR_TITLE);
+  replacements["incognitoTabWarning"] =
+      l10n_util::GetStringUTF8(IDS_NEW_TAB_OTR_VISIBLE);
+  replacements["learnMore"] =
+      l10n_util::GetStringUTF8(IDS_NEW_TAB_OTR_LEARN_MORE_LINK);
+  replacements["incognitoTabFeatures"] =
+      l10n_util::GetStringUTF8(IDS_NEW_TAB_OTR_NOT_SAVED);
   replacements["learnMoreLink"] = kLearnMoreIncognitoUrl;
   replacements["title"] = l10n_util::GetStringUTF8(IDS_NEW_TAB_TITLE);
 
@@ -303,8 +276,7 @@ void NTPResourceCache::CreateNewTabIncognitoHTML() {
 
   static const base::StringPiece incognito_tab_html(
       ui::ResourceBundle::GetSharedInstance().GetRawDataResource(
-          is_md_incognito_ntp_enabled ? IDR_MD_INCOGNITO_TAB_HTML
-                                      : IDR_INCOGNITO_TAB_HTML));
+          IDR_INCOGNITO_TAB_HTML));
 
   std::string full_html =
       ui::ReplaceTemplateExpressions(incognito_tab_html, replacements);
@@ -389,7 +361,6 @@ void NTPResourceCache::CreateNewTabHTML() {
   load_time_data.SetString(
       "bookmarkbarattached",
       prefs->GetBoolean(bookmarks::prefs::kShowBookmarkBar) ? "true" : "false");
-  load_time_data.SetBoolean("showAppLauncherPromo", false);
   load_time_data.SetString("title",
       l10n_util::GetStringUTF16(IDS_NEW_TAB_TITLE));
   load_time_data.SetString("webStoreTitle",
@@ -441,8 +412,6 @@ void NTPResourceCache::CreateNewTabHTML() {
       l10n_util::GetStringUTF16(IDS_NEW_TAB_PAGE_SWITCHER_CHANGE_TITLE));
   load_time_data.SetString("page_switcher_same_title",
       l10n_util::GetStringUTF16(IDS_NEW_TAB_PAGE_SWITCHER_SAME_TITLE));
-  load_time_data.SetString("appsPromoTitle",
-      l10n_util::GetStringUTF16(IDS_NEW_TAB_PAGE_APPS_PROMO_TITLE));
   // On Mac OS X 10.7+, horizontal scrolling can be treated as a back or
   // forward gesture. Pass through a flag that indicates whether or not that
   // feature is enabled.

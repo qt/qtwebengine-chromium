@@ -18,14 +18,7 @@
 #include "base/time/time.h"
 #include "net/base/net_export.h"
 #include "net/cert/x509_cert_types.h"
-#include "net/net_features.h"
-
-#if BUILDFLAG(USE_BYTE_CERTS)
 #include "third_party/boringssl/src/include/openssl/base.h"
-#elif defined(USE_NSS_CERTS)
-// Forward declaration; real one in <cert.h>
-struct CERTCertificateStr;
-#endif
 
 namespace base {
 class Pickle;
@@ -48,16 +41,9 @@ class NET_EXPORT X509Certificate
   // An OSCertHandle is a handle to a certificate object in the underlying
   // crypto library. We assume that OSCertHandle is a pointer type on all
   // platforms and that NULL represents an invalid OSCertHandle.
-#if BUILDFLAG(USE_BYTE_CERTS)
   // TODO(mattm): Remove OSCertHandle type and clean up the interfaces once all
   // platforms use the CRYPTO_BUFFER version.
   typedef CRYPTO_BUFFER* OSCertHandle;
-#elif defined(USE_NSS_CERTS)
-  typedef struct CERTCertificateStr* OSCertHandle;
-#else
-  // TODO(ericroman): not implemented
-  typedef void* OSCertHandle;
-#endif
 
   typedef std::vector<OSCertHandle> OSCertHandles;
 
@@ -90,30 +76,6 @@ class NET_EXPORT X509Certificate
     // Automatically detect the format.
     FORMAT_AUTO = FORMAT_SINGLE_CERTIFICATE | FORMAT_PEM_CERT_SEQUENCE |
                   FORMAT_PKCS7,
-  };
-
-  // PickleType is intended for deserializing certificates that were pickled
-  // by previous releases as part of a net::HttpResponseInfo.
-  // When serializing certificates to a new base::Pickle,
-  // PICKLETYPE_CERTIFICATE_CHAIN_V3 is always used.
-  enum PickleType {
-    // When reading a certificate from a Pickle, the Pickle only contains a
-    // single certificate.
-    PICKLETYPE_SINGLE_CERTIFICATE,
-
-    // When reading a certificate from a Pickle, the Pickle contains the
-    // the certificate plus any certificates that were stored in
-    // |intermediate_ca_certificates_| at the time it was serialized.
-    // The count of certificates is stored as a size_t, which is either 32
-    // or 64 bits.
-    PICKLETYPE_CERTIFICATE_CHAIN_V2,
-
-    // The Pickle contains the certificate and any certificates that were
-    // stored in |intermediate_ca_certs_| at the time it was serialized.
-    // The format is [int count], [data - this certificate],
-    // [data - intermediate1], ... [data - intermediateN].
-    // All certificates are stored in DER form.
-    PICKLETYPE_CERTIFICATE_CHAIN_V3,
   };
 
   // Create an X509Certificate from a handle to the certificate object in the
@@ -162,8 +124,7 @@ class NET_EXPORT X509Certificate
   // pickle_iter, which should be passed to the pickle's various Read* methods.
   // Returns NULL on failure.
   static scoped_refptr<X509Certificate> CreateFromPickle(
-      base::PickleIterator* pickle_iter,
-      PickleType type);
+      base::PickleIterator* pickle_iter);
 
   // Parses all of the certificates possible from |data|. |format| is a
   // bit-wise OR of Format, indicating the possible formats the
@@ -174,6 +135,11 @@ class NET_EXPORT X509Certificate
                                                         int format);
 
   // Appends a representation of this object to the given pickle.
+  // The Pickle contains the certificate and any certificates that were
+  // stored in |intermediate_ca_certs_| at the time it was serialized.
+  // The format is [int count], [data - this certificate],
+  // [data - intermediate1], ... [data - intermediateN].
+  // All certificates are stored in DER form.
   void Persist(base::Pickle* pickle);
 
   // The serial number, DER encoded, possibly including a leading 00 byte.
@@ -303,17 +269,10 @@ class NET_EXPORT X509Certificate
   // (all zero) fingerprint on failure.
   static SHA256HashValue CalculateFingerprint256(OSCertHandle cert_handle);
 
-  // Calculates the SHA-256 fingerprint of the intermediate CA certificates.
-  // Returns an empty (all zero) fingerprint on failure.
-  static SHA256HashValue CalculateCAFingerprint256(
-      const OSCertHandles& intermediates);
-
   // Calculates the SHA-256 fingerprint for the complete chain, including the
   // leaf certificate and all intermediate CA certificates. Returns an empty
   // (all zero) fingerprint on failure.
-  static SHA256HashValue CalculateChainFingerprint256(
-      OSCertHandle leaf,
-      const OSCertHandles& intermediates);
+  SHA256HashValue CalculateChainFingerprint256() const;
 
   // Returns true if the certificate is self-signed.
   static bool IsSelfSigned(OSCertHandle cert_handle);
@@ -355,21 +314,6 @@ class NET_EXPORT X509Certificate
                              const std::vector<std::string>& cert_san_dns_names,
                              const std::vector<std::string>& cert_san_ip_addrs,
                              bool allow_common_name_fallback);
-
-  // Reads a single certificate from |pickle_iter| and returns a
-  // platform-specific certificate handle. The format of the certificate
-  // stored in |pickle_iter| is not guaranteed to be the same across different
-  // underlying cryptographic libraries, nor acceptable to CreateFromBytes().
-  // Returns an invalid handle, NULL, on failure.
-  // NOTE: This should not be used for any new code. It is provided for
-  // migration purposes and should eventually be removed.
-  static OSCertHandle ReadOSCertHandleFromPickle(
-      base::PickleIterator* pickle_iter);
-
-  // Writes a single certificate to |pickle| in DER form. Returns false on
-  // failure.
-  static void WriteOSCertHandleToPickle(OSCertHandle handle,
-                                        base::Pickle* pickle);
 
   // The subject of the certificate.
   CertPrincipal subject_;

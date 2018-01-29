@@ -42,6 +42,7 @@
 #include "content/renderer/stats_collection_observer.h"
 #include "ipc/ipc_platform_file.h"
 #include "third_party/WebKit/public/platform/WebInputEvent.h"
+#include "third_party/WebKit/public/platform/WebScopedVirtualTimePauser.h"
 #include "third_party/WebKit/public/platform/WebSecurityOrigin.h"
 #include "third_party/WebKit/public/web/WebAXObject.h"
 #include "third_party/WebKit/public/web/WebConsoleMessage.h"
@@ -72,7 +73,6 @@ class WebDateTimeChooserCompletion;
 class WebGestureEvent;
 class WebMouseEvent;
 class WebSpeechRecognizer;
-class WebStorageNamespace;
 class WebTappedInfo;
 class WebURLRequest;
 struct WebDateTimeChooserParams;
@@ -123,7 +123,7 @@ class CONTENT_EXPORT RenderViewImpl : public RenderWidget,
   // send an additional IPC to finish making this view visible.
   static RenderViewImpl* Create(
       CompositorDependencies* compositor_deps,
-      const mojom::CreateViewParams& params,
+      mojom::CreateViewParamsPtr params,
       const RenderWidget::ShowCallback& show_callback);
 
   // Used by content_layouttest_support to hook into the creation of
@@ -232,6 +232,8 @@ class CONTENT_EXPORT RenderViewImpl : public RenderWidget,
 
   void UseSynchronousResizeModeForTesting(bool enable);
 
+  void DidCommitProvisionalHistoryLoad();
+
   // Control autoresize mode.
   void EnableAutoResizeForTesting(const gfx::Size& min_size,
                                   const gfx::Size& max_size);
@@ -261,7 +263,7 @@ class CONTENT_EXPORT RenderViewImpl : public RenderWidget,
                      const blink::WebFloatSize& accumulatedOverscroll,
                      const blink::WebFloatPoint& positionInViewport,
                      const blink::WebFloatSize& velocityInViewport,
-                     const blink::WebScrollBoundaryBehavior& behavior) override;
+                     const blink::WebOverscrollBehavior& behavior) override;
   void HasTouchEventHandlers(bool has_handlers) override;
   blink::WebScreenInfo GetScreenInfo() override;
   void SetToolTipText(const blink::WebString&,
@@ -280,8 +282,8 @@ class CONTENT_EXPORT RenderViewImpl : public RenderWidget,
                              blink::WebNavigationPolicy policy,
                              bool suppress_opener,
                              blink::WebSandboxFlags sandbox_flags) override;
-  blink::WebWidget* CreatePopupMenu(blink::WebPopupType popup_type) override;
-  blink::WebStorageNamespace* CreateSessionStorageNamespace() override;
+  blink::WebWidget* CreatePopup(blink::WebPopupType popup_type) override;
+  int64_t GetSessionStorageNamespaceId() override;
   void PrintPage(blink::WebLocalFrame* frame) override;
   bool EnumerateChosenDirectory(
       const blink::WebString& path,
@@ -290,13 +292,6 @@ class CONTENT_EXPORT RenderViewImpl : public RenderWidget,
                                      blink::WebTextDirection main_text_hint,
                                      base::string16* sub_text,
                                      blink::WebTextDirection sub_text_hint);
-  void ShowValidationMessage(const blink::WebRect& anchor_in_viewport,
-                             const blink::WebString& main_text,
-                             blink::WebTextDirection main_text_hint,
-                             const blink::WebString& sub_text,
-                             blink::WebTextDirection hint) override;
-  void HideValidationMessage() override;
-  void MoveValidationMessage(const blink::WebRect& anchor_in_viewport) override;
   void SetMouseOverURL(const blink::WebURL& url) override;
   void SetKeyboardFocusURL(const blink::WebURL& url) override;
   bool AcceptsLoadDrops() override;
@@ -340,6 +335,7 @@ class CONTENT_EXPORT RenderViewImpl : public RenderWidget,
   int GetRoutingID() const override;
   gfx::Size GetSize() const override;
   float GetDeviceScaleFactor() const override;
+  float GetZoomLevel() const override;
   const WebPreferences& GetWebkitPreferences() override;
   void SetWebkitPreferences(const WebPreferences& preferences) override;
   blink::WebView* GetWebView() override;
@@ -373,7 +369,8 @@ class CONTENT_EXPORT RenderViewImpl : public RenderWidget,
   void HandleInputEvent(const blink::WebCoalescedInputEvent& input_event,
                         const ui::LatencyInfo& latency_info,
                         HandledEventCallback callback) override;
-  void ScrollFocusedEditableNodeIntoRect(const gfx::Rect& rect);
+
+  void UpdateWebViewWithDeviceScaleFactor();
 
  protected:
   // RenderWidget overrides:
@@ -391,7 +388,7 @@ class CONTENT_EXPORT RenderViewImpl : public RenderWidget,
   RenderViewImpl(CompositorDependencies* compositor_deps,
                  const mojom::CreateViewParams& params);
 
-  void Initialize(const mojom::CreateViewParams& params,
+  void Initialize(mojom::CreateViewParamsPtr params,
                   const RenderWidget::ShowCallback& show_callback);
   void SetScreenMetricsEmulationParameters(
       bool enabled,
@@ -437,6 +434,7 @@ class CONTENT_EXPORT RenderViewImpl : public RenderWidget,
   FRIEND_TEST_ALL_PREFIXES(RenderViewImplTest,
                            GetCompositionCharacterBoundsTest);
   FRIEND_TEST_ALL_PREFIXES(RenderViewImplTest, OnNavigationHttpPost);
+  FRIEND_TEST_ALL_PREFIXES(RenderViewImplTest, UpdateDSFAfterSwapIn);
   FRIEND_TEST_ALL_PREFIXES(RenderViewImplScaleFactorTest,
                            ScreenMetricsEmulationWithOriginalDSF1);
   FRIEND_TEST_ALL_PREFIXES(RenderViewImplScaleFactorTest,
@@ -470,8 +468,6 @@ class CONTENT_EXPORT RenderViewImpl : public RenderWidget,
 
   // RenderWidgetOwnerDelegate implementation ----------------------------------
 
-  bool DoesRenderWidgetHaveTouchEventHandlersAt(
-      const gfx::Point& point) const override;
   bool RenderWidgetWillHandleMouseEvent(
       const blink::WebMouseEvent& event) override;
 
@@ -509,6 +505,12 @@ class CONTENT_EXPORT RenderViewImpl : public RenderWidget,
   void OnEnablePreferredSizeChangedMode();
   void OnEnableAutoResize(const gfx::Size& min_size, const gfx::Size& max_size);
   void OnDisableAutoResize(const gfx::Size& new_size);
+  void OnSetLocalSurfaceIdForAutoResize(
+      uint64_t sequence_number,
+      const gfx::Size& min_size,
+      const gfx::Size& max_size,
+      const content::ScreenInfo& screen_info,
+      const viz::LocalSurfaceId& local_surface_id);
   void OnEnumerateDirectoryResponse(int id,
                                     const std::vector<base::FilePath>& paths);
   void OnMediaPlayerActionAt(const gfx::Point& location,
@@ -602,8 +604,6 @@ class CONTENT_EXPORT RenderViewImpl : public RenderWidget,
 #else
   void UpdateThemePrefs() {}
 #endif
-
-  void UpdateWebViewWithDeviceScaleFactor();
 
   // Send the appropriate ack to be able discard this input event message.
   void OnDiscardInputEvent(
@@ -734,11 +734,6 @@ class CONTENT_EXPORT RenderViewImpl : public RenderWidget,
   // states for the sizes).
   base::OneShotTimer check_preferred_size_timer_;
 
-  // Bookkeeping to suppress redundant scroll and focus requests for an already
-  // scrolled and focused editable node.
-  bool has_scrolled_focused_editable_node_into_rect_;
-  gfx::Rect rect_for_scrolled_focused_editable_node_;
-
   // Used to indicate the zoom level to be used during subframe loads, since
   // they should match page zoom level.
   double page_zoom_level_;
@@ -788,10 +783,12 @@ class CONTENT_EXPORT RenderViewImpl : public RenderWidget,
   // constructors call the AddObservers method of RenderViewImpl.
   std::unique_ptr<StatsCollectionObserver> stats_collection_observer_;
 
-  typedef std::map<viz::SharedBitmapId, viz::SharedBitmap*> BitmapMap;
-  BitmapMap disambiguation_bitmaps_;
+  std::map<viz::SharedBitmapId, std::unique_ptr<viz::SharedBitmap>>
+      disambiguation_bitmaps_;
 
   std::unique_ptr<IdleUserDetector> idle_user_detector_;
+
+  blink::WebScopedVirtualTimePauser history_navigation_virtual_time_pauser_;
 
   // ---------------------------------------------------------------------------
   // ADDING NEW DATA? Please see if it fits appropriately in one of the above

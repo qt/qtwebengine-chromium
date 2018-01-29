@@ -23,7 +23,7 @@
 #include "components/viz/common/quads/solid_color_draw_quad.h"
 #include "components/viz/common/quads/stream_video_draw_quad.h"
 #include "components/viz/common/quads/texture_draw_quad.h"
-#include "components/viz/common/quads/texture_mailbox.h"
+#include "components/viz/common/resources/transferable_resource.h"
 #include "components/viz/service/display/ca_layer_overlay.h"
 #include "components/viz/service/display/gl_renderer.h"
 #include "components/viz/service/display/output_surface.h"
@@ -265,14 +265,14 @@ ResourceId CreateResource(
     cc::LayerTreeResourceProvider* child_resource_provider,
     const gfx::Size& size,
     bool is_overlay_candidate) {
-  TextureMailbox mailbox(gpu::Mailbox::Generate(), gpu::SyncToken(),
-                         GL_TEXTURE_2D, size, is_overlay_candidate);
+  auto resource = TransferableResource::MakeGLOverlay(
+      gpu::Mailbox::Generate(), GL_LINEAR, GL_TEXTURE_2D, gpu::SyncToken(),
+      size, is_overlay_candidate);
   auto release_callback =
       SingleReleaseCallback::Create(base::Bind(&MailboxReleased));
 
-  ResourceId resource_id =
-      child_resource_provider->CreateResourceFromTextureMailbox(
-          mailbox, std::move(release_callback));
+  ResourceId resource_id = child_resource_provider->ImportResource(
+      resource, std::move(release_callback));
 
   std::vector<ReturnedResource> returned_to_child;
   int child_id = parent_resource_provider->CreateChild(
@@ -284,8 +284,11 @@ ResourceId CreateResource(
   std::vector<TransferableResource> list;
   child_resource_provider->PrepareSendToParent(resource_ids_to_transfer, &list);
   parent_resource_provider->ReceiveFromChild(child_id, list);
-  ResourceId parent_resource_id = list[0].id;
-  return parent_resource_id;
+
+  // In DisplayResourceProvider's namespace, use the mapped resource id.
+  cc::ResourceProvider::ResourceIdMap resource_map =
+      parent_resource_provider->GetChildToParentMap(child_id);
+  return resource_map[list[0].id];
 }
 
 SolidColorDrawQuad* CreateSolidColorQuadAt(
@@ -414,8 +417,8 @@ YUVVideoDrawQuad* CreateFullscreenCandidateYUVVideoQuad(
   overlay_quad->SetNew(shared_quad_state, rect, rect, needs_blending,
                        tex_coord_rect, tex_coord_rect, resource_size_in_pixels,
                        resource_size_in_pixels, resource_id, resource_id,
-                       resource_id, resource_id, YUVVideoDrawQuad::REC_601,
-                       gfx::ColorSpace(), 0, 1.0, 8);
+                       resource_id, resource_id,
+                       gfx::ColorSpace::CreateREC601(), 0, 1.0, 8);
 
   return overlay_quad;
 }
@@ -525,10 +528,10 @@ TEST(OverlayTest, NoOverlaysByDefault) {
   scoped_refptr<cc::TestContextProvider> provider =
       cc::TestContextProvider::Create();
   OverlayOutputSurface<OverlayCandidateValidator> output_surface(provider);
-  EXPECT_EQ(NULL, output_surface.GetOverlayCandidateValidator());
+  EXPECT_EQ(nullptr, output_surface.GetOverlayCandidateValidator());
 
   output_surface.SetOverlayCandidateValidator(new SingleOverlayValidator);
-  EXPECT_TRUE(output_surface.GetOverlayCandidateValidator() != NULL);
+  EXPECT_TRUE(output_surface.GetOverlayCandidateValidator() != nullptr);
 }
 
 TEST(OverlayTest, OverlaysProcessorHasStrategy) {
@@ -1881,7 +1884,6 @@ TEST_F(CALayerOverlayTest, ThreeDTransform) {
   pass->shared_quad_state_list.back()
       ->quad_to_target_transform.RotateAboutXAxis(45.f);
 
-  gfx::Rect damage_rect;
   CALayerOverlayList ca_layer_list;
   cc::OverlayCandidateList overlay_list(BackbufferOverlayList(pass.get()));
   OverlayProcessor::FilterOperationsMap render_pass_filters;
@@ -2306,7 +2308,7 @@ class OverlayInfoRendererGL : public GLRenderer {
   OverlayInfoRendererGL(const RendererSettings* settings,
                         OutputSurface* output_surface,
                         cc::DisplayResourceProvider* resource_provider)
-      : GLRenderer(settings, output_surface, resource_provider, NULL),
+      : GLRenderer(settings, output_surface, resource_provider, nullptr),
         expect_overlays_(false) {}
 
   MOCK_METHOD2(DoDrawQuad,
@@ -2844,7 +2846,6 @@ class CALayerOverlayRPDQTest : public CALayerOverlayTest {
   }
 
   void ProcessForOverlays() {
-    gfx::Rect damage_rect;
     overlay_list_ = BackbufferOverlayList(pass_);
     overlay_processor_->ProcessForOverlays(
         resource_provider_.get(), &pass_list_, render_pass_filters_,

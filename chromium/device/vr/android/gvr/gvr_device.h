@@ -11,7 +11,7 @@
 
 #include "base/android/scoped_java_ref.h"
 #include "base/macros.h"
-#include "device/vr/vr_device.h"
+#include "device/vr/vr_device_base.h"
 #include "third_party/gvr-android-sdk/src/libraries/headers/vr/gvr/capi/include/gvr_types.h"
 
 namespace device {
@@ -20,46 +20,43 @@ class GvrDelegateProvider;
 class VRDisplayImpl;
 
 // TODO(mthiesse, crbug.com/769373): Remove DEVICE_VR_EXPORT.
-class DEVICE_VR_EXPORT GvrDevice : public VRDevice {
+class DEVICE_VR_EXPORT GvrDevice : public VRDeviceBase {
  public:
   static std::unique_ptr<GvrDevice> Create();
   ~GvrDevice() override;
 
-  // VRDevice
-  mojom::VRDisplayInfoPtr GetVRDisplayInfo() override;
+  // VRDeviceBase
   void RequestPresent(
       VRDisplayImpl* display,
       mojom::VRSubmitFrameClientPtr submit_client,
       mojom::VRPresentationProviderRequest request,
       mojom::VRDisplayHost::RequestPresentCallback callback) override;
   void ExitPresent() override;
-  void GetPose(mojom::VRMagicWindowProvider::GetPoseCallback callback) override;
-  void OnListeningForActivateChanged(bool listening) override;
   void PauseTracking() override;
   void ResumeTracking() override;
 
   void OnDIPScaleChanged(JNIEnv* env,
                          const base::android::JavaRef<jobject>& obj);
 
-  // TODO(mthiesse): Make this functionality cross-platform.
-  void SetInBrowsingMode(bool in_browsing_mode) {
-    in_browsing_mode_ = in_browsing_mode;
-  }
+  void Activate(mojom::VRDisplayEventReason reason,
+                base::Callback<void(bool)> on_handled);
 
  private:
+  // VRDeviceBase
+  void OnListeningForActivate(bool listening) override;
+  void OnMagicWindowPoseRequest(
+      mojom::VRMagicWindowProvider::GetPoseCallback callback) override;
+
   void OnRequestPresentResult(
       mojom::VRDisplayHost::RequestPresentCallback callback,
       VRDisplayImpl* display,
       bool result);
-  void UpdateListeningForActivate();
 
   GvrDevice();
   GvrDelegateProvider* GetGvrDelegateProvider();
 
   base::android::ScopedJavaGlobalRef<jobject> non_presenting_context_;
   std::unique_ptr<gvr::GvrApi> gvr_api_;
-  mojom::VRDisplayInfoPtr display_info_;
-  bool in_browsing_mode_ = false;
 
   base::WeakPtrFactory<GvrDevice> weak_ptr_factory_;
 

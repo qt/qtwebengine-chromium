@@ -100,7 +100,11 @@ PaymentRequestSpec::~PaymentRequestSpec() {}
 
 void PaymentRequestSpec::UpdateWith(mojom::PaymentDetailsPtr details) {
   details_ = std::move(details);
-  // We reparse the |details_| and update the observers.
+  RecomputeSpecForDetails();
+}
+
+void PaymentRequestSpec::RecomputeSpecForDetails() {
+  // Reparse the |details_| and update the observers.
   UpdateSelectedShippingOption(/*after_update=*/true);
   NotifyOnSpecUpdated();
   current_update_reason_ = UpdateReason::NONE;
@@ -222,11 +226,11 @@ PaymentRequestSpec::GetApplicableModifier(
     return nullptr;
 
   for (const auto& modifier : details_->modifiers) {
-    std::vector<std::string> supported_networks;
+    std::set<std::string> supported_card_networks_set;
     std::set<autofill::CreditCard::CardType> supported_types;
     // The following 4 are unused but required by PopulateValidatedMethodData.
     std::set<std::string> basic_card_specified_networks;
-    std::set<std::string> supported_card_networks_set;
+    std::vector<std::string> supported_networks;
     std::vector<GURL> url_payment_method_identifiers;
     std::set<std::string> payment_method_identifiers_set;
     std::map<std::string, std::set<std::string>> stringified_method_data;
@@ -237,8 +241,10 @@ PaymentRequestSpec::GetApplicableModifier(
         &payment_method_identifiers_set, &stringified_method_data);
 
     if (selected_instrument->IsValidForModifier(
-            modifier->method_data->supported_methods, supported_networks,
-            supported_types, !modifier->method_data->supported_types.empty())) {
+            modifier->method_data->supported_methods,
+            !modifier->method_data->supported_networks.empty(),
+            supported_card_networks_set,
+            !modifier->method_data->supported_types.empty(), supported_types)) {
       return &modifier;
     }
   }

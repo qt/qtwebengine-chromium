@@ -11,6 +11,7 @@
 
 #include "core/fxcrt/xml/cfx_xmlelement.h"
 #include "core/fxcrt/xml/cfx_xmlnode.h"
+#include "fxjs/cfxjse_engine.h"
 #include "third_party/base/stl_util.h"
 #include "xfa/fde/cfde_textout.h"
 #include "xfa/fxfa/cxfa_ffapp.h"
@@ -23,7 +24,6 @@
 #include "xfa/fxfa/parser/cxfa_layoutprocessor.h"
 #include "xfa/fxfa/parser/cxfa_localevalue.h"
 #include "xfa/fxfa/parser/cxfa_node.h"
-#include "xfa/fxfa/parser/cxfa_scriptcontext.h"
 #include "xfa/fxfa/parser/xfa_utils.h"
 
 class CXFA_WidgetLayoutData {
@@ -35,14 +35,6 @@ class CXFA_WidgetLayoutData {
 };
 
 namespace {
-
-void FFDeleteCalcData(void* pData) {
-  if (pData)
-    delete ((CXFA_CalcData*)pData);
-}
-
-static XFA_MAPDATABLOCKCALLBACKINFO gs_XFADeleteCalcData = {FFDeleteCalcData,
-                                                            nullptr};
 
 class CXFA_TextLayoutData : public CXFA_WidgetLayoutData {
  public:
@@ -77,16 +69,16 @@ class CXFA_ImageLayoutData : public CXFA_WidgetLayoutData {
     if (m_pDIBitmap)
       return true;
 
-    CXFA_Value value = pAcc->GetFormValue();
-    if (!value)
+    CXFA_ValueData valueData = pAcc->GetFormValueData();
+    if (!valueData.HasValidNode())
       return false;
 
-    CXFA_Image imageObj = value.GetImage();
-    if (!imageObj)
+    CXFA_ImageData imageData = valueData.GetImageData();
+    if (!imageData.HasValidNode())
       return false;
 
     CXFA_FFDoc* pFFDoc = pAcc->GetDoc();
-    pAcc->SetImageImage(XFA_LoadImageData(pFFDoc, &imageObj, m_bNamedImage,
+    pAcc->SetImageImage(XFA_LoadImageData(pFFDoc, &imageData, m_bNamedImage,
                                           m_iImageXDpi, m_iImageYDpi));
     return !!m_pDIBitmap;
   }
@@ -105,9 +97,10 @@ class CXFA_FieldLayoutData : public CXFA_WidgetLayoutData {
   bool LoadCaption(CXFA_WidgetAcc* pAcc) {
     if (m_pCapTextLayout)
       return true;
-    CXFA_Caption caption = pAcc->GetCaption();
-    if (!caption || caption.GetPresence() == XFA_ATTRIBUTEENUM_Hidden)
+    CXFA_CaptionData captionData = pAcc->GetCaptionData();
+    if (!captionData.HasValidNode() || captionData.IsHidden())
       return false;
+
     m_pCapTextProvider = pdfium::MakeUnique<CXFA_TextProvider>(
         pAcc, XFA_TEXTPROVIDERTYPE_Caption);
     m_pCapTextLayout =
@@ -136,13 +129,13 @@ class CXFA_ImageEditData : public CXFA_FieldLayoutData {
     if (m_pDIBitmap)
       return true;
 
-    CXFA_Value value = pAcc->GetFormValue();
-    if (!value)
+    CXFA_ValueData valueData = pAcc->GetFormValueData();
+    if (!valueData.HasValidNode())
       return false;
 
-    CXFA_Image imageObj = value.GetImage();
+    CXFA_ImageData imageData = valueData.GetImageData();
     CXFA_FFDoc* pFFDoc = pAcc->GetDoc();
-    pAcc->SetImageEditImage(XFA_LoadImageData(pFFDoc, &imageObj, m_bNamedImage,
+    pAcc->SetImageEditImage(XFA_LoadImageData(pFFDoc, &imageData, m_bNamedImage,
                                               m_iImageXDpi, m_iImageYDpi));
     return !!m_pDIBitmap;
   }
@@ -159,20 +152,6 @@ CXFA_WidgetAcc::CXFA_WidgetAcc(CXFA_FFDocView* pDocView, CXFA_Node* pNode)
     : CXFA_WidgetData(pNode), m_pDocView(pDocView), m_nRecursionDepth(0) {}
 
 CXFA_WidgetAcc::~CXFA_WidgetAcc() {}
-
-bool CXFA_WidgetAcc::GetName(WideString& wsName, int32_t iNameType) {
-  if (iNameType == 0) {
-    m_pNode->TryCData(XFA_ATTRIBUTE_Name, wsName);
-    return !wsName.IsEmpty();
-  }
-  m_pNode->GetSOMExpression(wsName);
-  if (iNameType == 2 && wsName.GetLength() >= 15) {
-    WideStringView wsPre = L"xfa[0].form[0].";
-    if (wsPre == WideStringView(wsName.c_str(), wsPre.GetLength()))
-      wsName.Delete(0, wsPre.GetLength());
-  }
-  return true;
-}
 
 CXFA_Node* CXFA_WidgetAcc::GetDatasets() {
   return m_pNode->GetBindData();
@@ -191,13 +170,13 @@ void CXFA_WidgetAcc::ResetData() {
   XFA_Element eUIType = GetUIType();
   switch (eUIType) {
     case XFA_Element::ImageEdit: {
-      CXFA_Value imageValue = GetDefaultValue();
-      CXFA_Image image = imageValue.GetImage();
+      CXFA_ValueData imageValueData = GetDefaultValueData();
+      CXFA_ImageData imageData = imageValueData.GetImageData();
       WideString wsContentType, wsHref;
-      if (image) {
-        image.GetContent(wsValue);
-        image.GetContentType(wsContentType);
-        image.GetHref(wsHref);
+      if (imageData.HasValidNode()) {
+        wsValue = imageData.GetContent();
+        wsContentType = imageData.GetContentType();
+        wsHref = imageData.GetHref();
       }
       SetImageEdit(wsContentType, wsHref, wsValue);
       break;
@@ -212,21 +191,28 @@ void CXFA_WidgetAcc::ResetData() {
         if (!pAcc)
           continue;
 
-        CXFA_Value defValue(nullptr);
-        if (wsValue.IsEmpty() && (defValue = pAcc->GetDefaultValue())) {
-          defValue.GetChildValueContent(wsValue);
-          SetValue(wsValue, XFA_VALUEPICTURE_Raw);
-          pAcc->SetValue(wsValue, XFA_VALUEPICTURE_Raw);
-        } else {
-          CXFA_Node* pItems = pChild->GetChild(0, XFA_Element::Items);
+        bool done = false;
+        if (wsValue.IsEmpty()) {
+          CXFA_ValueData defValueData = pAcc->GetDefaultValueData();
+          if (defValueData.HasValidNode()) {
+            wsValue = defValueData.GetChildValueContent();
+            SetValue(XFA_VALUEPICTURE_Raw, wsValue);
+            pAcc->SetValue(XFA_VALUEPICTURE_Raw, wsValue);
+            done = true;
+          }
+        }
+        if (!done) {
+          CXFA_Node* pItems = pChild->GetChild(0, XFA_Element::Items, false);
           if (!pItems)
             continue;
 
           WideString itemText;
-          if (pItems->CountChildren(XFA_Element::Unknown) > 1)
-            itemText = pItems->GetChild(1, XFA_Element::Unknown)->GetContent();
-
-          pAcc->SetValue(itemText, XFA_VALUEPICTURE_Raw);
+          if (pItems->CountChildren(XFA_Element::Unknown, false) > 1) {
+            itemText = pItems->GetChild(1, XFA_Element::Unknown, false)
+                           ->JSNode()
+                           ->GetContent(false);
+          }
+          pAcc->SetValue(XFA_VALUEPICTURE_Raw, itemText);
         }
         pNextChild = pChild->GetNodeItem(XFA_NODEITEM_NextSibling,
                                          XFA_ObjectType::ContainerNode);
@@ -235,35 +221,39 @@ void CXFA_WidgetAcc::ResetData() {
     }
     case XFA_Element::ChoiceList:
       ClearAllSelections();
-    default:
-      if (CXFA_Value defValue = GetDefaultValue())
-        defValue.GetChildValueContent(wsValue);
+    default: {
+      CXFA_ValueData defValueData = GetDefaultValueData();
+      if (defValueData.HasValidNode())
+        wsValue = defValueData.GetChildValueContent();
 
-      SetValue(wsValue, XFA_VALUEPICTURE_Raw);
+      SetValue(XFA_VALUEPICTURE_Raw, wsValue);
       break;
+    }
   }
 }
 
 void CXFA_WidgetAcc::SetImageEdit(const WideString& wsContentType,
                                   const WideString& wsHref,
                                   const WideString& wsData) {
-  CXFA_Image image = GetFormValue().GetImage();
-  if (image) {
-    image.SetContentType(WideString(wsContentType));
-    image.SetHref(wsHref);
+  CXFA_ImageData imageData = GetFormValueData().GetImageData();
+  if (imageData.HasValidNode()) {
+    imageData.SetContentType(WideString(wsContentType));
+    imageData.SetHref(wsHref);
   }
-  WideString wsFormatValue(wsData);
-  GetFormatDataValue(wsData, wsFormatValue);
-  m_pNode->SetContent(wsData, wsFormatValue, true);
+
+  m_pNode->JSNode()->SetContent(wsData, GetFormatDataValue(wsData), true, false,
+                                true);
+
   CXFA_Node* pBind = GetDatasets();
   if (!pBind) {
-    image.SetTransferEncoding(XFA_ATTRIBUTEENUM_Base64);
+    imageData.SetTransferEncoding(XFA_AttributeEnum::Base64);
     return;
   }
-  pBind->SetCData(XFA_ATTRIBUTE_ContentType, wsContentType);
+  pBind->JSNode()->SetCData(XFA_Attribute::ContentType, wsContentType, false,
+                            false);
   CXFA_Node* pHrefNode = pBind->GetNodeItem(XFA_NODEITEM_FirstChild);
   if (pHrefNode) {
-    pHrefNode->SetCData(XFA_ATTRIBUTE_Value, wsHref);
+    pHrefNode->JSNode()->SetCData(XFA_Attribute::Value, wsHref, false, false);
   } else {
     CFX_XMLNode* pXMLNode = pBind->GetXMLMappingNode();
     ASSERT(pXMLNode && pXMLNode->GetType() == FX_XMLNODE_Element);
@@ -278,23 +268,15 @@ CXFA_WidgetAcc* CXFA_WidgetAcc::GetExclGroup() {
   return static_cast<CXFA_WidgetAcc*>(pExcl->GetWidgetData());
 }
 
-CXFA_FFDocView* CXFA_WidgetAcc::GetDocView() {
-  return m_pDocView;
-}
-
 CXFA_FFDoc* CXFA_WidgetAcc::GetDoc() {
   return m_pDocView->GetDoc();
 }
 
-CXFA_FFApp* CXFA_WidgetAcc::GetApp() {
-  return GetDoc()->GetApp();
-}
-
 IXFA_AppProvider* CXFA_WidgetAcc::GetAppProvider() {
-  return GetApp()->GetAppProvider();
+  return GetDoc()->GetApp()->GetAppProvider();
 }
 
-int32_t CXFA_WidgetAcc::ProcessEvent(int32_t iActivity,
+int32_t CXFA_WidgetAcc::ProcessEvent(XFA_AttributeEnum iActivity,
                                      CXFA_EventParam* pEventParam) {
   if (GetElementType() == XFA_Element::Draw)
     return XFA_EVENTERROR_NotExist;
@@ -304,7 +286,7 @@ int32_t CXFA_WidgetAcc::ProcessEvent(int32_t iActivity,
   bool first = true;
   int32_t iRet = XFA_EVENTERROR_NotExist;
   for (CXFA_Node* pNode : eventArray) {
-    int32_t result = ProcessEvent(CXFA_Event(pNode), pEventParam);
+    int32_t result = ProcessEvent(CXFA_EventData(pNode), pEventParam);
     if (first || result == XFA_EVENTERROR_Success)
       iRet = result;
     first = false;
@@ -312,21 +294,21 @@ int32_t CXFA_WidgetAcc::ProcessEvent(int32_t iActivity,
   return iRet;
 }
 
-int32_t CXFA_WidgetAcc::ProcessEvent(const CXFA_Event& event,
+int32_t CXFA_WidgetAcc::ProcessEvent(const CXFA_EventData& eventData,
                                      CXFA_EventParam* pEventParam) {
-  if (!event)
+  if (!eventData.HasValidNode())
     return XFA_EVENTERROR_NotExist;
 
-  switch (event.GetEventType()) {
+  switch (eventData.GetEventType()) {
     case XFA_Element::Execute:
       break;
     case XFA_Element::Script:
-      return ExecuteScript(event.GetScript(), pEventParam);
+      return ExecuteScript(eventData.GetScriptData(), pEventParam);
     case XFA_Element::SignData:
       break;
     case XFA_Element::Submit:
-      return GetDoc()->GetDocEnvironment()->SubmitData(GetDoc(),
-                                                       event.GetSubmit());
+      return GetDoc()->GetDocEnvironment()->SubmitData(
+          GetDoc(), eventData.GetSubmitData());
     default:
       break;
   }
@@ -337,74 +319,72 @@ int32_t CXFA_WidgetAcc::ProcessCalculate() {
   if (GetElementType() == XFA_Element::Draw)
     return XFA_EVENTERROR_NotExist;
 
-  CXFA_Calculate calc = GetCalculate();
-  if (!calc)
+  CXFA_CalculateData calcData = GetCalculateData();
+  if (!calcData.HasValidNode())
     return XFA_EVENTERROR_NotExist;
   if (GetNode()->IsUserInteractive())
     return XFA_EVENTERROR_Disabled;
 
   CXFA_EventParam EventParam;
   EventParam.m_eType = XFA_EVENT_Calculate;
-  CXFA_Script script = calc.GetScript();
-  int32_t iRet = ExecuteScript(script, &EventParam);
+  int32_t iRet = ExecuteScript(calcData.GetScriptData(), &EventParam);
   if (iRet != XFA_EVENTERROR_Success)
     return iRet;
 
   if (GetRawValue() != EventParam.m_wsResult) {
-    SetValue(EventParam.m_wsResult, XFA_VALUEPICTURE_Raw);
+    SetValue(XFA_VALUEPICTURE_Raw, EventParam.m_wsResult);
     UpdateUIDisplay();
   }
   return XFA_EVENTERROR_Success;
 }
 
-void CXFA_WidgetAcc::ProcessScriptTestValidate(CXFA_Validate validate,
+void CXFA_WidgetAcc::ProcessScriptTestValidate(CXFA_ValidateData validateData,
                                                int32_t iRet,
-                                               CFXJSE_Value* pRetValue,
+                                               bool bRetValue,
                                                bool bVersionFlag) {
-  if (iRet == XFA_EVENTERROR_Success && pRetValue) {
-    if (pRetValue->IsBoolean() && !pRetValue->ToBoolean()) {
-      IXFA_AppProvider* pAppProvider = GetAppProvider();
-      if (!pAppProvider) {
-        return;
-      }
-      WideString wsTitle = pAppProvider->GetAppTitle();
-      WideString wsScriptMsg;
-      validate.GetScriptMessageText(wsScriptMsg);
-      int32_t eScriptTest = validate.GetScriptTest();
-      if (eScriptTest == XFA_ATTRIBUTEENUM_Warning) {
-        if (GetNode()->IsUserInteractive())
-          return;
-        if (wsScriptMsg.IsEmpty())
-          wsScriptMsg = GetValidateMessage(false, bVersionFlag);
+  if (iRet != XFA_EVENTERROR_Success)
+    return;
+  if (bRetValue)
+    return;
 
-        if (bVersionFlag) {
-          pAppProvider->MsgBox(wsScriptMsg, wsTitle, XFA_MBICON_Warning,
-                               XFA_MB_OK);
-          return;
-        }
-        if (pAppProvider->MsgBox(wsScriptMsg, wsTitle, XFA_MBICON_Warning,
-                                 XFA_MB_YesNo) == XFA_IDYes) {
-          GetNode()->SetFlag(XFA_NodeFlag_UserInteractive, false);
-        }
-      } else {
-        if (wsScriptMsg.IsEmpty())
-          wsScriptMsg = GetValidateMessage(true, bVersionFlag);
-        pAppProvider->MsgBox(wsScriptMsg, wsTitle, XFA_MBICON_Error, XFA_MB_OK);
-      }
+  IXFA_AppProvider* pAppProvider = GetAppProvider();
+  if (!pAppProvider)
+    return;
+
+  WideString wsTitle = pAppProvider->GetAppTitle();
+  WideString wsScriptMsg = validateData.GetScriptMessageText();
+  if (validateData.GetScriptTest() == XFA_AttributeEnum::Warning) {
+    if (GetNode()->IsUserInteractive())
+      return;
+    if (wsScriptMsg.IsEmpty())
+      wsScriptMsg = GetValidateMessage(false, bVersionFlag);
+
+    if (bVersionFlag) {
+      pAppProvider->MsgBox(wsScriptMsg, wsTitle, XFA_MBICON_Warning, XFA_MB_OK);
+      return;
     }
+    if (pAppProvider->MsgBox(wsScriptMsg, wsTitle, XFA_MBICON_Warning,
+                             XFA_MB_YesNo) == XFA_IDYes) {
+      GetNode()->SetFlag(XFA_NodeFlag_UserInteractive, false);
+    }
+    return;
   }
+
+  if (wsScriptMsg.IsEmpty())
+    wsScriptMsg = GetValidateMessage(true, bVersionFlag);
+  pAppProvider->MsgBox(wsScriptMsg, wsTitle, XFA_MBICON_Error, XFA_MB_OK);
 }
 
-int32_t CXFA_WidgetAcc::ProcessFormatTestValidate(CXFA_Validate validate,
-                                                  bool bVersionFlag) {
+int32_t CXFA_WidgetAcc::ProcessFormatTestValidate(
+    CXFA_ValidateData validateData,
+    bool bVersionFlag) {
   WideString wsRawValue = GetRawValue();
   if (!wsRawValue.IsEmpty()) {
-    WideString wsPicture;
-    validate.GetPicture(wsPicture);
+    WideString wsPicture = validateData.GetPicture();
     if (wsPicture.IsEmpty())
       return XFA_EVENTERROR_NotExist;
 
-    IFX_Locale* pLocale = GetLocal();
+    IFX_Locale* pLocale = GetLocale();
     if (!pLocale)
       return XFA_EVENTERROR_NotExist;
 
@@ -415,11 +395,9 @@ int32_t CXFA_WidgetAcc::ProcessFormatTestValidate(CXFA_Validate validate,
       if (!pAppProvider)
         return XFA_EVENTERROR_NotExist;
 
-      WideString wsFormatMsg;
-      validate.GetFormatMessageText(wsFormatMsg);
+      WideString wsFormatMsg = validateData.GetFormatMessageText();
       WideString wsTitle = pAppProvider->GetAppTitle();
-      int32_t eFormatTest = validate.GetFormatTest();
-      if (eFormatTest == XFA_ATTRIBUTEENUM_Error) {
+      if (validateData.GetFormatTest() == XFA_AttributeEnum::Error) {
         if (wsFormatMsg.IsEmpty())
           wsFormatMsg = GetValidateMessage(true, bVersionFlag);
         pAppProvider->MsgBox(wsFormatMsg, wsTitle, XFA_MBICON_Error, XFA_MB_OK);
@@ -445,26 +423,23 @@ int32_t CXFA_WidgetAcc::ProcessFormatTestValidate(CXFA_Validate validate,
   return XFA_EVENTERROR_NotExist;
 }
 
-int32_t CXFA_WidgetAcc::ProcessNullTestValidate(CXFA_Validate validate,
+int32_t CXFA_WidgetAcc::ProcessNullTestValidate(CXFA_ValidateData validateData,
                                                 int32_t iFlags,
                                                 bool bVersionFlag) {
-  WideString wsValue;
-  GetValue(wsValue, XFA_VALUEPICTURE_Raw);
-  if (!wsValue.IsEmpty())
+  if (!GetValue(XFA_VALUEPICTURE_Raw).IsEmpty())
     return XFA_EVENTERROR_Success;
-  if (m_bIsNull && (m_bPreNull == m_bIsNull))
+  if (IsNull() && IsPreNull())
     return XFA_EVENTERROR_Success;
 
-  int32_t eNullTest = validate.GetNullTest();
-  WideString wsNullMsg;
-  validate.GetNullMessageText(wsNullMsg);
+  XFA_AttributeEnum eNullTest = validateData.GetNullTest();
+  WideString wsNullMsg = validateData.GetNullMessageText();
   if (iFlags & 0x01) {
     int32_t iRet = XFA_EVENTERROR_Success;
-    if (eNullTest != XFA_ATTRIBUTEENUM_Disabled)
+    if (eNullTest != XFA_AttributeEnum::Disabled)
       iRet = XFA_EVENTERROR_Error;
 
     if (!wsNullMsg.IsEmpty()) {
-      if (eNullTest != XFA_ATTRIBUTEENUM_Disabled) {
+      if (eNullTest != XFA_AttributeEnum::Disabled) {
         m_pDocView->m_arrNullTestMsg.push_back(wsNullMsg);
         return XFA_EVENTERROR_Error;
       }
@@ -473,7 +448,7 @@ int32_t CXFA_WidgetAcc::ProcessNullTestValidate(CXFA_Validate validate,
     return iRet;
   }
   if (wsNullMsg.IsEmpty() && bVersionFlag &&
-      eNullTest != XFA_ATTRIBUTEENUM_Disabled) {
+      eNullTest != XFA_AttributeEnum::Disabled) {
     return XFA_EVENTERROR_Error;
   }
   IXFA_AppProvider* pAppProvider = GetAppProvider();
@@ -483,21 +458,22 @@ int32_t CXFA_WidgetAcc::ProcessNullTestValidate(CXFA_Validate validate,
   WideString wsCaptionName;
   WideString wsTitle = pAppProvider->GetAppTitle();
   switch (eNullTest) {
-    case XFA_ATTRIBUTEENUM_Error: {
+    case XFA_AttributeEnum::Error: {
       if (wsNullMsg.IsEmpty()) {
         wsCaptionName = GetValidateCaptionName(bVersionFlag);
-        wsNullMsg.Format(L"%s cannot be blank.", wsCaptionName.c_str());
+        wsNullMsg =
+            WideString::Format(L"%s cannot be blank.", wsCaptionName.c_str());
       }
       pAppProvider->MsgBox(wsNullMsg, wsTitle, XFA_MBICON_Status, XFA_MB_OK);
       return XFA_EVENTERROR_Error;
     }
-    case XFA_ATTRIBUTEENUM_Warning: {
+    case XFA_AttributeEnum::Warning: {
       if (GetNode()->IsUserInteractive())
         return true;
 
       if (wsNullMsg.IsEmpty()) {
         wsCaptionName = GetValidateCaptionName(bVersionFlag);
-        wsNullMsg.Format(
+        wsNullMsg = WideString::Format(
             L"%s cannot be blank. To ignore validations for %s, click Ignore.",
             wsCaptionName.c_str(), wsCaptionName.c_str());
       }
@@ -507,7 +483,7 @@ int32_t CXFA_WidgetAcc::ProcessNullTestValidate(CXFA_Validate validate,
       }
       return XFA_EVENTERROR_Error;
     }
-    case XFA_ATTRIBUTEENUM_Disabled:
+    case XFA_AttributeEnum::Disabled:
     default:
       break;
   }
@@ -518,118 +494,121 @@ WideString CXFA_WidgetAcc::GetValidateCaptionName(bool bVersionFlag) {
   WideString wsCaptionName;
 
   if (!bVersionFlag) {
-    if (CXFA_Caption caption = GetCaption()) {
-      if (CXFA_Value capValue = caption.GetValue()) {
-        if (CXFA_Text capText = capValue.GetText())
-          capText.GetContent(wsCaptionName);
+    CXFA_CaptionData captionData = GetCaptionData();
+    if (captionData.HasValidNode()) {
+      CXFA_ValueData capValue = captionData.GetValueData();
+      if (capValue.HasValidNode()) {
+        CXFA_TextData captionTextData = capValue.GetTextData();
+        if (captionTextData.HasValidNode())
+          wsCaptionName = captionTextData.GetContent();
       }
     }
   }
-  if (wsCaptionName.IsEmpty())
-    GetName(wsCaptionName);
-
-  return wsCaptionName;
+  if (!wsCaptionName.IsEmpty())
+    return wsCaptionName;
+  return m_pNode->JSNode()->GetCData(XFA_Attribute::Name);
 }
 
 WideString CXFA_WidgetAcc::GetValidateMessage(bool bError, bool bVersionFlag) {
   WideString wsCaptionName = GetValidateCaptionName(bVersionFlag);
-  WideString wsMessage;
-  if (bVersionFlag) {
-    wsMessage.Format(L"%s validation failed", wsCaptionName.c_str());
-    return wsMessage;
-  }
+  if (bVersionFlag)
+    return WideString::Format(L"%s validation failed", wsCaptionName.c_str());
   if (bError) {
-    wsMessage.Format(L"The value you entered for %s is invalid.",
-                     wsCaptionName.c_str());
-    return wsMessage;
+    return WideString::Format(L"The value you entered for %s is invalid.",
+                              wsCaptionName.c_str());
   }
-  wsMessage.Format(
+  return WideString::Format(
       L"The value you entered for %s is invalid. To ignore "
       L"validations for %s, click Ignore.",
       wsCaptionName.c_str(), wsCaptionName.c_str());
-  return wsMessage;
 }
 
 int32_t CXFA_WidgetAcc::ProcessValidate(int32_t iFlags) {
   if (GetElementType() == XFA_Element::Draw)
     return XFA_EVENTERROR_NotExist;
 
-  CXFA_Validate validate = GetValidate(false);
-  if (!validate)
+  CXFA_ValidateData validateData = GetValidateData(false);
+  if (!validateData.HasValidNode())
     return XFA_EVENTERROR_NotExist;
 
-  bool bInitDoc = validate.GetNode()->NeedsInitApp();
+  bool bInitDoc = validateData.GetNode()->NeedsInitApp();
   bool bStatus = m_pDocView->GetLayoutStatus() < XFA_DOCVIEW_LAYOUTSTATUS_End;
   int32_t iFormat = 0;
-  CFXJSE_Value* pRetValue = nullptr;
   int32_t iRet = XFA_EVENTERROR_NotExist;
-  CXFA_Script script = validate.GetScript();
-  if (script) {
+  CXFA_ScriptData scriptData = validateData.GetScriptData();
+  bool bRet = false;
+  bool hasBoolResult = (bInitDoc || bStatus) && GetRawValue().IsEmpty();
+  if (scriptData.HasValidNode()) {
     CXFA_EventParam eParam;
     eParam.m_eType = XFA_EVENT_Validate;
     eParam.m_pTarget = this;
-    iRet = ExecuteScript(script, &eParam,
-                         ((bInitDoc || bStatus) && GetRawValue().IsEmpty())
-                             ? nullptr
-                             : &pRetValue);
+    std::tie(iRet, bRet) = ExecuteBoolScript(scriptData, &eParam);
   }
+
   XFA_VERSION version = GetDoc()->GetXFADoc()->GetCurVersionMode();
   bool bVersionFlag = false;
   if (version < XFA_VERSION_208)
     bVersionFlag = true;
 
   if (bInitDoc) {
-    validate.GetNode()->ClearFlag(XFA_NodeFlag_NeedsInitApp);
+    validateData.GetNode()->ClearFlag(XFA_NodeFlag_NeedsInitApp);
   } else {
-    iFormat = ProcessFormatTestValidate(validate, bVersionFlag);
+    iFormat = ProcessFormatTestValidate(validateData, bVersionFlag);
     if (!bVersionFlag)
       bVersionFlag = GetDoc()->GetXFADoc()->HasFlag(XFA_DOCFLAG_Scripting);
 
-    iRet |= ProcessNullTestValidate(validate, iFlags, bVersionFlag);
+    iRet |= ProcessNullTestValidate(validateData, iFlags, bVersionFlag);
   }
-  if (iFormat != XFA_EVENTERROR_Success)
-    ProcessScriptTestValidate(validate, iRet, pRetValue, bVersionFlag);
 
-  delete pRetValue;
+  if (iFormat != XFA_EVENTERROR_Success && hasBoolResult)
+    ProcessScriptTestValidate(validateData, iRet, bRet, bVersionFlag);
 
   return iRet | iFormat;
 }
 
-int32_t CXFA_WidgetAcc::ExecuteScript(CXFA_Script script,
-                                      CXFA_EventParam* pEventParam,
-                                      CFXJSE_Value** pRetValue) {
+int32_t CXFA_WidgetAcc::ExecuteScript(const CXFA_ScriptData& scriptData,
+                                      CXFA_EventParam* pEventParam) {
+  bool bRet;
+  int32_t iRet;
+  std::tie(iRet, bRet) = ExecuteBoolScript(scriptData, pEventParam);
+  return iRet;
+}
+
+std::pair<int32_t, bool> CXFA_WidgetAcc::ExecuteBoolScript(
+    CXFA_ScriptData scriptData,
+    CXFA_EventParam* pEventParam) {
   static const uint32_t MAX_RECURSION_DEPTH = 2;
   if (m_nRecursionDepth > MAX_RECURSION_DEPTH)
-    return XFA_EVENTERROR_Success;
+    return {XFA_EVENTERROR_Success, false};
 
   ASSERT(pEventParam);
-  if (!script)
-    return XFA_EVENTERROR_NotExist;
-  if (script.GetRunAt() == XFA_ATTRIBUTEENUM_Server)
-    return XFA_EVENTERROR_Disabled;
+  if (!scriptData.HasValidNode())
+    return {XFA_EVENTERROR_NotExist, false};
+  if (scriptData.GetRunAt() == XFA_AttributeEnum::Server)
+    return {XFA_EVENTERROR_Disabled, false};
 
-  WideString wsExpression;
-  script.GetExpression(wsExpression);
+  WideString wsExpression = scriptData.GetExpression();
   if (wsExpression.IsEmpty())
-    return XFA_EVENTERROR_NotExist;
+    return {XFA_EVENTERROR_NotExist, false};
 
-  XFA_SCRIPTTYPE eScriptType = script.GetContentType();
-  if (eScriptType == XFA_SCRIPTTYPE_Unkown)
-    return XFA_EVENTERROR_Success;
+  CXFA_ScriptData::Type eScriptType = scriptData.GetContentType();
+  if (eScriptType == CXFA_ScriptData::Type::Unknown)
+    return {XFA_EVENTERROR_Success, false};
 
   CXFA_FFDoc* pDoc = GetDoc();
-  CXFA_ScriptContext* pContext = pDoc->GetXFADoc()->GetScriptContext();
+  CFXJSE_Engine* pContext = pDoc->GetXFADoc()->GetScriptContext();
   pContext->SetEventParam(*pEventParam);
-  pContext->SetRunAtType((XFA_ATTRIBUTEENUM)script.GetRunAt());
+  pContext->SetRunAtType(scriptData.GetRunAt());
+
   std::vector<CXFA_Node*> refNodes;
   if (pEventParam->m_eType == XFA_EVENT_InitCalculate ||
       pEventParam->m_eType == XFA_EVENT_Calculate) {
     pContext->SetNodesOfRunScript(&refNodes);
   }
+
   auto pTmpRetValue = pdfium::MakeUnique<CFXJSE_Value>(pContext->GetRuntime());
   ++m_nRecursionDepth;
-  bool bRet = pContext->RunScript((XFA_SCRIPTLANGTYPE)eScriptType,
-                                  wsExpression.AsStringView(),
+  bool bRet = pContext->RunScript(eScriptType, wsExpression.AsStringView(),
                                   pTmpRetValue.get(), m_pNode);
   --m_nRecursionDepth;
   int32_t iRet = XFA_EVENTERROR_Error;
@@ -648,7 +627,7 @@ int32_t CXFA_WidgetAcc::ExecuteScript(CXFA_Script script,
       if (pEventParam->m_eType == XFA_EVENT_InitCalculate) {
         if ((iRet == XFA_EVENTERROR_Success) &&
             (GetRawValue() != pEventParam->m_wsResult)) {
-          SetValue(pEventParam->m_wsResult, XFA_VALUEPICTURE_Raw);
+          SetValue(XFA_VALUEPICTURE_Raw, pEventParam->m_wsResult);
           m_pDocView->AddValidateWidget(this);
         }
       }
@@ -656,23 +635,19 @@ int32_t CXFA_WidgetAcc::ExecuteScript(CXFA_Script script,
         if (static_cast<CXFA_WidgetAcc*>(pRefNode->GetWidgetData()) == this)
           continue;
 
-        auto* pGlobalData =
-            static_cast<CXFA_CalcData*>(pRefNode->GetUserData(XFA_CalcData));
+        CXFA_CalcData* pGlobalData = pRefNode->JSNode()->GetCalcData();
         if (!pGlobalData) {
-          pGlobalData = new CXFA_CalcData;
-          pRefNode->SetUserData(XFA_CalcData, pGlobalData,
-                                &gs_XFADeleteCalcData);
+          pRefNode->JSNode()->SetCalcData(pdfium::MakeUnique<CXFA_CalcData>());
+          pGlobalData = pRefNode->JSNode()->GetCalcData();
         }
         if (!pdfium::ContainsValue(pGlobalData->m_Globals, this))
           pGlobalData->m_Globals.push_back(this);
       }
     }
   }
-  if (pRetValue)
-    *pRetValue = pTmpRetValue.release();
-
   pContext->SetNodesOfRunScript(nullptr);
-  return iRet;
+
+  return {iRet, pTmpRetValue->IsBoolean() ? pTmpRetValue->ToBoolean() : false};
 }
 
 CXFA_FFWidget* CXFA_WidgetAcc::GetNextWidget(CXFA_FFWidget* pWidget) {
@@ -698,16 +673,16 @@ void CXFA_WidgetAcc::UpdateUIDisplay(CXFA_FFWidget* pExcept) {
 }
 
 void CXFA_WidgetAcc::CalcCaptionSize(CFX_SizeF& szCap) {
-  CXFA_Caption caption = GetCaption();
-  if (!caption || caption.GetPresence() != XFA_ATTRIBUTEENUM_Visible)
+  CXFA_CaptionData captionData = GetCaptionData();
+  if (!captionData.HasValidNode() || !captionData.IsVisible())
     return;
 
   LoadCaption();
   XFA_Element eUIType = GetUIType();
-  int32_t iCapPlacement = caption.GetPlacementType();
-  float fCapReserve = caption.GetReserve();
-  const bool bVert = iCapPlacement == XFA_ATTRIBUTEENUM_Top ||
-                     iCapPlacement == XFA_ATTRIBUTEENUM_Bottom;
+  XFA_AttributeEnum iCapPlacement = captionData.GetPlacementType();
+  float fCapReserve = captionData.GetReserve();
+  const bool bVert = iCapPlacement == XFA_AttributeEnum::Top ||
+                     iCapPlacement == XFA_AttributeEnum::Bottom;
   const bool bReserveExit = fCapReserve > 0.01;
   CXFA_TextLayout* pCapTextLayout =
       static_cast<CXFA_FieldLayoutData*>(m_pLayoutData.get())
@@ -717,15 +692,19 @@ void CXFA_WidgetAcc::CalcCaptionSize(CFX_SizeF& szCap) {
       szCap.width = fCapReserve;
 
     CFX_SizeF minSize;
-    pCapTextLayout->CalcSize(minSize, szCap, szCap);
+    szCap = pCapTextLayout->CalcSize(minSize, szCap);
     if (bReserveExit)
       bVert ? szCap.height = fCapReserve : szCap.width = fCapReserve;
   } else {
     float fFontSize = 10.0f;
-    if (CXFA_Font font = caption.GetFont())
-      fFontSize = font.GetFontSize();
-    else if (CXFA_Font widgetfont = GetFont(false))
-      fFontSize = widgetfont.GetFontSize();
+    CXFA_FontData fontData = captionData.GetFontData();
+    if (fontData.HasValidNode()) {
+      fFontSize = fontData.GetFontSize();
+    } else {
+      CXFA_FontData widgetfontData = GetFontData(false);
+      if (widgetfontData.HasValidNode())
+        fFontSize = widgetfontData.GetFontSize();
+    }
 
     if (bVert) {
       szCap.height = fCapReserve > 0 ? fCapReserve : fFontSize;
@@ -734,12 +713,13 @@ void CXFA_WidgetAcc::CalcCaptionSize(CFX_SizeF& szCap) {
       szCap.height = fFontSize;
     }
   }
-  if (CXFA_Margin mgCap = caption.GetMargin()) {
-    float fLeftInset, fTopInset, fRightInset, fBottomInset;
-    mgCap.GetLeftInset(fLeftInset);
-    mgCap.GetTopInset(fTopInset);
-    mgCap.GetRightInset(fRightInset);
-    mgCap.GetBottomInset(fBottomInset);
+
+  CXFA_MarginData captionMarginData = captionData.GetMarginData();
+  if (captionMarginData.HasValidNode()) {
+    float fLeftInset = captionMarginData.GetLeftInset();
+    float fTopInset = captionMarginData.GetTopInset();
+    float fRightInset = captionMarginData.GetRightInset();
+    float fBottomInset = captionMarginData.GetBottomInset();
     if (bReserveExit) {
       bVert ? (szCap.width += fLeftInset + fRightInset)
             : (szCap.height += fTopInset + fBottomInset);
@@ -757,16 +737,15 @@ bool CXFA_WidgetAcc::CalculateFieldAutoSize(CFX_SizeF& size) {
   size.width += rtUIMargin.left + rtUIMargin.width;
   size.height += rtUIMargin.top + rtUIMargin.height;
   if (szCap.width > 0 && szCap.height > 0) {
-    int32_t iCapPlacement = GetCaption().GetPlacementType();
-    switch (iCapPlacement) {
-      case XFA_ATTRIBUTEENUM_Left:
-      case XFA_ATTRIBUTEENUM_Right:
-      case XFA_ATTRIBUTEENUM_Inline: {
+    switch (GetCaptionData().GetPlacementType()) {
+      case XFA_AttributeEnum::Left:
+      case XFA_AttributeEnum::Right:
+      case XFA_AttributeEnum::Inline: {
         size.width += szCap.width;
         size.height = std::max(size.height, szCap.height);
       } break;
-      case XFA_ATTRIBUTEENUM_Top:
-      case XFA_ATTRIBUTEENUM_Bottom: {
+      case XFA_AttributeEnum::Top:
+      case XFA_AttributeEnum::Bottom: {
         size.height += szCap.height;
         size.width = std::max(size.width, szCap.width);
       }
@@ -778,49 +757,47 @@ bool CXFA_WidgetAcc::CalculateFieldAutoSize(CFX_SizeF& size) {
 }
 
 bool CXFA_WidgetAcc::CalculateWidgetAutoSize(CFX_SizeF& size) {
-  CXFA_Margin mgWidget = GetMargin();
-  if (mgWidget) {
-    float fLeftInset, fTopInset, fRightInset, fBottomInset;
-    mgWidget.GetLeftInset(fLeftInset);
-    mgWidget.GetTopInset(fTopInset);
-    mgWidget.GetRightInset(fRightInset);
-    mgWidget.GetBottomInset(fBottomInset);
-    size.width += fLeftInset + fRightInset;
-    size.height += fTopInset + fBottomInset;
+  CXFA_MarginData marginData = GetMarginData();
+  if (marginData.HasValidNode()) {
+    size.width += marginData.GetLeftInset() + marginData.GetRightInset();
+    size.height += marginData.GetTopInset() + marginData.GetBottomInset();
   }
-  CXFA_Para para = GetPara();
-  if (para)
-    size.width += para.GetMarginLeft() + para.GetTextIndent();
 
-  float fVal = 0;
-  float fMin = 0;
-  float fMax = 0;
-  if (GetWidth(fVal)) {
-    size.width = fVal;
+  CXFA_ParaData paraData = GetParaData();
+  if (paraData.HasValidNode())
+    size.width += paraData.GetMarginLeft() + paraData.GetTextIndent();
+
+  pdfium::Optional<float> width = TryWidth();
+  if (width) {
+    size.width = *width;
   } else {
-    if (GetMinWidth(fMin))
-      size.width = std::max(size.width, fMin);
-    if (GetMaxWidth(fMax) && fMax > 0)
-      size.width = std::min(size.width, fMax);
+    pdfium::Optional<float> min = TryMinWidth();
+    if (min)
+      size.width = std::max(size.width, *min);
+
+    pdfium::Optional<float> max = TryMaxWidth();
+    if (max && *max > 0)
+      size.width = std::min(size.width, *max);
   }
-  fVal = 0;
-  fMin = 0;
-  fMax = 0;
-  if (GetHeight(fVal)) {
-    size.height = fVal;
+
+  pdfium::Optional<float> height = TryHeight();
+  if (height) {
+    size.height = *height;
   } else {
-    if (GetMinHeight(fMin))
-      size.height = std::max(size.height, fMin);
-    if (GetMaxHeight(fMax) && fMax > 0)
-      size.height = std::min(size.height, fMax);
+    pdfium::Optional<float> min = TryMinHeight();
+    if (min)
+      size.height = std::max(size.height, *min);
+
+    pdfium::Optional<float> max = TryMaxHeight();
+    if (max && *max > 0)
+      size.height = std::min(size.height, *max);
   }
   return true;
 }
 
 void CXFA_WidgetAcc::CalculateTextContentSize(CFX_SizeF& size) {
   float fFontSize = GetFontSize();
-  WideString wsText;
-  GetValue(wsText, XFA_VALUEPICTURE_Display);
+  WideString wsText = GetValue(XFA_VALUEPICTURE_Display);
   if (wsText.IsEmpty()) {
     size.height += fFontSize;
     return;
@@ -857,13 +834,13 @@ bool CXFA_WidgetAcc::CalculateTextEditAutoSize(CFX_SizeF& size) {
     CFX_SizeF szCap;
     CalcCaptionSize(szCap);
     bool bCapExit = szCap.width > 0.01 && szCap.height > 0.01;
-    int32_t iCapPlacement = XFA_ATTRIBUTEENUM_Unknown;
+    XFA_AttributeEnum iCapPlacement = XFA_AttributeEnum::Unknown;
     if (bCapExit) {
-      iCapPlacement = GetCaption().GetPlacementType();
+      iCapPlacement = GetCaptionData().GetPlacementType();
       switch (iCapPlacement) {
-        case XFA_ATTRIBUTEENUM_Left:
-        case XFA_ATTRIBUTEENUM_Right:
-        case XFA_ATTRIBUTEENUM_Inline: {
+        case XFA_AttributeEnum::Left:
+        case XFA_AttributeEnum::Right:
+        case XFA_AttributeEnum::Inline: {
           size.width -= szCap.width;
         }
         default:
@@ -872,24 +849,21 @@ bool CXFA_WidgetAcc::CalculateTextEditAutoSize(CFX_SizeF& size) {
     }
     CFX_RectF rtUIMargin = GetUIMargin();
     size.width -= rtUIMargin.left + rtUIMargin.width;
-    CXFA_Margin mgWidget = GetMargin();
-    if (mgWidget) {
-      float fLeftInset, fRightInset;
-      mgWidget.GetLeftInset(fLeftInset);
-      mgWidget.GetRightInset(fRightInset);
-      size.width -= fLeftInset + fRightInset;
-    }
+    CXFA_MarginData marginData = GetMarginData();
+    if (marginData.HasValidNode())
+      size.width -= marginData.GetLeftInset() + marginData.GetRightInset();
+
     CalculateTextContentSize(size);
     size.height += rtUIMargin.top + rtUIMargin.height;
     if (bCapExit) {
       switch (iCapPlacement) {
-        case XFA_ATTRIBUTEENUM_Left:
-        case XFA_ATTRIBUTEENUM_Right:
-        case XFA_ATTRIBUTEENUM_Inline: {
+        case XFA_AttributeEnum::Left:
+        case XFA_AttributeEnum::Right:
+        case XFA_AttributeEnum::Inline: {
           size.height = std::max(size.height, szCap.height);
         } break;
-        case XFA_ATTRIBUTEENUM_Top:
-        case XFA_ATTRIBUTEENUM_Bottom: {
+        case XFA_AttributeEnum::Top:
+        case XFA_AttributeEnum::Bottom: {
           size.height += szCap.height;
         }
         default:
@@ -914,33 +888,48 @@ bool CXFA_WidgetAcc::CalculatePushButtonAutoSize(CFX_SizeF& size) {
   return CalculateWidgetAutoSize(size);
 }
 
+CFX_SizeF CXFA_WidgetAcc::CalculateImageSize(float img_width,
+                                             float img_height,
+                                             float dpi_x,
+                                             float dpi_y) {
+  CFX_RectF rtImage(0, 0, XFA_UnitPx2Pt(img_width, dpi_x),
+                    XFA_UnitPx2Pt(img_height, dpi_y));
+
+  CFX_RectF rtFit;
+  pdfium::Optional<float> width = TryWidth();
+  if (width) {
+    rtFit.width = *width;
+    GetWidthWithoutMargin(rtFit.width);
+  } else {
+    rtFit.width = rtImage.width;
+  }
+
+  pdfium::Optional<float> height = TryHeight();
+  if (height) {
+    rtFit.height = *height;
+    GetHeightWithoutMargin(rtFit.height);
+  } else {
+    rtFit.height = rtImage.height;
+  }
+
+  return rtFit.Size();
+}
+
 bool CXFA_WidgetAcc::CalculateImageAutoSize(CFX_SizeF& size) {
   if (!GetImageImage())
     LoadImageImage();
 
   size.clear();
   RetainPtr<CFX_DIBitmap> pBitmap = GetImageImage();
-  if (pBitmap) {
-    int32_t iImageXDpi = 0;
-    int32_t iImageYDpi = 0;
-    GetImageDpi(iImageXDpi, iImageYDpi);
-    CFX_RectF rtImage(
-        0, 0, XFA_UnitPx2Pt((float)pBitmap->GetWidth(), (float)iImageXDpi),
-        XFA_UnitPx2Pt((float)pBitmap->GetHeight(), (float)iImageYDpi));
+  if (!pBitmap)
+    return CalculateWidgetAutoSize(size);
 
-    CFX_RectF rtFit;
-    if (GetWidth(rtFit.width))
-      GetWidthWithoutMargin(rtFit.width);
-    else
-      rtFit.width = rtImage.width;
+  int32_t iImageXDpi = 0;
+  int32_t iImageYDpi = 0;
+  GetImageDpi(iImageXDpi, iImageYDpi);
 
-    if (GetHeight(rtFit.height))
-      GetHeightWithoutMargin(rtFit.height);
-    else
-      rtFit.height = rtImage.height;
-
-    size = rtFit.Size();
-  }
+  size = CalculateImageSize(pBitmap->GetWidth(), pBitmap->GetHeight(),
+                            iImageXDpi, iImageYDpi);
   return CalculateWidgetAutoSize(size);
 }
 
@@ -950,28 +939,15 @@ bool CXFA_WidgetAcc::CalculateImageEditAutoSize(CFX_SizeF& size) {
 
   size.clear();
   RetainPtr<CFX_DIBitmap> pBitmap = GetImageEditImage();
-  if (pBitmap) {
-    int32_t iImageXDpi = 0;
-    int32_t iImageYDpi = 0;
-    GetImageEditDpi(iImageXDpi, iImageYDpi);
-    CFX_RectF rtImage(
-        0, 0, XFA_UnitPx2Pt((float)pBitmap->GetWidth(), (float)iImageXDpi),
-        XFA_UnitPx2Pt((float)pBitmap->GetHeight(), (float)iImageYDpi));
+  if (!pBitmap)
+    return CalculateFieldAutoSize(size);
 
-    CFX_RectF rtFit;
-    if (GetWidth(rtFit.width))
-      GetWidthWithoutMargin(rtFit.width);
-    else
-      rtFit.width = rtImage.width;
+  int32_t iImageXDpi = 0;
+  int32_t iImageYDpi = 0;
+  GetImageEditDpi(iImageXDpi, iImageYDpi);
 
-    if (GetHeight(rtFit.height))
-      GetHeightWithoutMargin(rtFit.height);
-    else
-      rtFit.height = rtImage.height;
-
-    size.width = rtFit.width;
-    size.height = rtFit.height;
-  }
+  size = CalculateImageSize(pBitmap->GetWidth(), pBitmap->GetHeight(),
+                            iImageXDpi, iImageYDpi);
   return CalculateFieldAutoSize(size);
 }
 
@@ -1018,60 +994,48 @@ void CXFA_WidgetAcc::LoadText() {
 }
 
 float CXFA_WidgetAcc::CalculateWidgetAutoWidth(float fWidthCalc) {
-  CXFA_Margin mgWidget = GetMargin();
-  if (mgWidget) {
-    float fLeftInset, fRightInset;
-    mgWidget.GetLeftInset(fLeftInset);
-    mgWidget.GetRightInset(fRightInset);
-    fWidthCalc += fLeftInset + fRightInset;
-  }
+  CXFA_MarginData marginData = GetMarginData();
+  if (marginData.HasValidNode())
+    fWidthCalc += marginData.GetLeftInset() + marginData.GetRightInset();
 
-  float fMin = 0, fMax = 0;
-  if (GetMinWidth(fMin))
-    fWidthCalc = std::max(fWidthCalc, fMin);
-  if (GetMaxWidth(fMax) && fMax > 0)
-    fWidthCalc = std::min(fWidthCalc, fMax);
+  pdfium::Optional<float> min = TryMinWidth();
+  if (min)
+    fWidthCalc = std::max(fWidthCalc, *min);
+
+  pdfium::Optional<float> max = TryMaxWidth();
+  if (max && *max > 0)
+    fWidthCalc = std::min(fWidthCalc, *max);
 
   return fWidthCalc;
 }
 
 float CXFA_WidgetAcc::GetWidthWithoutMargin(float fWidthCalc) {
-  CXFA_Margin mgWidget = GetMargin();
-  if (mgWidget) {
-    float fLeftInset, fRightInset;
-    mgWidget.GetLeftInset(fLeftInset);
-    mgWidget.GetRightInset(fRightInset);
-    fWidthCalc -= fLeftInset + fRightInset;
-  }
+  CXFA_MarginData marginData = GetMarginData();
+  if (marginData.HasValidNode())
+    fWidthCalc -= marginData.GetLeftInset() + marginData.GetRightInset();
   return fWidthCalc;
 }
 
 float CXFA_WidgetAcc::CalculateWidgetAutoHeight(float fHeightCalc) {
-  CXFA_Margin mgWidget = GetMargin();
-  if (mgWidget) {
-    float fTopInset, fBottomInset;
-    mgWidget.GetTopInset(fTopInset);
-    mgWidget.GetBottomInset(fBottomInset);
-    fHeightCalc += fTopInset + fBottomInset;
-  }
+  CXFA_MarginData marginData = GetMarginData();
+  if (marginData.HasValidNode())
+    fHeightCalc += marginData.GetTopInset() + marginData.GetBottomInset();
 
-  float fMin = 0, fMax = 0;
-  if (GetMinHeight(fMin))
-    fHeightCalc = std::max(fHeightCalc, fMin);
-  if (GetMaxHeight(fMax) && fMax > 0)
-    fHeightCalc = std::min(fHeightCalc, fMax);
+  pdfium::Optional<float> min = TryMinHeight();
+  if (min)
+    fHeightCalc = std::max(fHeightCalc, *min);
+
+  pdfium::Optional<float> max = TryMaxHeight();
+  if (max && *max > 0)
+    fHeightCalc = std::min(fHeightCalc, *max);
 
   return fHeightCalc;
 }
 
 float CXFA_WidgetAcc::GetHeightWithoutMargin(float fHeightCalc) {
-  CXFA_Margin mgWidget = GetMargin();
-  if (mgWidget) {
-    float fTopInset, fBottomInset;
-    mgWidget.GetTopInset(fTopInset);
-    mgWidget.GetBottomInset(fBottomInset);
-    fHeightCalc -= fTopInset + fBottomInset;
-  }
+  CXFA_MarginData marginData = GetMarginData();
+  if (marginData.HasValidNode())
+    fHeightCalc -= marginData.GetTopInset() + marginData.GetBottomInset();
   return fHeightCalc;
 }
 
@@ -1079,8 +1043,7 @@ void CXFA_WidgetAcc::StartWidgetLayout(float& fCalcWidth, float& fCalcHeight) {
   InitLayoutData();
   XFA_Element eUIType = GetUIType();
   if (eUIType == XFA_Element::Text) {
-    m_pLayoutData->m_fWidgetHeight = -1;
-    GetHeight(m_pLayoutData->m_fWidgetHeight);
+    m_pLayoutData->m_fWidgetHeight = TryHeight().value_or(-1);
     StartTextLayout(fCalcWidth, fCalcHeight);
     return;
   }
@@ -1090,14 +1053,26 @@ void CXFA_WidgetAcc::StartWidgetLayout(float& fCalcWidth, float& fCalcHeight) {
   m_pLayoutData->m_fWidgetHeight = -1;
   float fWidth = 0;
   if (fCalcWidth > 0 && fCalcHeight < 0) {
-    if (!GetHeight(fCalcHeight))
+    pdfium::Optional<float> height = TryHeight();
+    if (height)
+      fCalcHeight = *height;
+    else
       CalculateAccWidthAndHeight(eUIType, fCalcWidth, fCalcHeight);
 
     m_pLayoutData->m_fWidgetHeight = fCalcHeight;
     return;
   }
   if (fCalcWidth < 0 && fCalcHeight < 0) {
-    if (!GetWidth(fWidth) || !GetHeight(fCalcHeight))
+    pdfium::Optional<float> height;
+    pdfium::Optional<float> width = TryWidth();
+    if (width) {
+      fWidth = *width;
+
+      height = TryHeight();
+      if (height)
+        fCalcHeight = *height;
+    }
+    if (!width || !height)
       CalculateAccWidthAndHeight(eUIType, fWidth, fCalcHeight);
 
     fCalcWidth = fWidth;
@@ -1163,11 +1138,12 @@ bool CXFA_WidgetAcc::FindSplitPos(int32_t iBlockIndex, float& fCalcHeight) {
   float fTopInset = 0;
   float fBottomInset = 0;
   if (iBlockIndex == 0) {
-    CXFA_Margin mgWidget = GetMargin();
-    if (mgWidget) {
-      mgWidget.GetTopInset(fTopInset);
-      mgWidget.GetBottomInset(fBottomInset);
+    CXFA_MarginData marginData = GetMarginData();
+    if (marginData.HasValidNode()) {
+      fTopInset = marginData.GetTopInset();
+      fBottomInset = marginData.GetBottomInset();
     }
+
     CFX_RectF rtUIMargin = GetUIMargin();
     fTopInset += rtUIMargin.top;
     fBottomInset += rtUIMargin.width;
@@ -1182,8 +1158,9 @@ bool CXFA_WidgetAcc::FindSplitPos(int32_t iBlockIndex, float& fCalcHeight) {
 
     CXFA_TextLayout* pTextLayout =
         static_cast<CXFA_TextLayoutData*>(m_pLayoutData.get())->GetTextLayout();
-    pTextLayout->DoLayout(iBlockIndex, fCalcHeight, fCalcHeight,
-                          m_pLayoutData->m_fWidgetHeight - fTopInset);
+    fCalcHeight =
+        pTextLayout->DoLayout(iBlockIndex, fCalcHeight, fCalcHeight,
+                              m_pLayoutData->m_fWidgetHeight - fTopInset);
     if (fCalcHeight != 0) {
       if (iBlockIndex == 0)
         fCalcHeight = fCalcHeight + fTopInset;
@@ -1192,39 +1169,38 @@ bool CXFA_WidgetAcc::FindSplitPos(int32_t iBlockIndex, float& fCalcHeight) {
     }
     return true;
   }
-  XFA_ATTRIBUTEENUM iCapPlacement = XFA_ATTRIBUTEENUM_Unknown;
+  XFA_AttributeEnum iCapPlacement = XFA_AttributeEnum::Unknown;
   float fCapReserve = 0;
   if (iBlockIndex == 0) {
-    CXFA_Caption caption = GetCaption();
-    if (caption && caption.GetPresence() != XFA_ATTRIBUTEENUM_Hidden) {
-      iCapPlacement = (XFA_ATTRIBUTEENUM)caption.GetPlacementType();
-      fCapReserve = caption.GetReserve();
+    CXFA_CaptionData captionData = GetCaptionData();
+    if (captionData.HasValidNode() && !captionData.IsHidden()) {
+      iCapPlacement = captionData.GetPlacementType();
+      fCapReserve = captionData.GetReserve();
     }
-    if (iCapPlacement == XFA_ATTRIBUTEENUM_Top &&
+    if (iCapPlacement == XFA_AttributeEnum::Top &&
         fCalcHeight < fCapReserve + fTopInset) {
       fCalcHeight = 0;
       return true;
     }
-    if (iCapPlacement == XFA_ATTRIBUTEENUM_Bottom &&
+    if (iCapPlacement == XFA_AttributeEnum::Bottom &&
         m_pLayoutData->m_fWidgetHeight - fCapReserve - fBottomInset) {
       fCalcHeight = 0;
       return true;
     }
-    if (iCapPlacement != XFA_ATTRIBUTEENUM_Top)
+    if (iCapPlacement != XFA_AttributeEnum::Top)
       fCapReserve = 0;
   }
   CXFA_FieldLayoutData* pFieldData =
       static_cast<CXFA_FieldLayoutData*>(m_pLayoutData.get());
   int32_t iLinesCount = 0;
   float fHeight = m_pLayoutData->m_fWidgetHeight;
-  WideString wsText;
-  GetValue(wsText, XFA_VALUEPICTURE_Display);
-  if (wsText.IsEmpty()) {
+  if (GetValue(XFA_VALUEPICTURE_Display).IsEmpty()) {
     iLinesCount = 1;
   } else {
     if (!pFieldData->m_pTextOut) {
-      float fWidth = 0;
-      GetWidth(fWidth);
+      // TODO(dsinclair): Inline fWidth when the 2nd param of
+      // CalculateAccWidthAndHeight isn't a ref-param.
+      float fWidth = TryWidth().value_or(0);
       CalculateAccWidthAndHeight(eUIType, fWidth, fHeight);
     }
     iLinesCount = pFieldData->m_pTextOut->GetTotalLines();
@@ -1246,19 +1222,23 @@ bool CXFA_WidgetAcc::FindSplitPos(int32_t iBlockIndex, float& fCalcHeight) {
   if (fHeight > 0.1f && iBlockIndex == 0) {
     fStartOffset = fTopInset;
     fHeight -= (fTopInset + fBottomInset);
-    if (CXFA_Para para = GetPara()) {
-      fSpaceAbove = para.GetSpaceAbove();
-      float fSpaceBelow = para.GetSpaceBelow();
+    CXFA_ParaData paraData = GetParaData();
+    if (paraData.HasValidNode()) {
+      fSpaceAbove = paraData.GetSpaceAbove();
+      float fSpaceBelow = paraData.GetSpaceBelow();
       fHeight -= (fSpaceAbove + fSpaceBelow);
-      switch (para.GetVerticalAlign()) {
-        case XFA_ATTRIBUTEENUM_Top:
+      switch (paraData.GetVerticalAlign()) {
+        case XFA_AttributeEnum::Top:
           fStartOffset += fSpaceAbove;
           break;
-        case XFA_ATTRIBUTEENUM_Middle:
+        case XFA_AttributeEnum::Middle:
           fStartOffset += ((fHeight - fTextHeight) / 2 + fSpaceAbove);
           break;
-        case XFA_ATTRIBUTEENUM_Bottom:
+        case XFA_AttributeEnum::Bottom:
           fStartOffset += (fHeight - fTextHeight + fSpaceAbove);
+          break;
+        default:
+          NOTREACHED();
           break;
       }
     }
@@ -1277,20 +1257,21 @@ bool CXFA_WidgetAcc::FindSplitPos(int32_t iBlockIndex, float& fCalcHeight) {
 
   XFA_VERSION version = GetDoc()->GetXFADoc()->GetCurVersionMode();
   bool bCanSplitNoContent = false;
-  XFA_ATTRIBUTEENUM eLayoutMode;
-  GetNode()
-      ->GetNodeItem(XFA_NODEITEM_Parent)
-      ->TryEnum(XFA_ATTRIBUTE_Layout, eLayoutMode, true);
-  if ((eLayoutMode == XFA_ATTRIBUTEENUM_Position ||
-       eLayoutMode == XFA_ATTRIBUTEENUM_Tb ||
-       eLayoutMode == XFA_ATTRIBUTEENUM_Row ||
-       eLayoutMode == XFA_ATTRIBUTEENUM_Table) &&
+  XFA_AttributeEnum eLayoutMode = GetNode()
+                                      ->GetNodeItem(XFA_NODEITEM_Parent)
+                                      ->JSNode()
+                                      ->TryEnum(XFA_Attribute::Layout, true)
+                                      .value_or(XFA_AttributeEnum::Position);
+  if ((eLayoutMode == XFA_AttributeEnum::Position ||
+       eLayoutMode == XFA_AttributeEnum::Tb ||
+       eLayoutMode == XFA_AttributeEnum::Row ||
+       eLayoutMode == XFA_AttributeEnum::Table) &&
       version > XFA_VERSION_208) {
     bCanSplitNoContent = true;
   }
-  if ((eLayoutMode == XFA_ATTRIBUTEENUM_Tb ||
-       eLayoutMode == XFA_ATTRIBUTEENUM_Row ||
-       eLayoutMode == XFA_ATTRIBUTEENUM_Table) &&
+  if ((eLayoutMode == XFA_AttributeEnum::Tb ||
+       eLayoutMode == XFA_AttributeEnum::Row ||
+       eLayoutMode == XFA_AttributeEnum::Table) &&
       version <= XFA_VERSION_208) {
     if (fStartOffset < fCalcHeight) {
       bCanSplitNoContent = true;
@@ -1414,20 +1395,19 @@ void CXFA_WidgetAcc::StartTextLayout(float& fCalcWidth, float& fCalcHeight) {
     float fWidth = GetWidthWithoutMargin(fCalcWidth);
     pTextLayout->StartLayout(fWidth);
   }
+
   if (fCalcWidth < 0 && fCalcHeight < 0) {
-    float fMaxWidth = -1;
-    bool bRet = GetWidth(fMaxWidth);
-    if (bRet) {
-      float fWidth = GetWidthWithoutMargin(fMaxWidth);
-      pTextLayout->StartLayout(fWidth);
+    pdfium::Optional<float> width = TryWidth();
+    if (width) {
+      pTextLayout->StartLayout(GetWidthWithoutMargin(*width));
+      fCalcWidth = *width;
     } else {
-      float fWidth = pTextLayout->StartLayout(fMaxWidth);
-      fMaxWidth = CalculateWidgetAutoWidth(fWidth);
-      fWidth = GetWidthWithoutMargin(fMaxWidth);
-      pTextLayout->StartLayout(fWidth);
+      float fMaxWidth = CalculateWidgetAutoWidth(pTextLayout->StartLayout(-1));
+      pTextLayout->StartLayout(GetWidthWithoutMargin(fMaxWidth));
+      fCalcWidth = fMaxWidth;
     }
-    fCalcWidth = fMaxWidth;
   }
+
   if (m_pLayoutData->m_fWidgetHeight < 0) {
     m_pLayoutData->m_fWidgetHeight = pTextLayout->GetLayoutHeight();
     m_pLayoutData->m_fWidgetHeight =
@@ -1488,44 +1468,41 @@ void CXFA_WidgetAcc::SetImageEditImage(
     pData->m_pDIBitmap = newImage;
 }
 
-CXFA_WidgetLayoutData* CXFA_WidgetAcc::GetWidgetLayoutData() {
-  return m_pLayoutData.get();
-}
-
 RetainPtr<CFGAS_GEFont> CXFA_WidgetAcc::GetFDEFont() {
-  WideStringView wsFontName = L"Courier";
+  WideString wsFontName = L"Courier";
   uint32_t dwFontStyle = 0;
-  if (CXFA_Font font = GetFont(false)) {
-    if (font.IsBold())
+  CXFA_FontData fontData = GetFontData(false);
+  if (fontData.HasValidNode()) {
+    if (fontData.IsBold())
       dwFontStyle |= FXFONT_BOLD;
-    if (font.IsItalic())
+    if (fontData.IsItalic())
       dwFontStyle |= FXFONT_ITALIC;
-    font.GetTypeface(wsFontName);
+
+    wsFontName = fontData.GetTypeface();
   }
 
   auto* pDoc = GetDoc();
-  return pDoc->GetApp()->GetXFAFontMgr()->GetFont(pDoc, wsFontName,
-                                                  dwFontStyle);
+  return pDoc->GetApp()->GetXFAFontMgr()->GetFont(
+      pDoc, wsFontName.AsStringView(), dwFontStyle);
 }
 
 float CXFA_WidgetAcc::GetFontSize() {
-  float fFontSize = 10.0f;
-  if (CXFA_Font font = GetFont(false))
-    fFontSize = font.GetFontSize();
+  CXFA_FontData fontData = GetFontData(false);
+  float fFontSize = fontData.HasValidNode() ? fontData.GetFontSize() : 10.0f;
   return fFontSize < 0.1f ? 10.0f : fFontSize;
 }
 
 float CXFA_WidgetAcc::GetLineHeight() {
   float fLineHeight = 0;
-  if (CXFA_Para para = GetPara())
-    fLineHeight = para.GetLineHeight();
+  CXFA_ParaData paraData = GetParaData();
+  if (paraData.HasValidNode())
+    fLineHeight = paraData.GetLineHeight();
   if (fLineHeight < 1)
     fLineHeight = GetFontSize() * 1.2f;
   return fLineHeight;
 }
 
 FX_ARGB CXFA_WidgetAcc::GetTextColor() {
-  if (CXFA_Font font = GetFont(false))
-    return font.GetColor();
-  return 0xFF000000;
+  CXFA_FontData fontData = GetFontData(false);
+  return fontData.HasValidNode() ? fontData.GetColor() : 0xFF000000;
 }

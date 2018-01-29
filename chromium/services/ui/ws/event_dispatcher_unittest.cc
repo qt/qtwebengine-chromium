@@ -27,8 +27,6 @@
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/events/event.h"
 
-using base::MakeUnique;
-
 namespace ui {
 namespace ws {
 namespace test {
@@ -69,6 +67,10 @@ class TestEventDispatcherDelegate : public EventDispatcherDelegate {
   ~TestEventDispatcherDelegate() override {}
 
   void EnableFallbackToRoot() { fallback_to_root_ = true; }
+
+  void set_is_window_in_display_root(bool value) {
+    is_window_in_display_root_ = value;
+  }
 
   ui::Event* last_event_target_not_found() {
     return last_event_target_not_found_.get();
@@ -204,6 +206,9 @@ class TestEventDispatcherDelegate : public EventDispatcherDelegate {
   ServerWindow* GetRootWindowForEventDispatch(ServerWindow* window) override {
     return window->GetRootForDrawn();
   }
+  bool IsWindowInDisplayRoot(const ServerWindow* window) override {
+    return is_window_in_display_root_;
+  }
 
   Delegate* delegate_;
   ServerWindow* focused_window_;
@@ -220,6 +225,8 @@ class TestEventDispatcherDelegate : public EventDispatcherDelegate {
 
   // If true events blocked by a modal window are sent to |root_|.
   bool fallback_to_root_ = false;
+
+  bool is_window_in_display_root_ = true;
 
   DISALLOW_COPY_AND_ASSIGN(TestEventDispatcherDelegate);
 };
@@ -288,6 +295,10 @@ class EventDispatcherTest : public testing::TestWithParam<bool>,
     return test_event_dispatcher_delegate_.get();
   }
   EventDispatcher* event_dispatcher() { return event_dispatcher_.get(); }
+  VizHostProxy* viz_host_proxy() {
+    return ws_test_helper_.window_server()->GetVizHostProxy();
+  }
+  TestServerWindowDelegate* window_delegate() { return window_delegate_.get(); }
 
   void DispatchEvent(EventDispatcher* dispatcher,
                      const ui::Event& event,
@@ -323,12 +334,12 @@ class EventDispatcherTest : public testing::TestWithParam<bool>,
     event_dispatcher_->SetCaptureWindow(nullptr, kInvalidClientId);
   }
 
+  WindowServerTestHelper ws_test_helper_;
+
   std::unique_ptr<TestServerWindowDelegate> window_delegate_;
   std::unique_ptr<ServerWindow> root_window_;
   std::unique_ptr<TestEventDispatcherDelegate> test_event_dispatcher_delegate_;
   std::unique_ptr<EventDispatcher> event_dispatcher_;
-
-  base::test::ScopedTaskEnvironment scoped_task_environment_;
 
   DISALLOW_COPY_AND_ASSIGN(EventDispatcherTest);
 };
@@ -433,17 +444,18 @@ void EventDispatcherTest::SetUp() {
   }
   testing::TestWithParam<bool>::SetUp();
 
-  window_delegate_ = base::MakeUnique<TestServerWindowDelegate>();
+  window_delegate_ =
+      std::make_unique<TestServerWindowDelegate>(viz_host_proxy());
   root_window_ =
-      base::MakeUnique<ServerWindow>(window_delegate_.get(), WindowId(1, 2));
+      std::make_unique<ServerWindow>(window_delegate_.get(), WindowId(1, 2));
   root_window_->set_is_activation_parent(true);
   window_delegate_->set_root_window(root_window_.get());
   root_window_->SetVisible(true);
 
   test_event_dispatcher_delegate_ =
-      base::MakeUnique<TestEventDispatcherDelegate>(this);
+      std::make_unique<TestEventDispatcherDelegate>(this);
   event_dispatcher_ =
-      base::MakeUnique<EventDispatcher>(test_event_dispatcher_delegate_.get());
+      std::make_unique<EventDispatcher>(test_event_dispatcher_delegate_.get());
   test_event_dispatcher_delegate_->set_root(root_window_.get());
 }
 
@@ -459,6 +471,9 @@ class EventDispatcherVizTargeterTest
     return test_event_dispatcher_delegate_.get();
   }
   EventDispatcher* event_dispatcher() { return event_dispatcher_.get(); }
+  VizHostProxy* viz_host_proxy() {
+    return ws_test_helper_.window_server()->GetVizHostProxy();
+  }
   viz::AggregatedHitTestRegion* aggregated_hit_test_region() {
     return static_cast<viz::AggregatedHitTestRegion*>(active_buffer_.get());
   }
@@ -495,13 +510,13 @@ class EventDispatcherVizTargeterTest
     event_dispatcher_->SetCaptureWindow(nullptr, kInvalidClientId);
   }
 
+  WindowServerTestHelper ws_test_helper_;
+
   std::unique_ptr<TestServerWindowDelegate> window_delegate_;
   std::unique_ptr<ServerWindow> root_window_;
   std::unique_ptr<TestEventDispatcherDelegate> test_event_dispatcher_delegate_;
   std::unique_ptr<EventDispatcher> event_dispatcher_;
   mojo::ScopedSharedBufferMapping active_buffer_;
-
-  base::test::ScopedTaskEnvironment scoped_task_environment_;
 
   DISALLOW_COPY_AND_ASSIGN(EventDispatcherVizTargeterTest);
 };
@@ -515,17 +530,18 @@ void EventDispatcherVizTargeterTest::SetUp() {
   }
   testing::Test::SetUp();
 
-  window_delegate_ = base::MakeUnique<TestServerWindowDelegate>();
+  window_delegate_ =
+      std::make_unique<TestServerWindowDelegate>(viz_host_proxy());
   root_window_ =
-      base::MakeUnique<ServerWindow>(window_delegate_.get(), WindowId(1, 2));
+      std::make_unique<ServerWindow>(window_delegate_.get(), WindowId(1, 2));
   root_window_->set_is_activation_parent(true);
   window_delegate_->set_root_window(root_window_.get());
   root_window_->SetVisible(true);
 
   test_event_dispatcher_delegate_ =
-      base::MakeUnique<TestEventDispatcherDelegate>(this);
+      std::make_unique<TestEventDispatcherDelegate>(this);
   event_dispatcher_ =
-      base::MakeUnique<EventDispatcher>(test_event_dispatcher_delegate_.get());
+      std::make_unique<EventDispatcher>(test_event_dispatcher_delegate_.get());
   test_event_dispatcher_delegate_->set_root(root_window_.get());
 
   uint32_t handle_size = 100;
@@ -762,36 +778,36 @@ TEST_P(EventDispatcherTest, Capture) {
 
   MouseEventTest tests[] = {
       // Send a mouse down event over child.
-      {MakeUnique<ui::MouseEvent>(ui::ET_MOUSE_PRESSED, gfx::Point(20, 25),
-                                  gfx::Point(20, 25), base::TimeTicks(),
-                                  ui::EF_LEFT_MOUSE_BUTTON,
-                                  ui::EF_LEFT_MOUSE_BUTTON),
+      {std::make_unique<ui::MouseEvent>(
+           ui::ET_MOUSE_PRESSED, gfx::Point(20, 25), gfx::Point(20, 25),
+           base::TimeTicks(), ui::EF_LEFT_MOUSE_BUTTON,
+           ui::EF_LEFT_MOUSE_BUTTON),
        child.get(), gfx::Point(20, 25), gfx::Point(10, 15), nullptr,
        gfx::Point(), gfx::Point()},
 
       // Capture should be activated. Let's send a mouse move outside the bounds
       // of the child.
-      {MakeUnique<ui::MouseEvent>(ui::ET_MOUSE_MOVED, gfx::Point(50, 50),
-                                  gfx::Point(50, 50), base::TimeTicks(),
-                                  ui::EF_LEFT_MOUSE_BUTTON,
-                                  ui::EF_LEFT_MOUSE_BUTTON),
+      {std::make_unique<ui::MouseEvent>(ui::ET_MOUSE_MOVED, gfx::Point(50, 50),
+                                        gfx::Point(50, 50), base::TimeTicks(),
+                                        ui::EF_LEFT_MOUSE_BUTTON,
+                                        ui::EF_LEFT_MOUSE_BUTTON),
        child.get(), gfx::Point(50, 50), gfx::Point(40, 40), nullptr,
        gfx::Point(), gfx::Point()},
       // Release the mouse and verify that the mouse up event goes to the child.
-      {MakeUnique<ui::MouseEvent>(ui::ET_MOUSE_RELEASED, gfx::Point(50, 50),
-                                  gfx::Point(50, 50), base::TimeTicks(),
-                                  ui::EF_LEFT_MOUSE_BUTTON,
-                                  ui::EF_LEFT_MOUSE_BUTTON),
+      {std::make_unique<ui::MouseEvent>(
+           ui::ET_MOUSE_RELEASED, gfx::Point(50, 50), gfx::Point(50, 50),
+           base::TimeTicks(), ui::EF_LEFT_MOUSE_BUTTON,
+           ui::EF_LEFT_MOUSE_BUTTON),
        child.get(), gfx::Point(50, 50), gfx::Point(40, 40), nullptr,
        gfx::Point(), gfx::Point()},
 
       // A mouse move at (50, 50) should now go to the root window. As the
       // move crosses between |child| and |root| |child| gets an exit, and
       // |root| the move.
-      {MakeUnique<ui::MouseEvent>(ui::ET_MOUSE_MOVED, gfx::Point(50, 50),
-                                  gfx::Point(50, 50), base::TimeTicks(),
-                                  ui::EF_LEFT_MOUSE_BUTTON,
-                                  ui::EF_LEFT_MOUSE_BUTTON),
+      {std::make_unique<ui::MouseEvent>(ui::ET_MOUSE_MOVED, gfx::Point(50, 50),
+                                        gfx::Point(50, 50), base::TimeTicks(),
+                                        ui::EF_LEFT_MOUSE_BUTTON,
+                                        ui::EF_LEFT_MOUSE_BUTTON),
        child.get(), gfx::Point(50, 50), gfx::Point(40, 40), root,
        gfx::Point(50, 50), gfx::Point(50, 50)},
 
@@ -808,16 +824,16 @@ TEST_P(EventDispatcherTest, CaptureMultipleMouseButtons) {
 
   MouseEventTest tests[] = {
       // Send a mouse down event over child with a left mouse button
-      {MakeUnique<ui::MouseEvent>(ui::ET_MOUSE_PRESSED, gfx::Point(20, 25),
-                                  gfx::Point(20, 25), base::TimeTicks(),
-                                  ui::EF_LEFT_MOUSE_BUTTON,
-                                  ui::EF_LEFT_MOUSE_BUTTON),
+      {std::make_unique<ui::MouseEvent>(
+           ui::ET_MOUSE_PRESSED, gfx::Point(20, 25), gfx::Point(20, 25),
+           base::TimeTicks(), ui::EF_LEFT_MOUSE_BUTTON,
+           ui::EF_LEFT_MOUSE_BUTTON),
        child.get(), gfx::Point(20, 25), gfx::Point(10, 15), nullptr,
        gfx::Point(), gfx::Point()},
 
       // Capture should be activated. Let's send a mouse move outside the bounds
       // of the child and press the right mouse button too.
-      {MakeUnique<ui::MouseEvent>(
+      {std::make_unique<ui::MouseEvent>(
            ui::ET_MOUSE_MOVED, gfx::Point(50, 50), gfx::Point(50, 50),
            base::TimeTicks(),
            ui::EF_LEFT_MOUSE_BUTTON | ui::EF_RIGHT_MOUSE_BUTTON, 0),
@@ -826,7 +842,7 @@ TEST_P(EventDispatcherTest, CaptureMultipleMouseButtons) {
 
       // Release the left mouse button and verify that the mouse up event goes
       // to the child.
-      {MakeUnique<ui::MouseEvent>(
+      {std::make_unique<ui::MouseEvent>(
            ui::ET_MOUSE_RELEASED, gfx::Point(50, 50), gfx::Point(50, 50),
            base::TimeTicks(),
            ui::EF_LEFT_MOUSE_BUTTON | ui::EF_RIGHT_MOUSE_BUTTON,
@@ -835,9 +851,9 @@ TEST_P(EventDispatcherTest, CaptureMultipleMouseButtons) {
        gfx::Point(), gfx::Point()},
 
       // A mouse move at (50, 50) should still go to the child.
-      {MakeUnique<ui::MouseEvent>(ui::ET_MOUSE_MOVED, gfx::Point(50, 50),
-                                  gfx::Point(50, 50), base::TimeTicks(),
-                                  ui::EF_LEFT_MOUSE_BUTTON, 0),
+      {std::make_unique<ui::MouseEvent>(ui::ET_MOUSE_MOVED, gfx::Point(50, 50),
+                                        gfx::Point(50, 50), base::TimeTicks(),
+                                        ui::EF_LEFT_MOUSE_BUTTON, 0),
        child.get(), gfx::Point(50, 50), gfx::Point(40, 40), nullptr,
        gfx::Point(), gfx::Point()},
 
@@ -1178,16 +1194,16 @@ TEST_P(EventDispatcherTest, WheelWhileDown) {
 
   MouseEventTest tests[] = {
       // Send a mouse down event over child1.
-      {MakeUnique<ui::MouseEvent>(ui::ET_MOUSE_PRESSED, gfx::Point(15, 15),
-                                  gfx::Point(15, 15), base::TimeTicks(),
-                                  ui::EF_LEFT_MOUSE_BUTTON,
-                                  ui::EF_LEFT_MOUSE_BUTTON),
+      {std::make_unique<ui::MouseEvent>(
+           ui::ET_MOUSE_PRESSED, gfx::Point(15, 15), gfx::Point(15, 15),
+           base::TimeTicks(), ui::EF_LEFT_MOUSE_BUTTON,
+           ui::EF_LEFT_MOUSE_BUTTON),
        child1.get(), gfx::Point(15, 15), gfx::Point(5, 5), nullptr,
        gfx::Point(), gfx::Point()},
       // Send mouse wheel over child2, should go to child1 as it has capture.
-      {MakeUnique<ui::MouseWheelEvent>(gfx::Vector2d(1, 0), gfx::Point(53, 54),
-                                       gfx::Point(53, 54), base::TimeTicks(),
-                                       ui::EF_NONE, ui::EF_NONE),
+      {std::make_unique<ui::MouseWheelEvent>(
+           gfx::Vector2d(1, 0), gfx::Point(53, 54), gfx::Point(53, 54),
+           base::TimeTicks(), ui::EF_NONE, ui::EF_NONE),
        child1.get(), gfx::Point(53, 54), gfx::Point(43, 44), nullptr,
        gfx::Point(), gfx::Point()},
   };
@@ -1314,30 +1330,30 @@ TEST_P(EventDispatcherTest, ExplicitCaptureOverridesImplicitCapture) {
   // Run some implicit capture tests.
   MouseEventTest tests[] = {
       // Send a mouse down event over child with a left mouse button
-      {MakeUnique<ui::MouseEvent>(ui::ET_MOUSE_PRESSED, gfx::Point(20, 25),
-                                  gfx::Point(20, 25), base::TimeTicks(),
-                                  ui::EF_LEFT_MOUSE_BUTTON,
-                                  ui::EF_LEFT_MOUSE_BUTTON),
+      {std::make_unique<ui::MouseEvent>(
+           ui::ET_MOUSE_PRESSED, gfx::Point(20, 25), gfx::Point(20, 25),
+           base::TimeTicks(), ui::EF_LEFT_MOUSE_BUTTON,
+           ui::EF_LEFT_MOUSE_BUTTON),
        child.get(), gfx::Point(20, 25), gfx::Point(10, 15)},
       // Capture should be activated. Let's send a mouse move outside the bounds
       // of the child and press the right mouse button too.
-      {MakeUnique<ui::MouseEvent>(
+      {std::make_unique<ui::MouseEvent>(
            ui::ET_MOUSE_MOVED, gfx::Point(50, 50), gfx::Point(50, 50),
            base::TimeTicks(),
            ui::EF_LEFT_MOUSE_BUTTON | ui::EF_RIGHT_MOUSE_BUTTON, 0),
        child.get(), gfx::Point(50, 50), gfx::Point(40, 40)},
       // Release the left mouse button and verify that the mouse up event goes
       // to the child.
-      {MakeUnique<ui::MouseEvent>(
+      {std::make_unique<ui::MouseEvent>(
            ui::ET_MOUSE_RELEASED, gfx::Point(50, 50), gfx::Point(50, 50),
            base::TimeTicks(),
            ui::EF_LEFT_MOUSE_BUTTON | ui::EF_RIGHT_MOUSE_BUTTON,
            ui::EF_RIGHT_MOUSE_BUTTON),
        child.get(), gfx::Point(50, 50), gfx::Point(40, 40)},
       // A mouse move at (50, 50) should still go to the child.
-      {MakeUnique<ui::MouseEvent>(ui::ET_MOUSE_MOVED, gfx::Point(50, 50),
-                                  gfx::Point(50, 50), base::TimeTicks(),
-                                  ui::EF_LEFT_MOUSE_BUTTON, 0),
+      {std::make_unique<ui::MouseEvent>(ui::ET_MOUSE_MOVED, gfx::Point(50, 50),
+                                        gfx::Point(50, 50), base::TimeTicks(),
+                                        ui::EF_LEFT_MOUSE_BUTTON, 0),
        child.get(), gfx::Point(50, 50), gfx::Point(40, 40)},
 
   };
@@ -1449,8 +1465,8 @@ TEST_P(EventDispatcherTest, UpdatingCaptureStopsObservingPreviousCapture) {
   EXPECT_EQ(child1.get(),
             test_event_dispatcher_delegate()->lost_capture_window());
 
-  // If observing does not stop during the capture update this crashes.
-  child1->AddObserver(dispatcher);
+  EXPECT_FALSE(
+      EventDispatcherTestApi(dispatcher).IsObservingWindow(child1.get()));
 }
 
 // Tests that destroying a window with explicit capture clears the capture
@@ -2070,14 +2086,16 @@ TEST_P(EventDispatcherTest, MoveMouseFromNoTargetToValidTarget) {
   MouseEventTest tests[] = {
       // Send a mouse down over the root, but not the child. No event should
       // be generated.
-      {MakeUnique<ui::MouseEvent>(ui::ET_MOUSE_MOVED, gfx::Point(5, 5),
-                                  gfx::Point(5, 5), base::TimeTicks(), 0, 0),
+      {std::make_unique<ui::MouseEvent>(ui::ET_MOUSE_MOVED, gfx::Point(5, 5),
+                                        gfx::Point(5, 5), base::TimeTicks(), 0,
+                                        0),
        nullptr, gfx::Point(), gfx::Point(), nullptr, gfx::Point(),
        gfx::Point()},
 
       // Move into child.
-      {MakeUnique<ui::MouseEvent>(ui::ET_MOUSE_MOVED, gfx::Point(12, 12),
-                                  gfx::Point(12, 12), base::TimeTicks(), 0, 0),
+      {std::make_unique<ui::MouseEvent>(ui::ET_MOUSE_MOVED, gfx::Point(12, 12),
+                                        gfx::Point(12, 12), base::TimeTicks(),
+                                        0, 0),
        child.get(), gfx::Point(12, 12), gfx::Point(2, 2), nullptr, gfx::Point(),
        gfx::Point()}};
   RunMouseEventTests(event_dispatcher(), test_event_dispatcher_delegate(),
@@ -2095,23 +2113,24 @@ TEST_P(EventDispatcherTest, NoTargetToTargetWithMouseDown) {
 
   MouseEventTest tests[] = {
       // Mouse over the root, but not the child. No event should be generated.
-      {MakeUnique<ui::MouseEvent>(ui::ET_MOUSE_MOVED, gfx::Point(5, 5),
-                                  gfx::Point(5, 5), base::TimeTicks(), 0, 0),
+      {std::make_unique<ui::MouseEvent>(ui::ET_MOUSE_MOVED, gfx::Point(5, 5),
+                                        gfx::Point(5, 5), base::TimeTicks(), 0,
+                                        0),
        nullptr, gfx::Point(), gfx::Point(), nullptr, gfx::Point(),
        gfx::Point()},
 
       // Press in same location, still no target.
-      {MakeUnique<ui::MouseEvent>(ui::ET_MOUSE_PRESSED, gfx::Point(5, 5),
-                                  gfx::Point(5, 5), base::TimeTicks(),
-                                  ui::EF_LEFT_MOUSE_BUTTON,
-                                  ui::EF_LEFT_MOUSE_BUTTON),
+      {std::make_unique<ui::MouseEvent>(ui::ET_MOUSE_PRESSED, gfx::Point(5, 5),
+                                        gfx::Point(5, 5), base::TimeTicks(),
+                                        ui::EF_LEFT_MOUSE_BUTTON,
+                                        ui::EF_LEFT_MOUSE_BUTTON),
        nullptr, gfx::Point(), gfx::Point(), nullptr, gfx::Point(),
        gfx::Point()},
 
       // Move into child, still no target.
-      {MakeUnique<ui::MouseEvent>(ui::ET_MOUSE_MOVED, gfx::Point(12, 12),
-                                  gfx::Point(12, 12), base::TimeTicks(),
-                                  ui::EF_LEFT_MOUSE_BUTTON, 0),
+      {std::make_unique<ui::MouseEvent>(ui::ET_MOUSE_MOVED, gfx::Point(12, 12),
+                                        gfx::Point(12, 12), base::TimeTicks(),
+                                        ui::EF_LEFT_MOUSE_BUTTON, 0),
        nullptr, gfx::Point(), gfx::Point(), nullptr, gfx::Point(),
        gfx::Point()}};
   RunMouseEventTests(event_dispatcher(), test_event_dispatcher_delegate(),
@@ -2131,16 +2150,17 @@ TEST_P(EventDispatcherTest, DontSendExitToSameClientWhenCaptureChanges) {
 
   MouseEventTest tests[] = {
       // Mouse over |c2|.
-      {MakeUnique<ui::MouseEvent>(ui::ET_MOUSE_MOVED, gfx::Point(16, 16),
-                                  gfx::Point(16, 16), base::TimeTicks(), 0, 0),
+      {std::make_unique<ui::MouseEvent>(ui::ET_MOUSE_MOVED, gfx::Point(16, 16),
+                                        gfx::Point(16, 16), base::TimeTicks(),
+                                        0, 0),
        c2.get(), gfx::Point(16, 16), gfx::Point(1, 1), nullptr, gfx::Point(),
        gfx::Point()},
 
       // Press in same location.
-      {MakeUnique<ui::MouseEvent>(ui::ET_MOUSE_PRESSED, gfx::Point(16, 16),
-                                  gfx::Point(16, 16), base::TimeTicks(),
-                                  ui::EF_LEFT_MOUSE_BUTTON,
-                                  ui::EF_LEFT_MOUSE_BUTTON),
+      {std::make_unique<ui::MouseEvent>(
+           ui::ET_MOUSE_PRESSED, gfx::Point(16, 16), gfx::Point(16, 16),
+           base::TimeTicks(), ui::EF_LEFT_MOUSE_BUTTON,
+           ui::EF_LEFT_MOUSE_BUTTON),
        c2.get(), gfx::Point(16, 16), gfx::Point(1, 1), nullptr, gfx::Point(),
        gfx::Point()}};
   RunMouseEventTests(event_dispatcher(), test_event_dispatcher_delegate(),
@@ -2302,7 +2322,7 @@ TEST_P(EventDispatcherTest, ChildModal) {
 }
 
 TEST_P(EventDispatcherTest, DontCancelWhenMovedToSeparateDisplay) {
-  TestServerWindowDelegate window_delegate2;
+  TestServerWindowDelegate window_delegate2(viz_host_proxy());
   ServerWindow root2(&window_delegate2, WindowId(1, 100));
   root2.set_is_activation_parent(true);
   window_delegate2.set_root_window(&root2);
@@ -2312,6 +2332,7 @@ TEST_P(EventDispatcherTest, DontCancelWhenMovedToSeparateDisplay) {
   event_dispatcher()->SetCaptureWindow(w1.get(), kClientAreaId);
   ASSERT_EQ(w1.get(), event_dispatcher()->capture_window());
   test_event_dispatcher_delegate()->set_root(&root2);
+  window_delegate()->AddRootWindow(&root2);
   root2.Add(w1.get());
   EXPECT_EQ(w1.get(), event_dispatcher()->capture_window());
 }

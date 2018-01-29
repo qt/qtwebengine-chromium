@@ -17,7 +17,8 @@ class SyntheticBeginFrameSource;
 
 // An OutputSurface implementation that directly draws and
 // swaps to an actual GL surface.
-class DisplayOutputSurface : public OutputSurface {
+class DisplayOutputSurface : public OutputSurface,
+                             public OutputSurface::LatencyInfoCache::Client {
  public:
   DisplayOutputSurface(scoped_refptr<InProcessContextProvider> context_provider,
                        SyntheticBeginFrameSource* synthetic_begin_frame_source);
@@ -44,20 +45,26 @@ class DisplayOutputSurface : public OutputSurface {
   bool HasExternalStencilTest() const override;
   void ApplyExternalStencil() override;
 
+  // OutputSurface::LatencyInfoCache::Client implementation.
+  void LatencyInfoCompleted(
+      const std::vector<ui::LatencyInfo>& latency_info) override;
+
  protected:
   OutputSurfaceClient* client() const { return client_; }
 
   // Called when a swap completion is signaled from ImageTransportSurface.
-  virtual void DidReceiveSwapBuffersAck(gfx::SwapResult result);
+  virtual void DidReceiveSwapBuffersAck(gfx::SwapResult result,
+                                        uint64_t swap_id);
 
  private:
   // Called when a swap completion is signaled from ImageTransportSurface.
   void OnGpuSwapBuffersCompleted(
-      const std::vector<ui::LatencyInfo>& latency_info,
-      gfx::SwapResult result,
+      const gfx::SwapResponse& response,
       const gpu::GpuProcessHostedCALayerTreeParamsMac* params_mac);
   void OnVSyncParametersUpdated(base::TimeTicks timebase,
                                 base::TimeDelta interval);
+  void OnPresentation(uint64_t swap_id,
+                      const gfx::PresentationFeedback& feedback);
 
   OutputSurfaceClient* client_ = nullptr;
   SyntheticBeginFrameSource* const synthetic_begin_frame_source_;
@@ -67,6 +74,7 @@ class DisplayOutputSurface : public OutputSurface {
   // True if the draw rectangle has been set at all since the last resize.
   bool has_set_draw_rectangle_since_last_resize_ = false;
   gfx::Size size_;
+  LatencyInfoCache latency_info_cache_;
 
   base::WeakPtrFactory<DisplayOutputSurface> weak_ptr_factory_;
 };

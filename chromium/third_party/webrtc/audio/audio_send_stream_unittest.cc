@@ -19,6 +19,7 @@
 #include "call/rtp_transport_controller_send_interface.h"
 #include "logging/rtc_event_log/mock/mock_rtc_event_log.h"
 #include "modules/audio_mixer/audio_mixer_impl.h"
+#include "modules/audio_processing/include/audio_processing_statistics.h"
 #include "modules/audio_processing/include/mock_audio_processing.h"
 #include "modules/congestion_controller/include/mock/mock_congestion_observer.h"
 #include "modules/congestion_controller/include/send_side_congestion_controller.h"
@@ -50,11 +51,13 @@ const uint32_t kSsrc = 1234;
 const char* kCName = "foo_name";
 const int kAudioLevelId = 2;
 const int kTransportSequenceNumberId = 4;
-const int kEchoDelayMedian = 254;
-const int kEchoDelayStdDev = -3;
-const int kEchoReturnLoss = -65;
-const int kEchoReturnLossEnhancement = 101;
-const float kResidualEchoLikelihood = -1.0f;
+const int32_t kEchoDelayMedian = 254;
+const int32_t kEchoDelayStdDev = -3;
+const double kDivergentFilterFraction = 0.2f;
+const double kEchoReturnLoss = -65;
+const double kEchoReturnLossEnhancement = 101;
+const double kResidualEchoLikelihood = -1.0f;
+const double kResidualEchoLikelihoodMax = 23.0f;
 const int32_t kSpeechInputLevel = 96;
 const double kTotalInputEnergy = 0.25;
 const double kTotalInputDuration = 0.5;
@@ -115,14 +118,15 @@ rtc::scoped_refptr<MockAudioEncoderFactory> SetupEncoderFactoryMock() {
       .WillByDefault(Return(std::vector<AudioCodecSpec>(
           std::begin(kCodecSpecs), std::end(kCodecSpecs))));
   ON_CALL(*factory.get(), QueryAudioEncoder(_))
-      .WillByDefault(Invoke([](const SdpAudioFormat& format) {
-        for (const auto& spec : kCodecSpecs) {
-          if (format == spec.format) {
-            return rtc::Optional<AudioCodecInfo>(spec.info);
-          }
-        }
-        return rtc::Optional<AudioCodecInfo>();
-      }));
+      .WillByDefault(Invoke(
+          [](const SdpAudioFormat& format) -> rtc::Optional<AudioCodecInfo> {
+            for (const auto& spec : kCodecSpecs) {
+              if (format == spec.format) {
+                return spec.info;
+              }
+            }
+            return rtc::nullopt;
+          }));
   ON_CALL(*factory.get(), MakeAudioEncoderMock(_, _, _))
       .WillByDefault(Invoke([](int payload_type, const SdpAudioFormat& format,
                                std::unique_ptr<AudioEncoder>* return_value) {
@@ -147,7 +151,6 @@ struct ConfigHelper {
         audio_encoder_(nullptr) {
     using testing::Invoke;
 
-    EXPECT_CALL(voice_engine_, audio_device_module());
     EXPECT_CALL(voice_engine_, audio_transport());
 
     AudioState::Config config;
@@ -168,8 +171,7 @@ struct ConfigHelper {
     // Use ISAC as default codec so as to prevent unnecessary |voice_engine_|
     // calls from the default ctor behavior.
     stream_config_.send_codec_spec =
-        rtc::Optional<AudioSendStream::Config::SendCodecSpec>(
-            {kIsacPayloadType, kIsacFormat});
+        AudioSendStream::Config::SendCodecSpec(kIsacPayloadType, kIsacFormat);
     stream_config_.voe_channel_id = kChannelId;
     stream_config_.rtp.ssrc = kSsrc;
     stream_config_.rtp.nack.rtp_history_ms = 200;
@@ -311,17 +313,18 @@ struct ConfigHelper {
     EXPECT_CALL(transmit_mixer_, typing_noise_detected())
         .WillRepeatedly(Return(true));
 
-    // We have to set the instantaneous value, the average, min and max. We only
-    // care about the instantaneous value, so we set all to the same value.
-    audio_processing_stats_.echo_return_loss.Set(
-        kEchoReturnLoss, kEchoReturnLoss, kEchoReturnLoss, kEchoReturnLoss);
-    audio_processing_stats_.echo_return_loss_enhancement.Set(
-        kEchoReturnLossEnhancement, kEchoReturnLossEnhancement,
-        kEchoReturnLossEnhancement, kEchoReturnLossEnhancement);
-    audio_processing_stats_.delay_median = kEchoDelayMedian;
-    audio_processing_stats_.delay_standard_deviation = kEchoDelayStdDev;
+    audio_processing_stats_.echo_return_loss = kEchoReturnLoss;
+    audio_processing_stats_.echo_return_loss_enhancement =
+        kEchoReturnLossEnhancement;
+    audio_processing_stats_.delay_median_ms = kEchoDelayMedian;
+    audio_processing_stats_.delay_standard_deviation_ms = kEchoDelayStdDev;
+    audio_processing_stats_.divergent_filter_fraction =
+        kDivergentFilterFraction;
+    audio_processing_stats_.residual_echo_likelihood = kResidualEchoLikelihood;
+    audio_processing_stats_.residual_echo_likelihood_recent_max =
+        kResidualEchoLikelihoodMax;
 
-    EXPECT_CALL(*audio_processing_, GetStatistics())
+    EXPECT_CALL(*audio_processing_, GetStatistics(true))
         .WillRepeatedly(Return(audio_processing_stats_));
   }
 
@@ -332,7 +335,7 @@ struct ConfigHelper {
   testing::StrictMock<MockVoEChannelProxy>* channel_proxy_ = nullptr;
   rtc::scoped_refptr<MockAudioProcessing> audio_processing_;
   MockTransmitMixer transmit_mixer_;
-  AudioProcessing::AudioProcessingStatistics audio_processing_stats_;
+  AudioProcessingStats audio_processing_stats_;
   SimulatedClock simulated_clock_;
   PacketRouter packet_router_;
   testing::NiceMock<MockPacedSender> pacer_;
@@ -358,11 +361,10 @@ TEST(AudioSendStreamTest, ConfigToString) {
   config.min_bitrate_bps = 12000;
   config.max_bitrate_bps = 34000;
   config.send_codec_spec =
-      rtc::Optional<AudioSendStream::Config::SendCodecSpec>(
-          {kIsacPayloadType, kIsacFormat});
+      AudioSendStream::Config::SendCodecSpec(kIsacPayloadType, kIsacFormat);
   config.send_codec_spec->nack_enabled = true;
   config.send_codec_spec->transport_cc_enabled = false;
-  config.send_codec_spec->cng_payload_type = rtc::Optional<int>(42);
+  config.send_codec_spec->cng_payload_type = 42;
   config.encoder_factory = MockAudioEncoderFactory::CreateUnusedFactory();
   config.rtp.extensions.push_back(
       RtpExtension(RtpExtension::kAudioLevelUri, kAudioLevelId));
@@ -383,7 +385,7 @@ TEST(AudioSendStreamTest, ConstructDestruct) {
   internal::AudioSendStream send_stream(
       helper.config(), helper.audio_state(), helper.worker_queue(),
       helper.transport(), helper.bitrate_allocator(), helper.event_log(),
-      helper.rtcp_rtt_stats(), rtc::Optional<RtpState>());
+      helper.rtcp_rtt_stats(), rtc::nullopt);
 }
 
 TEST(AudioSendStreamTest, SendTelephoneEvent) {
@@ -391,7 +393,7 @@ TEST(AudioSendStreamTest, SendTelephoneEvent) {
   internal::AudioSendStream send_stream(
       helper.config(), helper.audio_state(), helper.worker_queue(),
       helper.transport(), helper.bitrate_allocator(), helper.event_log(),
-      helper.rtcp_rtt_stats(), rtc::Optional<RtpState>());
+      helper.rtcp_rtt_stats(), rtc::nullopt);
   helper.SetupMockForSendTelephoneEvent();
   EXPECT_TRUE(send_stream.SendTelephoneEvent(kTelephoneEventPayloadType,
       kTelephoneEventPayloadFrequency, kTelephoneEventCode,
@@ -403,7 +405,7 @@ TEST(AudioSendStreamTest, SetMuted) {
   internal::AudioSendStream send_stream(
       helper.config(), helper.audio_state(), helper.worker_queue(),
       helper.transport(), helper.bitrate_allocator(), helper.event_log(),
-      helper.rtcp_rtt_stats(), rtc::Optional<RtpState>());
+      helper.rtcp_rtt_stats(), rtc::nullopt);
   EXPECT_CALL(*helper.channel_proxy(), SetInputMute(true));
   send_stream.SetMuted(true);
 }
@@ -413,7 +415,7 @@ TEST(AudioSendStreamTest, AudioBweCorrectObjectsOnChannelProxy) {
   internal::AudioSendStream send_stream(
       helper.config(), helper.audio_state(), helper.worker_queue(),
       helper.transport(), helper.bitrate_allocator(), helper.event_log(),
-      helper.rtcp_rtt_stats(), rtc::Optional<RtpState>());
+      helper.rtcp_rtt_stats(), rtc::nullopt);
 }
 
 TEST(AudioSendStreamTest, NoAudioBweCorrectObjectsOnChannelProxy) {
@@ -421,7 +423,7 @@ TEST(AudioSendStreamTest, NoAudioBweCorrectObjectsOnChannelProxy) {
   internal::AudioSendStream send_stream(
       helper.config(), helper.audio_state(), helper.worker_queue(),
       helper.transport(), helper.bitrate_allocator(), helper.event_log(),
-      helper.rtcp_rtt_stats(), rtc::Optional<RtpState>());
+      helper.rtcp_rtt_stats(), rtc::nullopt);
 }
 
 TEST(AudioSendStreamTest, GetStats) {
@@ -429,9 +431,9 @@ TEST(AudioSendStreamTest, GetStats) {
   internal::AudioSendStream send_stream(
       helper.config(), helper.audio_state(), helper.worker_queue(),
       helper.transport(), helper.bitrate_allocator(), helper.event_log(),
-      helper.rtcp_rtt_stats(), rtc::Optional<RtpState>());
+      helper.rtcp_rtt_stats(), rtc::nullopt);
   helper.SetupMockForGetStats();
-  AudioSendStream::Stats stats = send_stream.GetStats();
+  AudioSendStream::Stats stats = send_stream.GetStats(true);
   EXPECT_EQ(kSsrc, stats.local_ssrc);
   EXPECT_EQ(static_cast<int64_t>(kCallStats.bytesSent), stats.bytes_sent);
   EXPECT_EQ(kCallStats.packetsSent, stats.packets_sent);
@@ -448,12 +450,17 @@ TEST(AudioSendStreamTest, GetStats) {
   EXPECT_EQ(static_cast<int32_t>(kSpeechInputLevel), stats.audio_level);
   EXPECT_EQ(kTotalInputEnergy, stats.total_input_energy);
   EXPECT_EQ(kTotalInputDuration, stats.total_input_duration);
-  EXPECT_EQ(-1, stats.aec_quality_min);
-  EXPECT_EQ(kEchoDelayMedian, stats.echo_delay_median_ms);
-  EXPECT_EQ(kEchoDelayStdDev, stats.echo_delay_std_ms);
-  EXPECT_EQ(kEchoReturnLoss, stats.echo_return_loss);
-  EXPECT_EQ(kEchoReturnLossEnhancement, stats.echo_return_loss_enhancement);
-  EXPECT_EQ(kResidualEchoLikelihood, stats.residual_echo_likelihood);
+  EXPECT_EQ(kEchoDelayMedian, stats.apm_statistics.delay_median_ms);
+  EXPECT_EQ(kEchoDelayStdDev, stats.apm_statistics.delay_standard_deviation_ms);
+  EXPECT_EQ(kEchoReturnLoss, stats.apm_statistics.echo_return_loss);
+  EXPECT_EQ(kEchoReturnLossEnhancement,
+            stats.apm_statistics.echo_return_loss_enhancement);
+  EXPECT_EQ(kDivergentFilterFraction,
+            stats.apm_statistics.divergent_filter_fraction);
+  EXPECT_EQ(kResidualEchoLikelihood,
+            stats.apm_statistics.residual_echo_likelihood);
+  EXPECT_EQ(kResidualEchoLikelihoodMax,
+            stats.apm_statistics.residual_echo_likelihood_recent_max);
   EXPECT_TRUE(stats.typing_noise_detected);
 }
 
@@ -461,12 +468,11 @@ TEST(AudioSendStreamTest, SendCodecAppliesAudioNetworkAdaptor) {
   ConfigHelper helper(false, true);
   auto stream_config = helper.config();
   stream_config.send_codec_spec =
-      rtc::Optional<AudioSendStream::Config::SendCodecSpec>({0, kOpusFormat});
+      AudioSendStream::Config::SendCodecSpec(0, kOpusFormat);
   const std::string kAnaConfigString = "abcde";
   const std::string kAnaReconfigString = "12345";
 
-  stream_config.audio_network_adaptor_config =
-      rtc::Optional<std::string>(kAnaConfigString);
+  stream_config.audio_network_adaptor_config = kAnaConfigString;
 
   EXPECT_CALL(helper.mock_encoder_factory(), MakeAudioEncoderMock(_, _, _))
       .WillOnce(Invoke([&kAnaConfigString, &kAnaReconfigString](
@@ -485,10 +491,9 @@ TEST(AudioSendStreamTest, SendCodecAppliesAudioNetworkAdaptor) {
   internal::AudioSendStream send_stream(
       stream_config, helper.audio_state(), helper.worker_queue(),
       helper.transport(), helper.bitrate_allocator(), helper.event_log(),
-      helper.rtcp_rtt_stats(), rtc::Optional<RtpState>());
+      helper.rtcp_rtt_stats(), rtc::nullopt);
 
-  stream_config.audio_network_adaptor_config =
-      rtc::Optional<std::string>(kAnaReconfigString);
+  stream_config.audio_network_adaptor_config = kAnaReconfigString;
 
   helper.SetupMockForModifyEncoder();
   send_stream.Reconfigure(stream_config);
@@ -500,8 +505,8 @@ TEST(AudioSendStreamTest, SendCodecCanApplyVad) {
   ConfigHelper helper(false, false);
   auto stream_config = helper.config();
   stream_config.send_codec_spec =
-      rtc::Optional<AudioSendStream::Config::SendCodecSpec>({9, kG722Format});
-  stream_config.send_codec_spec->cng_payload_type = rtc::Optional<int>(105);
+      AudioSendStream::Config::SendCodecSpec(9, kG722Format);
+  stream_config.send_codec_spec->cng_payload_type = 105;
   using ::testing::Invoke;
   std::unique_ptr<AudioEncoder> stolen_encoder;
   EXPECT_CALL(*helper.channel_proxy(), SetEncoderForMock(_, _))
@@ -515,7 +520,7 @@ TEST(AudioSendStreamTest, SendCodecCanApplyVad) {
   internal::AudioSendStream send_stream(
       stream_config, helper.audio_state(), helper.worker_queue(),
       helper.transport(), helper.bitrate_allocator(), helper.event_log(),
-      helper.rtcp_rtt_stats(), rtc::Optional<RtpState>());
+      helper.rtcp_rtt_stats(), rtc::nullopt);
 
   // We cannot truly determine if the encoder created is an AudioEncoderCng.  It
   // is the only reasonable implementation that will return something from
@@ -529,7 +534,7 @@ TEST(AudioSendStreamTest, DoesNotPassHigherBitrateThanMaxBitrate) {
   internal::AudioSendStream send_stream(
       helper.config(), helper.audio_state(), helper.worker_queue(),
       helper.transport(), helper.bitrate_allocator(), helper.event_log(),
-      helper.rtcp_rtt_stats(), rtc::Optional<RtpState>());
+      helper.rtcp_rtt_stats(), rtc::nullopt);
   EXPECT_CALL(*helper.channel_proxy(),
               SetBitrate(helper.config().max_bitrate_bps, _));
   send_stream.OnBitrateUpdated(helper.config().max_bitrate_bps + 5000, 0.0, 50,
@@ -541,7 +546,7 @@ TEST(AudioSendStreamTest, ProbingIntervalOnBitrateUpdated) {
   internal::AudioSendStream send_stream(
       helper.config(), helper.audio_state(), helper.worker_queue(),
       helper.transport(), helper.bitrate_allocator(), helper.event_log(),
-      helper.rtcp_rtt_stats(), rtc::Optional<RtpState>());
+      helper.rtcp_rtt_stats(), rtc::nullopt);
   EXPECT_CALL(*helper.channel_proxy(), SetBitrate(_, 5000));
   send_stream.OnBitrateUpdated(50000, 0.0, 50, 5000);
 }
@@ -559,12 +564,12 @@ TEST(AudioSendStreamTest, DontRecreateEncoder) {
 
   auto stream_config = helper.config();
   stream_config.send_codec_spec =
-      rtc::Optional<AudioSendStream::Config::SendCodecSpec>({9, kG722Format});
-  stream_config.send_codec_spec->cng_payload_type = rtc::Optional<int>(105);
+      AudioSendStream::Config::SendCodecSpec(9, kG722Format);
+  stream_config.send_codec_spec->cng_payload_type = 105;
   internal::AudioSendStream send_stream(
       stream_config, helper.audio_state(), helper.worker_queue(),
       helper.transport(), helper.bitrate_allocator(), helper.event_log(),
-      helper.rtcp_rtt_stats(), rtc::Optional<RtpState>());
+      helper.rtcp_rtt_stats(), rtc::nullopt);
   send_stream.Reconfigure(stream_config);
 }
 
@@ -573,7 +578,7 @@ TEST(AudioSendStreamTest, ReconfigureTransportCcResetsFirst) {
   internal::AudioSendStream send_stream(
       helper.config(), helper.audio_state(), helper.worker_queue(),
       helper.transport(), helper.bitrate_allocator(), helper.event_log(),
-      helper.rtcp_rtt_stats(), rtc::Optional<RtpState>());
+      helper.rtcp_rtt_stats(), rtc::nullopt);
   auto new_config = helper.config();
   ConfigHelper::AddBweToConfig(&new_config);
   EXPECT_CALL(*helper.channel_proxy(),

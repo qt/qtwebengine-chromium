@@ -5,6 +5,9 @@
 component("sandbox") {
   sources = [
     "export.h",
+    "sandbox.cc",
+    "sandbox.h",
+    "sandbox_delegate.h",
     "sandbox_type.cc",
     "sandbox_type.h",
     "switches.cc",
@@ -20,6 +23,44 @@ component("sandbox") {
   deps = [
     "//base",
   ]
+  if (is_linux) {
+    sources += [
+      "linux/bpf_base_policy_linux.cc",
+      "linux/bpf_base_policy_linux.h",
+      "linux/bpf_broker_policy_linux.cc",
+      "linux/bpf_broker_policy_linux.h",
+      "linux/bpf_cdm_policy_linux.cc",
+      "linux/bpf_cdm_policy_linux.h",
+      "linux/bpf_cros_amd_gpu_policy_linux.cc",
+      "linux/bpf_cros_amd_gpu_policy_linux.h",
+      "linux/bpf_cros_arm_gpu_policy_linux.cc",
+      "linux/bpf_cros_arm_gpu_policy_linux.h",
+      "linux/bpf_gpu_policy_linux.cc",
+      "linux/bpf_gpu_policy_linux.h",
+      "linux/bpf_network_policy_linux.cc",
+      "linux/bpf_network_policy_linux.h",
+      "linux/bpf_pdf_compositor_policy_linux.cc",
+      "linux/bpf_pdf_compositor_policy_linux.h",
+      "linux/bpf_ppapi_policy_linux.cc",
+      "linux/bpf_ppapi_policy_linux.h",
+      "linux/bpf_renderer_policy_linux.cc",
+      "linux/bpf_renderer_policy_linux.h",
+      "linux/bpf_utility_policy_linux.cc",
+      "linux/bpf_utility_policy_linux.h",
+      "linux/sandbox_debug_handling_linux.cc",
+      "linux/sandbox_debug_handling_linux.h",
+      "linux/sandbox_linux.cc",
+      "linux/sandbox_linux.h",
+      "linux/sandbox_seccomp_bpf_linux.cc",
+      "linux/sandbox_seccomp_bpf_linux.h",
+    ]
+    deps += [
+      "//sandbox:sandbox_features",
+      "//sandbox/linux:sandbox_services",
+      "//sandbox/linux:seccomp_bpf",
+      "//sandbox/linux:suid_sandbox_client",
+    ]
+  }
   if (is_mac) {
     sources += [
       "mac/sandbox_mac.h",
@@ -34,5 +75,14 @@ component("sandbox") {
       "Foundation.framework",
       "IOSurface.framework",
     ]
+  }
+  if (is_win) {
+    sources += [
+      "features.cc",
+      "features.h",
+      "win/sandbox_win.cc",
+      "win/sandbox_win.h",
+    ]
+    deps += [ "//sandbox/win:sandbox" ]
   }
 }

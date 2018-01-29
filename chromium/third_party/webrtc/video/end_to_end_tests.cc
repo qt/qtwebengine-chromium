@@ -329,16 +329,16 @@ class CodecObserver : public test::EndToEndTest,
   CodecObserver(int no_frames_to_wait_for,
                 VideoRotation rotation_to_test,
                 const std::string& payload_name,
-                webrtc::VideoEncoder* encoder,
-                webrtc::VideoDecoder* decoder)
+                std::unique_ptr<webrtc::VideoEncoder> encoder,
+                std::unique_ptr<webrtc::VideoDecoder> decoder)
       : EndToEndTest(4 * webrtc::EndToEndTest::kDefaultTimeoutMs),
         // TODO(hta): This timeout (120 seconds) is excessive.
         // https://bugs.webrtc.org/6830
         no_frames_to_wait_for_(no_frames_to_wait_for),
         expected_rotation_(rotation_to_test),
         payload_name_(payload_name),
-        encoder_(encoder),
-        decoder_(decoder),
+        encoder_(std::move(encoder)),
+        decoder_(std::move(decoder)),
         frame_counter_(0) {}
 
   void PerformTest() override {
@@ -411,21 +411,32 @@ TEST_P(EndToEndTest, SendsAndReceivesVP9VideoRotation90) {
 #endif  // !defined(RTC_DISABLE_VP9)
 
 #if defined(WEBRTC_USE_H264)
-TEST_P(EndToEndTest, SendsAndReceivesH264) {
+class EndToEndTestH264 : public EndToEndTest {};
+
+const auto h264_field_trial_combinations = ::testing::Values(
+    "WebRTC-SpsPpsIdrIsH264Keyframe/Disabled/WebRTC-RoundRobinPacing/Disabled/",
+    "WebRTC-SpsPpsIdrIsH264Keyframe/Enabled/WebRTC-RoundRobinPacing/Disabled/",
+    "WebRTC-SpsPpsIdrIsH264Keyframe/Disabled/WebRTC-RoundRobinPacing/Enabled/",
+    "WebRTC-SpsPpsIdrIsH264Keyframe/Enabled/WebRTC-RoundRobinPacing/Enabled/");
+INSTANTIATE_TEST_CASE_P(SpsPpsIdrIsKeyframe,
+                        EndToEndTestH264,
+                        h264_field_trial_combinations);
+
+TEST_P(EndToEndTestH264, SendsAndReceivesH264) {
   CodecObserver test(500, kVideoRotation_0, "H264",
                      H264Encoder::Create(cricket::VideoCodec("H264")),
                      H264Decoder::Create());
   RunBaseTest(&test);
 }
 
-TEST_P(EndToEndTest, SendsAndReceivesH264VideoRotation90) {
+TEST_P(EndToEndTestH264, SendsAndReceivesH264VideoRotation90) {
   CodecObserver test(5, kVideoRotation_90, "H264",
                      H264Encoder::Create(cricket::VideoCodec("H264")),
                      H264Decoder::Create());
   RunBaseTest(&test);
 }
 
-TEST_P(EndToEndTest, SendsAndReceivesH264PacketizationMode0) {
+TEST_P(EndToEndTestH264, SendsAndReceivesH264PacketizationMode0) {
   cricket::VideoCodec codec = cricket::VideoCodec("H264");
   codec.SetParam(cricket::kH264FmtpPacketizationMode, "0");
   CodecObserver test(500, kVideoRotation_0, "H264", H264Encoder::Create(codec),
@@ -433,14 +444,13 @@ TEST_P(EndToEndTest, SendsAndReceivesH264PacketizationMode0) {
   RunBaseTest(&test);
 }
 
-TEST_P(EndToEndTest, SendsAndReceivesH264PacketizationMode1) {
+TEST_P(EndToEndTestH264, SendsAndReceivesH264PacketizationMode1) {
   cricket::VideoCodec codec = cricket::VideoCodec("H264");
   codec.SetParam(cricket::kH264FmtpPacketizationMode, "1");
   CodecObserver test(500, kVideoRotation_0, "H264", H264Encoder::Create(codec),
                      H264Decoder::Create());
   RunBaseTest(&test);
 }
-
 #endif  // defined(WEBRTC_USE_H264)
 
 TEST_P(EndToEndTest, ReceiverUsesLocalSsrc) {
@@ -1543,7 +1553,7 @@ class MultiStreamTest {
       receiver_transport->SetReceiver(sender_call->Receiver());
 
       for (size_t i = 0; i < kNumStreams; ++i)
-        encoders[i].reset(VP8Encoder::Create());
+        encoders[i] = VP8Encoder::Create();
 
       for (size_t i = 0; i < kNumStreams; ++i) {
         uint32_t ssrc = codec_settings[i].ssrc;
@@ -2320,7 +2330,6 @@ TEST_P(EndToEndTest, RembWithSendSideBwe) {
       rtp_rtcp_.reset(RtpRtcp::CreateRtpRtcp(config));
       rtp_rtcp_->SetRemoteSSRC((*receive_configs)[0].rtp.remote_ssrc);
       rtp_rtcp_->SetSSRC((*receive_configs)[0].rtp.local_ssrc);
-      rtp_rtcp_->SetREMBStatus(true);
       rtp_rtcp_->SetRTCPStatus(RtcpMode::kReducedSize);
     }
 
@@ -2341,7 +2350,7 @@ TEST_P(EndToEndTest, RembWithSendSideBwe) {
               if (stats.send_bandwidth_bps >= remb_bitrate_bps_) {
                 state_ = kWaitForRemb;
                 remb_bitrate_bps_ /= 2;
-                rtp_rtcp_->SetREMBData(
+                rtp_rtcp_->SetRemb(
                     remb_bitrate_bps_,
                     std::vector<uint32_t>(&sender_ssrc_, &sender_ssrc_ + 1));
                 rtp_rtcp_->SendRTCP(kRtcpRr);
@@ -2352,7 +2361,7 @@ TEST_P(EndToEndTest, RembWithSendSideBwe) {
               if (stats.send_bandwidth_bps == remb_bitrate_bps_) {
                 state_ = kWaitForSecondRampUp;
                 remb_bitrate_bps_ *= 2;
-                rtp_rtcp_->SetREMBData(
+                rtp_rtcp_->SetRemb(
                     remb_bitrate_bps_,
                     std::vector<uint32_t>(&sender_ssrc_, &sender_ssrc_ + 1));
                 rtp_rtcp_->SendRTCP(kRtcpRr);
@@ -3681,14 +3690,17 @@ TEST_P(EndToEndTest, TimingFramesAreReported) {
 
 class RtcpXrObserver : public test::EndToEndTest {
  public:
-  RtcpXrObserver(bool enable_rrtr, bool enable_target_bitrate)
+  RtcpXrObserver(bool enable_rrtr, bool enable_target_bitrate,
+                 bool enable_zero_target_bitrate)
       : EndToEndTest(test::CallTest::kDefaultTimeoutMs),
         enable_rrtr_(enable_rrtr),
         enable_target_bitrate_(enable_target_bitrate),
+        enable_zero_target_bitrate_(enable_zero_target_bitrate),
         sent_rtcp_sr_(0),
         sent_rtcp_rr_(0),
         sent_rtcp_rrtr_(0),
         sent_rtcp_target_bitrate_(false),
+        sent_zero_rtcp_target_bitrate_(false),
         sent_rtcp_dlrr_(0) {}
 
  private:
@@ -3721,13 +3733,22 @@ class RtcpXrObserver : public test::EndToEndTest {
       EXPECT_FALSE(parser.xr()->rrtr());
       if (parser.xr()->dlrr())
         ++sent_rtcp_dlrr_;
-      if (parser.xr()->target_bitrate())
+      if (parser.xr()->target_bitrate()) {
         sent_rtcp_target_bitrate_ = true;
+        for (const rtcp::TargetBitrate::BitrateItem& item :
+                 parser.xr()->target_bitrate()->GetTargetBitrates()) {
+          if (item.target_bitrate_kbps == 0) {
+            sent_zero_rtcp_target_bitrate_ = true;
+            break;
+          }
+        }
+      }
     }
 
     if (sent_rtcp_sr_ > kNumRtcpReportPacketsToObserve &&
         sent_rtcp_rr_ > kNumRtcpReportPacketsToObserve &&
-        (sent_rtcp_target_bitrate_ || !enable_target_bitrate_)) {
+        (sent_rtcp_target_bitrate_ || !enable_target_bitrate_) &&
+        (sent_zero_rtcp_target_bitrate_ || !enable_zero_target_bitrate_)) {
       if (enable_rrtr_) {
         EXPECT_GT(sent_rtcp_rrtr_, 0);
         EXPECT_GT(sent_rtcp_dlrr_, 0);
@@ -3736,15 +3757,59 @@ class RtcpXrObserver : public test::EndToEndTest {
         EXPECT_EQ(sent_rtcp_dlrr_, 0);
       }
       EXPECT_EQ(enable_target_bitrate_, sent_rtcp_target_bitrate_);
+      EXPECT_EQ(enable_zero_target_bitrate_, sent_zero_rtcp_target_bitrate_);
       observation_complete_.Set();
     }
     return SEND_PACKET;
   }
 
+  size_t GetNumVideoStreams() const override {
+    // When sending a zero target bitrate, we use two spatial layers so that
+    // we'll still have a layer with non-zero bitrate.
+    return enable_zero_target_bitrate_ ? 2 : 1;
+  }
+
+  // This test uses VideoStream settings different from the the default one
+  // implemented in DefaultVideoStreamFactory, so it implements its own
+  // VideoEncoderConfig::VideoStreamFactoryInterface which is created
+  // in ModifyVideoConfigs.
+  class ZeroTargetVideoStreamFactory
+      : public VideoEncoderConfig::VideoStreamFactoryInterface {
+   public:
+    ZeroTargetVideoStreamFactory() {}
+
+   private:
+    std::vector<VideoStream> CreateEncoderStreams(
+        int width,
+        int height,
+        const VideoEncoderConfig& encoder_config) override {
+      std::vector<VideoStream> streams =
+          test::CreateVideoStreams(width, height, encoder_config);
+      // Set one of the streams' target bitrates to zero to test that a
+      // bitrate of 0 can be signalled.
+      streams[encoder_config.number_of_streams-1].min_bitrate_bps = 0;
+      streams[encoder_config.number_of_streams-1].target_bitrate_bps = 0;
+      streams[encoder_config.number_of_streams-1].max_bitrate_bps = 0;
+      return streams;
+    }
+  };
+
   void ModifyVideoConfigs(
       VideoSendStream::Config* send_config,
       std::vector<VideoReceiveStream::Config>* receive_configs,
       VideoEncoderConfig* encoder_config) override {
+    if (enable_zero_target_bitrate_) {
+      encoder_config->video_stream_factory =
+          new rtc::RefCountedObject<ZeroTargetVideoStreamFactory>();
+
+      // Configure VP8 to be able to use simulcast.
+      send_config->encoder_settings.payload_name = "VP8";
+      (*receive_configs)[0].decoders.resize(1);
+      (*receive_configs)[0].decoders[0].payload_type =
+          send_config->encoder_settings.payload_type;
+      (*receive_configs)[0].decoders[0].payload_name =
+          send_config->encoder_settings.payload_name;
+    }
     if (enable_target_bitrate_) {
       // TargetBitrate only signaled for screensharing.
       encoder_config->content_type = VideoEncoderConfig::ContentType::kScreen;
@@ -3764,30 +3829,42 @@ class RtcpXrObserver : public test::EndToEndTest {
   rtc::CriticalSection crit_;
   const bool enable_rrtr_;
   const bool enable_target_bitrate_;
+  const bool enable_zero_target_bitrate_;
   int sent_rtcp_sr_;
   int sent_rtcp_rr_ RTC_GUARDED_BY(&crit_);
   int sent_rtcp_rrtr_ RTC_GUARDED_BY(&crit_);
   bool sent_rtcp_target_bitrate_ RTC_GUARDED_BY(&crit_);
+  bool sent_zero_rtcp_target_bitrate_ RTC_GUARDED_BY(&crit_);
   int sent_rtcp_dlrr_;
 };
 
 TEST_P(EndToEndTest, TestExtendedReportsWithRrtrWithoutTargetBitrate) {
-  RtcpXrObserver test(true, false);
+  RtcpXrObserver test(/*enable_rrtr=*/true, /*enable_target_bitrate=*/false,
+                      /*enable_zero_target_bitrate=*/false);
   RunBaseTest(&test);
 }
 
 TEST_P(EndToEndTest, TestExtendedReportsWithoutRrtrWithoutTargetBitrate) {
-  RtcpXrObserver test(false, false);
+  RtcpXrObserver test(/*enable_rrtr=*/false, /*enable_target_bitrate=*/false,
+                      /*enable_zero_target_bitrate=*/false);
   RunBaseTest(&test);
 }
 
 TEST_P(EndToEndTest, TestExtendedReportsWithRrtrWithTargetBitrate) {
-  RtcpXrObserver test(true, true);
+  RtcpXrObserver test(/*enable_rrtr=*/true, /*enable_target_bitrate=*/true,
+                      /*enable_zero_target_bitrate=*/false);
   RunBaseTest(&test);
 }
 
 TEST_P(EndToEndTest, TestExtendedReportsWithoutRrtrWithTargetBitrate) {
-  RtcpXrObserver test(false, true);
+  RtcpXrObserver test(/*enable_rrtr=*/false, /*enable_target_bitrate=*/true,
+                      /*enable_zero_target_bitrate=*/false);
+  RunBaseTest(&test);
+}
+
+TEST_P(EndToEndTest, TestExtendedReportsCanSignalZeroTargetBitrate) {
+  RtcpXrObserver test(/*enable_rrtr=*/false, /*enable_target_bitrate=*/true,
+                      /*enable_zero_target_bitrate=*/true);
   RunBaseTest(&test);
 }
 
@@ -4318,7 +4395,7 @@ TEST_P(EndToEndTest, TestFlexfecRtpStatePreservation) {
     const int kNumFlexfecStreams = 1;
     CreateSendConfig(kNumVideoStreams, 0, kNumFlexfecStreams,
                      send_transport.get());
-    encoder = rtc::WrapUnique(VP8Encoder::Create());
+    encoder = VP8Encoder::Create();
     video_send_config_.encoder_settings.encoder = encoder.get();
     video_send_config_.encoder_settings.payload_name = "VP8";
     video_send_config_.encoder_settings.payload_type = kVideoSendPayloadType;
@@ -4985,8 +5062,8 @@ TEST_P(EndToEndLogTest, LogsEncodedFramesWhenRequested) {
         VideoSendStream::Config* send_config,
         std::vector<VideoReceiveStream::Config>* receive_configs,
         VideoEncoderConfig* encoder_config) override {
-      encoder_.reset(VP8Encoder::Create());
-      decoder_.reset(VP8Decoder::Create());
+      encoder_ = VP8Encoder::Create();
+      decoder_ = VP8Decoder::Create();
 
       send_config->post_encode_callback = this;
       send_config->encoder_settings.payload_name = "VP8";

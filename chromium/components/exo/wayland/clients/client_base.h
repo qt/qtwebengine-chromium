@@ -20,11 +20,14 @@
 
 #if defined(USE_GBM)
 #include <gbm.h>
-#endif
+#if defined(USE_VULKAN)
+#include <vulkan/vulkan.h>
+#include <vulkan/vulkan_intel.h>
+#endif  // defined(USE_GBM)
+#endif  // defined(USE_VULKAN)
 
 namespace base {
 class CommandLine;
-class MessageLoopForUI;
 }
 
 namespace exo {
@@ -40,7 +43,7 @@ class ClientBase {
     bool FromCommandLine(const base::CommandLine& command_line);
 
     std::string title = "Wayland Client";
-    size_t num_buffers = 8;
+    size_t num_buffers = 2;
     size_t width = 256;
     size_t height = 256;
     int scale = 1;
@@ -78,7 +81,13 @@ class ClientBase {
     std::unique_ptr<ScopedEglImage> egl_image;
     std::unique_ptr<ScopedEglSync> egl_sync;
     std::unique_ptr<ScopedTexture> texture;
-#endif
+#if defined(USE_VULKAN)
+    std::unique_ptr<ScopedVkDeviceMemory> vk_memory;
+    std::unique_ptr<ScopedVkImage> vk_image;
+    std::unique_ptr<ScopedVkImageView> vk_image_view;
+    std::unique_ptr<ScopedVkFramebuffer> vk_framebuffer;
+#endif  // defined(USE_VULKAN)
+#endif  // defined(USE_GBM)
     std::unique_ptr<zwp_linux_buffer_params_v1> params;
     std::unique_ptr<base::SharedMemory> shared_memory;
     std::unique_ptr<wl_shm_pool> shm_pool;
@@ -96,6 +105,7 @@ class ClientBase {
   std::unique_ptr<Buffer> CreateDrmBuffer(const gfx::Size& size,
                                           int32_t drm_format,
                                           int32_t bo_usage);
+  ClientBase::Buffer* DequeueBuffer();
 
   gfx::Size size_ = gfx::Size(256, 256);
   int scale_ = 1;
@@ -109,9 +119,15 @@ class ClientBase {
   std::unique_ptr<wl_shell_surface> shell_surface_;
   Globals globals_;
 #if defined(USE_GBM)
-  std::unique_ptr<base::MessageLoopForUI> ui_loop_;
   base::ScopedFD drm_fd_;
   std::unique_ptr<gbm_device> device_;
+#if defined(USE_VULKAN)
+  std::unique_ptr<ScopedVkInstance> vk_instance_;
+  std::unique_ptr<ScopedVkDevice> vk_device_;
+  std::unique_ptr<ScopedVkCommandPool> vk_command_pool_;
+  std::unique_ptr<ScopedVkRenderPass> vk_render_pass_;
+  VkQueue vk_queue_;
+#endif
 #endif
   scoped_refptr<gl::GLSurface> gl_surface_;
   scoped_refptr<gl::GLContext> gl_context_;
@@ -120,6 +136,7 @@ class ClientBase {
   std::vector<std::unique_ptr<Buffer>> buffers_;
   sk_sp<GrContext> gr_context_;
 
+ private:
   DISALLOW_COPY_AND_ASSIGN(ClientBase);
 };
 

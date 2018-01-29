@@ -37,7 +37,7 @@
 #include "core/inspector/ConsoleMessage.h"
 #include "core/inspector/WorkerThreadDebugger.h"
 #include "core/workers/SharedWorkerThread.h"
-#include "platform/wtf/CurrentTime.h"
+#include "platform/wtf/Time.h"
 
 namespace blink {
 
@@ -69,7 +69,7 @@ void SharedWorkerGlobalScope::ExceptionThrown(ErrorEvent* event) {
     debugger->ExceptionThrown(GetThread(), event);
 }
 
-DEFINE_TRACE(SharedWorkerGlobalScope) {
+void SharedWorkerGlobalScope::Trace(blink::Visitor* visitor) {
   WorkerGlobalScope::Trace(visitor);
 }
 

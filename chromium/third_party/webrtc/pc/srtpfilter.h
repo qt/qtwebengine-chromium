@@ -17,8 +17,8 @@
 #include <string>
 #include <vector>
 
+#include "api/cryptoparams.h"
 #include "api/optional.h"
-#include "media/base/cryptoparams.h"
 #include "p2p/base/sessiondescription.h"
 #include "rtc_base/basictypes.h"
 #include "rtc_base/buffer.h"
@@ -32,8 +32,6 @@ struct srtp_event_data_t;
 struct srtp_ctx_t_;
 
 namespace cricket {
-
-void ShutdownSrtp();
 
 // A helper class used to negotiate SDES crypto params.
 // TODO(zhihuang): Find a better name for this class, like "SdesNegotiator".

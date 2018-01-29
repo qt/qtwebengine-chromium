@@ -29,6 +29,7 @@
 #include "region_data_constants.h"
 #include "util/json.h"
 #include "util/re2ptr.h"
+#include "util/size.h"
 #include "util/string_split.h"
 
 namespace i18n {
@@ -55,7 +56,7 @@ struct NameIdMap {
   const NameIdInfo* infos;
   size_t size;
 
-  // Return the message id corresponding to |name|, ir INVALID_MESSAGE_ID
+  // Return the message id corresponding to |name|, or INVALID_MESSAGE_ID
   // if it is not found in the map.
   int GetIdFromName(const std::string& name) const {
     NameIdInfo key = { name.c_str() };
@@ -95,7 +96,7 @@ const NameIdInfo kAdminAreaInfoArray[] = {
 
 const NameIdMap kAdminAreaMessageIds = {
   kAdminAreaInfoArray,
-  arraysize(kAdminAreaInfoArray)
+  size(kAdminAreaInfoArray)
 };
 
 const NameIdInfo kPostalCodeInfoArray[] = {
@@ -107,7 +108,7 @@ const NameIdInfo kPostalCodeInfoArray[] = {
 
 const NameIdMap kPostalCodeMessageIds = {
   kPostalCodeInfoArray,
-  arraysize(kPostalCodeInfoArray),
+  size(kPostalCodeInfoArray),
 };
 
 const NameIdInfo kLocalityInfoArray[] = {
@@ -119,7 +120,7 @@ const NameIdInfo kLocalityInfoArray[] = {
 
 const NameIdMap kLocalityMessageIds = {
   kLocalityInfoArray,
-  arraysize(kLocalityInfoArray),
+  size(kLocalityInfoArray),
 };
 
 const NameIdInfo kSublocalityInfoArray[] = {
@@ -132,7 +133,7 @@ const NameIdInfo kSublocalityInfoArray[] = {
 
 const NameIdMap kSublocalityMessageIds = {
   kSublocalityInfoArray,
-  arraysize(kSublocalityInfoArray),
+  size(kSublocalityInfoArray),
 };
 
 #ifndef _NDEBUG
@@ -159,7 +160,7 @@ struct StaticMapChecker {
 // in regular expressions - (, [, \, {, ?. These special characters are all the
 // ones that appear in the postal code regular expressions.
 bool ContainsRegExSpecialCharacters(const std::string& input) {
-  return input.find_first_of("([\\{?") != std::string::npos;
+  return input.find_first_of(R"(([\{?)") != std::string::npos;
 }
 
 }  // namespace
@@ -268,7 +269,7 @@ void Rule::ParseJsonRule(const Json& json) {
     // the country. At other levels, the regular expression indicates the postal
     // code prefix expected for addresses in that region.
     //
-    // In order to make the RE2 object created from the "zip" field useable for
+    // In order to make the RE2 object created from the "zip" field usable for
     // both these purposes, the pattern string is here prefixed with "^" to
     // anchor it at the beginning of the string so that it can be used with
     // RE2::PartialMatch() to perform prefix matching or else with

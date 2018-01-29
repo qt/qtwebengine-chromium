@@ -97,19 +97,9 @@ class PrintPreviewHandler
                             int preview_uid,
                             int preview_response_id);
 
-#if BUILDFLAG(ENABLE_BASIC_PRINTING)
-  // Called when the user press ctrl+shift+p to display the native system
-  // dialog.
-  void ShowSystemDialog();
-#endif  // BUILDFLAG(ENABLE_BASIC_PRINTING)
-
   int regenerate_preview_request_count() const {
     return regenerate_preview_request_count_;
   }
-
-  // Shuts down the initiator renderer. Called when a bad IPC message is
-  // received.
-  void BadMessageReceived();
 
   // Notifies PDF Printer Handler that |path| was selected. Used for tests.
   void FileSelectedForTesting(const base::FilePath& path,
@@ -129,6 +119,13 @@ class PrintPreviewHandler
   // Protected so unit tests can override.
   virtual PrinterHandler* GetPrinterHandler(printing::PrinterType printer_type);
 
+  // Shuts down the initiator renderer. Called when a bad IPC message is
+  // received.
+  virtual void BadMessageReceived();
+
+  // Gets the initiator for the print preview dialog.
+  virtual content::WebContents* GetInitiator() const;
+
   // Register/unregister from notifications of changes done to the GAIA
   // cookie. Protected so unit tests can override.
   virtual void RegisterForGaiaCookieChanges();
@@ -141,6 +138,10 @@ class PrintPreviewHandler
   friend class PrintPreviewHandlerTest;
   FRIEND_TEST_ALL_PREFIXES(PrintPreviewHandlerTest, InitialSettings);
   FRIEND_TEST_ALL_PREFIXES(PrintPreviewHandlerTest, GetPrinters);
+  FRIEND_TEST_ALL_PREFIXES(PrintPreviewHandlerTest, GetPrinterCapabilities);
+  FRIEND_TEST_ALL_PREFIXES(PrintPreviewHandlerTest, Print);
+  FRIEND_TEST_ALL_PREFIXES(PrintPreviewHandlerTest, GetPreview);
+  FRIEND_TEST_ALL_PREFIXES(PrintPreviewHandlerTest, SendPreviewUpdates);
   class AccessTokenService;
 
   content::WebContents* preview_web_contents() const;
@@ -199,25 +200,17 @@ class PrintPreviewHandler
   // Generates new token and sends back to UI.
   void HandleGetAccessToken(const base::ListValue* args);
 
-  // Brings up a web page to allow the user to configure cloud print.
-  // |args| is unused.
-  void HandleManageCloudPrint(const base::ListValue* args);
+  // Brings up Chrome printing setting page to allow the user to configure local
+  // printers or Google Cloud printers. |args| is unused.
+  void HandleManagePrinters(const base::ListValue* args);
 
   // Gathers UMA stats when the print preview dialog is about to close.
   // |args| is unused.
   void HandleClosePreviewDialog(const base::ListValue* args);
 
-  // Asks the browser to show the native printer management dialog.
-  // |args| is unused.
-  void HandleManagePrinters(const base::ListValue* args);
-
   // Asks the browser for several settings that are needed before the first
   // preview is displayed.
   void HandleGetInitialSettings(const base::ListValue* args);
-
-  // Reports histogram data for a print preview UI action. |args| should consist
-  // of two elements: the bucket name, and the bucket event.
-  void HandleReportUiEvent(const base::ListValue* args);
 
   // Forces the opening of a new tab. |args| should consist of one element: the
   // URL to set the new tab to.
@@ -234,9 +227,6 @@ class PrintPreviewHandler
   // Send OAuth2 access token.
   void SendAccessToken(const std::string& callback_id,
                        const std::string& access_token);
-
-  // Send message indicating a request for token was already in progress.
-  void SendRequestInProgress(const std::string& callback_id);
 
   // Sends the printer capabilities to the Web UI. |settings_info| contains
   // printer capabilities information. If |settings_info| is empty, sends
@@ -258,41 +248,14 @@ class PrintPreviewHandler
   void SendCloudPrintJob(const std::string& callback_id,
                          const base::RefCountedBytes* data);
 
-  // Gets the initiator for the print preview dialog.
-  content::WebContents* GetInitiator() const;
-
   // Closes the preview dialog.
   void ClosePreviewDialog();
-
-  // Adds all the recorded stats taken so far to histogram counts.
-  void ReportStats();
 
   // Clears initiator details for the print preview dialog.
   void ClearInitiatorDetails();
 
-  // Called when the directory to save to has been created. Opens a modal
-  // dialog to prompt the user to select the file for Save As PDF.
-  void OnDirectoryCreated(const base::FilePath& path);
-
-  // Posts a task to save |data| to pdf at |print_to_pdf_path_|.
-  void PostPrintToPdfTask();
-
   // Populates |settings| according to the current locale.
   void GetNumberFormatAndMeasurementSystem(base::DictionaryValue* settings);
-
-  bool GetPreviewDataAndTitle(scoped_refptr<base::RefCountedBytes>* data,
-                              base::string16* title) const;
-
-  // Helper for getting a unique file name for SelectFile() without prompting
-  // the user. Just an adaptor for FileSelected().
-  void OnGotUniqueFileName(const base::FilePath& path);
-
-#if defined(USE_CUPS)
-  void SaveCUPSColorSetting(const base::DictionaryValue* settings);
-
-  void ConvertColorSettingToCUPSColorModel(
-      base::DictionaryValue* settings) const;
-#endif
 
   PdfPrinterHandler* GetPdfPrinterHandler();
 
@@ -316,11 +279,9 @@ class PrintPreviewHandler
 
   // Called when an extension or privet print job is completed.
   // |callback_id|: The javascript callback to run.
-  // |success|: Whether the job succeeded.
   // |error|: The returned print job error. Useful for reporting a specific
-  //     error.
+  //     error. None type implies no error.
   void OnPrintResult(const std::string& callback_id,
-                     bool success,
                      const base::Value& error);
 
   // A count of how many requests received to regenerate preview data.
@@ -329,7 +290,6 @@ class PrintPreviewHandler
 
   // A count of how many requests received to show manage printers dialog.
   int manage_printers_dialog_request_count_;
-  int manage_cloud_printers_dialog_request_count_;
 
   // Whether we have already logged a failed print preview.
   bool reported_failed_preview_;

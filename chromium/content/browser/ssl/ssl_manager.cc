@@ -36,13 +36,6 @@ namespace {
 
 const char kSSLManagerKeyName[] = "content_ssl_manager";
 
-// Events for UMA. Do not reorder or change!
-enum SSLGoodCertSeenEvent {
-  NO_PREVIOUS_EXCEPTION = 0,
-  HAD_PREVIOUS_EXCEPTION = 1,
-  SSL_GOOD_CERT_SEEN_EVENT_MAX = 2
-};
-
 void OnAllowCertificateWithRecordDecision(
     bool record_decision,
     const base::Callback<void(bool, content::CertificateRequestResultType)>&
@@ -100,13 +93,15 @@ class SSLManagerSet : public base::SupportsUserData::Data {
 void HandleSSLErrorOnUI(
     const base::Callback<WebContents*(void)>& web_contents_getter,
     const base::WeakPtr<SSLErrorHandler::Delegate>& delegate,
+    BrowserThread::ID delegate_thread,
     const ResourceType resource_type,
     const GURL& url,
     const net::SSLInfo& ssl_info,
     bool fatal) {
   content::WebContents* web_contents = web_contents_getter.Run();
-  std::unique_ptr<SSLErrorHandler> handler(new SSLErrorHandler(
-      web_contents, delegate, resource_type, url, ssl_info, fatal));
+  std::unique_ptr<SSLErrorHandler> handler(
+      new SSLErrorHandler(web_contents, delegate, delegate_thread,
+                          resource_type, url, ssl_info, fatal));
 
   if (!web_contents) {
     // Requests can fail to dispatch because they don't have a WebContents. See
@@ -145,12 +140,18 @@ void SSLManager::OnSSLCertificateError(
            << " url: " << url.spec()
            << " cert_status: " << std::hex << ssl_info.cert_status;
 
-  // A certificate error occurred. Construct a SSLErrorHandler object
-  // on the UI thread for processing.
+  if (BrowserThread::CurrentlyOn(BrowserThread::UI)) {
+    HandleSSLErrorOnUI(web_contents_getter, delegate, BrowserThread::UI,
+                       resource_type, url, ssl_info, fatal);
+    return;
+  }
+
+  // TODO(jam): remove the logic to call this from IO thread once the
+  // network service code path is the only one.
   BrowserThread::PostTask(
       BrowserThread::UI, FROM_HERE,
       base::BindOnce(&HandleSSLErrorOnUI, web_contents_getter, delegate,
-                     resource_type, url, ssl_info, fatal));
+                     BrowserThread::IO, resource_type, url, ssl_info, fatal));
 }
 
 // static
@@ -176,7 +177,7 @@ SSLManager::SSLManager(NavigationControllerImpl* controller)
   SSLManagerSet* managers = static_cast<SSLManagerSet*>(
       controller_->GetBrowserContext()->GetUserData(kSSLManagerKeyName));
   if (!managers) {
-    auto managers_owned = base::MakeUnique<SSLManagerSet>();
+    auto managers_owned = std::make_unique<SSLManagerSet>();
     managers = managers_owned.get();
     controller_->GetBrowserContext()->SetUserData(kSSLManagerKeyName,
                                                   std::move(managers_owned));
@@ -242,18 +243,6 @@ void SSLManager::DidDisplayContentWithCertErrors() {
   }
 }
 
-void SSLManager::DidShowPasswordInputOnHttp() {
-  UpdateLastCommittedEntry(SSLStatus::DISPLAYED_PASSWORD_FIELD_ON_HTTP, 0);
-}
-
-void SSLManager::DidHideAllPasswordInputsOnHttp() {
-  UpdateLastCommittedEntry(0, SSLStatus::DISPLAYED_PASSWORD_FIELD_ON_HTTP);
-}
-
-void SSLManager::DidShowCreditCardInputOnHttp() {
-  UpdateLastCommittedEntry(SSLStatus::DISPLAYED_CREDIT_CARD_FIELD_ON_HTTP, 0);
-}
-
 void SSLManager::DidRunMixedContent(const GURL& security_origin) {
   NavigationEntryImpl* entry = controller_->GetLastCommittedEntry();
   if (!entry)
@@ -317,7 +306,8 @@ void SSLManager::OnCertError(std::unique_ptr<SSLErrorHandler> handler) {
 
 void SSLManager::DidStartResourceResponse(const GURL& url,
                                           bool has_certificate,
-                                          net::CertStatus ssl_cert_status) {
+                                          net::CertStatus ssl_cert_status,
+                                          ResourceType resource_type) {
   if (has_certificate && url.SchemeIsCryptographic() &&
       !net::IsCertStatusError(ssl_cert_status)) {
     // If the scheme is https: or wss: *and* the security info for the
@@ -326,18 +316,16 @@ void SSLManager::DidStartResourceResponse(const GURL& url,
     // have occurred. If the cert info has not been set, do nothing since it
     // isn't known if the connection was actually a valid connection or if it
     // had a cert error.
-    SSLGoodCertSeenEvent event = NO_PREVIOUS_EXCEPTION;
     if (ssl_host_state_delegate_ &&
         ssl_host_state_delegate_->HasAllowException(url.host())) {
       // If there's no certificate error, a good certificate has been seen, so
       // clear out any exceptions that were made by the user for bad
       // certificates. This intentionally does not apply to cached resources
       // (see https://crbug.com/634553 for an explanation).
+      UMA_HISTOGRAM_BOOLEAN("interstitial.ssl.good_cert_seen_type_is_frame",
+                            IsResourceTypeFrame(resource_type));
       ssl_host_state_delegate_->RevokeUserAllowExceptions(url.host());
-      event = HAD_PREVIOUS_EXCEPTION;
     }
-    UMA_HISTOGRAM_ENUMERATION("interstitial.ssl.good_cert_seen", event,
-                              SSL_GOOD_CERT_SEEN_EVENT_MAX);
   }
 }
 

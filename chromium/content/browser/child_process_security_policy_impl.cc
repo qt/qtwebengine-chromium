@@ -83,7 +83,7 @@ bool IsMalformedBlobUrl(const GURL& url) {
 
   // If the part after blob: survives a roundtrip through url::Origin, then
   // it's a normal blob URL.
-  std::string canonical_origin = url::Origin(url).Serialize();
+  std::string canonical_origin = url::Origin::Create(url).Serialize();
   canonical_origin.append(1, '/');
   if (base::StartsWith(url.GetContent(), canonical_origin,
                        base::CompareCase::INSENSITIVE_ASCII))
@@ -215,7 +215,7 @@ class ChildProcessSecurityPolicyImpl::SecurityState {
       return true;
 
     // Otherwise, check for permission for specific origin.
-    if (CanCommitOrigin(url::Origin(url)))
+    if (CanCommitOrigin(url::Origin::Create(url)))
       return true;
 
     // file:// URLs are more granular.  The child may have been given
@@ -656,7 +656,7 @@ bool ChildProcessSecurityPolicyImpl::CanRequestURL(
     if (IsMalformedBlobUrl(url))
       return false;
 
-    url::Origin origin(url);
+    url::Origin origin = url::Origin::Create(url);
     return origin.unique() || IsWebSafeScheme(origin.scheme()) ||
            CanCommitURL(child_id, GURL(origin.Serialize()));
   }
@@ -719,7 +719,7 @@ bool ChildProcessSecurityPolicyImpl::CanCommitURL(int child_id,
     if (IsMalformedBlobUrl(url))
       return false;
 
-    url::Origin origin(url);
+    url::Origin origin = url::Origin::Create(url);
     return origin.unique() || CanCommitURL(child_id, GURL(origin.Serialize()));
   }
 
@@ -1025,7 +1025,7 @@ void ChildProcessSecurityPolicyImpl::AddChild(int child_id) {
     return;
   }
 
-  security_state_[child_id] = base::MakeUnique<SecurityState>();
+  security_state_[child_id] = std::make_unique<SecurityState>();
 }
 
 bool ChildProcessSecurityPolicyImpl::ChildProcessHasPermissionsForFile(
@@ -1045,7 +1045,7 @@ bool ChildProcessSecurityPolicyImpl::CanAccessDataForOrigin(int child_id,
   // TODO(creis): We must pass the valid browser_context to convert hosted apps
   // URLs. Currently, hosted apps cannot set cookies in this mode. See
   // http://crbug.com/160576.
-  GURL site_url = SiteInstanceImpl::GetSiteForURL(NULL, url);
+  GURL site_url = SiteInstanceImpl::GetSiteForURL(nullptr, url);
 
   base::AutoLock lock(lock_);
   SecurityStateMap::iterator state = security_state_.find(child_id);
@@ -1060,6 +1060,8 @@ bool ChildProcessSecurityPolicyImpl::CanAccessDataForOrigin(int child_id,
     // keys that will help understand the circumstances of that kill.
     base::debug::SetCrashKeyValue("requested_site_url", site_url.spec());
     base::debug::SetCrashKeyValue("requested_origin", url.GetOrigin().spec());
+    base::debug::SetCrashKeyValue("killed_process_origin_lock",
+                                  state->second->origin_lock().spec());
   }
   return can_access;
 }
@@ -1077,7 +1079,7 @@ bool ChildProcessSecurityPolicyImpl::HasSpecificPermissionForOrigin(
 void ChildProcessSecurityPolicyImpl::LockToOrigin(int child_id,
                                                   const GURL& gurl) {
   // "gurl" can be currently empty in some cases, such as file://blah.
-  DCHECK(SiteInstanceImpl::GetSiteForURL(NULL, gurl) == gurl);
+  DCHECK(SiteInstanceImpl::GetSiteForURL(nullptr, gurl) == gurl);
   base::AutoLock lock(lock_);
   SecurityStateMap::iterator state = security_state_.find(child_id);
   DCHECK(state != security_state_.end());

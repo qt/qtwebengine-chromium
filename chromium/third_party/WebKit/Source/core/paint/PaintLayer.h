@@ -230,7 +230,7 @@ class CORE_EXPORT PaintLayer : public DisplayItemClient {
 
   LayoutBoxModelObject& GetLayoutObject() const { return layout_object_; }
   LayoutBox* GetLayoutBox() const {
-    return layout_object_.IsBox() ? &ToLayoutBox(layout_object_) : 0;
+    return layout_object_.IsBox() ? &ToLayoutBox(layout_object_) : nullptr;
   }
   PaintLayer* Parent() const { return parent_; }
   PaintLayer* PreviousSibling() const { return previous_; }
@@ -243,7 +243,7 @@ class CORE_EXPORT PaintLayer : public DisplayItemClient {
   // PaintInfo::paintContainer.
   PaintLayer* CompositingContainer() const;
 
-  void AddChild(PaintLayer* new_child, PaintLayer* before_child = 0);
+  void AddChild(PaintLayer* new_child, PaintLayer* before_child = nullptr);
   PaintLayer* RemoveChild(PaintLayer*);
 
   void ClearClipRects(ClipRectsCacheSlot = kNumberOfClipRectsCacheSlots);
@@ -278,15 +278,21 @@ class CORE_EXPORT PaintLayer : public DisplayItemClient {
 
   // FIXME: size() should DCHECK(!needs_position_update_) as well, but that
   // fails in some tests, for example, fast/repaint/clipped-relative.html.
-  const IntSize& Size() const { return size_; }
+  const LayoutSize& Size() const { return size_; }
+  IntSize PixelSnappedSize() const {
+    LayoutPoint location = layout_object_.IsBox()
+                               ? ToLayoutBox(layout_object_).Location()
+                               : LayoutPoint();
+    return PixelSnappedIntSize(Size(), location);
+  }
 
-  void SetSizeHackForLayoutTreeAsText(const IntSize& size) { size_ = size; }
+  void SetSizeHackForLayoutTreeAsText(const LayoutSize& size) { size_ = size; }
 
-  LayoutRect Rect() const { return LayoutRect(Location(), LayoutSize(Size())); }
+  LayoutRect Rect() const { return LayoutRect(Location(), Size()); }
 
   // For LayoutTreeAsText
   LayoutRect RectIgnoringNeedsPositionUpdate() const {
-    return LayoutRect(location_, LayoutSize(size_));
+    return LayoutRect(location_, size_);
   }
 #if DCHECK_IS_ON()
   bool NeedsPositionUpdate() const { return needs_position_update_; }
@@ -439,7 +445,6 @@ class CORE_EXPORT PaintLayer : public DisplayItemClient {
   LayoutRect FragmentsBoundingBox(const PaintLayer* ancestor_layer) const;
 
   FloatRect BoxForFilterOrMask() const;
-  LayoutRect BoxForClipPath() const;
 
   LayoutRect BoundingBoxForCompositingOverlapTest() const;
   LayoutRect BoundingBoxForCompositing() const;
@@ -583,9 +588,7 @@ class CORE_EXPORT PaintLayer : public DisplayItemClient {
       LayoutRect&);
 
   bool PaintsWithTransparency(GlobalPaintFlags global_paint_flags) const {
-    return IsTransparent() &&
-           ((global_paint_flags & kGlobalPaintFlattenCompositingLayers) ||
-            GetCompositingState() != kPaintsIntoOwnBacking);
+    return IsTransparent() && !PaintsIntoOwnBacking(global_paint_flags);
   }
 
   // Returns the ScrollingCoordinator associated with this layer, if
@@ -599,6 +602,8 @@ class CORE_EXPORT PaintLayer : public DisplayItemClient {
   bool CompositesWithOpacity() const;
 
   bool PaintsWithTransform(GlobalPaintFlags) const;
+  bool PaintsIntoOwnBacking(GlobalPaintFlags) const;
+  bool PaintsIntoOwnOrGroupedBacking(GlobalPaintFlags) const;
 
   bool SupportsSubsequenceCaching() const;
 
@@ -886,7 +891,7 @@ class CORE_EXPORT PaintLayer : public DisplayItemClient {
       GeometryMapperOption,
       OverlayScrollbarClipBehavior = kIgnorePlatformOverlayScrollbarSize,
       ShouldRespectOverflowClipType = kRespectOverflowClip,
-      const LayoutPoint* offset_from_root = 0,
+      const LayoutPoint* offset_from_root = nullptr,
       const LayoutSize& sub_pixel_accumulation = LayoutSize()) const;
 
   // Use this method for callsites within paint, and |CollectFragments|
@@ -900,7 +905,7 @@ class CORE_EXPORT PaintLayer : public DisplayItemClient {
       GeometryMapperOption,
       OverlayScrollbarClipBehavior = kIgnorePlatformOverlayScrollbarSize,
       ShouldRespectOverflowClipType = kRespectOverflowClip,
-      const LayoutPoint* offset_from_root = 0,
+      const LayoutPoint* offset_from_root = nullptr,
       const LayoutSize& sub_pixel_accumulation = LayoutSize()) const;
 
   void CollectFragments(
@@ -911,9 +916,9 @@ class CORE_EXPORT PaintLayer : public DisplayItemClient {
       GeometryMapperOption,
       OverlayScrollbarClipBehavior = kIgnorePlatformOverlayScrollbarSize,
       ShouldRespectOverflowClipType = kRespectOverflowClip,
-      const LayoutPoint* offset_from_root = 0,
+      const LayoutPoint* offset_from_root = nullptr,
       const LayoutSize& sub_pixel_accumulation = LayoutSize(),
-      const LayoutRect* layer_bounding_box = 0) const;
+      const LayoutRect* layer_bounding_box = nullptr) const;
 
   LayoutPoint LayoutBoxLocation() const {
     return GetLayoutObject().IsBox() ? ToLayoutBox(GetLayoutObject()).Location()
@@ -1079,16 +1084,16 @@ class CORE_EXPORT PaintLayer : public DisplayItemClient {
                            const LayoutRect& hit_test_rect,
                            const HitTestLocation&,
                            bool applied_transform,
-                           const HitTestingTransformState* = 0,
-                           double* z_offset = 0);
+                           const HitTestingTransformState* = nullptr,
+                           double* z_offset = nullptr);
   PaintLayer* HitTestLayerByApplyingTransform(
       PaintLayer* root_layer,
       PaintLayer* container_layer,
       HitTestResult&,
       const LayoutRect& hit_test_rect,
       const HitTestLocation&,
-      const HitTestingTransformState* = 0,
-      double* z_offset = 0,
+      const HitTestingTransformState* = nullptr,
+      double* z_offset = nullptr,
       const LayoutPoint& translation_offset = LayoutPoint());
   PaintLayer* HitTestChildren(
       ChildrenIteration,
@@ -1102,7 +1107,7 @@ class CORE_EXPORT PaintLayer : public DisplayItemClient {
       const HitTestingTransformState* unflattened_transform_state,
       bool depth_sort_descendants);
 
-  RefPtr<HitTestingTransformState> CreateLocalTransformState(
+  scoped_refptr<HitTestingTransformState> CreateLocalTransformState(
       PaintLayer* root_layer,
       PaintLayer* container_layer,
       const LayoutRect& hit_test_rect,
@@ -1269,7 +1274,7 @@ class CORE_EXPORT PaintLayer : public DisplayItemClient {
   //
   // If the associated LayoutBoxModelObject is a LayoutBox, it's its border
   // box. Otherwise, this is the LayoutInline's lines' bounding box.
-  IntSize size_;
+  LayoutSize size_;
 
   // Cached normal flow values for absolute positioned elements with static
   // left/top values.
@@ -1301,7 +1306,7 @@ class CORE_EXPORT PaintLayer : public DisplayItemClient {
 
 }  // namespace blink
 
-#ifndef NDEBUG
+#if DCHECK_IS_ON()
 // Outside the WebCore namespace for ease of invocation from gdb.
 CORE_EXPORT void showLayerTree(const blink::PaintLayer*);
 CORE_EXPORT void showLayerTree(const blink::LayoutObject*);

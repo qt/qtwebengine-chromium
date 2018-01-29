@@ -23,6 +23,7 @@
 #include "ui/base/layout.h"
 #include "ui/base/ui_base_types.h"
 #include "ui/display/screen.h"
+#include "ui/events/event.h"
 #include "ui/gfx/geometry/point_conversions.h"
 #include "ui/gfx/geometry/size_conversions.h"
 #include "ui/gfx/geometry/size_f.h"
@@ -121,6 +122,13 @@ float RenderWidgetHostViewBase::GetBottomControlsHeight() const {
   return 0.f;
 }
 
+int RenderWidgetHostViewBase::GetMouseWheelMinimumGranularity() const {
+  // Most platforms can specify the floating-point delta in the wheel event so
+  // they don't have a minimum granularity. Android is currently the only
+  // platform that overrides this.
+  return 0;
+}
+
 void RenderWidgetHostViewBase::SelectionChanged(const base::string16& text,
                                                 size_t offset,
                                                 const gfx::Range& range) {
@@ -134,7 +142,7 @@ gfx::Size RenderWidgetHostViewBase::GetRequestedRendererSize() const {
 
 ui::TextInputClient* RenderWidgetHostViewBase::GetTextInputClient() {
   NOTREACHED();
-  return NULL;
+  return nullptr;
 }
 
 void RenderWidgetHostViewBase::SetIsInVR(bool is_in_vr) {
@@ -210,11 +218,11 @@ BrowserAccessibilityManager*
 RenderWidgetHostViewBase::CreateBrowserAccessibilityManager(
     BrowserAccessibilityDelegate* delegate, bool for_root_frame) {
   NOTREACHED();
-  return NULL;
+  return nullptr;
 }
 
 void RenderWidgetHostViewBase::AccessibilityShowMenu(const gfx::Point& point) {
-  RenderWidgetHostImpl* impl = NULL;
+  RenderWidgetHostImpl* impl = nullptr;
   if (GetRenderWidgetHost())
     impl = RenderWidgetHostImpl::From(GetRenderWidgetHost());
 
@@ -234,11 +242,11 @@ gfx::AcceleratedWidget
 
 gfx::NativeViewAccessible
     RenderWidgetHostViewBase::AccessibilityGetNativeViewAccessible() {
-  return NULL;
+  return nullptr;
 }
 
 void RenderWidgetHostViewBase::UpdateScreenInfo(gfx::NativeView view) {
-  RenderWidgetHostImpl* impl = NULL;
+  RenderWidgetHostImpl* impl = nullptr;
   if (GetRenderWidgetHost())
     impl = RenderWidgetHostImpl::From(GetRenderWidgetHost());
 
@@ -273,6 +281,13 @@ void RenderWidgetHostViewBase::DidUnregisterFromTextInputManager(
   text_input_manager_ = nullptr;
 }
 
+void RenderWidgetHostViewBase::ResizeDueToAutoResize(const gfx::Size& new_size,
+                                                     uint64_t sequence_number) {
+  RenderWidgetHostImpl* host =
+      RenderWidgetHostImpl::From(GetRenderWidgetHost());
+  host->DidAllocateLocalSurfaceIdForAutoResize(sequence_number);
+}
+
 base::WeakPtr<RenderWidgetHostViewBase> RenderWidgetHostViewBase::GetWeakPtr() {
   return weak_factory_.GetWeakPtr();
 }
@@ -299,6 +314,16 @@ void RenderWidgetHostViewBase::FocusedNodeTouched(
     const gfx::Point& location_dips_screen,
     bool editable) {
   DVLOG(1) << "FocusedNodeTouched: " << editable;
+}
+
+void RenderWidgetHostViewBase::GetScreenInfo(ScreenInfo* screen_info) {
+  RenderWidgetHostImpl* host =
+      RenderWidgetHostImpl::From(GetRenderWidgetHost());
+  if (!host || !host->delegate()) {
+    *screen_info = ScreenInfo();
+    return;
+  }
+  host->delegate()->GetScreenInfo(screen_info);
 }
 
 uint32_t RenderWidgetHostViewBase::RendererFrameNumber() {
@@ -393,6 +418,14 @@ ScreenOrientationValues RenderWidgetHostViewBase::GetOrientationTypeForDesktop(
 void RenderWidgetHostViewBase::OnDidNavigateMainFrameToNewPage() {
 }
 
+void RenderWidgetHostViewBase::OnFrameTokenChangedForView(
+    uint32_t frame_token) {
+  RenderWidgetHostImpl* host =
+      RenderWidgetHostImpl::From(GetRenderWidgetHost());
+  if (host)
+    host->DidProcessFrame(frame_token);
+}
+
 viz::FrameSinkId RenderWidgetHostViewBase::GetFrameSinkId() {
   return viz::FrameSinkId();
 }
@@ -403,35 +436,34 @@ viz::LocalSurfaceId RenderWidgetHostViewBase::GetLocalSurfaceId() const {
 
 viz::FrameSinkId RenderWidgetHostViewBase::FrameSinkIdAtPoint(
     viz::SurfaceHittestDelegate* delegate,
-    const gfx::Point& point,
-    gfx::Point* transformed_point) {
+    const gfx::PointF& point,
+    gfx::PointF* transformed_point) {
   NOTREACHED();
   return viz::FrameSinkId();
 }
 
-gfx::Point RenderWidgetHostViewBase::TransformPointToRootCoordSpace(
-    const gfx::Point& point) {
+gfx::PointF RenderWidgetHostViewBase::TransformPointToRootCoordSpaceF(
+    const gfx::PointF& point) {
   return point;
 }
 
-gfx::PointF RenderWidgetHostViewBase::TransformPointToRootCoordSpaceF(
+gfx::PointF RenderWidgetHostViewBase::TransformRootPointToViewCoordSpace(
     const gfx::PointF& point) {
-  return gfx::PointF(TransformPointToRootCoordSpace(
-      gfx::ToRoundedPoint(point)));
+  return point;
 }
 
 bool RenderWidgetHostViewBase::TransformPointToLocalCoordSpace(
-    const gfx::Point& point,
+    const gfx::PointF& point,
     const viz::SurfaceId& original_surface,
-    gfx::Point* transformed_point) {
+    gfx::PointF* transformed_point) {
   *transformed_point = point;
   return true;
 }
 
 bool RenderWidgetHostViewBase::TransformPointToCoordSpaceForView(
-    const gfx::Point& point,
+    const gfx::PointF& point,
     RenderWidgetHostViewBase* target_view,
-    gfx::Point* transformed_point) {
+    gfx::PointF* transformed_point) {
   NOTREACHED();
   return true;
 }

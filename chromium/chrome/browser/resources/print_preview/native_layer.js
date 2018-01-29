@@ -197,8 +197,8 @@ cr.define('print_preview', function() {
      */
     getNativeColorModel_(destination, color) {
       // For non-local printers native color model is ignored anyway.
-      var option = destination.isLocal ? color.getSelectedOption() : null;
-      var nativeColorModel = parseInt(option ? option.vendor_id : null, 10);
+      const option = destination.isLocal ? color.getSelectedOption() : null;
+      const nativeColorModel = parseInt(option ? option.vendor_id : null, 10);
       if (isNaN(nativeColorModel)) {
         return color.getValue() ? NativeLayer.ColorMode_.COLOR :
                                   NativeLayer.ColorMode_.GRAY;
@@ -228,7 +228,7 @@ cr.define('print_preview', function() {
           printTicketStore.isTicketValidForPreview(),
           'Trying to generate preview when ticket is not valid');
 
-      var ticket = {
+      const ticket = {
         'pageRange': printTicketStore.pageRange.getDocumentPageRanges(),
         'mediaSize': printTicketStore.mediaSize.getValue(),
         'landscape': printTicketStore.landscape.getValue(),
@@ -274,8 +274,8 @@ cr.define('print_preview', function() {
       if (printTicketStore.marginsType.isCapabilityAvailable() &&
           printTicketStore.marginsType.getValue() ==
               print_preview.ticket_items.MarginsTypeValue.CUSTOM) {
-        var customMargins = printTicketStore.customMargins.getValue();
-        var orientationEnum =
+        const customMargins = printTicketStore.customMargins.getValue();
+        const orientationEnum =
             print_preview.ticket_items.CustomMarginsOrientation;
         ticket['marginsCustom'] = {
           'marginTop': customMargins.get(orientationEnum.TOP),
@@ -295,8 +295,6 @@ cr.define('print_preview', function() {
      * @param {!print_preview.Destination} destination Destination to print to.
      * @param {!print_preview.PrintTicketStore} printTicketStore Used to get the
      *     state of the print ticket.
-     * @param {cloudprint.CloudPrintInterface} cloudPrintInterface Interface
-     *     to Google Cloud Print.
      * @param {!print_preview.DocumentInfo} documentInfo Document data model.
      * @param {boolean=} opt_isOpenPdfInPreview Whether to open the PDF in the
      *     system's preview application.
@@ -306,8 +304,8 @@ cr.define('print_preview', function() {
      *     finished or rejected.
      */
     print(
-        destination, printTicketStore, cloudPrintInterface, documentInfo,
-        opt_isOpenPdfInPreview, opt_showSystemDialog) {
+        destination, printTicketStore, documentInfo, opt_isOpenPdfInPreview,
+        opt_showSystemDialog) {
       assert(
           printTicketStore.isTicketValid(),
           'Trying to print when ticket is not valid');
@@ -316,7 +314,10 @@ cr.define('print_preview', function() {
           !opt_showSystemDialog || (cr.isWindows && destination.isLocal),
           'Implemented for Windows only');
 
-      var ticket = {
+      // Note: update
+      // chrome/browser/ui/webui/print_preview/print_preview_handler_unittest.cc
+      // with any changes to ticket creation.
+      const ticket = {
         'mediaSize': printTicketStore.mediaSize.getValue(),
         'pageCount': printTicketStore.pageRange.getPageNumberSet().size,
         'landscape': printTicketStore.landscape.getValue(),
@@ -361,8 +362,8 @@ cr.define('print_preview', function() {
       if (printTicketStore.marginsType.isCapabilityAvailable() &&
           printTicketStore.marginsType.isValueEqual(
               print_preview.ticket_items.MarginsTypeValue.CUSTOM)) {
-        var customMargins = printTicketStore.customMargins.getValue();
-        var orientationEnum =
+        const customMargins = printTicketStore.customMargins.getValue();
+        const orientationEnum =
             print_preview.ticket_items.CustomMarginsOrientation;
         ticket['marginsCustom'] = {
           'marginTop': customMargins.get(orientationEnum.TOP),
@@ -433,19 +434,12 @@ cr.define('print_preview', function() {
       return cr.sendWithPromise('signIn', addAccount);
     }
 
-    /** Navigates the user to the system printer settings interface. */
-    manageLocalPrinters() {
-      chrome.send('manageLocalPrinters');
-    }
-
     /**
-     * Navigates the user to the Google Cloud Print management page.
-     * @param {?string} user Email address of the user to open the management
-     *     page for (user must be currently logged in, indeed) or {@code null}
-     *     to open this page for the primary user.
+     * Navigates the user to the Chrome printing setting page to manage local
+     * printers and Google cloud printers.
      */
-    manageCloudPrinters(user) {
-      chrome.send('manageCloudPrinters', [user || '']);
+    managePrinters() {
+      chrome.send('managePrinters');
     }
 
     /** Forces browser to open a new tab with the given URL address. */
@@ -471,14 +465,6 @@ cr.define('print_preview', function() {
     }
 
     /**
-     * Notifies the metrics handler to record an action.
-     * @param {string} action The action to record.
-     */
-    recordAction(action) {
-      chrome.send('metricsHandler:recordAction', [action]);
-    }
-
-    /**
      * Notifies the metrics handler to record a histogram value.
      * @param {string} histogram The name of the histogram to record
      * @param {number} bucket The bucket to record
@@ -491,7 +477,7 @@ cr.define('print_preview', function() {
   }
 
   /** @private {?print_preview.NativeLayer} */
-  var currentInstance = null;
+  let currentInstance = null;
 
   /**
    * Constant values matching printing::DuplexMode enum.

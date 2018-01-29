@@ -12,6 +12,7 @@
 #include "base/memory/ref_counted.h"
 #include "base/strings/string16.h"
 #include "device/geolocation/geolocation_export.h"
+#include "device/geolocation/public/interfaces/geoposition.mojom.h"
 #include "device/geolocation/wifi_data_provider.h"
 #include "net/url_request/url_fetcher_delegate.h"
 #include "url/gurl.h"
@@ -19,34 +20,43 @@
 namespace net {
 class URLFetcher;
 class URLRequestContextGetter;
+
+struct PartialNetworkTrafficAnnotationTag;
 }
 
 namespace device {
-struct Geoposition;
 
 // Takes wifi data and sends it to a server to get a position fix.
 // It performs formatting of the request and interpretation of the response.
-class NetworkLocationRequest : private net::URLFetcherDelegate {
+class DEVICE_GEOLOCATION_EXPORT NetworkLocationRequest
+    : private net::URLFetcherDelegate {
  public:
   // ID passed to URLFetcher::Create(). Used for testing.
-  DEVICE_GEOLOCATION_EXPORT static int url_fetcher_id_for_tests;
+  static int url_fetcher_id_for_tests;
 
   // Called when a new geo position is available. The second argument indicates
   // whether there was a server error or not. It is true when there was a
   // server or network error - either no response or a 500 error code.
-  typedef base::Callback<void(const Geoposition& /* position */,
-                              bool /* server_error */,
-                              const WifiData& /* wifi_data */)>
-      LocationResponseCallback;
+  using LocationResponseCallback =
+      base::Callback<void(const mojom::Geoposition& /* position */,
+                          bool /* server_error */,
+                          const WifiData& /* wifi_data */)>;
 
   NetworkLocationRequest(scoped_refptr<net::URLRequestContextGetter> context,
                          const std::string& api_key,
                          LocationResponseCallback callback);
   ~NetworkLocationRequest() override;
 
-  // Makes a new request. Returns true if the new request was successfully
-  // started. In all cases, any currently pending request will be canceled.
-  bool MakeRequest(const WifiData& wifi_data, const base::Time& wifi_timestamp);
+  // Makes a new request using the specified |wifi_data|. Returns true if the
+  // new request was successfully started. In all cases, any currently pending
+  // request will be canceled. The specified |wifi_data| and |wifi_timestamp|
+  // are passed back to the client upon completion, via
+  // LocationResponseCallback's |wifi_data| and |position.timestamp|
+  // respectively.
+  bool MakeRequest(const WifiData& wifi_data,
+                   const base::Time& wifi_timestamp,
+                   const net::PartialNetworkTrafficAnnotationTag&
+                       partial_traffic_annotation);
 
   bool is_request_pending() const { return url_fetcher_ != NULL; }
 

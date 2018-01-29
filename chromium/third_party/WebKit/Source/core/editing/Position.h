@@ -57,7 +57,7 @@ class CORE_TEMPLATE_CLASS_EXPORT PositionTemplate {
   static const TreeScope* CommonAncestorTreeScope(
       const PositionTemplate<Strategy>&,
       const PositionTemplate<Strategy>& b);
-  static PositionTemplate<Strategy> EditingPositionOf(Node* anchor_node,
+  static PositionTemplate<Strategy> EditingPositionOf(const Node* anchor_node,
                                                       int offset);
 
   // For creating before/after positions:
@@ -151,7 +151,7 @@ class CORE_TEMPLATE_CLASS_EXPORT PositionTemplate {
   Node* AnchorNode() const { return anchor_node_.Get(); }
 
   Document* GetDocument() const {
-    return anchor_node_ ? &anchor_node_->GetDocument() : 0;
+    return anchor_node_ ? &anchor_node_->GetDocument() : nullptr;
   }
 
   // For PositionInFlatTree, it requires an ancestor traversal to compute the
@@ -195,12 +195,6 @@ class CORE_TEMPLATE_CLASS_EXPORT PositionTemplate {
   static PositionTemplate<Strategy> FirstPositionInNode(
       const Node& anchor_node);
   static PositionTemplate<Strategy> LastPositionInNode(const Node& anchor_node);
-  // TODO(editing-dev): Instead of these two deprecated functions please use
-  // const-ref implementation below.
-  static PositionTemplate<Strategy> FirstPositionInOrBeforeNodeDeprecated(
-      Node* anchor_node);
-  static PositionTemplate<Strategy> LastPositionInOrAfterNodeDeprecated(
-      Node* anchor_node);
   static PositionTemplate<Strategy> FirstPositionInOrBeforeNode(
       const Node& anchor_node);
   static PositionTemplate<Strategy> LastPositionInOrAfterNode(
@@ -212,7 +206,7 @@ class CORE_TEMPLATE_CLASS_EXPORT PositionTemplate {
   void ShowTreeForThisInFlatTree() const;
 #endif
 
-  DECLARE_TRACE();
+  void Trace(blink::Visitor*);
 
  private:
   bool IsAfterAnchorOrAfterChildren() const {

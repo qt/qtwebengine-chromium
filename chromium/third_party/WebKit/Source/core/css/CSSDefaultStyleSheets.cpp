@@ -64,8 +64,10 @@ static const MediaQueryEvaluator& PrintEval() {
 }
 
 static StyleSheetContents* ParseUASheet(const String& str) {
+  // UA stylesheets always parse in the insecure context mode.
   StyleSheetContents* sheet =
-      StyleSheetContents::Create(CSSParserContext::Create(kUASheetMode));
+      StyleSheetContents::Create(CSSParserContext::Create(
+          kUASheetMode, SecureContextMode::kInsecureContext));
   sheet->ParseString(str);
   // User Agent stylesheets are parsed once for the lifetime of the renderer
   // process and are intentionally leaked.
@@ -193,7 +195,7 @@ void CSSDefaultStyleSheets::EnsureDefaultStyleSheetForFullscreen() {
                                            ScreenEval());
 }
 
-DEFINE_TRACE(CSSDefaultStyleSheets) {
+void CSSDefaultStyleSheets::Trace(blink::Visitor* visitor) {
   visitor->Trace(default_style_);
   visitor->Trace(default_quirks_style_);
   visitor->Trace(default_print_style_);

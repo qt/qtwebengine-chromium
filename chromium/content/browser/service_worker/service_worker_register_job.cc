@@ -25,45 +25,9 @@
 #include "content/public/browser/browser_thread.h"
 #include "mojo/public/cpp/bindings/associated_binding.h"
 #include "net/base/net_errors.h"
+#include "third_party/WebKit/public/platform/modules/serviceworker/service_worker_object.mojom.h"
 
 namespace content {
-
-namespace {
-
-class InstallEventMethodsReceiver
-    : public mojom::ServiceWorkerInstallEventMethods {
- public:
-  InstallEventMethodsReceiver(ServiceWorkerVersion* version)
-      : version_(version), install_methods_binding_(this) {}
-  ~InstallEventMethodsReceiver() override {}
-
-  void BindInterface(
-      mojom::ServiceWorkerInstallEventMethodsAssociatedPtrInfo* ptr_info) {
-    install_methods_binding_.Bind(mojo::MakeRequest(ptr_info));
-  }
-
-  // Implements mojom::ServiceWorkerInstallEventMethod.
-  void RegisterForeignFetchScopes(
-      const std::vector<GURL>& sub_scopes,
-      const std::vector<url::Origin>& origins) override {
-    DCHECK(version_);
-    version_->RegisterForeignFetchScopes(sub_scopes, origins);
-  }
-
- private:
-  ServiceWorkerVersion* version_;
-
-  mojo::AssociatedBinding<mojom::ServiceWorkerInstallEventMethods>
-      install_methods_binding_;
-
-  DISALLOW_COPY_AND_ASSIGN(InstallEventMethodsReceiver);
-};
-
-void RunSoon(const base::Closure& closure) {
-  base::ThreadTaskRunnerHandle::Get()->PostTask(FROM_HERE, closure);
-}
-
-}  // namespace
 
 typedef ServiceWorkerRegisterJobBase::RegistrationJobType RegistrationJobType;
 
@@ -118,7 +82,9 @@ void ServiceWorkerRegisterJob::AddCallback(
       provider_host->AddScopedProcessReferenceToPattern(pattern_);
     return;
   }
-  RunSoon(base::Bind(callback, promise_resolved_status_,
+  base::ThreadTaskRunnerHandle::Get()->PostTask(
+      FROM_HERE,
+      base::BindOnce(callback, promise_resolved_status_,
                      promise_resolved_status_message_,
                      base::RetainedRef(promise_resolved_registration_)));
 }
@@ -146,7 +112,8 @@ void ServiceWorkerRegisterJob::StartImpl() {
   scoped_refptr<ServiceWorkerRegistration> registration =
       context_->storage()->GetUninstallingRegistration(pattern_);
   if (registration.get())
-    RunSoon(base::Bind(next_step, SERVICE_WORKER_OK, registration));
+    base::ThreadTaskRunnerHandle::Get()->PostTask(
+        FROM_HERE, base::BindOnce(next_step, SERVICE_WORKER_OK, registration));
   else
     context_->storage()->FindRegistrationForPattern(pattern_, next_step);
 }
@@ -373,7 +340,7 @@ void ServiceWorkerRegisterJob::UpdateAndContinue() {
   context_->storage()->NotifyInstallingRegistration(registration());
 
   int64_t version_id = context_->storage()->NewVersionId();
-  if (version_id == kInvalidServiceWorkerVersionId) {
+  if (version_id == blink::mojom::kInvalidServiceWorkerVersionId) {
     Complete(SERVICE_WORKER_ERROR_ABORT);
     return;
   }
@@ -465,24 +432,16 @@ void ServiceWorkerRegisterJob::DispatchInstallEvent() {
       base::Bind(&ServiceWorkerRegisterJob::OnInstallFailed,
                  weak_factory_.GetWeakPtr()));
 
-  std::unique_ptr<InstallEventMethodsReceiver> install_methods_receiver =
-      base::MakeUnique<InstallEventMethodsReceiver>(new_version());
-  mojom::ServiceWorkerInstallEventMethodsAssociatedPtrInfo ptr_info;
-  install_methods_receiver->BindInterface(&ptr_info);
   new_version()->event_dispatcher()->DispatchInstallEvent(
-      std::move(ptr_info),
       base::BindOnce(&ServiceWorkerRegisterJob::OnInstallFinished,
-                     weak_factory_.GetWeakPtr(), request_id,
-                     base::Passed(&install_methods_receiver)));
+                     weak_factory_.GetWeakPtr(), request_id));
 }
 
 void ServiceWorkerRegisterJob::OnInstallFinished(
     int request_id,
-    std::unique_ptr<InstallEventMethodsReceiver> install_methods_receiver,
     blink::mojom::ServiceWorkerEventStatus event_status,
     bool has_fetch_handler,
     base::Time dispatch_event_time) {
-  install_methods_receiver.reset();
   bool succeeded =
       event_status == blink::mojom::ServiceWorkerEventStatus::COMPLETED;
   new_version()->FinishRequest(request_id, succeeded, dispatch_event_time);
@@ -493,9 +452,6 @@ void ServiceWorkerRegisterJob::OnInstallFinished(
   }
 
   ServiceWorkerMetrics::RecordInstallEventStatus(SERVICE_WORKER_OK);
-  ServiceWorkerMetrics::RecordForeignFetchRegistrationCount(
-      new_version()->foreign_fetch_scopes().size(),
-      new_version()->foreign_fetch_origins().size());
 
   SetPhase(STORE);
   DCHECK(!registration()->last_update_check().is_null());
@@ -599,7 +555,7 @@ void ServiceWorkerRegisterJob::CompleteInternal(
       }
     }
     if (!is_promise_resolved_)
-      ResolvePromise(status, status_message, NULL);
+      ResolvePromise(status, status_message, nullptr);
   }
   DCHECK(callbacks_.empty());
   if (registration()) {

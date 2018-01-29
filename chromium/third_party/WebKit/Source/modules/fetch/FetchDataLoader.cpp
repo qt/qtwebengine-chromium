@@ -11,9 +11,9 @@
 #include "modules/fetch/BytesConsumer.h"
 #include "modules/fetch/MultipartParser.h"
 #include "mojo/public/cpp/system/simple_watcher.h"
-#include "platform/http_names.h"
 #include "platform/loader/fetch/TextResourceDecoderOptions.h"
 #include "platform/network/ParsedContentDisposition.h"
+#include "platform/network/http_names.h"
 #include "platform/wtf/Functional.h"
 #include "platform/wtf/PtrUtil.h"
 #include "platform/wtf/text/StringBuilder.h"
@@ -40,11 +40,12 @@ class FetchDataLoaderAsBlobHandle final : public FetchDataLoader,
     client_ = client;
     consumer_ = consumer;
 
-    RefPtr<BlobDataHandle> blob_handle = consumer_->DrainAsBlobDataHandle();
+    scoped_refptr<BlobDataHandle> blob_handle =
+        consumer_->DrainAsBlobDataHandle();
     if (blob_handle) {
       DCHECK_NE(UINT64_MAX, blob_handle->size());
       if (blob_handle->GetType() != mime_type_) {
-        storage::mojom::blink::BlobPtr blob_clone = blob_handle->CloneBlobPtr();
+        mojom::blink::BlobPtr blob_clone = blob_handle->CloneBlobPtr();
         // A new BlobDataHandle is created to override the Blob's type.
         // TODO(mek): It might be cleaner to create a new blob (referencing the
         // old blob) rather than just a new BlobDataHandle with mime type not
@@ -98,7 +99,7 @@ class FetchDataLoaderAsBlobHandle final : public FetchDataLoader,
 
   String DebugName() const override { return "FetchDataLoaderAsBlobHandle"; }
 
-  DEFINE_INLINE_TRACE() {
+  void Trace(blink::Visitor* visitor) override {
     visitor->Trace(consumer_);
     visitor->Trace(client_);
     FetchDataLoader::Trace(visitor);
@@ -123,7 +124,7 @@ class FetchDataLoaderAsArrayBuffer final : public FetchDataLoader,
     DCHECK(!raw_data_);
     DCHECK(!consumer_);
     client_ = client;
-    raw_data_ = WTF::MakeUnique<ArrayBufferBuilder>();
+    raw_data_ = std::make_unique<ArrayBufferBuilder>();
     consumer_ = consumer;
     consumer_->SetClient(this);
     OnStateChange();
@@ -171,7 +172,7 @@ class FetchDataLoaderAsArrayBuffer final : public FetchDataLoader,
 
   String DebugName() const override { return "FetchDataLoaderAsArrayBuffer"; }
 
-  DEFINE_INLINE_TRACE() {
+  void Trace(blink::Visitor* visitor) override {
     visitor->Trace(consumer_);
     visitor->Trace(client_);
     FetchDataLoader::Trace(visitor);
@@ -227,7 +228,7 @@ class FetchDataLoaderAsFailure final : public FetchDataLoader,
 
   void Cancel() override { consumer_->Cancel(); }
 
-  DEFINE_INLINE_TRACE() {
+  void Trace(blink::Visitor* visitor) override {
     visitor->Trace(consumer_);
     visitor->Trace(client_);
     FetchDataLoader::Trace(visitor);
@@ -312,7 +313,7 @@ class FetchDataLoaderAsFormData final : public FetchDataLoader,
     multipart_parser_->Cancel();
   }
 
-  DEFINE_INLINE_TRACE() {
+  void Trace(blink::Visitor* visitor) override {
     visitor->Trace(consumer_);
     visitor->Trace(client_);
     visitor->Trace(form_data_);
@@ -465,7 +466,7 @@ class FetchDataLoaderAsString final : public FetchDataLoader,
 
   void Cancel() override { consumer_->Cancel(); }
 
-  DEFINE_INLINE_TRACE() {
+  void Trace(blink::Visitor* visitor) override {
     visitor->Trace(consumer_);
     visitor->Trace(client_);
     FetchDataLoader::Trace(visitor);
@@ -557,7 +558,7 @@ class FetchDataLoaderAsDataPipe final : public FetchDataLoader,
 
   void Cancel() override { StopInternal(); }
 
-  DEFINE_INLINE_TRACE() {
+  void Trace(blink::Visitor* visitor) override {
     visitor->Trace(consumer_);
     visitor->Trace(client_);
     FetchDataLoader::Trace(visitor);

@@ -10,11 +10,11 @@
 #include "tools/gn/settings.h"
 #include "tools/gn/source_file.h"
 
-namespace {
+namespace gn_analyzer_unittest {
 
 class MockLoader : public Loader {
  public:
-  MockLoader() {}
+  MockLoader() = default;
 
   void Load(const SourceFile& file,
             const LocationRange& origin,
@@ -28,7 +28,7 @@ class MockLoader : public Loader {
   }
 
  private:
-  ~MockLoader() override {}
+  ~MockLoader() override = default;
 };
 
 class AnalyzerTest : public testing::Test {
@@ -110,8 +110,6 @@ class AnalyzerTest : public testing::Test {
   SourceDir tc_dir_;
   std::string tc_name_;
 };
-
-}  // namespace
 
 TEST_F(AnalyzerTest, AllWasPruned) {
   RunBasicTest(
@@ -231,3 +229,5 @@ TEST_F(AnalyzerTest, BuildFilesWereModifiedAndCompilingAll) {
       R"("test_targets":["//:a"])"
       "}");
 }
+
+}  // namespace gn_analyzer_unittest

@@ -44,17 +44,17 @@ TestPaintArtifact::TestPaintArtifact() : display_item_list_(0), built_(false) {}
 TestPaintArtifact::~TestPaintArtifact() {}
 
 TestPaintArtifact& TestPaintArtifact::Chunk(
-    RefPtr<const TransformPaintPropertyNode> transform,
-    RefPtr<const ClipPaintPropertyNode> clip,
-    RefPtr<const EffectPaintPropertyNode> effect) {
+    scoped_refptr<const TransformPaintPropertyNode> transform,
+    scoped_refptr<const ClipPaintPropertyNode> clip,
+    scoped_refptr<const EffectPaintPropertyNode> effect) {
   return Chunk(NewClient(), transform, clip, effect);
 }
 
 TestPaintArtifact& TestPaintArtifact::Chunk(
     DisplayItemClient& client,
-    RefPtr<const TransformPaintPropertyNode> transform,
-    RefPtr<const ClipPaintPropertyNode> clip,
-    RefPtr<const EffectPaintPropertyNode> effect) {
+    scoped_refptr<const TransformPaintPropertyNode> transform,
+    scoped_refptr<const ClipPaintPropertyNode> clip,
+    scoped_refptr<const EffectPaintPropertyNode> effect) {
   PropertyTreeState property_tree_state(transform.get(), clip.get(),
                                         effect.get());
   PaintChunkProperties properties(property_tree_state);
@@ -89,7 +89,7 @@ TestPaintArtifact& TestPaintArtifact::RectDrawing(DisplayItemClient& client,
                                                   Color color) {
   display_item_list_.AllocateAndConstruct<DrawingDisplayItem>(
       client, DisplayItem::kDrawingFirst,
-      static_cast<DummyRectClient&>(client).MakeRecord(bounds, color), bounds);
+      static_cast<DummyRectClient&>(client).MakeRecord(bounds, color));
   return *this;
 }
 
@@ -114,13 +114,13 @@ TestPaintArtifact& TestPaintArtifact::ForeignLayer(
 }
 
 TestPaintArtifact& TestPaintArtifact::ScrollHitTest(
-    RefPtr<const TransformPaintPropertyNode> scroll_offset) {
+    scoped_refptr<const TransformPaintPropertyNode> scroll_offset) {
   return ScrollHitTest(NewClient(), scroll_offset);
 }
 
 TestPaintArtifact& TestPaintArtifact::ScrollHitTest(
     DisplayItemClient& client,
-    RefPtr<const TransformPaintPropertyNode> scroll_offset) {
+    scoped_refptr<const TransformPaintPropertyNode> scroll_offset) {
   display_item_list_.AllocateAndConstruct<ScrollHitTestDisplayItem>(
       client, DisplayItem::kScrollHitTest, std::move(scroll_offset));
   return *this;

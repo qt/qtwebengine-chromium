@@ -68,16 +68,16 @@ class P2PTransportChannel : public IceTransportInternal,
   P2PTransportChannel(const std::string& transport_name,
                       int component,
                       PortAllocator* allocator);
-  virtual ~P2PTransportChannel();
+  ~P2PTransportChannel() override;
 
   // From TransportChannelImpl:
   IceTransportState GetState() const override;
-  const std::string& transport_name() const override { return transport_name_; }
-  int component() const override { return component_; }
-  bool writable() const override { return writable_; }
-  bool receiving() const override { return receiving_; }
+  const std::string& transport_name() const override;
+  int component() const override;
+  bool writable() const override;
+  bool receiving() const override;
   void SetIceRole(IceRole role) override;
-  IceRole GetIceRole() const override { return ice_role_; }
+  IceRole GetIceRole() const override;
   void SetIceTiebreaker(uint64_t tiebreaker) override;
   void SetIceParameters(const IceParameters& ice_params) override;
   void SetRemoteIceParameters(const IceParameters& ice_params) override;
@@ -86,9 +86,7 @@ class P2PTransportChannel : public IceTransportInternal,
   // IceTransportChannel does not depend on this.
   void Connect() {}
   void MaybeStartGathering() override;
-  IceGatheringState gathering_state() const override {
-    return gathering_state_;
-  }
+  IceGatheringState gathering_state() const override;
   void AddRemoteCandidate(const Candidate& candidate) override;
   void RemoveRemoteCandidate(const Candidate& candidate) override;
   // Sets the parameters in IceConfig. We do not set them blindly. Instead, we
@@ -107,7 +105,7 @@ class P2PTransportChannel : public IceTransportInternal,
                  int flags) override;
   int SetOption(rtc::Socket::Option opt, int value) override;
   bool GetOption(rtc::Socket::Option opt, int* value) override;
-  int GetError() override { return error_; }
+  int GetError() override;
   bool GetStats(std::vector<ConnectionInfo>* stats) override;
   rtc::Optional<int> GetRttEstimate() override;
 
@@ -128,6 +126,8 @@ class P2PTransportChannel : public IceTransportInternal,
   void PruneAllPorts();
   int receiving_timeout() const { return config_.receiving_timeout; }
   int check_receiving_interval() const { return check_receiving_interval_; }
+
+  rtc::Optional<rtc::NetworkRoute> network_route() const override;
 
   // Helper method used only in unittest.
   rtc::DiffServCodePoint DefaultDscpValue() const;
@@ -401,6 +401,8 @@ class P2PTransportChannel : public IceTransportInternal,
   bool writable_ = false;
 
   webrtc::MetricsObserverInterface* metrics_observer_ = nullptr;
+
+  rtc::Optional<rtc::NetworkRoute> network_route_;
 
   RTC_DISALLOW_COPY_AND_ASSIGN(P2PTransportChannel);
 };

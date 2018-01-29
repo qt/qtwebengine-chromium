@@ -61,7 +61,6 @@
 #include "core/dom/UserActionElementSet.h"
 #include "core/dom/V0InsertionPoint.h"
 #include "core/dom/events/Event.h"
-#include "core/dom/events/EventDispatchMediator.h"
 #include "core/dom/events/EventDispatcher.h"
 #include "core/dom/events/EventListener.h"
 #include "core/editing/EditingUtilities.h"
@@ -82,6 +81,7 @@
 #include "core/frame/LocalFrame.h"
 #include "core/frame/LocalFrameView.h"
 #include "core/frame/UseCounter.h"
+#include "core/fullscreen/Fullscreen.h"
 #include "core/html/HTMLDialogElement.h"
 #include "core/html/HTMLFrameOwnerElement.h"
 #include "core/html/HTMLSlotElement.h"
@@ -139,8 +139,9 @@ struct SameSizeAsNode : EventTarget {
   void* pointer_;
 };
 
-NodeRenderingData::NodeRenderingData(LayoutObject* layout_object,
-                                     RefPtr<ComputedStyle> non_attached_style)
+NodeRenderingData::NodeRenderingData(
+    LayoutObject* layout_object,
+    scoped_refptr<ComputedStyle> non_attached_style)
     : layout_object_(layout_object), non_attached_style_(non_attached_style) {}
 
 NodeRenderingData::~NodeRenderingData() {
@@ -148,7 +149,7 @@ NodeRenderingData::~NodeRenderingData() {
 }
 
 void NodeRenderingData::SetNonAttachedStyle(
-    RefPtr<ComputedStyle> non_attached_style) {
+    scoped_refptr<ComputedStyle> non_attached_style) {
   DCHECK_NE(&SharedEmptyData(), this);
   non_attached_style_ = non_attached_style;
 }
@@ -659,7 +660,8 @@ void Node::SetLayoutObject(LayoutObject* layout_object) {
     data_.node_layout_data_ = node_layout_data;
 }
 
-void Node::SetNonAttachedStyle(RefPtr<ComputedStyle> non_attached_style) {
+void Node::SetNonAttachedStyle(
+    scoped_refptr<ComputedStyle> non_attached_style) {
   NodeRenderingData* node_layout_data =
       HasRareData() ? data_.rare_data_->GetNodeRenderingData()
                     : data_.node_layout_data_;
@@ -742,7 +744,22 @@ bool Node::NeedsDistributionRecalc() const {
   return ShadowIncludingRoot().ChildNeedsDistributionRecalc();
 }
 
+bool Node::MayContainLegacyNodeTreeWhereDistributionShouldBeSupported() const {
+  if (!RuntimeEnabledFeatures::IncrementalShadowDOMEnabled())
+    return true;
+  if (isConnected() && !GetDocument().MayContainV0Shadow()) {
+    // TODO(crbug.com/787717): Some built-in elements still use <content>
+    // elements in their user-agent shadow roots. DCHECK() fails if such an
+    // element is used.
+    DCHECK(!GetDocument().ChildNeedsDistributionRecalc());
+    return false;
+  }
+  return true;
+}
+
 void Node::UpdateDistribution() {
+  if (!MayContainLegacyNodeTreeWhereDistributionShouldBeSupported())
+    return;
   // Extra early out to avoid spamming traces.
   if (isConnected() && !GetDocument().ChildNeedsDistributionRecalc())
     return;
@@ -897,10 +914,19 @@ bool Node::IsInert() const {
 
   DCHECK(!ChildNeedsDistributionRecalc());
 
-  const HTMLDialogElement* dialog = GetDocument().ActiveModalDialog();
-  if (dialog && this != GetDocument() &&
-      !FlatTreeTraversal::ContainsIncludingPseudoElement(*dialog, *this)) {
-    return true;
+  if (this != GetDocument()) {
+    // TODO(foolip): When fullscreen uses top layer, this can be simplified to
+    // just look at the topmost element in top layer. https://crbug.com/240576.
+    // Note: It's currently appropriate that a modal dialog element takes
+    // precedence over a fullscreen element, because it will be rendered on top,
+    // but with fullscreen merged into top layer that will no longer be true.
+    const Element* modal_element = GetDocument().ActiveModalDialog();
+    if (!modal_element)
+      modal_element = Fullscreen::FullscreenElementFrom(GetDocument());
+    if (modal_element && !FlatTreeTraversal::ContainsIncludingPseudoElement(
+                             *modal_element, *this)) {
+      return true;
+    }
   }
 
   if (RuntimeEnabledFeatures::InertAttributeEnabled()) {
@@ -1054,7 +1080,7 @@ void Node::AttachLayoutTree(AttachContext& context) {
   ClearNeedsStyleRecalc();
   ClearNeedsReattachLayoutTree();
 
-  if (AXObjectCache* cache = GetDocument().AxObjectCache())
+  if (AXObjectCache* cache = GetDocument().GetOrCreateAXObjectCache())
     cache->UpdateCacheAfterNodeIsAttached(this);
 }
 
@@ -1119,12 +1145,15 @@ bool Node::IsStyledElement() const {
 
 bool Node::CanParticipateInFlatTree() const {
   // TODO(hayato): Return false for pseudo elements.
+  if (RuntimeEnabledFeatures::IncrementalShadowDOMEnabled()) {
+    return !IsShadowRoot() && !IsActiveV0InsertionPoint(*this);
+  }
   return !IsShadowRoot() && !IsActiveSlotOrActiveV0InsertionPoint();
 }
 
 bool Node::IsActiveSlotOrActiveV0InsertionPoint() const {
   return (IsHTMLSlotElement(*this) &&
-          ToHTMLSlotElement(*this).SupportsDistribution()) ||
+          ToHTMLSlotElement(*this).SupportsAssignment()) ||
          IsActiveV0InsertionPoint(*this);
 }
 
@@ -1662,7 +1691,7 @@ std::ostream& operator<<(std::ostream& ostream, const Node& node) {
   if (node.IsShadowRoot()) {
     // nodeName of ShadowRoot is #document-fragment.  It's confused with
     // DocumentFragment.
-    return ostream << "#shadow-root";
+    return ostream << "#shadow-root(" << ToShadowRoot(node).GetType() << ")";
   }
   if (node.IsDocumentTypeNode())
     return ostream << "DOCTYPE " << node.nodeName().Utf8().data();
@@ -2203,11 +2232,11 @@ void Node::HandleLocalEvents(Event& event) {
 
 void Node::DispatchScopedEvent(Event* event) {
   event->SetTrusted(true);
-  EventDispatcher::DispatchScopedEvent(*this, event->CreateMediator());
+  EventDispatcher::DispatchScopedEvent(*this, event);
 }
 
 DispatchEventResult Node::DispatchEventInternal(Event* event) {
-  return EventDispatcher::DispatchEvent(*this, event->CreateMediator());
+  return EventDispatcher::DispatchEvent(*this, event);
 }
 
 void Node::DispatchSubtreeModifiedEvent() {
@@ -2388,11 +2417,6 @@ void Node::DefaultEventHandler(Event* event) {
           frame->GetEventHandler().StartMiddleClickAutoscroll(layout_object);
       }
     }
-  } else if (event->type() == EventTypeNames::webkitEditableContentChanged) {
-    // TODO(chongz): Remove after shipped.
-    // New InputEvent are dispatched in Editor::appliedEditing, etc.
-    if (!RuntimeEnabledFeatures::InputEventEnabled())
-      DispatchInputEvent();
   }
 }
 
@@ -2625,7 +2649,7 @@ void Node::CheckSlotChange(SlotChangeType slot_change_type) {
     Element* parent = parentElement();
     if (parent && IsHTMLSlotElement(parent)) {
       HTMLSlotElement& parent_slot = ToHTMLSlotElement(*parent);
-      DCHECK(parent_slot.SupportsDistribution());
+      DCHECK(parent_slot.SupportsAssignment());
       // The parent_slot's assigned nodes might not be calculated because they
       // are lazy evaluated later at UpdateDistribution() so we have to check it
       // here.
@@ -2667,7 +2691,7 @@ bool Node::HasMediaControlAncestor() const {
   return false;
 }
 
-DEFINE_TRACE(Node) {
+void Node::Trace(blink::Visitor* visitor) {
   visitor->Trace(parent_or_shadow_host_node_);
   visitor->Trace(previous_);
   visitor->Trace(next_);
@@ -2681,7 +2705,7 @@ DEFINE_TRACE(Node) {
   EventTarget::Trace(visitor);
 }
 
-DEFINE_TRACE_WRAPPERS(Node) {
+void Node::TraceWrappers(const ScriptWrappableVisitor* visitor) const {
   visitor->TraceWrappers(parent_or_shadow_host_node_);
   visitor->TraceWrappers(previous_);
   visitor->TraceWrappers(next_);

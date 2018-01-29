@@ -12,6 +12,7 @@
 #include "base/memory/ptr_util.h"
 #include "build/build_config.h"
 #include "content/common/frame_messages.h"
+#include "content/common/frame_owner_properties.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/content_browser_client.h"
 #include "content/public/common/browser_side_navigation_policy.h"
@@ -24,7 +25,7 @@
 #include "content/test/test_render_frame_host.h"
 #include "content/test/test_render_view_host.h"
 #include "content/test/test_web_contents.h"
-#include "third_party/WebKit/public/web/WebSandboxFlags.h"
+#include "third_party/WebKit/common/frame_policy.h"
 
 namespace content {
 
@@ -66,7 +67,7 @@ TEST_F(RenderProcessHostUnitTest, RendererProcessLimit) {
   ASSERT_NE(0u, kMaxRendererProcessCount);
   std::vector<std::unique_ptr<MockRenderProcessHost>> hosts;
   for (size_t i = 0; i < kMaxRendererProcessCount; ++i) {
-    hosts.push_back(base::MakeUnique<MockRenderProcessHost>(browser_context()));
+    hosts.push_back(std::make_unique<MockRenderProcessHost>(browser_context()));
   }
 
   // Verify that the renderer sharing will happen.
@@ -77,7 +78,7 @@ TEST_F(RenderProcessHostUnitTest, RendererProcessLimit) {
 #endif
 
 #if defined(OS_ANDROID) || defined(OS_CHROMEOS)
-TEST_F(RenderProcessHostUnitTest, NoRendererProcessLimitOnAndroid) {
+TEST_F(RenderProcessHostUnitTest, NoRendererProcessLimitOnAndroidOrChromeOS) {
   // Disable any overrides.
   RenderProcessHostImpl::SetMaxRendererProcessCount(0);
 
@@ -85,7 +86,7 @@ TEST_F(RenderProcessHostUnitTest, NoRendererProcessLimitOnAndroid) {
   ASSERT_NE(0u, kMaxRendererProcessCount);
   std::vector<std::unique_ptr<MockRenderProcessHost>> hosts;
   for (size_t i = 0; i < kMaxRendererProcessCount; ++i) {
-    hosts.push_back(base::MakeUnique<MockRenderProcessHost>(browser_context()));
+    hosts.push_back(std::make_unique<MockRenderProcessHost>(browser_context()));
   }
 
   // Verify that the renderer sharing still won't happen.
@@ -129,9 +130,10 @@ TEST_F(RenderProcessHostUnitTest, ReuseCommittedSite) {
   // return the process of the subframe RFH.
   std::string unique_name("uniqueName0");
   main_test_rfh()->OnCreateChildFrame(
-      process()->GetNextRoutingID(), blink::WebTreeScopeType::kDocument,
-      std::string(), unique_name, base::UnguessableToken::Create(),
-      blink::WebSandboxFlags::kNone, ParsedFeaturePolicyHeader(),
+      process()->GetNextRoutingID(),
+      TestRenderFrameHost::CreateStubInterfaceProviderRequest(),
+      blink::WebTreeScopeType::kDocument, std::string(), unique_name, false,
+      base::UnguessableToken::Create(), blink::FramePolicy(),
       FrameOwnerProperties());
   TestRenderFrameHost* subframe = static_cast<TestRenderFrameHost*>(
       contents()->GetFrameTree()->root()->child_at(0)->current_frame_host());
@@ -211,6 +213,50 @@ TEST_F(RenderProcessHostUnitTest, ReuseUnmatchedServiceWorkerProcess) {
       SiteInstanceImpl::CreateForURL(browser_context(), kUrl);
   EXPECT_NE(sw_host1, site_instance3->GetProcess());
   EXPECT_NE(sw_host2, site_instance3->GetProcess());
+}
+
+class UnsuitableHostContentBrowserClient : public ContentBrowserClient {
+ public:
+  UnsuitableHostContentBrowserClient() {}
+  ~UnsuitableHostContentBrowserClient() override {}
+
+ private:
+  bool IsSuitableHost(RenderProcessHost* process_host,
+                      const GURL& site_url) override {
+    return false;
+  }
+};
+
+// Check that an unmatched ServiceWorker process is not reused when it's not a
+// suitable host for the destination URL.  See https://crbug.com/782349.
+TEST_F(RenderProcessHostUnitTest,
+       DontReuseUnsuitableUnmatchedServiceWorkerProcess) {
+  const GURL kUrl("https://foo.com");
+
+  // Gets a RenderProcessHost for an unmatched service worker.
+  scoped_refptr<SiteInstanceImpl> sw_site_instance =
+      SiteInstanceImpl::CreateForURL(browser_context(), kUrl);
+  sw_site_instance->set_is_for_service_worker();
+  RenderProcessHost* sw_host = sw_site_instance->GetProcess();
+
+  // Simulate a situation where |sw_host| won't be considered suitable for
+  // future navigations to |kUrl|.  In https://crbug.com/782349, this happened
+  // when |kUrl| corresponded to a nonexistent extension, but
+  // chrome-extension:// URLs can't be tested inside content/.  Instead,
+  // install a ContentBrowserClient which will return false when IsSuitableHost
+  // is consulted.
+  UnsuitableHostContentBrowserClient modified_client;
+  ContentBrowserClient* regular_client =
+      SetBrowserClientForTesting(&modified_client);
+
+  // Now, getting a RenderProcessHost for a navigation to the same site should
+  // not reuse the unmatched service worker's process (i.e., |sw_host|), as
+  // it's unsuitable.
+  scoped_refptr<SiteInstanceImpl> site_instance =
+      SiteInstanceImpl::CreateForURL(browser_context(), kUrl);
+  EXPECT_NE(sw_host, site_instance->GetProcess());
+
+  SetBrowserClientForTesting(regular_client);
 }
 
 TEST_F(RenderProcessHostUnitTest, ReuseServiceWorkerProcessForServiceWorker) {
@@ -359,13 +405,21 @@ TEST_F(RenderProcessHostUnitTest, DoNotReuseError) {
 
   // Navigate back and simulate an error. Getting a RenderProcessHost with the
   // REUSE_PENDING_OR_COMMITTED_SITE policy should return a new process.
-  web_contents()->GetController().GoBack();
-  TestRenderFrameHost* pending_rfh = contents()->GetPendingMainFrame();
-  if (!IsBrowserSideNavigationEnabled())
-    pending_rfh->SimulateNavigationStart(kUrl1);
-  pending_rfh->SimulateNavigationError(kUrl1, net::ERR_TIMED_OUT);
-  pending_rfh->SimulateNavigationErrorPageCommit();
+  NavigationSimulator::GoBackAndFail(contents(), net::ERR_TIMED_OUT);
   site_instance = SiteInstanceImpl::CreateForURL(browser_context(), kUrl1);
+  site_instance->set_process_reuse_policy(
+      SiteInstanceImpl::ProcessReusePolicy::REUSE_PENDING_OR_COMMITTED_SITE);
+  EXPECT_NE(main_test_rfh()->GetProcess(), site_instance->GetProcess());
+}
+
+// Tests that RenderProcessHost will not consider reusing a process that is
+// marked as never suitable for reuse, according to MayReuseHost().
+TEST_F(RenderProcessHostUnitTest, DoNotReuseHostThatIsNeverSuitableForReuse) {
+  const GURL kUrl("http://foo.com");
+  NavigateAndCommit(kUrl);
+  main_test_rfh()->GetProcess()->SetIsNeverSuitableForReuse();
+  scoped_refptr<SiteInstanceImpl> site_instance =
+      SiteInstanceImpl::CreateForURL(browser_context(), kUrl);
   site_instance->set_process_reuse_policy(
       SiteInstanceImpl::ProcessReusePolicy::REUSE_PENDING_OR_COMMITTED_SITE);
   EXPECT_NE(main_test_rfh()->GetProcess(), site_instance->GetProcess());
@@ -594,26 +648,6 @@ TEST_F(RenderProcessHostUnitTest,
       SiteInstanceImpl::ProcessReusePolicy::REUSE_PENDING_OR_COMMITTED_SITE);
   EXPECT_EQ(speculative_process_host_id, site_instance->GetProcess()->GetID());
 }
-
-class EffectiveURLContentBrowserClient : public ContentBrowserClient {
- public:
-  EffectiveURLContentBrowserClient(const GURL& url_to_modify,
-                                   const GURL& url_to_return)
-      : url_to_modify_(url_to_modify), url_to_return_(url_to_return) {}
-  ~EffectiveURLContentBrowserClient() override {}
-
- private:
-  GURL GetEffectiveURL(BrowserContext* browser_context,
-                       const GURL& url,
-                       bool is_isolated_origin) override {
-    if (url == url_to_modify_)
-      return url_to_return_;
-    return url;
-  }
-
-  GURL url_to_modify_;
-  GURL url_to_return_;
-};
 
 // Tests that RenderProcessHost reuse works correctly even if the site URL of a
 // URL changes.
@@ -867,7 +901,7 @@ class SpareRenderProcessHostUnitTest : public RenderViewHostImplTestHarness {
   void SetUp() override {
     SetRenderProcessHostFactory(&rph_factory_);
     RenderViewHostImplTestHarness::SetUp();
-    SetContents(NULL);  // Start with no renderers.
+    SetContents(nullptr);  // Start with no renderers.
     while (!rph_factory_.GetProcesses()->empty()) {
       rph_factory_.Remove(rph_factory_.GetProcesses()->back().get());
     }

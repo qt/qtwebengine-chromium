@@ -7,6 +7,8 @@
 
 #include "core/layout/ng/ng_layout_algorithm.h"
 
+#include "core/layout/ng/ng_fragment_builder.h"
+
 namespace blink {
 
 class NGBlockNode;
@@ -16,18 +18,20 @@ class NGConstraintSpace;
 struct NGLogicalSize;
 
 class CORE_EXPORT NGPageLayoutAlgorithm
-    : public NGLayoutAlgorithm<NGBlockNode, NGBlockBreakToken> {
+    : public NGLayoutAlgorithm<NGBlockNode,
+                               NGFragmentBuilder,
+                               NGBlockBreakToken> {
  public:
   NGPageLayoutAlgorithm(NGBlockNode node,
                         const NGConstraintSpace& space,
                         NGBreakToken* break_token = nullptr);
 
-  RefPtr<NGLayoutResult> Layout() override;
+  scoped_refptr<NGLayoutResult> Layout() override;
 
   Optional<MinMaxSize> ComputeMinMaxSize() const override;
 
  private:
-  RefPtr<NGConstraintSpace> CreateConstraintSpaceForPages(
+  scoped_refptr<NGConstraintSpace> CreateConstraintSpaceForPages(
       const NGLogicalSize& size) const;
 };
 

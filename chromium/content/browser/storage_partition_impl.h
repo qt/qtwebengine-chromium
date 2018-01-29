@@ -91,33 +91,34 @@ class CONTENT_EXPORT StoragePartitionImpl
   ZoomLevelDelegate* GetZoomLevelDelegate() override;
 #endif  // !defined(OS_ANDROID)
   PlatformNotificationContextImpl* GetPlatformNotificationContext() override;
-  void ClearDataForOrigin(uint32_t remove_mask,
-                          uint32_t quota_storage_remove_mask,
-                          const GURL& storage_origin,
-                          net::URLRequestContextGetter* request_context_getter,
-                          const base::Closure& callback) override;
+  void ClearDataForOrigin(
+      uint32_t remove_mask,
+      uint32_t quota_storage_remove_mask,
+      const GURL& storage_origin,
+      net::URLRequestContextGetter* request_context_getter) override;
   void ClearData(uint32_t remove_mask,
                  uint32_t quota_storage_remove_mask,
                  const GURL& storage_origin,
                  const OriginMatcherFunction& origin_matcher,
                  const base::Time begin,
                  const base::Time end,
-                 const base::Closure& callback) override;
+                 base::OnceClosure callback) override;
   void ClearData(uint32_t remove_mask,
                  uint32_t quota_storage_remove_mask,
                  const OriginMatcherFunction& origin_matcher,
                  const CookieMatcherFunction& cookie_matcher,
                  const base::Time begin,
                  const base::Time end,
-                 const base::Closure& callback) override;
+                 base::OnceClosure callback) override;
   void ClearHttpAndMediaCaches(
       const base::Time begin,
       const base::Time end,
       const base::Callback<bool(const GURL&)>& url_matcher,
-      const base::Closure& callback) override;
+      base::OnceClosure callback) override;
   void Flush() override;
   void ClearBluetoothAllowedDevicesMapForTesting() override;
-
+  void SetNetworkFactoryForTesting(
+      mojom::URLLoaderFactory* test_factory) override;
   BackgroundFetchContext* GetBackgroundFetchContext();
   BackgroundSyncContext* GetBackgroundSyncContext();
   PaymentAppContextImpl* GetPaymentAppContext();
@@ -128,6 +129,10 @@ class CONTENT_EXPORT StoragePartitionImpl
 
   // mojom::StoragePartitionService interface.
   void OpenLocalStorage(
+      const url::Origin& origin,
+      mojo::InterfaceRequest<mojom::LevelDBWrapper> request) override;
+  void OpenSessionStorage(
+      int64_t namespace_id,
       const url::Origin& origin,
       mojo::InterfaceRequest<mojom::LevelDBWrapper> request) override;
 
@@ -213,7 +218,7 @@ class CONTENT_EXPORT StoragePartitionImpl
                      net::URLRequestContextGetter* rq_context,
                      const base::Time begin,
                      const base::Time end,
-                     const base::Closure& callback);
+                     base::OnceClosure callback);
 
   // Used by StoragePartitionImplMap.
   //

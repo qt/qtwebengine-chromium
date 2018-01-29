@@ -16,9 +16,7 @@
 #include "modules/audio_coding/codecs/cng/audio_encoder_cng.h"
 #include "modules/audio_coding/codecs/g711/audio_encoder_pcm.h"
 #include "rtc_base/logging.h"
-#ifdef WEBRTC_CODEC_G722
 #include "modules/audio_coding/codecs/g722/audio_encoder_g722.h"
-#endif
 #ifdef WEBRTC_CODEC_ILBC
 #include "modules/audio_coding/codecs/ilbc/audio_encoder_ilbc.h"
 #endif
@@ -57,7 +55,7 @@ rtc::Optional<RentACodec::CodecId> RentACodec::CodecIdByParams(
 rtc::Optional<CodecInst> RentACodec::CodecInstById(CodecId codec_id) {
   rtc::Optional<int> mi = CodecIndexFromId(codec_id);
   return mi ? rtc::Optional<CodecInst>(Database()[*mi])
-            : rtc::Optional<CodecInst>();
+            : rtc::nullopt;
 }
 
 rtc::Optional<RentACodec::CodecId> RentACodec::CodecIdByInst(
@@ -71,7 +69,7 @@ rtc::Optional<CodecInst> RentACodec::CodecInstByParams(const char* payload_name,
   rtc::Optional<CodecId> codec_id =
       CodecIdByParams(payload_name, sampling_freq_hz, channels);
   if (!codec_id)
-    return rtc::Optional<CodecInst>();
+    return rtc::nullopt;
   rtc::Optional<CodecInst> ci = CodecInstById(*codec_id);
   RTC_DCHECK(ci);
 
@@ -92,7 +90,7 @@ rtc::Optional<bool> RentACodec::IsSupportedNumChannels(CodecId codec_id,
   return i ? rtc::Optional<bool>(
                  ACMCodecDB::codec_settings_[*i].channel_support >=
                  num_channels)
-           : rtc::Optional<bool>();
+           : rtc::nullopt;
 }
 
 rtc::ArrayView<const CodecInst> RentACodec::Database() {
@@ -105,12 +103,11 @@ rtc::Optional<NetEqDecoder> RentACodec::NetEqDecoderFromCodecId(
     size_t num_channels) {
   rtc::Optional<int> i = CodecIndexFromId(codec_id);
   if (!i)
-    return rtc::Optional<NetEqDecoder>();
+    return rtc::nullopt;
   const NetEqDecoder ned = ACMCodecDB::neteq_decoders_[*i];
-  return rtc::Optional<NetEqDecoder>(
-      (ned == NetEqDecoder::kDecoderOpus && num_channels == 2)
-          ? NetEqDecoder::kDecoderOpus_2ch
-          : ned);
+  return (ned == NetEqDecoder::kDecoderOpus && num_channels == 2)
+             ? NetEqDecoder::kDecoderOpus_2ch
+             : ned;
 }
 
 RentACodec::RegistrationResult RentACodec::RegisterCngPayloadType(
@@ -163,7 +160,7 @@ std::unique_ptr<AudioEncoder> CreateEncoder(
 #endif
 #ifdef WEBRTC_CODEC_OPUS
   if (STR_CASE_CMP(speech_inst.plname, "opus") == 0)
-    return std::unique_ptr<AudioEncoder>(new AudioEncoderOpus(speech_inst));
+    return std::unique_ptr<AudioEncoder>(new AudioEncoderOpusImpl(speech_inst));
 #endif
   if (STR_CASE_CMP(speech_inst.plname, "pcmu") == 0)
     return std::unique_ptr<AudioEncoder>(new AudioEncoderPcmU(speech_inst));
@@ -175,11 +172,10 @@ std::unique_ptr<AudioEncoder> CreateEncoder(
   if (STR_CASE_CMP(speech_inst.plname, "ilbc") == 0)
     return std::unique_ptr<AudioEncoder>(new AudioEncoderIlbcImpl(speech_inst));
 #endif
-#ifdef WEBRTC_CODEC_G722
   if (STR_CASE_CMP(speech_inst.plname, "g722") == 0)
     return std::unique_ptr<AudioEncoder>(new AudioEncoderG722Impl(speech_inst));
-#endif
-  LOG_F(LS_ERROR) << "Could not create encoder of type " << speech_inst.plname;
+  RTC_LOG_F(LS_ERROR) << "Could not create encoder of type "
+                      << speech_inst.plname;
   return std::unique_ptr<AudioEncoder>();
 }
 
@@ -280,7 +276,7 @@ std::unique_ptr<AudioEncoder> RentACodec::RentEncoderStack(
 
   auto pt = [&param](const std::map<int, int>& m) {
     auto it = m.find(param->speech_encoder->SampleRateHz());
-    return it == m.end() ? rtc::Optional<int>()
+    return it == m.end() ? rtc::nullopt
                          : rtc::Optional<int>(it->second);
   };
   auto cng_pt = pt(param->cng_payload_types);

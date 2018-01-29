@@ -315,6 +315,7 @@ const char kServerCAPEMs[] = "ServerCAPEMs";
 const char kServerCARef[] = "ServerCARef";
 const char kServerCARefs[] = "ServerCARefs";
 const char kSubjectMatch[] = "SubjectMatch";
+const char kTLSVersionMax[] = "TLSVersionMax";
 const char kUseSystemCAs[] = "UseSystemCAs";
 const char kUseProactiveKeyCaching[] = "UseProactiveKeyCaching";
 }  // namespace eap
@@ -361,6 +362,7 @@ const char kAuth[] = "Auth";
 const char kCipher[] = "Cipher";
 const char kCompLZO[] = "CompLZO";
 const char kCompNoAdapt[] = "CompNoAdapt";
+const char kExtraHosts[] = "ExtraHosts";
 const char kIgnoreDefaultRoute[] = "IgnoreDefaultRoute";
 const char kInteract[] = "interact";
 const char kKeyDirection[] = "KeyDirection";

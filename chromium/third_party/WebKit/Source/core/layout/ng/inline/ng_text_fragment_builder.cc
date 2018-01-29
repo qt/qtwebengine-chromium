@@ -12,15 +12,15 @@ namespace blink {
 
 namespace {
 
-NGLineOrientation ToLineOrientation(NGWritingMode writing_mode) {
+NGLineOrientation ToLineOrientation(WritingMode writing_mode) {
   switch (writing_mode) {
-    case NGWritingMode::kHorizontalTopBottom:
+    case WritingMode::kHorizontalTb:
       return NGLineOrientation::kHorizontal;
-    case NGWritingMode::kVerticalRightLeft:
-    case NGWritingMode::kVerticalLeftRight:
-    case NGWritingMode::kSidewaysRightLeft:
+    case WritingMode::kVerticalRl:
+    case WritingMode::kVerticalLr:
+    case WritingMode::kSidewaysRl:
       return NGLineOrientation::kClockWiseVertical;
-    case NGWritingMode::kSidewaysLeftRight:
+    case WritingMode::kSidewaysLr:
       return NGLineOrientation::kCounterClockWiseVertical;
   }
   NOTREACHED();
@@ -30,7 +30,7 @@ NGLineOrientation ToLineOrientation(NGWritingMode writing_mode) {
 }  // namespace
 
 NGTextFragmentBuilder::NGTextFragmentBuilder(NGInlineNode node,
-                                             NGWritingMode writing_mode)
+                                             WritingMode writing_mode)
     : NGBaseFragmentBuilder(writing_mode, TextDirection::kLtr),
       inline_node_(node) {}
 
@@ -47,14 +47,14 @@ void NGTextFragmentBuilder::SetItem(NGInlineItemResult* item_result,
   layout_object_ = item_result->item->GetLayoutObject();
 }
 
-void NGTextFragmentBuilder::SetText(RefPtr<const ComputedStyle> style,
-                                    RefPtr<const ShapeResult> shape_result,
-                                    LayoutUnit inline_size,
-                                    LayoutUnit line_height) {
+void NGTextFragmentBuilder::SetText(
+    scoped_refptr<const ComputedStyle> style,
+    scoped_refptr<const ShapeResult> shape_result,
+    NGLogicalSize size) {
   DCHECK(style);
 
   SetStyle(style);
-  size_ = {inline_size, line_height};
+  size_ = size;
   end_effect_ = NGTextEndEffect::kNone;
   shape_result_ = shape_result;
   expansion_ = 0;
@@ -62,28 +62,28 @@ void NGTextFragmentBuilder::SetText(RefPtr<const ComputedStyle> style,
   ;
 }
 
-void NGTextFragmentBuilder::SetAtomicInline(RefPtr<const ComputedStyle> style,
-                                            LayoutUnit inline_size,
-                                            LayoutUnit line_height) {
+void NGTextFragmentBuilder::SetAtomicInline(
+    scoped_refptr<const ComputedStyle> style,
+    NGLogicalSize size) {
   DCHECK(style);
 
   SetStyle(style);
-  size_ = {inline_size, line_height};
+  size_ = size;
   end_effect_ = NGTextEndEffect::kNone;
   shape_result_ = nullptr;
   expansion_ = 0;
   layout_object_ = inline_node_.GetLayoutObject();
 }
 
-RefPtr<NGPhysicalTextFragment> NGTextFragmentBuilder::ToTextFragment(
+scoped_refptr<NGPhysicalTextFragment> NGTextFragmentBuilder::ToTextFragment(
     unsigned index,
     unsigned start_offset,
     unsigned end_offset) {
-  RefPtr<NGPhysicalTextFragment> fragment =
-      WTF::AdoptRef(new NGPhysicalTextFragment(
+  scoped_refptr<NGPhysicalTextFragment> fragment =
+      base::AdoptRef(new NGPhysicalTextFragment(
           layout_object_, Style(), inline_node_.Text(), index, start_offset,
-          end_offset, size_.ConvertToPhysical(WritingMode()), expansion_,
-          ToLineOrientation(WritingMode()), end_effect_,
+          end_offset, size_.ConvertToPhysical(GetWritingMode()), expansion_,
+          ToLineOrientation(GetWritingMode()), end_effect_,
           std::move(shape_result_)));
   return fragment;
 }

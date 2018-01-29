@@ -750,6 +750,11 @@ L2TP over IPsec with pre-shared key:
     * (optional, defaults to *false*) - **boolean**
     * Disables adaptive compression.
 
+* **ExtraHosts**
+    * (optional) - **array of string**
+    * List of hosts to try in order if client is unable to connect to the
+    * primary host.
+
 * **IgnoreDefaultRoute**
     * (optional, defaults to *false*) - **boolean**
     * Omits a default route to the VPN gateway while the connection is active.
@@ -1201,6 +1206,16 @@ type exists to configure the authentication.
     * (optional) - **string**
     * WiFi only. A substring which a remote RADIUS service certificate subject
       name must contain in order to connect.
+
+* **TLSVersionMax**
+    * (optional) - **string**
+    * Sets the maximum TLS protocol version used by the OS for EAP.
+      This is only needed when connecting to an AP with a buggy TLS
+      implementation, as the protocol will normally auto-negotiate.
+    * Allowed values are:
+        * *1.0*
+        * *1.1*
+        * *1.2*
 
 * **UseSystemCAs**
     * (optional, defaults to *true*) - **boolean**

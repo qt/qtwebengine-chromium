@@ -97,7 +97,7 @@ void HeadsUpDisplayLayerImpl::AcquireResource(
 
   auto resource = std::make_unique<ScopedResource>(resource_provider);
   resource->Allocate(
-      internal_content_bounds_, ResourceProvider::TEXTURE_HINT_FRAMEBUFFER,
+      internal_content_bounds_, viz::ResourceTextureHint::kFramebuffer,
       resource_provider->best_render_buffer_format(), gfx::ColorSpace());
   resources_.push_back(std::move(resource));
 }
@@ -597,7 +597,7 @@ SkRect HeadsUpDisplayLayerImpl::DrawMemoryDisplay(SkCanvas* canvas,
   paint.setStyle(SkPaint::kFill_Style);
   paint.setColor(SkColorSetARGB(255, 0, 255, 0));
   canvas->drawArc(oval, 180, angle, true, paint);
-  paint.setShader(NULL);
+  paint.setShader(nullptr);
 
   return area;
 }

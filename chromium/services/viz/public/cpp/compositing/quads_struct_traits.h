@@ -237,31 +237,30 @@ struct StructTraits<viz::mojom::StreamVideoQuadStateDataView, viz::DrawQuad> {
 };
 
 template <>
-struct EnumTraits<viz::mojom::SurfaceDrawQuadType, viz::SurfaceDrawQuadType> {
-  static viz::mojom::SurfaceDrawQuadType ToMojom(
-      viz::SurfaceDrawQuadType surface_draw_quad_type);
-  static bool FromMojom(viz::mojom::SurfaceDrawQuadType input,
-                        viz::SurfaceDrawQuadType* out);
-};
-template <>
 struct StructTraits<viz::mojom::SurfaceQuadStateDataView, viz::DrawQuad> {
-  static const viz::SurfaceId& surface(const viz::DrawQuad& input) {
+  static const viz::SurfaceId& primary_surface_id(const viz::DrawQuad& input) {
     const viz::SurfaceDrawQuad* quad =
         viz::SurfaceDrawQuad::MaterialCast(&input);
-    return quad->surface_id;
+    return quad->primary_surface_id;
   }
 
-  static viz::SurfaceDrawQuadType surface_draw_quad_type(
+  static const base::Optional<viz::SurfaceId>& fallback_surface_id(
       const viz::DrawQuad& input) {
     const viz::SurfaceDrawQuad* quad =
         viz::SurfaceDrawQuad::MaterialCast(&input);
-    return quad->surface_draw_quad_type;
+    return quad->fallback_surface_id;
   }
 
   static uint32_t default_background_color(const viz::DrawQuad& input) {
     const viz::SurfaceDrawQuad* quad =
         viz::SurfaceDrawQuad::MaterialCast(&input);
     return quad->default_background_color;
+  }
+
+  static bool stretch_content_to_fill_bounds(const viz::DrawQuad& input) {
+    const viz::SurfaceDrawQuad* quad =
+        viz::SurfaceDrawQuad::MaterialCast(&input);
+    return quad->stretch_content_to_fill_bounds;
   }
 
   static bool Read(viz::mojom::SurfaceQuadStateDataView data,
@@ -370,15 +369,6 @@ struct StructTraits<viz::mojom::TileQuadStateDataView, viz::DrawQuad> {
 };
 
 template <>
-struct EnumTraits<viz::mojom::YUVColorSpace,
-                  viz::YUVVideoDrawQuad::ColorSpace> {
-  static viz::mojom::YUVColorSpace ToMojom(
-      viz::YUVVideoDrawQuad::ColorSpace color_space);
-  static bool FromMojom(viz::mojom::YUVColorSpace input,
-                        viz::YUVVideoDrawQuad::ColorSpace* out);
-};
-
-template <>
 struct StructTraits<viz::mojom::YUVVideoQuadStateDataView, viz::DrawQuad> {
   static const gfx::RectF& ya_tex_coord_rect(const viz::DrawQuad& input) {
     const viz::YUVVideoDrawQuad* quad =
@@ -426,13 +416,6 @@ struct StructTraits<viz::mojom::YUVVideoQuadStateDataView, viz::DrawQuad> {
     const viz::YUVVideoDrawQuad* quad =
         viz::YUVVideoDrawQuad::MaterialCast(&input);
     return quad->a_plane_resource_id();
-  }
-
-  static viz::YUVVideoDrawQuad::ColorSpace color_space(
-      const viz::DrawQuad& input) {
-    const viz::YUVVideoDrawQuad* quad =
-        viz::YUVVideoDrawQuad::MaterialCast(&input);
-    return quad->color_space;
   }
 
   static float resource_offset(const viz::DrawQuad& input) {

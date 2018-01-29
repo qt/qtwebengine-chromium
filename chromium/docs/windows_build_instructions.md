@@ -16,19 +16,21 @@ Are you a Google employee? See
   recommended.
 * At least 100GB of free disk space on an NTFS-formatted hard drive. FAT32
   will not work, as some of the Git packfiles are larger than 4GB.
-* Visual Studio 2015 Update 3, see below (no other version is supported).
+* An appropriate version of Visual Studio, as described below.
 * Windows 7 or newer.
 
 ## Setting up Windows
 
 ### Visual Studio
 
-As of September, 2017 Chromium requires Visual Studio 2017 update 3.2 with the
-15063 (Creators Update) Windows SDK or later to build. Visual Studio Community
-Edition should work if its license is appropriate for you. You must install the
-VC++ toolchain and MFC. This can be done from the command line like this:
+As of September, 2017 (R503915) Chromium requires Visual Studio 2017 update 3.2
+with the 15063 (Creators Update) Windows SDK or later to build. Visual Studio
+Community Edition should work if its license is appropriate for you. You must
+install the "Desktop development with C++" component and the "MFC and ATL
+support" sub-component. This can be done from the command line by passing these
+arguments to the Visual Studio installer that you download:
 ```shell
-vs_professional.exe --add Microsoft.VisualStudio.Workload.NativeDesktop
+--add Microsoft.VisualStudio.Workload.NativeDesktop
     --add Microsoft.VisualStudio.Component.VC.ATLMFC --includeRecommended
 ```
 You must have the Windows 10 SDK installed, version 10.0.15063 or later.
@@ -207,8 +209,6 @@ support incremental linking for more targets. Note that if you set this but
 don't' set enable_nacl = false then build times may get worse.
 * `remove_webcore_debug_symbols = true` - turn off source-level debugging for
 blink to reduce build times, appropriate if you don't plan to debug blink.
-* `win_linker_timing = true` - this should not generally be set but can be
-helpful when trying to understand build times or incremental linking failures.
 
 In addition, Google employees should consider using goma, a distributed
 compilation system. Detailed information is available internally but the

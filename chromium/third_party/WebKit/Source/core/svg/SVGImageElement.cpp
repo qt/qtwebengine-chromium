@@ -52,8 +52,7 @@ inline SVGImageElement::SVGImageElement(Document& document)
       preserve_aspect_ratio_(SVGAnimatedPreserveAspectRatio::Create(
           this,
           SVGNames::preserveAspectRatioAttr)),
-      image_loader_(SVGImageLoader::Create(this)),
-      decoding_mode_(Image::kUnspecifiedDecode) {
+      image_loader_(SVGImageLoader::Create(this)) {
   AddToPropertyMap(x_);
   AddToPropertyMap(y_);
   AddToPropertyMap(width_);
@@ -63,7 +62,7 @@ inline SVGImageElement::SVGImageElement(Document& document)
 
 DEFINE_NODE_FACTORY(SVGImageElement)
 
-DEFINE_TRACE(SVGImageElement) {
+void SVGImageElement::Trace(blink::Visitor* visitor) {
   visitor->Trace(x_);
   visitor->Trace(y_);
   visitor->Trace(width_);
@@ -78,8 +77,9 @@ bool SVGImageElement::CurrentFrameHasSingleSecurityOrigin() const {
   if (LayoutSVGImage* layout_svg_image = ToLayoutSVGImage(GetLayoutObject())) {
     LayoutImageResource* layout_image_resource =
         layout_svg_image->ImageResource();
-    if (layout_image_resource->HasImage()) {
-      if (Image* image = layout_image_resource->CachedImage()->GetImage())
+    ImageResourceContent* image_content = layout_image_resource->CachedImage();
+    if (image_content) {
+      if (Image* image = image_content->GetImage())
         return image->CurrentFrameHasSingleSecurityOrigin();
     }
   }
@@ -94,7 +94,7 @@ ScriptPromise SVGImageElement::decode(ScriptState* script_state,
 void SVGImageElement::CollectStyleForPresentationAttribute(
     const QualifiedName& name,
     const AtomicString& value,
-    MutableStylePropertySet* style) {
+    MutableCSSPropertyValueSet* style) {
   SVGAnimatedPropertyBase* property = PropertyFromAttribute(name);
   if (property == width_) {
     AddPropertyToPresentationAttributeStyle(style, property->CssPropertyId(),
@@ -153,8 +153,8 @@ void SVGImageElement::SvgAttributeChanged(const QualifiedName& attr_name) {
 
 void SVGImageElement::ParseAttribute(
     const AttributeModificationParams& params) {
-  if (params.name == SVGNames::asyncAttr &&
-      RuntimeEnabledFeatures::ImageAsyncAttributeEnabled()) {
+  if (params.name == SVGNames::decodingAttr &&
+      RuntimeEnabledFeatures::ImageDecodingAttributeEnabled()) {
     decoding_mode_ = ParseImageDecodingMode(params.new_value);
   } else {
     SVGElement::ParseAttribute(params);
@@ -182,7 +182,7 @@ void SVGImageElement::AttachLayoutTree(AttachContext& context) {
     LayoutImageResource* layout_image_resource = image_obj->ImageResource();
     if (layout_image_resource->HasImage())
       return;
-    layout_image_resource->SetImageResource(GetImageLoader().GetImage());
+    layout_image_resource->SetImageResource(GetImageLoader().GetContent());
   }
 }
 
@@ -191,7 +191,7 @@ Node::InsertionNotificationRequest SVGImageElement::InsertedInto(
   // A previous loader update may have failed to actually fetch the image if
   // the document was inactive. In that case, force a re-update (but don't
   // clear previous errors).
-  if (root_parent->isConnected() && !GetImageLoader().GetImage())
+  if (root_parent->isConnected() && !GetImageLoader().GetContent())
     GetImageLoader().UpdateFromElement(ImageLoader::kUpdateNormal);
 
   return SVGGraphicsElement::InsertedInto(root_parent);

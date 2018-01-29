@@ -16,6 +16,7 @@
 #include "base/timer/elapsed_timer.h"
 #include "base/values.h"
 #include "extensions/browser/api/declarative_net_request/constants.h"
+#include "extensions/browser/api/declarative_net_request/flat/extension_ruleset_generated.h"
 #include "extensions/browser/api/declarative_net_request/flat_ruleset_indexer.h"
 #include "extensions/browser/api/declarative_net_request/indexed_rule.h"
 #include "extensions/browser/api/declarative_net_request/parse_info.h"
@@ -25,6 +26,7 @@
 #include "extensions/common/file_util.h"
 #include "extensions/common/install_warning.h"
 #include "extensions/common/manifest_constants.h"
+#include "third_party/flatbuffers/src/include/flatbuffers/flatbuffers.h"
 
 namespace extensions {
 namespace declarative_net_request {
@@ -72,7 +74,7 @@ const ExtensionResource* GetRulesetResource(const Extension& extension) {
 
 // Helper to retrieve the filename of the JSON ruleset provided by |extension|.
 std::string GetJSONRulesetFilename(const Extension& extension) {
-  base::ThreadRestrictions::AssertIOAllowed();
+  base::AssertBlockingAllowed();
   return GetRulesetResource(extension)->GetFilePath().BaseName().AsUTF8Unsafe();
 }
 
@@ -82,7 +84,7 @@ ParseInfo IndexAndPersistRulesImpl(const base::ListValue& rules,
                                    const Extension& extension,
                                    std::vector<InstallWarning>* warnings,
                                    int* ruleset_checksum) {
-  base::ThreadRestrictions::AssertIOAllowed();
+  base::AssertBlockingAllowed();
 
   FlatRulesetIndexer indexer;
   bool all_rules_parsed = true;
@@ -146,7 +148,7 @@ bool IndexAndPersistRules(const base::ListValue& rules,
   DCHECK(IsAPIAvailable());
   DCHECK(GetRulesetResource(extension));
   DCHECK(ruleset_checksum);
-  base::ThreadRestrictions::AssertIOAllowed();
+  base::AssertBlockingAllowed();
 
   const ParseInfo info =
       IndexAndPersistRulesImpl(rules, extension, warnings, ruleset_checksum);
@@ -158,8 +160,13 @@ bool IndexAndPersistRules(const base::ListValue& rules,
   return false;
 }
 
-int GetRulesetChecksumForTesting(const uint8_t* data, size_t size) {
-  return GetChecksum(FlatRulesetIndexer::SerializedData(data, size));
+bool IsValidRulesetData(const uint8_t* data,
+                        size_t size,
+                        int expected_checksum) {
+  flatbuffers::Verifier verifier(data, size);
+  FlatRulesetIndexer::SerializedData serialized_data(data, size);
+  return expected_checksum == GetChecksum(serialized_data) &&
+         flat::VerifyExtensionIndexedRulesetBuffer(verifier);
 }
 
 }  // namespace declarative_net_request

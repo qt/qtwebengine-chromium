@@ -394,4 +394,76 @@ bool PaintShader::IsValid() const {
   return false;
 }
 
+bool PaintShader::operator==(const PaintShader& other) const {
+  if (shader_type_ != other.shader_type_)
+    return false;
+
+  // Variables that all shaders use.
+  if (local_matrix_) {
+    if (!other.local_matrix_.has_value())
+      return false;
+    if (!PaintOp::AreSkMatricesEqual(*local_matrix_, *other.local_matrix_))
+      return false;
+  } else {
+    if (other.local_matrix_.has_value())
+      return false;
+  }
+  if (fallback_color_ != other.fallback_color_)
+    return false;
+  if (flags_ != other.flags_)
+    return false;
+  if (tx_ != other.tx_)
+    return false;
+  if (ty_ != other.ty_)
+    return false;
+  if (scaling_behavior_ != other.scaling_behavior_)
+    return false;
+
+  // Variables that only some shaders use.
+  switch (shader_type_) {
+    case Type::kColor:
+      break;
+    case Type::kSweepGradient:
+      if (!PaintOp::AreEqualEvenIfNaN(start_degrees_, other.start_degrees_))
+        return false;
+      if (!PaintOp::AreEqualEvenIfNaN(end_degrees_, other.end_degrees_))
+        return false;
+    // Fallthrough.
+    case Type::kLinearGradient:
+    case Type::kRadialGradient:
+    case Type::kTwoPointConicalGradient:
+      if (!PaintOp::AreEqualEvenIfNaN(start_radius_, other.start_radius_))
+        return false;
+      if (!PaintOp::AreEqualEvenIfNaN(end_radius_, other.end_radius_))
+        return false;
+      if (!PaintOp::AreSkPointsEqual(center_, other.center_))
+        return false;
+      if (!PaintOp::AreSkPointsEqual(start_point_, other.start_point_))
+        return false;
+      if (!PaintOp::AreSkPointsEqual(end_point_, other.end_point_))
+        return false;
+      if (colors_ != other.colors_)
+        return false;
+      if (positions_.size() != other.positions_.size())
+        return false;
+      for (size_t i = 0; i < positions_.size(); ++i) {
+        if (!PaintOp::AreEqualEvenIfNaN(positions_[i], other.positions_[i]))
+          return false;
+      }
+      break;
+    case Type::kImage:
+      // TODO(enne): add comparison of images once those are serialized.
+      break;
+    case Type::kPaintRecord:
+      // TODO(enne): add comparison of records once those are serialized.
+      if (!PaintOp::AreSkRectsEqual(tile_, other.tile_))
+        return false;
+      break;
+    case Type::kShaderCount:
+      break;
+  }
+
+  return true;
+}
+
 }  // namespace cc

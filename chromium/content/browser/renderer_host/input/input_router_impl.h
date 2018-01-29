@@ -22,11 +22,11 @@
 #include "content/browser/renderer_host/input/touch_action_filter.h"
 #include "content/browser/renderer_host/input/touch_event_queue.h"
 #include "content/browser/renderer_host/input/touchpad_tap_suppression_controller.h"
-#include "content/common/input/input_event_ack_source.h"
 #include "content/common/input/input_event_stream_validator.h"
 #include "content/common/input/input_handler.mojom.h"
 #include "content/common/widget.mojom.h"
 #include "content/public/browser/native_web_keyboard_event.h"
+#include "content/public/common/input_event_ack_source.h"
 #include "mojo/public/cpp/bindings/binding.h"
 
 namespace ui {
@@ -76,7 +76,8 @@ class CONTENT_EXPORT InputRouterImpl
   void SetFrameTreeNodeId(int frame_tree_node_id) override;
   void SetForceEnableZoom(bool enabled) override;
   cc::TouchAction AllowedTouchAction() override;
-  void BindHost(mojom::WidgetInputHandlerHostRequest request) override;
+  void BindHost(mojom::WidgetInputHandlerHostRequest request,
+                bool frame_handler) override;
 
   // InputHandlerHost impl
   void CancelTouchTimeout() override;
@@ -107,6 +108,7 @@ class CONTENT_EXPORT InputRouterImpl
   void SendTouchEventImmediately(
       const TouchEventWithLatencyInfo& touch_event) override;
   void OnTouchEventAck(const TouchEventWithLatencyInfo& event,
+                       InputEventAckSource ack_source,
                        InputEventAckState ack_result) override;
   void OnFilteringTouchEvent(const blink::WebTouchEvent& touch_event) override;
 
@@ -114,12 +116,14 @@ class CONTENT_EXPORT InputRouterImpl
   void SendGestureEventImmediately(
       const GestureEventWithLatencyInfo& gesture_event) override;
   void OnGestureEventAck(const GestureEventWithLatencyInfo& event,
+                         InputEventAckSource ack_source,
                          InputEventAckState ack_result) override;
 
   // MouseWheelEventQueueClient
   void SendMouseWheelEventImmediately(
       const MouseWheelEventWithLatencyInfo& touch_event) override;
   void OnMouseWheelEventAck(const MouseWheelEventWithLatencyInfo& event,
+                            InputEventAckSource ack_source,
                             InputEventAckState ack_result) override;
   void ForwardGestureEventWithLatencyInfo(
       const blink::WebGestureEvent& gesture_event,
@@ -191,7 +195,6 @@ class CONTENT_EXPORT InputRouterImpl
   bool touch_scroll_started_sent_;
 
   bool wheel_scroll_latching_enabled_;
-  bool raf_aligned_touch_enabled_;
   MouseWheelEventQueue wheel_event_queue_;
   std::unique_ptr<TouchEventQueue> touch_event_queue_;
   GestureEventQueue gesture_event_queue_;
@@ -204,7 +207,13 @@ class CONTENT_EXPORT InputRouterImpl
   // Last touch position relative to screen. Used to compute movementX/Y.
   base::flat_map<int, gfx::Point> global_touch_position_;
 
+  // The host binding associated with the widget input handler from
+  // the widget.
   mojo::Binding<mojom::WidgetInputHandlerHost> host_binding_;
+
+  // The host binding associated with the widget input handler from
+  // the frame.
+  mojo::Binding<mojom::WidgetInputHandlerHost> frame_host_binding_;
 
   base::WeakPtr<InputRouterImpl> weak_this_;
   base::WeakPtrFactory<InputRouterImpl> weak_ptr_factory_;

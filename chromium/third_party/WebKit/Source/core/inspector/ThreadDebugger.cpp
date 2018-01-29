@@ -25,9 +25,9 @@
 #include "core/inspector/InspectorTraceEvents.h"
 #include "core/inspector/V8InspectorString.h"
 #include "core/probe/CoreProbes.h"
-#include "platform/ScriptForbiddenScope.h"
-#include "platform/wtf/CurrentTime.h"
+#include "platform/bindings/ScriptForbiddenScope.h"
 #include "platform/wtf/PtrUtil.h"
+#include "platform/wtf/Time.h"
 
 namespace blink {
 
@@ -82,11 +82,13 @@ void ThreadDebugger::IdleFinished(v8::Isolate* isolate) {
 void ThreadDebugger::AsyncTaskScheduled(const String& operation_name,
                                         void* task,
                                         bool recurring) {
+  DCHECK_EQ(reinterpret_cast<intptr_t>(task) % 2, 0);
   v8_inspector_->asyncTaskScheduled(ToV8InspectorStringView(operation_name),
                                     task, recurring);
 }
 
 void ThreadDebugger::AsyncTaskCanceled(void* task) {
+  DCHECK_EQ(reinterpret_cast<intptr_t>(task) % 2, 0);
   v8_inspector_->asyncTaskCanceled(task);
 }
 
@@ -95,11 +97,29 @@ void ThreadDebugger::AllAsyncTasksCanceled() {
 }
 
 void ThreadDebugger::AsyncTaskStarted(void* task) {
+  DCHECK_EQ(reinterpret_cast<intptr_t>(task) % 2, 0);
   v8_inspector_->asyncTaskStarted(task);
 }
 
 void ThreadDebugger::AsyncTaskFinished(void* task) {
+  DCHECK_EQ(reinterpret_cast<intptr_t>(task) % 2, 0);
   v8_inspector_->asyncTaskFinished(task);
+}
+
+v8_inspector::V8StackTraceId ThreadDebugger::StoreCurrentStackTrace(
+    const String& description) {
+  return v8_inspector_->storeCurrentStackTrace(
+      ToV8InspectorStringView(description));
+}
+
+void ThreadDebugger::ExternalAsyncTaskStarted(
+    const v8_inspector::V8StackTraceId& parent) {
+  v8_inspector_->externalAsyncTaskStarted(parent);
+}
+
+void ThreadDebugger::ExternalAsyncTaskFinished(
+    const v8_inspector::V8StackTraceId& parent) {
+  v8_inspector_->externalAsyncTaskFinished(parent);
 }
 
 unsigned ThreadDebugger::PromiseRejected(
@@ -135,7 +155,7 @@ void ThreadDebugger::beginUserGesture() {
   ExecutionContext* ec = CurrentExecutionContext(isolate_);
   Document* document = ec && ec->IsDocument() ? ToDocument(ec) : nullptr;
   user_gesture_indicator_ =
-      LocalFrame::CreateUserGesture(document ? document->GetFrame() : nullptr);
+      Frame::NotifyUserActivation(document ? document->GetFrame() : nullptr);
 }
 
 void ThreadDebugger::endUserGesture() {
@@ -466,7 +486,7 @@ void ThreadDebugger::startRepeatingTimer(
       new Timer<ThreadDebugger>(this, &ThreadDebugger::OnTimer));
   Timer<ThreadDebugger>* timer_ptr = timer.get();
   timers_.push_back(std::move(timer));
-  timer_ptr->StartRepeating(interval, BLINK_FROM_HERE);
+  timer_ptr->StartRepeating(TimeDelta::FromSecondsD(interval), BLINK_FROM_HERE);
 }
 
 void ThreadDebugger::cancelTimer(void* data) {

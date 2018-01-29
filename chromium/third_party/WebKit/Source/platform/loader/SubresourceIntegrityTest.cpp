@@ -4,6 +4,7 @@
 
 #include "platform/loader/SubresourceIntegrity.h"
 
+#include "base/memory/scoped_refptr.h"
 #include "platform/Crypto.h"
 #include "platform/loader/fetch/IntegrityMetadata.h"
 #include "platform/loader/fetch/RawResource.h"
@@ -17,7 +18,6 @@
 #include "platform/testing/RuntimeEnabledFeaturesTestHelpers.h"
 #include "platform/weborigin/KURL.h"
 #include "platform/weborigin/SecurityOrigin.h"
-#include "platform/wtf/RefPtr.h"
 #include "platform/wtf/Vector.h"
 #include "platform/wtf/dtoa/utils.h"
 #include "platform/wtf/text/StringBuilder.h"
@@ -82,11 +82,11 @@ static const char kUnsupportedHashFunctionIntegrity[] =
 class SubresourceIntegrityTest : public ::testing::Test {
  public:
   SubresourceIntegrityTest()
-      : sec_url(kParsedURLString, "https://example.test:443"),
-        insec_url(kParsedURLString, "http://example.test:80") {}
+      : sec_url("https://example.test:443"),
+        insec_url("http://example.test:80") {}
 
  protected:
-  virtual void SetUp() {
+  void SetUp() override {
     context =
         MockFetchContext::Create(MockFetchContext::kShouldLoadNewResource);
   }
@@ -246,7 +246,7 @@ class SubresourceIntegrityTest : public ::testing::Test {
     response.SetURL(url);
 
     if (allow_origin_url) {
-      request.SetFetchRequestMode(WebURLRequest::kFetchRequestModeCORS);
+      request.SetFetchRequestMode(network::mojom::FetchRequestMode::kCORS);
       resource->MutableOptions().cors_handling_by_resource_fetcher =
           kEnableCORSHandlingByResourceFetcher;
       response.SetHTTPHeaderField(
@@ -445,8 +445,8 @@ TEST_F(SubresourceIntegrityTest, Parsing) {
       "07yMK81ytlg0MPaIrPAjcHqba5csorDWtKg==",
       IntegrityAlgorithm::kSha512);
 
-  ExpectParseMultipleHashes("", 0, 0);
-  ExpectParseMultipleHashes("    ", 0, 0);
+  ExpectParseMultipleHashes("", nullptr, 0);
+  ExpectParseMultipleHashes("    ", nullptr, 0);
 
   const IntegrityMetadata valid_sha384_and_sha512[] = {
       IntegrityMetadata(

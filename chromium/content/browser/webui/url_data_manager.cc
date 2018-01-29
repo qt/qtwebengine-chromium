@@ -34,7 +34,7 @@ base::LazyInstance<base::Lock>::Leaky g_delete_lock = LAZY_INSTANCE_INITIALIZER;
 URLDataManager* GetFromBrowserContext(BrowserContext* context) {
   if (!context->GetUserData(kURLDataManagerKeyName)) {
     context->SetUserData(kURLDataManagerKeyName,
-                         base::MakeUnique<URLDataManager>(context));
+                         std::make_unique<URLDataManager>(context));
   }
   return static_cast<URLDataManager*>(
       context->GetUserData(kURLDataManagerKeyName));
@@ -60,7 +60,7 @@ static void UpdateWebUIDataSourceOnIOThread(
 }  // namespace
 
 // static
-URLDataManager::URLDataSources* URLDataManager::data_sources_ = NULL;
+URLDataManager::URLDataSources* URLDataManager::data_sources_ = nullptr;
 
 URLDataManager::URLDataManager(BrowserContext* browser_context)
     : browser_context_(browser_context) {

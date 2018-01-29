@@ -63,8 +63,8 @@ class Context9 : public ContextImpl
     std::vector<PathImpl *> createPaths(GLsizei) override;
 
     // Flush and finish.
-    gl::Error flush() override;
-    gl::Error finish() override;
+    gl::Error flush(const gl::Context *context) override;
+    gl::Error finish(const gl::Context *context) override;
 
     // Drawing methods.
     gl::Error drawArrays(const gl::Context *context,
@@ -110,10 +110,14 @@ class Context9 : public ContextImpl
     std::string getVendorString() const override;
     std::string getRendererDescription() const override;
 
-    // Debug markers.
+    // EXT_debug_marker
     void insertEventMarker(GLsizei length, const char *marker) override;
     void pushGroupMarker(GLsizei length, const char *marker) override;
     void popGroupMarker() override;
+
+    // KHR_debug
+    void pushDebugGroup(GLenum source, GLuint id, GLsizei length, const char *message) override;
+    void popDebugGroup() override;
 
     // State sync with dirty bits.
     void syncState(const gl::Context *context, const gl::State::DirtyBits &dirtyBits) override;

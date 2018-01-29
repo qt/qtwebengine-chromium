@@ -16,7 +16,7 @@
 #include "base/strings/string_split.h"
 #include "build/build_config.h"
 #include "content/browser/accessibility/accessibility_flags.h"
-#include "content/browser/accessibility/ax_platform_position.h"
+#include "content/browser/accessibility/browser_accessibility_position.h"
 #include "content/common/content_export.h"
 #include "third_party/WebKit/public/web/WebAXEnums.h"
 #include "ui/accessibility/ax_node.h"
@@ -153,8 +153,9 @@ class CONTENT_EXPORT BrowserAccessibility : public ui::AXPlatformNodeDelegate {
   // Returns the bounds of this object in coordinates relative to the
   // page (specifically, the top-left corner of the topmost web contents).
   // Optionally updates |offscreen| to be true if the element is offscreen
-  // within its page.
-  gfx::Rect GetPageBoundsRect(bool* offscreen = nullptr) const;
+  // within its page. Clips bounds by default unless |clip_bounds| is false.
+  gfx::Rect GetPageBoundsRect(bool* offscreen = nullptr,
+                              bool clip_bounds = true) const;
 
   // Returns the bounds of the given range in coordinates relative to the
   // top-left corner of the overall web area. Only valid when the
@@ -169,9 +170,11 @@ class CONTENT_EXPORT BrowserAccessibility : public ui::AXPlatformNodeDelegate {
   // absolute bounds, either in page coordinates (when |frameOnly| is
   // false), or in frame coordinates (when |frameOnly| is true).
   // Updates optional |offscreen| to be true if the node is offscreen.
+  // If |clip_bounds| is set to false, will return unclipped bounds.
   virtual gfx::Rect RelativeToAbsoluteBounds(gfx::RectF bounds,
                                              bool frame_only,
-                                             bool* offscreen = nullptr) const;
+                                             bool* offscreen = nullptr,
+                                             bool clip_bounds = true) const;
 
   // This is to handle the cases such as ARIA textbox, where the value should
   // be calculated from the object's inner text.
@@ -308,10 +311,8 @@ class CONTENT_EXPORT BrowserAccessibility : public ui::AXPlatformNodeDelegate {
   bool IsWebAreaForPresentationalIframe() const;
 
   virtual bool IsClickable() const;
-  bool IsNativeTextControl() const;
-  bool IsSimpleTextControl() const;
-  // Indicates if this object is at the root of a rich edit text control.
-  bool IsRichTextControl() const;
+  bool IsPlainTextField() const;
+  bool IsRichTextField() const;
 
   // Return true if the accessible name was explicitly set to "" by the author
   bool HasExplicitlyEmptyName() const;
@@ -321,7 +322,7 @@ class CONTENT_EXPORT BrowserAccessibility : public ui::AXPlatformNodeDelegate {
   std::string ComputeAccessibleNameFromDescendants() const;
 
   // Creates a text position rooted at this object.
-  AXPlatformPosition::AXPositionInstance CreatePositionAt(
+  BrowserAccessibilityPosition::AXPositionInstance CreatePositionAt(
       int offset,
       ui::AXTextAffinity affinity = ui::AX_TEXT_AFFINITY_DOWNSTREAM) const;
 
@@ -348,8 +349,10 @@ class CONTENT_EXPORT BrowserAccessibility : public ui::AXPlatformNodeDelegate {
   bool IsOffscreen() const override;
 
  protected:
-  using AXPlatformPositionInstance = AXPlatformPosition::AXPositionInstance;
-  using AXPlatformRange = ui::AXRange<AXPlatformPositionInstance::element_type>;
+  using BrowserAccessibilityPositionInstance =
+      BrowserAccessibilityPosition::AXPositionInstance;
+  using AXPlatformRange =
+      ui::AXRange<BrowserAccessibilityPositionInstance::element_type>;
 
   BrowserAccessibility();
 

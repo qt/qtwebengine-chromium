@@ -24,7 +24,7 @@
 #include "components/viz/service/display/output_surface.h"
 #include "components/viz/service/display/output_surface_frame.h"
 #include "components/viz/service/display/software_output_device.h"
-#include "components/viz/service/display/texture_mailbox_deleter.h"
+#include "components/viz/service/display/texture_deleter.h"
 #include "components/viz/service/frame_sinks/compositor_frame_sink_support.h"
 #include "components/viz/service/frame_sinks/frame_sink_manager_impl.h"
 #include "content/common/android/sync_compositor_messages.h"
@@ -190,8 +190,8 @@ bool SynchronousLayerTreeFrameSink::BindToClient(
 
   viz::RendererSettings software_renderer_settings;
 
-  auto output_surface = base::MakeUnique<SoftwareOutputSurface>(
-      base::MakeUnique<SoftwareDevice>(&current_sw_canvas_));
+  auto output_surface = std::make_unique<SoftwareOutputSurface>(
+      std::make_unique<SoftwareDevice>(&current_sw_canvas_));
   software_output_surface_ = output_surface.get();
 
   // The gpu_memory_buffer_manager here is null as the Display is only used for
@@ -201,10 +201,10 @@ bool SynchronousLayerTreeFrameSink::BindToClient(
   // resources.
   // TODO(crbug.com/692814): The Display never sends its resources out of
   // process so there is no reason for it to use a SharedBitmapManager.
-  display_ = base::MakeUnique<viz::Display>(
+  display_ = std::make_unique<viz::Display>(
       shared_bitmap_manager_, nullptr /* gpu_memory_buffer_manager */,
       software_renderer_settings, kRootFrameSinkId, std::move(output_surface),
-      nullptr /* scheduler */, nullptr /* texture_mailbox_deleter */);
+      nullptr /* scheduler */, nullptr /* current_task_runner */);
   display_->Initialize(&display_client_,
                        frame_sink_manager_->surface_manager());
   display_->SetVisible(true);
@@ -314,7 +314,7 @@ void SynchronousLayerTreeFrameSink::SubmitCompositorFrame(
     surface_quad->SetNew(
         shared_quad_state, gfx::Rect(child_size), gfx::Rect(child_size),
         viz::SurfaceId(kChildFrameSinkId, child_local_surface_id_),
-        viz::SurfaceDrawQuadType::PRIMARY, SK_ColorWHITE, nullptr);
+        base::nullopt, SK_ColorWHITE, false);
 
     bool result = child_support_->SubmitCompositorFrame(child_local_surface_id_,
                                                         std::move(frame));
@@ -496,6 +496,15 @@ void SynchronousLayerTreeFrameSink::DidReceiveCompositorFrameAck(
     const std::vector<viz::ReturnedResource>& resources) {
   ReclaimResources(resources);
 }
+
+void SynchronousLayerTreeFrameSink::DidPresentCompositorFrame(
+    uint32_t presentation_token,
+    base::TimeTicks time,
+    base::TimeDelta refresh,
+    uint32_t flags) {}
+
+void SynchronousLayerTreeFrameSink::DidDiscardCompositorFrame(
+    uint32_t presentation_token) {}
 
 void SynchronousLayerTreeFrameSink::OnBeginFrame(
     const viz::BeginFrameArgs& args) {}

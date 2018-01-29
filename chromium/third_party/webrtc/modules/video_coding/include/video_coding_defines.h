@@ -45,6 +45,8 @@ enum {
   // |kDefaultOutliserFrameSizePercent| in size of average frame.
   kDefaultTimingFramesDelayMs = 200,
   kDefaultOutlierFrameSizePercent = 250,
+  // Maximum number of frames for what we store encode start timing information.
+  kMaxEncodeStartTimeListSize = 50,
 };
 
 enum VCMVideoProtection {
@@ -80,16 +82,6 @@ class VCMReceiveCallback {
 
  protected:
   virtual ~VCMReceiveCallback() {}
-};
-
-// Callback class used for informing the user of the bit rate and frame rate,
-// and the name of the encoder.
-class VCMSendStatisticsCallback {
- public:
-  virtual void SendStatistics(uint32_t bitRate, uint32_t frameRate) = 0;
-
- protected:
-  virtual ~VCMSendStatisticsCallback() {}
 };
 
 // Callback class used for informing the user of the incoming bit rate and frame

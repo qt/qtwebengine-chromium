@@ -76,8 +76,7 @@ void RenderNoisePower(
 
 }  // namespace
 
-ResidualEchoEstimator::ResidualEchoEstimator(
-    const AudioProcessing::Config::EchoCanceller3& config)
+ResidualEchoEstimator::ResidualEchoEstimator(const EchoCanceller3Config& config)
     : config_(config) {
   Reset();
 }
@@ -123,6 +122,7 @@ void ResidualEchoEstimator::Estimate(
 
       // Computes the spectral power over the blocks surrounding the delay.
       constexpr int kKnownDelayRenderWindowSize = 5;
+      // TODO(peah): Add lookahead since that was what was there initially.
       static_assert(
           kUnknownDelayRenderWindowSize >= kKnownDelayRenderWindowSize,
           "Requirement to ensure that the render buffer is overrun");
@@ -131,6 +131,7 @@ void ResidualEchoEstimator::Estimate(
           std::min(kKnownDelayRenderWindowSize - 1, delay_use + 1), &X2);
     } else {
       // Computes the spectral power over the latest blocks.
+      // TODO(peah): Add lookahead since that was what was there initially.
       EchoGeneratingPower(render_buffer, 0, kUnknownDelayRenderWindowSize - 1,
                           &X2);
     }
@@ -143,7 +144,7 @@ void ResidualEchoEstimator::Estimate(
 
     NonLinearEstimate(
         aec_state.SufficientFilterUpdates(), aec_state.SaturatedEcho(),
-        config_.param.ep_strength.bounded_erl, aec_state.TransparentMode(),
+        config_.ep_strength.bounded_erl, aec_state.TransparentMode(),
         aec_state.InitialState(), X2, Y2, R2);
 
     if (aec_state.ExternalDelay() && aec_state.FilterDelay() &&
@@ -219,9 +220,9 @@ void ResidualEchoEstimator::NonLinearEstimate(
     echo_path_gain_lf = echo_path_gain_mf = echo_path_gain_hf = 0.01f;
   } else {
     // In the initial state, use conservative gains.
-    echo_path_gain_lf = config_.param.ep_strength.lf;
-    echo_path_gain_mf = config_.param.ep_strength.mf;
-    echo_path_gain_hf = config_.param.ep_strength.hf;
+    echo_path_gain_lf = config_.ep_strength.lf;
+    echo_path_gain_mf = config_.ep_strength.mf;
+    echo_path_gain_hf = config_.ep_strength.hf;
   }
 
   // Compute preliminary residual echo.

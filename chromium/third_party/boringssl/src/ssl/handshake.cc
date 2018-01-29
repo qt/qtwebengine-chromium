@@ -127,6 +127,7 @@ SSL_HANDSHAKE::SSL_HANDSHAKE(SSL *ssl_arg)
       scts_requested(false),
       needs_psk_binder(false),
       received_hello_retry_request(false),
+      sent_hello_retry_request(false),
       received_custom_extension(false),
       handshake_finalized(false),
       accept_psk_mode(false),
@@ -149,36 +150,34 @@ SSL_HANDSHAKE::~SSL_HANDSHAKE() {
   ssl->ctx->x509_method->hs_flush_cached_ca_names(this);
 }
 
-SSL_HANDSHAKE *ssl_handshake_new(SSL *ssl) {
+UniquePtr<SSL_HANDSHAKE> ssl_handshake_new(SSL *ssl) {
   UniquePtr<SSL_HANDSHAKE> hs = MakeUnique<SSL_HANDSHAKE>(ssl);
   if (!hs ||
       !hs->transcript.Init()) {
     return nullptr;
   }
-  return hs.release();
+  return hs;
 }
 
-void ssl_handshake_free(SSL_HANDSHAKE *hs) { Delete(hs); }
-
-int ssl_check_message_type(SSL *ssl, const SSLMessage &msg, int type) {
+bool ssl_check_message_type(SSL *ssl, const SSLMessage &msg, int type) {
   if (msg.type != type) {
-    ssl3_send_alert(ssl, SSL3_AL_FATAL, SSL_AD_UNEXPECTED_MESSAGE);
+    ssl_send_alert(ssl, SSL3_AL_FATAL, SSL_AD_UNEXPECTED_MESSAGE);
     OPENSSL_PUT_ERROR(SSL, SSL_R_UNEXPECTED_MESSAGE);
     ERR_add_error_dataf("got type %d, wanted type %d", msg.type, type);
-    return 0;
+    return false;
   }
 
-  return 1;
+  return true;
 }
 
-int ssl_add_message_cbb(SSL *ssl, CBB *cbb) {
+bool ssl_add_message_cbb(SSL *ssl, CBB *cbb) {
   Array<uint8_t> msg;
   if (!ssl->method->finish_message(ssl, cbb, &msg) ||
       !ssl->method->add_message(ssl, std::move(msg))) {
-    return 0;
+    return false;
   }
 
-  return 1;
+  return true;
 }
 
 size_t ssl_max_handshake_message_len(const SSL *ssl) {
@@ -194,7 +193,7 @@ size_t ssl_max_handshake_message_len(const SSL *ssl) {
     return kMaxMessageLen;
   }
 
-  if (ssl3_protocol_version(ssl) < TLS1_3_VERSION) {
+  if (ssl_protocol_version(ssl) < TLS1_3_VERSION) {
     // In TLS 1.2 and below, the largest acceptable post-handshake message is
     // a HelloRequest.
     return 0;
@@ -216,7 +215,7 @@ bool ssl_hash_message(SSL_HANDSHAKE *hs, const SSLMessage &msg) {
     return true;
   }
 
-  return hs->transcript.Update(CBS_data(&msg.raw), CBS_len(&msg.raw));
+  return hs->transcript.Update(msg.raw);
 }
 
 int ssl_parse_extensions(const CBS *cbs, uint8_t *out_alert,
@@ -282,7 +281,7 @@ static void set_crypto_buffer(CRYPTO_BUFFER **dest, CRYPTO_BUFFER *src) {
 
 enum ssl_verify_result_t ssl_verify_peer_cert(SSL_HANDSHAKE *hs) {
   SSL *const ssl = hs->ssl;
-  const SSL_SESSION *prev_session = ssl->s3->established_session;
+  const SSL_SESSION *prev_session = ssl->s3->established_session.get();
   if (prev_session != NULL) {
     // If renegotiating, the server must not change the server certificate. See
     // https://mitls.org/pages/attacks/3SHAKE. We never resume on renegotiation,
@@ -292,7 +291,7 @@ enum ssl_verify_result_t ssl_verify_peer_cert(SSL_HANDSHAKE *hs) {
     if (sk_CRYPTO_BUFFER_num(prev_session->certs) !=
         sk_CRYPTO_BUFFER_num(hs->new_session->certs)) {
       OPENSSL_PUT_ERROR(SSL, SSL_R_SERVER_CERT_CHANGED);
-      ssl3_send_alert(ssl, SSL3_AL_FATAL, SSL_AD_ILLEGAL_PARAMETER);
+      ssl_send_alert(ssl, SSL3_AL_FATAL, SSL_AD_ILLEGAL_PARAMETER);
       return ssl_verify_invalid;
     }
 
@@ -306,7 +305,7 @@ enum ssl_verify_result_t ssl_verify_peer_cert(SSL_HANDSHAKE *hs) {
                          CRYPTO_BUFFER_data(new_cert),
                          CRYPTO_BUFFER_len(old_cert)) != 0) {
         OPENSSL_PUT_ERROR(SSL, SSL_R_SERVER_CERT_CHANGED);
-        ssl3_send_alert(ssl, SSL3_AL_FATAL, SSL_AD_ILLEGAL_PARAMETER);
+        ssl_send_alert(ssl, SSL3_AL_FATAL, SSL_AD_ILLEGAL_PARAMETER);
         return ssl_verify_invalid;
       }
     }
@@ -346,7 +345,7 @@ enum ssl_verify_result_t ssl_verify_peer_cert(SSL_HANDSHAKE *hs) {
 
   if (ret == ssl_verify_invalid) {
     OPENSSL_PUT_ERROR(SSL, SSL_R_CERTIFICATE_VERIFY_FAILED);
-    ssl3_send_alert(ssl, SSL3_AL_FATAL, alert);
+    ssl_send_alert(ssl, SSL3_AL_FATAL, alert);
   }
 
   return ret;
@@ -362,7 +361,7 @@ uint16_t ssl_get_grease_value(const SSL *ssl, enum ssl_grease_index_t index) {
                              : ssl->s3->client_random[index];
   // The first four bytes of server_random are a timestamp prior to TLS 1.3, but
   // servers have no fields to GREASE until TLS 1.3.
-  assert(!ssl->server || ssl3_protocol_version(ssl) >= TLS1_3_VERSION);
+  assert(!ssl->server || ssl_protocol_version(ssl) >= TLS1_3_VERSION);
   // This generates a random value of the form 0xωaωa, for all 0 ≤ ω < 16.
   ret = (ret & 0xf0) | 0x0a;
   ret |= ret << 8;
@@ -394,7 +393,7 @@ enum ssl_hs_wait_t ssl_get_finished(SSL_HANDSHAKE *hs) {
   finished_ok = 1;
 #endif
   if (!finished_ok) {
-    ssl3_send_alert(ssl, SSL3_AL_FATAL, SSL_AD_DECRYPT_ERROR);
+    ssl_send_alert(ssl, SSL3_AL_FATAL, SSL_AD_DECRYPT_ERROR);
     OPENSSL_PUT_ERROR(SSL, SSL_R_DIGEST_CHECK_FAILED);
     return ssl_hs_error;
   }
@@ -420,6 +419,66 @@ enum ssl_hs_wait_t ssl_get_finished(SSL_HANDSHAKE *hs) {
   return ssl_hs_ok;
 }
 
+bool ssl_send_finished(SSL_HANDSHAKE *hs) {
+  SSL *const ssl = hs->ssl;
+  const SSL_SESSION *session = SSL_get_session(ssl);
+
+  uint8_t finished[EVP_MAX_MD_SIZE];
+  size_t finished_len;
+  if (!hs->transcript.GetFinishedMAC(finished, &finished_len, session,
+                                     ssl->server)) {
+    return 0;
+  }
+
+  // Log the master secret, if logging is enabled.
+  if (!ssl_log_secret(ssl, "CLIENT_RANDOM",
+                      session->master_key,
+                      session->master_key_length)) {
+    return 0;
+  }
+
+  // Copy the Finished so we can use it for renegotiation checks.
+  if (ssl->version != SSL3_VERSION) {
+    if (finished_len > sizeof(ssl->s3->previous_client_finished) ||
+        finished_len > sizeof(ssl->s3->previous_server_finished)) {
+      OPENSSL_PUT_ERROR(SSL, ERR_R_INTERNAL_ERROR);
+      return 0;
+    }
+
+    if (ssl->server) {
+      OPENSSL_memcpy(ssl->s3->previous_server_finished, finished, finished_len);
+      ssl->s3->previous_server_finished_len = finished_len;
+    } else {
+      OPENSSL_memcpy(ssl->s3->previous_client_finished, finished, finished_len);
+      ssl->s3->previous_client_finished_len = finished_len;
+    }
+  }
+
+  ScopedCBB cbb;
+  CBB body;
+  if (!ssl->method->init_message(ssl, cbb.get(), &body, SSL3_MT_FINISHED) ||
+      !CBB_add_bytes(&body, finished, finished_len) ||
+      !ssl_add_message_cbb(ssl, cbb.get())) {
+    OPENSSL_PUT_ERROR(SSL, ERR_R_INTERNAL_ERROR);
+    return 0;
+  }
+
+  return 1;
+}
+
+bool ssl_output_cert_chain(SSL *ssl) {
+  ScopedCBB cbb;
+  CBB body;
+  if (!ssl->method->init_message(ssl, cbb.get(), &body, SSL3_MT_CERTIFICATE) ||
+      !ssl_add_cert_chain(ssl, &body) ||
+      !ssl_add_message_cbb(ssl, cbb.get())) {
+    OPENSSL_PUT_ERROR(SSL, ERR_R_INTERNAL_ERROR);
+    return false;
+  }
+
+  return true;
+}
+
 int ssl_run_handshake(SSL_HANDSHAKE *hs, bool *out_early_return) {
   SSL *const ssl = hs->ssl;
   for (;;) {
@@ -438,12 +497,22 @@ int ssl_run_handshake(SSL_HANDSHAKE *hs, bool *out_early_return) {
       }
 
       case ssl_hs_read_server_hello:
-      case ssl_hs_read_message: {
-        int ret = ssl->method->read_message(ssl);
-        if (ret <= 0) {
+      case ssl_hs_read_message:
+      case ssl_hs_read_change_cipher_spec: {
+        uint8_t alert = SSL_AD_DECODE_ERROR;
+        size_t consumed = 0;
+        ssl_open_record_t ret;
+        if (hs->wait == ssl_hs_read_change_cipher_spec) {
+          ret = ssl_open_change_cipher_spec(ssl, &consumed, &alert,
+                                            ssl->s3->read_buffer.span());
+        } else {
+          ret = ssl_open_handshake(ssl, &consumed, &alert,
+                                   ssl->s3->read_buffer.span());
+        }
+        if (ret == ssl_open_record_error &&
+            hs->wait == ssl_hs_read_server_hello) {
           uint32_t err = ERR_peek_error();
-          if (hs->wait == ssl_hs_read_server_hello &&
-              ERR_GET_LIB(err) == ERR_LIB_SSL &&
+          if (ERR_GET_LIB(err) == ERR_LIB_SSL &&
               ERR_GET_REASON(err) == SSL_R_SSLV3_ALERT_HANDSHAKE_FAILURE) {
             // Add a dedicated error code to the queue for a handshake_failure
             // alert in response to ClientHello. This matches NSS's client
@@ -454,16 +523,16 @@ int ssl_run_handshake(SSL_HANDSHAKE *hs, bool *out_early_return) {
             // See https://crbug.com/446505.
             OPENSSL_PUT_ERROR(SSL, SSL_R_HANDSHAKE_FAILURE_ON_CLIENT_HELLO);
           }
-          return ret;
         }
-        break;
-      }
-
-      case ssl_hs_read_change_cipher_spec: {
-        int ret = ssl->method->read_change_cipher_spec(ssl);
-        if (ret <= 0) {
-          return ret;
+        bool retry;
+        int bio_ret = ssl_handle_open_record(ssl, &retry, ret, consumed, alert);
+        if (bio_ret <= 0) {
+          return bio_ret;
         }
+        if (retry) {
+          continue;
+        }
+        ssl->s3->read_buffer.DiscardConsumed();
         break;
       }
 
@@ -478,42 +547,42 @@ int ssl_run_handshake(SSL_HANDSHAKE *hs, bool *out_early_return) {
       }
 
       case ssl_hs_certificate_selection_pending:
-        ssl->rwstate = SSL_CERTIFICATE_SELECTION_PENDING;
+        ssl->s3->rwstate = SSL_CERTIFICATE_SELECTION_PENDING;
         hs->wait = ssl_hs_ok;
         return -1;
 
       case ssl_hs_x509_lookup:
-        ssl->rwstate = SSL_X509_LOOKUP;
+        ssl->s3->rwstate = SSL_X509_LOOKUP;
         hs->wait = ssl_hs_ok;
         return -1;
 
       case ssl_hs_channel_id_lookup:
-        ssl->rwstate = SSL_CHANNEL_ID_LOOKUP;
+        ssl->s3->rwstate = SSL_CHANNEL_ID_LOOKUP;
         hs->wait = ssl_hs_ok;
         return -1;
 
       case ssl_hs_private_key_operation:
-        ssl->rwstate = SSL_PRIVATE_KEY_OPERATION;
+        ssl->s3->rwstate = SSL_PRIVATE_KEY_OPERATION;
         hs->wait = ssl_hs_ok;
         return -1;
 
       case ssl_hs_pending_session:
-        ssl->rwstate = SSL_PENDING_SESSION;
+        ssl->s3->rwstate = SSL_PENDING_SESSION;
         hs->wait = ssl_hs_ok;
         return -1;
 
       case ssl_hs_pending_ticket:
-        ssl->rwstate = SSL_PENDING_TICKET;
+        ssl->s3->rwstate = SSL_PENDING_TICKET;
         hs->wait = ssl_hs_ok;
         return -1;
 
       case ssl_hs_certificate_verify:
-        ssl->rwstate = SSL_CERTIFICATE_VERIFY;
+        ssl->s3->rwstate = SSL_CERTIFICATE_VERIFY;
         hs->wait = ssl_hs_ok;
         return -1;
 
       case ssl_hs_early_data_rejected:
-        ssl->rwstate = SSL_EARLY_DATA_REJECTED;
+        ssl->s3->rwstate = SSL_EARLY_DATA_REJECTED;
         // Cause |SSL_write| to start failing immediately.
         hs->can_early_write = false;
         return -1;

@@ -17,12 +17,13 @@
 #include "GrProcessor.h"
 #include "GrStyle.h"
 #include "SkGr.h"
+#include "SkPointPriv.h"
 #include "glsl/GrGLSLFragmentShaderBuilder.h"
 #include "glsl/GrGLSLGeometryProcessor.h"
 #include "glsl/GrGLSLProgramDataManager.h"
 #include "glsl/GrGLSLUniformHandler.h"
 #include "glsl/GrGLSLVarying.h"
-#include "glsl/GrGLSLVertexShaderBuilder.h"
+#include "glsl/GrGLSLVertexGeoBuilder.h"
 #include "ops/GrMeshDrawOp.h"
 
 using AAMode = GrDashOp::AAMode;
@@ -92,7 +93,7 @@ static void calc_dash_scaling(SkScalar* parallelScale, SkScalar* perpScale,
     vecSrc.scale(invSrc);
 
     SkVector vecSrcPerp;
-    vecSrc.rotateCW(&vecSrcPerp);
+    SkPointPriv::RotateCW(vecSrc, &vecSrcPerp);
     viewMatrix.mapVectors(&vecSrc, 1);
     viewMatrix.mapVectors(&vecSrcPerp, 1);
 
@@ -166,13 +167,13 @@ void setup_dashed_rect_common(const SkRect& rect, const SkMatrix& matrix, T* ver
     SkScalar endDashY = stroke + bloatY;
     vertices[idx].fDashPos = SkPoint::Make(startDashX , startDashY);
     vertices[idx + 1].fDashPos = SkPoint::Make(startDashX, endDashY);
-    vertices[idx + 2].fDashPos = SkPoint::Make(endDashX, endDashY);
-    vertices[idx + 3].fDashPos = SkPoint::Make(endDashX, startDashY);
+    vertices[idx + 2].fDashPos = SkPoint::Make(endDashX, startDashY);
+    vertices[idx + 3].fDashPos = SkPoint::Make(endDashX, endDashY);
 
     vertices[idx].fPos = SkPoint::Make(rect.fLeft, rect.fTop);
     vertices[idx + 1].fPos = SkPoint::Make(rect.fLeft, rect.fBottom);
-    vertices[idx + 2].fPos = SkPoint::Make(rect.fRight, rect.fBottom);
-    vertices[idx + 3].fPos = SkPoint::Make(rect.fRight, rect.fTop);
+    vertices[idx + 2].fPos = SkPoint::Make(rect.fRight, rect.fTop);
+    vertices[idx + 3].fPos = SkPoint::Make(rect.fRight, rect.fBottom);
 
     matrix.mapPointsWithStride(&vertices[idx].fPos, sizeof(T), 4);
 }
@@ -222,8 +223,8 @@ static void setup_dashed_rect_pos(const SkRect& rect, int idx, const SkMatrix& m
                                   SkPoint* verts) {
     verts[idx] = SkPoint::Make(rect.fLeft, rect.fTop);
     verts[idx + 1] = SkPoint::Make(rect.fLeft, rect.fBottom);
-    verts[idx + 2] = SkPoint::Make(rect.fRight, rect.fBottom);
-    verts[idx + 3] = SkPoint::Make(rect.fRight, rect.fTop);
+    verts[idx + 2] = SkPoint::Make(rect.fRight, rect.fTop);
+    verts[idx + 3] = SkPoint::Make(rect.fRight, rect.fBottom);
     matrix.mapPoints(&verts[idx], 4);
 }
 
@@ -299,7 +300,7 @@ public:
     RequiresDstTexture finalize(const GrCaps& caps, const GrAppliedClip* clip,
                                 GrPixelConfigIsClamped dstIsClamped) override {
         GrProcessorAnalysisCoverage coverage;
-        if (AAMode::kNone == fAAMode && !clip->clipCoverageFragmentProcessor()) {
+        if (AAMode::kNone == fAAMode && !clip->numClipCoverageFragmentProcessors()) {
             coverage = GrProcessorAnalysisCoverage::kNone;
         } else {
             coverage = GrProcessorAnalysisCoverage::kSingleChannel;
@@ -1093,13 +1094,13 @@ void GLDashingLineEffect::onEmitCode(EmitArgs& args, GrGPArgs* gpArgs) {
 
     // XY refers to dashPos, Z is the dash interval length
     GrGLSLVertToFrag inDashParams(kFloat3_GrSLType);
-    varyingHandler->addVarying("DashParams", &inDashParams, GrSLPrecision::kHigh_GrSLPrecision);
+    varyingHandler->addVarying("DashParams", &inDashParams);
     vertBuilder->codeAppendf("%s = %s;", inDashParams.vsOut(), de.inDashParams()->fName);
 
     // The rect uniform's xyzw refer to (left + 0.5, top + 0.5, right - 0.5, bottom - 0.5),
     // respectively.
     GrGLSLVertToFrag inRectParams(kFloat4_GrSLType);
-    varyingHandler->addVarying("RectParams", &inRectParams, GrSLPrecision::kHigh_GrSLPrecision);
+    varyingHandler->addVarying("RectParams", &inRectParams);
     vertBuilder->codeAppendf("%s = %s;", inRectParams.vsOut(), de.inRectParams()->fName);
 
     GrGLSLPPFragmentBuilder* fragBuilder = args.fFragBuilder;

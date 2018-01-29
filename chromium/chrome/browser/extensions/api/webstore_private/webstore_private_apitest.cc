@@ -41,6 +41,11 @@
 
 #if BUILDFLAG(ENABLE_SUPERVISED_USERS)
 #include "chrome/browser/supervised_user/supervised_user_constants.h"
+
+#if defined(OS_CHROMEOS)
+#include "chromeos/chromeos_switches.h"
+#endif
+
 #endif  // BUILDFLAG(ENABLE_SUPERVISED_USERS)
 
 namespace utils = extension_function_test_utils;
@@ -221,7 +226,7 @@ IN_PROC_BROWSER_TEST_F(ExtensionWebstorePrivateApiTest, InstallAccepted) {
 // Test having the default download directory missing.
 IN_PROC_BROWSER_TEST_F(ExtensionWebstorePrivateApiTest, MissingDownloadDir) {
   // Set a non-existent directory as the download path.
-  base::ThreadRestrictions::ScopedAllowIO allow_io;
+  base::ScopedAllowBlockingForTesting allow_blocking;
   base::ScopedTempDir temp_dir;
   EXPECT_TRUE(temp_dir.CreateUniqueTempDir());
   base::FilePath missing_directory = temp_dir.Take();
@@ -372,6 +377,12 @@ class ExtensionWebstorePrivateApiTestChild
     ExtensionWebstorePrivateApiTest::SetUpCommandLine(command_line);
     command_line->AppendSwitchASCII(switches::kSupervisedUserId,
                                     supervised_users::kChildAccountSUID);
+#if defined(OS_CHROMEOS)
+    command_line->AppendSwitchASCII(
+        chromeos::switches::kLoginUser,
+        "supervised_user@locally-managed.localhost");
+    command_line->AppendSwitchASCII(chromeos::switches::kLoginProfile, "hash");
+#endif
   }
 };
 

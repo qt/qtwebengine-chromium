@@ -23,7 +23,7 @@ class CORE_EXPORT NGConstraintSpaceBuilder final {
   // them to the constructor below.
   NGConstraintSpaceBuilder(const NGConstraintSpace& parent_space);
 
-  NGConstraintSpaceBuilder(NGWritingMode writing_mode, NGPhysicalSize icb_size);
+  NGConstraintSpaceBuilder(WritingMode writing_mode, NGPhysicalSize icb_size);
 
   NGConstraintSpaceBuilder& SetAvailableSize(NGLogicalSize available_size);
 
@@ -58,7 +58,7 @@ class CORE_EXPORT NGConstraintSpaceBuilder final {
   NGConstraintSpaceBuilder& SetUseFirstLineStyle(bool use_first_line_sytle);
 
   NGConstraintSpaceBuilder& SetUnpositionedFloats(
-      Vector<RefPtr<NGUnpositionedFloat>>& unpositioned_floats);
+      Vector<scoped_refptr<NGUnpositionedFloat>>& unpositioned_floats);
 
   NGConstraintSpaceBuilder& SetMarginStrut(const NGMarginStrut& margin_strut);
 
@@ -82,8 +82,8 @@ class CORE_EXPORT NGConstraintSpaceBuilder final {
   //    updated.
   //  - Has its size is determined by its parent layout (flex, abs-pos).
   //
-  // NGWritingMode specifies the writing mode of the generated space.
-  RefPtr<NGConstraintSpace> ToConstraintSpace(NGWritingMode);
+  // WritingMode specifies the writing mode of the generated space.
+  scoped_refptr<NGConstraintSpace> ToConstraintSpace(WritingMode);
 
  private:
   // Relative to parent_writing_mode_.
@@ -112,7 +112,7 @@ class CORE_EXPORT NGConstraintSpaceBuilder final {
   WTF::Optional<NGBfcOffset> floats_bfc_offset_;
   const NGExclusionSpace* exclusion_space_;
   WTF::Optional<LayoutUnit> clearance_offset_;
-  Vector<RefPtr<NGUnpositionedFloat>> unpositioned_floats_;
+  Vector<scoped_refptr<NGUnpositionedFloat>> unpositioned_floats_;
   Vector<NGBaselineRequest> baseline_requests_;
 };
 

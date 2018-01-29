@@ -27,13 +27,13 @@
 #include "base/sys_info.h"
 #include "base/task_scheduler/initialization_util.h"
 #include "base/time/time.h"
-#include "content/child/site_isolation_stats_gatherer.h"
 #include "content/common/task_scheduler.h"
 #include "content/public/common/bindings_policy.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/content_features.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/renderer/content_renderer_client.h"
+#include "content/renderer/loader/site_isolation_stats_gatherer.h"
 #include "third_party/WebKit/public/web/WebFrame.h"
 #include "v8/include/v8.h"
 
@@ -70,7 +70,7 @@ GetDefaultTaskSchedulerInitParams() {
   constexpr int kMaxNumThreadsInForegroundBlockingPool = 1;
   constexpr auto kSuggestedReclaimTime = base::TimeDelta::FromSeconds(30);
 
-  return base::MakeUnique<base::TaskScheduler::InitParams>(
+  return std::make_unique<base::TaskScheduler::InitParams>(
       base::SchedulerWorkerPoolParams(kMaxNumThreadsInBackgroundPool,
                                       kSuggestedReclaimTime),
       base::SchedulerWorkerPoolParams(kMaxNumThreadsInBackgroundBlockingPool,
@@ -150,10 +150,15 @@ RenderProcessImpl::RenderProcessImpl(
   SetV8FlagIfHasSwitch(switches::kJavaScriptHarmony, "--harmony");
   SetV8FlagIfFeature(features::kModuleScriptsDynamicImport,
                      "--harmony-dynamic-import");
+  SetV8FlagIfFeature(features::kModuleScriptsImportMetaUrl,
+                     "--harmony-import-meta");
   SetV8FlagIfFeature(features::kAsmJsToWebAssembly, "--validate-asm");
   SetV8FlagIfNotFeature(features::kAsmJsToWebAssembly, "--no-validate-asm");
   SetV8FlagIfNotFeature(features::kWebAssembly,
                         "--wasm-disable-structured-cloning");
+
+  SetV8FlagIfFeature(features::kV8VmFuture, "--future");
+  SetV8FlagIfNotFeature(features::kV8VmFuture, "--no-future");
   SetV8FlagIfFeature(features::kSharedArrayBuffer,
                      "--harmony-sharedarraybuffer");
   SetV8FlagIfNotFeature(features::kSharedArrayBuffer,

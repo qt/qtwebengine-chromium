@@ -2162,8 +2162,7 @@ class WindowEventDispatcherTestWithMessageLoop
     message_loop()->task_runner()->PostTask(
         FROM_HERE, message_loop()->QuitWhenIdleClosure());
 
-    base::MessageLoop::ScopedNestableTaskAllower allow(message_loop());
-    base::RunLoop loop;
+    base::RunLoop loop(base::RunLoop::Type::kNestableTasksAllowed);
     loop.Run();
     EXPECT_EQ(0, handler_.num_mouse_events());
 
@@ -2309,9 +2308,7 @@ class TriggerNestedLoopOnRightMousePress : public ui::test::TestEventHandler {
     TestEventHandler::OnMouseEvent(mouse);
     if (mouse->type() == ui::ET_MOUSE_PRESSED &&
         mouse->IsOnlyRightMouseButton()) {
-      base::MessageLoop::ScopedNestableTaskAllower allow(
-          base::MessageLoopForUI::current());
-      base::RunLoop run_loop;
+      base::RunLoop run_loop(base::RunLoop::Type::kNestableTasksAllowed);
       scoped_refptr<base::TaskRunner> task_runner =
           base::ThreadTaskRunnerHandle::Get();
       if (!callback_.is_null())
@@ -2789,6 +2786,8 @@ TEST_P(WindowEventDispatcherTest, TouchMovesMarkedWhenCausingScroll) {
 // scale factor changed). Test that hover effects are properly updated.
 TEST_P(WindowEventDispatcherTest, OnCursorMovedToRootLocationUpdatesHover) {
   WindowEventDispatcher* dispatcher = host()->dispatcher();
+  test::TestCursorClient cursor_client(root_window());
+  cursor_client.ShowCursor();
 
   std::unique_ptr<Window> w(CreateNormalWindow(1, root_window(), nullptr));
   w->SetBounds(gfx::Rect(20, 20, 20, 20));
@@ -2810,6 +2809,20 @@ TEST_P(WindowEventDispatcherTest, OnCursorMovedToRootLocationUpdatesHover) {
   dispatcher->OnCursorMovedToRootLocation(gfx::Point(11, 11));
   RunAllPendingInMessageLoop();
   EXPECT_TRUE(recorder.HasReceivedEvent(ui::ET_MOUSE_EXITED));
+  recorder.Reset();
+
+  // Hide the cursor, synthetic event will not be sent.
+  cursor_client.HideCursor();
+  dispatcher->OnCursorMovedToRootLocation(gfx::Point(22, 22));
+  RunAllPendingInMessageLoop();
+  EXPECT_TRUE(recorder.events().empty());
+
+  // Cursor is hidden when locked, but synthetic move event still be dispatched.
+  cursor_client.LockCursor();
+  dispatcher->OnCursorMovedToRootLocation(gfx::Point(33, 33));
+  RunAllPendingInMessageLoop();
+  EXPECT_TRUE(recorder.HasReceivedEvent(ui::ET_MOUSE_MOVED));
+  recorder.Reset();
 
   w->RemovePreTargetHandler(&recorder);
 }
@@ -3100,9 +3113,7 @@ class NestedLocationDelegate : public test::TestWindowDelegate {
   void InInitialMessageLoop(base::RunLoop* initial_run_loop) {
     // See comments in OnMouseEvent() for details on which this creates another
     // RunLoop.
-    base::MessageLoop::ScopedNestableTaskAllower allow_nestable_tasks(
-        base::MessageLoop::current());
-    base::RunLoop run_loop;
+    base::RunLoop run_loop(base::RunLoop::Type::kNestableTasksAllowed);
     base::MessageLoop::current()->task_runner()->PostTask(
         FROM_HERE, base::Bind(&NestedLocationDelegate::InRunMessageLoop,
                               base::Unretained(this), &run_loop));

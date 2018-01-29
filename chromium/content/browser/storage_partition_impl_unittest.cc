@@ -23,7 +23,7 @@
 #include "content/public/test/test_browser_context.h"
 #include "content/public/test/test_browser_thread.h"
 #include "content/public/test/test_browser_thread_bundle.h"
-#include "content/test/mock_leveldb_database.h"
+#include "content/test/fake_leveldb_database.h"
 #include "net/base/test_completion_callback.h"
 #include "net/cookies/canonical_cookie.h"
 #include "net/cookies/cookie_store.h"
@@ -177,7 +177,7 @@ class RemoveCookieTester {
 class RemoveLocalStorageTester {
  public:
   explicit RemoveLocalStorageTester(TestBrowserContext* profile)
-      : dom_storage_context_(NULL),
+      : dom_storage_context_(nullptr),
         mock_db_(&mock_data_),
         db_binding_(&mock_db_) {
     dom_storage_context_ =
@@ -201,7 +201,7 @@ class RemoveLocalStorageTester {
     // stores data in the database.
     leveldb::mojom::LevelDBDatabaseAssociatedPtr database_ptr;
     leveldb::mojom::LevelDBDatabaseAssociatedRequest request =
-        MakeIsolatedRequest(&database_ptr);
+        MakeRequestAssociatedWithDedicatedPipe(&database_ptr);
     static_cast<DOMStorageContextWrapper*>(dom_storage_context_)
         ->SetLocalStorageDatabaseForTesting(std::move(database_ptr));
     db_binding_.Bind(std::move(request));
@@ -211,21 +211,21 @@ class RemoveLocalStorageTester {
     base::Time now = base::Time::Now();
     data.set_last_modified(now.ToInternalValue());
     data.set_size_bytes(16);
-    mock_data_[CreateMetaDataKey(url::Origin(kOrigin1))] =
+    mock_data_[CreateMetaDataKey(url::Origin::Create(kOrigin1))] =
         leveldb::StdStringToUint8Vector(data.SerializeAsString());
-    mock_data_[CreateDataKey(url::Origin(kOrigin1))] = {};
+    mock_data_[CreateDataKey(url::Origin::Create(kOrigin1))] = {};
 
     base::Time one_day_ago = now - base::TimeDelta::FromDays(1);
     data.set_last_modified(one_day_ago.ToInternalValue());
-    mock_data_[CreateMetaDataKey(url::Origin(kOrigin2))] =
+    mock_data_[CreateMetaDataKey(url::Origin::Create(kOrigin2))] =
         leveldb::StdStringToUint8Vector(data.SerializeAsString());
-    mock_data_[CreateDataKey(url::Origin(kOrigin2))] = {};
+    mock_data_[CreateDataKey(url::Origin::Create(kOrigin2))] = {};
 
     base::Time sixty_days_ago = now - base::TimeDelta::FromDays(60);
     data.set_last_modified(sixty_days_ago.ToInternalValue());
-    mock_data_[CreateMetaDataKey(url::Origin(kOrigin3))] =
+    mock_data_[CreateMetaDataKey(url::Origin::Create(kOrigin3))] =
         leveldb::StdStringToUint8Vector(data.SerializeAsString());
-    mock_data_[CreateDataKey(url::Origin(kOrigin3))] = {};
+    mock_data_[CreateDataKey(url::Origin::Create(kOrigin3))] = {};
   }
 
  private:
@@ -266,7 +266,7 @@ class RemoveLocalStorageTester {
   content::DOMStorageContext* dom_storage_context_;
 
   std::map<std::vector<uint8_t>, std::vector<uint8_t>> mock_data_;
-  MockLevelDBDatabase mock_db_;
+  FakeLevelDBDatabase mock_db_;
   mojo::AssociatedBinding<leveldb::mojom::LevelDBDatabase> db_binding_;
 
   std::vector<content::LocalStorageUsageInfo> infos_;
@@ -335,7 +335,7 @@ class RemovePluginPrivateDataTester {
         filesystem_context_->GetAsyncFileUtil(
             storage::kFileSystemTypePluginPrivate);
     std::unique_ptr<storage::FileSystemOperationContext> operation_context =
-        base::MakeUnique<storage::FileSystemOperationContext>(
+        std::make_unique<storage::FileSystemOperationContext>(
             filesystem_context_);
     async_file_util->CreateOrOpen(
         std::move(operation_context), clearkey_file_,
@@ -381,7 +381,7 @@ class RemovePluginPrivateDataTester {
     storage::AsyncFileUtil* file_util = filesystem_context_->GetAsyncFileUtil(
         storage::kFileSystemTypePluginPrivate);
     std::unique_ptr<storage::FileSystemOperationContext> operation_context =
-        base::MakeUnique<storage::FileSystemOperationContext>(
+        std::make_unique<storage::FileSystemOperationContext>(
             filesystem_context_);
     operation_context->set_allowed_bytes_growth(
         storage::QuotaManager::kNoLimit);
@@ -398,7 +398,7 @@ class RemovePluginPrivateDataTester {
     storage::AsyncFileUtil* file_util = filesystem_context_->GetAsyncFileUtil(
         storage::kFileSystemTypePluginPrivate);
     std::unique_ptr<storage::FileSystemOperationContext> operation_context =
-        base::MakeUnique<storage::FileSystemOperationContext>(
+        std::make_unique<storage::FileSystemOperationContext>(
             filesystem_context_);
     file_util->DeleteFile(
         std::move(operation_context), file_url,
@@ -415,7 +415,7 @@ class RemovePluginPrivateDataTester {
     storage::AsyncFileUtil* file_util = filesystem_context_->GetAsyncFileUtil(
         storage::kFileSystemTypePluginPrivate);
     std::unique_ptr<storage::FileSystemOperationContext> operation_context =
-        base::MakeUnique<storage::FileSystemOperationContext>(
+        std::make_unique<storage::FileSystemOperationContext>(
             filesystem_context_);
     file_util->Touch(std::move(operation_context), file_url, time_stamp,
                      time_stamp,
@@ -664,7 +664,7 @@ class StoragePartitionShaderClearTest : public testing::Test {
   }
 
   ~StoragePartitionShaderClearTest() override {
-    cache_ = NULL;
+    cache_ = nullptr;
     GetShaderCacheFactorySingleton()->RemoveCacheInfo(kDefaultClientId);
   }
 

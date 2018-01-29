@@ -7,6 +7,7 @@
 #include <string>
 
 #include "base/command_line.h"
+#include "base/feature_list.h"
 #include "base/lazy_instance.h"
 #include "base/logging.h"
 #include "base/metrics/histogram_macros.h"
@@ -152,7 +153,7 @@ bool IsKeyboardOverscrollEnabled() {
   // Users of the sticky accessibility on-screen keyboard are likely to be using
   // mouse input, which may interfere with overscrolling.
   if (keyboard::KeyboardController::GetInstance() &&
-      keyboard::KeyboardController::GetInstance()->keyboard_locked()) {
+      !keyboard::KeyboardController::GetInstance()->IsOverscrollAllowed()) {
     return false;
   }
 
@@ -189,8 +190,7 @@ bool IsExperimentalInputViewEnabled() {
 }
 
 bool IsFloatingVirtualKeyboardEnabled() {
-  return base::CommandLine::ForCurrentProcess()->HasSwitch(
-      switches::kEnableFloatingVirtualKeyboard);
+  return base::FeatureList::IsEnabled(features::kEnableFloatingVirtualKeyboard);
 }
 
 bool IsGestureTypingEnabled() {

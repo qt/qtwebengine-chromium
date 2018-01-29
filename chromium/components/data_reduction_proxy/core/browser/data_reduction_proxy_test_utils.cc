@@ -217,7 +217,19 @@ void TestDataReductionProxyConfigServiceClient::
   OnApplicationStateChange(
       base::android::APPLICATION_STATE_HAS_RUNNING_ACTIVITIES);
 }
-#endif
+#endif  // OS_ANDROID
+
+void TestDataReductionProxyConfigServiceClient::SetRemoteConfigApplied(
+    bool remote_config_applied) {
+  remote_config_applied_ = remote_config_applied;
+}
+
+bool TestDataReductionProxyConfigServiceClient::RemoteConfigApplied() const {
+  if (!remote_config_applied_) {
+    return DataReductionProxyConfigServiceClient::RemoteConfigApplied();
+  }
+  return remote_config_applied_.value();
+}
 
 MockDataReductionProxyService::MockDataReductionProxyService(
     DataReductionProxySettings* settings,
@@ -447,6 +459,7 @@ DataReductionProxyTestContext::Builder::Build() {
         std::move(params), task_runner, net_log.get(), configurator.get(),
         event_creator.get()));
   } else {
+    test_context_flags ^= USE_MOCK_CONFIG;
     if (!proxy_servers_.empty()) {
       params->SetProxiesForHttp(proxy_servers_);
     }
@@ -615,12 +628,11 @@ DataReductionProxyTestContext::CreateDataReductionProxyServiceInternal(
     return base::MakeUnique<MockDataReductionProxyService>(
         settings, simple_pref_service_.get(), request_context_getter_.get(),
         task_runner_);
-  } else {
-    return base::MakeUnique<DataReductionProxyService>(
-        settings, simple_pref_service_.get(), request_context_getter_.get(),
-        base::WrapUnique(new TestDataStore()), task_runner_, task_runner_,
-        task_runner_, base::TimeDelta());
   }
+  return base::MakeUnique<DataReductionProxyService>(
+      settings, simple_pref_service_.get(), request_context_getter_.get(),
+      base::WrapUnique(new TestDataStore()), task_runner_, task_runner_,
+      task_runner_, base::TimeDelta());
 }
 
 void DataReductionProxyTestContext::AttachToURLRequestContext(
@@ -730,6 +742,8 @@ DataReductionProxyTestContext::TestConfigStorer::TestConfigStorer(
 void DataReductionProxyTestContext::TestConfigStorer::StoreSerializedConfig(
     const std::string& serialized_config) {
   prefs_->SetString(prefs::kDataReductionProxyConfig, serialized_config);
+  prefs_->SetInt64(prefs::kDataReductionProxyLastConfigRetrievalTime,
+                   (base::Time::Now() - base::Time()).InMicroseconds());
 }
 
 std::vector<net::ProxyServer>

@@ -57,7 +57,7 @@ class SERVICES_RESOURCE_COORDINATOR_PUBLIC_CPP_EXPORT ClientProcessImpl
   // This function will be called by the MemoryDumpScheduler::OnTick and
   // MemoryPeakDetector.
   void RequestGlobalMemoryDump_NoCallback(
-      const base::trace_event::MemoryDumpRequestArgs&);
+      const base::trace_event::GlobalMemoryDumpRequestArgs&);
 
   // mojom::ClientProcess implementation. The Coordinator calls this.
   void RequestChromeMemoryDump(
@@ -72,8 +72,6 @@ class SERVICES_RESOURCE_COORDINATOR_PUBLIC_CPP_EXPORT ClientProcessImpl
 
   // Callback passed to base::MemoryDumpManager::CreateProcessDump().
   void OnChromeMemoryDumpDone(
-      const RequestChromeMemoryDumpCallback&,
-      const base::trace_event::MemoryDumpRequestArgs& req_args,
       bool success,
       uint64_t dump_guid,
       std::unique_ptr<base::trace_event::ProcessMemoryDump>);
@@ -83,6 +81,10 @@ class SERVICES_RESOURCE_COORDINATOR_PUBLIC_CPP_EXPORT ClientProcessImpl
       bool wants_mmaps,
       const std::vector<base::ProcessId>& ids,
       const RequestOSMemoryDumpCallback& callback) override;
+
+  // Map containing pending chrome memory callbacks indexed by dump guid.
+  // This must be destroyed after |binding_|.
+  std::map<uint64_t, RequestChromeMemoryDumpCallback> pending_chrome_callbacks_;
 
   mojom::CoordinatorPtr coordinator_;
   mojo::Binding<mojom::ClientProcess> binding_;

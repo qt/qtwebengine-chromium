@@ -64,7 +64,7 @@ class ServiceTestClient : public service_manager::test::ServiceTestClient,
                      const std::string& name) override {
     if (name == mojom::kServiceName) {
       identity_service_context_.reset(new service_manager::ServiceContext(
-          base::MakeUnique<IdentityService>(account_tracker_, signin_manager_,
+          std::make_unique<IdentityService>(account_tracker_, signin_manager_,
                                             token_service_),
           std::move(request)));
     }
@@ -87,7 +87,7 @@ class ServiceTestClient : public service_manager::test::ServiceTestClient,
 class IdentityManagerTest : public service_manager::test::ServiceTest {
  public:
   IdentityManagerTest()
-      : ServiceTest("identity_unittests", false),
+      : ServiceTest("identity_unittests"),
         signin_client_(&pref_service_),
 #if defined(OS_CHROMEOS)
         signin_manager_(&signin_client_, &account_tracker_) {
@@ -178,7 +178,7 @@ class IdentityManagerTest : public service_manager::test::ServiceTest {
 
   // service_manager::test::ServiceTest:
   std::unique_ptr<service_manager::Service> CreateService() override {
-    return base::MakeUnique<ServiceTestClient>(
+    return std::make_unique<ServiceTestClient>(
         this, &account_tracker_, &signin_manager_, &token_service_);
   }
 

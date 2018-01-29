@@ -12,10 +12,6 @@
 #include "SkGraphics.h"
 #include "SkTypeface.h"
 
-#ifdef SK_BUILD_FOR_WIN
-    #include "SkTypeface_win.h"
-#endif
-
 // limit this just so we don't take too long to draw
 #define MAX_FAMILIES    30
 
@@ -55,18 +51,12 @@ static const char* ja = "ja";
 
 class FontMgrGM : public skiagm::GM {
 public:
-    FontMgrGM(sk_sp<SkFontMgr> fontMgr = nullptr) {
+    FontMgrGM() {
         SkGraphics::SetFontCacheLimit(16 * 1024 * 1024);
 
         fName.set("fontmgr_iter");
-        if (fontMgr) {
-            fName.append("_factory");
-            fFM = std::move(fontMgr);
-        } else {
-            fFM = SkFontMgr::RefDefault();
-        }
-        fName.append(sk_tool_utils::platform_os_name());
-        fName.append(sk_tool_utils::platform_extra_config("GDI"));
+        fFM = SkFontMgr::RefDefault();
+        fName.append(sk_tool_utils::platform_font_manager());
     }
 
 protected:
@@ -134,8 +124,7 @@ public:
 protected:
     SkString onShortName() override {
         SkString name("fontmgr_match");
-        name.append(sk_tool_utils::platform_os_name());
-        name.append(sk_tool_utils::platform_extra_config("GDI"));
+        name.append(sk_tool_utils::platform_font_manager());
         return name;
     }
 
@@ -223,8 +212,7 @@ public:
         if (scale != 1 || skew != 0) {
             fName.appendf("_%g_%g", scale, skew);
         }
-        fName.append(sk_tool_utils::platform_os_name());
-        fName.append(sk_tool_utils::platform_extra_config("GDI"));
+        fName.append(sk_tool_utils::platform_font_manager());
         fFM = SkFontMgr::RefDefault();
     }
 
@@ -346,7 +334,3 @@ DEF_GM(return new FontMgrMatchGM;)
 DEF_GM(return new FontMgrBoundsGM(1.0, 0);)
 DEF_GM(return new FontMgrBoundsGM(0.75, 0);)
 DEF_GM(return new FontMgrBoundsGM(1.0, -0.25);)
-
-#ifdef SK_BUILD_FOR_WIN
-DEF_GM(return new FontMgrGM(SkFontMgr_New_DirectWrite());)
-#endif

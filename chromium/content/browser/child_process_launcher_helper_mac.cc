@@ -45,7 +45,7 @@ ChildProcessLauncherHelper::GetFilesToMap() {
       command_line());
 }
 
-void ChildProcessLauncherHelper::BeforeLaunchOnLauncherThread(
+bool ChildProcessLauncherHelper::BeforeLaunchOnLauncherThread(
     const FileMappedForLaunch& files_to_register,
     base::LaunchOptions* options) {
   // Convert FD mapping to FileHandleMappingVector.
@@ -58,13 +58,21 @@ void ChildProcessLauncherHelper::BeforeLaunchOnLauncherThread(
 
   if (base::FeatureList::IsEnabled(features::kMacV2Sandbox) &&
       GetProcessType() == switches::kRendererProcess && !no_sandbox) {
-    seatbelt_exec_client_ = base::MakeUnique<sandbox::SeatbeltExecClient>();
+    // Disable os logging to com.apple.diagnosticd which is a performance
+    // problem.
+    options->environ.insert(std::make_pair("OS_ACTIVITY_MODE", "disable"));
+
+    seatbelt_exec_client_ = std::make_unique<sandbox::SeatbeltExecClient>();
     seatbelt_exec_client_->SetProfile(
         service_manager::kSeatbeltPolicyString_renderer_v2);
 
     SetupRendererSandboxParameters(seatbelt_exec_client_.get());
 
     int pipe = seatbelt_exec_client_->SendProfileAndGetFD();
+    if (pipe < 0) {
+      LOG(ERROR) << "pipe for sending sandbox profile is an invalid FD";
+      return false;
+    }
 
     base::FilePath helper_executable;
     CHECK(PathService::Get(content::CHILD_PROCESS_EXE, &helper_executable));
@@ -90,6 +98,8 @@ void ChildProcessLauncherHelper::BeforeLaunchOnLauncherThread(
   // Make sure the MachBroker is running, and inform it to expect a check-in
   // from the new process.
   broker->EnsureRunning();
+
+  return true;
 }
 
 ChildProcessLauncherHelper::Process

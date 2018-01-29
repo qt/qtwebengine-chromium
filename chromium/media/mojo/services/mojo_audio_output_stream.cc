@@ -26,6 +26,7 @@ MojoAudioOutputStream::MojoAudioOutputStream(
       client_(std::move(client)),
       weak_factory_(this) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  DCHECK(stream_created_callback_);
   DCHECK(deleter_callback_);
   // |this| owns |binding_|, so unretained is safe.
   binding_.set_connection_error_handler(
@@ -80,7 +81,10 @@ void MojoAudioOutputStream::OnStreamCreated(
 
   base::SharedMemoryHandle foreign_memory_handle =
       base::SharedMemory::DuplicateHandle(shared_memory->handle());
-  DCHECK(base::SharedMemory::IsHandleValid(foreign_memory_handle));
+  if (!base::SharedMemory::IsHandleValid(foreign_memory_handle)) {
+    OnStreamError(/*not used*/ 0);
+    return;
+  }
 
   mojo::ScopedSharedBufferHandle buffer_handle = mojo::WrapSharedMemoryHandle(
       foreign_memory_handle, shared_memory->requested_size(), false);

@@ -26,8 +26,8 @@ class CORE_EXPORT ModuleTreeLinkerRegistry
   static ModuleTreeLinkerRegistry* Create() {
     return new ModuleTreeLinkerRegistry;
   }
-  DECLARE_TRACE();
-  DECLARE_TRACE_WRAPPERS();
+  void Trace(blink::Visitor*);
+  void TraceWrappers(const ScriptWrappableVisitor*) const override;
 
   ModuleTreeLinker* Fetch(const ModuleScriptFetchRequest&,
                           Modulator*,

@@ -31,6 +31,7 @@
 #include "content/public/browser/download_interrupt_reasons.h"
 #include "content/public/browser/download_item.h"
 #include "content/public/browser/download_manager_delegate.h"
+#include "content/public/browser/download_request_utils.h"
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/resource_context.h"
 #include "content/public/browser/web_contents.h"
@@ -56,7 +57,7 @@ class DownloadRequestData : public base::SupportsUserData::Data {
   static void Attach(net::URLRequest* request,
                      DownloadUrlParameters* download_parameters,
                      uint32_t download_id);
-  static DownloadRequestData* Get(net::URLRequest* request);
+  static DownloadRequestData* Get(const net::URLRequest* request);
   static void Detach(net::URLRequest* request);
 
   std::unique_ptr<DownloadSaveInfo> TakeSaveInfo() {
@@ -69,6 +70,7 @@ class DownloadRequestData : public base::SupportsUserData::Data {
   const DownloadUrlParameters::OnStartedCallback& callback() const {
     return on_started_callback_;
   }
+  std::string request_origin() const { return request_origin_; }
 
  private:
   static const int kKey;
@@ -79,6 +81,7 @@ class DownloadRequestData : public base::SupportsUserData::Data {
   bool fetch_error_body_ = false;
   bool transient_ = false;
   DownloadUrlParameters::OnStartedCallback on_started_callback_;
+  std::string request_origin_;
 };
 
 // static
@@ -88,7 +91,7 @@ const int DownloadRequestData::kKey = 0;
 void DownloadRequestData::Attach(net::URLRequest* request,
                                  DownloadUrlParameters* parameters,
                                  uint32_t download_id) {
-  auto request_data = base::MakeUnique<DownloadRequestData>();
+  auto request_data = std::make_unique<DownloadRequestData>();
   request_data->save_info_.reset(
       new DownloadSaveInfo(parameters->GetSaveInfo()));
   request_data->download_id_ = download_id;
@@ -96,11 +99,12 @@ void DownloadRequestData::Attach(net::URLRequest* request,
   request_data->fetch_error_body_ = parameters->fetch_error_body();
   request_data->transient_ = parameters->is_transient();
   request_data->on_started_callback_ = parameters->callback();
+  request_data->request_origin_ = parameters->request_origin();
   request->SetUserData(&kKey, std::move(request_data));
 }
 
 // static
-DownloadRequestData* DownloadRequestData::Get(net::URLRequest* request) {
+DownloadRequestData* DownloadRequestData::Get(const net::URLRequest* request) {
   return static_cast<DownloadRequestData*>(request->GetUserData(&kKey));
 }
 
@@ -126,6 +130,15 @@ DownloadRequestCore::CreateRequestOnIOThread(uint32_t download_id,
 
   DownloadRequestData::Attach(request.get(), params, download_id);
   return request;
+}
+
+// static impl of DownloadRequestUtils
+std::string DownloadRequestUtils::GetRequestOriginFromRequest(
+    const net::URLRequest* request) {
+  DownloadRequestData* data = DownloadRequestData::Get(request);
+  if (data)
+    return data->request_origin();
+  return std::string();  // Empty string if data does not exist.
 }
 
 DownloadRequestCore::DownloadRequestCore(net::URLRequest* request,
@@ -157,8 +170,8 @@ DownloadRequestCore::DownloadRequestCore(net::URLRequest* request,
     connector->BindInterface(device::mojom::kServiceName,
                              mojo::MakeRequest(&wake_lock_provider));
     wake_lock_provider->GetWakeLockWithoutContext(
-        device::mojom::WakeLockType::PreventAppSuspension,
-        device::mojom::WakeLockReason::ReasonOther, "Download in progress",
+        device::mojom::WakeLockType::kPreventAppSuspension,
+        device::mojom::WakeLockReason::kOther, "Download in progress",
         mojo::MakeRequest(&wake_lock_));
 
     wake_lock_->RequestWakeLock();
@@ -190,8 +203,8 @@ std::unique_ptr<DownloadCreateInfo>
 DownloadRequestCore::CreateDownloadCreateInfo(DownloadInterruptReason result) {
   DCHECK(!started_);
   started_ = true;
-  std::unique_ptr<DownloadCreateInfo> create_info(new DownloadCreateInfo(
-      base::Time::Now(), request()->net_log(), std::move(save_info_)));
+  std::unique_ptr<DownloadCreateInfo> create_info(
+      new DownloadCreateInfo(base::Time::Now(), std::move(save_info_)));
 
   if (result == DOWNLOAD_INTERRUPT_REASON_NONE)
     create_info->remote_address = request()->GetSocketAddress().host();
@@ -330,7 +343,7 @@ bool DownloadRequestCore::OnReadCompleted(int bytes_read, bool* defer) {
     last_stream_pause_time_ = base::TimeTicks::Now();
   }
 
-  read_buffer_ = NULL;  // Drop our reference.
+  read_buffer_ = nullptr;  // Drop our reference.
 
   if (pause_count_ > 0)
     *defer = was_deferred_ = true;

@@ -15,21 +15,20 @@
 
 namespace webrtc {
 
-int32_t AudioDeviceIOS::ActiveAudioLayer(
-    AudioDeviceModule::AudioLayer& audioLayer) const {
+int32_t AudioDeviceIOS::ActiveAudioLayer(AudioDeviceModule::AudioLayer& audioLayer) const {
   audioLayer = AudioDeviceModule::kPlatformDefaultAudio;
   return 0;
 }
 
 int16_t AudioDeviceIOS::PlayoutDevices() {
   // TODO(henrika): improve.
-  LOG_F(LS_WARNING) << "Not implemented";
+  RTC_LOG_F(LS_WARNING) << "Not implemented";
   return (int16_t)1;
 }
 
 int16_t AudioDeviceIOS::RecordingDevices() {
   // TODO(henrika): improve.
-  LOG_F(LS_WARNING) << "Not implemented";
+  RTC_LOG_F(LS_WARNING) << "Not implemented";
   return (int16_t)1;
 }
 
@@ -82,7 +81,7 @@ int32_t AudioDeviceIOS::SpeakerMute(bool& enabled) const {
 }
 
 int32_t AudioDeviceIOS::SetPlayoutDevice(uint16_t index) {
-  LOG_F(LS_WARNING) << "Not implemented";
+  RTC_LOG_F(LS_WARNING) << "Not implemented";
   return 0;
 }
 
@@ -120,7 +119,7 @@ int32_t AudioDeviceIOS::StereoRecordingIsAvailable(bool& available) {
 }
 
 int32_t AudioDeviceIOS::SetStereoRecording(bool enable) {
-  LOG_F(LS_WARNING) << "Not implemented";
+  RTC_LOG_F(LS_WARNING) << "Not implemented";
   return -1;
 }
 
@@ -135,7 +134,7 @@ int32_t AudioDeviceIOS::StereoPlayoutIsAvailable(bool& available) {
 }
 
 int32_t AudioDeviceIOS::SetStereoPlayout(bool enable) {
-  LOG_F(LS_WARNING) << "Not implemented";
+  RTC_LOG_F(LS_WARNING) << "Not implemented";
   return -1;
 }
 
@@ -195,12 +194,11 @@ int32_t AudioDeviceIOS::RecordingDeviceName(uint16_t index,
 }
 
 int32_t AudioDeviceIOS::SetRecordingDevice(uint16_t index) {
-  LOG_F(LS_WARNING) << "Not implemented";
+  RTC_LOG_F(LS_WARNING) << "Not implemented";
   return 0;
 }
 
-int32_t AudioDeviceIOS::SetRecordingDevice(
-    AudioDeviceModule::WindowsDeviceType) {
+int32_t AudioDeviceIOS::SetRecordingDevice(AudioDeviceModule::WindowsDeviceType) {
   RTC_NOTREACHED() << "Not implemented";
   return -1;
 }

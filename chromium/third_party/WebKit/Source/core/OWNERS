@@ -26,6 +26,7 @@ fmalita@chromium.org
 # foolip reviews <video>, <track>, WebVTT and Fullscreen.
 foolip@chromium.org
 fs@opera.com
+futhark@chromium.org
 haraken@chromium.org
 hayato@chromium.org
 inferno@chromium.org
@@ -43,7 +44,8 @@ kojii@chromium.org
 kouhei@chromium.org
 meade@chromium.org
 mkwst@chromium.org
-mstensho@opera.com
+mstensho@chromium.org
+nainar@chromium.org
 ojan@chromium.org
 # pdr reviews many svg and text autosizing patches.
 pdr@chromium.org
@@ -53,8 +55,6 @@ rego@igalia.com
 rbyers@chromium.org
 rob.buis@samsung.com
 robhogan@gmail.com
-# rune reviews core/css and parts of core/rendering
-rune@opera.com
 schenney@chromium.org
 senorblanco@chromium.org
 sashab@chromium.org

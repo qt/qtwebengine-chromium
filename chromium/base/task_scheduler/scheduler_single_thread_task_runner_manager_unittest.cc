@@ -591,21 +591,20 @@ class TaskSchedulerSingleThreadTaskRunnerManagerStartTest
 TEST_F(TaskSchedulerSingleThreadTaskRunnerManagerStartTest,
        PostTaskBeforeStart) {
   AtomicFlag manager_started;
-  WaitableEvent task_running(WaitableEvent::ResetPolicy::MANUAL,
-                             WaitableEvent::InitialState::NOT_SIGNALED);
+  WaitableEvent task_finished(WaitableEvent::ResetPolicy::MANUAL,
+                              WaitableEvent::InitialState::NOT_SIGNALED);
   single_thread_task_runner_manager_
       ->CreateSingleThreadTaskRunnerWithTraits(
           "A", TaskTraits(), SingleThreadTaskRunnerThreadMode::DEDICATED)
       ->PostTask(
           FROM_HERE,
           BindOnce(
-              [](WaitableEvent* task_running, AtomicFlag* manager_started) {
-                task_running->Signal();
-
+              [](WaitableEvent* task_finished, AtomicFlag* manager_started) {
                 // The task should not run before Start().
                 EXPECT_TRUE(manager_started->IsSet());
+                task_finished->Signal();
               },
-              Unretained(&task_running), Unretained(&manager_started)));
+              Unretained(&task_finished), Unretained(&manager_started)));
 
   // Wait a little bit to make sure that the task doesn't run before start.
   // Note: This test won't catch a case where the task runs between setting
@@ -615,8 +614,8 @@ TEST_F(TaskSchedulerSingleThreadTaskRunnerManagerStartTest,
   manager_started.Set();
   single_thread_task_runner_manager_->Start();
 
-  // This should not hang if the task runs after Start().
-  task_running.Wait();
+  // Wait for the task to complete to keep |manager_started| alive.
+  task_finished.Wait();
 }
 
 }  // namespace internal

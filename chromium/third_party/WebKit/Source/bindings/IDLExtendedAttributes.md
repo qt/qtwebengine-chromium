@@ -128,7 +128,7 @@ Extended attributes on members of an implemented interface work as normal. Howev
 
 ### Inheritance
 
-Extended attributes are generally not inherited: only extended attributes on the interface itself are consulted. However, there are a handful of extended attributes that are inherited (applying them to an ancestor interface applies them to the descendants). These are extended attributes that affect memory management, and currently consists of `[DependentLifetime]` and `[ActiveScriptWrappable]`; the up-to-date list is [compute_dependencies.INHERITED_EXTENDED_ATTRIBUTES](https://code.google.com/p/chromium/codesearch#chromium/src/third_party/WebKit/Source/bindings/scripts/compute_dependencies.py&q=INHERITED_EXTENDED_ATTRIBUTES).
+Extended attributes are generally not inherited: only extended attributes on the interface itself are consulted. However, there are a handful of extended attributes that are inherited (applying them to an ancestor interface applies them to the descendants). These are extended attributes that affect memory management, and currently consists of `[ActiveScriptWrappable]`; the up-to-date list is [compute_dependencies.INHERITED_EXTENDED_ATTRIBUTES](https://code.google.com/p/chromium/codesearch#chromium/src/third_party/WebKit/Source/bindings/scripts/compute_dependencies.py&q=INHERITED_EXTENDED_ATTRIBUTES).
 
 ## Standard Web IDL Extended Attributes
 
@@ -207,7 +207,7 @@ var x = new XXX(1.0, 2.0, "hello");
 The Blink implementation must have the following method as a constructor callback:
 
 ```c++
-RefPtr<XXX> XXX::create(float x, float y, String str)
+scoped_refptr<XXX> XXX::create(float x, float y, String str)
 {
     ...;
 }
@@ -528,13 +528,12 @@ If an interface X has `[ActiveScriptWrappable]` and an interface Y inherits the 
 ```webidl
 [
     ActiveScriptWrappable,
-    DependentLifetime,
 ] interface Foo {};
 
 interface Bar : Foo {};  // inherits [ActiveScriptWrappable] from Foo
 ```
 
-If a given DOM object needs to be kept alive as long as the DOM object has pending activities, you need to specify `[ActiveScriptWrappable]` and `[DependentLifetime]`. For example, `[ActiveScriptWrappable]` can be used when the DOM object is expecting events to be raised in the future.
+If a given DOM object needs to be kept alive as long as the DOM object has pending activities, you need to specify `[ActiveScriptWrappable]`. For example, `[ActiveScriptWrappable]` can be used when the DOM object is expecting events to be raised in the future.
 
 If you use `[ActiveScriptWrappable]`, the corresponding Blink class needs to inherit ActiveScriptWrappable and override hasPendingActivity(). For example, in case of XMLHttpRequest, core/xml/XMLHttpRequest.h would look like this:
 
@@ -601,7 +600,7 @@ String Example::func(ScriptState* state, bool a, bool b);
 ```
 
 Be careful when you use `[CallWith=ScriptState]`.
-You should not store the passed-in ScriptState on a DOM object (using RefPtr<ScriptState>).
+You should not store the passed-in ScriptState on a DOM object (using scoped_refptr<ScriptState>).
 This is because if the stored ScriptState is used by some method called by a different
 world (note that the DOM object is shared among multiple worlds), it leaks the ScriptState
 to the world. ScriptState must be carefully maintained in a way that doesn't leak
@@ -680,14 +679,14 @@ Then XXX::create(...) can have the following signature
 ***
 
 ```c++
-RefPtr<XXX> XXX::create(ExecutionContext* context, float x, float y, String str)
+scoped_refptr<XXX> XXX::create(ExecutionContext* context, float x, float y, String str)
 {
     ...;
 }
 ```
 
 Be careful when you use `[ConstructorCallWith=ScriptState]`.
-You should not store the passed-in ScriptState on a DOM object (using RefPtr<ScriptState>).
+You should not store the passed-in ScriptState on a DOM object (using scoped_refptr<ScriptState>).
 This is because if the stored ScriptState is used by some method called by a different
 world (note that the DOM object is shared among multiple worlds), it leaks the ScriptState
 to the world. ScriptState must be carefully maintained in a way that doesn't leak
@@ -924,27 +923,6 @@ In case of func1(...), if JavaScript calls func1(100, 200), then HTMLFoo::func1(
 
 In case of func2(...) which adds `[Default=Undefined]`, if JavaScript calls func2(100, 200), then it behaves as if JavaScript called func2(100, 200, undefined). Consequently, HTMLFoo::func2(int a, int b, int c) is called in Blink. 100 is passed to a, 200 is passed to b, and 0 is passed to c. (A JavaScript `undefined` is converted to 0, following the value conversion rule in the Web IDL spec; if it were a DOMString parameter, it would end up as the string `"undefined"`.) In this way, Blink needs to just implement func2(int a, int b, int c) and needs not to implement both func2(int a, int b) and func2(int a, int b, int c).
 
-### [DependentLifetime] _(i)_
-
-Summary: `[DependentLifetime]` means objects of this class are treated as dependent DOM objects.
-
-Usage: `[DependentLifetime]` can be specified on interfaces, and **is inherited**:
-
-```webidl
-[
-    DependentLifetime,
-] interface Foo { ... };
-
-interface Bar : Foo { ... };  // inherits [DependentLifetime]
-```
-
-If a DOM object does not have `[DependentLifetime]`, V8's GC collects the wrapper of the DOM object
-if the wrapper is unreachable on the JS side (i.e., V8's GC assumes that the wrapper should not be
-reachable in the DOM side). Use `[DependentLifetime]` to relax the assumption.
-For example, if the DOM object has `[ActiveScriptWrappable]` and implements hasPendingActivity(), it must be annotated with
-`[DependentLifetime]`. Otherwise, the wrapper will be collected regardless of the returned value
-of the hasPendingActivity().
-
 ### [DeprecateAs] _(m, a, c)_
 
 Summary: Measures usage of a deprecated feature via UseCounter, and notifies developers about deprecation via a console warning.
@@ -1105,7 +1083,7 @@ interface XXX {
 Blink needs to implement the following method as a constructor callback:
 
 ```c++
-RefPtr<XXX> XXX::create(float x, ExceptionState& exceptionState)
+scoped_refptr<XXX> XXX::create(float x, ExceptionState& exceptionState)
 {
     ...;
     if (...) {

@@ -9,7 +9,6 @@
 #include "core/css/StyleEngine.h"
 #include "core/dom/ElementTraversal.h"
 #include "core/dom/NodeComputedStyle.h"
-#include "core/dom/TaskRunnerHelper.h"
 #include "core/dom/events/ScopedEventQueue.h"
 #include "core/exported/WebViewImpl.h"
 #include "core/frame/LocalFrame.h"
@@ -28,6 +27,7 @@
 #include "platform/geometry/IntRect.h"
 #include "platform/text/PlatformLocale.h"
 #include "public/platform/Platform.h"
+#include "public/platform/TaskType.h"
 #include "public/platform/WebMouseEvent.h"
 #include "public/web/WebColorChooser.h"
 
@@ -71,14 +71,14 @@ class PopupMenuCSSFontSelector : public CSSFontSelector,
     return new PopupMenuCSSFontSelector(document, owner_font_selector);
   }
 
-  ~PopupMenuCSSFontSelector();
+  ~PopupMenuCSSFontSelector() override;
 
   // We don't override willUseFontData() for now because the old PopupListBox
   // only worked with fonts loaded when opening the popup.
-  RefPtr<FontData> GetFontData(const FontDescription&,
-                               const AtomicString&) override;
+  scoped_refptr<FontData> GetFontData(const FontDescription&,
+                                      const AtomicString&) override;
 
-  DECLARE_VIRTUAL_TRACE();
+  void Trace(blink::Visitor*) override;
 
  private:
   PopupMenuCSSFontSelector(Document*, CSSFontSelector*);
@@ -97,7 +97,7 @@ PopupMenuCSSFontSelector::PopupMenuCSSFontSelector(
 
 PopupMenuCSSFontSelector::~PopupMenuCSSFontSelector() {}
 
-RefPtr<FontData> PopupMenuCSSFontSelector::GetFontData(
+scoped_refptr<FontData> PopupMenuCSSFontSelector::GetFontData(
     const FontDescription& description,
     const AtomicString& name) {
   return owner_font_selector_->GetFontData(description, name);
@@ -107,7 +107,7 @@ void PopupMenuCSSFontSelector::FontsNeedUpdate(FontSelector* font_selector) {
   DispatchInvalidationCallbacks();
 }
 
-DEFINE_TRACE(PopupMenuCSSFontSelector) {
+void PopupMenuCSSFontSelector::Trace(blink::Visitor* visitor) {
   visitor->Trace(owner_font_selector_);
   CSSFontSelector::Trace(visitor);
   FontSelectorClient::Trace(visitor);
@@ -223,7 +223,7 @@ InternalPopupMenu::~InternalPopupMenu() {
   DCHECK(!popup_);
 }
 
-DEFINE_TRACE(InternalPopupMenu) {
+void InternalPopupMenu::Trace(blink::Visitor* visitor) {
   visitor->Trace(chrome_client_);
   visitor->Trace(owner_element_);
   PopupMenu::Trace(visitor);
@@ -498,8 +498,9 @@ void InternalPopupMenu::UpdateFromElement(UpdateReason) {
   if (needs_update_)
     return;
   needs_update_ = true;
-  TaskRunnerHelper::Get(TaskType::kUserInteraction,
-                        &OwnerElement().GetDocument())
+  OwnerElement()
+      .GetDocument()
+      .GetTaskRunner(TaskType::kUserInteraction)
       ->PostTask(BLINK_FROM_HERE,
                  WTF::Bind(&InternalPopupMenu::Update, WrapPersistent(this)));
 }
@@ -523,7 +524,7 @@ void InternalPopupMenu::Update() {
     return;
   }
 
-  RefPtr<SharedBuffer> data = SharedBuffer::Create();
+  scoped_refptr<SharedBuffer> data = SharedBuffer::Create();
   PagePopupClient::AddString("window.updateData = {\n", data.get());
   PagePopupClient::AddString("type: \"update\",\n", data.get());
   ItemIterationContext context(*owner_element_->GetComputedStyle(), data.get());

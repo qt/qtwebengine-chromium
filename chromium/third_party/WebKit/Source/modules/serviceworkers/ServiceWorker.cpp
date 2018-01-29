@@ -50,7 +50,7 @@ const AtomicString& ServiceWorker::InterfaceName() const {
 }
 
 void ServiceWorker::postMessage(ScriptState* script_state,
-                                RefPtr<SerializedScriptValue> message,
+                                scoped_refptr<SerializedScriptValue> message,
                                 const MessagePortArray& ports,
                                 ExceptionState& exception_state) {
   ServiceWorkerContainerClient* client =
@@ -158,7 +158,7 @@ ServiceWorker::ServiceWorker(ExecutionContext* execution_context,
 
 ServiceWorker::~ServiceWorker() {}
 
-DEFINE_TRACE(ServiceWorker) {
+void ServiceWorker::Trace(blink::Visitor* visitor) {
   AbstractWorker::Trace(visitor);
 }
 

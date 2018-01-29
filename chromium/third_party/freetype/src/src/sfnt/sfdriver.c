@@ -862,7 +862,8 @@
                        NULL,
                        &mm_var );
 
-    if ( FT_IS_NAMED_INSTANCE( FT_FACE( face ) ) )
+    if ( FT_IS_NAMED_INSTANCE( FT_FACE( face ) ) &&
+         !FT_IS_VARIATION( FT_FACE( face ) )     )
     {
       SFNT_Service  sfnt = (SFNT_Service)face->sfnt;
 
@@ -1029,7 +1030,9 @@
       return face->postscript_name;
 
 #ifdef TT_CONFIG_OPTION_GX_VAR_SUPPORT
-    if ( face->blend && !face->is_default_instance )
+    if ( face->blend                                 &&
+         ( FT_IS_NAMED_INSTANCE( FT_FACE( face ) ) ||
+           FT_IS_VARIATION( FT_FACE( face ) )      ) )
     {
       face->postscript_name = sfnt_get_var_ps_name( face );
       return face->postscript_name;

@@ -19,6 +19,7 @@ Polymer({
       value: false,
       reflectToAttribute: true,
       observer: 'checkedChanged_',
+      notify: true,
     },
 
     disabled: {
@@ -27,17 +28,13 @@ Polymer({
       reflectToAttribute: true,
       observer: 'disabledChanged_',
     },
-
-    tabIndex: {
-      type: Number,
-      value: 0,
-    },
   },
 
   hostAttributes: {
     'aria-disabled': 'false',
     'aria-pressed': 'false',
     role: 'button',
+    tabindex: 0,
   },
 
   listeners: {
@@ -52,25 +49,40 @@ Polymer({
   /** @private {?Function} */
   boundPointerMove_: null,
 
-  /** @private {boolean} */
-  pointerMoveFired_: false,
+  /**
+   * Number of pixels required to move to consider the pointermove event as
+   * intentional.
+   * @type {number}
+   */
+  MOVE_THRESHOLD_PX: 5,
+
+  /**
+   * Whether the state of the toggle has already taken into account by
+   * |pointeremove| handlers. Used in the 'tap' handler.
+   * @private {boolean}
+   */
+  handledInPointerMove_: false,
+
+  /** @private {number} */
+  lastPointerUpTime_: 0,
 
   /** @override */
   attached: function() {
-    // Note: Doing the same in ready instead of attached produces incorrect
-    // transient values for RTL.
-    var direction = getComputedStyle(this).direction == 'rtl' ? -1 : 1;
+    let direction = this.matches(':host-context([dir=rtl]) cr-toggle') ? -1 : 1;
 
     this.boundPointerMove_ = (e) => {
       // Prevent unwanted text selection to occur while moving the pointer, this
       // is important.
       e.preventDefault();
-      this.pointerMoveFired_ = true;
 
-      var diff = e.clientX - this.pointerDownX_;
-      var shouldToggle = Math.abs(diff) > 4 &&
-          ((diff * direction < 0 && this.checked) ||
-           (diff * direction > 0 && !this.checked));
+      let diff = e.clientX - this.pointerDownX_;
+      if (Math.abs(diff) < this.MOVE_THRESHOLD_PX)
+        return;
+
+      this.handledInPointerMove_ = true;
+
+      let shouldToggle = (diff * direction < 0 && this.checked) ||
+          (diff * direction > 0 && !this.checked);
       if (shouldToggle)
         this.toggleState_(false);
     };
@@ -83,15 +95,14 @@ Polymer({
 
   /** @private */
   disabledChanged_: function() {
-    this.tabIndex = this.disabled ? -1 : 0;
+    this.setAttribute('tabindex', this.disabled ? -1 : 0);
     this.setAttribute('aria-disabled', this.disabled ? 'true' : 'false');
   },
 
   /** @private */
   onFocus_: function() {
     this.ensureRipple();
-    this.$$('paper-ripple').holdDown =
-        cr.ui.FocusOutlineManager.forDocument(document).visible;
+    this.$$('paper-ripple').holdDown = true;
   },
 
   /** @private */
@@ -101,7 +112,8 @@ Polymer({
   },
 
   /** @private */
-  onPointerUp_: function() {
+  onPointerUp_: function(e) {
+    this.lastPointerUpTime_ = e.timeStamp;
     this.removeEventListener('pointermove', this.boundPointerMove_);
   },
 
@@ -114,25 +126,45 @@ Polymer({
     if (e.button != 0)
       return;
 
-    // This is necessary to have follow up events fire on |this|, even
+    // This is necessary to have follow up pointer events fire on |this|, even
     // if they occur outside of its bounds.
     this.setPointerCapture(e.pointerId);
     this.pointerDownX_ = e.clientX;
-    this.pointerMoveFired_ = false;
+    this.handledInPointerMove_ = false;
     this.addEventListener('pointermove', this.boundPointerMove_);
   },
 
   /** @private */
-  onTap_: function() {
-    // If pointermove fired it means that user tried to drag the toggle button,
-    // and therefore its state has already been handled within the pointermove
-    // handler. Do nothing here.
-    if (this.pointerMoveFired_)
+  onTap_: function(e) {
+    // Prevent |tap| event from bubbling. It can cause parents of this elements
+    // to erroneously re-toggle this control.
+    e.stopPropagation();
+
+    // User gesture has already been taken care of inside |pointermove|
+    // handlers, Do nothing here.
+    if (this.handledInPointerMove_)
       return;
 
     // If no pointermove event fired, then user just tapped on the
     // toggle button and therefore it should be toggled.
     this.toggleState_(false);
+  },
+
+  /**
+   * Whether the host of this element should handle a 'tap' event it received,
+   * to be used when tapping on the parent is supposed to toggle the cr-toggle.
+   *
+   * This is necessary to avoid a corner case when pointerdown is initiated
+   * in cr-toggle, but pointerup happens outside the bounds of cr-toggle, which
+   * ends up firing a 'tap' event on the parent (see context at crbug.com/689158
+   * and crbug.com/768555).
+   * @param {!Event} e
+   * @return {boolean}
+   */
+  shouldIgnoreHostTap: function(e) {
+    let timeStamp =
+        e.detail.sourceEvent ? e.detail.sourceEvent.timeStamp : e.timeStamp;
+    return timeStamp == this.lastPointerUpTime_;
   },
 
   /**
@@ -155,14 +187,16 @@ Polymer({
    * @private
    */
   onKeyPress_: function(e) {
-    if (e.code == 'Space' || e.code == 'Enter')
+    if (e.code == 'Space' || e.code == 'Enter') {
+      e.preventDefault();
       this.toggleState_(true);
+    }
   },
 
   // customize the element's ripple
   _createRipple: function() {
     this._rippleContainer = this.$.button;
-    var ripple = Polymer.PaperRippleBehavior._createRipple();
+    let ripple = Polymer.PaperRippleBehavior._createRipple();
     ripple.id = 'ink';
     ripple.setAttribute('recenters', '');
     ripple.classList.add('circle', 'toggle-ink');

@@ -8,6 +8,7 @@
 #include "SkGpuDevice.h"
 #include "GrBlurUtils.h"
 #include "GrCaps.h"
+#include "GrColorSpaceXform.h"
 #include "GrRenderTargetContext.h"
 #include "GrStyle.h"
 #include "GrTextureAdjuster.h"
@@ -113,7 +114,8 @@ static void draw_texture_affine(const SkPaint& paint, const SkMatrix& ctm, const
         SkAssertResult(srcRect.intersect(SkRect::MakeIWH(proxy->width(), proxy->height())));
         srcToDst.mapRect(&dstRect, srcRect);
     }
-    auto csxf = GrColorSpaceXform::Make(colorSpace, rtc->getColorSpace());
+    auto csxf = GrColorSpaceXform::Make(colorSpace, proxy->config(),
+                                        rtc->colorSpaceInfo().colorSpace());
     GrSamplerState::Filter filter;
     switch (paint.getFilterQuality()) {
         case kNone_SkFilterQuality:
@@ -145,9 +147,8 @@ void SkGpuDevice::drawPinnedTextureProxy(sk_sp<GrTextureProxy> proxy, uint32_t p
                             this->clip(), fRenderTargetContext.get());
         return;
     }
-    auto contentRect = SkIRect::MakeWH(proxy->width(), proxy->height());
-    GrTextureAdjuster adjuster(this->context(), std::move(proxy), alphaType, contentRect,
-                               pinnedUniqueID, colorSpace);
+    GrTextureAdjuster adjuster(this->context(), std::move(proxy), alphaType, pinnedUniqueID,
+                               colorSpace);
     this->drawTextureProducer(&adjuster, srcRect, dstRect, constraint, viewMatrix, paint);
 }
 
@@ -159,9 +160,9 @@ void SkGpuDevice::drawTextureMaker(GrTextureMaker* maker, int imageW, int imageH
         sk_sp<SkColorSpace> cs;
         // We've done enough checks above to allow us to pass ClampNearest() and not check for
         // scaling adjustments.
-        auto proxy = maker->refTextureProxyForParams(GrSamplerState::ClampNearest(),
-                                                     fRenderTargetContext->getColorSpace(), &cs,
-                                                     nullptr);
+        auto proxy = maker->refTextureProxyForParams(
+                GrSamplerState::ClampNearest(), fRenderTargetContext->colorSpaceInfo().colorSpace(),
+                &cs, nullptr);
         if (!proxy) {
             return;
         }
@@ -283,19 +284,20 @@ void SkGpuDevice::drawTextureProducerImpl(GrTextureProducer* producer,
         }
         textureMatrix = &tempMatrix;
     }
-    auto fp = producer->createFragmentProcessor(*textureMatrix, clippedSrcRect, constraintMode,
-                                                coordsAllInsideSrcRect, filterMode,
-                                                fRenderTargetContext->getColorSpace());
+    auto fp = producer->createFragmentProcessor(
+            *textureMatrix, clippedSrcRect, constraintMode, coordsAllInsideSrcRect, filterMode,
+            fRenderTargetContext->colorSpaceInfo().colorSpace());
     if (!fp) {
         return;
     }
 
     GrPaint grPaint;
-    if (!SkPaintToGrPaintWithTexture(fContext.get(), fRenderTargetContext.get(), paint, viewMatrix,
-                                     std::move(fp), producer->isAlphaOnly(), &grPaint)) {
+    if (!SkPaintToGrPaintWithTexture(fContext.get(), fRenderTargetContext->colorSpaceInfo(), paint,
+                                     viewMatrix, std::move(fp), producer->isAlphaOnly(),
+                                     &grPaint)) {
         return;
     }
-    GrAA aa = GrBoolToAA(paint.isAntiAlias());
+    GrAA aa = GrAA(paint.isAntiAlias());
     if (canUseTextureCoordsAsLocalCoords) {
         fRenderTargetContext->fillRectToRect(this->clip(), std::move(grPaint), aa, viewMatrix,
                                              clippedDstRect, clippedSrcRect);

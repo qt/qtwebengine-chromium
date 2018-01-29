@@ -4,10 +4,13 @@
 
 #include "modules/media_capabilities/MediaCapabilities.h"
 
+#include <memory>
+
 #include "bindings/core/v8/CallbackPromiseAdapter.h"
 #include "bindings/core/v8/ScriptPromise.h"
 #include "bindings/core/v8/ScriptPromiseResolver.h"
 #include "core/dom/DOMException.h"
+#include "core/html/parser/HTMLParserIdioms.h"
 #include "modules/media_capabilities/MediaCapabilitiesInfo.h"
 #include "modules/media_capabilities/MediaConfiguration.h"
 #include "modules/media_capabilities/MediaDecodingConfiguration.h"
@@ -30,9 +33,34 @@ constexpr const char* kAudioMimeTypePrefix = "audio/";
 constexpr const char* kVideoMimeTypePrefix = "video/";
 constexpr const char* kCodecsMimeTypeParam = "codecs";
 
+// Computes the effective framerate value based on the framerate field passed to
+// the VideoConfiguration. It will return the parsed string as a double or
+// compute the value in case of it is of the form "a/b".
+// If the value is not valid, it will return NaN.
+double ComputeFrameRate(const String& fps_str) {
+  double result = ParseToDoubleForNumberType(fps_str);
+  if (std::isfinite(result))
+    return result > 0 ? result : std::numeric_limits<double>::quiet_NaN();
+
+  size_t slash_position = fps_str.find('/');
+  if (slash_position == kNotFound)
+    return std::numeric_limits<double>::quiet_NaN();
+
+  double numerator =
+      ParseToDoubleForNumberType(fps_str.Substring(0, slash_position));
+  double denominator = ParseToDoubleForNumberType(fps_str.Substring(
+      slash_position + 1, fps_str.length() - slash_position - 1));
+  if (std::isfinite(numerator) && std::isfinite(denominator) && numerator > 0 &&
+      denominator > 0) {
+    return numerator / denominator;
+  }
+
+  return std::numeric_limits<double>::quiet_NaN();
+}
+
 bool IsValidMimeType(const String& content_type, const String& prefix) {
-  ParsedContentType parsed_content_type(content_type,
-                                        ParsedContentType::Mode::kStrict);
+  ParsedContentType parsed_content_type(content_type);
+
   if (!parsed_content_type.IsValid())
     return false;
 
@@ -40,17 +68,15 @@ bool IsValidMimeType(const String& content_type, const String& prefix) {
       !parsed_content_type.MimeType().StartsWith(kApplicationMimeTypePrefix)) {
     return false;
   }
+  const auto& parameters = parsed_content_type.GetParameters();
 
-  if (parsed_content_type.ParameterCount() > 1)
+  if (parameters.ParameterCount() > 1)
     return false;
 
-  if (parsed_content_type.ParameterCount() == 1 &&
-      parsed_content_type.ParameterValueForName(kCodecsMimeTypeParam)
-          .IsNull()) {
-    return false;
-  }
+  if (parameters.ParameterCount() == 0)
+    return true;
 
-  return true;
+  return parameters.begin()->name.LowerASCII() == kCodecsMimeTypeParam;
 }
 
 bool IsValidMediaConfiguration(const MediaConfiguration& configuration) {
@@ -64,10 +90,8 @@ bool IsValidVideoConfiguration(const VideoConfiguration& configuration) {
     return false;
 
   DCHECK(configuration.hasFramerate());
-  if (!std::isfinite(configuration.framerate()) ||
-      configuration.framerate() <= 0) {
+  if (std::isnan(ComputeFrameRate(configuration.framerate())))
     return false;
-  }
 
   return true;
 }
@@ -87,9 +111,9 @@ WebAudioConfiguration ToWebAudioConfiguration(
 
   // |contentType| is mandatory.
   DCHECK(configuration.hasContentType());
-  ParsedContentType parsed_content_type(configuration.contentType(),
-                                        ParsedContentType::Mode::kStrict);
+  ParsedContentType parsed_content_type(configuration.contentType());
   DCHECK(parsed_content_type.IsValid());
+  DCHECK(!parsed_content_type.GetParameters().HasDuplicatedNames());
 
   DEFINE_STATIC_LOCAL(const String, codecs, ("codecs"));
   web_configuration.mime_type = parsed_content_type.MimeType().LowerASCII();
@@ -115,9 +139,9 @@ WebVideoConfiguration ToWebVideoConfiguration(
 
   // All the properties are mandatory.
   DCHECK(configuration.hasContentType());
-  ParsedContentType parsed_content_type(configuration.contentType(),
-                                        ParsedContentType::Mode::kStrict);
+  ParsedContentType parsed_content_type(configuration.contentType());
   DCHECK(parsed_content_type.IsValid());
+  DCHECK(!parsed_content_type.GetParameters().HasDuplicatedNames());
 
   DEFINE_STATIC_LOCAL(const String, codecs, ("codecs"));
   web_configuration.mime_type = parsed_content_type.MimeType().LowerASCII();
@@ -133,7 +157,9 @@ WebVideoConfiguration ToWebVideoConfiguration(
   web_configuration.bitrate = configuration.bitrate();
 
   DCHECK(configuration.hasFramerate());
-  web_configuration.framerate = configuration.framerate();
+  double computed_framerate = ComputeFrameRate(configuration.framerate());
+  DCHECK(!std::isnan(computed_framerate));
+  web_configuration.framerate = computed_framerate;
 
   return web_configuration;
 }
@@ -219,7 +245,7 @@ ScriptPromise MediaCapabilities::decodingInfo(
 
   Platform::Current()->MediaCapabilitiesClient()->DecodingInfo(
       ToWebMediaConfiguration(configuration),
-      WTF::MakeUnique<CallbackPromiseAdapter<MediaCapabilitiesInfo, void>>(
+      std::make_unique<CallbackPromiseAdapter<MediaCapabilitiesInfo, void>>(
           resolver));
 
   return promise;
@@ -266,11 +292,9 @@ ScriptPromise MediaCapabilities::encodingInfo(
 
   handler->EncodingInfo(
       ToWebMediaConfiguration(configuration),
-      WTF::MakeUnique<CallbackPromiseAdapter<MediaCapabilitiesInfo, void>>(
+      std::make_unique<CallbackPromiseAdapter<MediaCapabilitiesInfo, void>>(
           resolver));
   return promise;
 }
-
-DEFINE_TRACE(MediaCapabilities) {}
 
 }  // namespace blink

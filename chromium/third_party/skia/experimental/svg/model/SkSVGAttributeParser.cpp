@@ -593,3 +593,57 @@ bool SkSVGAttributeParser::parseFillRule(SkSVGFillRule* fillRule) {
 
     return parsedValue && this->parseEOSToken();
 }
+
+// https://www.w3.org/TR/SVG/painting.html#VisibilityProperty
+bool SkSVGAttributeParser::parseVisibility(SkSVGVisibility* visibility) {
+    static const struct {
+        SkSVGVisibility::Type fType;
+        const char*           fName;
+    } gVisibilityInfo[] = {
+        { SkSVGVisibility::Type::kVisible , "visible"  },
+        { SkSVGVisibility::Type::kHidden  , "hidden"   },
+        { SkSVGVisibility::Type::kCollapse, "collapse" },
+        { SkSVGVisibility::Type::kInherit , "inherit"  },
+    };
+
+    bool parsedValue = false;
+    for (const auto& parseInfo : gVisibilityInfo) {
+        if (this->parseExpectedStringToken(parseInfo.fName)) {
+            *visibility = SkSVGVisibility(parseInfo.fType);
+            parsedValue = true;
+            break;
+        }
+    }
+
+    return parsedValue && this->parseEOSToken();
+}
+
+// https://www.w3.org/TR/SVG/painting.html#StrokeDasharrayProperty
+bool SkSVGAttributeParser::parseDashArray(SkSVGDashArray* dashArray) {
+    bool parsedValue = false;
+    if (this->parseExpectedStringToken("none")) {
+        *dashArray = SkSVGDashArray(SkSVGDashArray::Type::kNone);
+        parsedValue = true;
+    } else if (this->parseExpectedStringToken("inherit")) {
+        *dashArray = SkSVGDashArray(SkSVGDashArray::Type::kInherit);
+        parsedValue = true;
+    } else {
+        SkTDArray<SkSVGLength> dashes;
+        for (;;) {
+            SkSVGLength dash;
+            // parseLength() also consumes trailing separators.
+            if (!this->parseLength(&dash)) {
+                break;
+            }
+
+            dashes.push(dash);
+            parsedValue = true;
+        }
+
+        if (parsedValue) {
+            *dashArray = SkSVGDashArray(std::move(dashes));
+        }
+    }
+
+    return parsedValue && this->parseEOSToken();
+}

@@ -19,6 +19,7 @@
 #include "content/browser/renderer_host/media/audio_input_device_manager.h"
 #include "content/browser/renderer_host/media/media_stream_manager.h"
 #include "content/common/media/audio_messages.h"
+#include "content/public/browser/browser_context.h"
 #include "content/public/browser/media_device_id.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/test/mock_render_process_host.h"
@@ -45,7 +46,6 @@ namespace {
 const int kStreamId = 50;
 const char kSecurityOrigin[] = "http://localhost";
 const char kDefaultDeviceId[] = "";
-const char kSalt[] = "salt";
 const char kBadDeviceId[] =
     "badbadbadbadbadbadbadbadbadbadbadbadbadbadbadbadbadbadbadbadbad1";
 const char kInvalidDeviceId[] = "invalid-device-id";
@@ -68,7 +68,7 @@ class MockAudioMirroringManager : public AudioMirroringManager {
 class FakeAudioManagerWithAssociations : public media::FakeAudioManager {
  public:
   explicit FakeAudioManagerWithAssociations(media::AudioLogFactory* factory)
-      : FakeAudioManager(base::MakeUnique<media::TestAudioThread>(), factory) {}
+      : FakeAudioManager(std::make_unique<media::TestAudioThread>(), factory) {}
 
   void CreateDeviceAssociation(const std::string& input_device_id,
                                const std::string& output_device_id) {
@@ -99,17 +99,14 @@ class MockAudioRendererHost : public AudioRendererHost {
                         media::AudioManager* audio_manager,
                         media::AudioSystem* audio_system,
                         AudioMirroringManager* mirroring_manager,
-                        MediaStreamManager* media_stream_manager,
-                        const std::string& salt)
+                        MediaStreamManager* media_stream_manager)
       : AudioRendererHost(render_process_id,
                           audio_manager,
                           audio_system,
                           mirroring_manager,
-                          media_stream_manager,
-                          salt),
+                          media_stream_manager),
         shared_memory_length_(0),
-        auth_run_loop_(auth_run_loop) {
-  }
+        auth_run_loop_(auth_run_loop) {}
 
   // A list of mock methods.
   MOCK_METHOD4(OnDeviceAuthorized,
@@ -208,16 +205,15 @@ class AudioRendererHostTest : public RenderViewHostTestHarness {
 
     RenderViewHostTestHarness::SetUp();
     audio_manager_ =
-        base::MakeUnique<FakeAudioManagerWithAssociations>(&log_factory_);
+        std::make_unique<FakeAudioManagerWithAssociations>(&log_factory_);
     audio_system_ =
         std::make_unique<media::AudioSystemImpl>(audio_manager_.get());
-    media_stream_manager_ = base::MakeUnique<MediaStreamManager>(
+    media_stream_manager_ = std::make_unique<MediaStreamManager>(
         audio_system_.get(), audio_manager_->GetTaskRunner());
-    auth_run_loop_ = base::MakeUnique<base::RunLoop>();
+    auth_run_loop_ = std::make_unique<base::RunLoop>();
     host_ = base::MakeRefCounted<MockAudioRendererHost>(
         auth_run_loop_.get(), process()->GetID(), audio_manager_.get(),
-        audio_system_.get(), &mirroring_manager_, media_stream_manager_.get(),
-        kSalt);
+        audio_system_.get(), &mirroring_manager_, media_stream_manager_.get());
 
     // Simulate IPC channel connected.
     host_->set_peer_process_for_testing(base::Process::Current());
@@ -296,7 +292,8 @@ class AudioRendererHostTest : public RenderViewHostTestHarness {
   }
 
   void Create() {
-    Create(kDefaultDeviceId, url::Origin(GURL(kSecurityOrigin)), true, true);
+    Create(kDefaultDeviceId, url::Origin::Create(GURL(kSecurityOrigin)), true,
+           true);
   }
 
   void Create(const std::string& device_id,
@@ -307,16 +304,18 @@ class AudioRendererHostTest : public RenderViewHostTestHarness {
         device_id == kDefaultDeviceId ||
                 device_id ==
                     MediaStreamManager::GetHMACForMediaDeviceID(
-                        kSalt, url::Origin(GURL(kSecurityOrigin)),
+                        browser_context()->GetMediaDeviceIDSalt(),
+                        url::Origin::Create(GURL(kSecurityOrigin)),
                         GetNondefaultIdExpectedToPassPermissionsCheck())
             ? media::OUTPUT_DEVICE_STATUS_OK
             : device_id == kBadDeviceId
                   ? media::OUTPUT_DEVICE_STATUS_ERROR_NOT_AUTHORIZED
                   : media::OUTPUT_DEVICE_STATUS_ERROR_NOT_FOUND;
 
-    if (expect_onauthorized)
+    if (expect_onauthorized) {
       EXPECT_CALL(*host_.get(),
                   OnDeviceAuthorized(kStreamId, expected_device_status, _, _));
+    }
 
     if (expected_device_status == media::OUTPUT_DEVICE_STATUS_OK) {
       EXPECT_CALL(*host_.get(), WasNotifiedOfCreation(kStreamId));
@@ -352,7 +351,7 @@ class AudioRendererHostTest : public RenderViewHostTestHarness {
   }
 
   void CreateWithoutWaitingForAuth(const std::string& device_id) {
-    Create(device_id, url::Origin(GURL(kSecurityOrigin)), false, false);
+    Create(device_id, url::Origin::Create(GURL(kSecurityOrigin)), false, false);
   }
 
   void CreateWithInvalidRenderFrameId() {
@@ -381,7 +380,8 @@ class AudioRendererHostTest : public RenderViewHostTestHarness {
     std::string output_id = GetNondefaultIdExpectedToPassPermissionsCheck();
     std::string input_id = GetNondefaultInputId();
     std::string hashed_output_id = MediaStreamManager::GetHMACForMediaDeviceID(
-        kSalt, url::Origin(GURL(kSecurityOrigin)), output_id);
+        browser_context()->GetMediaDeviceIDSalt(),
+        url::Origin::Create(GURL(kSecurityOrigin)), output_id);
     // Set up association between input and output so that the output
     // device gets selected when using session id:
     audio_manager_->CreateDeviceAssociation(input_id, output_id);
@@ -549,12 +549,12 @@ TEST_F(AudioRendererHostTest, SimulateErrorAndClose) {
 }
 
 TEST_F(AudioRendererHostTest, CreateUnifiedStreamAndClose) {
-  CreateUnifiedStream(url::Origin(GURL(kSecurityOrigin)));
+  CreateUnifiedStream(url::Origin::Create(GURL(kSecurityOrigin)));
   Close();
 }
 
 TEST_F(AudioRendererHostTest, CreateUnauthorizedDevice) {
-  Create(kBadDeviceId, url::Origin(GURL(kSecurityOrigin)), true, true);
+  Create(kBadDeviceId, url::Origin::Create(GURL(kSecurityOrigin)), true, true);
   Close();
 }
 
@@ -562,8 +562,9 @@ TEST_F(AudioRendererHostTest, CreateAuthorizedDevice) {
   OverrideDevicePermissions(true);
   std::string id = GetNondefaultIdExpectedToPassPermissionsCheck();
   std::string hashed_id = MediaStreamManager::GetHMACForMediaDeviceID(
-      kSalt, url::Origin(GURL(kSecurityOrigin)), id);
-  Create(hashed_id, url::Origin(GURL(kSecurityOrigin)), true, true);
+      browser_context()->GetMediaDeviceIDSalt(),
+      url::Origin::Create(GURL(kSecurityOrigin)), id);
+  Create(hashed_id, url::Origin::Create(GURL(kSecurityOrigin)), true, true);
   Close();
 }
 
@@ -574,7 +575,8 @@ TEST_F(AudioRendererHostTest, CreateDeviceWithAuthorizationPendingIsError) {
 }
 
 TEST_F(AudioRendererHostTest, CreateInvalidDevice) {
-  Create(kInvalidDeviceId, url::Origin(GURL(kSecurityOrigin)), true, true);
+  Create(kInvalidDeviceId, url::Origin::Create(GURL(kSecurityOrigin)), true,
+         true);
   Close();
 }
 

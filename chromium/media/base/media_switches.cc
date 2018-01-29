@@ -215,6 +215,10 @@ const base::Feature kUseAndroidOverlay{"UseAndroidOverlay",
 const base::Feature kUseAndroidOverlayAggressively{
     "UseAndroidOverlayAggressively", base::FEATURE_ENABLED_BY_DEFAULT};
 
+// Enables playback of AV1 video files.
+const base::Feature kAv1Decoder{"Av1Decoder",
+                                base::FEATURE_DISABLED_BY_DEFAULT};
+
 // Let video track be unselected when video is playing in the background.
 const base::Feature kBackgroundVideoTrackOptimization{
     "BackgroundVideoTrackOptimization", base::FEATURE_ENABLED_BY_DEFAULT};
@@ -249,10 +253,6 @@ const base::Feature kMseFlacInIsobmff{"MseFlacInIsobmff",
 const base::Feature kNewRemotePlaybackPipeline{
     "NewRemotePlaybackPipeline", base::FEATURE_DISABLED_BY_DEFAULT};
 
-// Set preload to "metadata" by default for <video> and <audio>.
-const base::Feature kPreloadDefaultIsMetadata{
-    "PreloadDefaultIsMetadata", base::FEATURE_DISABLED_BY_DEFAULT};
-
 // CanPlayThrough issued according to standard.
 const base::Feature kSpecCompliantCanPlayThrough{
     "SpecCompliantCanPlayThrough", base::FEATURE_ENABLED_BY_DEFAULT};
@@ -265,9 +265,10 @@ const base::Feature kUseNewMediaCache{"use-new-media-cache",
 const base::Feature kUseR16Texture{"use-r16-texture",
                                    base::FEATURE_DISABLED_BY_DEFAULT};
 
-// Correct video colors based on output display?
-const base::Feature kVideoColorManagement{"video-color-management",
-                                          base::FEATURE_ENABLED_BY_DEFAULT};
+// Enables the Unified Autoplay policy by overriding the platform's default
+// autoplay policy.
+const base::Feature kUnifiedAutoplay{"UnifiedAutoplay",
+                                     base::FEATURE_DISABLED_BY_DEFAULT};
 
 // Use SurfaceLayer instead of VideoLayer.
 const base::Feature kUseSurfaceLayerForVideo{"UseSurfaceLayerForVideo",
@@ -283,6 +284,10 @@ const base::Feature kVideoBlitColorAccuracy{"video-blit-color-accuracy",
 const base::Feature kExternalClearKeyForTesting{
     "ExternalClearKeyForTesting", base::FEATURE_DISABLED_BY_DEFAULT};
 
+// Enables support of experimental CDM interface version(s). This is usually
+// used to enable new CDM interface support for testing while it's still in
+// development. This switch may not be used anywhere if there's no experimental
+// CDM interface being developed.
 const base::Feature kSupportExperimentalCdmInterface{
     "SupportExperimentalCdmInterface", base::FEATURE_DISABLED_BY_DEFAULT};
 
@@ -334,14 +339,6 @@ const base::Feature kMediaFoundationH264Encoding{
     "MediaFoundationH264Encoding", base::FEATURE_ENABLED_BY_DEFAULT};
 #endif  // defined(OS_WIN)
 
-#if defined(OS_MACOSX)
-// Enables a workaround for a CoreAudio issue. The workaround ensures that
-// CoreAudio's pause and resume operations are serialized. These operations are
-// executed when the system is suspended and when it resumes.
-const base::Feature kSerializeCoreAudioPauseResume{
-    "SerializeCoreAudioPauseResume", base::FEATURE_DISABLED_BY_DEFAULT};
-#endif  // defined(OS_MACOSX)
-
 std::string GetEffectiveAutoplayPolicy(const base::CommandLine& command_line) {
   // |kIgnoreAutoplayRestrictionsForTests| overrides all other settings.
   if (command_line.HasSwitch(switches::kIgnoreAutoplayRestrictionsForTests))
@@ -351,6 +348,9 @@ std::string GetEffectiveAutoplayPolicy(const base::CommandLine& command_line) {
   if (command_line.HasSwitch(switches::kAutoplayPolicy))
     return command_line.GetSwitchValueASCII(switches::kAutoplayPolicy);
 
+  if (base::FeatureList::IsEnabled(media::kUnifiedAutoplay))
+    return switches::autoplay::kDocumentUserActivationRequiredPolicy;
+
 // The default value is platform dependent.
 #if defined(OS_ANDROID)
   return switches::autoplay::kUserGestureRequiredPolicy;
@@ -358,6 +358,14 @@ std::string GetEffectiveAutoplayPolicy(const base::CommandLine& command_line) {
   return switches::autoplay::kNoUserGestureRequiredPolicy;
 #endif
 }
+
+#if BUILDFLAG(ENABLE_PLUGINS)
+MEDIA_EXPORT bool IsAudioFocusDuckFlashEnabled() {
+  return base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
+             switches::kEnableAudioFocus) ==
+         switches::kEnableAudioFocusDuckFlash;
+}
+#endif  // BUILDFLAG(ENABLE_PLUGINS)
 
 // Adds icons to the overflow menu on the native media controls.
 // For experiment: crbug.com/763301

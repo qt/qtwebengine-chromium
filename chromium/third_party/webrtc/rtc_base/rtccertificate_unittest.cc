@@ -15,8 +15,8 @@
 #include "rtc_base/fakesslidentity.h"
 #include "rtc_base/gunit.h"
 #include "rtc_base/logging.h"
+#include "rtc_base/numerics/safe_conversions.h"
 #include "rtc_base/rtccertificate.h"
-#include "rtc_base/safe_conversions.h"
 #include "rtc_base/sslidentity.h"
 #include "rtc_base/thread.h"
 #include "rtc_base/timeutils.h"
@@ -30,10 +30,6 @@ static const char* kTestCertCommonName = "RTCCertificateTest's certificate";
 }  // namespace
 
 class RTCCertificateTest : public testing::Test {
- public:
-  RTCCertificateTest() {}
-  ~RTCCertificateTest() {}
-
  protected:
   scoped_refptr<RTCCertificate> GenerateECDSA() {
     std::unique_ptr<SSLIdentity> identity(

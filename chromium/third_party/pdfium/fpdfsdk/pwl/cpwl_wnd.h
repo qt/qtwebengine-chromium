@@ -95,8 +95,8 @@ inline bool operator!=(const CFX_Color& c1, const CFX_Color& c2) {
 
 #define PWL_SCROLLBAR_WIDTH 12.0f
 #define PWL_SCROLLBAR_TRANSPARENCY 150
-#define PWL_DEFAULT_BLACKCOLOR CFX_Color(COLORTYPE_GRAY, 0)
-#define PWL_DEFAULT_WHITECOLOR CFX_Color(COLORTYPE_GRAY, 1)
+#define PWL_DEFAULT_BLACKCOLOR CFX_Color(CFX_Color::kGray, 0)
+#define PWL_DEFAULT_WHITECOLOR CFX_Color(CFX_Color::kGray, 1)
 
 class CPWL_Wnd : public CPWL_TimerHandler, public Observable<CPWL_Wnd> {
  public:
@@ -249,9 +249,10 @@ class CPWL_Wnd : public CPWL_TimerHandler, public Observable<CPWL_Wnd> {
   void SetChildMatrix(const CFX_Matrix& mt);
   CFX_Matrix GetWindowMatrix() const;
 
- protected:
-  friend class CPWL_MsgControl;
+  virtual void OnSetFocus();
+  virtual void OnKillFocus();
 
+ protected:
   // CPWL_TimerHandler
   CFX_SystemHandler* GetSystemHandler() const override;
 
@@ -266,9 +267,6 @@ class CPWL_Wnd : public CPWL_TimerHandler, public Observable<CPWL_Wnd> {
   virtual void OnCreate(CreateParams* pParamsToAdjust);
   virtual void OnCreated();
   virtual void OnDestroy();
-
-  virtual void OnSetFocus();
-  virtual void OnKillFocus();
 
   void SetNotifyFlag(bool bNotifying = true) { m_bNotifying = bNotifying; }
   bool IsNotifying() const { return m_bNotifying; }

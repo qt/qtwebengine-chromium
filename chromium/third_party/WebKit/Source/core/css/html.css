@@ -517,7 +517,17 @@ input::-webkit-input-placeholder {
     -webkit-user-modify: read-only !important;
 }
 
+input::-internal-input-suggested {
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    overflow: hidden;
+}
+
 input[type="password" i] {
+    -webkit-text-security: disc !important;
+}
+
+input[type="password" i]::-internal-input-suggested {
     -webkit-text-security: disc !important;
 }
 
@@ -533,6 +543,10 @@ input[type="file" i] {
     align-items: baseline;
     color: inherit;
     text-align: start !important;
+}
+
+input[type="image" i] {
+    cursor: pointer;
 }
 
 input:-webkit-autofill, textarea:-webkit-autofill, select:-webkit-autofill {
@@ -625,6 +639,7 @@ input[type="button" i]:active:disabled, input[type="submit" i]:active:disabled, 
 
 input:disabled, textarea:disabled {
     color: #545454;
+    cursor: default;
 }
 
 option:-internal-spatial-navigation-focus {
@@ -1009,6 +1024,10 @@ a:-webkit-any-link {
 
 a:-webkit-any-link:active {
     color: -webkit-activelink
+}
+
+a:-webkit-any-link:read-write {
+    cursor: text;
 }
 
 /* HTML5 ruby elements */

@@ -233,7 +233,7 @@ void DataObject::AddFilename(const String& filename,
       File::CreateForUserProvidedFile(filename, display_name), file_system_id));
 }
 
-void DataObject::AddSharedBuffer(RefPtr<SharedBuffer> buffer,
+void DataObject::AddSharedBuffer(scoped_refptr<SharedBuffer> buffer,
                                  const KURL& source_url,
                                  const String& filename_extension,
                                  const AtomicString& content_disposition) {
@@ -281,7 +281,7 @@ void DataObject::NotifyItemListChanged() const {
     observer->OnItemListChanged();
 }
 
-DEFINE_TRACE(DataObject) {
+void DataObject::Trace(blink::Visitor* visitor) {
   visitor->Trace(item_list_);
   visitor->Trace(observers_);
   Supplementable<DataObject>::Trace(visitor);

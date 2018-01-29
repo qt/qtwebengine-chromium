@@ -54,6 +54,20 @@ struct SK_API SkColorSpaceTransferFn {
      * this one.
      */
     SkColorSpaceTransferFn invert() const;
+
+    /**
+     * Transform a single float by this transfer function.
+     * For negative inputs, returns sign(x) * f(abs(x)).
+     */
+    float operator()(float x) {
+        SkScalar s = SkScalarSignAsScalar(x);
+        x = sk_float_abs(x);
+        if (x >= fD) {
+            return s * (powf(fA * x + fB, fG) + fE);
+        } else {
+            return s * (fC * x + fF);
+        }
+    }
 };
 
 class SK_API SkColorSpace : public SkRefCnt {
@@ -103,6 +117,16 @@ public:
      *  Create an SkColorSpace from an ICC profile.
      */
     static sk_sp<SkColorSpace> MakeICC(const void*, size_t);
+
+    /**
+     *  Types of colorspaces.
+     */
+    enum Type {
+        kRGB_Type,
+        kCMYK_Type,
+        kGray_Type,
+    };
+    Type type() const;
 
     /**
      *  Returns true if the color space gamma is near enough to be approximated as sRGB.

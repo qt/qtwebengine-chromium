@@ -7,7 +7,7 @@
 #include "base/memory/ptr_util.h"
 #include "base/trace_event/trace_event.h"
 #include "cc/base/math_util.h"
-#include "cc/base/render_surface_filters.h"
+#include "cc/paint/render_surface_filters.h"
 #include "cc/resources/scoped_resource.h"
 #include "components/viz/common/display/renderer_settings.h"
 #include "components/viz/common/frame_sinks/copy_output_request.h"
@@ -74,12 +74,12 @@ ResourceFormat SoftwareRenderer::BackbufferFormat() const {
 }
 
 void SoftwareRenderer::BeginDrawingFrame() {
-  TRACE_EVENT0("cc", "SoftwareRenderer::BeginDrawingFrame");
+  TRACE_EVENT0("viz", "SoftwareRenderer::BeginDrawingFrame");
   root_canvas_ = output_device_->BeginPaint(current_frame()->root_damage_rect);
 }
 
 void SoftwareRenderer::FinishDrawingFrame() {
-  TRACE_EVENT0("cc", "SoftwareRenderer::FinishDrawingFrame");
+  TRACE_EVENT0("viz", "SoftwareRenderer::FinishDrawingFrame");
   current_framebuffer_lock_ = nullptr;
   current_framebuffer_canvas_.reset();
   current_canvas_ = nullptr;
@@ -90,7 +90,7 @@ void SoftwareRenderer::FinishDrawingFrame() {
 
 void SoftwareRenderer::SwapBuffers(std::vector<ui::LatencyInfo> latency_info) {
   DCHECK(visible_);
-  TRACE_EVENT0("cc", "SoftwareRenderer::SwapBuffers");
+  TRACE_EVENT0("viz", "SoftwareRenderer::SwapBuffers");
   OutputSurfaceFrame output_frame;
   output_frame.latency_info = std::move(latency_info);
   output_surface_->SwapBuffers(std::move(output_frame));
@@ -115,8 +115,10 @@ void SoftwareRenderer::BindFramebufferToOutputSurface() {
   current_canvas_ = root_canvas_;
 }
 
-bool SoftwareRenderer::BindFramebufferToTexture(
-    const cc::ScopedResource* texture) {
+void SoftwareRenderer::BindFramebufferToTexture(
+    const RenderPassId render_pass_id) {
+  cc::ScopedResource* texture = render_pass_textures_[render_pass_id].get();
+  DCHECK(texture);
   DCHECK(texture->id());
 
   // Explicitly release lock, otherwise we can crash when try to lock
@@ -128,7 +130,6 @@ bool SoftwareRenderer::BindFramebufferToTexture(
   current_framebuffer_canvas_ =
       std::make_unique<SkCanvas>(current_framebuffer_lock_->sk_bitmap());
   current_canvas_ = current_framebuffer_canvas_.get();
-  return true;
 }
 
 void SoftwareRenderer::SetScissorTestRect(const gfx::Rect& scissor_rect) {
@@ -199,10 +200,10 @@ void SoftwareRenderer::PrepareSurfaceForPass(
 
 bool SoftwareRenderer::IsSoftwareResource(ResourceId resource_id) const {
   switch (resource_provider_->GetResourceType(resource_id)) {
-    case cc::ResourceProvider::RESOURCE_TYPE_GPU_MEMORY_BUFFER:
-    case cc::ResourceProvider::RESOURCE_TYPE_GL_TEXTURE:
+    case ResourceType::kGpuMemoryBuffer:
+    case ResourceType::kTexture:
       return false;
-    case cc::ResourceProvider::RESOURCE_TYPE_BITMAP:
+    case ResourceType::kBitmap:
       return true;
   }
 
@@ -215,7 +216,7 @@ void SoftwareRenderer::DoDrawQuad(const DrawQuad* quad,
   if (!current_canvas_)
     return;
 
-  TRACE_EVENT0("cc", "SoftwareRenderer::DoDrawQuad");
+  TRACE_EVENT0("viz", "SoftwareRenderer::DoDrawQuad");
   bool do_save = draw_region || is_scissor_enabled_;
   SkAutoCanvasRestore canvas_restore(current_canvas_, do_save);
   if (is_scissor_enabled_) {
@@ -338,7 +339,7 @@ void SoftwareRenderer::DrawPictureQuad(const PictureDrawQuad* quad) {
   const bool disable_image_filtering =
       disable_picture_quad_image_filtering_ || quad->nearest_neighbor;
 
-  TRACE_EVENT0("cc", "SoftwareRenderer::DrawPictureQuad");
+  TRACE_EVENT0("viz", "SoftwareRenderer::DrawPictureQuad");
 
   SkCanvas* raster_canvas = current_canvas_;
 
@@ -476,9 +477,10 @@ void SoftwareRenderer::DrawRenderPassQuad(const RenderPassDrawQuad* quad) {
   const cc::FilterOperations* filters = FiltersForPass(quad->render_pass_id);
   if (filters) {
     DCHECK(!filters->IsEmpty());
-    sk_sp<SkImageFilter> image_filter =
-        cc::RenderSurfaceFilters::BuildImageFilter(
-            *filters, gfx::SizeF(content_texture->size()));
+    auto paint_filter = cc::RenderSurfaceFilters::BuildImageFilter(
+        *filters, gfx::SizeF(content_texture->size()));
+    auto image_filter =
+        paint_filter ? paint_filter->cached_sk_filter_ : nullptr;
     if (image_filter) {
       SkIRect result_rect;
       // TODO(ajuma): Apply the filter in the same pass as the content where
@@ -570,40 +572,27 @@ void SoftwareRenderer::DrawUnsupportedQuad(const DrawQuad* quad) {
 
 void SoftwareRenderer::CopyDrawnRenderPass(
     std::unique_ptr<CopyOutputRequest> request) {
-  // SoftwareRenderer supports RGBA_BITMAP only. For legacy reasons, if a
-  // RGBA_TEXTURE request is being made, clients are prepared to accept
-  // RGBA_BITMAP results.
-  //
-  // TODO(miu): Get rid of the legacy behavior and send empty results for
-  // RGBA_TEXTURE requests once tab capture is moved into VIZ.
-  // http://crbug.com/754872
-  switch (request->result_format()) {
-    case CopyOutputRequest::ResultFormat::RGBA_BITMAP:
-    case CopyOutputRequest::ResultFormat::RGBA_TEXTURE:
-      break;
-  }
+  // Finalize the source subrect, as the entirety of the RenderPass's output
+  // optionally clamped to the requested copy area. Then, compute the result
+  // rect, which is the selection clamped to the maximum possible result bounds.
+  // If there will be zero pixels of output or the scaling ratio was not
+  // reasonable, do not proceed.
+  gfx::Rect output_rect = current_frame()->current_render_pass->output_rect;
+  if (request->has_area())
+    output_rect.Intersect(request->area());
+  const gfx::Rect result_bounds =
+      request->is_scaled() ? copy_output::ComputeResultRect(
+                                 gfx::Rect(output_rect.size()),
+                                 request->scale_from(), request->scale_to())
+                           : gfx::Rect(output_rect.size());
+  gfx::Rect result_rect = result_bounds;
+  if (request->has_result_selection())
+    result_rect.Intersect(request->result_selection());
+  if (result_rect.IsEmpty())
+    return;
 
-  // Finalize the source rect, either as the entire RenderPass's output rect, or
-  // the client-provided area clamped to the output rect.
-  if (request->has_area()) {
-    gfx::Rect clamped_area = request->area();
-    clamped_area.Intersect(current_frame()->current_render_pass->output_rect);
-    request->set_area(clamped_area);
-  } else {
-    request->set_area(current_frame()->current_render_pass->output_rect);
-  }
-
-  gfx::Rect result_rect;
   SkBitmap bitmap;
   if (request->is_scaled()) {
-    // Compute the rect of the pixels in the copy output result's coordinate
-    // space that are affected by the requested copy area. If there will be zero
-    // pixels of output or the scaling ratio was not reasonable, do not proceed.
-    result_rect = copy_output::ComputeResultRect(
-        request->area(), request->scale_from(), request->scale_to());
-    if (result_rect.IsEmpty())
-      return;
-
     // Resolve the source for the scaling input: Initialize a SkPixmap that
     // selects the current RenderPass's output rect within the current canvas
     // and provides access to its pixels.
@@ -611,19 +600,12 @@ void SoftwareRenderer::CopyDrawnRenderPass(
     if (!current_canvas_->peekPixels(&render_pass_output))
       return;
     {
-      const gfx::Rect subrect = MoveFromDrawToWindowSpace(
-          current_frame()->current_render_pass->output_rect);
+      const gfx::Rect subrect = MoveFromDrawToWindowSpace(output_rect);
       render_pass_output = SkPixmap(
           render_pass_output.info().makeWH(subrect.width(), subrect.height()),
           render_pass_output.addr(subrect.x(), subrect.y()),
           render_pass_output.rowBytes());
     }
-    const gfx::Size scaled_output_size =
-        copy_output::ComputeResultRect(
-            gfx::Rect(render_pass_output.width(), render_pass_output.height()),
-            request->scale_from(), request->scale_to())
-            .size();
-    DCHECK(gfx::Rect(scaled_output_size).Contains(result_rect));
 
     // Execute the scaling: For downscaling, use the RESIZE_BETTER strategy
     // (appropriate for thumbnailing); and, for upscaling, use the RESIZE_BEST
@@ -637,15 +619,13 @@ void SoftwareRenderer::CopyDrawnRenderPass(
         is_downscale_in_both_dimensions ? ImageOperations::RESIZE_BETTER
                                         : ImageOperations::RESIZE_BEST;
     bitmap = ImageOperations::Resize(
-        render_pass_output, method, scaled_output_size.width(),
-        scaled_output_size.height(),
+        render_pass_output, method, result_bounds.width(),
+        result_bounds.height(),
         SkIRect{result_rect.x(), result_rect.y(), result_rect.right(),
                 result_rect.bottom()});
   } else /* if (!request->is_scaled()) */ {
-    result_rect = request->area();
-    if (result_rect.IsEmpty())
-      return;
-    const gfx::Rect window_copy_rect = MoveFromDrawToWindowSpace(result_rect);
+    const gfx::Rect window_copy_rect =
+        MoveFromDrawToWindowSpace(result_rect + output_rect.OffsetFromOrigin());
     bitmap.allocPixels(SkImageInfo::MakeN32Premul(
         window_copy_rect.width(), window_copy_rect.height(),
         current_canvas_->imageInfo().refColorSpace()));
@@ -654,8 +634,20 @@ void SoftwareRenderer::CopyDrawnRenderPass(
       return;
   }
 
-  request->SendResult(
-      std::make_unique<CopyOutputSkBitmapResult>(result_rect, bitmap));
+  // Deliver the result. SoftwareRenderer supports RGBA_BITMAP and I420_PLANES
+  // only. For legacy reasons, if a RGBA_TEXTURE request is being made, clients
+  // are prepared to accept RGBA_BITMAP results.
+  //
+  // TODO(crbug/754872): Get rid of the legacy behavior and send empty results
+  // for RGBA_TEXTURE requests once tab capture is moved into VIZ.
+  const CopyOutputResult::Format result_format =
+      (request->result_format() == CopyOutputResult::Format::RGBA_TEXTURE)
+          ? CopyOutputResult::Format::RGBA_BITMAP
+          : request->result_format();
+  // Note: The CopyOutputSkBitmapResult automatically provides I420 format
+  // conversion, if needed.
+  request->SendResult(std::make_unique<CopyOutputSkBitmapResult>(
+      result_format, result_rect, bitmap));
 }
 
 void SoftwareRenderer::SetEnableDCLayers(bool enable) {
@@ -796,10 +788,12 @@ sk_sp<SkShader> SoftwareRenderer::GetBackgroundFilterShader(
   gfx::Vector2dF clipping_offset =
       (unclipped_rect.top_right() - backdrop_rect.top_right()) +
       (backdrop_rect.bottom_left() - unclipped_rect.bottom_left());
-  sk_sp<SkImageFilter> filter = cc::RenderSurfaceFilters::BuildImageFilter(
-      *background_filters,
-      gfx::SizeF(backdrop_bitmap.width(), backdrop_bitmap.height()),
-      clipping_offset);
+  sk_sp<SkImageFilter> filter =
+      cc::RenderSurfaceFilters::BuildImageFilter(
+          *background_filters,
+          gfx::SizeF(backdrop_bitmap.width(), backdrop_bitmap.height()),
+          clipping_offset)
+          ->cached_sk_filter_;
   sk_sp<SkImage> filter_backdrop_image =
       ApplyImageFilter(filter.get(), quad, backdrop_bitmap, nullptr);
 
@@ -808,6 +802,74 @@ sk_sp<SkShader> SoftwareRenderer::GetBackgroundFilterShader(
 
   return filter_backdrop_image->makeShader(content_tile_mode, content_tile_mode,
                                            &filter_backdrop_transform);
+}
+
+void SoftwareRenderer::UpdateRenderPassTextures(
+    const RenderPassList& render_passes_in_draw_order,
+    const base::flat_map<RenderPassId, RenderPassRequirements>&
+        render_passes_in_frame) {
+  std::vector<RenderPassId> passes_to_delete;
+  for (const auto& pair : render_pass_textures_) {
+    auto render_pass_it = render_passes_in_frame.find(pair.first);
+    if (render_pass_it == render_passes_in_frame.end()) {
+      passes_to_delete.push_back(pair.first);
+      continue;
+    }
+
+    gfx::Size required_size = render_pass_it->second.size;
+    ResourceTextureHint required_hint = render_pass_it->second.hint;
+    cc::ScopedResource* texture = pair.second.get();
+    DCHECK(texture);
+
+    bool size_appropriate = texture->size().width() >= required_size.width() &&
+                            texture->size().height() >= required_size.height();
+    bool hint_appropriate = (texture->hint() & required_hint) == required_hint;
+    if (texture->id() && (!size_appropriate || !hint_appropriate))
+      texture->Free();
+  }
+
+  // Delete RenderPass textures from the previous frame that will not be used
+  // again.
+  for (size_t i = 0; i < passes_to_delete.size(); ++i)
+    render_pass_textures_.erase(passes_to_delete[i]);
+}
+
+void SoftwareRenderer::AllocateRenderPassResourceIfNeeded(
+    const RenderPassId render_pass_id,
+    const gfx::Size& enlarged_size,
+    ResourceTextureHint texturehint) {
+  auto& resource = render_pass_textures_[render_pass_id];
+  if (resource && resource->id())
+    return;
+
+  if (!resource)
+    resource = std::make_unique<cc::ScopedResource>(resource_provider_);
+  resource->Allocate(enlarged_size, texturehint, BackbufferFormat(),
+                     current_frame()->current_render_pass->color_space);
+}
+
+bool SoftwareRenderer::IsRenderPassResourceAllocated(
+    const RenderPassId render_pass_id) const {
+  auto texture_it = render_pass_textures_.find(render_pass_id);
+  if (texture_it == render_pass_textures_.end())
+    return false;
+
+  cc::ScopedResource* texture = texture_it->second.get();
+  DCHECK(texture);
+  return texture->id() != 0;
+}
+
+const gfx::Size& SoftwareRenderer::GetRenderPassTextureSize(
+    const RenderPassId render_pass_id) {
+  cc::ScopedResource* texture = render_pass_textures_[render_pass_id].get();
+  DCHECK(texture);
+  return texture->size();
+}
+
+bool SoftwareRenderer::HasAllocatedResourcesForTesting(
+    const RenderPassId render_pass_id) const {
+  auto iter = render_pass_textures_.find(render_pass_id);
+  return iter != render_pass_textures_.end() && iter->second->id();
 }
 
 }  // namespace viz

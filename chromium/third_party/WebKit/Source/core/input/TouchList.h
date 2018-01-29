@@ -34,8 +34,7 @@
 
 namespace blink {
 
-class CORE_EXPORT TouchList final : public GarbageCollected<TouchList>,
-                                    public ScriptWrappable {
+class CORE_EXPORT TouchList final : public ScriptWrappable {
   DEFINE_WRAPPERTYPEINFO();
 
  public:
@@ -58,7 +57,7 @@ class CORE_EXPORT TouchList final : public GarbageCollected<TouchList>,
 
   void Append(Touch* touch) { values_.push_back(touch); }
 
-  DECLARE_TRACE();
+  void Trace(blink::Visitor*);
 
  private:
   TouchList() {}

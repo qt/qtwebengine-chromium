@@ -4,6 +4,7 @@
 
 #include "core/dom/Range.h"
 
+#include "base/memory/scoped_refptr.h"
 #include "bindings/core/v8/ExceptionState.h"
 #include "bindings/core/v8/V8BindingForTesting.h"
 #include "bindings/core/v8/string_or_array_buffer_or_array_buffer_view.h"
@@ -24,11 +25,9 @@
 #include "core/html/HTMLElement.h"
 #include "core/html/HTMLHtmlElement.h"
 #include "core/html/forms/HTMLTextAreaElement.h"
-#include "core/layout/LayoutTestHelper.h"
 #include "platform/heap/Handle.h"
 #include "platform/testing/UnitTestHelpers.h"
 #include "platform/wtf/Compiler.h"
-#include "platform/wtf/RefPtr.h"
 #include "platform/wtf/text/AtomicString.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -263,12 +262,8 @@ TEST_F(RangeTest, ToPosition) {
   EXPECT_EQ(position, range.EndPosition());
 }
 
-static void LoadAhem(DummyPageHolder& page_holder, Document& document) {
-  RenderingTest::LoadAhem(page_holder.GetFrame());
-}
-
 TEST_F(RangeTest, BoundingRectMustIndependentFromSelection) {
-  LoadAhem(GetDummyPageHolder(), GetDocument());
+  LoadAhem();
   GetDocument().body()->SetInnerHTMLFromString(
       "<div style='font: Ahem; width: 2em;letter-spacing: 5px;'>xx xx </div>");
   Node* const div = GetDocument().QuerySelector("div");
@@ -322,13 +317,14 @@ static Vector<IntSize> ComputeSizesOfQuads(const Vector<FloatQuad>& quads) {
 }
 
 TEST_F(RangeTest, GetBorderAndTextQuadsWithFirstLetterOne) {
-  GetDocument().body()->SetInnerHTMLFromString(
-      "<style>"
-      "  body { font-size: 20px; }"
-      "  #sample::first-letter { font-size: 500%; }"
-      "</style>"
-      "<p id=sample>abc</p>"
-      "<p id=expected><span style='font-size: 500%'>a</span>bc</p>");
+  GetDocument().body()->SetInnerHTMLFromString(R"HTML(
+    <style>
+      body { font-size: 20px; }
+      #sample::first-letter { font-size: 500%; }
+    </style>
+    <p id=sample>abc</p>
+    <p id=expected><span style='font-size: 500%'>a</span>bc</p>
+  )HTML");
   GetDocument().UpdateStyleAndLayout();
 
   Element* const expected = GetDocument().getElementById("expected");
@@ -366,13 +362,14 @@ TEST_F(RangeTest, GetBorderAndTextQuadsWithFirstLetterOne) {
 }
 
 TEST_F(RangeTest, GetBorderAndTextQuadsWithFirstLetterThree) {
-  GetDocument().body()->SetInnerHTMLFromString(
-      "<style>"
-      "  body { font-size: 20px; }"
-      "  #sample::first-letter { font-size: 500%; }"
-      "</style>"
-      "<p id=sample>(a)bc</p>"
-      "<p id=expected><span style='font-size: 500%'>(a)</span>bc</p>");
+  GetDocument().body()->SetInnerHTMLFromString(R"HTML(
+    <style>
+      body { font-size: 20px; }
+      #sample::first-letter { font-size: 500%; }
+    </style>
+    <p id=sample>(a)bc</p>
+    <p id=expected><span style='font-size: 500%'>(a)</span>bc</p>
+  )HTML");
   GetDocument().UpdateStyleAndLayout();
 
   Element* const expected = GetDocument().getElementById("expected");

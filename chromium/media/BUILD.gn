@@ -26,6 +26,7 @@ buildflag_header("media_features") {
     "ENABLE_LIBRARY_CDMS=$enable_library_cdms",
     "ENABLE_MSE_MPEG2TS_STREAM_PARSER=$enable_mse_mpeg2ts_stream_parser",
     "ENABLE_RUNTIME_MEDIA_RENDERER_SELECTION=$enable_runtime_media_renderer_selection",
+    "ENABLE_CDM_STORAGE_ID=$enable_cdm_storage_id",
     "ENABLE_MEDIA_REMOTING=$enable_media_remoting",
     "ENABLE_MEDIA_REMOTING_RPC=$enable_media_remoting_rpc",
     "ENABLE_WEBRTC=$enable_webrtc",
@@ -137,6 +138,7 @@ source_set("test_support") {
     "//media/audio:test_support",
     "//media/base:test_support",
     "//media/base/android:test_support",
+    "//media/filters:test_support",
     "//media/formats:test_support",
     "//media/video:test_support",
   ]
@@ -148,6 +150,7 @@ test("media_unittests") {
   deps = [
     "//media/audio:unit_tests",
     "//media/base:unit_tests",
+    "//media/capabilities:unit_tests",
     "//media/cdm:unit_tests",
     "//media/device_monitors:unit_tests",
     "//media/filters:unit_tests",
@@ -324,7 +327,7 @@ fuzzer_test("media_vp8_parser_fuzzer") {
     "filters/vp8_parser_fuzzertest.cc",
   ]
   deps = [
-    ":media",
+    ":test_support",
     "//base",
   ]
   libfuzzer_options = [ "max_len = 400000" ]
@@ -336,7 +339,7 @@ fuzzer_test("media_vp9_parser_fuzzer") {
     "filters/vp9_parser_fuzzertest.cc",
   ]
   deps = [
-    ":media",
+    ":test_support",
     "//base",
   ]
   libfuzzer_options = [ "max_len = 400000" ]
@@ -369,6 +372,50 @@ if (proprietary_codecs) {
   fuzzer_test("media_mp4_avcc_parser_fuzzer") {
     sources = [
       "formats/mp4/mp4_avcc_parser_fuzzer.cc",
+    ]
+    deps = [
+      ":media",
+      "//base",
+    ]
+  }
+
+  fuzzer_test("media_mp4_box_reader_fuzzer") {
+    sources = [
+      "formats/mp4/mp4_box_reader_fuzzer.cc",
+    ]
+    deps = [
+      ":media",
+      "//base",
+    ]
+    libfuzzer_options = [ "max_len=500" ]
+    dict = "test/mp4.dict"
+  }
+}
+
+if (enable_mse_mpeg2ts_stream_parser) {
+  fuzzer_test("media_es_parser_adts_fuzzer") {
+    sources = [
+      "formats/mp2t/es_parser_adts_fuzzer.cc",
+    ]
+    deps = [
+      ":media",
+      "//base",
+    ]
+  }
+
+  fuzzer_test("media_es_parser_h264_fuzzer") {
+    sources = [
+      "formats/mp2t/es_parser_h264_fuzzer.cc",
+    ]
+    deps = [
+      ":media",
+      "//base",
+    ]
+  }
+
+  fuzzer_test("media_es_parser_mpeg1audio_fuzzer") {
+    sources = [
+      "formats/mp2t/es_parser_mpeg1audio_fuzzer.cc",
     ]
     deps = [
       ":media",

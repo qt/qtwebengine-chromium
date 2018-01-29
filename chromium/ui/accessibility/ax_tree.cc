@@ -167,7 +167,8 @@ void AXTree::UpdateData(const AXTreeData& new_data) {
 
 gfx::RectF AXTree::RelativeToTreeBounds(const AXNode* node,
                                         gfx::RectF bounds,
-                                        bool* offscreen) const {
+                                        bool* offscreen,
+                                        bool clip_bounds) const {
   // If |bounds| is uninitialized, which is not the same as empty,
   // start with the node bounds.
   if (bounds.width() == 0 && bounds.height() == 0) {
@@ -176,19 +177,11 @@ gfx::RectF AXTree::RelativeToTreeBounds(const AXNode* node,
     // If the node bounds is empty (either width or height is zero),
     // try to compute good bounds from the children.
     if (bounds.IsEmpty()) {
-      bool all_children_offscreen = true;
       for (size_t i = 0; i < node->children().size(); i++) {
         ui::AXNode* child = node->children()[i];
-        bool temp_offscreen = false;
-        bounds.Union(GetTreeBounds(child, &temp_offscreen));
-        if (!temp_offscreen)
-          // At least one child is on screen.
-          all_children_offscreen = false;
+        bounds.Union(GetTreeBounds(child));
       }
       if (bounds.width() > 0 && bounds.height() > 0) {
-        // If all the children are offscreen, the node itself is offscreen.
-        if (offscreen != nullptr && all_children_offscreen)
-          *offscreen = true;
         return bounds;
       }
     }
@@ -221,8 +214,13 @@ gfx::RectF AXTree::RelativeToTreeBounds(const AXNode* node,
     // The rationale is that it's not useful to the user for an object to
     // have no width or height and it's probably a bug; it's better to
     // reflect the bounds of the nearest ancestor rather than a 0x0 box.
-    if (bounds.width() == 0 && bounds.height() == 0)
+    // Tag this node as 'offscreen' because it has no true size, just a
+    // size inherited from the ancestor.
+    if (bounds.width() == 0 && bounds.height() == 0) {
       bounds.set_size(container_bounds.size());
+      if (offscreen != nullptr)
+        *offscreen |= true;
+    }
 
     int scroll_x = 0;
     int scroll_y = 0;
@@ -231,14 +229,65 @@ gfx::RectF AXTree::RelativeToTreeBounds(const AXNode* node,
       bounds.Offset(-scroll_x, -scroll_y);
     }
 
+    // Get the intersection between the bounds and the container.
+    gfx::RectF intersection = bounds;
+    intersection.Intersect(container_bounds);
+
+    // Calculate the clipped bounds to determine offscreen state.
+    gfx::RectF clipped = bounds;
+    // If this is the root web area, make sure we clip the node to fit.
+    // This is disabled as a bugfix for Chrome 63, see crbug.com/786164
+    // if (false) {
+    if (container->data().GetBoolAttribute(ui::AX_ATTR_CLIPS_CHILDREN)) {
+      if (!intersection.IsEmpty()) {
+        // We can simply clip it to the container.
+        clipped = intersection;
+      } else {
+        // Totally offscreen. Find the nearest edge or corner.
+        // Make the minimum dimension 1 instead of 0.
+        if (clipped.x() >= container_bounds.width()) {
+          clipped.set_x(container_bounds.width() - 1);
+          clipped.set_width(1);
+        } else if (clipped.x() + clipped.width() <= 0) {
+          clipped.set_x(0);
+          clipped.set_width(1);
+        }
+        if (clipped.y() >= container_bounds.height()) {
+          clipped.set_y(container_bounds.height() - 1);
+          clipped.set_height(1);
+        } else if (clipped.y() + clipped.height() <= 0) {
+          clipped.set_y(0);
+          clipped.set_height(1);
+        }
+      }
+    }
+
+    if (clip_bounds)
+      bounds = clipped;
+
+    if (container->data().GetBoolAttribute(ui::AX_ATTR_CLIPS_CHILDREN) &&
+        intersection.IsEmpty() && !clipped.IsEmpty()) {
+      // If it is offscreen with respect to its parent, and the node itself is
+      // not empty, label it offscreen.
+      // Here we are extending the definition of offscreen to include elements
+      // that are clipped by their parents in addition to those clipped by
+      // the rootWebArea.
+      // No need to update |offscreen| if |clipped| is not empty, because it
+      // should be false by default.
+      if (offscreen != nullptr)
+        *offscreen |= true;
+    }
+
     node = container;
   }
 
   return bounds;
 }
 
-gfx::RectF AXTree::GetTreeBounds(const AXNode* node, bool* offscreen) const {
-  return RelativeToTreeBounds(node, gfx::RectF(), offscreen);
+gfx::RectF AXTree::GetTreeBounds(const AXNode* node,
+                                 bool* offscreen,
+                                 bool clip_bounds) const {
+  return RelativeToTreeBounds(node, gfx::RectF(), offscreen, clip_bounds);
 }
 
 std::set<int32_t> AXTree::GetReverseRelations(AXIntAttribute attr,

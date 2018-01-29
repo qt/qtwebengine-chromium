@@ -8,8 +8,8 @@
 #include "bindings/modules/v8/WebGLAny.h"
 #include "core/html/HTMLCanvasElement.h"
 #include "core/html/HTMLImageElement.h"
-#include "core/html/HTMLVideoElement.h"
 #include "core/html/ImageData.h"
+#include "core/html/media/HTMLVideoElement.h"
 #include "core/imagebitmap/ImageBitmap.h"
 #include "gpu/command_buffer/client/gles2_interface.h"
 #include "modules/webgl/WebGLActiveInfo.h"
@@ -143,9 +143,11 @@ const GLenum kSupportedInternalFormatsStorage[] = {
 WebGL2RenderingContextBase::WebGL2RenderingContextBase(
     CanvasRenderingContextHost* host,
     std::unique_ptr<WebGraphicsContext3DProvider> context_provider,
+    bool using_gpu_compositing,
     const CanvasContextCreationAttributes& requested_attributes)
     : WebGLRenderingContextBase(host,
                                 std::move(context_provider),
+                                using_gpu_compositing,
                                 requested_attributes,
                                 2) {
   supported_internal_formats_storage_.insert(
@@ -393,14 +395,12 @@ void WebGL2RenderingContextBase::blitFramebuffer(GLint src_x0,
   if (isContextLost())
     return;
 
-  bool default_framebuffer_bound = !GetFramebufferBinding(GL_DRAW_FRAMEBUFFER);
+  bool user_framebuffer_bound = GetFramebufferBinding(GL_DRAW_FRAMEBUFFER);
   DrawingBuffer::ScopedRGBEmulationForBlitFramebuffer emulation(
-      GetDrawingBuffer(), !default_framebuffer_bound);
+      GetDrawingBuffer(), user_framebuffer_bound);
   ContextGL()->BlitFramebufferCHROMIUM(src_x0, src_y0, src_x1, src_y1, dst_x0,
                                        dst_y0, dst_x1, dst_y1, mask, filter);
-  if (default_framebuffer_bound) {
-    MarkContextChanged(kCanvasChanged);
-  }
+  MarkContextChanged(kCanvasChanged);
 }
 
 bool WebGL2RenderingContextBase::ValidateTexFuncLayer(const char* function_name,
@@ -462,6 +462,12 @@ void WebGL2RenderingContextBase::framebufferTextureLayer(GLenum target,
   if (!framebuffer_binding || !framebuffer_binding->Object()) {
     SynthesizeGLError(GL_INVALID_OPERATION, "framebufferTextureLayer",
                       "no framebuffer bound");
+    return;
+  }
+  // Don't allow modifications to opaque framebuffer attachements.
+  if (framebuffer_binding && framebuffer_binding->Opaque()) {
+    SynthesizeGLError(GL_INVALID_OPERATION, "framebufferTextureLayer",
+                      "opaque framebuffer bound");
     return;
   }
   framebuffer_binding->SetAttachmentForBoundFramebuffer(
@@ -1062,6 +1068,12 @@ void WebGL2RenderingContextBase::texImage2D(GLenum target,
                       "no bound PIXEL_UNPACK_BUFFER");
     return;
   }
+  if (unpack_flip_y_ || unpack_premultiply_alpha_) {
+    SynthesizeGLError(
+        GL_INVALID_OPERATION, "texImage2D",
+        "FLIP_Y or PREMULTIPLY_ALPHA isn't allowed while uploading from PBO");
+    return;
+  }
   if (!ValidateTexFunc("texImage2D", kTexImage, kSourceUnpackBuffer, target,
                        level, internalformat, width, height, 1, border, format,
                        type, 0, 0, 0))
@@ -1090,6 +1102,12 @@ void WebGL2RenderingContextBase::texSubImage2D(GLenum target,
   if (!bound_pixel_unpack_buffer_) {
     SynthesizeGLError(GL_INVALID_OPERATION, "texSubImage2D",
                       "no bound PIXEL_UNPACK_BUFFER");
+    return;
+  }
+  if (unpack_flip_y_ || unpack_premultiply_alpha_) {
+    SynthesizeGLError(
+        GL_INVALID_OPERATION, "texSubImage2D",
+        "FLIP_Y or PREMULTIPLY_ALPHA isn't allowed while uploading from PBO");
     return;
   }
   if (!ValidateTexFunc("texSubImage2D", kTexSubImage, kSourceUnpackBuffer,
@@ -1673,6 +1691,12 @@ void WebGL2RenderingContextBase::texImage3D(
     GLenum format,
     GLenum type,
     MaybeShared<DOMArrayBufferView> pixels) {
+  if ((unpack_flip_y_ || unpack_premultiply_alpha_) && pixels) {
+    SynthesizeGLError(
+        GL_INVALID_OPERATION, "texImage3D",
+        "FLIP_Y or PREMULTIPLY_ALPHA isn't allowed for uploading 3D textures");
+    return;
+  }
   TexImageHelperDOMArrayBufferView(kTexImage3D, target, level, internalformat,
                                    width, height, depth, border, format, type,
                                    0, 0, 0, pixels.View(), kNullAllowed, 0);
@@ -1697,6 +1721,13 @@ void WebGL2RenderingContextBase::texImage3D(
                       "a buffer is bound to PIXEL_UNPACK_BUFFER");
     return;
   }
+  if (unpack_flip_y_ || unpack_premultiply_alpha_) {
+    DCHECK(pixels);
+    SynthesizeGLError(
+        GL_INVALID_OPERATION, "texImage3D",
+        "FLIP_Y or PREMULTIPLY_ALPHA isn't allowed for uploading 3D textures");
+    return;
+  }
   TexImageHelperDOMArrayBufferView(
       kTexImage3D, target, level, internalformat, width, height, depth, border,
       format, type, 0, 0, 0, pixels.View(), kNullNotReachable, src_offset);
@@ -1719,6 +1750,12 @@ void WebGL2RenderingContextBase::texImage3D(GLenum target,
   if (!bound_pixel_unpack_buffer_) {
     SynthesizeGLError(GL_INVALID_OPERATION, "texImage3D",
                       "no bound PIXEL_UNPACK_BUFFER");
+    return;
+  }
+  if (unpack_flip_y_ || unpack_premultiply_alpha_) {
+    SynthesizeGLError(
+        GL_INVALID_OPERATION, "texImage3D",
+        "FLIP_Y or PREMULTIPLY_ALPHA isn't allowed for uploading 3D textures");
     return;
   }
   if (!ValidateTexFunc("texImage3D", kTexImage, kSourceUnpackBuffer, target,
@@ -1879,6 +1916,14 @@ void WebGL2RenderingContextBase::texSubImage3D(
                       "a buffer is bound to PIXEL_UNPACK_BUFFER");
     return;
   }
+  if (unpack_flip_y_ || unpack_premultiply_alpha_) {
+    DCHECK(pixels);
+    SynthesizeGLError(
+        GL_INVALID_OPERATION, "texSubImage3D",
+        "FLIP_Y or PREMULTIPLY_ALPHA isn't allowed for uploading 3D textures");
+    return;
+  }
+
   TexImageHelperDOMArrayBufferView(
       kTexSubImage3D, target, level, 0, width, height, depth, 0, format, type,
       xoffset, yoffset, zoffset, pixels.View(), kNullNotReachable, src_offset);
@@ -1902,6 +1947,12 @@ void WebGL2RenderingContextBase::texSubImage3D(GLenum target,
   if (!bound_pixel_unpack_buffer_) {
     SynthesizeGLError(GL_INVALID_OPERATION, "texSubImage3D",
                       "no bound PIXEL_UNPACK_BUFFER");
+    return;
+  }
+  if (unpack_flip_y_ || unpack_premultiply_alpha_) {
+    SynthesizeGLError(
+        GL_INVALID_OPERATION, "texSubImage3D",
+        "FLIP_Y or PREMULTIPLY_ALPHA isn't allowed for uploading 3D textures");
     return;
   }
   if (!ValidateTexFunc("texSubImage3D", kTexSubImage, kSourceUnpackBuffer,
@@ -3614,6 +3665,11 @@ void WebGL2RenderingContextBase::clearBufferfv(
 
   ContextGL()->ClearBufferfv(buffer, drawbuffer,
                              value.View()->DataMaybeShared() + src_offset);
+  // The other clearBuffer entry points will currently generate an
+  // error if they're called against the default back buffer. If
+  // support for extended canvas color spaces is added, this call
+  // might need to be added to the other versions.
+  MarkContextChanged(kCanvasChanged);
 }
 
 void WebGL2RenderingContextBase::clearBufferfv(GLenum buffer,
@@ -3634,6 +3690,11 @@ void WebGL2RenderingContextBase::clearBufferfv(GLenum buffer,
                                                    drawing_buffer_.get());
 
   ContextGL()->ClearBufferfv(buffer, drawbuffer, value.data() + src_offset);
+  // The other clearBuffer entry points will currently generate an
+  // error if they're called against the default back buffer. If
+  // support for extended canvas color spaces is added, this call
+  // might need to be added to the other versions.
+  MarkContextChanged(kCanvasChanged);
 }
 
 void WebGL2RenderingContextBase::clearBufferfi(GLenum buffer,
@@ -4707,7 +4768,7 @@ void WebGL2RenderingContextBase::bindVertexArray(
     return;
 
   if (vertex_array &&
-      (vertex_array->IsDeleted() || !vertex_array->Validate(0, this))) {
+      (vertex_array->IsDeleted() || !vertex_array->Validate(nullptr, this))) {
     SynthesizeGLError(GL_INVALID_OPERATION, "bindVertexArray",
                       "invalid vertexArray");
     return;
@@ -4754,6 +4815,12 @@ void WebGL2RenderingContextBase::bindFramebuffer(GLenum target,
 
 void WebGL2RenderingContextBase::deleteFramebuffer(
     WebGLFramebuffer* framebuffer) {
+  // Don't allow the application to delete an opaque framebuffer.
+  if (framebuffer && framebuffer->Opaque()) {
+    SynthesizeGLError(GL_INVALID_OPERATION, "deleteFramebuffer",
+                      "cannot delete an opaque framebuffer");
+    return;
+  }
   if (!DeleteObject(framebuffer))
     return;
   GLenum target = 0;
@@ -5487,7 +5554,7 @@ ScriptValue WebGL2RenderingContextBase::getFramebufferAttachmentParameter(
   return ScriptValue::CreateNull(script_state);
 }
 
-DEFINE_TRACE(WebGL2RenderingContextBase) {
+void WebGL2RenderingContextBase::Trace(blink::Visitor* visitor) {
   visitor->Trace(read_framebuffer_binding_);
   visitor->Trace(transform_feedback_binding_);
   visitor->Trace(default_transform_feedback_);
@@ -5505,7 +5572,8 @@ DEFINE_TRACE(WebGL2RenderingContextBase) {
   WebGLRenderingContextBase::Trace(visitor);
 }
 
-DEFINE_TRACE_WRAPPERS(WebGL2RenderingContextBase) {
+void WebGL2RenderingContextBase::TraceWrappers(
+    const ScriptWrappableVisitor* visitor) const {
   visitor->TraceWrappers(read_framebuffer_binding_);
   visitor->TraceWrappers(transform_feedback_binding_);
   visitor->TraceWrappers(bound_copy_read_buffer_);

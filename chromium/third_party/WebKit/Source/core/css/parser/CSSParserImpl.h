@@ -6,10 +6,12 @@
 #define CSSParserImpl_h
 
 #include <memory>
+
+#include "base/macros.h"
 #include "core/CSSPropertyNames.h"
-#include "core/css/CSSProperty.h"
 #include "core/css/CSSPropertySourceData.h"
-#include "core/css/StylePropertySet.h"
+#include "core/css/CSSPropertyValue.h"
+#include "core/css/CSSPropertyValueSet.h"
 #include "core/css/parser/CSSParserTokenRange.h"
 #include "platform/heap/Handle.h"
 #include "platform/wtf/Vector.h"
@@ -20,8 +22,6 @@ namespace blink {
 class CSSLazyParsingState;
 class CSSParserContext;
 class CSSParserObserver;
-class CSSParserObserverWrapper;
-class CSSParserScopedTokenBuffer;
 class CSSParserTokenStream;
 class StyleRule;
 class StyleRuleBase;
@@ -40,7 +40,6 @@ class Element;
 
 class CSSParserImpl {
   STACK_ALLOCATED();
-  WTF_MAKE_NONCOPYABLE(CSSParserImpl);
 
  public:
   CSSParserImpl(const CSSParserContext*, StyleSheetContents* = nullptr);
@@ -56,7 +55,6 @@ class CSSParserImpl {
     kAllowNamespaceRules,
     kRegularRules,
     kKeyframeRules,
-    kApplyRules,  // For @apply inside style rules
     kNoRules,     // For parsing at-rules inside declaration lists
   };
 
@@ -73,22 +71,24 @@ class CSSParserImpl {
     static RangeOffset Ignore() { return {0, 0}; }
   };
 
-  static MutableStylePropertySet::SetResult ParseValue(MutableStylePropertySet*,
-                                                       CSSPropertyID,
-                                                       const String&,
-                                                       bool important,
-                                                       const CSSParserContext*);
-  static MutableStylePropertySet::SetResult ParseVariableValue(
-      MutableStylePropertySet*,
+  static MutableCSSPropertyValueSet::SetResult ParseValue(
+      MutableCSSPropertyValueSet*,
+      CSSPropertyID,
+      const String&,
+      bool important,
+      const CSSParserContext*);
+  static MutableCSSPropertyValueSet::SetResult ParseVariableValue(
+      MutableCSSPropertyValueSet*,
       const AtomicString& property_name,
       const PropertyRegistry*,
       const String&,
       bool important,
       const CSSParserContext*,
       bool is_animation_tainted);
-  static ImmutableStylePropertySet* ParseInlineStyleDeclaration(const String&,
-                                                                Element*);
-  static bool ParseDeclarationList(MutableStylePropertySet*,
+  static ImmutableCSSPropertyValueSet* ParseInlineStyleDeclaration(
+      const String&,
+      Element*);
+  static bool ParseDeclarationList(MutableCSSPropertyValueSet*,
                                    const String&,
                                    const CSSParserContext*);
   static StyleRuleBase* ParseRule(const String&,
@@ -102,12 +102,6 @@ class CSSParserImpl {
   static CSSSelectorList ParsePageSelector(CSSParserTokenRange,
                                            StyleSheetContents*);
 
-  static ImmutableStylePropertySet* ParseCustomPropertySet(CSSParserTokenRange);
-  // TODO(shend): Remove this when crbug.com/661854 is fixed. We need to use a
-  // stream for parsing @apply blocks so we can correctly store custom
-  // property values.
-  void ConsumeDeclarationListForAtApply(CSSParserTokenRange);
-
   static std::unique_ptr<Vector<double>> ParseKeyframeKeyList(const String&);
 
   bool SupportsDeclaration(CSSParserTokenRange&);
@@ -120,7 +114,7 @@ class CSSParserImpl {
                                           StyleSheetContents*,
                                           CSSParserObserver&);
 
-  static StylePropertySet* ParseDeclarationListForLazyStyle(
+  static CSSPropertyValueSet* ParseDeclarationListForLazyStyle(
       const String&,
       size_t offset,
       const CSSParserContext*);
@@ -141,39 +135,30 @@ class CSSParserImpl {
                                      CSSParserTokenRange prelude,
                                      const RangeOffset& prelude_offset);
   StyleRuleNamespace* ConsumeNamespaceRule(CSSParserTokenRange prelude);
-  StyleRuleMedia* ConsumeMediaRule(CSSParserScopedTokenBuffer prelude_buffer,
+  StyleRuleMedia* ConsumeMediaRule(CSSParserTokenRange prelude,
                                    const RangeOffset& prelude_offset,
                                    CSSParserTokenStream& block);
-  StyleRuleSupports* ConsumeSupportsRule(
-      CSSParserScopedTokenBuffer prelude_buffer,
-      const RangeOffset& prelude_offset,
-      CSSParserTokenStream& block);
-  StyleRuleViewport* ConsumeViewportRule(
-      CSSParserScopedTokenBuffer prelude_buffer,
-      const RangeOffset& prelude_offset,
-      CSSParserTokenStream& block);
-  StyleRuleFontFace* ConsumeFontFaceRule(
-      CSSParserScopedTokenBuffer prelude_buffer,
-      const RangeOffset& prelude_offset,
-      CSSParserTokenStream& block);
-  StyleRuleKeyframes* ConsumeKeyframesRule(
-      bool webkit_prefixed,
-      CSSParserScopedTokenBuffer prelude_buffer,
-      const RangeOffset& prelude_offset,
-      CSSParserTokenStream& block);
-  StyleRulePage* ConsumePageRule(CSSParserScopedTokenBuffer prelude_buffer,
+  StyleRuleSupports* ConsumeSupportsRule(CSSParserTokenRange prelude,
+                                         const RangeOffset& prelude_offset,
+                                         CSSParserTokenStream& block);
+  StyleRuleViewport* ConsumeViewportRule(CSSParserTokenRange prelude,
+                                         const RangeOffset& prelude_offset,
+                                         CSSParserTokenStream& block);
+  StyleRuleFontFace* ConsumeFontFaceRule(CSSParserTokenRange prelude,
+                                         const RangeOffset& prelude_offset,
+                                         CSSParserTokenStream& block);
+  StyleRuleKeyframes* ConsumeKeyframesRule(bool webkit_prefixed,
+                                           CSSParserTokenRange prelude,
+                                           const RangeOffset& prelude_offset,
+                                           CSSParserTokenStream& block);
+  StyleRulePage* ConsumePageRule(CSSParserTokenRange prelude,
                                  const RangeOffset& prelude_offset,
                                  CSSParserTokenStream& block);
-  // Updates parsed_properties_
-  void ConsumeApplyRule(CSSParserTokenRange prelude);
 
-  StyleRuleKeyframe* ConsumeKeyframeStyleRule(
-      CSSParserScopedTokenBuffer prelude_buffer,
-      const RangeOffset& prelude_offset,
-      CSSParserTokenStream& block);
-  StyleRule* ConsumeStyleRule(CSSParserScopedTokenBuffer prelude_buffer,
-                              const RangeOffset& prelude_offset,
-                              CSSParserTokenStream& block);
+  StyleRuleKeyframe* ConsumeKeyframeStyleRule(CSSParserTokenRange prelude,
+                                              const RangeOffset& prelude_offset,
+                                              CSSParserTokenStream& block);
+  StyleRule* ConsumeStyleRule(CSSParserTokenStream&);
 
   void ConsumeDeclarationList(CSSParserTokenStream&, StyleRule::RuleType);
   void ConsumeDeclaration(CSSParserTokenRange,
@@ -191,17 +176,18 @@ class CSSParserImpl {
   static std::unique_ptr<Vector<double>> ConsumeKeyframeKeyList(
       CSSParserTokenRange);
 
-  // FIXME: Can we build StylePropertySets directly?
+  // FIXME: Can we build CSSPropertyValueSets directly?
   // FIXME: Investigate using a smaller inline buffer
-  HeapVector<CSSProperty, 256> parsed_properties_;
+  HeapVector<CSSPropertyValue, 256> parsed_properties_;
 
   Member<const CSSParserContext> context_;
   Member<StyleSheetContents> style_sheet_;
 
   // For the inspector
-  CSSParserObserverWrapper* observer_wrapper_;
+  CSSParserObserver* observer_;
 
   Member<CSSLazyParsingState> lazy_state_;
+  DISALLOW_COPY_AND_ASSIGN(CSSParserImpl);
 };
 
 }  // namespace blink

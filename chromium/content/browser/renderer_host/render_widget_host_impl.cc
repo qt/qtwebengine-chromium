@@ -30,14 +30,17 @@
 #include "base/trace_event/trace_event.h"
 #include "build/build_config.h"
 #include "cc/base/switches.h"
+#include "components/viz/common/features.h"
 #include "components/viz/common/quads/compositor_frame.h"
 #include "components/viz/common/switches.h"
+#include "components/viz/host/host_frame_sink_manager.h"
 #include "components/viz/service/display_embedder/server_shared_bitmap_manager.h"
 #include "content/browser/accessibility/browser_accessibility_state_impl.h"
 #include "content/browser/bad_message.h"
 #include "content/browser/browser_main_loop.h"
 #include "content/browser/browser_plugin/browser_plugin_guest.h"
 #include "content/browser/child_process_security_policy_impl.h"
+#include "content/browser/compositor/surface_utils.h"
 #include "content/browser/fileapi/browser_file_system_helper.h"
 #include "content/browser/gpu/compositor_util.h"
 #include "content/browser/renderer_host/dip_util.h"
@@ -160,7 +163,7 @@ class RenderWidgetHostIteratorImpl : public RenderWidgetHostIterator {
 
   // RenderWidgetHostIterator:
   RenderWidgetHost* GetNextHost() override {
-    RenderWidgetHost* host = NULL;
+    RenderWidgetHost* host = nullptr;
     while (current_index_ < hosts_.size() && !host) {
       RenderWidgetHostID id = hosts_[current_index_];
       host = RenderWidgetHost::FromID(id.first, id.second);
@@ -344,7 +347,7 @@ RenderWidgetHostImpl::RenderWidgetHostImpl(RenderWidgetHostDelegate* delegate,
       is_last_unlocked_by_target_(false),
       has_touch_handler_(false),
       is_in_touchpad_gesture_fling_(false),
-      latency_tracker_(true),
+      latency_tracker_(true, delegate_),
       next_browser_snapshot_id_(1),
       owned_by_render_frame_host_(false),
       is_focused_(false),
@@ -360,7 +363,6 @@ RenderWidgetHostImpl::RenderWidgetHostImpl(RenderWidgetHostDelegate* delegate,
       weak_factory_(this) {
   CHECK(delegate_);
   CHECK_NE(MSG_ROUTING_NONE, routing_id_);
-  latency_tracker_.SetDelegate(delegate_);
   DCHECK(base::TaskScheduler::GetInstance())
       << "Ref. Prerequisite section of post_task.h";
 
@@ -390,14 +392,18 @@ RenderWidgetHostImpl::RenderWidgetHostImpl(RenderWidgetHostDelegate* delegate,
                    weak_factory_.GetWeakPtr())));
   }
 
-  new_content_rendering_timeout_.reset(new TimeoutMonitor(
-      base::Bind(&RenderWidgetHostImpl::ClearDisplayedGraphics,
-                 weak_factory_.GetWeakPtr())));
+  if (!base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kDisableNewContentRenderingTimeout)) {
+    new_content_rendering_timeout_.reset(new TimeoutMonitor(
+        base::Bind(&RenderWidgetHostImpl::ClearDisplayedGraphics,
+                   weak_factory_.GetWeakPtr())));
+  }
+
+  enable_surface_synchronization_ = features::IsSurfaceSynchronizationEnabled();
 
   const base::CommandLine& command_line =
       *base::CommandLine::ForCurrentProcess();
-  enable_surface_synchronization_ =
-      command_line.HasSwitch(switches::kEnableSurfaceSynchronization);
+  enable_viz_ = command_line.HasSwitch(switches::kEnableViz);
 
   delegate_->RenderWidgetCreated(this);
 }
@@ -704,9 +710,8 @@ void RenderWidgetHostImpl::WasShown(const ui::LatencyInfo& latency_info) {
   // 2. WasResized -> do nothing as resize_ack_pending_ is true
   // 3. WasHidden
   // 4. OnResizeOrRepaintACK from (1) processed. Does NOT invoke WasResized as
-  // view
-  //    is hidden. Now renderer/browser out of sync with what they think size
-  //    is.
+  //    view is hidden. Now renderer/browser out of sync with what they think
+  //    size is.
   // By invoking WasResized the renderer is updated as necessary. WasResized
   // does nothing if the sizes are already in sync.
   //
@@ -801,10 +806,14 @@ void RenderWidgetHostImpl::SetInitialRenderSizeParams(
     const ResizeParams& resize_params) {
   resize_ack_pending_ = resize_params.needs_resize_ack;
 
-  old_resize_params_ = base::MakeUnique<ResizeParams>(resize_params);
+  old_resize_params_ = std::make_unique<ResizeParams>(resize_params);
 }
 
 void RenderWidgetHostImpl::WasResized() {
+  WasResized(false);
+}
+
+void RenderWidgetHostImpl::WasResized(bool scroll_focused_node_into_view) {
   // Skip if the |delegate_| has already been detached because
   // it's web contents is being deleted.
   if (resize_ack_pending_ || !process_->HasConnection() || !view_ ||
@@ -815,6 +824,7 @@ void RenderWidgetHostImpl::WasResized() {
   std::unique_ptr<ResizeParams> params(new ResizeParams);
   if (!GetResizeParams(params.get()))
     return;
+  params->scroll_focused_node_into_view = scroll_focused_node_into_view;
 
   bool width_changed =
       !old_resize_params_ ||
@@ -912,7 +922,7 @@ void RenderWidgetHostImpl::ViewDestroyed() {
 
   // TODO(evanm): tracking this may no longer be necessary;
   // eliminate this function if so.
-  SetView(NULL);
+  SetView(nullptr);
 }
 
 #if defined(OS_MACOSX)
@@ -1062,6 +1072,10 @@ void RenderWidgetHostImpl::RestartHangMonitorTimeoutIfNecessary() {
   }
 }
 
+bool RenderWidgetHostImpl::IsCurrentlyUnresponsive() const {
+  return is_unresponsive_;
+}
+
 void RenderWidgetHostImpl::StopHangMonitorTimeout() {
   LogHangMonitorUnresponsive();
   hang_start_time_ = TimeTicks();
@@ -1080,6 +1094,10 @@ void RenderWidgetHostImpl::LogHangMonitorUnresponsive() {
 void RenderWidgetHostImpl::StartNewContentRenderingTimeout(
     uint32_t next_source_id) {
   current_content_source_id_ = next_source_id;
+
+  if (!new_content_rendering_timeout_)
+    return;
+
   // It is possible for a compositor frame to arrive before the browser is
   // notified about the page being committed, in which case no timer is
   // necessary.
@@ -1376,7 +1394,7 @@ void RenderWidgetHostImpl::QueueSyntheticGesture(
     base::OnceCallback<void(SyntheticGesture::Result)> on_complete) {
   if (!synthetic_gesture_controller_ && view_) {
     synthetic_gesture_controller_ =
-        base::MakeUnique<SyntheticGestureController>(
+        std::make_unique<SyntheticGestureController>(
             this, view_->CreateSyntheticGestureTarget());
   }
   if (synthetic_gesture_controller_) {
@@ -1454,22 +1472,23 @@ void RenderWidgetHostImpl::RemoveInputEventObserver(
 
 void RenderWidgetHostImpl::GetScreenInfo(ScreenInfo* result) {
   TRACE_EVENT0("renderer_host", "RenderWidgetHostImpl::GetScreenInfo");
-  if (delegate_)
+  if (view_) {
+    view_->GetScreenInfo(result);
+  } else {
+    DCHECK(delegate_);
     delegate_->GetScreenInfo(result);
-  else
-    NOTREACHED();
+  }
 
   // TODO(sievers): find a way to make this done another way so the method
   // can be const.
-  latency_tracker_.set_device_scale_factor(result->device_scale_factor);
   if (IsUseZoomForDSFEnabled())
     input_router_->SetDeviceScaleFactor(result->device_scale_factor);
 }
 
 void RenderWidgetHostImpl::DragTargetDragEnter(
     const DropData& drop_data,
-    const gfx::Point& client_pt,
-    const gfx::Point& screen_pt,
+    const gfx::PointF& client_pt,
+    const gfx::PointF& screen_pt,
     WebDragOperationsMask operations_allowed,
     int key_modifiers) {
   DragTargetDragEnterWithMetaData(DropDataToMetaData(drop_data), client_pt,
@@ -1478,8 +1497,8 @@ void RenderWidgetHostImpl::DragTargetDragEnter(
 
 void RenderWidgetHostImpl::DragTargetDragEnterWithMetaData(
     const std::vector<DropData::Metadata>& metadata,
-    const gfx::Point& client_pt,
-    const gfx::Point& screen_pt,
+    const gfx::PointF& client_pt,
+    const gfx::PointF& screen_pt,
     WebDragOperationsMask operations_allowed,
     int key_modifiers) {
   Send(new DragMsg_TargetDragEnter(GetRoutingID(), metadata, client_pt,
@@ -1488,22 +1507,23 @@ void RenderWidgetHostImpl::DragTargetDragEnterWithMetaData(
 }
 
 void RenderWidgetHostImpl::DragTargetDragOver(
-    const gfx::Point& client_pt,
-    const gfx::Point& screen_pt,
+    const gfx::PointF& client_pt,
+    const gfx::PointF& screen_pt,
     WebDragOperationsMask operations_allowed,
     int key_modifiers) {
   Send(new DragMsg_TargetDragOver(GetRoutingID(), client_pt, screen_pt,
                                   operations_allowed, key_modifiers));
 }
 
-void RenderWidgetHostImpl::DragTargetDragLeave(const gfx::Point& client_point,
-                                               const gfx::Point& screen_point) {
+void RenderWidgetHostImpl::DragTargetDragLeave(
+    const gfx::PointF& client_point,
+    const gfx::PointF& screen_point) {
   Send(new DragMsg_TargetDragLeave(GetRoutingID(), client_point, screen_point));
 }
 
 void RenderWidgetHostImpl::DragTargetDrop(const DropData& drop_data,
-                                          const gfx::Point& client_pt,
-                                          const gfx::Point& screen_pt,
+                                          const gfx::PointF& client_pt,
+                                          const gfx::PointF& screen_pt,
                                           int key_modifiers) {
   DropData drop_data_with_permissions(drop_data);
   GrantFileAccessFromDropData(&drop_data_with_permissions);
@@ -1512,8 +1532,8 @@ void RenderWidgetHostImpl::DragTargetDrop(const DropData& drop_data,
 }
 
 void RenderWidgetHostImpl::DragSourceEndedAt(
-    const gfx::Point& client_pt,
-    const gfx::Point& screen_pt,
+    const gfx::PointF& client_pt,
+    const gfx::PointF& screen_pt,
     blink::WebDragOperation operation) {
   Send(new DragMsg_SourceEnded(GetRoutingID(),
                                client_pt,
@@ -1754,8 +1774,6 @@ void RenderWidgetHostImpl::RendererExited(base::TerminationStatus status,
   // event. (In particular, the above call to view_->RenderProcessGone will
   // destroy the aura window, which may dispatch a synthetic mouse move.)
   SetupInputRouter();
-  associated_widget_input_handler_ = nullptr;
-  widget_input_handler_ = nullptr;
   synthetic_gesture_controller_.reset();
 
   last_received_frame_token_ = 0;
@@ -2038,14 +2056,15 @@ void RenderWidgetHostImpl::OnResizeOrRepaintACK(
 
   DidCompleteResizeOrRepaint(params, paint_start);
 
+  last_auto_resize_request_number_ = params.sequence_number;
+
   if (auto_resize_enabled_) {
     bool post_callback = new_auto_size_.IsEmpty();
     new_auto_size_ = params.view_size;
     if (post_callback) {
       base::ThreadTaskRunnerHandle::Get()->PostTask(
-          FROM_HERE,
-          base::BindOnce(&RenderWidgetHostImpl::DelayedAutoResized,
-                         weak_factory_.GetWeakPtr(), params.sequence_number));
+          FROM_HERE, base::BindOnce(&RenderWidgetHostImpl::DelayedAutoResized,
+                                    weak_factory_.GetWeakPtr()));
     }
   }
 
@@ -2211,7 +2230,7 @@ void RenderWidgetHostImpl::OnShowDisambiguationPopup(
 
   // It is assumed that the disambiguation popup will make a copy of the
   // provided zoomed image, so we delete this one.
-  zoomed_bitmap.setPixels(0);
+  zoomed_bitmap.setPixels(nullptr);
   Send(new ViewMsg_ReleaseDisambiguationPopupBitmap(GetRoutingID(), id));
 }
 
@@ -2315,11 +2334,12 @@ void RenderWidgetHostImpl::DispatchInputEventWithLatencyInfo(
 }
 
 void RenderWidgetHostImpl::OnKeyboardEventAck(
-      const NativeWebKeyboardEventWithLatencyInfo& event,
-      InputEventAckState ack_result) {
+    const NativeWebKeyboardEventWithLatencyInfo& event,
+    InputEventAckSource ack_source,
+    InputEventAckState ack_result) {
   latency_tracker_.OnInputEventAck(event.event, &event.latency, ack_result);
   for (auto& input_event_observer : input_event_observers_)
-    input_event_observer.OnInputEventAck(event.event);
+    input_event_observer.OnInputEventAck(ack_source, ack_result, event.event);
 
   const bool processed = (INPUT_EVENT_ACK_STATE_CONSUMED == ack_result);
 
@@ -2337,20 +2357,24 @@ void RenderWidgetHostImpl::OnKeyboardEventAck(
 
 void RenderWidgetHostImpl::OnMouseEventAck(
     const MouseEventWithLatencyInfo& mouse_event,
+    InputEventAckSource ack_source,
     InputEventAckState ack_result) {
   latency_tracker_.OnInputEventAck(mouse_event.event, &mouse_event.latency,
                                    ack_result);
   for (auto& input_event_observer : input_event_observers_)
-    input_event_observer.OnInputEventAck(mouse_event.event);
+    input_event_observer.OnInputEventAck(ack_source, ack_result,
+                                         mouse_event.event);
 }
 
 void RenderWidgetHostImpl::OnWheelEventAck(
     const MouseWheelEventWithLatencyInfo& wheel_event,
+    InputEventAckSource ack_source,
     InputEventAckState ack_result) {
   latency_tracker_.OnInputEventAck(wheel_event.event, &wheel_event.latency,
                                    ack_result);
   for (auto& input_event_observer : input_event_observers_)
-    input_event_observer.OnInputEventAck(wheel_event.event);
+    input_event_observer.OnInputEventAck(ack_source, ack_result,
+                                         wheel_event.event);
 
   if (!is_hidden() && view_) {
     if (ack_result != INPUT_EVENT_ACK_STATE_CONSUMED &&
@@ -2363,10 +2387,11 @@ void RenderWidgetHostImpl::OnWheelEventAck(
 
 void RenderWidgetHostImpl::OnGestureEventAck(
     const GestureEventWithLatencyInfo& event,
+    InputEventAckSource ack_source,
     InputEventAckState ack_result) {
   latency_tracker_.OnInputEventAck(event.event, &event.latency, ack_result);
   for (auto& input_event_observer : input_event_observers_)
-    input_event_observer.OnInputEventAck(event.event);
+    input_event_observer.OnInputEventAck(ack_source, ack_result, event.event);
 
   if (view_)
     view_->GestureEventAck(event.event, ack_result);
@@ -2374,10 +2399,11 @@ void RenderWidgetHostImpl::OnGestureEventAck(
 
 void RenderWidgetHostImpl::OnTouchEventAck(
     const TouchEventWithLatencyInfo& event,
+    InputEventAckSource ack_source,
     InputEventAckState ack_result) {
   latency_tracker_.OnInputEventAck(event.event, &event.latency, ack_result);
   for (auto& input_event_observer : input_event_observers_)
-    input_event_observer.OnInputEventAck(event.event);
+    input_event_observer.OnInputEventAck(ack_source, ack_result, event.event);
 
   if (touch_emulator_ &&
       touch_emulator_->HandleTouchEventAck(event.event, ack_result)) {
@@ -2426,7 +2452,7 @@ bool RenderWidgetHostImpl::GotResponseToLockMouseRequest(bool allowed) {
   return true;
 }
 
-void RenderWidgetHostImpl::DelayedAutoResized(uint64_t sequence_number) {
+void RenderWidgetHostImpl::DelayedAutoResized() {
   gfx::Size new_size = new_auto_size_;
   // Clear the new_auto_size_ since the empty value is used as a flag to
   // indicate that no callback is in progress (i.e. without this line
@@ -2435,19 +2461,30 @@ void RenderWidgetHostImpl::DelayedAutoResized(uint64_t sequence_number) {
   if (!auto_resize_enabled_)
     return;
 
-  if (delegate_)
-    delegate_->ResizeDueToAutoResize(this, new_size);
-
-  viz::LocalSurfaceId local_surface_id(view_->GetLocalSurfaceId());
-  if (local_surface_id.is_valid()) {
-    Send(new ViewMsg_SetLocalSurfaceIdForAutoResize(
-        routing_id_, sequence_number, local_surface_id));
+  if (delegate_) {
+    delegate_->ResizeDueToAutoResize(this, new_size,
+                                     last_auto_resize_request_number_);
   }
 }
 
 void RenderWidgetHostImpl::DetachDelegate() {
-  delegate_ = NULL;
-  latency_tracker_.SetDelegate(nullptr);
+  delegate_ = nullptr;
+  latency_tracker_.reset_delegate();
+}
+
+void RenderWidgetHostImpl::DidAllocateLocalSurfaceIdForAutoResize(
+    uint64_t sequence_number) {
+  if (!view_ || last_auto_resize_request_number_ != sequence_number)
+    return;
+
+  viz::LocalSurfaceId local_surface_id(view_->GetLocalSurfaceId());
+  if (local_surface_id.is_valid()) {
+    ScreenInfo screen_info;
+    GetScreenInfo(&screen_info);
+    Send(new ViewMsg_SetLocalSurfaceIdForAutoResize(
+        routing_id_, sequence_number, min_size_for_auto_resize_,
+        max_size_for_auto_resize_, screen_info, local_surface_id));
+  }
 }
 
 void RenderWidgetHostImpl::DidReceiveRendererFrame() {
@@ -2521,7 +2558,7 @@ void RenderWidgetHostImpl::OnSnapshotFromSurfaceReceived(
 }
 
 void RenderWidgetHostImpl::OnSnapshotReceived(int snapshot_id,
-                                              const gfx::Image& image) {
+                                              gfx::Image image) {
   // Any pending snapshots with a lower ID than the one received are considered
   // to be implicitly complete, and returned the same snapshot data.
   PendingSnapshotMap::iterator it = pending_browser_snapshots_.begin();
@@ -2566,13 +2603,13 @@ void RenderWidgetHostImpl::OnGpuSwapBuffersCompleted(
 
 BrowserAccessibilityManager*
     RenderWidgetHostImpl::GetRootBrowserAccessibilityManager() {
-  return delegate_ ? delegate_->GetRootBrowserAccessibilityManager() : NULL;
+  return delegate_ ? delegate_->GetRootBrowserAccessibilityManager() : nullptr;
 }
 
 BrowserAccessibilityManager*
     RenderWidgetHostImpl::GetOrCreateRootBrowserAccessibilityManager() {
-  return delegate_ ?
-      delegate_->GetOrCreateRootBrowserAccessibilityManager() : NULL;
+  return delegate_ ? delegate_->GetOrCreateRootBrowserAccessibilityManager()
+                   : nullptr;
 }
 
 void RenderWidgetHostImpl::GrantFileAccessFromDropData(DropData* drop_data) {
@@ -2595,6 +2632,16 @@ void RenderWidgetHostImpl::RequestCompositionUpdates(bool immediate_request,
 void RenderWidgetHostImpl::RequestCompositorFrameSink(
     viz::mojom::CompositorFrameSinkRequest request,
     viz::mojom::CompositorFrameSinkClientPtr client) {
+  if (enable_viz_) {
+    // TODO(kylechar): Find out why renderer is requesting a CompositorFrameSink
+    // with no view.
+    if (view_) {
+      GetHostFrameSinkManager()->CreateCompositorFrameSink(
+          view_->GetFrameSinkId(), std::move(request), std::move(client));
+    }
+    return;
+  }
+
   if (compositor_frame_sink_binding_.is_bound())
     compositor_frame_sink_binding_.Close();
   compositor_frame_sink_binding_.Bind(
@@ -2620,7 +2667,7 @@ void RenderWidgetHostImpl::SubmitCompositorFrame(
     uint64_t submit_time) {
   // TODO(gklassen): Route hit-test data to appropriate HitTestAggregator.
   TRACE_EVENT_FLOW_END0(TRACE_DISABLED_BY_DEFAULT("cc.debug.ipc"),
-                        "SubmitCompositorFrame", local_surface_id.local_id());
+                        "SubmitCompositorFrame", local_surface_id.parent_id());
   bool tracing_enabled;
   TRACE_EVENT_CATEGORY_GROUP_ENABLED(TRACE_DISABLED_BY_DEFAULT("cc.debug.ipc"),
                                      &tracing_enabled);
@@ -2669,7 +2716,6 @@ void RenderWidgetHostImpl::SubmitCompositorFrame(
   last_surface_properties_ = new_surface_properties;
 
   last_received_content_source_id_ = frame.metadata.content_source_id;
-  uint32_t frame_token = frame.metadata.frame_token;
 
   // |has_damage| is not transmitted.
   frame.metadata.begin_frame_ack.has_damage = true;
@@ -2690,9 +2736,14 @@ void RenderWidgetHostImpl::SubmitCompositorFrame(
   // compositor frame can arrive before the navigation commit message that
   // updates that value.
   if (view_ && frame.metadata.content_source_id >= current_content_source_id_) {
-    view_->SubmitCompositorFrame(local_surface_id, std::move(frame));
+    view_->SubmitCompositorFrame(local_surface_id, std::move(frame),
+                                 std::move(hit_test_region_list));
     view_->DidReceiveRendererFrame();
   } else {
+    if (view_) {
+      frame.metadata.begin_frame_ack.has_damage = false;
+      view_->OnDidNotProduceFrame(frame.metadata.begin_frame_ack);
+    }
     std::vector<viz::ReturnedResource> resources =
         viz::TransferableResource::ReturnResources(frame.resource_list);
     renderer_compositor_frame_sink_->DidReceiveCompositorFrameAck(resources);
@@ -2700,16 +2751,14 @@ void RenderWidgetHostImpl::SubmitCompositorFrame(
 
   // After navigation, if a frame belonging to the new page is received, stop
   // the timer that triggers clearing the graphics of the last page.
-  if (last_received_content_source_id_ >= current_content_source_id_ &&
+  if (new_content_rendering_timeout_ &&
+      last_received_content_source_id_ >= current_content_source_id_ &&
       new_content_rendering_timeout_->IsRunning()) {
     new_content_rendering_timeout_->Stop();
   }
 
   if (delegate_)
     delegate_->DidReceiveCompositorFrame();
-
-  if (frame_token)
-    DidProcessFrame(frame_token);
 }
 
 void RenderWidgetHostImpl::DidProcessFrame(uint32_t frame_token) {
@@ -2755,8 +2804,8 @@ device::mojom::WakeLock* RenderWidgetHostImpl::GetWakeLock() {
       connector->BindInterface(device::mojom::kServiceName,
                                mojo::MakeRequest(&wake_lock_provider));
       wake_lock_provider->GetWakeLockWithoutContext(
-          device::mojom::WakeLockType::PreventDisplaySleep,
-          device::mojom::WakeLockReason::ReasonOther, "GetSnapshot",
+          device::mojom::WakeLockType::kPreventDisplaySleep,
+          device::mojom::WakeLockReason::kOther, "GetSnapshot",
           std::move(request));
     }
   }
@@ -2782,6 +2831,11 @@ void RenderWidgetHostImpl::DidAllocateSharedBitmap(uint32_t sequence_number) {
 }
 
 void RenderWidgetHostImpl::SetupInputRouter() {
+  in_flight_event_count_ = 0;
+  StopHangMonitorTimeout();
+  associated_widget_input_handler_ = nullptr;
+  widget_input_handler_ = nullptr;
+
   if (base::FeatureList::IsEnabled(features::kMojoInputMessages)) {
     input_router_.reset(
         new InputRouterImpl(this, this, GetInputRouterConfigForPlatform()));
@@ -2791,13 +2845,18 @@ void RenderWidgetHostImpl::SetupInputRouter() {
     // widget shutdown, so we present an UnboundWidgetInputHandler had
     // DLOGS the message calls.
     legacy_widget_input_handler_ =
-        base::MakeUnique<UnboundWidgetInputHandler>();
+        std::make_unique<UnboundWidgetInputHandler>();
   } else {
     input_router_.reset(new LegacyInputRouterImpl(
         process_, this, this, routing_id_, GetInputRouterConfigForPlatform()));
     legacy_widget_input_handler_ =
-        base::MakeUnique<LegacyIPCWidgetInputHandler>(
+        std::make_unique<LegacyIPCWidgetInputHandler>(
             static_cast<LegacyInputRouterImpl*>(input_router_.get()));
+  }
+
+  if (IsUseZoomForDSFEnabled()) {
+    input_router_->SetDeviceScaleFactor(
+        view_.get() ? content::GetScaleFactorForView(view_.get()) : 1.0f);
   }
 }
 
@@ -2806,20 +2865,26 @@ void RenderWidgetHostImpl::SetForceEnableZoom(bool enabled) {
 }
 
 void RenderWidgetHostImpl::SetWidgetInputHandler(
-    mojom::WidgetInputHandlerAssociatedPtr widget_input_handler) {
-  associated_widget_input_handler_ = std::move(widget_input_handler);
+    mojom::WidgetInputHandlerAssociatedPtr widget_input_handler,
+    mojom::WidgetInputHandlerHostRequest host_request) {
+  if (base::FeatureList::IsEnabled(features::kMojoInputMessages)) {
+    associated_widget_input_handler_ = std::move(widget_input_handler);
+    input_router_->BindHost(std::move(host_request), true);
+  }
 }
 
 void RenderWidgetHostImpl::SetWidget(mojom::WidgetPtr widget) {
   if (widget && base::FeatureList::IsEnabled(features::kMojoInputMessages)) {
-    widget_input_handler_.reset();
+    // If we have a bound handler ensure that we destroy the old input router.
+    if (widget_input_handler_.get())
+      SetupInputRouter();
 
     mojom::WidgetInputHandlerHostPtr host;
     mojom::WidgetInputHandlerHostRequest host_request =
         mojo::MakeRequest(&host);
     widget->SetupWidgetInputHandler(mojo::MakeRequest(&widget_input_handler_),
                                     std::move(host));
-    input_router_->BindHost(std::move(host_request));
+    input_router_->BindHost(std::move(host_request), false);
   }
 }
 

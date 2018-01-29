@@ -88,7 +88,7 @@ class LoadStopNotificationObserver : public WindowedNotificationObserver {
       : WindowedNotificationObserver(NOTIFICATION_LOAD_STOP,
                                      Source<NavigationController>(controller)),
         session_index_(-1),
-        controller_(NULL) {}
+        controller_(nullptr) {}
   void Observe(int type,
                const NotificationSource& source,
                const NotificationDetails& details) override {
@@ -420,7 +420,7 @@ IN_PROC_BROWSER_TEST_F(WebContentsImplBrowserTest,
 class RenderFrameCreatedObserver : public WebContentsObserver {
  public:
   explicit RenderFrameCreatedObserver(Shell* shell)
-      : WebContentsObserver(shell->web_contents()), last_rfh_(NULL) {}
+      : WebContentsObserver(shell->web_contents()), last_rfh_(nullptr) {}
 
   void RenderFrameCreated(RenderFrameHost* render_frame_host) override {
     last_rfh_ = render_frame_host;
@@ -1128,6 +1128,7 @@ class TestWCDelegateForDialogsAndFullscreen : public JavaScriptDialogManager,
   };
 
   void RunBeforeUnloadDialog(WebContents* web_contents,
+                             RenderFrameHost* render_frame_host,
                              bool is_reload,
                              DialogClosedCallback callback) override {
     std::move(callback).Run(true, base::string16());
@@ -1624,82 +1625,6 @@ IN_PROC_BROWSER_TEST_F(WebContentsImplBrowserTest,
 
   wc->SetDelegate(nullptr);
   wc->SetJavaScriptDialogManagerForTesting(nullptr);
-}
-
-class FormBubbleDelegate : public WebContentsDelegate {
- public:
-  FormBubbleDelegate() = default;
-
-  void WaitUntilShown() {
-    while (!is_visible_) {
-      message_loop_runner_ = new MessageLoopRunner;
-      message_loop_runner_->Run();
-    }
-  }
-
-  void WaitUntilHidden() {
-    while (is_visible_) {
-      message_loop_runner_ = new MessageLoopRunner;
-      message_loop_runner_->Run();
-    }
-  }
-
- private:
-  void ShowValidationMessage(WebContents* web_contents,
-                             const gfx::Rect& anchor_in_root_view,
-                             const base::string16& main_text,
-                             const base::string16& sub_text) override {
-    is_visible_ = true;
-    if (message_loop_runner_)
-      message_loop_runner_->Quit();
-  }
-
-  void HideValidationMessage(WebContents* web_contents) override {
-    is_visible_ = false;
-    if (message_loop_runner_)
-      message_loop_runner_->Quit();
-  }
-
-  bool is_visible_ = false;
-  scoped_refptr<MessageLoopRunner> message_loop_runner_;
-};
-
-// TODO(tkent): Remove this test when we remove the browser-side validation
-// bubble implementation. crbug.com/739091
-IN_PROC_BROWSER_TEST_F(WebContentsImplBrowserTest,
-                       DISABLED_NavigationHidesFormValidationBubble) {
-  ASSERT_TRUE(embedded_test_server()->Start());
-  EXPECT_TRUE(NavigateToURL(
-      shell(), embedded_test_server()->GetURL("a.com", "/title1.html")));
-
-  // Start listening for requests to show or hide the form validation bubble.
-  WebContentsImpl* web_contents =
-      static_cast<WebContentsImpl*>(shell()->web_contents());
-  FormBubbleDelegate bubble_delegate;
-  web_contents->SetDelegate(&bubble_delegate);
-
-  // Trigger a form validation bubble and verify that the bubble is shown.
-  std::string script = R"(
-      var input_field = document.createElement('input');
-      input_field.required = true;
-      var form = document.createElement('form');
-      form.appendChild(input_field);
-      document.body.appendChild(form);
-
-      setTimeout(function() {
-              input_field.setCustomValidity('Custom validity message');
-              input_field.reportValidity();
-          },
-          0);
-      )";
-  ASSERT_TRUE(ExecuteScript(web_contents, script));
-  bubble_delegate.WaitUntilShown();
-
-  // Navigate to another page and verify that the form validation bubble is
-  // hidden.
-  EXPECT_TRUE(NavigateToURL(
-      shell(), embedded_test_server()->GetURL("b.com", "/title2.html")));
-  bubble_delegate.WaitUntilHidden();
 }
 
 IN_PROC_BROWSER_TEST_F(WebContentsImplBrowserTest,

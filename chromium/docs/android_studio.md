@@ -8,20 +8,13 @@ Make sure you have followed
 [android build instructions](android_build_instructions.md) already.
 
 ```shell
-build/android/gradle/generate_gradle.py [--canary]  # Use --canary for Android Studio 3.0 beta
+build/android/gradle/generate_gradle.py --output-directory out/Debug [--canary]  # Use --canary for Android Studio 3.1 canary
 ```
 
 This creates a project at `out/Debug/gradle`. To create elsewhere:
 
 ```shell
-build/android/gradle/generate_gradle.py --output-directory out/My-Out-Dir --project-dir my-project
-```
-
-By default, common targets are generated. To add more targets to generate
-projects for:
-
-```shell
-build/android/gradle/generate_gradle.py --extra-target //chrome/android:chrome_public_apk
+build/android/gradle/generate_gradle.py --output-directory out/Debug --project-dir my-project
 ```
 
 For first-time Android Studio users:
@@ -38,7 +31,7 @@ To import the project:
 
 If you're asked to use Studio's Android SDK:
 
-* No.
+* No. (Always use project's own SDK)
 
 If you're asked to use Studio's Gradle wrapper:
 
@@ -145,15 +138,16 @@ resources, native libraries, etc.
     * Add the line `org.gradle.daemon=true` to `~/.gradle/gradle.properties`,
       creating it if necessary.
 
-## Status (as of Oct, 2017)
+## Status (as of Nov 1, 2017)
 
 ### What works
 
-* Android Studio v2.3, and v3.0 beta with `--canary` flag.
-* Java editing and gradle compile.
+* Android Studio v3.0 and v3.1 canary with `--canary` flag.
+* Java editing and gradle compile (mostly).
 * Instrumentation tests included as androidTest.
 * Symlinks to existing .so files in jniLibs (doesn't generate them).
-* Editing resource xml files.
+* Editing resource xml files
+* Layout editor (somewhat :P).
 * Java debugging (see
 [here](/docs/android_debugging_instructions.md#Android-Studio)).
 * Import resolution and refactoring across all modules.
@@ -162,6 +156,5 @@ resources, native libraries, etc.
 ### What doesn't work (yet) ([crbug](https://bugs.chromium.org/p/chromium/issues/detail?id=620034))
 
 * Gradle being aware of assets.
-* Layout editor.
 * Native code editing.
 * Having the "Make Project" button work correctly.

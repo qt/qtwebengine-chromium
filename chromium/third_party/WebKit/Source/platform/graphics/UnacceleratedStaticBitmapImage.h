@@ -13,12 +13,14 @@ class PLATFORM_EXPORT UnacceleratedStaticBitmapImage final
     : public StaticBitmapImage {
  public:
   ~UnacceleratedStaticBitmapImage() override;
-  static RefPtr<UnacceleratedStaticBitmapImage> Create(sk_sp<SkImage>);
-  static RefPtr<UnacceleratedStaticBitmapImage> Create(PaintImage);
+  static scoped_refptr<UnacceleratedStaticBitmapImage> Create(sk_sp<SkImage>);
+  static scoped_refptr<UnacceleratedStaticBitmapImage> Create(PaintImage);
 
   bool CurrentFrameKnownToBeOpaque(MetadataMode = kUseCurrentMetadata) override;
   IntSize Size() const override;
   bool IsPremultiplied() const override;
+  scoped_refptr<StaticBitmapImage> MakeAccelerated(
+      WeakPtr<WebGraphicsContext3DProviderWrapper> context_wrapper) override;
 
   void Draw(PaintCanvas*,
             const PaintFlags&,

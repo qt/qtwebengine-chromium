@@ -13,7 +13,6 @@
 #include <algorithm>
 #include <deque>
 #include <map>
-#include <set>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -23,6 +22,7 @@
 #include "common_video/libyuv/include/webrtc_libyuv.h"
 #include "logging/rtc_event_log/output/rtc_event_log_output_file.h"
 #include "logging/rtc_event_log/rtc_event_log.h"
+#include "media/engine/internalencoderfactory.h"
 #include "media/engine/webrtcvideoengine.h"
 #include "modules/audio_mixer/audio_mixer_impl.h"
 #include "modules/rtp_rtcp/include/rtp_header_parser.h"
@@ -92,11 +92,13 @@ struct VoiceEngineState {
 
 void CreateVoiceEngine(
     VoiceEngineState* voe,
+    webrtc::AudioDeviceModule* adm,
     webrtc::AudioProcessing* apm,
     rtc::scoped_refptr<webrtc::AudioDecoderFactory> decoder_factory) {
   voe->voice_engine = webrtc::VoiceEngine::Create();
   voe->base = webrtc::VoEBase::GetInterface(voe->voice_engine);
-  EXPECT_EQ(0, voe->base->Init(nullptr, apm, decoder_factory));
+  EXPECT_EQ(0, adm->Init());
+  EXPECT_EQ(0, voe->base->Init(adm, apm, decoder_factory));
   webrtc::VoEBase::ChannelConfig config;
   config.enable_voice_pacing = true;
   voe->send_channel_id = voe->base->CreateChannel(config);
@@ -844,7 +846,7 @@ class VideoAnalyzer : public PacketReceiver,
       test::GetTestArtifactsDir(&output_dir);
       std::string output_path =
           rtc::Pathname(output_dir, test_label_ + ".jpg").pathname();
-      LOG(LS_INFO) << "Saving worst frame to " << output_path;
+      RTC_LOG(LS_INFO) << "Saving worst frame to " << output_path;
       test::JpegFrameWriter frame_writer(output_path);
       RTC_CHECK(frame_writer.WriteFrame(worst_frame_->frame,
                                         100 /*best quality*/));
@@ -1129,35 +1131,6 @@ class VideoAnalyzer : public PacketReceiver,
   const int64_t start_ms_;
 };
 
-class Vp8EncoderFactory : public cricket::WebRtcVideoEncoderFactory {
- public:
-  Vp8EncoderFactory() {
-    supported_codecs_.push_back(cricket::VideoCodec("VP8"));
-  }
-  ~Vp8EncoderFactory() override { RTC_CHECK(live_encoders_.empty()); }
-
-  const std::vector<cricket::VideoCodec>& supported_codecs() const override {
-    return supported_codecs_;
-  }
-
-  VideoEncoder* CreateVideoEncoder(const cricket::VideoCodec& codec) override {
-    VideoEncoder* encoder = VP8Encoder::Create();
-    live_encoders_.insert(encoder);
-    return encoder;
-  }
-
-  void DestroyVideoEncoder(VideoEncoder* encoder) override {
-    auto it = live_encoders_.find(encoder);
-    RTC_CHECK(it != live_encoders_.end());
-    live_encoders_.erase(it);
-    delete encoder;
-  }
-
- private:
-  std::vector<cricket::VideoCodec> supported_codecs_;
-  std::set<VideoEncoder*> live_encoders_;
-};
-
 VideoQualityTest::VideoQualityTest()
     : clock_(Clock::GetRealTimeClock()), receive_logs_(0), send_logs_(0) {
   payload_type_map_ = test::CallTest::payload_type_map_;
@@ -1413,7 +1386,7 @@ void VideoQualityTest::SetupVideo(Transport* send_transport,
 
   int payload_type;
   if (params_.video.codec == "H264") {
-    video_encoder_.reset(H264Encoder::Create(cricket::VideoCodec("H264")));
+    video_encoder_ = H264Encoder::Create(cricket::VideoCodec("H264"));
     payload_type = kPayloadTypeH264;
   } else if (params_.video.codec == "VP8") {
     if (params_.screenshare.enabled && params_.ss.streams.size() > 1) {
@@ -1421,13 +1394,13 @@ void VideoQualityTest::SetupVideo(Transport* send_transport,
       // encoders usually can't natively do simulcast with different frame rates
       // for the different layers.
       video_encoder_.reset(
-          new SimulcastEncoderAdapter(new Vp8EncoderFactory()));
+          new SimulcastEncoderAdapter(new InternalEncoderFactory()));
     } else {
-      video_encoder_.reset(VP8Encoder::Create());
+      video_encoder_ = VP8Encoder::Create();
     }
     payload_type = kPayloadTypeVP8;
   } else if (params_.video.codec == "VP9") {
-    video_encoder_.reset(VP9Encoder::Create());
+    video_encoder_ = VP9Encoder::Create();
     payload_type = kPayloadTypeVP9;
   } else {
     RTC_NOTREACHED() << "Codec not supported!";
@@ -1792,6 +1765,20 @@ void VideoQualityTest::CreateCapturer() {
   RTC_DCHECK(video_capturer_.get());
 }
 
+std::unique_ptr<test::LayerFilteringTransport>
+VideoQualityTest::CreateSendTransport() {
+  return rtc::MakeUnique<test::LayerFilteringTransport>(
+      &task_queue_, params_.pipe, sender_call_.get(), kPayloadTypeVP8,
+      kPayloadTypeVP9, params_.video.selected_tl, params_.ss.selected_sl,
+      payload_type_map_);
+}
+
+std::unique_ptr<test::DirectTransport>
+VideoQualityTest::CreateReceiveTransport() {
+  return rtc::MakeUnique<test::DirectTransport>(
+      &task_queue_, params_.pipe, receiver_call_.get(), payload_type_map_);
+}
+
 void VideoQualityTest::RunWithAnalyzer(const Params& params) {
   std::unique_ptr<test::LayerFilteringTransport> send_transport;
   std::unique_ptr<test::DirectTransport> recv_transport;
@@ -1815,27 +1802,23 @@ void VideoQualityTest::RunWithAnalyzer(const Params& params) {
 
   if (!params.logging.rtc_event_log_name.empty()) {
     event_log_ = RtcEventLog::Create(clock_, RtcEventLog::EncodingType::Legacy);
-    bool event_log_started =
-        event_log_->StartLogging(rtc::MakeUnique<RtcEventLogOutputFile>(
+    std::unique_ptr<RtcEventLogOutputFile> output(
+        rtc::MakeUnique<RtcEventLogOutputFile>(
             params.logging.rtc_event_log_name, RtcEventLog::kUnlimitedOutput));
+    bool event_log_started = event_log_->StartLogging(
+        std::move(output), RtcEventLog::kImmediateOutput);
     RTC_DCHECK(event_log_started);
   }
 
   Call::Config call_config(event_log_.get());
   call_config.bitrate_config = params.call.call_bitrate_config;
 
-  task_queue_.SendTask([this, &call_config, &send_transport,
-                        &recv_transport]() {
-    CreateCalls(call_config, call_config);
-
-    send_transport = rtc::MakeUnique<test::LayerFilteringTransport>(
-        &task_queue_, params_.pipe, sender_call_.get(), kPayloadTypeVP8,
-        kPayloadTypeVP9, params_.video.selected_tl, params_.ss.selected_sl,
-        payload_type_map_);
-
-    recv_transport = rtc::MakeUnique<test::DirectTransport>(
-        &task_queue_, params_.pipe, receiver_call_.get(), payload_type_map_);
-  });
+  task_queue_.SendTask(
+      [this, &call_config, &send_transport, &recv_transport]() {
+        CreateCalls(call_config, call_config);
+        send_transport = CreateSendTransport();
+        recv_transport = CreateReceiveTransport();
+      });
 
   std::string graph_title = params_.analyzer.graph_title;
   if (graph_title.empty())
@@ -1987,6 +1970,7 @@ void VideoQualityTest::SetupAudio(int send_channel_id,
 void VideoQualityTest::RunWithRenderers(const Params& params) {
   std::unique_ptr<test::LayerFilteringTransport> send_transport;
   std::unique_ptr<test::DirectTransport> recv_transport;
+  std::unique_ptr<test::FakeAudioDevice> fake_audio_device;
   ::VoiceEngineState voe;
   std::unique_ptr<test::VideoRenderer> local_preview;
   std::vector<std::unique_ptr<test::VideoRenderer>> loopback_renderers;
@@ -2001,16 +1985,24 @@ void VideoQualityTest::RunWithRenderers(const Params& params) {
     Call::Config call_config(event_log_.get());
     call_config.bitrate_config = params_.call.call_bitrate_config;
 
+    fake_audio_device.reset(new test::FakeAudioDevice(
+        test::FakeAudioDevice::CreatePulsedNoiseCapturer(32000, 48000),
+        test::FakeAudioDevice::CreateDiscardRenderer(48000),
+        1.f));
+
     rtc::scoped_refptr<webrtc::AudioProcessing> audio_processing(
         webrtc::AudioProcessing::Create());
 
     if (params_.audio.enabled) {
-      CreateVoiceEngine(&voe, audio_processing.get(), decoder_factory_);
+      CreateVoiceEngine(&voe, fake_audio_device.get(), audio_processing.get(),
+                        decoder_factory_);
       AudioState::Config audio_state_config;
       audio_state_config.voice_engine = voe.voice_engine;
       audio_state_config.audio_mixer = AudioMixerImpl::Create();
       audio_state_config.audio_processing = audio_processing;
       call_config.audio_state = AudioState::Create(audio_state_config);
+      fake_audio_device->RegisterAudioCallback(
+          call_config.audio_state->audio_transport());
     }
 
     CreateCalls(call_config, call_config);
@@ -2070,8 +2062,7 @@ void VideoQualityTest::RunWithRenderers(const Params& params) {
           video_receive_configs_[selected_stream_id].sync_group = kSyncGroup;
       }
 
-      if (params_.screenshare.enabled)
-        SetupScreenshareOrSVC();
+      SetupScreenshareOrSVC();
 
       CreateFlexfecStreams();
       CreateVideoStreams();

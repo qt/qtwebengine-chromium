@@ -148,12 +148,12 @@ std::vector<PathImpl *> ContextGL::createPaths(GLsizei range)
     return ret;
 }
 
-gl::Error ContextGL::flush()
+gl::Error ContextGL::flush(const gl::Context *context)
 {
     return mRenderer->flush();
 }
 
-gl::Error ContextGL::finish()
+gl::Error ContextGL::finish(const gl::Context *context)
 {
     return mRenderer->finish();
 }
@@ -339,6 +339,16 @@ void ContextGL::pushGroupMarker(GLsizei length, const char *marker)
 void ContextGL::popGroupMarker()
 {
     mRenderer->popGroupMarker();
+}
+
+void ContextGL::pushDebugGroup(GLenum source, GLuint id, GLsizei length, const char *message)
+{
+    mRenderer->pushDebugGroup(source, id, length, message);
+}
+
+void ContextGL::popDebugGroup()
+{
+    mRenderer->popDebugGroup();
 }
 
 void ContextGL::syncState(const gl::Context *context, const gl::State::DirtyBits &dirtyBits)

@@ -128,6 +128,10 @@ const char kCloudPrintServiceProcess[]      = "service";
 // service or register proxy for autostart.
 const char kCloudPrintSetupProxy[]          = "cloud-print-setup-proxy";
 
+// Enables committed error pages instead of transient navigation entries for
+// interstitial error pages (e.g. certificate errors).
+const char kCommittedInterstitials[] = "committed-interstitials";
+
 // Comma-separated list of BrowserThreads that cause browser process to crash
 // if the given browser thread is not responsive. UI,IO,DB,FILE,CACHE are the
 // list of BrowserThreads that are supported.
@@ -158,6 +162,10 @@ const char kDebugEnableFrameToggle[]        = "debug-enable-frame-toggle";
 // apps.
 const char kDebugPackedApps[]               = "debug-packed-apps";
 
+// Prevents permission prompts from appearing by denying instead of showing
+// prompts.
+const char kDenyPermissionPrompts[] = "deny-permission-prompts";
+
 // Passes command line parameters to the DevTools front-end.
 const char kDevToolsFlags[]                 = "devtools-flags";
 
@@ -181,10 +189,6 @@ const char kDisableBundledPpapiFlash[]      = "disable-bundled-ppapi-flash";
 // Disables hardware encoding support for Cast Streaming.
 const char kDisableCastStreamingHWEncoding[] =
     "disable-cast-streaming-hw-encoding";
-
-// Disables data volume counters in the Clear Browsing Data dialog.
-const char kDisableClearBrowsingDataCounters[] =
-    "disable-clear-browsing-data-counters";
 
 // Disables the client-side phishing detection feature. Note that even if
 // client-side phishing detection is enabled, it will only be active if the
@@ -257,10 +261,6 @@ const char kDisablePushApiBackgroundMode[] = "disable-push-api-background-mode";
 const char kDisableSearchGeolocationDisclosure[] =
     "disable-search-geolocation-disclosure";
 
-// Disables Web Notification custom layouts.
-const char kDisableWebNotificationCustomLayouts[] =
-    "disable-web-notification-custom-layouts";
-
 // Some tests seem to require the application to close when the last
 // browser window is closed. Thus, we need a switch to force this behavior
 // for ChromeOS Aura, disable "zero window mode".
@@ -292,10 +292,6 @@ const char kEnableAudioDebugRecordingsFromExtension[] =
 // Enables the multi-level undo system for bookmarks.
 const char kEnableBookmarkUndo[]            = "enable-bookmark-undo";
 
-// Enables data volume counters in the Clear Browsing Data dialog.
-const char kEnableClearBrowsingDataCounters[] =
-    "enable-clear-browsing-data-counters";
-
 // This applies only when the process type is "service". Enables the Cloud Print
 // Proxy component within the service process.
 const char kEnableCloudPrintProxy[]         = "enable-cloud-print-proxy";
@@ -314,9 +310,6 @@ const char kEnableDomainReliability[] = "enable-domain-reliability";
 // mouse or touch.
 const char kEnableExperimentalFullscreenExitUI[] =
     "enable-experimental-fullscreen-exit-ui";
-
-// Enables experimental hotword features specific to always-on.
-const char kEnableExperimentalHotwordHardware[] = "enable-hotword-hardware";
 
 // Enables logging for extension activity.
 const char kEnableExtensionActivityLogging[] =
@@ -379,10 +372,6 @@ const char kEnableSiteSettings[] = "enable-site-settings";
 // Enables user control over muting tab audio from the tab strip.
 const char kEnableTabAudioMuting[]  = "enable-tab-audio-muting";
 
-// Enables Web Notification custom layouts.
-const char kEnableWebNotificationCustomLayouts[] =
-    "enable-web-notification-custom-layouts";
-
 // If the WebRTC logging private API is active, enables WebRTC event logging.
 const char kEnableWebRtcEventLoggingFromExtension[] =
     "enable-webrtc-event-logging-from-extension";
@@ -436,6 +425,11 @@ const char kForceEnableMetricsReporting[] = "force-enable-metrics-reporting";
 // whether or not it's actually the First Run (this overrides kNoFirstRun).
 const char kForceFirstRun[]                 = "force-first-run";
 
+// Shows the modal first run dialog during browser startup. This is shown for
+// the "organic" first run experience (Chrome downloaded, empty user data dir).
+// This does nothing without --force-first-run also being set.
+const char kForceFirstRunDialog[] = "force-first-run-dialog";
+
 // Forces Chrome to use localNTP instead of server (GWS) NTP.
 const char kForceLocalNtp[]                 = "force-local-ntp";
 
@@ -486,7 +480,10 @@ const char kMediaCacheSize[]                = "media-cache-size";
 // Enables the out-of-process memory logging.
 const char kMemlog[] = "memlog";
 const char kMemlogModeAll[] = "all";
+const char kMemlogModeBrowser[] = "browser";
+const char kMemlogModeGpu[] = "gpu";
 const char kMemlogModeMinimal[] = "minimal";
+const char kMemlogModeRendererSampling[] = "renderer-sampling";
 
 // Allows setting a different destination ID for connection-monitoring GCM
 // messages. Useful when running against a non-prod management server.
@@ -967,12 +964,14 @@ const char kWatcherProcess[]                = "watcher";
 const char kWindows10CustomTitlebar[]       = "windows10-custom-titlebar";
 #endif  // defined(OS_WIN)
 
-#if BUILDFLAG(ENABLE_PACKAGE_MASH_SERVICES)
-// Used to enable Mus+ash.
+#if BUILDFLAG(ENABLE_MUS)
+// Enables Mus+ash (out-of-process ash and mus). See //ash/README.md
 const char kMash[]                          = "mash";
 
-// Used to enable mus as a separate process, but chrome+ash still together.
-const char kMus[] = "mus";
+// Provides the name of the mojo service running in a mash utility process.
+// NOTE: Used by the Chrome OS crash_reporter to identify mash processes. If you
+// change or remove the flag please update platform2/crash_reporter.
+const char kMashServiceName[] = "mash-service-name";
 #endif
 
 #if BUILDFLAG(ENABLE_PRINT_PREVIEW) && !defined(OFFICIAL_BUILD)
@@ -1000,12 +999,12 @@ const char kEnableWaylandServer[] = "enable-wayland-server";
 #endif
 
 #if defined(OS_WIN) || defined(OS_LINUX)
-extern const char kDisableInputImeAPI[] = "disable-input-ime-api";
-extern const char kEnableInputImeAPI[] = "enable-input-ime-api";
+const char kDisableInputImeAPI[] = "disable-input-ime-api";
+const char kEnableInputImeAPI[] = "enable-input-ime-api";
 #endif
 
 #if defined(OS_LINUX) || defined(OS_MACOSX) || defined(OS_WIN)
-extern const char kEnableNewAppMenuIcon[] = "enable-new-app-menu-icon";
+const char kEnableNewAppMenuIcon[] = "enable-new-app-menu-icon";
 #endif
 
 #if !defined(OS_CHROMEOS) && !defined(OS_ANDROID)

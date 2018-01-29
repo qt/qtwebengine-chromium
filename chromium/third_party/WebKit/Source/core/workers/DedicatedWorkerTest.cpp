@@ -4,9 +4,9 @@
 
 #include <memory>
 #include "bindings/core/v8/V8CacheOptions.h"
-#include "core/dom/TaskRunnerHelper.h"
 #include "core/events/MessageEvent.h"
 #include "core/inspector/ConsoleMessageStorage.h"
+#include "core/inspector/ThreadDebugger.h"
 #include "core/testing/DummyPageHolder.h"
 #include "core/workers/DedicatedWorkerGlobalScope.h"
 #include "core/workers/DedicatedWorkerMessagingProxy.h"
@@ -14,11 +14,12 @@
 #include "core/workers/DedicatedWorkerThread.h"
 #include "core/workers/GlobalScopeCreationParams.h"
 #include "core/workers/WorkerBackingThreadStartupData.h"
-#include "core/workers/WorkerInspectorProxy.h"
 #include "core/workers/WorkerThread.h"
 #include "core/workers/WorkerThreadTestHelper.h"
 #include "platform/CrossThreadFunctional.h"
 #include "platform/testing/UnitTestHelpers.h"
+#include "platform/weborigin/SecurityPolicy.h"
+#include "public/platform/TaskType.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -34,7 +35,7 @@ class DedicatedWorkerThreadForTest final : public DedicatedWorkerThread {
 
   WorkerOrWorkletGlobalScope* CreateWorkerGlobalScope(
       std::unique_ptr<GlobalScopeCreationParams> creation_params) override {
-    auto global_scope = new DedicatedWorkerGlobalScope(
+    auto* global_scope = new DedicatedWorkerGlobalScope(
         std::move(creation_params), this, time_origin_);
     // Initializing a global scope with a dummy creation params may emit warning
     // messages (e.g., invalid CSP directives). Clear them here for tests that
@@ -69,8 +70,8 @@ class DedicatedWorkerThreadForTest final : public DedicatedWorkerThread {
 
   void TestTaskRunner() {
     EXPECT_TRUE(IsCurrentThread());
-    RefPtr<WebTaskRunner> task_runner =
-        TaskRunnerHelper::Get(TaskType::kUnspecedTimer, GlobalScope());
+    scoped_refptr<WebTaskRunner> task_runner =
+        GlobalScope()->GetTaskRunner(TaskType::kUnspecedTimer);
     EXPECT_TRUE(task_runner->RunsTasksInCurrentSequence());
     GetParentFrameTaskRunners()
         ->Get(TaskType::kUnspecedTimer)
@@ -112,41 +113,40 @@ class DedicatedWorkerMessagingProxyForTest
       : DedicatedWorkerMessagingProxy(execution_context,
                                       nullptr /* workerObject */,
                                       nullptr /* workerClients */) {
-    worker_object_proxy_ = WTF::MakeUnique<DedicatedWorkerObjectProxyForTest>(
+    worker_object_proxy_ = std::make_unique<DedicatedWorkerObjectProxyForTest>(
         this, GetParentFrameTaskRunners());
   }
 
   ~DedicatedWorkerMessagingProxyForTest() override = default;
 
   void StartWithSourceCode(const String& source) {
-    KURL script_url(kParsedURLString, "http://fake.url/");
+    KURL script_url("http://fake.url/");
     security_origin_ = SecurityOrigin::Create(script_url);
-    std::unique_ptr<Vector<CSPHeaderAndType>> headers =
-        WTF::MakeUnique<Vector<CSPHeaderAndType>>();
+    auto headers = std::make_unique<Vector<CSPHeaderAndType>>();
     CSPHeaderAndType header_and_type("contentSecurityPolicy",
                                      kContentSecurityPolicyHeaderTypeReport);
     headers->push_back(header_and_type);
     auto worker_settings = std::make_unique<WorkerSettings>(
         ToDocument(GetExecutionContext())->GetSettings());
     InitializeWorkerThread(
-        WTF::MakeUnique<GlobalScopeCreationParams>(
+        std::make_unique<GlobalScopeCreationParams>(
             script_url, "fake user agent", source,
-            nullptr /* cached_meta_data */, kDontPauseWorkerGlobalScopeOnStart,
-            headers.get(), "" /* referrer_policy */, security_origin_.get(),
+            nullptr /* cached_meta_data */, headers.get(),
+            kReferrerPolicyDefault, security_origin_.get(),
             nullptr /* worker_clients */, kWebAddressSpaceLocal,
             nullptr /* origin_trial_tokens */, std::move(worker_settings),
             kV8CacheOptionsDefault),
         WorkerBackingThreadStartupData(
             WorkerBackingThreadStartupData::HeapLimitMode::kDefault,
             WorkerBackingThreadStartupData::AtomicsWaitMode::kAllow),
-        script_url);
+        script_url, v8_inspector::V8StackTraceId());
   }
 
   DedicatedWorkerThreadForTest* GetDedicatedWorkerThread() {
     return static_cast<DedicatedWorkerThreadForTest*>(GetWorkerThread());
   }
 
-  DEFINE_INLINE_VIRTUAL_TRACE() {
+  void Trace(blink::Visitor* visitor) override {
     visitor->Trace(mock_worker_thread_lifecycle_observer_);
     DedicatedWorkerMessagingProxy::Trace(visitor);
   }
@@ -154,7 +154,7 @@ class DedicatedWorkerMessagingProxyForTest
  private:
   std::unique_ptr<WorkerThread> CreateWorkerThread() override {
     auto worker_thread =
-        WTF::MakeUnique<DedicatedWorkerThreadForTest>(WorkerObjectProxy());
+        std::make_unique<DedicatedWorkerThreadForTest>(WorkerObjectProxy());
     mock_worker_thread_lifecycle_observer_ =
         new MockWorkerThreadLifecycleObserver(
             worker_thread->GetWorkerThreadLifecycleContext());
@@ -166,7 +166,7 @@ class DedicatedWorkerMessagingProxyForTest
 
   Member<MockWorkerThreadLifecycleObserver>
       mock_worker_thread_lifecycle_observer_;
-  RefPtr<SecurityOrigin> security_origin_;
+  scoped_refptr<SecurityOrigin> security_origin_;
 };
 
 class DedicatedWorkerTest : public ::testing::Test {
@@ -186,7 +186,8 @@ class DedicatedWorkerTest : public ::testing::Test {
 
   void DispatchMessageEvent() {
     WorkerMessagingProxy()->PostMessageToWorkerGlobalScope(
-        nullptr /* message */, Vector<MessagePortChannel>());
+        nullptr /* message */, Vector<MessagePortChannel>(),
+        v8_inspector::V8StackTraceId());
   }
 
   DedicatedWorkerMessagingProxyForTest* WorkerMessagingProxy() {
@@ -225,7 +226,8 @@ TEST_F(DedicatedWorkerTest, UseCounter) {
   // API use on the DedicatedWorkerGlobalScope should be recorded in UseCounter
   // on the Document.
   EXPECT_FALSE(UseCounter::IsCounted(GetDocument(), kFeature1));
-  TaskRunnerHelper::Get(TaskType::kUnspecedTimer, GetWorkerThread())
+  GetWorkerThread()
+      ->GetTaskRunner(TaskType::kUnspecedTimer)
       ->PostTask(
           BLINK_FROM_HERE,
           CrossThreadBind(&DedicatedWorkerThreadForTest::CountFeature,
@@ -235,7 +237,8 @@ TEST_F(DedicatedWorkerTest, UseCounter) {
 
   // API use should be reported to the Document only one time. See comments in
   // DedicatedWorkerObjectProxyForTest::CountFeature.
-  TaskRunnerHelper::Get(TaskType::kUnspecedTimer, GetWorkerThread())
+  GetWorkerThread()
+      ->GetTaskRunner(TaskType::kUnspecedTimer)
       ->PostTask(
           BLINK_FROM_HERE,
           CrossThreadBind(&DedicatedWorkerThreadForTest::CountFeature,
@@ -248,7 +251,8 @@ TEST_F(DedicatedWorkerTest, UseCounter) {
   // Deprecated API use on the DedicatedWorkerGlobalScope should be recorded in
   // UseCounter on the Document.
   EXPECT_FALSE(UseCounter::IsCounted(GetDocument(), kFeature2));
-  TaskRunnerHelper::Get(TaskType::kUnspecedTimer, GetWorkerThread())
+  GetWorkerThread()
+      ->GetTaskRunner(TaskType::kUnspecedTimer)
       ->PostTask(
           BLINK_FROM_HERE,
           CrossThreadBind(&DedicatedWorkerThreadForTest::CountDeprecation,
@@ -258,7 +262,8 @@ TEST_F(DedicatedWorkerTest, UseCounter) {
 
   // API use should be reported to the Document only one time. See comments in
   // DedicatedWorkerObjectProxyForTest::CountDeprecation.
-  TaskRunnerHelper::Get(TaskType::kUnspecedTimer, GetWorkerThread())
+  GetWorkerThread()
+      ->GetTaskRunner(TaskType::kUnspecedTimer)
       ->PostTask(
           BLINK_FROM_HERE,
           CrossThreadBind(&DedicatedWorkerThreadForTest::CountDeprecation,
@@ -270,7 +275,8 @@ TEST_F(DedicatedWorkerTest, TaskRunner) {
   const String source_code = "// Do nothing";
   WorkerMessagingProxy()->StartWithSourceCode(source_code);
 
-  TaskRunnerHelper::Get(TaskType::kUnspecedTimer, GetWorkerThread())
+  GetWorkerThread()
+      ->GetTaskRunner(TaskType::kUnspecedTimer)
       ->PostTask(BLINK_FROM_HERE,
                  CrossThreadBind(&DedicatedWorkerThreadForTest::TestTaskRunner,
                                  CrossThreadUnretained(GetWorkerThread())));

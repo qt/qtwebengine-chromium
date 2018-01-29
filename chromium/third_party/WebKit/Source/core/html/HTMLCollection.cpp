@@ -342,7 +342,7 @@ Element* HTMLCollection::TraverseToFirst() const {
           RootNode(), MakeIsMatch(ToClassCollection(*this)));
     default:
       if (OverridesItemAfter())
-        return VirtualItemAfter(0);
+        return VirtualItemAfter(nullptr);
       if (ShouldOnlyIncludeDirectChildren())
         return ElementTraversal::FirstChild(RootNode(), MakeIsMatch(*this));
       return ElementTraversal::FirstWithin(RootNode(), MakeIsMatch(*this));
@@ -525,9 +525,10 @@ void HTMLCollection::NamedItems(const AtomicString& name,
 
 HTMLCollection::NamedItemCache::NamedItemCache() {}
 
-DEFINE_TRACE(HTMLCollection) {
+void HTMLCollection::Trace(blink::Visitor* visitor) {
   visitor->Trace(named_item_cache_);
   visitor->Trace(collection_items_cache_);
+  ScriptWrappable::Trace(visitor);
   LiveNodeListBase::Trace(visitor);
 }
 

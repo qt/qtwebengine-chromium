@@ -20,6 +20,7 @@
 #include "content/public/browser/security_style_explanations.h"
 #include "content/public/browser/ssl_status.h"
 #include "content/public/browser/web_contents.h"
+#include "content/public/common/url_constants.h"
 #include "net/base/net_errors.h"
 #include "net/cert/x509_certificate.h"
 #include "net/ssl/ssl_cipher_suite_names.h"
@@ -64,8 +65,8 @@ void ExplainHTTPSecurity(
             l10n_util::GetStringUTF8(IDS_EDITED_NONSECURE),
             l10n_util::GetStringUTF8(IDS_EDITED_NONSECURE_DESCRIPTION)));
   }
-  if (security_info.displayed_password_field_on_http ||
-      security_info.displayed_credit_card_field_on_http) {
+  if (security_info.insecure_input_events.password_field_shown ||
+      security_info.insecure_input_events.credit_card_field_edited) {
     security_style_explanations->neutral_explanations.push_back(
         content::SecurityStyleExplanation(
             l10n_util::GetStringUTF8(IDS_PRIVATE_USER_DATA_INPUT),
@@ -199,10 +200,10 @@ void ExplainConnectionSecurity(
                                &is_tls13, cipher_suite);
   base::string16 protocol_name = base::ASCIIToUTF16(protocol);
   const base::string16 cipher_name =
-      (mac == NULL) ? base::ASCIIToUTF16(cipher)
-                    : l10n_util::GetStringFUTF16(IDS_CIPHER_WITH_MAC,
-                                                 base::ASCIIToUTF16(cipher),
-                                                 base::ASCIIToUTF16(mac));
+      (mac == nullptr) ? base::ASCIIToUTF16(cipher)
+                       : l10n_util::GetStringFUTF16(IDS_CIPHER_WITH_MAC,
+                                                    base::ASCIIToUTF16(cipher),
+                                                    base::ASCIIToUTF16(mac));
 
   // Include the key exchange group (previously known as curve) if specified.
   base::string16 key_exchange_name;
@@ -362,13 +363,17 @@ std::unique_ptr<security_state::VisibleSecurityState> GetVisibleSecurityState(
 
   content::NavigationEntry* entry =
       web_contents->GetController().GetVisibleEntry();
-  state->is_error_page =
-      entry && (entry->GetPageType() == content::PAGE_TYPE_ERROR);
-  if (!entry || !entry->GetSSL().initialized)
+  if (!entry)
     return state;
-
-  state->connection_info_initialized = true;
+  // Set fields that are not dependent on the connection info.
+  state->is_error_page = entry->GetPageType() == content::PAGE_TYPE_ERROR;
+  state->is_view_source =
+      entry->GetVirtualURL().SchemeIs(content::kViewSourceScheme);
   state->url = entry->GetURL();
+
+  if (!entry->GetSSL().initialized)
+    return state;
+  state->connection_info_initialized = true;
   const content::SSLStatus& ssl = entry->GetSSL();
   state->certificate = ssl.certificate;
   state->cert_status = ssl.cert_status;
@@ -388,12 +393,6 @@ std::unique_ptr<security_state::VisibleSecurityState> GetVisibleSecurityState(
   state->contained_mixed_form =
       !!(ssl.content_status &
          content::SSLStatus::DISPLAYED_FORM_WITH_INSECURE_ACTION);
-  state->displayed_password_field_on_http =
-      !!(ssl.content_status &
-         content::SSLStatus::DISPLAYED_PASSWORD_FIELD_ON_HTTP);
-  state->displayed_credit_card_field_on_http =
-      !!(ssl.content_status &
-         content::SSLStatus::DISPLAYED_CREDIT_CARD_FIELD_ON_HTTP);
 
   SSLStatusInputEventData* input_events =
       static_cast<SSLStatusInputEventData*>(ssl.user_data.get());

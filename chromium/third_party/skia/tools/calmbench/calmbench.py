@@ -74,6 +74,9 @@ def parse_args():
       '(i.e., reuse previous baseline measurements)')
   noinit_help = (
       'whether to skip initial nanobench runs (default: %(default)s)')
+  branch_help = (
+      "the test branch to benchmark; if it's 'modified', we'll benchmark the "
+      "current modified code against 'git stash'.")
 
   definitions = [
     # argname, type, default value, help
@@ -85,22 +88,30 @@ def parse_args():
     ['--baseline',  str, 'master', baseline_help],
     ['--basearg',   str, '', basearg_help],
     ['--reps',      int, 2, reps_help],
-    ['--threads',   int, default_threads, threads_help]
+    ['--threads',   int, default_threads, threads_help],
   ]
 
   for d in definitions:
     parser.add_argument(d[0], type=d[1], default=d[2], help=d[3])
 
-  parser.add_argument('branch', type=str, help="the test branch to benchmark")
+  parser.add_argument('branch', type=str, help=branch_help)
   parser.add_argument('--no-compile', dest='no_compile', action="store_true",
       help=no_compile_help)
   parser.add_argument('--skip-base', dest='skipbase', action="store_true",
       help=skip_base_help)
   parser.add_argument('--noinit', dest='noinit', action="store_true",
       help=noinit_help)
+  parser.add_argument('--concise', dest='concise', action="store_true",
+      help="If set, no verbose thread info will be printed.")
   parser.set_defaults(no_compile=False);
   parser.set_defaults(skipbase=False);
   parser.set_defaults(noinit=False);
+  parser.set_defaults(concise=False);
+
+  # Additional args for bots
+  BHELP = "bot specific options"
+  parser.add_argument('--githash', type=str, help=BHELP)
+  parser.add_argument('--keys', type=str, default=[], nargs='+', help=BHELP)
 
   args = parser.parse_args()
   if not args.basearg:
@@ -116,7 +127,6 @@ def nano_path(args, branch):
 def compile_branch(args, branch):
   print "Compiling branch %s" % args.branch
 
-  os.chdir(args.skiadir)
   commands = [
     ['git', 'checkout', branch],
     ['ninja', '-C', args.ninjadir, 'nanobench'],
@@ -126,9 +136,33 @@ def compile_branch(args, branch):
     subprocess.check_call(command, cwd=args.skiadir)
 
 
+def compile_modified(args):
+  print "Compiling modified code"
+  subprocess.check_call(
+      ['ninja', '-C', args.ninjadir, 'nanobench'], cwd=args.skiadir)
+  subprocess.check_call(
+      ['cp', args.ninjadir + '/nanobench', nano_path(args, args.branch)],
+      cwd=args.skiadir)
+
+  print "Compiling stashed code"
+  stash_output = subprocess.check_output(['git', 'stash'], cwd=args.skiadir)
+  if 'No local changes to save' in stash_output:
+    subprocess.check_call(['git', 'reset', 'HEAD^', '--soft'])
+    subprocess.check_call(['git', 'stash'])
+
+  subprocess.check_call(
+      ['ninja', '-C', args.ninjadir, 'nanobench'], cwd=args.skiadir)
+  subprocess.check_call(
+      ['cp', args.ninjadir + '/nanobench', nano_path(args, args.baseline)],
+      cwd=args.skiadir)
+  subprocess.check_call(['git', 'stash', 'pop'], cwd=args.skiadir)
+
 def compile_nanobench(args):
-  compile_branch(args, args.branch)
-  compile_branch(args, args.baseline)
+  if args.branch == 'modified':
+    compile_modified(args)
+  else:
+    compile_branch(args, args.branch)
+    compile_branch(args, args.baseline)
 
 
 def main():
@@ -159,6 +193,14 @@ def main():
     str(args.threads if args.config in ["8888", "565"] else 1),
     "true" if args.noinit else "false"
   ]
+
+  if args.githash:
+    command += ['--githash', args.githash]
+  if args.keys:
+    command += (['--keys'] + args.keys)
+
+  if args.concise:
+    command.append("--concise")
 
   p = subprocess.Popen(command, cwd=args.skiadir)
   try:

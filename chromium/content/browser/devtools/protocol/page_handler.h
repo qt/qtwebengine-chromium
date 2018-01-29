@@ -40,6 +40,7 @@ struct WebDeviceEmulationParams;
 namespace content {
 
 class DevToolsAgentHostImpl;
+class NavigationRequest;
 class RenderFrameHostImpl;
 class WebContentsImpl;
 
@@ -77,16 +78,17 @@ class PageHandler : public DevToolsDomainHandler,
   void DidRunBeforeUnloadConfirm(const GURL& url,
                                  JavaScriptDialogCallback callback);
   void DidCloseJavaScriptDialog(bool success, const base::string16& user_input);
+  void NavigationReset(NavigationRequest* navigation_request);
 
   Response Enable() override;
   Response Disable() override;
 
   Response Reload(Maybe<bool> bypassCache,
                   Maybe<std::string> script_to_evaluate_on_load) override;
-  Response Navigate(const std::string& url,
-                    Maybe<std::string> referrer,
-                    Maybe<std::string> transition_type,
-                    Page::FrameId* frame_id) override;
+  void Navigate(const std::string& url,
+                Maybe<std::string> referrer,
+                Maybe<std::string> transition_type,
+                std::unique_ptr<NavigateCallback> callback) override;
   Response StopLoading() override;
 
   using NavigationEntries = protocol::Array<Page::NavigationEntry>;
@@ -150,6 +152,7 @@ class PageHandler : public DevToolsDomainHandler,
       const std::string& format,
       int quality,
       const gfx::Size& original_view_size,
+      const gfx::Size& requested_image_size,
       const blink::WebDeviceEmulationParams& original_params,
       const gfx::Image& image);
 
@@ -180,6 +183,7 @@ class PageHandler : public DevToolsDomainHandler,
   NotificationRegistrar registrar_;
   JavaScriptDialogCallback pending_dialog_;
   scoped_refptr<DevToolsDownloadManagerDelegate> download_manager_delegate_;
+  std::unique_ptr<NavigateCallback> navigate_callback_;
   base::WeakPtrFactory<PageHandler> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(PageHandler);

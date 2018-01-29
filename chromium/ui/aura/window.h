@@ -84,6 +84,17 @@ class AURA_EXPORT Window : public ui::LayerDelegate,
     STACK_ABOVE,
     STACK_BELOW
   };
+  enum class OcclusionState {
+    // The window's occlusion state isn't tracked
+    // (WindowOcclusionTracker::Track) or hasn't been computed yet.
+    UNKNOWN,
+    // The window is occluded, i.e. one of these conditions is true:
+    // - The window is hidden (Window::IsVisible() is true).
+    // - The bounds of the window are completely covered by opaque windows.
+    OCCLUDED,
+    // The window is not occluded.
+    NOT_OCCLUDED,
+  };
 
   typedef std::vector<Window*> Windows;
 
@@ -156,6 +167,11 @@ class AURA_EXPORT Window : public ui::LayerDelegate,
   // account the visibility of the layer and ancestors, where as this tracks
   // whether Show() without a Hide() has been invoked.
   bool TargetVisibility() const { return visible_; }
+  // Returns the occlusion state of this window. Will be UNKNOWN if the
+  // occlusion state of this window isn't tracked
+  // (WindowOcclusionTracker::Track). Will be stale if called within the scope
+  // of a WindowOcclusionTracker::ScopedPauseOcclusionTracking.
+  OcclusionState occlusion_state() const { return occlusion_state_; }
 
   // Returns the window's bounds in root window's coordinates.
   gfx::Rect GetBoundsInRootWindow() const;
@@ -167,6 +183,7 @@ class AURA_EXPORT Window : public ui::LayerDelegate,
   gfx::Rect GetBoundsInScreen() const;
 
   void SetTransform(const gfx::Transform& transform);
+  const gfx::Transform& transform() const { return layer()->transform(); }
 
   // Assigns a LayoutManager to size and place child windows.
   // The Window takes ownership of the LayoutManager.
@@ -226,6 +243,9 @@ class AURA_EXPORT Window : public ui::LayerDelegate,
   // Converts |point| from |source|'s coordinates to |target|'s. If |source| is
   // NULL, the function returns without modifying |point|. |target| cannot be
   // NULL.
+  static void ConvertPointToTarget(const Window* source,
+                                   const Window* target,
+                                   gfx::PointF* point);
   static void ConvertPointToTarget(const Window* source,
                                    const Window* target,
                                    gfx::Point* point);
@@ -341,6 +361,15 @@ class AURA_EXPORT Window : public ui::LayerDelegate,
   // return a valid FrameSinkId.
   viz::FrameSinkId GetFrameSinkId() const;
 
+  const viz::FrameSinkId& embed_frame_sink_id() const {
+    return embed_frame_sink_id_;
+  }
+  void set_embed_frame_sink_id(const viz::FrameSinkId& embed_frame_sink_id) {
+    embed_frame_sink_id_ = embed_frame_sink_id;
+  }
+  // Returns whether this window is an embed window.
+  bool IsEmbeddingClient() const;
+
  protected:
   // Deletes (or removes if not owned by parent) all child windows. Intended for
   // use from the destructor.
@@ -356,6 +385,7 @@ class AURA_EXPORT Window : public ui::LayerDelegate,
   friend class HitTestDataProviderAura;
   friend class LayoutManager;
   friend class PropertyConverter;
+  friend class WindowOcclusionTracker;
   friend class WindowPort;
   friend class WindowPortForShutdown;
   friend class WindowTargeter;
@@ -374,6 +404,9 @@ class AURA_EXPORT Window : public ui::LayerDelegate,
   // Updates the visible state of the layer, but does not make visible-state
   // specific changes. Called from Show()/Hide().
   void SetVisible(bool visible);
+
+  // Updates the occlusion state of the window.
+  void SetOccluded(bool occluded);
 
   // Schedules a paint for the Window's entire bounds.
   void SchedulePaint();
@@ -447,9 +480,10 @@ class AURA_EXPORT Window : public ui::LayerDelegate,
 
   // Overridden from ui::LayerDelegate:
   void OnPaintLayer(const ui::PaintContext& context) override;
-  void OnDelegatedFrameDamage(const gfx::Rect& damage_rect_in_dip) override;
-  void OnLayerBoundsChanged(const gfx::Rect& old_bounds) override;
-  void OnLayerOpacityChanged(float old_opacity, float new_opacity) override;
+  void OnLayerBoundsChanged(const gfx::Rect& old_bounds,
+                            ui::PropertyChangeReason reason) override;
+  void OnLayerTransformed(ui::PropertyChangeReason reason) override;
+  void OnLayerOpacityChanged(ui::PropertyChangeReason reason) override;
 
   // Overridden from ui::EventTarget:
   bool CanAcceptEvent(const ui::Event& event) override;
@@ -499,7 +533,13 @@ class AURA_EXPORT Window : public ui::LayerDelegate,
   // the window is hidden (e.g. to animate its disappearance).
   bool visible_;
 
+  // Occlusion state of the window.
+  OcclusionState occlusion_state_;
+
   int id_;
+
+  // Only set when it is embedding another client inside.
+  viz::FrameSinkId embed_frame_sink_id_;
 
   // Whether layer is initialized as non-opaque. Defaults to false.
   bool transparent_;

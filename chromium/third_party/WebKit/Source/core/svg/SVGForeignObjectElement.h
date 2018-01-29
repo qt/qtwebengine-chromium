@@ -37,14 +37,15 @@ class SVGForeignObjectElement final : public SVGGraphicsElement {
   SVGAnimatedLength* width() const { return width_.Get(); }
   SVGAnimatedLength* height() const { return height_.Get(); }
 
-  DECLARE_VIRTUAL_TRACE();
+  virtual void Trace(blink::Visitor*);
 
  private:
   explicit SVGForeignObjectElement(Document&);
 
-  void CollectStyleForPresentationAttribute(const QualifiedName&,
-                                            const AtomicString&,
-                                            MutableStylePropertySet*) override;
+  void CollectStyleForPresentationAttribute(
+      const QualifiedName&,
+      const AtomicString&,
+      MutableCSSPropertyValueSet*) override;
   void SvgAttributeChanged(const QualifiedName&) override;
 
   bool LayoutObjectIsNeeded(const ComputedStyle&) override;

@@ -36,10 +36,10 @@
 #include "WebNode.h"
 #include "public/platform/WebCanvas.h"
 #include "public/platform/WebCommon.h"
-#include "public/platform/WebFeaturePolicy.h"
 #include "public/platform/WebInsecureRequestPolicy.h"
 #include "public/web/WebFrameLoadType.h"
 #include "public/web/WebTreeScopeType.h"
+#include "third_party/WebKit/common/feature_policy/feature_policy.h"
 #include "v8/include/v8.h"
 
 namespace blink {
@@ -47,7 +47,6 @@ namespace blink {
 class Frame;
 class OpenedFrameTracker;
 class Visitor;
-class WebElement;
 class WebLocalFrame;
 class WebRemoteFrame;
 class WebSecurityOrigin;
@@ -105,8 +104,7 @@ class BLINK_EXPORT WebFrame {
   // parent is in another process and it dynamically updates this frame's
   // sandbox flags or container policy. The new policy won't take effect until
   // the next navigation.
-  void SetFrameOwnerPolicy(WebSandboxFlags,
-                           const blink::WebParsedFeaturePolicy&);
+  void SetFrameOwnerPolicy(WebSandboxFlags, const blink::ParsedFeaturePolicy&);
 
   // The frame's insecure request policy.
   WebInsecureRequestPolicy GetInsecureRequestPolicy() const;
@@ -187,8 +185,8 @@ class BLINK_EXPORT WebFrame {
   // Utility -------------------------------------------------------------
 
   // Returns the frame inside a given frame or iframe element. Returns 0 if
-  // the given element is not a frame, iframe or if the frame is empty.
-  static WebFrame* FromFrameOwnerElement(const WebElement&);
+  // the given node is not a frame, iframe or if the frame is empty.
+  static WebFrame* FromFrameOwnerElement(const WebNode&);
 
 #if INSIDE_BLINK
   // TODO(mustaq): Should be named FromCoreFrame instead.

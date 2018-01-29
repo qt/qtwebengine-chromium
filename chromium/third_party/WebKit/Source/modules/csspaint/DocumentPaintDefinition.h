@@ -49,8 +49,8 @@ class DocumentPaintDefinition final
     return registered_definitions_count_;
   }
 
-  DECLARE_VIRTUAL_TRACE();
-  DECLARE_TRACE_WRAPPERS(){};
+  virtual void Trace(blink::Visitor*);
+  void TraceWrappers(const ScriptWrappableVisitor* visitor) const override{};
 
  private:
   Member<CSSPaintDefinition> paint_definition_;

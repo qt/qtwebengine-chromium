@@ -30,10 +30,9 @@
 #include "bindings/core/v8/ExceptionState.h"
 #include "bindings/core/v8/serialization/SerializedScriptValue.h"
 #include "bindings/core/v8/serialization/SerializedScriptValueFactory.h"
-#include "core/dom/BlinkMessagePortMessageStructTraits.h"
+#include "core/dom/BlinkTransferableMessageStructTraits.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/dom/ExecutionContext.h"
-#include "core/dom/TaskRunnerHelper.h"
 #include "core/events/MessageEvent.h"
 #include "core/frame/LocalDOMWindow.h"
 #include "core/frame/UseCounter.h"
@@ -43,6 +42,7 @@
 #include "platform/wtf/Atomics.h"
 #include "platform/wtf/PtrUtil.h"
 #include "platform/wtf/text/AtomicString.h"
+#include "public/platform/TaskType.h"
 #include "public/platform/WebString.h"
 
 namespace blink {
@@ -56,15 +56,14 @@ MessagePort* MessagePort::Create(ExecutionContext& execution_context) {
 
 MessagePort::MessagePort(ExecutionContext& execution_context)
     : ContextLifecycleObserver(&execution_context),
-      task_runner_(TaskRunnerHelper::Get(TaskType::kPostedMessage,
-                                         &execution_context)) {}
+      task_runner_(execution_context.GetTaskRunner(TaskType::kPostedMessage)) {}
 
 MessagePort::~MessagePort() {
   DCHECK(!started_ || !IsEntangled());
 }
 
 void MessagePort::postMessage(ScriptState* script_state,
-                              RefPtr<SerializedScriptValue> message,
+                              scoped_refptr<SerializedScriptValue> message,
                               const MessagePortArray& ports,
                               ExceptionState& exception_state) {
   if (!IsEntangled())
@@ -72,7 +71,7 @@ void MessagePort::postMessage(ScriptState* script_state,
   DCHECK(GetExecutionContext());
   DCHECK(!IsNeutered());
 
-  BlinkMessagePortMessage msg;
+  BlinkTransferableMessage msg;
   msg.message = message;
 
   // Make sure we aren't connected to any of the passed-in ports.
@@ -90,7 +89,7 @@ void MessagePort::postMessage(ScriptState* script_state,
     return;
 
   channel_.PostMojoMessage(
-      mojom::blink::MessagePortMessage::SerializeAsMessage(&msg));
+      mojom::blink::TransferableMessage::SerializeAsMessage(&msg));
 }
 
 MessagePortChannel MessagePort::Disentangle() {
@@ -125,8 +124,10 @@ void MessagePort::start() {
     return;
 
   // Note that MessagePortChannel may call this callback on any thread.
-  channel_.SetCallback(ConvertToBaseCallback(CrossThreadBind(
-      &MessagePort::MessageAvailable, WrapCrossThreadWeakPersistent(this))));
+  channel_.SetCallback(
+      ConvertToBaseCallback(CrossThreadBind(
+          &MessagePort::MessageAvailable, WrapCrossThreadWeakPersistent(this))),
+      task_runner_);
   started_ = true;
   MessageAvailable();
 }
@@ -157,7 +158,7 @@ const AtomicString& MessagePort::InterfaceName() const {
   return EventTargetNames::MessagePort;
 }
 
-bool MessagePort::TryGetMessage(BlinkMessagePortMessage& message) {
+bool MessagePort::TryGetMessage(BlinkTransferableMessage& message) {
   if (IsNeutered())
     return false;
 
@@ -165,7 +166,7 @@ bool MessagePort::TryGetMessage(BlinkMessagePortMessage& message) {
   if (!channel_.GetMojoMessage(&mojo_message))
     return false;
 
-  if (!mojom::blink::MessagePortMessage::DeserializeFromMessage(
+  if (!mojom::blink::TransferableMessage::DeserializeFromMessage(
           std::move(mojo_message), &message)) {
     return false;
   }
@@ -202,7 +203,7 @@ void MessagePort::DispatchMessages() {
       break;
     }
 
-    BlinkMessagePortMessage message;
+    BlinkTransferableMessage message;
     if (!TryGetMessage(message))
       break;
 
@@ -287,7 +288,7 @@ MojoHandle MessagePort::EntangledHandleForTesting() const {
   return channel_.GetHandle().get().value();
 }
 
-DEFINE_TRACE(MessagePort) {
+void MessagePort::Trace(blink::Visitor* visitor) {
   ContextLifecycleObserver::Trace(visitor);
   EventTargetWithInlineData::Trace(visitor);
 }

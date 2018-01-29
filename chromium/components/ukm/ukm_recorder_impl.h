@@ -9,12 +9,13 @@
 #include <set>
 #include <vector>
 
-#include "base/threading/thread_checker.h"
+#include "base/sequence_checker.h"
 #include "services/metrics/public/cpp/ukm_recorder.h"
 #include "services/metrics/public/interfaces/ukm_interface.mojom.h"
 
 namespace metrics {
 class UkmBrowserTest;
+class UkmEGTestHelper;
 }
 
 namespace ukm {
@@ -51,14 +52,16 @@ class UkmRecorderImpl : public UkmRecorder {
 
   const std::vector<mojom::UkmEntryPtr>& entries() const { return entries_; }
 
+  // UkmRecorder:
+  void UpdateSourceURL(SourceId source_id, const GURL& url) override;
+
   virtual bool ShouldRestrictToWhitelistedSourceIds() const;
 
  private:
   friend ::metrics::UkmBrowserTest;
+  friend ::metrics::UkmEGTestHelper;
   friend ::ukm::debug::DebugPage;
 
-  // UkmRecorder:
-  void UpdateSourceURL(SourceId source_id, const GURL& url) override;
   void AddEntry(mojom::UkmEntryPtr entry) override;
 
   // Whether recording new data is currently allowed.
@@ -72,7 +75,7 @@ class UkmRecorderImpl : public UkmRecorder {
   // Whitelisted Entry hashes, only the ones in this set will be recorded.
   std::set<uint64_t> whitelisted_entry_hashes_;
 
-  THREAD_CHECKER(thread_checker_);
+  SEQUENCE_CHECKER(sequence_checker_);
 };
 
 }  // namespace ukm

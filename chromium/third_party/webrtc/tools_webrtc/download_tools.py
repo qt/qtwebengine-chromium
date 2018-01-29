@@ -15,13 +15,18 @@ so please download and compile these tools manually if this script fails.
 """
 
 import os
-import subprocess
 import sys
 
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-# Needed to properly resolve PATH and executable extensions on Windows.
-USE_SHELL = sys.platform == 'win32'
+SRC_DIR = os.path.abspath(os.path.join(SCRIPT_DIR, os.pardir))
+sys.path.append(os.path.join(SRC_DIR, 'build'))
+
+
+import find_depot_tools
+find_depot_tools.add_depot_tools_to_path()
+import gclient_utils
+import subprocess2
 
 
 def main(directories):
@@ -30,7 +35,9 @@ def main(directories):
 
   for path in directories:
     cmd = [
-      'download_from_google_storage',
+      sys.executable,
+      os.path.join(find_depot_tools.DEPOT_TOOLS_PATH,
+                   'download_from_google_storage.py'),
       '--directory',
       '--num_threads=10',
       '--bucket', 'chrome-webrtc-resources',
@@ -39,7 +46,14 @@ def main(directories):
       path,
     ]
     print 'Downloading precompiled tools...'
-    subprocess.check_call(cmd, shell=USE_SHELL)
+
+    # Perform download similar to how gclient hooks execute.
+    try:
+      gclient_utils.CheckCallAndFilterAndHeader(cmd, cwd=SRC_DIR, always=True)
+    except (gclient_utils.Error, subprocess2.CalledProcessError) as e:
+      print 'Error: %s' % str(e)
+      return 2
+    return 0
 
 
 if __name__ == '__main__':

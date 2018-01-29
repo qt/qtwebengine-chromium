@@ -68,6 +68,8 @@ if (!is_win) {
       # Always want these files included regardless of platform.
       set_sources_assignment_filter([])
       sources = [
+        "breakpad/src/common/path_helper.cc",
+        "breakpad/src/common/path_helper.h",
         "breakpad/src/processor/basic_code_module.h",
         "breakpad/src/processor/basic_code_modules.cc",
         "breakpad/src/processor/basic_code_modules.h",
@@ -162,7 +164,6 @@ if (!is_win) {
 
       defines = [ "BPLOG_MINIMUM_SEVERITY=SEVERITY_ERROR" ]
       include_dirs = [ "breakpad/src" ]
-      dict = "minidump_fuzzer.dict"
 
       libfuzzer_options = [
         "close_fd_mask=3",
@@ -297,6 +298,8 @@ if (is_mac) {
         "breakpad/src/common/mac/macho_walker.cc",
         "breakpad/src/common/md5.cc",
         "breakpad/src/common/module.cc",
+        "breakpad/src/common/path_helper.cc",
+        "breakpad/src/common/path_helper.h",
         "breakpad/src/common/stabs_reader.cc",
         "breakpad/src/common/stabs_to_module.cc",
         "breakpad/src/tools/mac/dump_syms/dump_syms_tool.cc",
@@ -520,6 +523,8 @@ if (is_linux || is_android) {
         "breakpad/src/common/linux/memory_mapped_file.h",
         "breakpad/src/common/module.cc",
         "breakpad/src/common/module.h",
+        "breakpad/src/common/path_helper.cc",
+        "breakpad/src/common/path_helper.h",
         "breakpad/src/common/stabs_reader.cc",
         "breakpad/src/common/stabs_reader.h",
         "breakpad/src/common/stabs_to_module.cc",
@@ -613,7 +618,7 @@ if (is_linux || is_android) {
       "breakpad/src/common/linux/memory_mapped_file.h",
       "breakpad/src/common/linux/safe_readlink.cc",
       "breakpad/src/common/linux/safe_readlink.h",
-      "breakpad/src/common/memory.h",
+      "breakpad/src/common/memory_allocator.h",
       "breakpad/src/common/simple_string_dictionary.cc",
       "breakpad/src/common/simple_string_dictionary.h",
       "breakpad/src/common/string_conversion.cc",
@@ -696,8 +701,8 @@ if (is_linux || is_android) {
       "breakpad/src/common/linux/tests/auto_testfile.h",
       "breakpad/src/common/linux/tests/crash_generator.cc",
       "breakpad/src/common/linux/tests/crash_generator.h",
+      "breakpad/src/common/memory_allocator_unittest.cc",
       "breakpad/src/common/memory_range.h",
-      "breakpad/src/common/memory_unittest.cc",
       "breakpad/src/common/simple_string_dictionary_unittest.cc",
       "breakpad/src/common/test_assembler.cc",
       "breakpad/src/common/tests/file_utils.cc",
@@ -765,10 +770,7 @@ if (is_linux || is_android) {
     configs += [ ":client_config" ]
 
     if (is_component_build) {
-      ldflags = [
-        "-Wl,-rpath,",
-        rebase_path(root_build_dir),
-      ]
+      ldflags = [ "-Wl,-rpath,\$ORIGIN" ]
     }
   }
 
@@ -799,6 +801,8 @@ if (is_linux || is_android) {
   executable("minidump-2-core") {
     set_sources_assignment_filter([])
     sources = [
+      "breakpad/src/common/path_helper.cc",
+      "breakpad/src/common/path_helper.h",
       "breakpad/src/tools/linux/md2core/minidump-2-core.cc",
     ]
 
@@ -896,6 +900,7 @@ if (is_ios) {
       "breakpad/src/client/minidump_file_writer.h",
       "breakpad/src/common/convert_UTF.c",
       "breakpad/src/common/convert_UTF.h",
+      "breakpad/src/common/long_string_dictionary.cc",
       "breakpad/src/common/mac/HTTPMultipartUpload.m",
       "breakpad/src/common/mac/file_id.cc",
       "breakpad/src/common/mac/file_id.h",

@@ -171,7 +171,7 @@ void* ImageDataPlatformBackend::Map() {
     const bool is_opaque = false;
     mapped_canvas_ = dib_->GetPlatformCanvas(width_, height_, is_opaque);
     if (!mapped_canvas_)
-      return NULL;
+      return nullptr;
   }
   SkPixmap pixmap;
   skia::GetWritablePixels(mapped_canvas_.get(), &pixmap);
@@ -234,7 +234,9 @@ bool ImageDataSimpleBackend::Init(PPB_ImageData_Impl* impl,
 
 bool ImageDataSimpleBackend::IsMapped() const { return map_count_ > 0; }
 
-TransportDIB* ImageDataSimpleBackend::GetTransportDIB() const { return NULL; }
+TransportDIB* ImageDataSimpleBackend::GetTransportDIB() const {
+  return nullptr;
+}
 
 void* ImageDataSimpleBackend::Map() {
   DCHECK(shared_memory_.get());
@@ -243,7 +245,7 @@ void* ImageDataSimpleBackend::Map() {
     skia_bitmap_.setPixels(shared_memory_->memory());
     // Our platform bitmaps are set to opaque by default, which we don't want.
     skia_bitmap_.setAlphaType(kPremul_SkAlphaType);
-    skia_canvas_ = base::MakeUnique<SkCanvas>(skia_bitmap_);
+    skia_canvas_ = std::make_unique<SkCanvas>(skia_bitmap_);
     return skia_bitmap_.getAddr32(0, 0);
   }
   return shared_memory_->memory();
@@ -263,7 +265,7 @@ int32_t ImageDataSimpleBackend::GetSharedMemory(base::SharedMemory** shm,
 
 SkCanvas* ImageDataSimpleBackend::GetCanvas() {
   if (!IsMapped())
-    return NULL;
+    return nullptr;
   return skia_canvas_.get();
 }
 

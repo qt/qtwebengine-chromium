@@ -520,7 +520,8 @@ TEST(BrowserAccessibilityManagerTest, TestMoveChildUp) {
   ASSERT_EQ(0, CountedBrowserAccessibility::global_obj_count_);
 }
 
-TEST(BrowserAccessibilityManagerTest, TestFatalError) {
+// Temporarily disabled due to bug http://crbug.com/765490
+TEST(BrowserAccessibilityManagerTest, DISABLED_TestFatalError) {
   // Test that BrowserAccessibilityManager raises a fatal error
   // (which will crash the renderer) if the same id is used in
   // two places in the tree.
@@ -1035,11 +1036,25 @@ TEST(BrowserAccessibilityManagerTest, TestNextPreviousInTreeOrder) {
   EXPECT_EQ(node5_accessible, manager->NextInTreeOrder(node4_accessible));
   EXPECT_EQ(nullptr, manager->NextInTreeOrder(node5_accessible));
 
-  EXPECT_EQ(nullptr, manager->PreviousInTreeOrder(nullptr));
-  EXPECT_EQ(node4_accessible, manager->PreviousInTreeOrder(node5_accessible));
-  EXPECT_EQ(node3_accessible, manager->PreviousInTreeOrder(node4_accessible));
-  EXPECT_EQ(node2_accessible, manager->PreviousInTreeOrder(node3_accessible));
-  EXPECT_EQ(root_accessible, manager->PreviousInTreeOrder(node2_accessible));
+  EXPECT_EQ(nullptr, manager->PreviousInTreeOrder(nullptr, false));
+  EXPECT_EQ(node4_accessible,
+            manager->PreviousInTreeOrder(node5_accessible, false));
+  EXPECT_EQ(node3_accessible,
+            manager->PreviousInTreeOrder(node4_accessible, false));
+  EXPECT_EQ(node2_accessible,
+            manager->PreviousInTreeOrder(node3_accessible, false));
+  EXPECT_EQ(root_accessible,
+            manager->PreviousInTreeOrder(node2_accessible, false));
+
+  EXPECT_EQ(nullptr, manager->PreviousInTreeOrder(nullptr, true));
+  EXPECT_EQ(node4_accessible,
+            manager->PreviousInTreeOrder(node5_accessible, true));
+  EXPECT_EQ(node3_accessible,
+            manager->PreviousInTreeOrder(node4_accessible, true));
+  EXPECT_EQ(node2_accessible,
+            manager->PreviousInTreeOrder(node3_accessible, true));
+  EXPECT_EQ(root_accessible,
+            manager->PreviousInTreeOrder(node2_accessible, true));
 
   EXPECT_EQ(ui::AX_TREE_ORDER_EQUAL,
             BrowserAccessibilityManager::CompareNodes(

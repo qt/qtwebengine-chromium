@@ -81,7 +81,8 @@ class ClipRectsContext {
                                   ? kIgnoreOverflowClip
                                   : kRespectOverflowClip),
         respect_overflow_clip_for_viewport(
-            slot == kRootRelativeClipRectsIgnoringViewportClip
+            (slot == kRootRelativeClipRectsIgnoringViewportClip ||
+             slot == kAbsoluteClipRectsIgnoringViewportClip)
                 ? kIgnoreOverflowClip
                 : kRespectOverflowClip) {}
 
@@ -206,7 +207,7 @@ class CORE_EXPORT PaintLayerClipper {
                       LayoutRect& layer_bounds,
                       ClipRect& background_rect,
                       ClipRect& foreground_rect,
-                      const LayoutPoint* offset_from_root = 0) const;
+                      const LayoutPoint* offset_from_root = nullptr) const;
 
  private:
   void ClearCache(ClipRectsCacheSlot);
@@ -242,7 +243,7 @@ class CORE_EXPORT PaintLayerClipper {
       LayoutRect& layer_bounds,
       ClipRect& background_rect,
       ClipRect& foreground_rect,
-      const LayoutPoint* offset_from_root = 0) const;
+      const LayoutPoint* offset_from_root = nullptr) const;
 
   // Returns the visual rect of |layer_| in local space. This includes
   // filter effects if needed.

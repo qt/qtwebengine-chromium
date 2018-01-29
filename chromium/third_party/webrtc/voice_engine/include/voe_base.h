@@ -92,24 +92,17 @@ class WEBRTC_DLLEXPORT VoEBase {
   // functionality in a separate (reference counted) module.
   // - The AudioProcessing module handles capture-side processing.
   // - An AudioDecoderFactory - used to create audio decoders.
-  // If NULL is passed for either of ADM or AudioDecoderFactory, VoiceEngine
-  // will create its own. Returns -1 in case of an error, 0 otherwise.
-  // TODO(ajm): Remove default NULLs.
-  virtual int Init(AudioDeviceModule* external_adm = NULL,
-                   AudioProcessing* external_apm = nullptr,
-                   const rtc::scoped_refptr<AudioDecoderFactory>&
-                       decoder_factory = nullptr) = 0;
-  // This method is WIP - DO NOT USE!
-  // Returns NULL before Init() is called.
-  virtual AudioDeviceModule* audio_device_module() = 0;
+  virtual int Init(
+      AudioDeviceModule* audio_device,
+      AudioProcessing* audio_processing,
+      const rtc::scoped_refptr<AudioDecoderFactory>& decoder_factory) = 0;
 
   // This method is WIP - DO NOT USE!
   // Returns NULL before Init() is called.
   virtual voe::TransmitMixer* transmit_mixer() = 0;
 
   // Terminates all VoiceEngine functions and releases allocated resources.
-  // Returns 0.
-  virtual int Terminate() = 0;
+  virtual void Terminate() = 0;
 
   // Creates a new channel and allocates the required resources for it.
   // The second version accepts a |config| struct which includes an Audio Coding
@@ -138,6 +131,21 @@ class WEBRTC_DLLEXPORT VoEBase {
 
   // Stops sending packets from a specified |channel|.
   virtual int StopSend(int channel) = 0;
+
+  // Enable or disable playout to the underlying device. Takes precedence over
+  // StartPlayout. Though calls to StartPlayout are remembered; if
+  // SetPlayout(true) is called after StartPlayout, playout will be started.
+  //
+  // By default, playout is enabled.
+  virtual int SetPlayout(bool enabled) = 0;
+
+  // Enable or disable recording (which drives sending of encoded audio packtes)
+  // from the underlying device. Takes precedence over StartSend. Though calls
+  // to StartSend are remembered; if SetRecording(true) is called after
+  // StartSend, recording will be started.
+  //
+  // By default, recording is enabled.
+  virtual int SetRecording(bool enabled) = 0;
 
   // TODO(xians): Make the interface pure virtual after libjingle
   // implements the interface in its FakeWebRtcVoiceEngine.

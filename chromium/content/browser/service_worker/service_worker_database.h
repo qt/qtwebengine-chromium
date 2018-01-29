@@ -13,6 +13,7 @@
 #include <utility>
 #include <vector>
 
+#include "base/containers/flat_map.h"
 #include "base/files/file_path.h"
 #include "base/gtest_prod_util.h"
 #include "base/macros.h"
@@ -75,11 +76,9 @@ class CONTENT_EXPORT ServiceWorkerDatabase {
     bool is_active;
     bool has_fetch_handler;
     base::Time last_update_check;
-    std::vector<GURL> foreign_fetch_scopes;
-    std::vector<url::Origin> foreign_fetch_origins;
     base::Optional<blink::TrialTokenValidator::FeatureToTokensMap>
         origin_trial_tokens;
-    NavigationPreloadState navigation_preload_state;
+    blink::mojom::NavigationPreloadState navigation_preload_state;
     std::set<uint32_t> used_features;
 
     // Not populated until ServiceWorkerStorage::StoreRegistration is called.
@@ -113,11 +112,6 @@ class CONTENT_EXPORT ServiceWorkerDatabase {
   // database. Returns OK if they are successfully read or not found.
   // Otherwise, returns an error.
   Status GetOriginsWithRegistrations(std::set<GURL>* origins);
-
-  // Reads origins that have one or more than one registration with at least one
-  // foreign fetch scope registered. Returns OK if they are successfully read or
-  // not found. Otherwise returns an error.
-  Status GetOriginsWithForeignFetchRegistrations(std::set<GURL>* origins);
 
   // Reads registrations for |origin| from the database. Returns OK if they are
   // successfully read or not found. Otherwise, returns an error.
@@ -193,18 +187,27 @@ class CONTENT_EXPORT ServiceWorkerDatabase {
                             std::vector<int64_t>* newly_purgeable_resources);
 
   // Reads user data for |registration_id| and |user_data_names| from the
-  // database. Returns OK only if all keys are found; otherwise NOT_FOUND, and
-  // |user_data_values| will be empty.
+  // database and writes them to |user_data_values|. Returns OK only if all keys
+  // are found; otherwise NOT_FOUND, and |user_data_values| will be empty.
   Status ReadUserData(int64_t registration_id,
                       const std::vector<std::string>& user_data_names,
                       std::vector<std::string>* user_data_values);
 
   // Reads user data for |registration_id| and |user_data_name_prefix| from the
-  // database. Returns OK only if keys matched to |user_data_name_prefix| are
-  // found; otherwise NOT_FOUND, and |user_data_values| will be empty.
+  // database and writes them to |user_data_values|. Returns OK if they are
+  // successfully read or not found.
   Status ReadUserDataByKeyPrefix(int64_t registration_id,
                                  const std::string& user_data_name_prefix,
                                  std::vector<std::string>* user_data_values);
+
+  // Reads user keys and associated data for |registration_id| and
+  // |user_data_name_prefix| from the database and writes them to
+  // |user_data_map|. The map keys are stripped of |user_data_name_prefix|.
+  // Returns OK if they are successfully read or not found.
+  Status ReadUserKeysAndDataByKeyPrefix(
+      int64_t registration_id,
+      const std::string& user_data_name_prefix,
+      base::flat_map<std::string, std::string>* user_data_map);
 
   // Writes |name_value_pairs| into the database. Returns NOT_FOUND if the
   // registration specified by |registration_id| does not exist in the database.

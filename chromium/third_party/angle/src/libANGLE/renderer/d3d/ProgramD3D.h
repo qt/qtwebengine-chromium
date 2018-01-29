@@ -36,11 +36,17 @@ class ShaderExecutableD3D;
 // register indices.
 struct D3DUniform : private angle::NonCopyable
 {
-    D3DUniform(GLenum type, const std::string &nameIn, unsigned int arraySizeIn, bool defaultBlock);
+    D3DUniform(GLenum type,
+               const std::string &nameIn,
+               const std::vector<unsigned int> &arraySizesIn,
+               bool defaultBlock);
     ~D3DUniform();
 
     bool isSampler() const;
-    unsigned int elementCount() const { return std::max(1u, arraySize); }
+
+    bool isArray() const { return !arraySizes.empty(); }
+    unsigned int getArraySizeProduct() const;
+
     bool isReferencedByVertexShader() const;
     bool isReferencedByFragmentShader() const;
     bool isReferencedByComputeShader() const;
@@ -50,8 +56,8 @@ struct D3DUniform : private angle::NonCopyable
 
     // Duplicated from the GL layer
     const gl::UniformTypeInfo &typeInfo;
-    std::string name;
-    unsigned int arraySize;
+    std::string name;  // Names of arrays don't include [0], unlike at the GL layer.
+    std::vector<unsigned int> arraySizes;
 
     // Pointer to a system copies of the data. Separate pointers for each uniform storage type.
     uint8_t *vsData;
@@ -151,7 +157,7 @@ class ProgramD3D : public ProgramImpl
 {
   public:
     ProgramD3D(const gl::ProgramState &data, RendererD3D *renderer);
-    virtual ~ProgramD3D();
+    ~ProgramD3D() override;
 
     const std::vector<PixelShaderOutputVariable> &getPixelShaderKey() { return mPixelShaderKey; }
 
@@ -192,16 +198,10 @@ class ProgramD3D : public ProgramImpl
                                                       gl::InfoLog *infoLog);
     gl::Error getComputeExecutable(ShaderExecutableD3D **outExecutable);
     gl::LinkResult link(const gl::Context *context,
-                        const gl::VaryingPacking &packing,
+                        const gl::ProgramLinkedResources &resources,
                         gl::InfoLog &infoLog) override;
     GLboolean validate(const gl::Caps &caps, gl::InfoLog *infoLog) override;
 
-    bool getUniformBlockSize(const std::string &blockName,
-                             const std::string &blockMappedName,
-                             size_t *sizeOut) const override;
-    bool getUniformBlockMemberInfo(const std::string &memberUniformName,
-                                   const std::string &memberUniformMappedName,
-                                   sh::BlockMemberInfo *memberInfoOut) const override;
     void setPathFragmentInputGen(const std::string &inputName,
                                  GLenum genMode,
                                  GLint components,
@@ -374,13 +374,29 @@ class ProgramD3D : public ProgramImpl
     void defineUniformBase(const gl::Shader *shader,
                            const sh::Uniform &uniform,
                            D3DUniformMap *uniformMap);
+    void defineStructUniformFields(GLenum shaderType,
+                                   const std::vector<sh::ShaderVariable> &fields,
+                                   const std::string &namePrefix,
+                                   sh::HLSLBlockEncoder *encoder,
+                                   D3DUniformMap *uniformMap);
+    void defineArrayOfStructsUniformFields(GLenum shaderType,
+                                           const sh::ShaderVariable &uniform,
+                                           unsigned int arrayNestingIndex,
+                                           const std::string &prefix,
+                                           sh::HLSLBlockEncoder *encoder,
+                                           D3DUniformMap *uniformMap);
+    void defineArrayUniformElements(GLenum shaderType,
+                                    const sh::ShaderVariable &uniform,
+                                    const std::string &fullName,
+                                    sh::HLSLBlockEncoder *encoder,
+                                    D3DUniformMap *uniformMap);
     void defineUniform(GLenum shaderType,
                        const sh::ShaderVariable &uniform,
                        const std::string &fullName,
                        sh::HLSLBlockEncoder *encoder,
                        D3DUniformMap *uniformMap);
     void assignAllSamplerRegisters();
-    void assignSamplerRegisters(D3DUniform *d3dUniform);
+    void assignSamplerRegisters(size_t uniformIndex);
 
     static void AssignSamplers(unsigned int startSamplerIndex,
                                const gl::UniformTypeInfo &typeInfo,
@@ -428,15 +444,14 @@ class ProgramD3D : public ProgramImpl
     void initAttribLocationsToD3DSemantic(const gl::Context *context);
 
     void reset();
-    void ensureUniformBlocksInitialized();
-
-    void initUniformBlockInfo(const gl::Context *context, gl::Shader *shader);
-    size_t getUniformBlockInfo(const sh::InterfaceBlock &interfaceBlock);
+    void initializeUniformBlocks();
 
     void updateCachedInputLayoutFromShader(const gl::Context *context);
     void updateCachedOutputLayoutFromShader();
     void updateCachedVertexExecutableIndex();
     void updateCachedPixelExecutableIndex();
+
+    void linkResources(const gl::Context *context, const gl::ProgramLinkedResources &resources);
 
     RendererD3D *mRenderer;
     DynamicHLSL *mDynamicHLSL;
@@ -497,9 +512,6 @@ class ProgramD3D : public ProgramImpl
     bool mVertexUniformsDirty;
     bool mFragmentUniformsDirty;
     bool mComputeUniformsDirty;
-
-    std::map<std::string, sh::BlockMemberInfo> mBlockInfo;
-    std::map<std::string, size_t> mBlockDataSizes;
 
     static unsigned int issueSerial();
     static unsigned int mCurrentSerial;

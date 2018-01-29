@@ -14,6 +14,8 @@
 #include "core/frame/LocalDOMWindow.h"
 #include "core/frame/LocalFrame.h"
 #include "core/inspector/MainThreadDebugger.h"
+#include "core/origin_trials/OriginTrialContext.h"
+#include "core/workers/GlobalScopeCreationParams.h"
 #include "modules/csspaint/CSSPaintDefinition.h"
 #include "modules/csspaint/CSSPaintImageGeneratorImpl.h"
 #include "modules/csspaint/CSSPaintWorklet.h"
@@ -169,40 +171,31 @@ bool ParsePaintFunction(v8::Isolate* isolate,
 // static
 PaintWorkletGlobalScope* PaintWorkletGlobalScope::Create(
     LocalFrame* frame,
-    const KURL& url,
-    const String& user_agent,
-    RefPtr<SecurityOrigin> security_origin,
+    std::unique_ptr<GlobalScopeCreationParams> creation_params,
     v8::Isolate* isolate,
     WorkerReportingProxy& reporting_proxy,
     PaintWorkletPendingGeneratorRegistry* pending_generator_registry,
     size_t global_scope_number) {
-  PaintWorkletGlobalScope* paint_worklet_global_scope =
-      new PaintWorkletGlobalScope(frame, url, user_agent,
-                                  std::move(security_origin), isolate,
+  auto* global_scope =
+      new PaintWorkletGlobalScope(frame, std::move(creation_params), isolate,
                                   reporting_proxy, pending_generator_registry);
   String context_name("PaintWorklet #");
   context_name.append(String::Number(global_scope_number));
-  paint_worklet_global_scope->ScriptController()->InitializeContextIfNeeded(
-      context_name);
+  global_scope->ScriptController()->InitializeContextIfNeeded(context_name);
   MainThreadDebugger::Instance()->ContextCreated(
-      paint_worklet_global_scope->ScriptController()->GetScriptState(),
-      paint_worklet_global_scope->GetFrame(),
-      paint_worklet_global_scope->GetSecurityOrigin());
-  return paint_worklet_global_scope;
+      global_scope->ScriptController()->GetScriptState(),
+      global_scope->GetFrame(), global_scope->GetSecurityOrigin());
+  return global_scope;
 }
 
 PaintWorkletGlobalScope::PaintWorkletGlobalScope(
     LocalFrame* frame,
-    const KURL& url,
-    const String& user_agent,
-    RefPtr<SecurityOrigin> security_origin,
+    std::unique_ptr<GlobalScopeCreationParams> creation_params,
     v8::Isolate* isolate,
     WorkerReportingProxy& reporting_proxy,
     PaintWorkletPendingGeneratorRegistry* pending_generator_registry)
     : MainThreadWorkletGlobalScope(frame,
-                                   url,
-                                   user_agent,
-                                   std::move(security_origin),
+                                   std::move(creation_params),
                                    isolate,
                                    reporting_proxy),
       pending_generator_registry_(pending_generator_registry) {}
@@ -313,13 +306,14 @@ double PaintWorkletGlobalScope::devicePixelRatio() const {
   return GetFrame()->DevicePixelRatio();
 }
 
-DEFINE_TRACE(PaintWorkletGlobalScope) {
+void PaintWorkletGlobalScope::Trace(blink::Visitor* visitor) {
   visitor->Trace(paint_definitions_);
   visitor->Trace(pending_generator_registry_);
   MainThreadWorkletGlobalScope::Trace(visitor);
 }
 
-DEFINE_TRACE_WRAPPERS(PaintWorkletGlobalScope) {
+void PaintWorkletGlobalScope::TraceWrappers(
+    const ScriptWrappableVisitor* visitor) const {
   for (auto definition : paint_definitions_)
     visitor->TraceWrappers(definition.value);
   MainThreadWorkletGlobalScope::TraceWrappers(visitor);

@@ -40,11 +40,11 @@ class CORE_EXPORT DocumentModuleScriptFetcher
   void NotifyFinished(Resource*) final;
   String DebugName() const final { return "DocumentModuleScriptFetcher"; }
 
-  DECLARE_TRACE();
+  void Trace(blink::Visitor*) override;
 
  private:
   void Finalize(const WTF::Optional<ModuleScriptCreationParams>&,
-                ConsoleMessage* error_message);
+                const HeapVector<Member<ConsoleMessage>>& error_messages);
 
   Member<ResourceFetcher> fetcher_;
   bool was_fetched_ = false;

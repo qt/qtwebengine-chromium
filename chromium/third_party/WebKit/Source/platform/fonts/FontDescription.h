@@ -27,6 +27,7 @@
 #define FontDescription_h
 
 #include "SkFontStyle.h"
+#include "base/memory/scoped_refptr.h"
 #include "platform/LayoutLocale.h"
 #include "platform/font_family_names.h"
 #include "platform/fonts/FontCacheKey.h"
@@ -42,7 +43,6 @@
 #include "platform/fonts/opentype/FontSettings.h"
 #include "platform/wtf/Allocator.h"
 #include "platform/wtf/MathExtras.h"
-#include "platform/wtf/RefPtr.h"
 
 #include <unicode/uscript.h>
 
@@ -285,7 +285,7 @@ class PLATFORM_EXPORT FontDescription {
   void SetWidthVariant(FontWidthVariant width_variant) {
     fields_.width_variant_ = width_variant;
   }
-  void SetLocale(RefPtr<const LayoutLocale> locale) {
+  void SetLocale(scoped_refptr<const LayoutLocale> locale) {
     locale_ = std::move(locale);
   }
   void SetSyntheticBold(bool synthetic_bold) {
@@ -294,10 +294,10 @@ class PLATFORM_EXPORT FontDescription {
   void SetSyntheticItalic(bool synthetic_italic) {
     fields_.synthetic_italic_ = synthetic_italic;
   }
-  void SetFeatureSettings(RefPtr<FontFeatureSettings> settings) {
+  void SetFeatureSettings(scoped_refptr<FontFeatureSettings> settings) {
     feature_settings_ = std::move(settings);
   }
-  void SetVariationSettings(RefPtr<FontVariationSettings> settings) {
+  void SetVariationSettings(scoped_refptr<FontVariationSettings> settings) {
     variation_settings_ = std::move(settings);
   }
   void SetWordSpacing(float s) { word_spacing_ = s; }
@@ -340,9 +340,9 @@ class PLATFORM_EXPORT FontDescription {
 
  private:
   FontFamily family_list_;  // The list of font families to be used.
-  RefPtr<FontFeatureSettings> feature_settings_;
-  RefPtr<FontVariationSettings> variation_settings_;
-  RefPtr<const LayoutLocale> locale_;
+  scoped_refptr<FontFeatureSettings> feature_settings_;
+  scoped_refptr<FontVariationSettings> variation_settings_;
+  scoped_refptr<const LayoutLocale> locale_;
 
   void UpdateTypesettingFeatures();
 

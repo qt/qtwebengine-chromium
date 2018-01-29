@@ -23,7 +23,7 @@
 #include "core/css/resolver/StyleResolverState.h"
 
 #include "core/animation/css/CSSAnimations.h"
-#include "core/css/StylePropertySet.h"
+#include "core/css/CSSPropertyValueSet.h"
 #include "core/dom/Node.h"
 #include "core/dom/NodeComputedStyle.h"
 #include "core/layout/api/LayoutViewItem.h"
@@ -79,7 +79,7 @@ StyleResolverState::~StyleResolverState() {
   animation_update_.Clear();
 }
 
-void StyleResolverState::SetStyle(RefPtr<ComputedStyle> style) {
+void StyleResolverState::SetStyle(scoped_refptr<ComputedStyle> style) {
   // FIXME: Improve RAII of StyleResolverState to remove this function.
   style_ = std::move(style);
   css_to_length_conversion_data_ = CSSToLengthConversionData(
@@ -87,7 +87,7 @@ void StyleResolverState::SetStyle(RefPtr<ComputedStyle> style) {
       style_->EffectiveZoom());
 }
 
-RefPtr<ComputedStyle> StyleResolverState::TakeStyle() {
+scoped_refptr<ComputedStyle> StyleResolverState::TakeStyle() {
   return std::move(style_);
 }
 
@@ -103,12 +103,12 @@ CSSToLengthConversionData StyleResolverState::FontSizeConversionData() const {
 }
 
 void StyleResolverState::SetParentStyle(
-    RefPtr<const ComputedStyle> parent_style) {
+    scoped_refptr<const ComputedStyle> parent_style) {
   parent_style_ = std::move(parent_style);
 }
 
 void StyleResolverState::SetLayoutParentStyle(
-    RefPtr<const ComputedStyle> parent_style) {
+    scoped_refptr<const ComputedStyle> parent_style) {
   layout_parent_style_ = std::move(parent_style);
 }
 
@@ -152,17 +152,6 @@ void StyleResolverState::SetTextOrientation(ETextOrientation text_orientation) {
     style_->SetTextOrientation(text_orientation);
     font_builder_.DidChangeTextOrientation();
   }
-}
-
-void StyleResolverState::SetCustomPropertySetForApplyAtRule(
-    const String& string,
-    StylePropertySet* custom_property_set) {
-  custom_property_sets_for_apply_at_rule_.Set(string, custom_property_set);
-}
-
-StylePropertySet* StyleResolverState::CustomPropertySetForApplyAtRule(
-    const String& string) {
-  return custom_property_sets_for_apply_at_rule_.at(string);
 }
 
 HeapHashMap<CSSPropertyID, Member<const CSSValue>>&

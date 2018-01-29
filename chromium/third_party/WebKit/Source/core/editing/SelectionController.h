@@ -27,6 +27,7 @@
 #ifndef SelectionController_h
 #define SelectionController_h
 
+#include "base/macros.h"
 #include "core/CoreExport.h"
 #include "core/dom/DocumentShutdownObserver.h"
 #include "core/editing/FrameSelection.h"
@@ -43,19 +44,17 @@ class LocalFrame;
 class CORE_EXPORT SelectionController final
     : public GarbageCollectedFinalized<SelectionController>,
       public DocumentShutdownObserver {
-  WTF_MAKE_NONCOPYABLE(SelectionController);
   USING_GARBAGE_COLLECTED_MIXIN(SelectionController);
 
  public:
   static SelectionController* Create(LocalFrame&);
   virtual ~SelectionController();
-  DECLARE_TRACE();
+  void Trace(blink::Visitor*);
 
   bool HandleMousePressEvent(const MouseEventWithHitTestResults&);
   void HandleMouseDraggedEvent(const MouseEventWithHitTestResults&,
                                const IntPoint&,
                                const LayoutPoint&,
-                               Node*,
                                const IntPoint&);
   bool HandleMouseReleaseEvent(const MouseEventWithHitTestResults&,
                                const LayoutPoint&);
@@ -64,9 +63,8 @@ class CORE_EXPORT SelectionController final
   void HandleGestureTwoFingerTap(const GestureEventWithHitTestResults&);
   void HandleGestureLongTap(const GestureEventWithHitTestResults&);
 
-  void UpdateSelectionForMouseDrag(Node*, const LayoutPoint&, const IntPoint&);
+  void UpdateSelectionForMouseDrag(const LayoutPoint&, const IntPoint&);
   void UpdateSelectionForMouseDrag(const HitTestResult&,
-                                   Node*,
                                    const LayoutPoint&,
                                    const IntPoint&);
   void SendContextMenuEvent(const MouseEventWithHitTestResults&,
@@ -145,6 +143,8 @@ class CORE_EXPORT SelectionController final
     kExtendedSelection
   };
   SelectionState selection_state_;
+
+  DISALLOW_COPY_AND_ASSIGN(SelectionController);
 };
 
 bool IsLinkSelection(const MouseEventWithHitTestResults&);

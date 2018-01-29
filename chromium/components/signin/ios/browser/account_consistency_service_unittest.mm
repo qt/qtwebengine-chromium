@@ -8,12 +8,16 @@
 
 #include <memory>
 
+#include "base/bind.h"
+#include "base/bind_helpers.h"
+#include "base/values.h"
 #include "components/signin/core/browser/account_reconcilor.h"
+#include "components/signin/core/browser/account_reconcilor_delegate.h"
 #include "components/signin/core/browser/account_tracker_service.h"
 #include "components/signin/core/browser/fake_signin_manager.h"
 #include "components/signin/core/browser/gaia_cookie_manager_service.h"
+#include "components/signin/core/browser/signin_pref_names.h"
 #include "components/signin/core/browser/test_signin_client.h"
-#include "components/signin/core/common/signin_pref_names.h"
 #include "components/sync_preferences/testing_pref_service_syncable.h"
 #include "google_apis/gaia/gaia_constants.h"
 #include "ios/web/public/test/fakes/test_browser_state.h"
@@ -76,8 +80,13 @@ class FakeAccountConsistencyService : public AccountConsistencyService {
 // Mock AccountReconcilor to catch call to OnReceivedManageAccountsResponse.
 class MockAccountReconcilor : public AccountReconcilor {
  public:
-  MockAccountReconcilor()
-      : AccountReconcilor(nullptr, nullptr, nullptr, nullptr) {}
+  MockAccountReconcilor(SigninClient* client)
+      : AccountReconcilor(
+            nullptr,
+            nullptr,
+            client,
+            nullptr,
+            std::make_unique<signin::AccountReconcilorDelegate>()) {}
   MOCK_METHOD1(OnReceivedManageAccountsResponse, void(signin::GAIAServiceType));
 };
 
@@ -148,6 +157,8 @@ class AccountConsistencyServiceTest : public PlatformTest {
         false /* store_last_modified */);
     cookie_settings_ =
         new content_settings::CookieSettings(settings_map_.get(), &prefs_, "");
+    account_reconcilor_ =
+        std::make_unique<MockAccountReconcilor>(signin_client_.get());
     ResetAccountConsistencyService();
   }
 
@@ -184,7 +195,7 @@ class AccountConsistencyServiceTest : public PlatformTest {
       account_consistency_service_->Shutdown();
     }
     account_consistency_service_.reset(new FakeAccountConsistencyService(
-        &browser_state_, &account_reconcilor_, cookie_settings_,
+        &browser_state_, account_reconcilor_.get(), cookie_settings_,
         gaia_cookie_manager_service_.get(), signin_client_.get(),
         signin_manager_.get()));
   }
@@ -237,7 +248,6 @@ class AccountConsistencyServiceTest : public PlatformTest {
   // Creates test threads, necessary for ActiveStateManager that needs a UI
   // thread.
   web::TestWebThreadBundle thread_bundle_;
-  MockAccountReconcilor account_reconcilor_;
   AccountTrackerService account_tracker_service_;
   web::TestBrowserState browser_state_;
   sync_preferences::TestingPrefServiceSyncable prefs_;
@@ -248,6 +258,7 @@ class AccountConsistencyServiceTest : public PlatformTest {
   std::unique_ptr<TestSigninClient> signin_client_;
   std::unique_ptr<FakeSigninManager> signin_manager_;
   std::unique_ptr<MockGaiaCookieManagerService> gaia_cookie_manager_service_;
+  std::unique_ptr<MockAccountReconcilor> account_reconcilor_;
   scoped_refptr<HostContentSettingsMap> settings_map_;
   scoped_refptr<content_settings::CookieSettings> cookie_settings_;
   bool remove_cookie_callback_called_;
@@ -388,8 +399,8 @@ TEST_F(AccountConsistencyServiceTest, ChromeManageAccountsDefault) {
        HTTPVersion:@"HTTP/1.1"
       headerFields:headers];
   account_consistency_service_->SetWebStateHandler(&web_state_, delegate);
-  EXPECT_CALL(account_reconcilor_, OnReceivedManageAccountsResponse(
-                                       signin::GAIA_SERVICE_TYPE_DEFAULT))
+  EXPECT_CALL(*account_reconcilor_, OnReceivedManageAccountsResponse(
+                                        signin::GAIA_SERVICE_TYPE_DEFAULT))
       .Times(1);
   EXPECT_FALSE(
       web_state_.ShouldAllowResponse(response, /* for_main_frame = */ true));

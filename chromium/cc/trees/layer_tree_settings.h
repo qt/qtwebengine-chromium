@@ -87,12 +87,11 @@ class CC_EXPORT LayerTreeSettings {
   int max_staging_buffer_usage_in_bytes = 32 * 1024 * 1024;
   ManagedMemoryPolicy gpu_memory_policy;
   ManagedMemoryPolicy software_memory_policy;
-  size_t decoded_image_cache_budget_bytes = 128 * 1024 * 1024;
   size_t decoded_image_working_set_budget_bytes = 128 * 1024 * 1024;
   int max_preraster_distance_in_screen_pixels = 1000;
   viz::ResourceFormat preferred_tile_format;
 
-  bool enable_mask_tiling = false;
+  bool enable_mask_tiling = true;
 
   // If set to true, the compositor may selectively defer image decodes to the
   // Image Decode Service and raster tiles without images until the decode is

@@ -26,8 +26,10 @@
 #define SK_TEXTURESAMPLERS_BUILTIN     10006
 #define SK_FRAGCOORD_BUILTIN              15
 #define SK_VERTEXID_BUILTIN                5
+#define SK_INSTANCEID_BUILTIN              6
 #define SK_CLIPDISTANCE_BUILTIN            3
 #define SK_INVOCATIONID_BUILTIN            8
+#define SK_POSITION_BUILTIN                0
 
 namespace SkSL {
 
@@ -65,6 +67,8 @@ public:
     bool toGLSL(const Program& program, OutputStream& out);
 
     bool toGLSL(const Program& program, String* out);
+
+    bool toMetal(const Program& program, OutputStream& out);
 
     bool toCPP(const Program& program, String name, OutputStream& out);
 

@@ -9,7 +9,9 @@
 #include <stdint.h>
 #include <string>
 
+#include "net/quic/core/quic_bandwidth.h"
 #include "net/quic/core/quic_error_codes.h"
+#include "net/quic/core/quic_time.h"
 #include "net/quic/core/quic_types.h"
 #include "net/quic/platform/api/quic_export.h"
 #include "net/quic/quartc/quartc_stream_interface.h"
@@ -19,7 +21,10 @@ namespace net {
 // Structure holding stats exported by a QuartcSession.
 struct QUIC_EXPORT_PRIVATE QuartcSessionStats {
   // Bandwidth estimate in bits per second.
-  int64_t bandwidth_estimate_bits_per_second;
+  QuicBandwidth bandwidth_estimate = QuicBandwidth::Zero();
+
+  // Smoothed round-trip time.
+  QuicTime::Delta smoothed_rtt = QuicTime::Delta::Zero();
 };
 
 // Given a PacketTransport, provides a way to send and receive separate streams
@@ -49,6 +54,17 @@ class QUIC_EXPORT_PRIVATE QuartcSessionInterface {
                                     bool used_context,
                                     uint8_t* result,
                                     size_t result_len) = 0;
+
+  // Closes the connection with the given human-readable error details.
+  // The connection closes with the QUIC_CONNECTION_CANCELLED error code to
+  // indicate the application closed it.
+  //
+  // Informs the peer that the connection has been closed.  This prevents the
+  // peer from waiting until the connection times out.
+  //
+  // Cleans up the underlying QuicConnection's state.  Closing the connection
+  // makes it safe to delete the QuartcSession.
+  virtual void CloseConnection(const std::string& error_details) = 0;
 
   // For forward-compatibility. More parameters could be added through the
   // struct without changing the API.

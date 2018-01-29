@@ -4,6 +4,8 @@
 
 #include "ui/accessibility/platform/ax_platform_node_win.h"
 
+#include <wrl/client.h>
+
 #include <vector>
 
 #include "base/containers/hash_tables.h"
@@ -12,7 +14,6 @@
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/win/enum_variant.h"
-#include "base/win/scoped_comptr.h"
 #include "base/win/scoped_variant.h"
 #include "third_party/iaccessible2/ia2_api_all.h"
 #include "third_party/skia/include/core/SkColor.h"
@@ -42,34 +43,44 @@
   if (!delegate_)                      \
     return E_FAIL;                     \
   if (!arg)                            \
-    return E_INVALIDARG;
+    return E_INVALIDARG;               \
+  *arg = {};
 #define COM_OBJECT_VALIDATE_2_ARGS(arg1, arg2) \
   if (!delegate_)                              \
     return E_FAIL;                             \
   if (!arg1)                                   \
     return E_INVALIDARG;                       \
+  *arg1 = {};                                  \
   if (!arg2)                                   \
-    return E_INVALIDARG;
+    return E_INVALIDARG;                       \
+  *arg2 = {};
 #define COM_OBJECT_VALIDATE_3_ARGS(arg1, arg2, arg3) \
   if (!delegate_)                                    \
     return E_FAIL;                                   \
   if (!arg1)                                         \
     return E_INVALIDARG;                             \
+  *arg1 = {};                                        \
   if (!arg2)                                         \
     return E_INVALIDARG;                             \
+  *arg2 = {};                                        \
   if (!arg3)                                         \
-    return E_INVALIDARG;
+    return E_INVALIDARG;                             \
+  *arg3 = {};
 #define COM_OBJECT_VALIDATE_4_ARGS(arg1, arg2, arg3, arg4) \
   if (!delegate_)                                          \
     return E_FAIL;                                         \
   if (!arg1)                                               \
     return E_INVALIDARG;                                   \
+  *arg1 = {};                                              \
   if (!arg2)                                               \
     return E_INVALIDARG;                                   \
+  *arg2 = {};                                              \
   if (!arg3)                                               \
     return E_INVALIDARG;                                   \
+  *arg3 = {};                                              \
   if (!arg4)                                               \
-    return E_INVALIDARG;
+    return E_INVALIDARG;                                   \
+  *arg4 = {};
 #define COM_OBJECT_VALIDATE_VAR_ID_AND_GET_TARGET(var_id, target) \
   if (!delegate_)                                                 \
     return E_FAIL;                                                \
@@ -83,6 +94,7 @@
     return E_FAIL;                                                           \
   if (!arg)                                                                  \
     return E_INVALIDARG;                                                     \
+  *arg = {};                                                                 \
   target = GetTargetFromChildID(var_id);                                     \
   if (!target)                                                               \
     return E_INVALIDARG;                                                     \
@@ -94,8 +106,10 @@
     return E_FAIL;                                                           \
   if (!arg1)                                                                 \
     return E_INVALIDARG;                                                     \
+  *arg1 = {};                                                                \
   if (!arg2)                                                                 \
     return E_INVALIDARG;                                                     \
+  *arg2 = {};                                                                \
   target = GetTargetFromChildID(var_id);                                     \
   if (!target)                                                               \
     return E_INVALIDARG;                                                     \
@@ -107,10 +121,13 @@
     return E_FAIL;                                                           \
   if (!arg1)                                                                 \
     return E_INVALIDARG;                                                     \
+  *arg1 = {};                                                                \
   if (!arg2)                                                                 \
     return E_INVALIDARG;                                                     \
+  *arg2 = {};                                                                \
   if (!arg3)                                                                 \
     return E_INVALIDARG;                                                     \
+  *arg3 = {};                                                                \
   target = GetTargetFromChildID(var_id);                                     \
   if (!target)                                                               \
     return E_INVALIDARG;                                                     \
@@ -122,12 +139,16 @@
     return E_FAIL;                                                           \
   if (!arg1)                                                                 \
     return E_INVALIDARG;                                                     \
+  *arg1 = {};                                                                \
   if (!arg2)                                                                 \
     return E_INVALIDARG;                                                     \
+  *arg2 = {};                                                                \
   if (!arg3)                                                                 \
     return E_INVALIDARG;                                                     \
+  *arg3 = {};                                                                \
   if (!arg4)                                                                 \
     return E_INVALIDARG;                                                     \
+  *arg4 = {};                                                                \
   target = GetTargetFromChildID(var_id);                                     \
   if (!target)                                                               \
     return E_INVALIDARG;                                                     \
@@ -310,7 +331,7 @@ AXPlatformNode* AXPlatformNode::FromNativeViewAccessible(
     gfx::NativeViewAccessible accessible) {
   if (!accessible)
     return nullptr;
-  base::win::ScopedComPtr<AXPlatformNodeWin> ax_platform_node;
+  Microsoft::WRL::ComPtr<AXPlatformNodeWin> ax_platform_node;
   accessible->QueryInterface(ax_platform_node.GetAddressOf());
   return ax_platform_node.Get();
 }
@@ -598,8 +619,8 @@ void AXPlatformNodeWin::NotifyAccessibilityEvent(AXEvent event_type) {
 }
 
 int AXPlatformNodeWin::GetIndexInParent() {
-  base::win::ScopedComPtr<IDispatch> parent_dispatch;
-  base::win::ScopedComPtr<IAccessible> parent_accessible;
+  Microsoft::WRL::ComPtr<IDispatch> parent_dispatch;
+  Microsoft::WRL::ComPtr<IAccessible> parent_accessible;
   if (S_OK != get_accParent(parent_dispatch.GetAddressOf()))
     return -1;
   if (S_OK != parent_dispatch.CopyTo(parent_accessible.GetAddressOf()))
@@ -610,8 +631,8 @@ int AXPlatformNodeWin::GetIndexInParent() {
     return -1;
   for (LONG index = 1; index <= child_count; ++index) {
     base::win::ScopedVariant childid_index(index);
-    base::win::ScopedComPtr<IDispatch> child_dispatch;
-    base::win::ScopedComPtr<IAccessible> child_accessible;
+    Microsoft::WRL::ComPtr<IDispatch> child_dispatch;
+    Microsoft::WRL::ComPtr<IAccessible> child_accessible;
     if (S_OK == parent_accessible->get_accChild(
                     childid_index, child_dispatch.GetAddressOf()) &&
         S_OK == child_dispatch.CopyTo(child_accessible.GetAddressOf())) {
@@ -1041,7 +1062,7 @@ STDMETHODIMP AXPlatformNodeWin::get_accValue(VARIANT var_id, BSTR* value) {
   if (result.empty() && target->IsRangeValueSupported()) {
     float fval;
     if (target->GetFloatAttribute(AX_ATTR_VALUE_FOR_RANGE, &fval)) {
-      result = base::UTF8ToUTF16(base::DoubleToString(fval));
+      result = base::NumberToString16(fval);
       *value = SysAllocString(result.c_str());
       DCHECK(*value);
       return S_OK;
@@ -1049,11 +1070,8 @@ STDMETHODIMP AXPlatformNodeWin::get_accValue(VARIANT var_id, BSTR* value) {
   }
 
   // Last resort (Use innerText)
-  if (result.empty() &&
-      (target->IsSimpleTextControl() || target->IsRichTextControl()) &&
-      !target->IsNativeTextControl()) {
+  if (result.empty() && target->IsRichTextField())
     result = target->GetInnerText();
-  }
 
   *value = SysAllocString(result.c_str());
   DCHECK(*value);
@@ -1076,7 +1094,7 @@ STDMETHODIMP AXPlatformNodeWin::put_accValue(VARIANT var_id,
 STDMETHODIMP AXPlatformNodeWin::get_accSelection(VARIANT* selected) {
   WIN_ACCESSIBILITY_API_HISTOGRAM(UMA_API_GET_ACC_SELECTION);
   COM_OBJECT_VALIDATE_1_ARG(selected);
-  std::vector<base::win::ScopedComPtr<IDispatch>> selected_nodes;
+  std::vector<Microsoft::WRL::ComPtr<IDispatch>> selected_nodes;
   for (int i = 0; i < delegate_->GetChildCount(); ++i) {
     auto* node = static_cast<AXPlatformNodeWin*>(
         FromNativeViewAccessible(delegate_->ChildAtIndex(i)));
@@ -2092,6 +2110,9 @@ STDMETHODIMP AXPlatformNodeWin::get_columnHeaderCells(
     return E_INVALIDARG;
 
   *n_column_header_cells = 0;
+  if (GetData().role != AX_ROLE_CELL)
+    return S_FALSE;
+
   AXPlatformNodeBase* table = GetTable();
   if (!table) {
     return S_FALSE;
@@ -2157,6 +2178,9 @@ STDMETHODIMP AXPlatformNodeWin::get_rowHeaderCells(IUnknown*** cell_accessibles,
     return E_INVALIDARG;
 
   *n_row_header_cells = 0;
+  if (GetData().role != AX_ROLE_CELL)
+    return S_FALSE;
+
   AXPlatformNodeBase* table = GetTable();
   if (!table) {
     return S_FALSE;
@@ -2638,7 +2662,8 @@ int AXPlatformNodeWin::MSAARole() {
     case AX_ROLE_COLUMN_HEADER:
       return ROLE_SYSTEM_COLUMNHEADER;
 
-    case AX_ROLE_COMBO_BOX:
+    case AX_ROLE_COMBO_BOX_GROUPING:
+    case AX_ROLE_COMBO_BOX_MENU_BUTTON:
       return ROLE_SYSTEM_COMBOBOX;
 
     case AX_ROLE_COMPLEMENTARY:
@@ -2868,6 +2893,9 @@ int AXPlatformNodeWin::MSAARole() {
     case AX_ROLE_SEARCH_BOX:
       return ROLE_SYSTEM_TEXT;
 
+    case AX_ROLE_TEXT_FIELD_WITH_COMBO_BOX:
+      return ROLE_SYSTEM_COMBOBOX;
+
     case AX_ROLE_ABBR:
     case AX_ROLE_TIME:
       return ROLE_SYSTEM_TEXT;
@@ -2990,7 +3018,6 @@ bool AXPlatformNodeWin::IsWebAreaForPresentationalIframe() {
 
 int32_t AXPlatformNodeWin::ComputeIA2State() {
   const AXNodeData& data = GetData();
-
   int32_t ia2_state = IA2_STATE_OPAQUE;
 
   const auto checked_state =
@@ -3009,20 +3036,16 @@ int32_t AXPlatformNodeWin::ComputeIA2State() {
   if (data.HasState(AX_STATE_HORIZONTAL))
     ia2_state |= IA2_STATE_HORIZONTAL;
 
-  const bool is_editable = data.HasState(AX_STATE_EDITABLE);
-  if (is_editable)
+  if (data.HasState(AX_STATE_EDITABLE))
     ia2_state |= IA2_STATE_EDITABLE;
 
-  if (IsRichTextControl() || IsEditField(data.role)) {
-    // Support multi/single line states if root editable or appropriate role.
-    // We support the edit box roles even if the area is not actually editable,
-    // because it is technically feasible for JS to implement the edit box
-    // by controlling selection.
+  if (IsPlainTextField() || IsRichTextField()) {
     if (data.HasState(AX_STATE_MULTILINE)) {
       ia2_state |= IA2_STATE_MULTI_LINE;
     } else {
       ia2_state |= IA2_STATE_SINGLE_LINE;
     }
+    ia2_state |= IA2_STATE_SELECTABLE_TEXT;
   }
 
   if (!GetStringAttribute(AX_ATTR_AUTO_COMPLETE).empty())
@@ -3033,19 +3056,8 @@ int32_t AXPlatformNodeWin::ComputeIA2State() {
 
   switch (data.role) {
     case AX_ROLE_MENU_LIST_POPUP:
-      ia2_state &= ~(IA2_STATE_EDITABLE);
-      break;
     case AX_ROLE_MENU_LIST_OPTION:
       ia2_state &= ~(IA2_STATE_EDITABLE);
-      break;
-    case AX_ROLE_TEXT_FIELD:
-    case AX_ROLE_SEARCH_BOX:
-      if (data.HasState(AX_STATE_MULTILINE)) {
-        ia2_state |= IA2_STATE_MULTI_LINE;
-      } else {
-        ia2_state |= IA2_STATE_SINGLE_LINE;
-      }
-      ia2_state |= IA2_STATE_SELECTABLE_TEXT;
       break;
     default:
       break;
@@ -3250,6 +3262,9 @@ std::vector<base::string16> AXPlatformNodeWin::ComputeIA2Attributes() {
       case AX_ARIA_CURRENT_STATE_LOCATION:
         result.push_back(L"current:location");
         break;
+      case AX_ARIA_CURRENT_STATE_UNCLIPPED_LOCATION:
+        result.push_back(L"current:unclippedLocation");
+        break;
       case AX_ARIA_CURRENT_STATE_DATE:
         result.push_back(L"current:date");
         break;
@@ -3334,7 +3349,8 @@ std::vector<base::string16> AXPlatformNodeWin::ComputeIA2Attributes() {
   if (IsRangeValueSupported()) {
     base::string16 value = GetRangeValueText();
     SanitizeStringAttributeForIA2(value, &value);
-    result.push_back(L"valuetext:" + value);
+    if (!value.empty())
+      result.push_back(L"valuetext:" + value);
   }
 
   // Expose dropeffect attribute.
@@ -3386,14 +3402,13 @@ std::vector<base::string16> AXPlatformNodeWin::ComputeIA2Attributes() {
   // object (as opposed to treating it like a native Windows text box).
   // The text-model:a1 attribute is documented here:
   // http://www.linuxfoundation.org/collaborate/workgroups/accessibility/ia2/ia2_implementation_guide
-  if (GetData().role == AX_ROLE_TEXT_FIELD) {
+  if (IsPlainTextField() || IsRichTextField())
     result.push_back(L"text-model:a1;");
-  }
 
   // Expose input-text type attribute.
   base::string16 type;
   base::string16 html_tag = GetString16Attribute(AX_ATTR_HTML_TAG);
-  if (IsSimpleTextControl() && html_tag == L"input" &&
+  if (IsPlainTextField() && html_tag == L"input" &&
       GetData().GetHtmlAttribute("type", &type)) {
     SanitizeStringAttributeForIA2(type, &type);
     result.push_back(L"text-input-type:" + type);
@@ -3419,7 +3434,7 @@ base::string16 AXPlatformNodeWin::GetValue() {
 AXHypertext AXPlatformNodeWin::ComputeHypertext() {
   AXHypertext result;
 
-  if (IsSimpleTextControl()) {
+  if (IsPlainTextField()) {
     result.hypertext = GetValue();
     return result;
   }
@@ -3427,7 +3442,7 @@ AXHypertext AXPlatformNodeWin::ComputeHypertext() {
   int child_count = delegate_->GetChildCount();
 
   if (!child_count) {
-    if (IsRichTextControl()) {
+    if (IsRichTextField()) {
       // We don't want to expose any associated label in IA2 Hypertext.
       return result;
     }
@@ -3650,6 +3665,11 @@ int AXPlatformNodeWin::MSAAState() {
   if (GetData().role == AX_ROLE_LINK)
     msaa_state |= STATE_SYSTEM_LINKED;
 
+  // Special case for indeterminate progressbar.
+  if (GetData().role == AX_ROLE_PROGRESS_INDICATOR &&
+      !HasFloatAttribute(ui::AX_ATTR_VALUE_FOR_RANGE))
+    msaa_state |= STATE_SYSTEM_MIXED;
+
   return msaa_state;
 }
 
@@ -3708,7 +3728,7 @@ void AXPlatformNodeWin::RemoveAlertTarget() {
 
 base::string16 AXPlatformNodeWin::TextForIAccessibleText() {
   // Special case allows us to get text even in non-HTML case, e.g. browser UI.
-  if (IsSimpleTextControl())
+  if (IsPlainTextField())
     return GetString16Attribute(AX_ATTR_VALUE);
   return GetText();
 }
@@ -3717,7 +3737,11 @@ void AXPlatformNodeWin::HandleSpecialTextOffset(LONG* offset) {
   if (*offset == IA2_TEXT_OFFSET_LENGTH) {
     *offset = static_cast<LONG>(GetText().length());
   } else if (*offset == IA2_TEXT_OFFSET_CARET) {
-    *offset = static_cast<LONG>(GetIntAttribute(AX_ATTR_TEXT_SEL_END));
+    int selection_start, selection_end;
+    GetSelectionOffsets(&selection_start, &selection_end);
+    if (selection_end < 0)
+      *offset = 0;
+    *offset = static_cast<LONG>(selection_end);
   }
 }
 
@@ -3886,10 +3910,10 @@ int32_t AXPlatformNodeWin::GetHypertextOffsetFromChild(
     AXPlatformNodeWin* child) {
   // TODO(dougt) DCHECK(child.owner()->PlatformGetParent() == owner());
 
-  // Handle the case when we are dealing with a direct text-only child.
-  // (Note that this object might be a platform leaf, e.g. an ARIA searchbox,
-  // Also, direct text-only children should not be present at tree roots and so
-  // no cross-tree traversal is necessary.
+  // Handle the case when we are dealing with a text-only child.
+  // Note that this object might be a platform leaf, e.g. an ARIA searchbox.
+  // Also, text-only children should not be present at tree roots and so no
+  // cross-tree traversal is necessary.
   if (child->IsTextOnlyObject()) {
     int32_t hypertext_offset = 0;
     int32_t index_in_parent = child->delegate_->GetIndexInParent();
@@ -4096,7 +4120,7 @@ void AXPlatformNodeWin::GetSelectionOffsets(int* selection_start,
                                             int* selection_end) {
   DCHECK(selection_start && selection_end);
 
-  if (IsSimpleTextControl() &&
+  if (IsPlainTextField() &&
       GetIntAttribute(ui::AX_ATTR_TEXT_SEL_START, selection_start) &&
       GetIntAttribute(ui::AX_ATTR_TEXT_SEL_END, selection_end)) {
     return;

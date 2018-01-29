@@ -8,6 +8,7 @@
 #include "gpu/command_buffer/common/gles2_cmd_utils.h"
 #include "gpu/command_buffer/service/context_group.h"
 #include "gpu/command_buffer/service/gpu_switches.h"
+#include "gpu/config/gpu_finch_features.h"
 #include "ui/gl/gl_switches.h"
 
 #if defined(USE_EGL)
@@ -33,6 +34,7 @@ gl::GLContextAttribs GenerateGLContextAttribs(
     attribs.global_texture_share_group = true;
 
     attribs.robust_resource_initialization = true;
+    attribs.robust_buffer_access = true;
 
     // Request a specific context version instead of always 3.0
     if (IsWebGL2OrES3ContextType(attribs_helper.context_type)) {
@@ -59,7 +61,20 @@ gl::GLContextAttribs GenerateGLContextAttribs(
 }
 
 bool UsePassthroughCommandDecoder(const base::CommandLine* command_line) {
-  return command_line->HasSwitch(switches::kUsePassthroughCmdDecoder);
+  std::string switch_value;
+  if (command_line->HasSwitch(switches::kUseCmdDecoder)) {
+    switch_value = command_line->GetSwitchValueASCII(switches::kUseCmdDecoder);
+  }
+
+  if (switch_value == kCmdDecoderPassthroughName) {
+    return true;
+  } else if (switch_value == kCmdDecoderValidatingName) {
+    return false;
+  } else {
+    // Unrecognized or missing switch, use the default.
+    return base::FeatureList::IsEnabled(
+        features::kDefaultPassthroughCommandDecoder);
+  }
 }
 
 bool PassthroughCommandDecoderSupported() {

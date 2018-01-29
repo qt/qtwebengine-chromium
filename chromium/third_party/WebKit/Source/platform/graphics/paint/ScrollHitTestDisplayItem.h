@@ -27,7 +27,7 @@ class PLATFORM_EXPORT ScrollHitTestDisplayItem final : public DisplayItem {
   ScrollHitTestDisplayItem(
       const DisplayItemClient&,
       Type,
-      RefPtr<const TransformPaintPropertyNode> scroll_offset_node);
+      scoped_refptr<const TransformPaintPropertyNode> scroll_offset_node);
   ~ScrollHitTestDisplayItem();
 
   const TransformPaintPropertyNode& scroll_offset_node() const {
@@ -39,7 +39,7 @@ class PLATFORM_EXPORT ScrollHitTestDisplayItem final : public DisplayItem {
   void AppendToWebDisplayItemList(const LayoutSize&,
                                   WebDisplayItemList*) const override;
   bool Equals(const DisplayItem&) const override;
-#ifndef NDEBUG
+#if DCHECK_IS_ON()
   void PropertiesAsJSON(JSONObject&) const override;
 #endif
 
@@ -50,14 +50,14 @@ class PLATFORM_EXPORT ScrollHitTestDisplayItem final : public DisplayItem {
       GraphicsContext&,
       const DisplayItemClient&,
       DisplayItem::Type,
-      RefPtr<const TransformPaintPropertyNode> scroll_offset_node);
+      scoped_refptr<const TransformPaintPropertyNode> scroll_offset_node);
 
  private:
   const ScrollPaintPropertyNode& scroll_node() const {
     return *scroll_offset_node_->ScrollNode();
   }
 
-  RefPtr<const TransformPaintPropertyNode> scroll_offset_node_;
+  scoped_refptr<const TransformPaintPropertyNode> scroll_offset_node_;
 };
 
 }  // namespace blink

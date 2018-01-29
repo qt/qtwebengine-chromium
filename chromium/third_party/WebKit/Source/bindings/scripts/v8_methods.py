@@ -419,7 +419,7 @@ def v8_value_to_local_cpp_value(interface_name, method, argument, index, return_
     extended_attributes = argument.extended_attributes
     idl_type = argument.idl_type
     name = argument.name
-    v8_value = 'info[%s]' % index
+    v8_value = 'info[{index}]'.format(index=index)
 
     # History.pushState and History.replaceState are explicitly specified as
     # serializing the value for storage. The default is to not serialize for

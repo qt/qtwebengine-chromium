@@ -15,8 +15,12 @@ namespace testing {
 
 class TestVp8Impl : public TestVp8Simulcast {
  protected:
-  VP8Encoder* CreateEncoder() override { return VP8Encoder::Create(); }
-  VP8Decoder* CreateDecoder() override { return VP8Decoder::Create(); }
+  std::unique_ptr<VP8Encoder> CreateEncoder() override {
+    return VP8Encoder::Create();
+  }
+  std::unique_ptr<VP8Decoder> CreateDecoder() override {
+    return VP8Decoder::Create();
+  }
 };
 
 TEST_F(TestVp8Impl, TestKeyFrameRequestsOnAllStreams) {
@@ -65,10 +69,6 @@ TEST_F(TestVp8Impl, TestSwitchingToOneSmallStream) {
 
 TEST_F(TestVp8Impl, TestSaptioTemporalLayers333PatternEncoder) {
   TestVp8Simulcast::TestSaptioTemporalLayers333PatternEncoder();
-}
-
-TEST_F(TestVp8Impl, TestSpatioTemporalLayers321PatternEncoder) {
-  TestVp8Simulcast::TestSpatioTemporalLayers321PatternEncoder();
 }
 
 TEST_F(TestVp8Impl, TestStrideEncodeDecode) {

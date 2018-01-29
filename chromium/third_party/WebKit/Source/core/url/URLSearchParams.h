@@ -23,10 +23,8 @@ class DOMURL;
 typedef USVStringSequenceSequenceOrUSVStringUSVStringRecordOrUSVString
     URLSearchParamsInit;
 
-class CORE_EXPORT URLSearchParams final
-    : public GarbageCollectedFinalized<URLSearchParams>,
-      public ScriptWrappable,
-      public PairIterable<String, String> {
+class CORE_EXPORT URLSearchParams final : public ScriptWrappable,
+                                          public PairIterable<String, String> {
   DEFINE_WRAPPERTYPEINFO();
 
  public:
@@ -52,17 +50,17 @@ class CORE_EXPORT URLSearchParams final
   bool has(const String&) const;
   void set(const String& name, const String& value);
   void sort();
-  void SetInput(const String&);
+  void SetInputWithoutUpdate(const String&);
 
   // Internal helpers
-  RefPtr<EncodedFormData> ToEncodedFormData() const;
+  scoped_refptr<EncodedFormData> ToEncodedFormData() const;
   const Vector<std::pair<String, String>>& Params() const { return params_; }
 
 #if DCHECK_IS_ON()
   DOMURL* UrlObject() const;
 #endif
 
-  DECLARE_TRACE();
+  void Trace(blink::Visitor*);
 
  private:
   FRIEND_TEST_ALL_PREFIXES(URLSearchParamsTest, EncodedFormData);

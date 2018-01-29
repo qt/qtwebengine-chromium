@@ -36,9 +36,10 @@
 #include "fpdfsdk/cpdfsdk_pageview.h"
 #include "fpdfsdk/fsdk_define.h"
 #include "fpdfsdk/fsdk_pauseadapter.h"
-#include "fpdfsdk/javascript/ijs_runtime.h"
+#include "fxjs/ijs_runtime.h"
 #include "public/fpdf_edit.h"
 #include "public/fpdf_ext.h"
+#include "public/fpdf_formfill.h"
 #include "public/fpdf_progressive.h"
 #include "third_party/base/allocator/partition_allocator/partition_alloc.h"
 #include "third_party/base/numerics/safe_conversions_impl.h"
@@ -49,7 +50,6 @@
 #include "fpdfsdk/fpdfxfa/cpdfxfa_page.h"
 #include "fpdfsdk/fpdfxfa/cxfa_fwladaptertimermgr.h"
 #include "fxbarcode/BC_Library.h"
-#include "public/fpdf_formfill.h"
 #endif  // PDF_ENABLE_XFA
 
 #if _FX_PLATFORM_ == _FX_PLATFORM_WINDOWS_
@@ -359,6 +359,17 @@ CFX_DIBitmap* CFXBitmapFromFPDFBitmap(FPDF_BITMAP bitmap) {
   return static_cast<CFX_DIBitmap*>(bitmap);
 }
 
+CFX_FloatRect CFXFloatRectFromFSRECTF(const FS_RECTF& rect) {
+  return CFX_FloatRect(rect.left, rect.bottom, rect.right, rect.top);
+}
+
+void FSRECTFFromCFXFloatRect(const CFX_FloatRect& rect, FS_RECTF* out_rect) {
+  out_rect->left = rect.left;
+  out_rect->top = rect.top;
+  out_rect->right = rect.right;
+  out_rect->bottom = rect.bottom;
+}
+
 const FX_PATHPOINT* FXPathPointFromFPDFPathSegment(FPDF_PATHSEGMENT segment) {
   return static_cast<const FX_PATHPOINT*>(segment);
 }
@@ -560,39 +571,35 @@ FPDF_EXPORT FPDF_DOCUMENT FPDF_CALLCONV
 FPDF_LoadDocument(FPDF_STRING file_path, FPDF_BYTESTRING password) {
   // NOTE: the creation of the file needs to be by the embedder on the
   // other side of this API.
-  return LoadDocumentImpl(
-      IFX_SeekableReadStream::CreateFromFilename((const char*)file_path),
-      password);
+  return LoadDocumentImpl(IFX_SeekableReadStream::CreateFromFilename(file_path),
+                          password);
 }
 
-#ifdef PDF_ENABLE_XFA
-FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV FPDF_HasXFAField(FPDF_DOCUMENT document,
-                                                     int* docType) {
+FPDF_EXPORT int FPDF_CALLCONV FPDF_GetFormType(FPDF_DOCUMENT document) {
   if (!document)
     return false;
 
-  const CPDF_Document* pDoc =
-      static_cast<CPDFXFA_Context*>(document)->GetPDFDoc();
+  const CPDF_Document* pDoc = CPDFDocumentFromFPDFDocument(document);
   if (!pDoc)
-    return false;
+    return FORMTYPE_NONE;
 
   const CPDF_Dictionary* pRoot = pDoc->GetRoot();
   if (!pRoot)
-    return false;
+    return FORMTYPE_NONE;
 
   CPDF_Dictionary* pAcroForm = pRoot->GetDictFor("AcroForm");
   if (!pAcroForm)
-    return false;
+    return FORMTYPE_NONE;
 
   CPDF_Object* pXFA = pAcroForm->GetObjectFor("XFA");
   if (!pXFA)
-    return false;
+    return FORMTYPE_ACRO_FORM;
 
-  bool bDynamicXFA = pRoot->GetBooleanFor("NeedsRendering", false);
-  *docType = bDynamicXFA ? DOCTYPE_DYNAMIC_XFA : DOCTYPE_STATIC_XFA;
-  return true;
+  bool needsRendering = pRoot->GetBooleanFor("NeedsRendering", false);
+  return needsRendering ? FORMTYPE_XFA_FULL : FORMTYPE_XFA_FOREGROUND;
 }
 
+#ifdef PDF_ENABLE_XFA
 FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV FPDF_LoadXFA(FPDF_DOCUMENT document) {
   return document && static_cast<CPDFXFA_Context*>(document)->LoadXFADoc();
 }
@@ -600,7 +607,7 @@ FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV FPDF_LoadXFA(FPDF_DOCUMENT document) {
 
 class CMemFile final : public IFX_SeekableReadStream {
  public:
-  static RetainPtr<CMemFile> Create(uint8_t* pBuf, FX_FILESIZE size) {
+  static RetainPtr<CMemFile> Create(const uint8_t* pBuf, FX_FILESIZE size) {
     return RetainPtr<CMemFile>(new CMemFile(pBuf, size));
   }
 
@@ -619,15 +626,17 @@ class CMemFile final : public IFX_SeekableReadStream {
   }
 
  private:
-  CMemFile(uint8_t* pBuf, FX_FILESIZE size) : m_pBuf(pBuf), m_size(size) {}
+  CMemFile(const uint8_t* pBuf, FX_FILESIZE size)
+      : m_pBuf(pBuf), m_size(size) {}
 
-  uint8_t* const m_pBuf;
+  const uint8_t* const m_pBuf;
   const FX_FILESIZE m_size;
 };
 
 FPDF_EXPORT FPDF_DOCUMENT FPDF_CALLCONV
 FPDF_LoadMemDocument(const void* data_buf, int size, FPDF_BYTESTRING password) {
-  return LoadDocumentImpl(CMemFile::Create((uint8_t*)data_buf, size), password);
+  return LoadDocumentImpl(
+      CMemFile::Create(static_cast<const uint8_t*>(data_buf), size), password);
 }
 
 FPDF_EXPORT FPDF_DOCUMENT FPDF_CALLCONV
@@ -807,7 +816,7 @@ RetainPtr<CFX_DIBitmap> GetMaskBitmap(CPDF_Page* pPage,
                                       int size_x,
                                       int size_y,
                                       int rotate,
-                                      RetainPtr<CFX_DIBitmap>& pSrc,
+                                      const RetainPtr<CFX_DIBitmap>& pSrc,
                                       const CFX_FloatRect& mask_box,
                                       FX_RECT* bitmap_area) {
   ASSERT(bitmap_area);
@@ -1011,12 +1020,8 @@ FPDF_RenderPageBitmapWithMatrix(FPDF_BITMAP bitmap,
   pDevice->Attach(pBitmap, !!(flags & FPDF_REVERSE_BYTE_ORDER), nullptr, false);
 
   CFX_FloatRect clipping_rect;
-  if (clipping) {
-    clipping_rect.left = clipping->left;
-    clipping_rect.bottom = clipping->bottom;
-    clipping_rect.right = clipping->right;
-    clipping_rect.top = clipping->top;
-  }
+  if (clipping)
+    clipping_rect = CFXFloatRectFromFSRECTF(*clipping);
   FX_RECT clip_rect = clipping_rect.ToFxRect();
   RenderPageImpl(
       pContext, pPage,
@@ -1180,7 +1185,8 @@ FPDF_EXPORT FPDF_BITMAP FPDF_CALLCONV FPDFBitmap_CreateEx(int width,
       return nullptr;
   }
   auto pBitmap = pdfium::MakeRetain<CFX_DIBitmap>();
-  pBitmap->Create(width, height, fx_format, (uint8_t*)first_scan, stride);
+  pBitmap->Create(width, height, fx_format, static_cast<uint8_t*>(first_scan),
+                  stride);
   return pBitmap.Leak();
 }
 

@@ -27,9 +27,9 @@
 #include "xfa/fxfa/cxfa_textprovider.h"
 #include "xfa/fxfa/cxfa_texttabstopscontext.h"
 #include "xfa/fxfa/cxfa_textuserdata.h"
-#include "xfa/fxfa/parser/cxfa_font.h"
+#include "xfa/fxfa/parser/cxfa_fontdata.h"
 #include "xfa/fxfa/parser/cxfa_node.h"
-#include "xfa/fxfa/parser/cxfa_para.h"
+#include "xfa/fxfa/parser/cxfa_paradata.h"
 
 #define XFA_LOADERCNTXTFLG_FILTERSPACE 0x001
 
@@ -102,50 +102,59 @@ std::unique_ptr<CFX_RTFBreak> CXFA_TextLayout::CreateBreak(bool bDefault) {
 }
 
 void CXFA_TextLayout::InitBreak(float fLineWidth) {
-  CXFA_Font font = m_pTextProvider->GetFontNode();
-  CXFA_Para para = m_pTextProvider->GetParaNode();
+  CXFA_ParaData paraData = m_pTextProvider->GetParaData();
   float fStart = 0;
   float fStartPos = 0;
-  if (para) {
+  if (paraData.HasValidNode()) {
     CFX_RTFLineAlignment iAlign = CFX_RTFLineAlignment::Left;
-    switch (para.GetHorizontalAlign()) {
-      case XFA_ATTRIBUTEENUM_Center:
+    switch (paraData.GetHorizontalAlign()) {
+      case XFA_AttributeEnum::Center:
         iAlign = CFX_RTFLineAlignment::Center;
         break;
-      case XFA_ATTRIBUTEENUM_Right:
+      case XFA_AttributeEnum::Right:
         iAlign = CFX_RTFLineAlignment::Right;
         break;
-      case XFA_ATTRIBUTEENUM_Justify:
+      case XFA_AttributeEnum::Justify:
         iAlign = CFX_RTFLineAlignment::Justified;
         break;
-      case XFA_ATTRIBUTEENUM_JustifyAll:
+      case XFA_AttributeEnum::JustifyAll:
         iAlign = CFX_RTFLineAlignment::Distributed;
+        break;
+      case XFA_AttributeEnum::Left:
+      case XFA_AttributeEnum::Radix:
+        break;
+      default:
+        NOTREACHED();
         break;
     }
     m_pBreak->SetAlignment(iAlign);
 
-    fStart = para.GetMarginLeft();
+    fStart = paraData.GetMarginLeft();
     if (m_pTextProvider->IsCheckButtonAndAutoWidth()) {
       if (iAlign != CFX_RTFLineAlignment::Left)
-        fLineWidth -= para.GetMarginRight();
+        fLineWidth -= paraData.GetMarginRight();
     } else {
-      fLineWidth -= para.GetMarginRight();
+      fLineWidth -= paraData.GetMarginRight();
     }
     if (fLineWidth < 0)
       fLineWidth = fStart;
 
     fStartPos = fStart;
-    float fIndent = para.GetTextIndent();
+    float fIndent = paraData.GetTextIndent();
     if (fIndent > 0)
       fStartPos += fIndent;
   }
 
   m_pBreak->SetLineBoundary(fStart, fLineWidth);
   m_pBreak->SetLineStartPos(fStartPos);
-  if (font) {
-    m_pBreak->SetHorizontalScale((int32_t)font.GetHorizontalScale());
-    m_pBreak->SetVerticalScale((int32_t)font.GetVerticalScale());
-    m_pBreak->SetCharSpace(font.GetLetterSpacing());
+
+  CXFA_FontData fontData = m_pTextProvider->GetFontData();
+  if (fontData.HasValidNode()) {
+    m_pBreak->SetHorizontalScale(
+        static_cast<int32_t>(fontData.GetHorizontalScale()));
+    m_pBreak->SetVerticalScale(
+        static_cast<int32_t>(fontData.GetVerticalScale()));
+    m_pBreak->SetCharSpace(fontData.GetLetterSpacing());
   }
 
   float fFontSize = m_textParser.GetFontSize(m_pTextProvider, nullptr);
@@ -237,24 +246,15 @@ void CXFA_TextLayout::InitBreak(CFX_CSSComputedStyle* pStyle,
   m_pBreak->SetCharSpace(pStyle->GetLetterSpacing().GetValue());
 }
 
-int32_t CXFA_TextLayout::GetText(WideString& wsText) {
-  GetTextDataNode();
-  wsText.clear();
-  if (!m_bRichText)
-    wsText = m_pTextDataNode->GetContent();
-  return wsText.GetLength();
-}
-
 float CXFA_TextLayout::GetLayoutHeight() {
   if (!m_pLoader)
     return 0;
 
   if (m_pLoader->m_lineHeights.empty() && m_pLoader->m_fWidth > 0) {
     CFX_SizeF szMax(m_pLoader->m_fWidth, m_pLoader->m_fHeight);
-    CFX_SizeF szDef;
     m_pLoader->m_bSaveLineHeight = true;
     m_pLoader->m_fLastPos = 0;
-    CalcSize(szMax, szMax, szDef);
+    CFX_SizeF szDef = CalcSize(szMax, szMax);
     m_pLoader->m_bSaveLineHeight = false;
     return szDef.height;
   }
@@ -281,24 +281,24 @@ float CXFA_TextLayout::StartLayout(float fWidth) {
   }
   m_pLoader->m_fWidth = fWidth;
 
-  if (fWidth < 0) {
-    CFX_SizeF szMax;
-    CFX_SizeF szDef;
-    m_pLoader->m_bSaveLineHeight = true;
-    m_pLoader->m_fLastPos = 0;
-    CalcSize(szMax, szMax, szDef);
-    m_pLoader->m_bSaveLineHeight = false;
-    fWidth = szDef.width;
-  }
-  return fWidth;
+  if (fWidth >= 0)
+    return fWidth;
+
+  CFX_SizeF szMax;
+
+  m_pLoader->m_bSaveLineHeight = true;
+  m_pLoader->m_fLastPos = 0;
+  CFX_SizeF szDef = CalcSize(szMax, szMax);
+  m_pLoader->m_bSaveLineHeight = false;
+  return szDef.width;
 }
 
-bool CXFA_TextLayout::DoLayout(int32_t iBlockIndex,
-                               float& fCalcHeight,
-                               float fContentAreaHeight,
-                               float fTextHeight) {
+float CXFA_TextLayout::DoLayout(int32_t iBlockIndex,
+                                float fCalcHeight,
+                                float fContentAreaHeight,
+                                float fTextHeight) {
   if (!m_pLoader)
-    return false;
+    return fCalcHeight;
 
   int32_t iBlockCount = pdfium::CollectionSize<int32_t>(m_Blocks);
   float fHeight = fTextHeight;
@@ -307,16 +307,16 @@ bool CXFA_TextLayout::DoLayout(int32_t iBlockIndex,
 
   m_pLoader->m_fHeight = fHeight;
   if (fContentAreaHeight < 0)
-    return false;
+    return fCalcHeight;
 
   m_bHasBlock = true;
   if (iBlockCount == 0 && fHeight > 0) {
     fHeight = fTextHeight - GetLayoutHeight();
     if (fHeight > 0) {
-      int32_t iAlign = m_textParser.GetVAlign(m_pTextProvider);
-      if (iAlign == XFA_ATTRIBUTEENUM_Middle)
+      XFA_AttributeEnum iAlign = m_textParser.GetVAlign(m_pTextProvider);
+      if (iAlign == XFA_AttributeEnum::Middle)
         fHeight /= 2.0f;
-      else if (iAlign != XFA_ATTRIBUTEENUM_Bottom)
+      else if (iAlign != XFA_AttributeEnum::Bottom)
         fHeight = 0;
       m_pLoader->m_fStartLineOffset = fHeight;
     }
@@ -340,10 +340,9 @@ bool CXFA_TextLayout::DoLayout(int32_t iBlockIndex,
   int32_t i = 0;
   for (i = iLineIndex; i < iCount; i++) {
     float fLineHeight = m_pLoader->m_lineHeights[i];
-    if (i == iLineIndex && fLineHeight - fContentAreaHeight > 0.001) {
-      fCalcHeight = 0;
-      return true;
-    }
+    if (i == iLineIndex && fLineHeight - fContentAreaHeight > 0.001)
+      return 0;
+
     if (fLinePos + fLineHeight - fContentAreaHeight > 0.001) {
       if (iBlockCount >= (iBlockIndex + 1) * 2) {
         m_Blocks[iBlockIndex * 2] = iLineIndex;
@@ -363,15 +362,13 @@ bool CXFA_TextLayout::DoLayout(int32_t iBlockIndex,
             m_pLoader->m_BlocksHeight.push_back(fCalcHeight);
           }
         }
-        return true;
+        return fCalcHeight;
       }
-
-      fCalcHeight = fLinePos;
-      return true;
+      return fLinePos;
     }
     fLinePos += fLineHeight;
   }
-  return false;
+  return fCalcHeight;
 }
 
 int32_t CXFA_TextLayout::CountBlocks() const {
@@ -379,29 +376,27 @@ int32_t CXFA_TextLayout::CountBlocks() const {
   return iCount > 0 ? iCount : 1;
 }
 
-bool CXFA_TextLayout::CalcSize(const CFX_SizeF& minSize,
-                               const CFX_SizeF& maxSize,
-                               CFX_SizeF& defaultSize) {
-  defaultSize.width = maxSize.width;
-  if (defaultSize.width < 1)
-    defaultSize.width = 0xFFFF;
+CFX_SizeF CXFA_TextLayout::CalcSize(const CFX_SizeF& minSize,
+                                    const CFX_SizeF& maxSize) {
+  float width = maxSize.width;
+  if (width < 1)
+    width = 0xFFFF;
 
   m_pBreak = CreateBreak(false);
   float fLinePos = 0;
   m_iLines = 0;
   m_fMaxWidth = 0;
-  Loader(defaultSize, fLinePos, false);
+  Loader(width, fLinePos, false);
   if (fLinePos < 0.1f)
     fLinePos = m_textParser.GetFontSize(m_pTextProvider, nullptr);
 
   m_pTabstopContext.reset();
-  defaultSize = CFX_SizeF(m_fMaxWidth, fLinePos);
-  return true;
+  return CFX_SizeF(m_fMaxWidth, fLinePos);
 }
 
-bool CXFA_TextLayout::Layout(const CFX_SizeF& size, float* fHeight) {
+float CXFA_TextLayout::Layout(const CFX_SizeF& size) {
   if (size.width < 1)
-    return false;
+    return 0.f;
 
   Unload();
   m_pBreak = CreateBreak(true);
@@ -412,12 +407,10 @@ bool CXFA_TextLayout::Layout(const CFX_SizeF& size, float* fHeight) {
 
   m_iLines = 0;
   float fLinePos = 0;
-  Loader(size, fLinePos, true);
+  Loader(size.width, fLinePos, true);
   UpdateAlign(size.height, fLinePos);
   m_pTabstopContext.reset();
-  if (fHeight)
-    *fHeight = fLinePos;
-  return true;
+  return fLinePos;
 }
 
 bool CXFA_TextLayout::Layout(int32_t iBlock) {
@@ -448,7 +441,7 @@ bool CXFA_TextLayout::Layout(int32_t iBlock) {
     if (iCount > 1)
       m_pLoader->m_iTotalLines = m_Blocks[iBlock * 2 + 1];
 
-    Loader(szText, fLinePos, true);
+    Loader(szText.width, fLinePos, true);
     if (iCount == 0 && m_pLoader->m_fStartLineOffset < 0.1f)
       UpdateAlign(szText.height, fLinePos);
   } else if (m_pTextDataNode) {
@@ -469,8 +462,8 @@ bool CXFA_TextLayout::Layout(int32_t iBlock) {
       CFX_XMLNode* pSaveXMLNode = m_pLoader->m_pXMLNode;
       for (; pXMLNode;
            pXMLNode = pXMLNode->GetNodeItem(CFX_XMLNode::NextSibling)) {
-        if (!LoadRichText(pXMLNode, szText, fLinePos, m_pLoader->m_pParentStyle,
-                          true, nullptr)) {
+        if (!LoadRichText(pXMLNode, szText.width, fLinePos,
+                          m_pLoader->m_pParentStyle, true, nullptr)) {
           break;
         }
       }
@@ -478,8 +471,8 @@ bool CXFA_TextLayout::Layout(int32_t iBlock) {
         pXMLNode = pSaveXMLNode->GetNodeItem(CFX_XMLNode::Parent);
         if (pXMLNode == pContainerNode)
           break;
-        if (!LoadRichText(pXMLNode, szText, fLinePos, m_pLoader->m_pParentStyle,
-                          true, nullptr, false)) {
+        if (!LoadRichText(pXMLNode, szText.width, fLinePos,
+                          m_pLoader->m_pParentStyle, true, nullptr, false)) {
           break;
         }
         pSaveXMLNode = pXMLNode;
@@ -488,7 +481,7 @@ bool CXFA_TextLayout::Layout(int32_t iBlock) {
           continue;
         for (; pXMLNode;
              pXMLNode = pXMLNode->GetNodeItem(CFX_XMLNode::NextSibling)) {
-          if (!LoadRichText(pXMLNode, szText, fLinePos,
+          if (!LoadRichText(pXMLNode, szText.width, fLinePos,
                             m_pLoader->m_pParentStyle, true, nullptr)) {
             break;
           }
@@ -498,7 +491,7 @@ bool CXFA_TextLayout::Layout(int32_t iBlock) {
       pNode = m_pLoader->m_pNode;
       if (!pNode)
         return true;
-      LoadText(pNode, szText, fLinePos, true);
+      LoadText(pNode, szText.width, fLinePos, true);
     }
   }
   if (iBlock == iCount) {
@@ -614,10 +607,10 @@ void CXFA_TextLayout::UpdateAlign(float fHeight, float fBottom) {
     return;
 
   switch (m_textParser.GetVAlign(m_pTextProvider)) {
-    case XFA_ATTRIBUTEENUM_Middle:
+    case XFA_AttributeEnum::Middle:
       fHeight /= 2.0f;
       break;
-    case XFA_ATTRIBUTEENUM_Bottom:
+    case XFA_AttributeEnum::Bottom:
       break;
     default:
       return;
@@ -629,7 +622,7 @@ void CXFA_TextLayout::UpdateAlign(float fHeight, float fBottom) {
   }
 }
 
-bool CXFA_TextLayout::Loader(const CFX_SizeF& szText,
+bool CXFA_TextLayout::Loader(float textWidth,
                              float& fLinePos,
                              bool bSavePieces) {
   GetTextDataNode();
@@ -643,40 +636,42 @@ bool CXFA_TextLayout::Loader(const CFX_SizeF& szText,
         m_textParser.DoParse(pXMLContainer, m_pTextProvider);
 
       auto pRootStyle = m_textParser.CreateRootStyle(m_pTextProvider);
-      LoadRichText(pXMLContainer, szText, fLinePos, pRootStyle, bSavePieces,
+      LoadRichText(pXMLContainer, textWidth, fLinePos, pRootStyle, bSavePieces,
                    nullptr);
     }
   } else {
-    LoadText(m_pTextDataNode, szText, fLinePos, bSavePieces);
+    LoadText(m_pTextDataNode, textWidth, fLinePos, bSavePieces);
   }
   return true;
 }
 
 void CXFA_TextLayout::LoadText(CXFA_Node* pNode,
-                               const CFX_SizeF& szText,
+                               float textWidth,
                                float& fLinePos,
                                bool bSavePieces) {
-  InitBreak(szText.width);
+  InitBreak(textWidth);
 
-  CXFA_Para para = m_pTextProvider->GetParaNode();
+  CXFA_ParaData paraData = m_pTextProvider->GetParaData();
   float fSpaceAbove = 0;
-  if (para) {
-    fSpaceAbove = para.GetSpaceAbove();
-    if (fSpaceAbove < 0.1f) {
+  if (paraData.HasValidNode()) {
+    fSpaceAbove = paraData.GetSpaceAbove();
+    if (fSpaceAbove < 0.1f)
       fSpaceAbove = 0;
-    }
-    int32_t verAlign = para.GetVerticalAlign();
-    switch (verAlign) {
-      case XFA_ATTRIBUTEENUM_Top:
-      case XFA_ATTRIBUTEENUM_Middle:
-      case XFA_ATTRIBUTEENUM_Bottom: {
+
+    switch (paraData.GetVerticalAlign()) {
+      case XFA_AttributeEnum::Top:
+      case XFA_AttributeEnum::Middle:
+      case XFA_AttributeEnum::Bottom: {
         fLinePos += fSpaceAbove;
         break;
       }
+      default:
+        NOTREACHED();
+        break;
     }
   }
 
-  WideString wsText = pNode->GetContent();
+  WideString wsText = pNode->JSNode()->GetContent(false);
   wsText.TrimRight(L" ");
   bool bRet = AppendChar(wsText, fLinePos, fSpaceAbove, bSavePieces);
   if (bRet && m_pLoader)
@@ -687,7 +682,7 @@ void CXFA_TextLayout::LoadText(CXFA_Node* pNode,
 
 bool CXFA_TextLayout::LoadRichText(
     CFX_XMLNode* pXMLNode,
-    const CFX_SizeF& szText,
+    float textWidth,
     float& fLinePos,
     const RetainPtr<CFX_CSSComputedStyle>& pParentStyle,
     bool bSavePieces,
@@ -734,7 +729,7 @@ bool CXFA_TextLayout::LoadRichText(
 
         pStyle = m_textParser.ComputeStyle(pXMLNode, pParentStyle.Get());
         InitBreak(bContentNode ? pParentStyle.Get() : pStyle.Get(), eDisplay,
-                  szText.width, pXMLNode, pParentStyle.Get());
+                  textWidth, pXMLNode, pParentStyle.Get());
         if ((eDisplay == CFX_CSSDisplay::Block ||
              eDisplay == CFX_CSSDisplay::ListItem) &&
             pStyle &&
@@ -769,7 +764,7 @@ bool CXFA_TextLayout::LoadRichText(
         } else if (wsName == L"li") {
           bCurLi = true;
           if (bIsOl)
-            wsText.Format(L"%d.  ", iLiCount);
+            wsText = WideString::Format(L"%d.  ", iLiCount);
           else
             wsText = 0x00B7 + WideStringView(L"  ", 1);
         } else if (!bContentNode) {
@@ -788,7 +783,7 @@ bool CXFA_TextLayout::LoadRichText(
         if (m_pLoader) {
           if (wsText.GetLength() > 0 &&
               (m_pLoader->m_dwFlags & XFA_LOADERCNTXTFLG_FILTERSPACE)) {
-            wsText.TrimLeft(0x20);
+            wsText.TrimLeft(L" ");
           }
           if (CFX_CSSDisplay::Block == eDisplay) {
             m_pLoader->m_dwFlags |= XFA_LOADERCNTXTFLG_FILTERSPACE;
@@ -833,7 +828,7 @@ bool CXFA_TextLayout::LoadRichText(
       if (bCurOl)
         iLiCount++;
 
-      if (!LoadRichText(pChildNode, szText, fLinePos,
+      if (!LoadRichText(pChildNode, textWidth, fLinePos,
                         pContext ? pStyle : pParentStyle, bSavePieces,
                         pLinkData, true, bIsOl, iLiCount))
         return false;
@@ -1104,14 +1099,14 @@ void CXFA_TextLayout::AppendTextLine(CFX_BreakType dwStatus,
   if (dwStatus == CFX_BreakType::Paragraph) {
     m_pBreak->Reset();
     if (!pStyle && bEndBreak) {
-      CXFA_Para para = m_pTextProvider->GetParaNode();
-      if (para) {
-        float fStartPos = para.GetMarginLeft();
-        float fIndent = para.GetTextIndent();
+      CXFA_ParaData paraData = m_pTextProvider->GetParaData();
+      if (paraData.HasValidNode()) {
+        float fStartPos = paraData.GetMarginLeft();
+        float fIndent = paraData.GetTextIndent();
         if (fIndent > 0)
           fStartPos += fIndent;
 
-        float fSpaceBelow = para.GetSpaceBelow();
+        float fSpaceBelow = paraData.GetSpaceBelow();
         if (fSpaceBelow < 0.1f)
           fSpaceBelow = 0;
 
@@ -1166,7 +1161,7 @@ void CXFA_TextLayout::RenderPath(CFX_RenderDevice* pDevice,
   if (iChars > 0) {
     CFX_PointF pt1, pt2;
     float fEndY = pCharPos[0].m_Origin.y + 1.05f;
-    if (pPiece->iPeriod == XFA_ATTRIBUTEENUM_Word) {
+    if (pPiece->iPeriod == XFA_AttributeEnum::Word) {
       for (int32_t i = 0; i < pPiece->iUnderline; i++) {
         for (int32_t j = 0; j < iChars; j++) {
           pt1.x = pCharPos[j].m_Origin.x;
@@ -1199,7 +1194,7 @@ void CXFA_TextLayout::RenderPath(CFX_RenderDevice* pDevice,
     }
   } else {
     if (bNoLineThrough &&
-        (bNoUnderline || pPiece->iPeriod != XFA_ATTRIBUTEENUM_All)) {
+        (bNoUnderline || pPiece->iPeriod != XFA_AttributeEnum::All)) {
       return;
     }
     int32_t iCharsTmp = 0;

@@ -29,9 +29,9 @@
 #include "platform/network/ContentSecurityPolicyParsers.h"
 #include "platform/weborigin/KURL.h"
 #include "platform/weborigin/SecurityOrigin.h"
-#include "platform/wtf/CurrentTime.h"
 #include "platform/wtf/Forward.h"
 #include "platform/wtf/PtrUtil.h"
+#include "platform/wtf/Time.h"
 #include "platform/wtf/Vector.h"
 #include "public/platform/WebAddressSpace.h"
 #include "testing/gmock/include/gmock/gmock.h"
@@ -91,20 +91,22 @@ class WorkerThreadForTest : public WorkerThread {
                            const String& source,
                            ParentFrameTaskRunners* parent_frame_task_runners,
                            WorkerClients* worker_clients = nullptr) {
-    auto headers = WTF::MakeUnique<Vector<CSPHeaderAndType>>();
+    auto headers = std::make_unique<Vector<CSPHeaderAndType>>();
     CSPHeaderAndType header_and_type("contentSecurityPolicy",
                                      kContentSecurityPolicyHeaderTypeReport);
     headers->push_back(header_and_type);
 
-    auto creation_params = WTF::MakeUnique<GlobalScopeCreationParams>(
-        KURL(kParsedURLString, "http://fake.url/"), "fake user agent", source,
-        nullptr, kDontPauseWorkerGlobalScopeOnStart, headers.get(), "",
-        security_origin, worker_clients, kWebAddressSpaceLocal, nullptr,
+    auto creation_params = std::make_unique<GlobalScopeCreationParams>(
+        KURL("http://fake.url/"), "fake user agent", source, nullptr,
+        headers.get(), kReferrerPolicyDefault, security_origin, worker_clients,
+        kWebAddressSpaceLocal, nullptr,
         std::make_unique<WorkerSettings>(Settings::Create().get()),
         kV8CacheOptionsDefault);
 
     Start(std::move(creation_params),
           WorkerBackingThreadStartupData::CreateDefault(),
+          std::make_unique<GlobalScopeInspectorCreationParams>(
+              WorkerInspectorProxy::PauseOnWorkerStart::kDontPause),
           parent_frame_task_runners);
   }
 

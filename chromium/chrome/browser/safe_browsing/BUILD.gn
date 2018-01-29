@@ -20,8 +20,13 @@ static_library("safe_browsing") {
     "chrome_cleaner/chrome_cleaner_fetcher_win.h",
     "chrome_cleaner/chrome_cleaner_navigation_util_win.cc",
     "chrome_cleaner/chrome_cleaner_navigation_util_win.h",
+    "chrome_cleaner/chrome_cleaner_reboot_dialog_controller_impl_win.cc",
+    "chrome_cleaner/chrome_cleaner_reboot_dialog_controller_impl_win.h",
+    "chrome_cleaner/chrome_cleaner_reboot_dialog_controller_win.h",
     "chrome_cleaner/chrome_cleaner_runner_win.cc",
     "chrome_cleaner/chrome_cleaner_runner_win.h",
+    "chrome_cleaner/chrome_cleaner_scanner_results.cc",
+    "chrome_cleaner/chrome_cleaner_scanner_results.h",
     "chrome_cleaner/chrome_cleaner_state_change_observer_win.cc",
     "chrome_cleaner/chrome_cleaner_state_change_observer_win.h",
     "chrome_cleaner/reporter_runner_win.cc",
@@ -34,8 +39,6 @@ static_library("safe_browsing") {
     "chrome_cleaner/srt_client_info_win.h",
     "chrome_cleaner/srt_field_trial_win.cc",
     "chrome_cleaner/srt_field_trial_win.h",
-    "chrome_cleaner/srt_global_error_win.cc",
-    "chrome_cleaner/srt_global_error_win.h",
     "safe_browsing_tab_observer.cc",
     "safe_browsing_tab_observer.h",
     "url_checker_delegate_impl.cc",
@@ -157,10 +160,6 @@ static_library("safe_browsing") {
         "download_protection/path_sanitizer.h",
         "download_protection/ppapi_download_request.cc",
         "download_protection/ppapi_download_request.h",
-        "download_protection/sandboxed_dmg_analyzer_mac.cc",
-        "download_protection/sandboxed_dmg_analyzer_mac.h",
-        "download_protection/sandboxed_zip_analyzer.cc",
-        "download_protection/sandboxed_zip_analyzer.h",
         "download_protection/two_phase_uploader.cc",
         "download_protection/two_phase_uploader.h",
         "incident_reporting/binary_integrity_analyzer.cc",
@@ -230,10 +229,9 @@ static_library("safe_browsing") {
         "signature_evaluator_mac.mm",
         "trigger_creator.cc",
         "trigger_creator.h",
-        "v4_test_utils.cc",
-        "v4_test_utils.h",
       ]
       deps += [
+        "//chrome/services/file_util/public/cpp",
         "//components/content_settings/core/browser:browser",
         "//components/prefs:prefs",
         "//components/safe_browsing/common:safe_browsing_prefs",
@@ -255,7 +253,7 @@ static_library("safe_browsing") {
         "services_delegate_stub.cc",
         "services_delegate_stub.h",
       ]
-      deps += [ "//components/safe_browsing/db:safe_browsing_mobile" ]
+      deps += [ "//components/safe_browsing/android:safe_browsing_mobile" ]
     }
   }
 }

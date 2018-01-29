@@ -80,7 +80,7 @@ class ObjCVideoEncoder : public VideoEncoder {
     // CodecSpecificInfo only handles a hard coded list of codecs
     id<RTCCodecSpecificInfo> rtcCodecSpecificInfo = nil;
     if (codec_specific_info) {
-      if (strcmp(codec_specific_info->codec_name, "H264") == 0) {
+      if (strcmp(codec_specific_info->codec_name, cricket::kH264CodecName) == 0) {
         RTCCodecSpecificInfoH264 *h264Info = [[RTCCodecSpecificInfoH264 alloc] init];
         h264Info.packetizationMode =
             (RTCH264PacketizationMode)codec_specific_info->codecSpecific.H264.packetization_mode;
@@ -144,7 +144,8 @@ VideoEncoderFactory::CodecInfo ObjCVideoEncoderFactory::QueryVideoEncoder(
     const SdpVideoFormat &format) const {
   // TODO(andersc): This is a hack until we figure out how this should be done properly.
   NSString *formatName = [NSString stringForStdString:format.name];
-  NSSet *wrappedSoftwareFormats = [NSSet setWithObjects:@"VP8", @"VP9", nil];
+  NSSet *wrappedSoftwareFormats =
+      [NSSet setWithObjects:kRTCVideoCodecVp8Name, kRTCVideoCodecVp9Name, nil];
 
   CodecInfo codec_info;
   codec_info.is_hardware_accelerated = ![wrappedSoftwareFormats containsObject:formatName];

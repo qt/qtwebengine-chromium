@@ -9,6 +9,8 @@
 #include <utility>
 
 #include "core/fxcrt/cfx_widetextbuf.h"
+#include "xfa/fxfa/fm2js/cxfa_fmsimpleexpression.h"
+#include "xfa/fxfa/fm2js/cxfa_fmtojavascriptdepth.h"
 
 namespace {
 
@@ -30,11 +32,13 @@ CXFA_FMExpression::CXFA_FMExpression(uint32_t line, XFA_FM_EXPTYPE type)
     : m_type(type), m_line(line) {}
 
 bool CXFA_FMExpression::ToJavaScript(CFX_WideTextBuf& javascript) {
-  return true;
+  CXFA_FMToJavaScriptDepth depthManager;
+  return !CXFA_IsTooBig(javascript) && depthManager.IsWithinMaxDepth();
 }
 
 bool CXFA_FMExpression::ToImpliedReturnJS(CFX_WideTextBuf& javascript) {
-  return true;
+  CXFA_FMToJavaScriptDepth depthManager;
+  return !CXFA_IsTooBig(javascript) && depthManager.IsWithinMaxDepth();
 }
 
 CXFA_FMFunctionDefinition::CXFA_FMFunctionDefinition(
@@ -52,9 +56,13 @@ CXFA_FMFunctionDefinition::CXFA_FMFunctionDefinition(
 CXFA_FMFunctionDefinition::~CXFA_FMFunctionDefinition() {}
 
 bool CXFA_FMFunctionDefinition::ToJavaScript(CFX_WideTextBuf& javascript) {
+  CXFA_FMToJavaScriptDepth depthManager;
+  if (CXFA_IsTooBig(javascript) || !depthManager.IsWithinMaxDepth())
+    return false;
+
   if (m_isGlobal && m_pExpressions.empty()) {
     javascript << L"// comments only";
-    return true;
+    return !CXFA_IsTooBig(javascript);
   }
   if (m_isGlobal) {
     javascript << L"(\n";
@@ -91,7 +99,8 @@ bool CXFA_FMFunctionDefinition::ToJavaScript(CFX_WideTextBuf& javascript) {
       ret = expr->ToImpliedReturnJS(javascript);
     else
       ret = expr->ToJavaScript(javascript);
-    if (!ret || CFXA_IsTooBig(javascript))
+
+    if (!ret)
       return false;
   }
   javascript << L"return ";
@@ -107,11 +116,12 @@ bool CXFA_FMFunctionDefinition::ToJavaScript(CFX_WideTextBuf& javascript) {
   if (m_isGlobal) {
     javascript << L").call(this);\n";
   }
-  return true;
+  return !CXFA_IsTooBig(javascript);
 }
 
-bool CXFA_FMFunctionDefinition::ToImpliedReturnJS(CFX_WideTextBuf&) {
-  return true;
+bool CXFA_FMFunctionDefinition::ToImpliedReturnJS(CFX_WideTextBuf& javascript) {
+  CXFA_FMToJavaScriptDepth depthManager;
+  return !CXFA_IsTooBig(javascript) && depthManager.IsWithinMaxDepth();
 }
 
 CXFA_FMVarExpression::CXFA_FMVarExpression(
@@ -125,6 +135,10 @@ CXFA_FMVarExpression::CXFA_FMVarExpression(
 CXFA_FMVarExpression::~CXFA_FMVarExpression() {}
 
 bool CXFA_FMVarExpression::ToJavaScript(CFX_WideTextBuf& javascript) {
+  CXFA_FMToJavaScriptDepth depthManager;
+  if (CXFA_IsTooBig(javascript) || !depthManager.IsWithinMaxDepth())
+    return false;
+
   javascript << L"var ";
   WideString tempName(m_wsName);
   if (m_wsName[0] == L'!') {
@@ -145,10 +159,14 @@ bool CXFA_FMVarExpression::ToJavaScript(CFX_WideTextBuf& javascript) {
   } else {
     javascript << L"\"\";\n";
   }
-  return true;
+  return !CXFA_IsTooBig(javascript);
 }
 
 bool CXFA_FMVarExpression::ToImpliedReturnJS(CFX_WideTextBuf& javascript) {
+  CXFA_FMToJavaScriptDepth depthManager;
+  if (CXFA_IsTooBig(javascript) || !depthManager.IsWithinMaxDepth())
+    return false;
+
   javascript << L"var ";
   WideString tempName(m_wsName);
   if (m_wsName[0] == L'!') {
@@ -173,7 +191,7 @@ bool CXFA_FMVarExpression::ToImpliedReturnJS(CFX_WideTextBuf& javascript) {
   javascript << L" = ";
   javascript << tempName;
   javascript << L";\n";
-  return true;
+  return !CXFA_IsTooBig(javascript);
 }
 
 CXFA_FMExpExpression::CXFA_FMExpExpression(
@@ -185,6 +203,10 @@ CXFA_FMExpExpression::CXFA_FMExpExpression(
 CXFA_FMExpExpression::~CXFA_FMExpExpression() {}
 
 bool CXFA_FMExpExpression::ToJavaScript(CFX_WideTextBuf& javascript) {
+  CXFA_FMToJavaScriptDepth depthManager;
+  if (CXFA_IsTooBig(javascript) || !depthManager.IsWithinMaxDepth())
+    return false;
+
   bool ret = m_pExpression->ToJavaScript(javascript);
   if (m_pExpression->GetOperatorToken() != TOKassign)
     javascript << L";\n";
@@ -192,6 +214,10 @@ bool CXFA_FMExpExpression::ToJavaScript(CFX_WideTextBuf& javascript) {
 }
 
 bool CXFA_FMExpExpression::ToImpliedReturnJS(CFX_WideTextBuf& javascript) {
+  CXFA_FMToJavaScriptDepth depthManager;
+  if (CXFA_IsTooBig(javascript) || !depthManager.IsWithinMaxDepth())
+    return false;
+
   if (m_pExpression->GetOperatorToken() == TOKassign)
     return m_pExpression->ToImpliedReturnJS(javascript);
 
@@ -207,7 +233,7 @@ bool CXFA_FMExpExpression::ToImpliedReturnJS(CFX_WideTextBuf& javascript) {
     if (!m_pExpression->ToJavaScript(javascript))
       return false;
     javascript << L");\n";
-    return true;
+    return !CXFA_IsTooBig(javascript);
   }
 
   javascript << RUNTIMEFUNCTIONRETURNVALUE;
@@ -215,7 +241,7 @@ bool CXFA_FMExpExpression::ToImpliedReturnJS(CFX_WideTextBuf& javascript) {
   if (!m_pExpression->ToJavaScript(javascript))
     return false;
   javascript << L";\n";
-  return true;
+  return !CXFA_IsTooBig(javascript);
 }
 
 CXFA_FMBlockExpression::CXFA_FMBlockExpression(
@@ -227,16 +253,24 @@ CXFA_FMBlockExpression::CXFA_FMBlockExpression(
 CXFA_FMBlockExpression::~CXFA_FMBlockExpression() {}
 
 bool CXFA_FMBlockExpression::ToJavaScript(CFX_WideTextBuf& javascript) {
+  CXFA_FMToJavaScriptDepth depthManager;
+  if (CXFA_IsTooBig(javascript) || !depthManager.IsWithinMaxDepth())
+    return false;
+
   javascript << L"{\n";
   for (const auto& expr : m_ExpressionList) {
-    if (!expr->ToJavaScript(javascript) || CFXA_IsTooBig(javascript))
+    if (!expr->ToJavaScript(javascript))
       return false;
   }
   javascript << L"}\n";
-  return true;
+  return !CXFA_IsTooBig(javascript);
 }
 
 bool CXFA_FMBlockExpression::ToImpliedReturnJS(CFX_WideTextBuf& javascript) {
+  CXFA_FMToJavaScriptDepth depthManager;
+  if (CXFA_IsTooBig(javascript) || !depthManager.IsWithinMaxDepth())
+    return false;
+
   javascript << L"{\n";
   for (const auto& expr : m_ExpressionList) {
     bool ret;
@@ -244,11 +278,12 @@ bool CXFA_FMBlockExpression::ToImpliedReturnJS(CFX_WideTextBuf& javascript) {
       ret = expr->ToImpliedReturnJS(javascript);
     else
       ret = expr->ToJavaScript(javascript);
-    if (!ret || CFXA_IsTooBig(javascript))
+
+    if (!ret)
       return false;
   }
   javascript << L"}\n";
-  return true;
+  return !CXFA_IsTooBig(javascript);
 }
 
 CXFA_FMDoExpression::CXFA_FMDoExpression(
@@ -259,10 +294,18 @@ CXFA_FMDoExpression::CXFA_FMDoExpression(
 CXFA_FMDoExpression::~CXFA_FMDoExpression() {}
 
 bool CXFA_FMDoExpression::ToJavaScript(CFX_WideTextBuf& javascript) {
+  CXFA_FMToJavaScriptDepth depthManager;
+  if (CXFA_IsTooBig(javascript) || !depthManager.IsWithinMaxDepth())
+    return false;
+
   return m_pList->ToJavaScript(javascript);
 }
 
 bool CXFA_FMDoExpression::ToImpliedReturnJS(CFX_WideTextBuf& javascript) {
+  CXFA_FMToJavaScriptDepth depthManager;
+  if (CXFA_IsTooBig(javascript) || !depthManager.IsWithinMaxDepth())
+    return false;
+
   return m_pList->ToImpliedReturnJS(javascript);
 }
 
@@ -279,6 +322,10 @@ CXFA_FMIfExpression::CXFA_FMIfExpression(
 CXFA_FMIfExpression::~CXFA_FMIfExpression() {}
 
 bool CXFA_FMIfExpression::ToJavaScript(CFX_WideTextBuf& javascript) {
+  CXFA_FMToJavaScriptDepth depthManager;
+  if (CXFA_IsTooBig(javascript) || !depthManager.IsWithinMaxDepth())
+    return false;
+
   javascript << L"if (";
   if (m_pExpression) {
     javascript << XFA_FM_EXPTypeToString(GETFMVALUE);
@@ -288,13 +335,13 @@ bool CXFA_FMIfExpression::ToJavaScript(CFX_WideTextBuf& javascript) {
     javascript << L")";
   }
   javascript << L")\n";
-  if (CFXA_IsTooBig(javascript))
+  if (CXFA_IsTooBig(javascript))
     return false;
 
   if (m_pIfExpression) {
     if (!m_pIfExpression->ToJavaScript(javascript))
       return false;
-    if (CFXA_IsTooBig(javascript))
+    if (CXFA_IsTooBig(javascript))
       return false;
   }
 
@@ -311,10 +358,14 @@ bool CXFA_FMIfExpression::ToJavaScript(CFX_WideTextBuf& javascript) {
         return false;
     }
   }
-  return !CFXA_IsTooBig(javascript);
+  return !CXFA_IsTooBig(javascript);
 }
 
 bool CXFA_FMIfExpression::ToImpliedReturnJS(CFX_WideTextBuf& javascript) {
+  CXFA_FMToJavaScriptDepth depthManager;
+  if (CXFA_IsTooBig(javascript) || !depthManager.IsWithinMaxDepth())
+    return false;
+
   javascript << RUNTIMEFUNCTIONRETURNVALUE;
   javascript << L" = 0;\n";
   javascript << L"if (";
@@ -326,13 +377,13 @@ bool CXFA_FMIfExpression::ToImpliedReturnJS(CFX_WideTextBuf& javascript) {
     javascript << L")";
   }
   javascript << L")\n";
-  if (CFXA_IsTooBig(javascript))
+  if (CXFA_IsTooBig(javascript))
     return false;
 
   if (m_pIfExpression) {
     if (!m_pIfExpression->ToImpliedReturnJS(javascript))
       return false;
-    if (CFXA_IsTooBig(javascript))
+    if (CXFA_IsTooBig(javascript))
       return false;
   }
   if (m_pElseExpression) {
@@ -348,17 +399,19 @@ bool CXFA_FMIfExpression::ToImpliedReturnJS(CFX_WideTextBuf& javascript) {
         return false;
     }
   }
-  return !CFXA_IsTooBig(javascript);
+  return !CXFA_IsTooBig(javascript);
 }
 
 CXFA_FMLoopExpression::~CXFA_FMLoopExpression() {}
 
 bool CXFA_FMLoopExpression::ToJavaScript(CFX_WideTextBuf& javascript) {
-  return true;
+  CXFA_FMToJavaScriptDepth depthManager;
+  return !CXFA_IsTooBig(javascript) && depthManager.IsWithinMaxDepth();
 }
 
-bool CXFA_FMLoopExpression::ToImpliedReturnJS(CFX_WideTextBuf&) {
-  return true;
+bool CXFA_FMLoopExpression::ToImpliedReturnJS(CFX_WideTextBuf& javascript) {
+  CXFA_FMToJavaScriptDepth depthManager;
+  return !CXFA_IsTooBig(javascript) && depthManager.IsWithinMaxDepth();
 }
 
 CXFA_FMWhileExpression::CXFA_FMWhileExpression(
@@ -372,31 +425,39 @@ CXFA_FMWhileExpression::CXFA_FMWhileExpression(
 CXFA_FMWhileExpression::~CXFA_FMWhileExpression() {}
 
 bool CXFA_FMWhileExpression::ToJavaScript(CFX_WideTextBuf& javascript) {
+  CXFA_FMToJavaScriptDepth depthManager;
+  if (CXFA_IsTooBig(javascript) || !depthManager.IsWithinMaxDepth())
+    return false;
+
   javascript << L"while (";
   if (!m_pCondition->ToJavaScript(javascript))
     return false;
   javascript << L")\n";
-  if (CFXA_IsTooBig(javascript))
+  if (CXFA_IsTooBig(javascript))
     return false;
 
   if (!m_pExpression->ToJavaScript(javascript))
     return false;
-  return !CFXA_IsTooBig(javascript);
+  return !CXFA_IsTooBig(javascript);
 }
 
 bool CXFA_FMWhileExpression::ToImpliedReturnJS(CFX_WideTextBuf& javascript) {
+  CXFA_FMToJavaScriptDepth depthManager;
+  if (CXFA_IsTooBig(javascript) || !depthManager.IsWithinMaxDepth())
+    return false;
+
   javascript << RUNTIMEFUNCTIONRETURNVALUE;
   javascript << L" = 0;\n";
   javascript << L"while (";
   if (!m_pCondition->ToJavaScript(javascript))
     return false;
   javascript << L")\n";
-  if (CFXA_IsTooBig(javascript))
+  if (CXFA_IsTooBig(javascript))
     return false;
 
   if (!m_pExpression->ToImpliedReturnJS(javascript))
     return false;
-  return !CFXA_IsTooBig(javascript);
+  return !CXFA_IsTooBig(javascript);
 }
 
 CXFA_FMBreakExpression::CXFA_FMBreakExpression(uint32_t line)
@@ -405,17 +466,25 @@ CXFA_FMBreakExpression::CXFA_FMBreakExpression(uint32_t line)
 CXFA_FMBreakExpression::~CXFA_FMBreakExpression() {}
 
 bool CXFA_FMBreakExpression::ToJavaScript(CFX_WideTextBuf& javascript) {
+  CXFA_FMToJavaScriptDepth depthManager;
+  if (CXFA_IsTooBig(javascript) || !depthManager.IsWithinMaxDepth())
+    return false;
+
   javascript << RUNTIMEFUNCTIONRETURNVALUE;
   javascript << L" = 0;\n";
   javascript << L"break;\n";
-  return true;
+  return !CXFA_IsTooBig(javascript);
 }
 
 bool CXFA_FMBreakExpression::ToImpliedReturnJS(CFX_WideTextBuf& javascript) {
+  CXFA_FMToJavaScriptDepth depthManager;
+  if (CXFA_IsTooBig(javascript) || !depthManager.IsWithinMaxDepth())
+    return false;
+
   javascript << RUNTIMEFUNCTIONRETURNVALUE;
   javascript << L" = 0;\n";
   javascript << L"break;\n";
-  return true;
+  return !CXFA_IsTooBig(javascript);
 }
 
 CXFA_FMContinueExpression::CXFA_FMContinueExpression(uint32_t line)
@@ -424,17 +493,25 @@ CXFA_FMContinueExpression::CXFA_FMContinueExpression(uint32_t line)
 CXFA_FMContinueExpression::~CXFA_FMContinueExpression() {}
 
 bool CXFA_FMContinueExpression::ToJavaScript(CFX_WideTextBuf& javascript) {
+  CXFA_FMToJavaScriptDepth depthManager;
+  if (CXFA_IsTooBig(javascript) || !depthManager.IsWithinMaxDepth())
+    return false;
+
   javascript << RUNTIMEFUNCTIONRETURNVALUE;
   javascript << L" = 0;\n";
   javascript << L"continue;\n";
-  return true;
+  return !CXFA_IsTooBig(javascript);
 }
 
 bool CXFA_FMContinueExpression::ToImpliedReturnJS(CFX_WideTextBuf& javascript) {
+  CXFA_FMToJavaScriptDepth depthManager;
+  if (CXFA_IsTooBig(javascript) || !depthManager.IsWithinMaxDepth())
+    return false;
+
   javascript << RUNTIMEFUNCTIONRETURNVALUE;
   javascript << L" = 0;\n";
   javascript << L"continue;\n";
-  return true;
+  return !CXFA_IsTooBig(javascript);
 }
 
 CXFA_FMForExpression::CXFA_FMForExpression(
@@ -456,6 +533,10 @@ CXFA_FMForExpression::CXFA_FMForExpression(
 CXFA_FMForExpression::~CXFA_FMForExpression() {}
 
 bool CXFA_FMForExpression::ToJavaScript(CFX_WideTextBuf& javascript) {
+  CXFA_FMToJavaScriptDepth depthManager;
+  if (CXFA_IsTooBig(javascript) || !depthManager.IsWithinMaxDepth())
+    return false;
+
   javascript << L"{\nvar ";
   WideString tempVariant;
   if (m_wsVariant[0] == L'!') {
@@ -476,8 +557,6 @@ bool CXFA_FMForExpression::ToJavaScript(CFX_WideTextBuf& javascript) {
     return false;
   javascript << L"); ";
   javascript << tempVariant;
-  if (CFXA_IsTooBig(javascript))
-    return false;
 
   javascript << (m_bDirection ? kLessEqual : kGreaterEqual);
   javascript << XFA_FM_EXPTypeToString(GETFMVALUE);
@@ -487,7 +566,7 @@ bool CXFA_FMForExpression::ToJavaScript(CFX_WideTextBuf& javascript) {
   javascript << L"); ";
   javascript << tempVariant;
   javascript << (m_bDirection ? kPlusEqual : kMinusEqual);
-  if (CFXA_IsTooBig(javascript))
+  if (CXFA_IsTooBig(javascript))
     return false;
 
   if (m_pStep) {
@@ -496,8 +575,6 @@ bool CXFA_FMForExpression::ToJavaScript(CFX_WideTextBuf& javascript) {
     if (!m_pStep->ToJavaScript(javascript))
       return false;
     javascript << L")";
-    if (CFXA_IsTooBig(javascript))
-      return false;
   } else {
     javascript << L"1";
   }
@@ -505,10 +582,14 @@ bool CXFA_FMForExpression::ToJavaScript(CFX_WideTextBuf& javascript) {
   if (!m_pList->ToJavaScript(javascript))
     return false;
   javascript << L"}\n";
-  return !CFXA_IsTooBig(javascript);
+  return !CXFA_IsTooBig(javascript);
 }
 
 bool CXFA_FMForExpression::ToImpliedReturnJS(CFX_WideTextBuf& javascript) {
+  CXFA_FMToJavaScriptDepth depthManager;
+  if (CXFA_IsTooBig(javascript) || !depthManager.IsWithinMaxDepth())
+    return false;
+
   javascript << RUNTIMEFUNCTIONRETURNVALUE;
   javascript << L" = 0;\n";
   javascript << L"{\nvar ";
@@ -531,8 +612,6 @@ bool CXFA_FMForExpression::ToImpliedReturnJS(CFX_WideTextBuf& javascript) {
     return false;
   javascript << L"); ";
   javascript << tempVariant;
-  if (CFXA_IsTooBig(javascript))
-    return false;
 
   javascript << (m_bDirection ? kLessEqual : kGreaterEqual);
   javascript << XFA_FM_EXPTypeToString(GETFMVALUE);
@@ -543,7 +622,7 @@ bool CXFA_FMForExpression::ToImpliedReturnJS(CFX_WideTextBuf& javascript) {
   javascript << tempVariant;
   javascript << L" += ";
   javascript << (m_bDirection ? kPlusEqual : kMinusEqual);
-  if (CFXA_IsTooBig(javascript))
+  if (CXFA_IsTooBig(javascript))
     return false;
 
   if (m_pStep) {
@@ -552,7 +631,7 @@ bool CXFA_FMForExpression::ToImpliedReturnJS(CFX_WideTextBuf& javascript) {
     if (!m_pStep->ToJavaScript(javascript))
       return false;
     javascript << L")";
-    if (CFXA_IsTooBig(javascript))
+    if (CXFA_IsTooBig(javascript))
       return false;
   } else {
     javascript << L"1";
@@ -561,7 +640,7 @@ bool CXFA_FMForExpression::ToImpliedReturnJS(CFX_WideTextBuf& javascript) {
   if (!m_pList->ToImpliedReturnJS(javascript))
     return false;
   javascript << L"}\n";
-  return !CFXA_IsTooBig(javascript);
+  return !CXFA_IsTooBig(javascript);
 }
 
 CXFA_FMForeachExpression::CXFA_FMForeachExpression(
@@ -577,6 +656,10 @@ CXFA_FMForeachExpression::CXFA_FMForeachExpression(
 CXFA_FMForeachExpression::~CXFA_FMForeachExpression() {}
 
 bool CXFA_FMForeachExpression::ToJavaScript(CFX_WideTextBuf& javascript) {
+  CXFA_FMToJavaScriptDepth depthManager;
+  if (CXFA_IsTooBig(javascript) || !depthManager.IsWithinMaxDepth())
+    return false;
+
   javascript << L"{\n";
   javascript << L"var ";
   if (m_wsIdentifier[0] == L'!') {
@@ -599,8 +682,6 @@ bool CXFA_FMForeachExpression::ToJavaScript(CFX_WideTextBuf& javascript) {
       return false;
     if (expr != m_pAccessors.back())
       javascript << L", ";
-    if (CFXA_IsTooBig(javascript))
-      return false;
   }
   javascript << L");\n";
   javascript << L"var ";
@@ -628,10 +709,14 @@ bool CXFA_FMForeachExpression::ToJavaScript(CFX_WideTextBuf& javascript) {
     return false;
   javascript << L"}\n";
   javascript << L"}\n";
-  return !CFXA_IsTooBig(javascript);
+  return !CXFA_IsTooBig(javascript);
 }
 
 bool CXFA_FMForeachExpression::ToImpliedReturnJS(CFX_WideTextBuf& javascript) {
+  CXFA_FMToJavaScriptDepth depthManager;
+  if (CXFA_IsTooBig(javascript) || !depthManager.IsWithinMaxDepth())
+    return false;
+
   javascript << RUNTIMEFUNCTIONRETURNVALUE;
   javascript << L" = 0;\n";
   javascript << L"{\n";
@@ -655,8 +740,6 @@ bool CXFA_FMForeachExpression::ToImpliedReturnJS(CFX_WideTextBuf& javascript) {
       return false;
     if (expr != m_pAccessors.back())
       javascript << L", ";
-    if (CFXA_IsTooBig(javascript))
-      return false;
   }
   javascript << L");\n";
   javascript << L"var ";
@@ -684,5 +767,5 @@ bool CXFA_FMForeachExpression::ToImpliedReturnJS(CFX_WideTextBuf& javascript) {
     return false;
   javascript << L"}\n";
   javascript << L"}\n";
-  return !CFXA_IsTooBig(javascript);
+  return !CXFA_IsTooBig(javascript);
 }

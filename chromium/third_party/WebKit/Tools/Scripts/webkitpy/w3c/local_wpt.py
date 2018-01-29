@@ -32,7 +32,7 @@ class LocalWPT(object):
         if self.host.filesystem.exists(self.path):
             _log.info('WPT checkout exists at %s, fetching latest', self.path)
             self.run(['git', 'fetch', 'origin'])
-            self.run(['git', 'checkout', 'origin/master'])
+            self.run(['git', 'reset', '--hard', 'origin/master'])
             return
 
         _log.info('Cloning GitHub w3c/web-platform-tests into %s', self.path)
@@ -162,14 +162,18 @@ class LocalWPT(object):
         """
         return self.run(['git', 'log', '-1', '--grep', grep_str])
 
+    # Note: the regexes in the two following methods use the start-of-line
+    # anchor ^ to prevent matching quoted text in commit messages. The end-of-
+    # line anchor $ is omitted to accommodate trailing whitespaces and non-
+    # standard line endings caused by manual editing.
+
     def seek_change_id(self, change_id):
         """Finds the most recent commit with the given Chromium change ID.
 
         Returns:
             A string of the matched commit log, empty if not found.
         """
-        # Note: anchors (^, $) are important so that quoted commit messages are not matched.
-        return self._most_recent_log_matching('^Change-Id: %s$' % change_id)
+        return self._most_recent_log_matching('^Change-Id: %s' % change_id)
 
     def seek_commit_position(self, commit_position):
         """Finds the most recent commit with the given Chromium commit position.
@@ -177,5 +181,4 @@ class LocalWPT(object):
         Returns:
             A string of the matched commit log, empty if not found.
         """
-        # Note: anchors (^, $) are important so that quoted commit messages are not matched.
-        return self._most_recent_log_matching('^Cr-Commit-Position: %s$' % commit_position)
+        return self._most_recent_log_matching('^Cr-Commit-Position: %s' % commit_position)

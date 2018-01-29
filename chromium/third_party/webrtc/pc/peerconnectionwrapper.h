@@ -14,9 +14,11 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <vector>
 
 #include "api/peerconnectioninterface.h"
 #include "pc/test/mockpeerconnectionobservers.h"
+#include "rtc_base/function_view.h"
 
 namespace webrtc {
 
@@ -54,51 +56,100 @@ class PeerConnectionWrapper {
   // resulting SessionDescription once it is available. If the method call
   // failed, null is returned.
   std::unique_ptr<SessionDescriptionInterface> CreateOffer(
-      const PeerConnectionInterface::RTCOfferAnswerOptions& options);
+      const PeerConnectionInterface::RTCOfferAnswerOptions& options,
+      std::string* error_out = nullptr);
   // Calls CreateOffer with default options.
   std::unique_ptr<SessionDescriptionInterface> CreateOffer();
   // Calls CreateOffer and sets a copy of the offer as the local description.
+  std::unique_ptr<SessionDescriptionInterface> CreateOfferAndSetAsLocal(
+      const PeerConnectionInterface::RTCOfferAnswerOptions& options);
+  // Calls CreateOfferAndSetAsLocal with default options.
   std::unique_ptr<SessionDescriptionInterface> CreateOfferAndSetAsLocal();
 
   // Calls the underlying PeerConnection's CreateAnswer method and returns the
   // resulting SessionDescription once it is available. If the method call
   // failed, null is returned.
   std::unique_ptr<SessionDescriptionInterface> CreateAnswer(
-      const PeerConnectionInterface::RTCOfferAnswerOptions& options);
+      const PeerConnectionInterface::RTCOfferAnswerOptions& options,
+      std::string* error_out = nullptr);
   // Calls CreateAnswer with the default options.
   std::unique_ptr<SessionDescriptionInterface> CreateAnswer();
   // Calls CreateAnswer and sets a copy of the offer as the local description.
+  std::unique_ptr<SessionDescriptionInterface> CreateAnswerAndSetAsLocal(
+      const PeerConnectionInterface::RTCOfferAnswerOptions& options);
+  // Calls CreateAnswerAndSetAsLocal with default options.
   std::unique_ptr<SessionDescriptionInterface> CreateAnswerAndSetAsLocal();
 
   // Calls the underlying PeerConnection's SetLocalDescription method with the
   // given session description and waits for the success/failure response.
   // Returns true if the description was successfully set.
-  bool SetLocalDescription(std::unique_ptr<SessionDescriptionInterface> desc);
+  bool SetLocalDescription(std::unique_ptr<SessionDescriptionInterface> desc,
+                           std::string* error_out = nullptr);
   // Calls the underlying PeerConnection's SetRemoteDescription method with the
   // given session description and waits for the success/failure response.
   // Returns true if the description was successfully set.
-  bool SetRemoteDescription(std::unique_ptr<SessionDescriptionInterface> desc);
+  bool SetRemoteDescription(std::unique_ptr<SessionDescriptionInterface> desc,
+                            std::string* error_out = nullptr);
+  bool SetRemoteDescription(std::unique_ptr<SessionDescriptionInterface> desc,
+                            RTCError* error_out);
 
-  // Adds a new stream with one audio track to the underlying PeerConnection.
-  void AddAudioStream(const std::string& stream_label,
-                      const std::string& track_label);
-  // Adds a new stream with one video track to the underlying PeerConnection.
-  void AddVideoStream(const std::string& stream_label,
-                      const std::string& track_label);
-  // Adds a new stream with one audio and one video track to the underlying
-  // PeerConnection.
-  void AddAudioVideoStream(const std::string& stream_label,
-                           const std::string& audio_track_label,
-                           const std::string& video_track_label);
+  // The following are wrappers for the underlying PeerConnection's
+  // AddTransceiver method. They return the result of calling AddTransceiver
+  // with the given arguments, DCHECKing if there is an error.
+  rtc::scoped_refptr<RtpTransceiverInterface> AddTransceiver(
+      cricket::MediaType media_type);
+  rtc::scoped_refptr<RtpTransceiverInterface> AddTransceiver(
+      cricket::MediaType media_type,
+      const RtpTransceiverInit& init);
+  rtc::scoped_refptr<RtpTransceiverInterface> AddTransceiver(
+      rtc::scoped_refptr<MediaStreamTrackInterface> track);
+  rtc::scoped_refptr<RtpTransceiverInterface> AddTransceiver(
+      rtc::scoped_refptr<MediaStreamTrackInterface> track,
+      const RtpTransceiverInit& init);
+
+  // Returns a new dummy audio track with the given label.
+  rtc::scoped_refptr<AudioTrackInterface> CreateAudioTrack(
+      const std::string& label);
+
+  // Returns a new dummy video track with the given label.
+  rtc::scoped_refptr<VideoTrackInterface> CreateVideoTrack(
+      const std::string& label);
+
+  // Calls the underlying PeerConnection's AddTrack method with an audio media
+  // stream track not bound to any source.
+  rtc::scoped_refptr<RtpSenderInterface> AddAudioTrack(
+      const std::string& track_label,
+      std::vector<MediaStreamInterface*> streams = {});
+
+  // Calls the underlying PeerConnection's AddTrack method with a video media
+  // stream track fed by a fake video capturer.
+  rtc::scoped_refptr<RtpSenderInterface> AddVideoTrack(
+      const std::string& track_label,
+      std::vector<MediaStreamInterface*> streams = {});
+
+  // Returns the signaling state of the underlying PeerConnection.
+  PeerConnectionInterface::SignalingState signaling_state();
+
+  // Returns true if ICE has finished gathering candidates.
+  bool IsIceGatheringDone();
+
+  // Returns true if ICE has established a connection.
+  bool IsIceConnected();
+
+  // Calls GetStats() on the underlying PeerConnection and returns the resulting
+  // report. If GetStats() fails, this method returns null and fails the test.
+  rtc::scoped_refptr<const RTCStatsReport> GetStats();
 
  private:
   std::unique_ptr<SessionDescriptionInterface> CreateSdp(
-      std::function<void(CreateSessionDescriptionObserver*)> fn);
-  bool SetSdp(std::function<void(SetSessionDescriptionObserver*)> fn);
+      rtc::FunctionView<void(CreateSessionDescriptionObserver*)> fn,
+      std::string* error_out);
+  bool SetSdp(rtc::FunctionView<void(SetSessionDescriptionObserver*)> fn,
+              std::string* error_out);
 
   rtc::scoped_refptr<PeerConnectionFactoryInterface> pc_factory_;
-  rtc::scoped_refptr<PeerConnectionInterface> pc_;
   std::unique_ptr<MockPeerConnectionObserver> observer_;
+  rtc::scoped_refptr<PeerConnectionInterface> pc_;
 };
 
 }  // namespace webrtc

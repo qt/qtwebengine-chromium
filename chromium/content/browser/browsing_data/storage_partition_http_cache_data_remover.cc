@@ -64,10 +64,10 @@ StoragePartitionHttpCacheDataRemover::CreateForURLsAndRange(
 StoragePartitionHttpCacheDataRemover::~StoragePartitionHttpCacheDataRemover() {}
 
 void StoragePartitionHttpCacheDataRemover::Remove(
-    const base::Closure& done_callback) {
+    base::OnceClosure done_callback) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
   DCHECK(!done_callback.is_null());
-  done_callback_ = done_callback;
+  done_callback_ = std::move(done_callback);
 
   BrowserThread::PostTask(
       BrowserThread::IO, FROM_HERE,
@@ -87,7 +87,7 @@ void StoragePartitionHttpCacheDataRemover::ClearHttpCacheOnIOThread() {
 
 void StoragePartitionHttpCacheDataRemover::ClearedHttpCache() {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
-  done_callback_.Run();
+  std::move(done_callback_).Run();
   base::ThreadTaskRunnerHandle::Get()->DeleteSoon(FROM_HERE, this);
 }
 
@@ -160,12 +160,12 @@ void StoragePartitionHttpCacheDataRemover::DoClearCache(int rv) {
                 base::Bind(&StoragePartitionHttpCacheDataRemover::DoClearCache,
                            base::Unretained(this)));
           }
-          cache_ = NULL;
+          cache_ = nullptr;
         }
         break;
       }
       case CacheState::DONE: {
-        cache_ = NULL;
+        cache_ = nullptr;
         next_cache_state_ = CacheState::NONE;
 
         // Notify the UI thread that we are done.

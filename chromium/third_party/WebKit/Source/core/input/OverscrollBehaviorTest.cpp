@@ -33,13 +33,14 @@ void OverscrollBehaviorTest::SetUp() {
   WebView().Resize(WebSize(400, 400));
   SimRequest request("https://example.com/test.html", "text/html");
   LoadURL("https://example.com/test.html");
-  request.Complete(
-      "<div id='outer' style='height: 300px; width: 300px; overflow: "
-      "scroll;'>"
-      "  <div id='inner' style='height: 500px; width: 500px; overflow: "
-      "scroll;'>"
-      "    <div id='content' style='height: 700px; width: 700px;'>"
-      "</div></div></div>");
+  request.Complete(R"HTML(
+    <div id='outer' style='height: 300px; width: 300px; overflow:
+    scroll;'>
+      <div id='inner' style='height: 500px; width: 500px; overflow:
+    scroll;'>
+        <div id='content' style='height: 700px; width: 700px;'>
+    </div></div></div>
+  )HTML");
 
   Compositor().BeginFrame();
 
@@ -167,7 +168,7 @@ TEST_F(OverscrollBehaviorTest, ContainOnYAllowsPropagationsOnX) {
   ASSERT_EQ(outer->scrollTop(), 200);
 }
 
-TEST_F(OverscrollBehaviorTest, ContainOnYAPreventsDiagonalPropagations) {
+TEST_F(OverscrollBehaviorTest, ContainOnYPreventsDiagonalPropagations) {
   SetInnerOverscrollBehavior(EOverscrollBehavior::kAuto,
                              EOverscrollBehavior::kContain);
   Scroll(-100.0, -100.0);

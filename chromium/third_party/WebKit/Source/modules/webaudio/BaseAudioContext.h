@@ -26,9 +26,13 @@
 #ifndef BaseAudioContext_h
 #define BaseAudioContext_h
 
+#include "base/memory/scoped_refptr.h"
+#include "bindings/core/v8/ActiveScriptWrappable.h"
 #include "bindings/core/v8/ScriptPromise.h"
 #include "bindings/core/v8/ScriptPromiseResolver.h"
-#include "core/dom/SuspendableObject.h"
+#include "bindings/modules/v8/v8_decode_error_callback.h"
+#include "bindings/modules/v8/v8_decode_success_callback.h"
+#include "core/dom/PausableObject.h"
 #include "core/dom/events/EventListener.h"
 #include "core/html/media/AutoplayPolicy.h"
 #include "core/typed_arrays/ArrayBufferViewHelpers.h"
@@ -40,11 +44,8 @@
 #include "modules/webaudio/DeferredTaskHandler.h"
 #include "modules/webaudio/IIRFilterNode.h"
 #include "platform/audio/AudioBus.h"
-#include "platform/bindings/ActiveScriptWrappable.h"
-#include "platform/bindings/TraceWrapperMember.h"
 #include "platform/heap/Handle.h"
 #include "platform/wtf/HashSet.h"
-#include "platform/wtf/RefPtr.h"
 #include "platform/wtf/Threading.h"
 #include "platform/wtf/Vector.h"
 
@@ -55,7 +56,7 @@ class AudioBuffer;
 class AudioBufferSourceNode;
 class AudioContextOptions;
 class AudioListener;
-class AudioWorkletMessagingProxy;
+class AudioWorklet;
 class BiquadFilterNode;
 class ChannelMergerNode;
 class ChannelSplitterNode;
@@ -92,7 +93,7 @@ class WaveShaperNode;
 class MODULES_EXPORT BaseAudioContext
     : public EventTargetWithInlineData,
       public ActiveScriptWrappable<BaseAudioContext>,
-      public SuspendableObject {
+      public PausableObject {
   USING_GARBAGE_COLLECTED_MIXIN(BaseAudioContext);
   DEFINE_WRAPPERTYPEINFO();
 
@@ -111,9 +112,7 @@ class MODULES_EXPORT BaseAudioContext
 
   ~BaseAudioContext() override;
 
-  DECLARE_VIRTUAL_TRACE();
-
-  DECLARE_VIRTUAL_TRACE_WRAPPERS();
+  void Trace(blink::Visitor*) override;
 
   // Is the destination node initialized and ready to handle audio?
   bool IsDestinationInitialized() const {
@@ -334,9 +333,17 @@ class MODULES_EXPORT BaseAudioContext
   // gesture while the AudioContext requires a user gesture.
   void MaybeRecordStartAttempt();
 
-  void SetWorkletMessagingProxy(AudioWorkletMessagingProxy*);
-  AudioWorkletMessagingProxy* WorkletMessagingProxy();
-  bool HasWorkletMessagingProxy() const;
+  // AudioWorklet IDL
+  AudioWorklet* audioWorklet() const;
+
+  // Callback from AudioWorklet, invoked when the associated
+  // AudioWorkletGlobalScope is created and the worklet operation is ready after
+  // the first script evaluation.
+  void NotifyWorkletIsReady();
+
+  // TODO(crbug.com/764396): Remove this when fixed.
+  virtual void CountValueSetterConflict(bool does_conflict){};
+  virtual void RecordValueSetterStatistics(){};
 
  protected:
   enum ContextType { kRealtimeContext, kOfflineContext };
@@ -439,7 +446,7 @@ class MODULES_EXPORT BaseAudioContext
   //
   // TODO(dominicc): Move to AudioContext because only it creates
   // these Promises.
-  void ResolvePromisesForResume();
+  void ResolvePromisesForUnpause();
 
   // The audio thread relies on the main thread to perform some operations
   // over the objects that it owns and controls; |ScheduleMainThreadCleanup()|
@@ -476,7 +483,7 @@ class MODULES_EXPORT BaseAudioContext
   unsigned connection_count_;
 
   // Graph locking.
-  RefPtr<DeferredTaskHandler> deferred_task_handler_;
+  scoped_refptr<DeferredTaskHandler> deferred_task_handler_;
 
   // The state of the BaseAudioContext.
   AudioContextState context_state_;
@@ -486,8 +493,18 @@ class MODULES_EXPORT BaseAudioContext
   // Hold references to the |decodeAudioData| callbacks so that they
   // don't get prematurely GCed by v8 before |decodeAudioData| returns
   // and calls them.
-  HeapVector<TraceWrapperMember<V8DecodeSuccessCallback>> success_callbacks_;
-  HeapVector<TraceWrapperMember<V8DecodeErrorCallback>> error_callbacks_;
+  //
+  // Note that BaseAudioContext has no parent object that does wrapper-tracing,
+  // and author script does not hold the V8 wrapper object in general. The only
+  // thing that makes the BaseAudioContext alive is a closure posted to a task
+  // queue, which doesn't support wrapper-tracing. So this object holds the
+  // callback functions as persistent handles. This is acceptable because it's
+  // guaranteed that each callback will be removed once their task gets done
+  // regardless of whether it's successful or not.
+  Vector<V8DecodeSuccessCallback::Persistent<V8DecodeSuccessCallback>>
+      success_callbacks_;
+  Vector<V8DecodeErrorCallback::Persistent<V8DecodeErrorCallback>>
+      error_callbacks_;
 
   // When a context is closed, the sample rate is cleared.  But decodeAudioData
   // can be called after the context has been closed and it needs the sample
@@ -514,8 +531,7 @@ class MODULES_EXPORT BaseAudioContext
   Optional<AutoplayStatus> autoplay_status_;
   AudioIOPosition output_position_;
 
-  bool has_worklet_messaging_proxy_ = false;
-  Member<AudioWorkletMessagingProxy> worklet_messaging_proxy_;
+  Member<AudioWorklet> audio_worklet_;
 };
 
 }  // namespace blink

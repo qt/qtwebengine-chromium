@@ -26,7 +26,7 @@ const char kFeaturePolicyBlocked[] =
     "Access to the feature \"vr\" is disallowed by feature policy.";
 
 const char kCrossOriginSubframeBlocked[] =
-    "Blocked call to navigator.vr.getDevices inside a cross-origin "
+    "Blocked call to navigator.vr.requestDevice inside a cross-origin "
     "iframe because the frame has never been activated by the user.";
 
 }  // namespace
@@ -57,7 +57,7 @@ const AtomicString& VR::InterfaceName() const {
   return EventTargetNames::VR;
 }
 
-ScriptPromise VR::getDevices(ScriptState* script_state) {
+ScriptPromise VR::requestDevice(ScriptState* script_state) {
   LocalFrame* frame = GetFrame();
   if (!frame) {
     // Reject if the frame is inaccessible.
@@ -66,16 +66,15 @@ ScriptPromise VR::getDevices(ScriptState* script_state) {
         DOMException::Create(kInvalidStateError, kNavigatorDetachedError));
   }
 
-  if (IsSupportedInFeaturePolicy(WebFeaturePolicyFeature::kWebVr)) {
-    if (!frame->IsFeatureEnabled(WebFeaturePolicyFeature::kWebVr)) {
+  if (IsSupportedInFeaturePolicy(FeaturePolicyFeature::kWebVr)) {
+    if (!frame->IsFeatureEnabled(FeaturePolicyFeature::kWebVr)) {
       // Only allow the call to be made if the appropraite feature policy is in
       // place.
       return ScriptPromise::RejectWithDOMException(
           script_state,
           DOMException::Create(kSecurityError, kFeaturePolicyBlocked));
     }
-  } else if (!frame->HasReceivedUserGesture() &&
-             frame->IsCrossOriginSubframe()) {
+  } else if (!frame->HasBeenActivated() && frame->IsCrossOriginSubframe()) {
     // Block calls from cross-origin iframes that have never had a user gesture.
     return ScriptPromise::RejectWithDOMException(
         script_state,
@@ -92,10 +91,13 @@ ScriptPromise VR::getDevices(ScriptState* script_state) {
   ScriptPromise promise = resolver->Promise();
 
   // If we've previously synced the VRDevices or no longer have a valid service
-  // connection just return the current list. In the case of the service being
+  // connection just use the current list. In the case of the service being
   // disconnected this will be an empty array.
   if (!service_ || devices_synced_) {
-    resolver->Resolve(devices_);
+    // TODO (offenwanger): When we have a prioritized order of devices, or some
+    // other method of getting the prefered device, insert that here. For now,
+    // just get the first device out of the list, if there is one.
+    devices_.size() == 0 ? resolver->Resolve() : resolver->Resolve(devices_[0]);
     return promise;
   }
 
@@ -128,13 +130,14 @@ void VR::OnDisplayConnected(
 // VRDevices.
 void VR::OnDevicesSynced() {
   devices_synced_ = true;
-  OnGetDevices();
+  ResolveRequestDevice();
 }
 
 // Called when details for every connected VRDevice has been received.
-void VR::OnGetDevices() {
+void VR::ResolveRequestDevice() {
   if (pending_devices_resolver_) {
-    pending_devices_resolver_->Resolve(devices_);
+    devices_.size() == 0 ? pending_devices_resolver_->Resolve()
+                         : pending_devices_resolver_->Resolve(devices_[0]);
     pending_devices_resolver_ = nullptr;
   }
 }
@@ -155,12 +158,12 @@ void VR::Dispose() {
 
   devices_.clear();
 
-  // Ensure that any outstanding getDevices promises are resolved. They will
-  // receive an empty array of devices.
-  OnGetDevices();
+  // Ensure that any outstanding requestDevice promises are resolved. They will
+  // receive a null result.
+  ResolveRequestDevice();
 }
 
-DEFINE_TRACE(VR) {
+void VR::Trace(blink::Visitor* visitor) {
   visitor->Trace(devices_);
   visitor->Trace(pending_devices_resolver_);
   ContextLifecycleObserver::Trace(visitor);

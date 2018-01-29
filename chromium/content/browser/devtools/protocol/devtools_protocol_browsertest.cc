@@ -27,6 +27,7 @@
 #include "content/browser/download/download_manager_impl.h"
 #include "content/browser/download/download_task_runner.h"
 #include "content/browser/frame_host/interstitial_page_impl.h"
+#include "content/browser/frame_host/navigator.h"
 #include "content/browser/renderer_host/render_widget_host_view_base.h"
 #include "content/browser/web_contents/web_contents_impl.h"
 #include "content/public/browser/devtools_agent_host.h"
@@ -153,6 +154,7 @@ class TestJavaScriptDialogManager : public JavaScriptDialogManager,
   };
 
   void RunBeforeUnloadDialog(WebContents* web_contents,
+                             RenderFrameHost* render_frame_host,
                              bool is_reload,
                              DialogClosedCallback callback) override {}
 
@@ -243,7 +245,7 @@ class DevToolsProtocolTest : public ContentBrowserTest,
       return result_.get();
     }
     in_dispatch_ = false;
-    return nullptr;
+    return result_.get();
   }
 
   void WaitForResponse() {
@@ -252,7 +254,7 @@ class DevToolsProtocolTest : public ContentBrowserTest,
   }
 
   bool HasValue(const std::string& path) {
-    base::Value* value = 0;
+    base::Value* value = nullptr;
     return result_->Get(path, &value);
   }
 
@@ -473,7 +475,7 @@ class DevToolsProtocolTest : public ContentBrowserTest,
     }
   }
 
-  void AgentHostClosed(DevToolsAgentHost* agent_host, bool replaced) override {
+  void AgentHostClosed(DevToolsAgentHost* agent_host) override {
     if (!agent_host_can_close_)
       NOTREACHED();
   }
@@ -560,52 +562,52 @@ IN_PROC_BROWSER_TEST_F(SyntheticKeyEventTest, KeyboardEventAck) {
   Attach();
   ASSERT_TRUE(content::ExecuteScript(
       shell()->web_contents()->GetRenderViewHost(),
-      "document.body.addEventListener('keydown', () => console.log('x'));"));
+      "document.body.addEventListener('keydown', () => {debugger;});"));
 
-  scoped_refptr<InputMsgWatcher> filter = new InputMsgWatcher(
+  auto filter = std::make_unique<InputMsgWatcher>(
       RenderWidgetHostImpl::From(
           shell()->web_contents()->GetRenderViewHost()->GetWidget()),
-      blink::WebInputEvent::kMouseMove);
+      blink::WebInputEvent::kRawKeyDown);
 
-  SendCommand("Runtime.enable", nullptr);
+  SendCommand("Debugger.enable", nullptr);
   SendKeyEvent("rawKeyDown", 0, 13, 13, "Enter", false);
 
-  // We expect that the console log message event arrives *before* the input
+  // We expect that the debugger message event arrives *before* the input
   // event ack, and the subsequent command response for Input.dispatchKeyEvent.
-  WaitForNotification("Runtime.consoleAPICalled");
-  EXPECT_THAT(console_messages_, ElementsAre("x"));
+  WaitForNotification("Debugger.paused");
   EXPECT_FALSE(filter->HasReceivedAck());
   EXPECT_EQ(1u, result_ids_.size());
 
-  WaitForResponse();
-  EXPECT_EQ(2u, result_ids_.size());
+  SendCommand("Debugger.resume", nullptr);
+  filter->WaitForAck();
+  EXPECT_EQ(3u, result_ids_.size());
 }
 
-IN_PROC_BROWSER_TEST_F(SyntheticMouseEventTest, MouseEventAck) {
+IN_PROC_BROWSER_TEST_F(SyntheticMouseEventTest, DISABLED_MouseEventAck) {
   NavigateToURLBlockUntilNavigationsComplete(shell(), GURL("about:blank"), 1);
   Attach();
   ASSERT_TRUE(content::ExecuteScript(
       shell()->web_contents()->GetRenderViewHost(),
-      "document.body.addEventListener('mousemove', () => console.log('x'));"));
+      "document.body.addEventListener('mousemove', () => {debugger;});"));
 
-  scoped_refptr<InputMsgWatcher> filter = new InputMsgWatcher(
+  auto filter = std::make_unique<InputMsgWatcher>(
       RenderWidgetHostImpl::From(
           shell()->web_contents()->GetRenderViewHost()->GetWidget()),
       blink::WebInputEvent::kMouseMove);
 
-  SendCommand("Runtime.enable", nullptr);
+  SendCommand("Debugger.enable", nullptr);
   SendMouseEvent("mouseMoved", 15, 15, false);
 
-  // We expect that the console log message event arrives *before* the input
+  // We expect that the debugger message event arrives *before* the input
   // event ack, and the subsequent command response for
   // Input.dispatchMouseEvent.
-  WaitForNotification("Runtime.consoleAPICalled");
-  EXPECT_THAT(console_messages_, ElementsAre("x"));
+  WaitForNotification("Debugger.paused");
   EXPECT_FALSE(filter->HasReceivedAck());
   EXPECT_EQ(1u, result_ids_.size());
 
-  WaitForResponse();
-  EXPECT_EQ(2u, result_ids_.size());
+  SendCommand("Debugger.resume", nullptr);
+  filter->WaitForAck();
+  EXPECT_EQ(3u, result_ids_.size());
 }
 
 namespace {
@@ -1500,19 +1502,21 @@ IN_PROC_BROWSER_TEST_F(DevToolsProtocolTest, PageStopLoading) {
   ASSERT_TRUE(embedded_test_server()->Start());
 
   // Navigate to about:blank first so we can make sure there is a target page we
-  // can attach to, and have Network.setRequestInterceptionEnabled complete
+  // can attach to, and have Network.setRequestInterception complete
   // before we start the navigations we're interested in.
   NavigateToURLBlockUntilNavigationsComplete(shell(), GURL("about:blank"), 1);
   Attach();
 
   std::unique_ptr<base::DictionaryValue> params(new base::DictionaryValue());
-  params->SetBoolean("enabled", true);
-  SendCommand("Network.setRequestInterceptionEnabled", std::move(params), true);
+  std::unique_ptr<base::ListValue> patterns(new base::ListValue());
+  patterns->Append(std::make_unique<base::DictionaryValue>());
+  params->Set("patterns", std::move(patterns));
+  SendCommand("Network.setRequestInterception", std::move(params), true);
 
   LoadFinishedObserver load_finished_observer(shell()->web_contents());
 
   // The page will try to navigate twice, however since
-  // Network.setRequestInterceptionEnabled is true,
+  // Network.setRequestInterception is true,
   // it'll wait for confirmation before committing to the navigation.
   GURL test_url = embedded_test_server()->GetURL(
       "/devtools/control_navigations/meta_tag.html");
@@ -1529,14 +1533,16 @@ IN_PROC_BROWSER_TEST_F(DevToolsProtocolTest, ControlNavigationsMainFrame) {
   ASSERT_TRUE(embedded_test_server()->Start());
 
   // Navigate to about:blank first so we can make sure there is a target page we
-  // can attach to, and have Network.setRequestInterceptionEnabled complete
+  // can attach to, and have Network.setRequestInterception complete
   // before we start the navigations we're interested in.
   NavigateToURLBlockUntilNavigationsComplete(shell(), GURL("about:blank"), 1);
   Attach();
 
   std::unique_ptr<base::DictionaryValue> params(new base::DictionaryValue());
-  params->SetBoolean("enabled", true);
-  SendCommand("Network.setRequestInterceptionEnabled", std::move(params), true);
+  std::unique_ptr<base::ListValue> patterns(new base::ListValue());
+  patterns->Append(std::make_unique<base::DictionaryValue>());
+  params->Set("patterns", std::move(patterns));
+  SendCommand("Network.setRequestInterception", std::move(params), true);
 
   NavigationFinishedObserver navigation_finished_observer(
       shell()->web_contents());
@@ -1579,14 +1585,16 @@ IN_PROC_BROWSER_TEST_F(IsolatedDevToolsProtocolTest,
   ASSERT_TRUE(embedded_test_server()->Start());
 
   // Navigate to about:blank first so we can make sure there is a target page we
-  // can attach to, and have Network.setRequestInterceptionEnabled complete
+  // can attach to, and have Network.setRequestInterception complete
   // before we start the navigations we're interested in.
   NavigateToURLBlockUntilNavigationsComplete(shell(), GURL("about:blank"), 1);
   Attach();
 
   std::unique_ptr<base::DictionaryValue> params(new base::DictionaryValue());
-  params->SetBoolean("enabled", true);
-  SendCommand("Network.setRequestInterceptionEnabled", std::move(params), true);
+  std::unique_ptr<base::ListValue> patterns(new base::ListValue());
+  patterns->Append(std::make_unique<base::DictionaryValue>());
+  params->Set("patterns", std::move(patterns));
+  SendCommand("Network.setRequestInterception", std::move(params), true);
 
   NavigationFinishedObserver navigation_finished_observer(
       shell()->web_contents());
@@ -1874,7 +1882,7 @@ IN_PROC_BROWSER_TEST_F(DevToolsProtocolTest, TargetDiscovery) {
   EXPECT_TRUE(notifications_.empty());
 
   WebContents::CreateParams create_params(
-      ShellContentBrowserClient::Get()->browser_context(), NULL);
+      ShellContentBrowserClient::Get()->browser_context(), nullptr);
   std::unique_ptr<content::WebContents> web_contents(
       content::WebContents::Create(create_params));
   EXPECT_TRUE(notifications_.empty());
@@ -1956,7 +1964,7 @@ IN_PROC_BROWSER_TEST_F(SitePerProcessDevToolsProtocolTest, TargetNoDiscovery) {
   Attach();
   command_params.reset(new base::DictionaryValue());
   command_params->SetBoolean("autoAttach", true);
-  command_params->SetBoolean("waitForDebuggerOnStart", true);
+  command_params->SetBoolean("waitForDebuggerOnStart", false);
   SendCommand("Target.setAutoAttach", std::move(command_params), true);
   EXPECT_TRUE(notifications_.empty());
   command_params.reset(new base::DictionaryValue());
@@ -2163,8 +2171,7 @@ IN_PROC_BROWSER_TEST_F(DevToolsProtocolTest, CertificateExplanations) {
 
   // There should be one explanation containing the server's certificate chain.
   net::SHA256HashValue cert_chain_fingerprint =
-      net::X509Certificate::CalculateChainFingerprint256(
-          cert->os_cert_handle(), cert->GetIntermediateCertificates());
+      cert->CalculateChainFingerprint256();
 
   // Read the certificate out of the first explanation.
   const base::ListValue* certificate;
@@ -2184,9 +2191,7 @@ IN_PROC_BROWSER_TEST_F(DevToolsProtocolTest, CertificateExplanations) {
       net::X509Certificate::CreateFromDERCertChain(cert_string_piece);
   ASSERT_TRUE(explanation_cert);
   EXPECT_EQ(cert_chain_fingerprint,
-            net::X509Certificate::CalculateChainFingerprint256(
-                explanation_cert->os_cert_handle(),
-                explanation_cert->GetIntermediateCertificates()));
+            explanation_cert->CalculateChainFingerprint256());
 }
 
 // Download tests are flaky on Android: https://crbug.com/7546
@@ -2214,12 +2219,12 @@ class CountingDownloadFile : public DownloadFileImpl {
   CountingDownloadFile(std::unique_ptr<DownloadSaveInfo> save_info,
                        const base::FilePath& default_downloads_directory,
                        std::unique_ptr<DownloadManager::InputStream> stream,
-                       const net::NetLogWithSource& net_log,
+                       uint32_t download_id,
                        base::WeakPtr<DownloadDestinationObserver> observer)
       : DownloadFileImpl(std::move(save_info),
                          default_downloads_directory,
                          std::move(stream),
-                         net_log,
+                         download_id,
                          observer) {}
 
   ~CountingDownloadFile() override {
@@ -2271,11 +2276,11 @@ class CountingDownloadFileFactory : public DownloadFileFactory {
       std::unique_ptr<DownloadSaveInfo> save_info,
       const base::FilePath& default_downloads_directory,
       std::unique_ptr<DownloadManager::InputStream> stream,
-      const net::NetLogWithSource& net_log,
+      uint32_t download_id,
       base::WeakPtr<DownloadDestinationObserver> observer) override {
     return new CountingDownloadFile(std::move(save_info),
                                     default_downloads_directory,
-                                    std::move(stream), net_log, observer);
+                                    std::move(stream), download_id, observer);
   }
 };
 

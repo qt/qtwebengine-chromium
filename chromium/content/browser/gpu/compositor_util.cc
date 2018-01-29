@@ -20,7 +20,6 @@
 #include "build/build_config.h"
 #include "cc/base/switches.h"
 #include "content/browser/gpu/gpu_data_manager_impl.h"
-#include "content/public/browser/gpu_utils.h"
 #include "content/public/common/content_features.h"
 #include "content/public/common/content_switches.h"
 #include "gpu/config/gpu_feature_type.h"
@@ -64,7 +63,6 @@ const GpuFeatureInfo GetGpuFeatureInfo(size_t index, bool* eof) {
   const base::CommandLine& command_line =
       *base::CommandLine::ForCurrentProcess();
   GpuDataManagerImpl* manager = GpuDataManagerImpl::GetInstance();
-  gpu::GpuPreferences gpu_preferences = GetGpuPreferencesFromCommandLine();
 
   const GpuFeatureInfo kGpuFeatureInfo[] = {
     {"2d_canvas",
@@ -109,23 +107,6 @@ const GpuFeatureInfo GetGpuFeatureInfo(size_t index, bool* eof) {
      "Accelerated video decode has been disabled, either via blacklist,"
      " about:flags or the command line.",
      true},
-#if BUILDFLAG(ENABLE_WEBRTC)
-    {"video_encode",
-     manager->IsFeatureBlacklisted(
-         gpu::GPU_FEATURE_TYPE_ACCELERATED_VIDEO_ENCODE),
-     command_line.HasSwitch(switches::kDisableWebRtcHWEncoding),
-     "Accelerated video encode has been disabled, either via blacklist,"
-     " about:flags or the command line.",
-     true},
-#endif
-#if defined(OS_CHROMEOS)
-    {"panel_fitting",
-     manager->IsFeatureBlacklisted(gpu::GPU_FEATURE_TYPE_PANEL_FITTING),
-     command_line.HasSwitch(switches::kDisablePanelFitting),
-     "Panel fitting has been disabled, either via blacklist, about:flags or"
-     " the command line.",
-     false},
-#endif
     {kRasterizationFeatureName,
      IsGpuRasterizationBlacklisted() && !IsGpuRasterizationEnabled() &&
          !IsForceGpuRasterizationEnabled(),
@@ -294,9 +275,6 @@ bool IsCheckerImagingEnabled() {
 }
 
 bool IsGpuAsyncWorkerContextEnabled() {
-  if (!base::FeatureList::IsEnabled(features::kGpuScheduler))
-    return false;
-
   if (base::CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kDisableGpuAsyncWorkerContext))
     return false;
@@ -321,7 +299,7 @@ std::unique_ptr<base::DictionaryValue> GetFeatureStatus() {
   bool gpu_access_blocked =
       !manager->GpuAccessAllowed(&gpu_access_blocked_reason);
 
-  auto feature_status_dict = base::MakeUnique<base::DictionaryValue>();
+  auto feature_status_dict = std::make_unique<base::DictionaryValue>();
 
   bool eof = false;
   for (size_t i = 0; !eof; ++i) {
@@ -384,15 +362,15 @@ std::unique_ptr<base::ListValue> GetProblems() {
   bool gpu_access_blocked =
       !manager->GpuAccessAllowed(&gpu_access_blocked_reason);
 
-  auto problem_list = base::MakeUnique<base::ListValue>();
+  auto problem_list = std::make_unique<base::ListValue>();
   manager->GetBlacklistReasons(problem_list.get());
 
   if (gpu_access_blocked) {
-    auto problem = base::MakeUnique<base::DictionaryValue>();
+    auto problem = std::make_unique<base::DictionaryValue>();
     problem->SetString("description",
         "GPU process was unable to boot: " + gpu_access_blocked_reason);
-    problem->Set("crBugs", base::MakeUnique<base::ListValue>());
-    auto disabled_features = base::MakeUnique<base::ListValue>();
+    problem->Set("crBugs", std::make_unique<base::ListValue>());
+    auto disabled_features = std::make_unique<base::ListValue>();
     disabled_features->AppendString("all");
     problem->Set("affectedGpuSettings", std::move(disabled_features));
     problem->SetString("tag", "disabledFeatures");

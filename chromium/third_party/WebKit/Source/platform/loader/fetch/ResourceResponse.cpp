@@ -26,12 +26,12 @@
 
 #include "platform/loader/fetch/ResourceResponse.h"
 
-#include "platform/http_names.h"
 #include "platform/network/HTTPParsers.h"
+#include "platform/network/http_names.h"
 #include "platform/wtf/Assertions.h"
-#include "platform/wtf/CurrentTime.h"
 #include "platform/wtf/PtrUtil.h"
 #include "platform/wtf/StdLibExtras.h"
+#include "platform/wtf/Time.h"
 #include "public/platform/WebURLResponse.h"
 
 #include <memory>
@@ -92,7 +92,6 @@ ResourceResponse::ResourceResponse()
       was_fetched_via_spdy_(false),
       was_fetched_via_proxy_(false),
       was_fetched_via_service_worker_(false),
-      was_fetched_via_foreign_fetch_(false),
       was_fallback_required_by_service_worker_(false),
       did_service_worker_navigation_preload_(false),
       response_type_via_service_worker_(
@@ -133,7 +132,6 @@ ResourceResponse::ResourceResponse(const KURL& url,
       was_fetched_via_spdy_(false),
       was_fetched_via_proxy_(false),
       was_fetched_via_service_worker_(false),
-      was_fetched_via_foreign_fetch_(false),
       was_fallback_required_by_service_worker_(false),
       did_service_worker_navigation_preload_(false),
       response_type_via_service_worker_(
@@ -169,7 +167,6 @@ ResourceResponse::ResourceResponse(CrossThreadResourceResponseData* data)
   was_fetched_via_spdy_ = data->was_fetched_via_spdy_;
   was_fetched_via_proxy_ = data->was_fetched_via_proxy_;
   was_fetched_via_service_worker_ = data->was_fetched_via_service_worker_;
-  was_fetched_via_foreign_fetch_ = data->was_fetched_via_foreign_fetch_;
   was_fallback_required_by_service_worker_ =
       data->was_fallback_required_by_service_worker_;
   did_service_worker_navigation_preload_ =
@@ -232,7 +229,6 @@ std::unique_ptr<CrossThreadResourceResponseData> ResourceResponse::CopyData()
   data->was_fetched_via_spdy_ = was_fetched_via_spdy_;
   data->was_fetched_via_proxy_ = was_fetched_via_proxy_;
   data->was_fetched_via_service_worker_ = was_fetched_via_service_worker_;
-  data->was_fetched_via_foreign_fetch_ = was_fetched_via_foreign_fetch_;
   data->was_fallback_required_by_service_worker_ =
       was_fallback_required_by_service_worker_;
   data->did_service_worker_navigation_preload_ =
@@ -564,15 +560,16 @@ ResourceLoadTiming* ResourceResponse::GetResourceLoadTiming() const {
 }
 
 void ResourceResponse::SetResourceLoadTiming(
-    RefPtr<ResourceLoadTiming> resource_load_timing) {
+    scoped_refptr<ResourceLoadTiming> resource_load_timing) {
   resource_load_timing_ = std::move(resource_load_timing);
 }
 
-RefPtr<ResourceLoadInfo> ResourceResponse::GetResourceLoadInfo() const {
+scoped_refptr<ResourceLoadInfo> ResourceResponse::GetResourceLoadInfo() const {
   return resource_load_info_.get();
 }
 
-void ResourceResponse::SetResourceLoadInfo(RefPtr<ResourceLoadInfo> load_info) {
+void ResourceResponse::SetResourceLoadInfo(
+    scoped_refptr<ResourceLoadInfo> load_info) {
   resource_load_info_ = std::move(load_info);
 }
 

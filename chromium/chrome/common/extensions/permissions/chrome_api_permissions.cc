@@ -125,8 +125,6 @@ ChromeAPIPermissions::GetAllPermissions() const {
        APIPermissionInfo::kFlagCannotBeOptional},
       {APIPermission::kFileManagerPrivate, "fileManagerPrivate",
        APIPermissionInfo::kFlagCannotBeOptional},
-      {APIPermission::kHotwordPrivate, "hotwordPrivate",
-       APIPermissionInfo::kFlagCannotBeOptional},
       {APIPermission::kIdentityPrivate, "identityPrivate",
        APIPermissionInfo::kFlagCannotBeOptional},
       {APIPermission::kWebcamPrivate, "webcamPrivate"},
@@ -170,6 +168,9 @@ ChromeAPIPermissions::GetAllPermissions() const {
        "webrtcDesktopCapturePrivate", APIPermissionInfo::kFlagCannotBeOptional},
       {APIPermission::kWebrtcLoggingPrivate, "webrtcLoggingPrivate",
        APIPermissionInfo::kFlagCannotBeOptional},
+      {APIPermission::kWebrtcLoggingPrivateAudioDebug,
+       "webrtcLoggingPrivate.audioDebug",
+       APIPermissionInfo::kFlagCannotBeOptional},
       {APIPermission::kFirstRunPrivate, "firstRunPrivate",
        APIPermissionInfo::kFlagCannotBeOptional},
       {APIPermission::kInlineInstallPrivate, "inlineInstallPrivate"},
@@ -202,11 +203,6 @@ ChromeAPIPermissions::GetAllPermissions() const {
        APIPermissionInfo::kFlagImpliesFullURLAccess},
       {APIPermission::kTabCaptureForTab, "tabCaptureForTab",
        APIPermissionInfo::kFlagInternal},
-      {APIPermission::kPlugin, "plugin",
-       APIPermissionInfo::kFlagImpliesFullURLAccess |
-           APIPermissionInfo::kFlagImpliesFullAccess |
-           APIPermissionInfo::kFlagCannotBeOptional |
-           APIPermissionInfo::kFlagInternal},
       {APIPermission::kProxy, "proxy",
        APIPermissionInfo::kFlagImpliesFullURLAccess |
            APIPermissionInfo::kFlagCannotBeOptional},

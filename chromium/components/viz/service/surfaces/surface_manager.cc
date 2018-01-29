@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <utility>
 
+#include "base/containers/adapters.h"
 #include "base/containers/queue.h"
 #include "base/logging.h"
 #include "base/metrics/histogram_macros.h"
@@ -132,13 +133,12 @@ void SurfaceManager::DestroySurface(const SurfaceId& surface_id) {
   for (auto& observer : observer_list_)
     observer.OnSurfaceDestroyed(surface_id);
   surfaces_to_destroy_.insert(surface_id);
-  GarbageCollectSurfaces();
 }
 
-void SurfaceManager::SurfaceWillDraw(const SurfaceId& surface_id) {
+void SurfaceManager::SurfaceSubtreeDamaged(const SurfaceId& surface_id) {
   DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
   for (auto& observer : observer_list_)
-    observer.OnSurfaceWillDraw(surface_id);
+    observer.OnSurfaceSubtreeDamaged(surface_id);
 }
 
 void SurfaceManager::RequireSequence(const SurfaceId& surface_id,
@@ -156,7 +156,6 @@ void SurfaceManager::SatisfySequence(const SurfaceSequence& sequence) {
   DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
   DCHECK_EQ(lifetime_type_, LifetimeType::SEQUENCES);
   satisfied_sequences_.insert(sequence);
-  GarbageCollectSurfaces();
 }
 
 void SurfaceManager::RegisterFrameSinkId(const FrameSinkId& frame_sink_id) {
@@ -218,8 +217,6 @@ void SurfaceManager::RemoveSurfaceReferences(
 
   for (const auto& reference : references)
     RemoveSurfaceReferenceImpl(reference.parent_id(), reference.child_id());
-
-  GarbageCollectSurfaces();
 }
 
 void SurfaceManager::AssignTemporaryReference(const SurfaceId& surface_id,
@@ -244,23 +241,8 @@ void SurfaceManager::DropTemporaryReference(const SurfaceId& surface_id) {
   RemoveTemporaryReference(surface_id, false);
 }
 
-const base::flat_set<SurfaceId>& SurfaceManager::GetSurfacesReferencedByParent(
-    const SurfaceId& surface_id) const {
-  auto iter = references_.find(surface_id);
-  if (iter == references_.end())
-    return empty_surface_id_set_;
-  return iter->second.children;
-}
-
-const base::flat_set<SurfaceId>& SurfaceManager::GetSurfacesThatReferenceChild(
-    const SurfaceId& surface_id) const {
-  auto iter = references_.find(surface_id);
-  if (iter == references_.end())
-    return empty_surface_id_set_;
-  return iter->second.parents;
-}
-
 void SurfaceManager::GarbageCollectSurfaces() {
+  TRACE_EVENT0("viz", "SurfaceManager::GarbageCollectSurfaces");
   if (surfaces_to_destroy_.empty())
     return;
 
@@ -284,6 +266,22 @@ void SurfaceManager::GarbageCollectSurfaces() {
   // ~Surface() draw callback could modify |surfaces_to_destroy_|.
   for (const SurfaceId& surface_id : surfaces_to_delete)
     DestroySurfaceInternal(surface_id);
+}
+
+const base::flat_set<SurfaceId>& SurfaceManager::GetSurfacesReferencedByParent(
+    const SurfaceId& surface_id) const {
+  auto iter = references_.find(surface_id);
+  if (iter == references_.end())
+    return empty_surface_id_set_;
+  return iter->second.children;
+}
+
+const base::flat_set<SurfaceId>& SurfaceManager::GetSurfacesThatReferenceChild(
+    const SurfaceId& surface_id) const {
+  auto iter = references_.find(surface_id);
+  if (iter == references_.end())
+    return empty_surface_id_set_;
+  return iter->second.parents;
 }
 
 SurfaceManager::SurfaceIdSet SurfaceManager::GetLiveSurfacesForReferences() {
@@ -465,6 +463,52 @@ void SurfaceManager::RemoveTemporaryReference(const SurfaceId& surface_id,
     temporary_reference_ranges_.erase(frame_sink_id);
 }
 
+Surface* SurfaceManager::GetLatestInFlightSurface(
+    const FrameSinkId& parent,
+    const SurfaceId& primary_surface_id,
+    const SurfaceId& fallback_surface_id) {
+  if (!using_surface_references())
+    return nullptr;
+
+  // The fallback surface must exist before we begin looking for more recent
+  // surfaces. This guarantees that the |parent| is allowed to embed the
+  // |fallback_surface_id| and is not guessing surface IDs.
+  Surface* fallback_surface = GetSurfaceForId(fallback_surface_id);
+  if (!fallback_surface || !fallback_surface->HasActiveFrame())
+    return nullptr;
+
+  // If the FrameSinkId of the primary and the fallback surface IDs do not
+  // match then we should avoid presenting a fallback newer than intended by
+  // |parent|.
+  if (primary_surface_id.frame_sink_id() != fallback_surface_id.frame_sink_id())
+    return fallback_surface;
+
+  auto it =
+      temporary_reference_ranges_.find(fallback_surface_id.frame_sink_id());
+  if (it == temporary_reference_ranges_.end())
+    return fallback_surface;
+
+  const std::vector<LocalSurfaceId>& temp_surfaces = it->second;
+  for (const LocalSurfaceId& local_surface_id : base::Reversed(temp_surfaces)) {
+    // The in-flight surface cannot be newer than the primary surface ID.
+    if (local_surface_id.parent_id() >
+        primary_surface_id.local_surface_id().parent_id()) {
+      continue;
+    }
+
+    // |parent| must own this temporary reference.
+    SurfaceId surface_id(fallback_surface_id.frame_sink_id(), local_surface_id);
+    if (parent != temporary_references_[surface_id].owner)
+      continue;
+
+    Surface* surface = GetSurfaceForId(surface_id);
+    if (surface && surface->HasActiveFrame())
+      return surface;
+  }
+
+  return fallback_surface;
+}
+
 void SurfaceManager::MarkOldTemporaryReference() {
   if (temporary_references_.empty()) {
     UMA_HISTOGRAM_EXACT_LINEAR(kUmaNumOldTemporaryReferences, 0, kUmaStatMax);
@@ -537,8 +581,8 @@ void SurfaceManager::SurfaceActivated(Surface* surface) {
 
 void SurfaceManager::SurfaceDependenciesChanged(
     Surface* surface,
-    const base::flat_set<SurfaceId>& added_dependencies,
-    const base::flat_set<SurfaceId>& removed_dependencies) {
+    const base::flat_set<FrameSinkId>& added_dependencies,
+    const base::flat_set<FrameSinkId>& removed_dependencies) {
   dependency_tracker_.OnSurfaceDependenciesChanged(surface, added_dependencies,
                                                    removed_dependencies);
 }
@@ -610,6 +654,11 @@ void SurfaceManager::SurfaceReferencesToStringImpl(const SurfaceId& surface_id,
 
 bool SurfaceManager::IsMarkedForDestruction(const SurfaceId& surface_id) {
   return surfaces_to_destroy_.count(surface_id) != 0;
+}
+
+void SurfaceManager::SurfaceWillBeDrawn(Surface* surface) {
+  for (auto& observer : observer_list_)
+    observer.OnSurfaceWillBeDrawn(surface);
 }
 
 }  // namespace viz

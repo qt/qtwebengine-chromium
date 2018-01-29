@@ -83,9 +83,9 @@ HeadlessBrowserContextImpl::HeadlessBrowserContextImpl(
     std::unique_ptr<HeadlessBrowserContextOptions> context_options)
     : browser_(browser),
       context_options_(std::move(context_options)),
-      resource_context_(new HeadlessResourceContext),
+      resource_context_(std::make_unique<HeadlessResourceContext>()),
       should_remove_headers_(true),
-      permission_manager_(new HeadlessPermissionManager()),
+      permission_manager_(std::make_unique<HeadlessPermissionManager>(this)),
       id_(base::GenerateGUID()) {
   InitWhileIOAllowed();
 }
@@ -201,7 +201,8 @@ void HeadlessBrowserContextImpl::Close() {
 
 void HeadlessBrowserContextImpl::InitWhileIOAllowed() {
   if (!context_options_->user_data_dir().empty()) {
-    path_ = context_options_->user_data_dir();
+    path_ =
+        context_options_->user_data_dir().Append(FILE_PATH_LITERAL("Default"));
   } else {
     PathService::Get(base::DIR_EXE, &path_);
   }
@@ -253,8 +254,6 @@ HeadlessBrowserContextImpl::GetSSLHostStateDelegate() {
 }
 
 content::PermissionManager* HeadlessBrowserContextImpl::GetPermissionManager() {
-  if (!permission_manager_.get())
-    permission_manager_.reset(new HeadlessPermissionManager());
   return permission_manager_.get();
 }
 
@@ -476,6 +475,12 @@ HeadlessBrowserContext::Builder::SetIncognitoMode(bool incognito_mode) {
 }
 
 HeadlessBrowserContext::Builder&
+HeadlessBrowserContext::Builder::SetAllowCookies(bool allow_cookies) {
+  options_->allow_cookies_ = allow_cookies;
+  return *this;
+}
+
+HeadlessBrowserContext::Builder&
 HeadlessBrowserContext::Builder::AddTabSocketMojoBindings() {
   std::string js_bindings =
       ui::ResourceBundle::GetSharedInstance()
@@ -514,13 +519,13 @@ HeadlessBrowserContext* HeadlessBrowserContext::Builder::Build() {
   return browser_->CreateBrowserContext(this);
 }
 
-HeadlessBrowserContext::Builder::MojoBindings::MojoBindings() {}
+HeadlessBrowserContext::Builder::MojoBindings::MojoBindings() = default;
 
 HeadlessBrowserContext::Builder::MojoBindings::MojoBindings(
     const std::string& mojom_name,
     const std::string& js_bindings)
     : mojom_name(mojom_name), js_bindings(js_bindings) {}
 
-HeadlessBrowserContext::Builder::MojoBindings::~MojoBindings() {}
+HeadlessBrowserContext::Builder::MojoBindings::~MojoBindings() = default;
 
 }  // namespace headless

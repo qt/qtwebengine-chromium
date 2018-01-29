@@ -23,6 +23,7 @@
 #include "components/safe_browsing/db/v4_protocol_manager_util.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
+#include "crypto/sha2.h"
 
 using content::BrowserThread;
 using base::TimeTicks;
@@ -411,18 +412,6 @@ AsyncMatch V4LocalDatabaseManager::CheckCsdWhitelistUrl(const GURL& url,
   return HandleWhitelistCheck(std::move(check));
 }
 
-bool V4LocalDatabaseManager::MatchCsdWhitelistUrl(const GURL& url) {
-  DCHECK_CURRENTLY_ON(BrowserThread::IO);
-
-  StoresToCheck stores_to_check({GetUrlCsdWhitelistId()});
-  if (!AreAllStoresAvailableNow(stores_to_check)) {
-    // Fail open: Whitelist everything. See CheckCsdWhitelistUrl.
-    return true;
-  }
-
-  return HandleUrlSynchronously(url, stores_to_check);
-}
-
 bool V4LocalDatabaseManager::MatchDownloadWhitelistString(
     const std::string& str) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
@@ -434,14 +423,15 @@ bool V4LocalDatabaseManager::MatchDownloadWhitelistString(
     return false;
   }
 
-  return HandleHashSynchronously(str, stores_to_check);
+  return HandleHashSynchronously(crypto::SHA256HashString(str),
+                                 stores_to_check);
 }
 
 bool V4LocalDatabaseManager::MatchDownloadWhitelistUrl(const GURL& url) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
 
   StoresToCheck stores_to_check({GetUrlCsdDownloadWhitelistId()});
-  if (!AreAllStoresAvailableNow(stores_to_check)) {
+  if (!AreAllStoresAvailableNow(stores_to_check) || !CanCheckUrl(url)) {
     // Fail close: Whitelist nothing. This may generate download-protection
     // pings for whitelisted domains, but that's fine.
     return false;
@@ -470,20 +460,10 @@ ThreatSource V4LocalDatabaseManager::GetThreatSource() const {
   return ThreatSource::LOCAL_PVER4;
 }
 
-bool V4LocalDatabaseManager::IsCsdWhitelistKillSwitchOn() {
-  DCHECK_CURRENTLY_ON(BrowserThread::IO);
-  return false;
-}
-
 bool V4LocalDatabaseManager::IsDownloadProtectionEnabled() const {
   // TODO(vakh): Investigate the possibility of using a command line switch for
   // this instead.
   return true;
-}
-
-bool V4LocalDatabaseManager::IsMalwareKillSwitchOn() {
-  DCHECK_CURRENTLY_ON(BrowserThread::IO);
-  return false;
 }
 
 bool V4LocalDatabaseManager::IsSupported() const {
@@ -511,7 +491,7 @@ void V4LocalDatabaseManager::StopOnIOThread(bool shutdown) {
 
   enabled_ = false;
 
-  current_local_database_manager_ = NULL;
+  current_local_database_manager_ = nullptr;
 
   pending_checks_.clear();
 
@@ -565,21 +545,19 @@ void V4LocalDatabaseManager::DatabaseReadyForUpdates(
     const std::vector<ListIdentifier>& stores_to_reset) {
   if (enabled_) {
     v4_database_->ResetStores(stores_to_reset);
-    UpdateListClientStates(v4_database_->GetStoreStateMap());
+    UpdateListClientStates(GetStoreStateMap());
 
     // The database is ready to process updates. Schedule them now.
-    v4_update_protocol_manager_->ScheduleNextUpdate(
-        v4_database_->GetStoreStateMap());
+    v4_update_protocol_manager_->ScheduleNextUpdate(GetStoreStateMap());
   }
 }
 
 void V4LocalDatabaseManager::DatabaseUpdated() {
   if (enabled_) {
-    v4_update_protocol_manager_->ScheduleNextUpdate(
-        v4_database_->GetStoreStateMap());
+    v4_update_protocol_manager_->ScheduleNextUpdate(GetStoreStateMap());
 
     v4_database_->RecordFileSizeHistograms();
-    UpdateListClientStates(v4_database_->GetStoreStateMap());
+    UpdateListClientStates(GetStoreStateMap());
 
     BrowserThread::PostTask(
         BrowserThread::UI, FROM_HERE,
@@ -714,6 +692,10 @@ StoresToCheck V4LocalDatabaseManager::GetStoresForFullHashRequests() {
     stores_for_full_hash.insert(it.list_id());
   }
   return stores_for_full_hash;
+}
+
+std::unique_ptr<StoreStateMap> V4LocalDatabaseManager::GetStoreStateMap() {
+  return v4_database_->GetStoreStateMap();
 }
 
 // Returns the SBThreatType corresponding to a given SafeBrowsing list.
@@ -983,12 +965,8 @@ bool V4LocalDatabaseManager::AreAnyStoresAvailableNow(
 void V4LocalDatabaseManager::UpdateListClientStates(
     const std::unique_ptr<StoreStateMap>& store_state_map) {
   list_client_states_.clear();
-  std::transform(
-      store_state_map->begin(), store_state_map->end(),
-      std::back_inserter(list_client_states_),
-      [](const std::map<ListIdentifier, std::string>::value_type& pair) {
-        return pair.second;
-      });
+  V4ProtocolManagerUtil::GetListClientStatesFromStoreStateMap(
+      store_state_map, &list_client_states_);
 }
 
 }  // namespace safe_browsing

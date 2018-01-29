@@ -7,7 +7,6 @@
 #include "bindings/core/v8/ExceptionState.h"
 #include "core/dom/Document.h"
 #include "core/dom/ExecutionContext.h"
-#include "core/dom/TaskRunnerHelper.h"
 #include "core/frame/LocalDOMWindow.h"
 #include "core/frame/LocalFrame.h"
 #include "core/frame/LocalFrameClient.h"
@@ -19,6 +18,7 @@
 #include "platform/bindings/ScriptState.h"
 #include "platform/wtf/text/StringUTF8Adaptor.h"
 #include "public/platform/Platform.h"
+#include "public/platform/TaskType.h"
 #include "services/service_manager/public/cpp/connector.h"
 #include "services/service_manager/public/cpp/interface_provider.h"
 
@@ -119,7 +119,7 @@ void MojoInterfaceInterceptor::stop() {
   test_api.ClearBinderForName(interface_name);
 }
 
-DEFINE_TRACE(MojoInterfaceInterceptor) {
+void MojoInterfaceInterceptor::Trace(blink::Visitor* visitor) {
   EventTargetWithInlineData::Trace(visitor);
   ContextLifecycleObserver::Trace(visitor);
 }
@@ -153,14 +153,7 @@ MojoInterfaceInterceptor::GetInterfaceProvider() const {
   if (!context)
     return nullptr;
 
-  if (context->IsWorkerGlobalScope())
-    return &ToWorkerGlobalScope(context)->GetThread()->GetInterfaceProvider();
-
-  LocalFrame* frame = ToDocument(context)->GetFrame();
-  if (!frame)
-    return nullptr;
-
-  return frame->Client()->GetInterfaceProvider();
+  return context->GetInterfaceProvider();
 }
 
 void MojoInterfaceInterceptor::OnInterfaceRequest(
@@ -170,7 +163,8 @@ void MojoInterfaceInterceptor::OnInterfaceRequest(
   // 'interfacerequest' event is therefore scheduled to take place in the next
   // microtask. This also more closely mirrors the behavior when an interface
   // request is being satisfied by another process.
-  TaskRunnerHelper::Get(TaskType::kMicrotask, GetExecutionContext())
+  GetExecutionContext()
+      ->GetTaskRunner(TaskType::kMicrotask)
       ->PostTask(
           BLINK_FROM_HERE,
           WTF::Bind(&MojoInterfaceInterceptor::DispatchInterfaceRequestEvent,

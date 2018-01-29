@@ -60,11 +60,31 @@ class MockObserver : public DeviceStatusListener::Observer {
   MOCK_METHOD1(OnDeviceStatusChanged, void(const DeviceStatus&));
 };
 
+class TestBatteryStatusListener : public BatteryStatusListener {
+ public:
+  TestBatteryStatusListener() : BatteryStatusListener(base::TimeDelta()) {}
+  ~TestBatteryStatusListener() override = default;
+
+  void set_battery_percentage(int battery_percentage) {
+    battery_percentage_ = battery_percentage;
+  }
+
+  // BatteryStatusListener implementation.
+  int GetBatteryPercentageInternal() override { return battery_percentage_; }
+
+ private:
+  int battery_percentage_ = 0;
+  DISALLOW_COPY_AND_ASSIGN(TestBatteryStatusListener);
+};
+
 // Test target that only loads default implementation of NetworkStatusListener.
 class TestDeviceStatusListener : public DeviceStatusListener {
  public:
-  explicit TestDeviceStatusListener()
-      : DeviceStatusListener(base::TimeDelta(), base::TimeDelta()) {}
+  explicit TestDeviceStatusListener(
+      std::unique_ptr<TestBatteryStatusListener> battery_listener)
+      : DeviceStatusListener(base::TimeDelta(),
+                             base::TimeDelta(),
+                             std::move(battery_listener)) {}
 
   void BuildNetworkStatusListener() override {
     network_listener_ = base::MakeUnique<NetworkStatusListenerImpl>();
@@ -79,14 +99,40 @@ class DeviceStatusListenerTest : public testing::Test {
     power_monitor_ =
         base::MakeUnique<base::PowerMonitor>(std::move(power_source));
 
-    listener_ = base::MakeUnique<TestDeviceStatusListener>();
+    auto battery_listener = base::MakeUnique<TestBatteryStatusListener>();
+    test_battery_listener_ = battery_listener.get();
+    listener_ =
+        base::MakeUnique<TestDeviceStatusListener>(std::move(battery_listener));
   }
 
   void TearDown() override { listener_.reset(); }
 
-  // Simulates a network change call.
+ protected:
+  // Start the listener with certain network and battery state.
+  void StartListener(ConnectionType type, bool on_battery_power) {
+    ChangeNetworkType(type);
+    SimulateBatteryChange(on_battery_power);
+    base::RunLoop().RunUntilIdle();
+
+    EXPECT_CALL(mock_observer_, OnDeviceStatusChanged(_))
+        .Times(1)
+        .RetiresOnSaturation();
+    listener_->Start(&mock_observer_);
+    base::RunLoop().RunUntilIdle();
+  }
+
+  // Simulates a network change call, the event will be broadcasted
+  // asynchronously.
   void ChangeNetworkType(ConnectionType type) {
     test_network_notifier_.ChangeNetworkType(type);
+  }
+
+  // Simulates a network change call, the event will be sent to client
+  // immediately.
+  void ChangeNetworkTypeImmediately(ConnectionType type) {
+    DCHECK(listener_.get());
+    static_cast<NetworkStatusListener::Observer*>(listener_.get())
+        ->OnNetworkChanged(type);
   }
 
   // Simulates a battery change call.
@@ -94,8 +140,12 @@ class DeviceStatusListenerTest : public testing::Test {
     power_source_->GeneratePowerStateEvent(on_battery_power);
   }
 
- protected:
-  std::unique_ptr<DeviceStatusListener> listener_;
+  void ChangeBatteryPercentage(int percentage) {
+    DCHECK(test_battery_listener_);
+    test_battery_listener_->set_battery_percentage(percentage);
+  }
+
+  std::unique_ptr<TestDeviceStatusListener> listener_;
   MockObserver mock_observer_;
 
   // Needed for network change notifier and power monitor.
@@ -103,6 +153,7 @@ class DeviceStatusListenerTest : public testing::Test {
   TestNetworkChangeNotifier test_network_notifier_;
   std::unique_ptr<base::PowerMonitor> power_monitor_;
   base::PowerMonitorTestSource* power_source_;
+  TestBatteryStatusListener* test_battery_listener_;
 };
 
 // Verifies the initial state that the observer should be notified.
@@ -111,12 +162,17 @@ TEST_F(DeviceStatusListenerTest, InitialNoOptState) {
   SimulateBatteryChange(true); /* Not charging. */
   EXPECT_EQ(DeviceStatus(), listener_->CurrentDeviceStatus());
 
+  const int kInitialBatteryPercentage = 45;
   listener_->Start(&mock_observer_);
+  ChangeBatteryPercentage(kInitialBatteryPercentage);
 
   // We are in no opt state, notify the observer.
   EXPECT_CALL(mock_observer_, OnDeviceStatusChanged(_)).Times(1);
   base::RunLoop().RunUntilIdle();
-  EXPECT_EQ(DeviceStatus(), listener_->CurrentDeviceStatus());
+  const DeviceStatus& status = listener_->CurrentDeviceStatus();
+  EXPECT_EQ(BatteryStatus::NOT_CHARGING, status.battery_status);
+  EXPECT_EQ(kInitialBatteryPercentage, status.battery_percentage);
+  EXPECT_EQ(NetworkStatus::DISCONNECTED, status.network_status);
 }
 
 TEST_F(DeviceStatusListenerTest, TestValidStateChecks) {
@@ -138,8 +194,7 @@ TEST_F(DeviceStatusListenerTest, TestValidStateChecks) {
 
   // Simulate a connection change directly on the DeviceStatusListener itself to
   // allow validating the state correctly here.
-  static_cast<NetworkStatusListener::Observer*>(listener_.get())
-      ->OnNetworkChanged(ConnectionType::CONNECTION_4G);
+  ChangeNetworkTypeImmediately(ConnectionType::CONNECTION_4G);
   EXPECT_FALSE(listener_->is_valid_state());
 
   {
@@ -150,8 +205,7 @@ TEST_F(DeviceStatusListenerTest, TestValidStateChecks) {
 
   {
     EXPECT_CALL(mock_observer_, OnDeviceStatusChanged(_)).Times(1);
-    static_cast<NetworkStatusListener::Observer*>(listener_.get())
-        ->OnNetworkChanged(ConnectionType::CONNECTION_NONE);
+    ChangeNetworkTypeImmediately(ConnectionType::CONNECTION_NONE);
     EXPECT_TRUE(listener_->is_valid_state());
     base::RunLoop().RunUntilIdle();
     EXPECT_TRUE(listener_->is_valid_state());
@@ -200,6 +254,7 @@ TEST_F(DeviceStatusListenerTest, NotifyObserverNetworkChange) {
 // Ensures the observer is notified when battery condition changes.
 TEST_F(DeviceStatusListenerTest, NotifyObserverBatteryChange) {
   InSequence s;
+  ChangeNetworkType(ConnectionType::CONNECTION_4G);
   SimulateBatteryChange(false); /* Charging. */
   EXPECT_EQ(DeviceStatus(), listener_->CurrentDeviceStatus());
 
@@ -219,12 +274,83 @@ TEST_F(DeviceStatusListenerTest, NotifyObserverBatteryChange) {
       .Times(1)
       .RetiresOnSaturation();
   SimulateBatteryChange(true); /* Not charging. */
+  const int kBatteryPercentage = 70;
+  ChangeBatteryPercentage(kBatteryPercentage);
   base::RunLoop().RunUntilIdle();
   EXPECT_EQ(BatteryStatus::NOT_CHARGING,
             listener_->CurrentDeviceStatus().battery_status);
+  EXPECT_EQ(kBatteryPercentage,
+            listener_->CurrentDeviceStatus().battery_percentage);
 
   listener_->Stop();
 };
+
+// Verify a sequence of offline->online->offline network state changes.
+TEST_F(DeviceStatusListenerTest, OfflineOnlineOffline) {
+  StartListener(ConnectionType::CONNECTION_NONE, true);
+
+  // Initial state is offline.
+  EXPECT_EQ(NetworkStatus::DISCONNECTED,
+            listener_->CurrentDeviceStatus().network_status);
+  EXPECT_TRUE(listener_->is_valid_state());
+  EXPECT_CALL(mock_observer_, OnDeviceStatusChanged(_)).Times(0);
+
+  // Change to online.
+  ChangeNetworkTypeImmediately(ConnectionType::CONNECTION_4G);
+  EXPECT_FALSE(listener_->is_valid_state());
+  EXPECT_EQ(NetworkStatus::DISCONNECTED,
+            listener_->CurrentDeviceStatus().network_status);
+
+  // Change to offline immediately.
+  ChangeNetworkTypeImmediately(ConnectionType::CONNECTION_NONE);
+
+  // Since the state changed back to offline before delayed online signal is
+  // reported. The state becomes valid again immediately.
+  EXPECT_TRUE(listener_->is_valid_state());
+  EXPECT_EQ(NetworkStatus::DISCONNECTED,
+            listener_->CurrentDeviceStatus().network_status);
+
+  // No more online signal since we are already offline.
+  base::RunLoop().RunUntilIdle();
+  EXPECT_EQ(NetworkStatus::DISCONNECTED,
+            listener_->CurrentDeviceStatus().network_status);
+}
+
+// Verify a sequence of online->offline->online network state changes.
+TEST_F(DeviceStatusListenerTest, OnlineOfflineOnline) {
+  StartListener(ConnectionType::CONNECTION_3G, true);
+
+  // Initial states is online.
+  EXPECT_EQ(NetworkStatus::METERED,
+            listener_->CurrentDeviceStatus().network_status);
+  EXPECT_TRUE(listener_->is_valid_state());
+
+  // Change to offline. Signal is broadcasted immediately.
+  EXPECT_CALL(
+      mock_observer_,
+      OnDeviceStatusChanged(NetworkStatusEqual(NetworkStatus::DISCONNECTED)))
+      .Times(1)
+      .RetiresOnSaturation();
+  ChangeNetworkTypeImmediately(ConnectionType::CONNECTION_NONE);
+  EXPECT_TRUE(listener_->is_valid_state());
+  EXPECT_EQ(NetworkStatus::DISCONNECTED,
+            listener_->CurrentDeviceStatus().network_status);
+
+  // Change to online. Signal will be broadcasted after a delay.
+  ChangeNetworkTypeImmediately(ConnectionType::CONNECTION_WIFI);
+  EXPECT_FALSE(listener_->is_valid_state());
+  EXPECT_EQ(NetworkStatus::DISCONNECTED,
+            listener_->CurrentDeviceStatus().network_status);
+
+  EXPECT_CALL(mock_observer_, OnDeviceStatusChanged(
+                                  NetworkStatusEqual(NetworkStatus::UNMETERED)))
+      .Times(1)
+      .RetiresOnSaturation();
+  base::RunLoop().RunUntilIdle();
+  EXPECT_TRUE(listener_->is_valid_state());
+  EXPECT_EQ(NetworkStatus::UNMETERED,
+            listener_->CurrentDeviceStatus().network_status);
+}
 
 }  // namespace
 }  // namespace download

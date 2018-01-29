@@ -44,8 +44,8 @@ rtc_static_library("audio_processing") {
     "aec3/cascaded_biquad_filter.h",
     "aec3/comfort_noise_generator.cc",
     "aec3/comfort_noise_generator.h",
-    "aec3/decimator_by_4.cc",
-    "aec3/decimator_by_4.h",
+    "aec3/decimator.cc",
+    "aec3/decimator.h",
     "aec3/downsampled_render_buffer.cc",
     "aec3/downsampled_render_buffer.h",
     "aec3/echo_canceller3.cc",
@@ -108,8 +108,6 @@ rtc_static_library("audio_processing") {
     "agc/loudness_histogram.h",
     "agc/utility.cc",
     "agc/utility.h",
-    "agc2/digital_gain_applier.cc",
-    "agc2/digital_gain_applier.h",
     "agc2/gain_controller2.cc",
     "agc2/gain_controller2.h",
     "audio_buffer.cc",
@@ -235,6 +233,7 @@ rtc_static_library("audio_processing") {
   defines = []
   deps = [
     ":aec_dump_interface",
+    ":audio_processing_statistics",
     "..:module_api",
     "../..:webrtc_common",
     "../../api:array_view",
@@ -242,6 +241,7 @@ rtc_static_library("audio_processing") {
     "../../audio/utility:audio_frame_operations",
     "../../rtc_base:gtest_prod",
     "../../rtc_base:protobuf_utils",
+    "../../system_wrappers:field_trial_api",
     "../audio_coding:isac",
   ]
   public_deps = [
@@ -306,8 +306,20 @@ rtc_static_library("audio_processing") {
 
   deps += [
     "../../common_audio",
+    "../../common_audio:fir_filter",
+    "../../common_audio:fir_filter_factory",
     "../../rtc_base:rtc_base_approved",
     "../../system_wrappers",
+  ]
+}
+
+rtc_source_set("audio_processing_statistics") {
+  sources = [
+    "include/audio_processing_statistics.cc",
+    "include/audio_processing_statistics.h",
+  ]
+  deps = [
+    "../../api:optional",
   ]
 }
 
@@ -507,12 +519,6 @@ if (rtc_include_tests) {
   rtc_source_set("audio_processing_unittests") {
     testonly = true
 
-    # Skip restricting visibility on mobile platforms since the tests on those
-    # gets additional generated targets which would require many lines here to
-    # cover (which would be confusing to read and hard to maintain).
-    if (!is_android && !is_ios) {
-      visibility = [ "..:modules_unittests" ]
-    }
     sources = [
       "aec/echo_cancellation_unittest.cc",
       "aec/system_delay_unittest.cc",
@@ -565,7 +571,7 @@ if (rtc_include_tests) {
       "../../rtc_base:rtc_base_approved",
       "../../system_wrappers:system_wrappers",
       "../../test:test_support",
-      "../audio_coding:neteq_tools",
+      "../audio_coding:neteq_input_audio_tools",
       "aec_dump:mock_aec_dump_unittests",
       "test/conversational_speech:unittest",
       "//testing/gmock",
@@ -616,7 +622,7 @@ if (rtc_include_tests) {
         "aec3/block_processor_unittest.cc",
         "aec3/cascaded_biquad_filter_unittest.cc",
         "aec3/comfort_noise_generator_unittest.cc",
-        "aec3/decimator_by_4_unittest.cc",
+        "aec3/decimator_unittest.cc",
         "aec3/echo_canceller3_unittest.cc",
         "aec3/echo_path_delay_estimator_unittest.cc",
         "aec3/echo_path_variability_unittest.cc",
@@ -689,22 +695,19 @@ if (rtc_include_tests) {
     check_includes = false
     testonly = true
 
-    # Skip restricting visibility on mobile platforms since the tests on those
-    # gets additional generated targets which would require many lines here to
-    # cover (which would be confusing to read and hard to maintain).
-    if (!is_android && !is_ios) {
-      visibility = [ "../..:webrtc_perf_tests" ]
-    }
     sources = [
       "audio_processing_performance_unittest.cc",
       "level_controller/level_controller_complexity_unittest.cc",
-      "residual_echo_detector_complexity_unittest.cc",
     ]
     deps = [
       ":audio_processing",
       ":audioproc_test_utils",
+      "../../api:array_view",
+      "../../modules:module_api",
       "../../rtc_base:protobuf_utils",
-      "//testing/gtest",
+      "../../rtc_base:rtc_base_approved",
+      "../../system_wrappers:system_wrappers",
+      "../../test:test_support",
     ]
 
     if (rtc_enable_intelligibility_enhancer) {
@@ -804,7 +807,7 @@ if (rtc_include_tests) {
       "../../rtc_base:rtc_base_approved",
       "../../system_wrappers:system_wrappers",
       "../../test:test_support",
-      "../audio_coding:neteq_tools",
+      "../audio_coding:neteq_input_audio_tools",
       "//testing/gtest",
     ]
   }

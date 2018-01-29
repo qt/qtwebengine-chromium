@@ -16,19 +16,22 @@
 
 namespace blink {
 
+class ExecutionContext;
 class FontDescription;
 
 class CORE_EXPORT OffscreenFontSelector : public FontSelector {
  public:
-  static OffscreenFontSelector* Create() { return new OffscreenFontSelector(); }
+  static OffscreenFontSelector* Create(ExecutionContext* context) {
+    return new OffscreenFontSelector(context);
+  }
   ~OffscreenFontSelector() override;
 
   unsigned Version() const override { return 1; }
 
   void ReportNotDefGlyph() const override;
 
-  RefPtr<FontData> GetFontData(const FontDescription&,
-                               const AtomicString&) override;
+  scoped_refptr<FontData> GetFontData(const FontDescription&,
+                                      const AtomicString&) override;
   void WillUseFontData(const FontDescription&,
                        const AtomicString& family,
                        const String& text) override;
@@ -48,15 +51,20 @@ class CORE_EXPORT OffscreenFontSelector : public FontSelector {
 
   void UpdateGenericFontFamilySettings(const GenericFontFamilySettings&);
 
-  FontFaceCache* GetFontFaceCache() { return &font_face_cache_; }
+  FontFaceCache* GetFontFaceCache() override { return &font_face_cache_; }
 
-  bool IsPlatformFamilyMatchAvailable(const FontDescription&,
-                                      const AtomicString& passed_family);
+  bool IsPlatformFamilyMatchAvailable(
+      const FontDescription&,
+      const AtomicString& passed_family) override;
 
-  DECLARE_VIRTUAL_TRACE();
+  ExecutionContext* GetExecutionContext() const override {
+    return execution_context_;
+  }
+
+  virtual void Trace(blink::Visitor*);
 
  protected:
-  explicit OffscreenFontSelector();
+  explicit OffscreenFontSelector(ExecutionContext*);
 
   void DispatchInvalidationCallbacks();
 
@@ -64,6 +72,8 @@ class CORE_EXPORT OffscreenFontSelector : public FontSelector {
   GenericFontFamilySettings generic_font_family_settings_;
 
   FontFaceCache font_face_cache_;
+
+  Member<ExecutionContext> execution_context_;
 };
 
 }  // namespace blink

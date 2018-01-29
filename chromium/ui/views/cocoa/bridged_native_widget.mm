@@ -39,6 +39,7 @@
 #include "ui/views/widget/widget.h"
 #include "ui/views/widget/widget_aura_utils.h"
 #include "ui/views/widget/widget_delegate.h"
+#include "ui/views/window/dialog_delegate.h"
 
 extern "C" {
 
@@ -490,6 +491,9 @@ void BridgedNativeWidget::Init(base::scoped_nsobject<NSWindow> window,
       [window_ setHasShadow:NO];
       break;
     case Widget::InitParams::SHADOW_TYPE_DEFAULT:
+      // Controls should get views shadows instead of native shadows.
+      [window_ setHasShadow:params.type != Widget::InitParams::TYPE_CONTROL];
+      break;
     case Widget::InitParams::SHADOW_TYPE_DROP:
       [window_ setHasShadow:YES];
       break;
@@ -527,6 +531,13 @@ void BridgedNativeWidget::Init(base::scoped_nsobject<NSWindow> window,
   // native on Mac, so nothing should ever want one in Widget form.
   DCHECK_NE(params.type, Widget::InitParams::TYPE_TOOLTIP);
   tooltip_manager_.reset(new TooltipManagerMac(this));
+}
+
+void BridgedNativeWidget::OnWidgetInitDone() {
+  DialogDelegate* dialog =
+      native_widget_mac_->GetWidget()->widget_delegate()->AsDialogDelegate();
+  if (dialog)
+    dialog->AddObserver(this);
 }
 
 void BridgedNativeWidget::SetFocusManager(FocusManager* focus_manager) {
@@ -767,7 +778,10 @@ void BridgedNativeWidget::SetCursor(NSCursor* cursor) {
 }
 
 void BridgedNativeWidget::OnWindowWillClose() {
-  native_widget_mac_->GetWidget()->OnNativeWidgetDestroying();
+  Widget* widget = native_widget_mac_->GetWidget();
+  if (DialogDelegate* dialog = widget->widget_delegate()->AsDialogDelegate())
+    dialog->RemoveObserver(this);
+  widget->OnNativeWidgetDestroying();
 
   // Ensure BridgedNativeWidget does not have capture, otherwise
   // OnMouseCaptureLost() may reference a deleted |native_widget_mac_| when
@@ -1072,7 +1086,7 @@ void BridgedNativeWidget::CreateLayer(ui::LayerType layer_type,
   CreateCompositor();
   DCHECK(compositor_);
 
-  SetLayer(base::MakeUnique<ui::Layer>(layer_type));
+  SetLayer(std::make_unique<ui::Layer>(layer_type));
   // Note, except for controls, this will set the layer to be hidden, since it
   // is only called during Init().
   layer()->SetVisible(window_visible_);
@@ -1223,11 +1237,6 @@ void BridgedNativeWidget::OnPaintLayer(const ui::PaintContext& context) {
   native_widget_mac_->GetWidget()->OnNativeWidgetPaint(context);
 }
 
-void BridgedNativeWidget::OnDelegatedFrameDamage(
-    const gfx::Rect& damage_rect_in_dip) {
-  NOTIMPLEMENTED();
-}
-
 void BridgedNativeWidget::OnDeviceScaleFactorChanged(
     float old_device_scale_factor,
     float new_device_scale_factor) {
@@ -1293,6 +1302,18 @@ void BridgedNativeWidget::RemoveChildWindow(BridgedNativeWidget* child) {
   // version, and possibly some unpredictable reference counting. Removing it
   // here should be safe regardless.
   [window_ removeChildWindow:child->window_];
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// BridgedNativeWidget, DialogObserver:
+
+void BridgedNativeWidget::OnDialogModelChanged() {
+  // Note it's only necessary to clear the TouchBar. If the OS needs it again,
+  // a new one will be created.
+  if (@available(macOS 10.12.2, *)) {
+    if ([bridged_view_ respondsToSelector:@selector(setTouchBar:)])
+      [bridged_view_ setTouchBar:nil];
+  }
 }
 
 ////////////////////////////////////////////////////////////////////////////////

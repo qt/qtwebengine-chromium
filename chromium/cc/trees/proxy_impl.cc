@@ -28,6 +28,7 @@
 #include "components/viz/common/frame_sinks/delay_based_time_source.h"
 #include "components/viz/common/gpu/context_provider.h"
 #include "gpu/command_buffer/client/gles2_interface.h"
+#include "services/metrics/public/cpp/ukm_recorder.h"
 
 namespace cc {
 
@@ -100,8 +101,12 @@ ProxyImpl::~ProxyImpl() {
   // Take away the LayerTreeFrameSink before destroying things so it doesn't
   // try to call into its client mid-shutdown.
   host_impl_->ReleaseLayerTreeFrameSink();
-  scheduler_ = nullptr;
+
+  // It is important to destroy LTHI before the Scheduler since it can make
+  // callbacks that access it during destruction cleanup.
   host_impl_ = nullptr;
+  scheduler_ = nullptr;
+
   // We need to explicitly shutdown the notifier to destroy any weakptrs it is
   // holding while still on the compositor thread. This also ensures any
   // callbacks holding a ProxyImpl pointer are cancelled.
@@ -384,18 +389,33 @@ void ProxyImpl::PostAnimationEventsToMainThreadOnImplThread(
                                 proxy_main_weak_ptr_, base::Passed(&events)));
 }
 
+size_t ProxyImpl::CompositedAnimationsCount() const {
+  return host_impl_->mutator_host()->CompositedAnimationsCount();
+}
+
+size_t ProxyImpl::MainThreadAnimationsCount() const {
+  return host_impl_->mutator_host()->MainThreadAnimationsCount();
+}
+
+size_t ProxyImpl::MainThreadCompositableAnimationsCount() const {
+  return host_impl_->mutator_host()->MainThreadCompositableAnimationsCount();
+}
+
 bool ProxyImpl::IsInsideDraw() {
   return inside_draw_;
 }
 
 void ProxyImpl::RenewTreePriority() {
   DCHECK(IsImplThread());
-  bool smoothness_takes_priority = host_impl_->pinch_gesture_active() ||
-                                   host_impl_->page_scale_animation_active() ||
-                                   host_impl_->IsActivelyScrolling();
+  const bool user_interaction_in_progress =
+      host_impl_->pinch_gesture_active() ||
+      host_impl_->page_scale_animation_active() ||
+      host_impl_->IsActivelyScrolling();
+  host_impl_->ukm_manager()->SetUserInteractionInProgress(
+      user_interaction_in_progress);
 
   // Schedule expiration if smoothness currently takes priority.
-  if (smoothness_takes_priority)
+  if (user_interaction_in_progress)
     smoothness_priority_expiration_notifier_.Schedule();
 
   // We use the same priority for both trees by default.
@@ -509,8 +529,8 @@ void ProxyImpl::ScheduledActionSendBeginMainFrame(
   begin_main_frame_state->scroll_info = host_impl_->ProcessScrollDeltas();
   begin_main_frame_state->evicted_ui_resources =
       host_impl_->EvictedUIResourcesExist();
-  begin_main_frame_state->completed_image_decode_callbacks =
-      host_impl_->TakeCompletedImageDecodeCallbacks();
+  begin_main_frame_state->completed_image_decode_requests =
+      host_impl_->TakeCompletedImageDecodeRequests();
   MainThreadTaskRunner()->PostTask(
       FROM_HERE,
       base::BindOnce(&ProxyMain::BeginMainFrame, proxy_main_weak_ptr_,
@@ -704,6 +724,18 @@ ProxyImpl::BlockedMainCommitOnly& ProxyImpl::blocked_main_commit() {
 
 base::SingleThreadTaskRunner* ProxyImpl::MainThreadTaskRunner() {
   return task_runner_provider_->MainThreadTaskRunner();
+}
+
+void ProxyImpl::SetURLForUkm(const GURL& url) {
+  DCHECK(IsImplThread());
+  DCHECK(host_impl_->ukm_manager());
+  // The active tree might still be from content for the previous page when the
+  // recorder is updated here, since new content will be pushed with the next
+  // main frame. But we should only get a few impl frames wrong here in that
+  // case. Also, since checkerboard stats are only recorded with user
+  // interaction, it must be in progress when the navigation commits for this
+  // case to occur.
+  host_impl_->ukm_manager()->SetSourceURL(url);
 }
 
 }  // namespace cc

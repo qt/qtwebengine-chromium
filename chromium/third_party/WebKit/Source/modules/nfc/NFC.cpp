@@ -20,6 +20,7 @@
 #include "platform/mojo/MojoHelper.h"
 #include "public/platform/Platform.h"
 #include "services/service_manager/public/cpp/interface_provider.h"
+#include "third_party/WebKit/common/page/page_visibility_state.mojom-blink.h"
 
 namespace {
 const char kJsonMimePostfix[] = "+json";
@@ -525,7 +526,7 @@ ScriptPromise RejectIfInvalidNFCPushMessage(
 
 bool SetURL(const String& origin,
             device::mojom::blink::NFCMessagePtr& message) {
-  KURL origin_url(kParsedURLString, origin);
+  KURL origin_url(origin);
 
   if (!message->url.IsEmpty() && origin_url.CanSetPathname()) {
     origin_url.SetPath(message->url);
@@ -752,7 +753,7 @@ ScriptPromise NFC::watch(ScriptState* script_state,
 
   // https://w3c.github.io/web-nfc/#dom-nfc-watch (Step 9)
   if (options.hasURL() && !options.url().IsEmpty()) {
-    KURL pattern_url(kParsedURLString, options.url());
+    KURL pattern_url(options.url());
     if (!pattern_url.IsValid() || pattern_url.Protocol() != kProtocolHttps) {
       return RejectWithDOMException(script_state, kSyntaxError,
                                     "Invalid URL pattern was provided.");
@@ -814,7 +815,7 @@ void NFC::PageVisibilityChanged() {
 
   // NFC operations should be suspended.
   // https://w3c.github.io/web-nfc/#nfc-suspended
-  if (GetPage()->VisibilityState() == kPageVisibilityStateVisible)
+  if (GetPage()->VisibilityState() == mojom::PageVisibilityState::kVisible)
     nfc_->ResumeNFCOperations();
   else
     nfc_->SuspendNFCOperations();
@@ -916,11 +917,12 @@ void NFC::OnWatchRegistered(MessageCallback* callback,
   }
 }
 
-DEFINE_TRACE(NFC) {
-  PageVisibilityObserver::Trace(visitor);
-  ContextLifecycleObserver::Trace(visitor);
+void NFC::Trace(blink::Visitor* visitor) {
   visitor->Trace(requests_);
   visitor->Trace(callbacks_);
+  ScriptWrappable::Trace(visitor);
+  PageVisibilityObserver::Trace(visitor);
+  ContextLifecycleObserver::Trace(visitor);
 }
 
 }  // namespace blink

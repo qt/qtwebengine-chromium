@@ -125,19 +125,17 @@ static const uint16_t VP9_HIGH_VAR_OFFS_12[64] = {
 };
 #endif  // CONFIG_VP9_HIGHBITDEPTH
 
-unsigned int vp9_get_sby_perpixel_variance(VP9_COMP *cpi,
-                                           const struct buf_2d *ref,
-                                           BLOCK_SIZE bs) {
+unsigned int vp9_get_sby_variance(VP9_COMP *cpi, const struct buf_2d *ref,
+                                  BLOCK_SIZE bs) {
   unsigned int sse;
   const unsigned int var =
       cpi->fn_ptr[bs].vf(ref->buf, ref->stride, VP9_VAR_OFFS, 0, &sse);
-  return ROUND_POWER_OF_TWO(var, num_pels_log2_lookup[bs]);
+  return var;
 }
 
 #if CONFIG_VP9_HIGHBITDEPTH
-unsigned int vp9_high_get_sby_perpixel_variance(VP9_COMP *cpi,
-                                                const struct buf_2d *ref,
-                                                BLOCK_SIZE bs, int bd) {
+unsigned int vp9_high_get_sby_variance(VP9_COMP *cpi, const struct buf_2d *ref,
+                                       BLOCK_SIZE bs, int bd) {
   unsigned int var, sse;
   switch (bd) {
     case 10:
@@ -157,8 +155,24 @@ unsigned int vp9_high_get_sby_perpixel_variance(VP9_COMP *cpi,
                              CONVERT_TO_BYTEPTR(VP9_HIGH_VAR_OFFS_8), 0, &sse);
       break;
   }
-  return (unsigned int)ROUND64_POWER_OF_TWO((int64_t)var,
-                                            num_pels_log2_lookup[bs]);
+  return var;
+}
+#endif  // CONFIG_VP9_HIGHBITDEPTH
+
+unsigned int vp9_get_sby_perpixel_variance(VP9_COMP *cpi,
+                                           const struct buf_2d *ref,
+                                           BLOCK_SIZE bs) {
+  return ROUND_POWER_OF_TWO(vp9_get_sby_variance(cpi, ref, bs),
+                            num_pels_log2_lookup[bs]);
+}
+
+#if CONFIG_VP9_HIGHBITDEPTH
+unsigned int vp9_high_get_sby_perpixel_variance(VP9_COMP *cpi,
+                                                const struct buf_2d *ref,
+                                                BLOCK_SIZE bs, int bd) {
+  return (unsigned int)ROUND64_POWER_OF_TWO(
+      (int64_t)vp9_high_get_sby_variance(cpi, ref, bs, bd),
+      num_pels_log2_lookup[bs]);
 }
 #endif  // CONFIG_VP9_HIGHBITDEPTH
 
@@ -287,8 +301,12 @@ static void set_block_size(VP9_COMP *const cpi, MACROBLOCK *const x,
 }
 
 typedef struct {
-  int64_t sum_square_error;
-  int64_t sum_error;
+  // This struct is used for computing variance in choose_partitioning(), where
+  // the max number of samples within a superblock is 16x16 (with 4x4 avg). Even
+  // in high bitdepth, uint32_t is enough for sum_square_error (2^12 * 2^12 * 16
+  // * 16 = 2^32).
+  uint32_t sum_square_error;
+  int32_t sum_error;
   int log2_count;
   int variance;
 } var;
@@ -381,7 +399,7 @@ static void tree_to_node(void *data, BLOCK_SIZE bsize, variance_node *node) {
 }
 
 // Set variance values given sum square error, sum error, count.
-static void fill_variance(int64_t s2, int64_t s, int c, var *v) {
+static void fill_variance(uint32_t s2, int32_t s, int c, var *v) {
   v->sum_square_error = s2;
   v->sum_error = s;
   v->log2_count = c;
@@ -843,7 +861,7 @@ static void copy_partitioning_helper(VP9_COMP *cpi, MACROBLOCK *x,
   int start_pos = mi_row * cm->mi_stride + mi_col;
 
   const int bsl = b_width_log2_lookup[bsize];
-  const int bs = (1 << bsl) / 4;
+  const int bs = (1 << bsl) >> 2;
   BLOCK_SIZE subsize;
   PARTITION_TYPE partition;
 
@@ -911,13 +929,165 @@ static int copy_partitioning(VP9_COMP *cpi, MACROBLOCK *x, MACROBLOCKD *xd,
   return 0;
 }
 
+static int scale_partitioning_svc(VP9_COMP *cpi, MACROBLOCK *x, MACROBLOCKD *xd,
+                                  BLOCK_SIZE bsize, int mi_row, int mi_col,
+                                  int mi_row_high, int mi_col_high) {
+  VP9_COMMON *const cm = &cpi->common;
+  SVC *const svc = &cpi->svc;
+  BLOCK_SIZE *prev_part = svc->prev_partition_svc;
+  // Variables with _high are for higher resolution.
+  int bsize_high = 0;
+  int subsize_high = 0;
+  const int bsl_high = b_width_log2_lookup[bsize];
+  const int bs_high = (1 << bsl_high) >> 2;
+  const int has_rows = (mi_row_high + bs_high) < cm->mi_rows;
+  const int has_cols = (mi_col_high + bs_high) < cm->mi_cols;
+
+  const int row_boundary_block_scale_factor[BLOCK_SIZES] = {
+    13, 13, 13, 1, 0, 1, 1, 0, 1, 1, 0, 1, 0
+  };
+  const int col_boundary_block_scale_factor[BLOCK_SIZES] = {
+    13, 13, 13, 2, 2, 0, 2, 2, 0, 2, 2, 0, 0
+  };
+  int start_pos;
+  BLOCK_SIZE bsize_low;
+  PARTITION_TYPE partition_high;
+
+  if (mi_row_high >= cm->mi_rows || mi_col_high >= cm->mi_cols) return 0;
+  if (mi_row >= (cm->mi_rows >> 1) || mi_col >= (cm->mi_cols >> 1)) return 0;
+
+  // Find corresponding (mi_col/mi_row) block down-scaled by 2x2.
+  start_pos = mi_row * (svc->mi_stride[svc->spatial_layer_id - 1]) + mi_col;
+  bsize_low = prev_part[start_pos];
+  // The block size is too big for boundaries. Do variance based partitioning.
+  if ((!has_rows || !has_cols) && bsize_low > BLOCK_16X16) return 1;
+
+  // For reference frames: return 1 (do variance-based partitioning) if the
+  // superblock is not low source sad and lower-resoln bsize is below 32x32.
+  if (!cpi->svc.non_reference_frame && !x->skip_low_source_sad &&
+      bsize_low < BLOCK_32X32)
+    return 1;
+
+  // Scale up block size by 2x2. Force 64x64 for size larger than 32x32.
+  if (bsize_low < BLOCK_32X32) {
+    bsize_high = bsize_low + 3;
+  } else if (bsize_low >= BLOCK_32X32) {
+    bsize_high = BLOCK_64X64;
+  }
+  // Scale up blocks on boundary.
+  if (!has_cols && has_rows) {
+    bsize_high = bsize_low + row_boundary_block_scale_factor[bsize_low];
+  } else if (has_cols && !has_rows) {
+    bsize_high = bsize_low + col_boundary_block_scale_factor[bsize_low];
+  } else if (!has_cols && !has_rows) {
+    bsize_high = bsize_low;
+  }
+
+  partition_high = partition_lookup[bsl_high][bsize_high];
+  subsize_high = get_subsize(bsize, partition_high);
+
+  if (subsize_high < BLOCK_8X8) {
+    set_block_size(cpi, x, xd, mi_row_high, mi_col_high, bsize_high);
+  } else {
+    const int bsl = b_width_log2_lookup[bsize];
+    const int bs = (1 << bsl) >> 2;
+    switch (partition_high) {
+      case PARTITION_NONE:
+        set_block_size(cpi, x, xd, mi_row_high, mi_col_high, bsize_high);
+        break;
+      case PARTITION_HORZ:
+        set_block_size(cpi, x, xd, mi_row_high, mi_col_high, subsize_high);
+        if (subsize_high < BLOCK_64X64)
+          set_block_size(cpi, x, xd, mi_row_high + bs_high, mi_col_high,
+                         subsize_high);
+        break;
+      case PARTITION_VERT:
+        set_block_size(cpi, x, xd, mi_row_high, mi_col_high, subsize_high);
+        if (subsize_high < BLOCK_64X64)
+          set_block_size(cpi, x, xd, mi_row_high, mi_col_high + bs_high,
+                         subsize_high);
+        break;
+      case PARTITION_SPLIT:
+        if (scale_partitioning_svc(cpi, x, xd, subsize_high, mi_row, mi_col,
+                                   mi_row_high, mi_col_high))
+          return 1;
+        if (scale_partitioning_svc(cpi, x, xd, subsize_high, mi_row + (bs >> 1),
+                                   mi_col, mi_row_high + bs_high, mi_col_high))
+          return 1;
+        if (scale_partitioning_svc(cpi, x, xd, subsize_high, mi_row,
+                                   mi_col + (bs >> 1), mi_row_high,
+                                   mi_col_high + bs_high))
+          return 1;
+        if (scale_partitioning_svc(cpi, x, xd, subsize_high, mi_row + (bs >> 1),
+                                   mi_col + (bs >> 1), mi_row_high + bs_high,
+                                   mi_col_high + bs_high))
+          return 1;
+        break;
+      default: assert(0);
+    }
+  }
+
+  return 0;
+}
+
+static void update_partition_svc(VP9_COMP *cpi, BLOCK_SIZE bsize, int mi_row,
+                                 int mi_col) {
+  VP9_COMMON *const cm = &cpi->common;
+  BLOCK_SIZE *prev_part = cpi->svc.prev_partition_svc;
+  int start_pos = mi_row * cm->mi_stride + mi_col;
+  const int bsl = b_width_log2_lookup[bsize];
+  const int bs = (1 << bsl) >> 2;
+  BLOCK_SIZE subsize;
+  PARTITION_TYPE partition;
+  const MODE_INFO *mi = NULL;
+  int xx, yy;
+
+  if (mi_row >= cm->mi_rows || mi_col >= cm->mi_cols) return;
+
+  mi = cm->mi_grid_visible[start_pos];
+  partition = partition_lookup[bsl][mi->sb_type];
+  subsize = get_subsize(bsize, partition);
+  if (subsize < BLOCK_8X8) {
+    prev_part[start_pos] = bsize;
+  } else {
+    switch (partition) {
+      case PARTITION_NONE:
+        prev_part[start_pos] = bsize;
+        if (bsize == BLOCK_64X64) {
+          for (xx = 0; xx < 8; xx += 4)
+            for (yy = 0; yy < 8; yy += 4) {
+              if ((mi_row + xx < cm->mi_rows) && (mi_col + yy < cm->mi_cols))
+                prev_part[start_pos + xx * cm->mi_stride + yy] = bsize;
+            }
+        }
+        break;
+      case PARTITION_HORZ:
+        prev_part[start_pos] = subsize;
+        if (mi_row + bs < cm->mi_rows)
+          prev_part[start_pos + bs * cm->mi_stride] = subsize;
+        break;
+      case PARTITION_VERT:
+        prev_part[start_pos] = subsize;
+        if (mi_col + bs < cm->mi_cols) prev_part[start_pos + bs] = subsize;
+        break;
+      case PARTITION_SPLIT:
+        update_partition_svc(cpi, subsize, mi_row, mi_col);
+        update_partition_svc(cpi, subsize, mi_row + bs, mi_col);
+        update_partition_svc(cpi, subsize, mi_row, mi_col + bs);
+        update_partition_svc(cpi, subsize, mi_row + bs, mi_col + bs);
+        break;
+      default: assert(0);
+    }
+  }
+}
+
 static void update_prev_partition(VP9_COMP *cpi, BLOCK_SIZE bsize, int mi_row,
                                   int mi_col) {
   VP9_COMMON *const cm = &cpi->common;
   BLOCK_SIZE *prev_part = cpi->prev_partition;
   int start_pos = mi_row * cm->mi_stride + mi_col;
   const int bsl = b_width_log2_lookup[bsize];
-  const int bs = (1 << bsl) / 4;
+  const int bs = (1 << bsl) >> 2;
   BLOCK_SIZE subsize;
   PARTITION_TYPE partition;
   const MODE_INFO *mi = NULL;
@@ -1040,7 +1210,7 @@ static int choose_partitioning(VP9_COMP *cpi, const TileInfo *const tile,
   MACROBLOCKD *xd = &x->e_mbd;
   int i, j, k, m;
   v64x64 vt;
-  v16x16 vt2[16];
+  v16x16 *vt2 = NULL;
   int force_split[21];
   int avg_32x32;
   int max_var_32x32 = 0;
@@ -1056,6 +1226,7 @@ static int choose_partitioning(VP9_COMP *cpi, const TileInfo *const tile,
   const uint8_t *d;
   int sp;
   int dp;
+  int compute_minmax_variance = 1;
   unsigned int y_sad = UINT_MAX;
   BLOCK_SIZE bsize = BLOCK_64X64;
   // Ref frame used in partitioning.
@@ -1080,6 +1251,9 @@ static int choose_partitioning(VP9_COMP *cpi, const TileInfo *const tile,
   set_offsets(cpi, tile, x, mi_row, mi_col, BLOCK_64X64);
   segment_id = xd->mi[0]->segment_id;
 
+  if (cpi->oxcf.speed >= 8 || (cpi->use_svc && cpi->svc.non_reference_frame))
+    compute_minmax_variance = 0;
+
   if (cpi->sf.use_source_sad && !is_key_frame) {
     int sb_offset2 = ((cm->mi_cols + 7) >> 3) * (mi_row >> 3) + (mi_col >> 3);
     content_state = x->content_state_sb;
@@ -1090,10 +1264,23 @@ static int choose_partitioning(VP9_COMP *cpi, const TileInfo *const tile,
     x->lowvar_highsumdiff = (content_state == kLowVarHighSumdiff) ? 1 : 0;
     if (cpi->content_state_sb_fd != NULL)
       x->last_sb_high_content = cpi->content_state_sb_fd[sb_offset2];
+
+    // For SVC on top spatial layer: use/scale the partition from
+    // the lower spatial resolution if svc_use_lowres_part is enabled.
+    if (cpi->sf.svc_use_lowres_part &&
+        cpi->svc.spatial_layer_id == cpi->svc.number_spatial_layers - 1 &&
+        cpi->svc.prev_partition_svc != NULL && content_state != kVeryHighSad) {
+      if (!scale_partitioning_svc(cpi, x, xd, BLOCK_64X64, mi_row >> 1,
+                                  mi_col >> 1, mi_row, mi_col))
+        return 0;
+    }
     // If source_sad is low copy the partition without computing the y_sad.
     if (x->skip_low_source_sad && cpi->sf.copy_partition_flag &&
         copy_partitioning(cpi, x, xd, mi_row, mi_col, segment_id, sb_offset)) {
       x->sb_use_mv_part = 1;
+      if (cpi->sf.svc_use_lowres_part &&
+          cpi->svc.spatial_layer_id == cpi->svc.number_spatial_layers - 2)
+        update_partition_svc(cpi, BLOCK_64X64, mi_row, mi_col);
       return 0;
     }
   }
@@ -1218,6 +1405,9 @@ static int choose_partitioning(VP9_COMP *cpi, const TileInfo *const tile,
         set_block_size(cpi, x, xd, mi_row, mi_col, BLOCK_64X64);
         x->variance_low[0] = 1;
         chroma_check(cpi, x, bsize, y_sad, is_key_frame);
+        if (cpi->sf.svc_use_lowres_part &&
+            cpi->svc.spatial_layer_id == cpi->svc.number_spatial_layers - 2)
+          update_partition_svc(cpi, BLOCK_64X64, mi_row, mi_col);
         return 0;
       }
     }
@@ -1229,6 +1419,9 @@ static int choose_partitioning(VP9_COMP *cpi, const TileInfo *const tile,
     if (cpi->sf.copy_partition_flag && y_sad_last < cpi->vbp_threshold_copy &&
         copy_partitioning(cpi, x, xd, mi_row, mi_col, segment_id, sb_offset)) {
       chroma_check(cpi, x, bsize, y_sad, is_key_frame);
+      if (cpi->sf.svc_use_lowres_part &&
+          cpi->svc.spatial_layer_id == cpi->svc.number_spatial_layers - 2)
+        update_partition_svc(cpi, BLOCK_64X64, mi_row, mi_col);
       return 0;
     }
   } else {
@@ -1246,6 +1439,8 @@ static int choose_partitioning(VP9_COMP *cpi, const TileInfo *const tile,
 #endif  // CONFIG_VP9_HIGHBITDEPTH
   }
 
+  if (low_res && threshold_4x4avg < INT64_MAX)
+    CHECK_MEM_ERROR(cm, vt2, vpx_calloc(16, sizeof(*vt2)));
   // Fill in the entire tree of 8x8 (or 4x4 under some conditions) variances
   // for splits.
   for (i = 0; i < 4; i++) {
@@ -1282,7 +1477,7 @@ static int choose_partitioning(VP9_COMP *cpi, const TileInfo *const tile,
           force_split[split_index] = 1;
           force_split[i + 1] = 1;
           force_split[0] = 1;
-        } else if (cpi->oxcf.speed < 8 &&
+        } else if (compute_minmax_variance &&
                    vt.split[i].split[j].part_variances.none.variance >
                        thresholds[1] &&
                    !cyclic_refresh_segment_id_boosted(segment_id)) {
@@ -1449,12 +1644,17 @@ static int choose_partitioning(VP9_COMP *cpi, const TileInfo *const tile,
       cpi->copied_frame_cnt[sb_offset] = 0;
   }
 
+  if (cm->frame_type != KEY_FRAME && cpi->sf.svc_use_lowres_part &&
+      cpi->svc.spatial_layer_id == cpi->svc.number_spatial_layers - 2)
+    update_partition_svc(cpi, BLOCK_64X64, mi_row, mi_col);
+
   if (cpi->sf.short_circuit_low_temp_var) {
     set_low_temp_var_flag(cpi, x, xd, &vt, thresholds, ref_frame_partition,
                           mi_col, mi_row);
   }
 
   chroma_check(cpi, x, bsize, y_sad, is_key_frame);
+  if (vt2) vpx_free(vt2);
   return 0;
 }
 
@@ -3489,7 +3689,7 @@ static TX_MODE select_tx_mode(const VP9_COMP *cpi, MACROBLOCKD *const xd) {
 static void hybrid_intra_mode_search(VP9_COMP *cpi, MACROBLOCK *const x,
                                      RD_COST *rd_cost, BLOCK_SIZE bsize,
                                      PICK_MODE_CONTEXT *ctx) {
-  if (bsize < BLOCK_16X16)
+  if (!cpi->sf.nonrd_keyframe && bsize < BLOCK_16X16)
     vp9_rd_pick_intra_mode_sb(cpi, x, rd_cost, bsize, ctx, INT64_MAX);
   else
     vp9_pick_intra_mode(cpi, x, rd_cost, bsize, ctx);
@@ -4183,7 +4383,7 @@ static void encode_nonrd_sb_row(VP9_COMP *cpi, ThreadData *td,
       if (sf->adapt_partition_source_sad &&
           (cpi->oxcf.rc_mode == VPX_VBR && !cpi->rc.is_src_frame_alt_ref &&
            source_sad > sf->adapt_partition_thresh &&
-           cpi->refresh_golden_frame))
+           (cpi->refresh_golden_frame || cpi->refresh_alt_ref_frame)))
         partition_search_type = REFERENCE_PARTITION;
     }
 
@@ -4216,7 +4416,8 @@ static void encode_nonrd_sb_row(VP9_COMP *cpi, ThreadData *td,
         // nonrd_pick_partition does not support 4x4 partition, so avoid it
         // on key frame for now.
         if ((cpi->oxcf.rc_mode == VPX_VBR && cpi->rc.high_source_sad &&
-             cm->frame_type != KEY_FRAME)) {
+             cpi->oxcf.speed < 6 && cm->frame_type != KEY_FRAME &&
+             (cpi->refresh_golden_frame || cpi->refresh_alt_ref_frame))) {
           // Use lower max_partition_size for low resoultions.
           if (cm->width <= 352 && cm->height <= 288)
             x->max_partition_size = BLOCK_32X32;
@@ -4789,8 +4990,31 @@ void vp9_encode_frame(VP9_COMP *cpi) {
       }
     }
   } else {
+    FRAME_COUNTS *counts = cpi->td.counts;
     cm->reference_mode = SINGLE_REFERENCE;
+    if (cpi->allow_comp_inter_inter && cpi->sf.use_compound_nonrd_pickmode &&
+        cpi->rc.alt_ref_gf_group && !cpi->rc.is_src_frame_alt_ref &&
+        cm->frame_type != KEY_FRAME)
+      cm->reference_mode = REFERENCE_MODE_SELECT;
+
     encode_frame_internal(cpi);
+
+    if (cm->reference_mode == REFERENCE_MODE_SELECT) {
+      int single_count_zero = 0;
+      int comp_count_zero = 0;
+      int i;
+      for (i = 0; i < COMP_INTER_CONTEXTS; i++) {
+        single_count_zero += counts->comp_inter[i][0];
+        comp_count_zero += counts->comp_inter[i][1];
+      }
+      if (comp_count_zero == 0) {
+        cm->reference_mode = SINGLE_REFERENCE;
+        vp9_zero(counts->comp_inter);
+      } else if (single_count_zero == 0) {
+        cm->reference_mode = COMPOUND_REFERENCE;
+        vp9_zero(counts->comp_inter);
+      }
+    }
   }
 
   // If segmented AQ is enabled compute the average AQ weighting.

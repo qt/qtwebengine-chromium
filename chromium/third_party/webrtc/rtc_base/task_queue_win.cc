@@ -15,15 +15,16 @@
 
 #include <algorithm>
 #include <queue>
+#include <utility>
 
 #include "rtc_base/arraysize.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/event.h"
 #include "rtc_base/logging.h"
+#include "rtc_base/numerics/safe_conversions.h"
 #include "rtc_base/platform_thread.h"
 #include "rtc_base/refcount.h"
 #include "rtc_base/refcountedobject.h"
-#include "rtc_base/safe_conversions.h"
 #include "rtc_base/timeutils.h"
 
 namespace rtc {
@@ -170,10 +171,11 @@ class TaskQueue::Impl : public RefCountInterface {
   bool IsCurrent() const;
 
   template <class Closure,
-            typename std::enable_if<
-                std::is_copy_constructible<Closure>::value>::type* = nullptr>
-  void PostTask(const Closure& closure) {
-    PostTask(std::unique_ptr<QueuedTask>(new ClosureTask<Closure>(closure)));
+            typename std::enable_if<!std::is_convertible<
+                Closure,
+                std::unique_ptr<QueuedTask>>::value>::type* = nullptr>
+  void PostTask(Closure&& closure) {
+    PostTask(NewClosure(std::forward<Closure>(closure)));
   }
 
   void PostTask(std::unique_ptr<QueuedTask> task);

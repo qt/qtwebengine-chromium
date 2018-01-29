@@ -25,7 +25,6 @@
 #include "core/CSSValueKeywords.h"
 #include "core/dom/ElementTraversal.h"
 #include "core/dom/ShadowRoot.h"
-#include "core/dom/TaskRunnerHelper.h"
 #include "core/dom/Text.h"
 #include "core/dom/events/Event.h"
 #include "core/frame/UseCounter.h"
@@ -37,6 +36,7 @@
 #include "core/html_names.h"
 #include "core/layout/LayoutBlockFlow.h"
 #include "platform/text/PlatformLocale.h"
+#include "public/platform/TaskType.h"
 
 namespace blink {
 
@@ -61,7 +61,9 @@ class FirstSummarySelectFilter final : public HTMLContentSelectFilter {
     return true;
   }
 
-  DEFINE_INLINE_VIRTUAL_TRACE() { HTMLContentSelectFilter::Trace(visitor); }
+  virtual void Trace(blink::Visitor* visitor) {
+    HTMLContentSelectFilter::Trace(visitor);
+  }
 
  private:
   FirstSummarySelectFilter() {}
@@ -130,7 +132,8 @@ void HTMLDetailsElement::ParseAttribute(
 
     // Dispatch toggle event asynchronously.
     pending_event_ =
-        TaskRunnerHelper::Get(TaskType::kDOMManipulation, &GetDocument())
+        GetDocument()
+            .GetTaskRunner(TaskType::kDOMManipulation)
             ->PostCancellableTask(
                 BLINK_FROM_HERE,
                 WTF::Bind(&HTMLDetailsElement::DispatchPendingEvent,

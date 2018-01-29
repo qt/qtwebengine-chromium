@@ -15,6 +15,7 @@
 #include "ast/SkSLASTContinueStatement.h"
 #include "ast/SkSLASTDiscardStatement.h"
 #include "ast/SkSLASTDoStatement.h"
+#include "ast/SkSLASTEnum.h"
 #include "ast/SkSLASTExpression.h"
 #include "ast/SkSLASTExpressionStatement.h"
 #include "ast/SkSLASTExtension.h"
@@ -279,11 +280,75 @@ std::unique_ptr<ASTDeclaration> Parser::section() {
                                                           text));
 }
 
-/* modifiers (structVarDeclaration | type IDENTIFIER ((LPAREN parameter
+/* ENUM CLASS IDENTIFIER LBRACE (IDENTIFIER (EQ expression)? (COMMA IDENTIFIER (EQ expression))*)?
+   RBRACE */
+std::unique_ptr<ASTDeclaration> Parser::enumDeclaration() {
+    Token start;
+    if (!this->expect(Token::ENUM, "'enum'", &start)) {
+        return nullptr;
+    }
+    if (!this->expect(Token::CLASS, "'class'")) {
+        return nullptr;
+    }
+    Token name;
+    if (!this->expect(Token::IDENTIFIER, "an identifier", &name)) {
+        return nullptr;
+    }
+    if (!this->expect(Token::LBRACE, "'{'")) {
+        return nullptr;
+    }
+    fTypes.add(this->text(name), std::unique_ptr<Symbol>(new Type(this->text(name),
+                                                                  Type::kEnum_Kind)));
+    std::vector<StringFragment> names;
+    std::vector<std::unique_ptr<ASTExpression>> values;
+    if (!this->checkNext(Token::RBRACE)) {
+        Token id;
+        if (!this->expect(Token::IDENTIFIER, "an identifier", &id)) {
+            return nullptr;
+        }
+        names.push_back(this->text(id));
+        if (this->checkNext(Token::EQ)) {
+            std::unique_ptr<ASTExpression> value = this->assignmentExpression();
+            if (!value) {
+                return nullptr;
+            }
+            values.push_back(std::move(value));
+        } else {
+            values.push_back(nullptr);
+        }
+        while (!this->checkNext(Token::RBRACE)) {
+            if (!this->expect(Token::COMMA, "','")) {
+                return nullptr;
+            }
+            if (!this->expect(Token::IDENTIFIER, "an identifier", &id)) {
+                return nullptr;
+            }
+            names.push_back(this->text(id));
+            if (this->checkNext(Token::EQ)) {
+                std::unique_ptr<ASTExpression> value = this->assignmentExpression();
+                if (!value) {
+                    return nullptr;
+                }
+                values.push_back(std::move(value));
+            } else {
+                values.push_back(nullptr);
+            }
+        }
+    }
+    this->expect(Token::SEMICOLON, "';'");
+    return std::unique_ptr<ASTDeclaration>(new ASTEnum(name.fOffset, this->text(name), names,
+                                                       std::move(values)));
+}
+
+/* enumDeclaration | modifiers (structVarDeclaration | type IDENTIFIER ((LPAREN parameter
    (COMMA parameter)* RPAREN (block | SEMICOLON)) | SEMICOLON) | interfaceBlock) */
 std::unique_ptr<ASTDeclaration> Parser::declaration() {
-    Modifiers modifiers = this->modifiers();
     Token lookahead = this->peek();
+    if (lookahead.fKind == Token::ENUM) {
+        return this->enumDeclaration();
+    }
+    Modifiers modifiers = this->modifiers();
+    lookahead = this->peek();
     if (lookahead.fKind == Token::IDENTIFIER && !this->isType(this->text(lookahead))) {
         // we have an identifier that's not a type, could be the start of an interface block
         return this->interfaceBlock(modifiers);
@@ -515,7 +580,7 @@ std::unique_ptr<ASTParameter> Parser::parameter() {
                                                           this->text(name), std::move(sizes)));
 }
 
-/** (EQ INT_LITERAL)? */
+/** EQ INT_LITERAL */
 int Parser::layoutInt() {
     if (!this->expect(Token::EQ, "'='")) {
         return -1;
@@ -526,6 +591,19 @@ int Parser::layoutInt() {
     }
     return -1;
 }
+
+/** EQ IDENTIFIER */
+StringFragment Parser::layoutIdentifier() {
+    if (!this->expect(Token::EQ, "'='")) {
+        return StringFragment();
+    }
+    Token resultToken;
+    if (!this->expect(Token::IDENTIFIER, "an identifier", &resultToken)) {
+        return StringFragment();
+    }
+    return this->text(resultToken);
+}
+
 
 /** EQ <any sequence of tokens with balanced parentheses and no top-level comma> */
 String Parser::layoutCode() {
@@ -588,6 +666,7 @@ Layout::Key Parser::layoutKey() {
 
 /* LAYOUT LPAREN IDENTIFIER (EQ INT_LITERAL)? (COMMA IDENTIFIER (EQ INT_LITERAL)?)* RPAREN */
 Layout Parser::layout() {
+    int flags = 0;
     int location = -1;
     int offset = -1;
     int binding = -1;
@@ -595,21 +674,18 @@ Layout Parser::layout() {
     int set = -1;
     int builtin = -1;
     int inputAttachmentIndex = -1;
-    bool originUpperLeft = false;
-    bool overrideCoverage = false;
-    bool blendSupportAllEquations = false;
     Layout::Format format = Layout::Format::kUnspecified;
-    bool pushConstant = false;
     Layout::Primitive primitive = Layout::kUnspecified_Primitive;
     int maxVertices = -1;
     int invocations = -1;
     String when;
+    StringFragment ctype;
     Layout::Key key = Layout::kNo_Key;
     if (this->checkNext(Token::LAYOUT)) {
         if (!this->expect(Token::LPAREN, "'('")) {
-            return Layout(location, offset, binding, index, set, builtin, inputAttachmentIndex,
-                          originUpperLeft, overrideCoverage, blendSupportAllEquations, format,
-                          pushConstant, primitive, maxVertices, invocations, when, key);
+            return Layout(flags, location, offset, binding, index, set, builtin,
+                          inputAttachmentIndex, format, primitive, maxVertices, invocations, when,
+                          key, ctype);
         }
         for (;;) {
             Token t = this->nextToken();
@@ -640,16 +716,61 @@ Layout Parser::layout() {
                         inputAttachmentIndex = this->layoutInt();
                         break;
                     case LayoutToken::ORIGIN_UPPER_LEFT:
-                        originUpperLeft = true;
+                        flags |= Layout::kOriginUpperLeft_Flag;
                         break;
                     case LayoutToken::OVERRIDE_COVERAGE:
-                        overrideCoverage = true;
+                        flags |= Layout::kOverrideCoverage_Flag;
                         break;
                     case LayoutToken::BLEND_SUPPORT_ALL_EQUATIONS:
-                        blendSupportAllEquations = true;
+                        flags |= Layout::kBlendSupportAllEquations_Flag;
+                        break;
+                    case LayoutToken::BLEND_SUPPORT_MULTIPLY:
+                        flags |= Layout::kBlendSupportMultiply_Flag;
+                        break;
+                    case LayoutToken::BLEND_SUPPORT_SCREEN:
+                        flags |= Layout::kBlendSupportScreen_Flag;
+                        break;
+                    case LayoutToken::BLEND_SUPPORT_OVERLAY:
+                        flags |= Layout::kBlendSupportOverlay_Flag;
+                        break;
+                    case LayoutToken::BLEND_SUPPORT_DARKEN:
+                        flags |= Layout::kBlendSupportDarken_Flag;
+                        break;
+                    case LayoutToken::BLEND_SUPPORT_LIGHTEN:
+                        flags |= Layout::kBlendSupportLighten_Flag;
+                        break;
+                    case LayoutToken::BLEND_SUPPORT_COLORDODGE:
+                        flags |= Layout::kBlendSupportColorDodge_Flag;
+                        break;
+                    case LayoutToken::BLEND_SUPPORT_COLORBURN:
+                        flags |= Layout::kBlendSupportColorBurn_Flag;
+                        break;
+                    case LayoutToken::BLEND_SUPPORT_HARDLIGHT:
+                        flags |= Layout::kBlendSupportHardLight_Flag;
+                        break;
+                    case LayoutToken::BLEND_SUPPORT_SOFTLIGHT:
+                        flags |= Layout::kBlendSupportSoftLight_Flag;
+                        break;
+                    case LayoutToken::BLEND_SUPPORT_DIFFERENCE:
+                        flags |= Layout::kBlendSupportDifference_Flag;
+                        break;
+                    case LayoutToken::BLEND_SUPPORT_EXCLUSION:
+                        flags |= Layout::kBlendSupportExclusion_Flag;
+                        break;
+                    case LayoutToken::BLEND_SUPPORT_HSL_HUE:
+                        flags |= Layout::kBlendSupportHSLHue_Flag;
+                        break;
+                    case LayoutToken::BLEND_SUPPORT_HSL_SATURATION:
+                        flags |= Layout::kBlendSupportHSLSaturation_Flag;
+                        break;
+                    case LayoutToken::BLEND_SUPPORT_HSL_COLOR:
+                        flags |= Layout::kBlendSupportHSLColor_Flag;
+                        break;
+                    case LayoutToken::BLEND_SUPPORT_HSL_LUMINOSITY:
+                        flags |= Layout::kBlendSupportHSLLuminosity_Flag;
                         break;
                     case LayoutToken::PUSH_CONSTANT:
-                        pushConstant = true;
+                        flags |= Layout::kPushConstant_Flag;
                         break;
                     case LayoutToken::POINTS:
                         primitive = Layout::kPoints_Primitive;
@@ -684,8 +805,9 @@ Layout Parser::layout() {
                     case LayoutToken::KEY:
                         key = this->layoutKey();
                         break;
-                    default:
-                        ASSERT(false);
+                    case LayoutToken::CTYPE:
+                        ctype = this->layoutIdentifier();
+                        break;
                 }
             } else if (Layout::ReadFormat(this->text(t), &format)) {
                // AST::ReadFormat stored the result in 'format'.
@@ -700,9 +822,8 @@ Layout Parser::layout() {
             }
         }
     }
-    return Layout(location, offset, binding, index, set, builtin, inputAttachmentIndex,
-                  originUpperLeft, overrideCoverage, blendSupportAllEquations, format,
-                  pushConstant, primitive, maxVertices, invocations, when, key);
+    return Layout(flags, location, offset, binding, index, set, builtin, inputAttachmentIndex,
+                  format, primitive, maxVertices, invocations, when, key, ctype);
 }
 
 /* layout? (UNIFORM | CONST | IN | OUT | INOUT | LOWP | MEDIUMP | HIGHP | FLAT | NOPERSPECTIVE |
@@ -1269,7 +1390,7 @@ std::unique_ptr<ASTExpressionStatement> Parser::expressionStatement() {
     return nullptr;
 }
 
-/* assignmentExpression */
+/* commaExpression */
 std::unique_ptr<ASTExpression> Parser::expression() {
     AutoDepth depth(this);
     if (!depth.checkValid()) {
@@ -1616,11 +1737,12 @@ std::unique_ptr<ASTExpression> Parser::postfixExpression() {
     }
     for (;;) {
         switch (this->peek().fKind) {
-            case Token::LBRACKET: // fall through
-            case Token::DOT:      // fall through
-            case Token::LPAREN:   // fall through
-            case Token::PLUSPLUS: // fall through
-            case Token::MINUSMINUS: {
+            case Token::LBRACKET:   // fall through
+            case Token::DOT:        // fall through
+            case Token::LPAREN:     // fall through
+            case Token::PLUSPLUS:   // fall through
+            case Token::MINUSMINUS: // fall through
+            case Token::COLONCOLON: {
                 std::unique_ptr<ASTSuffix> s = this->suffix();
                 if (!s) {
                     return nullptr;
@@ -1635,7 +1757,7 @@ std::unique_ptr<ASTExpression> Parser::postfixExpression() {
 }
 
 /* LBRACKET expression? RBRACKET | DOT IDENTIFIER | LPAREN parameters RPAREN |
-   PLUSPLUS | MINUSMINUS */
+   PLUSPLUS | MINUSMINUS | COLONCOLON IDENTIFIER */
 std::unique_ptr<ASTSuffix> Parser::suffix() {
     Token next = this->nextToken();
     switch (next.fKind) {
@@ -1650,7 +1772,8 @@ std::unique_ptr<ASTSuffix> Parser::suffix() {
             this->expect(Token::RBRACKET, "']' to complete array access expression");
             return std::unique_ptr<ASTSuffix>(new ASTIndexSuffix(std::move(e)));
         }
-        case Token::DOT: {
+        case Token::DOT: // fall through
+        case Token::COLONCOLON: {
             int offset = this->peek().fOffset;
             StringFragment text;
             if (this->identifier(&text)) {

@@ -6,8 +6,12 @@
 
 #include <utility>
 
+#include "base/bind.h"
+#include "base/bind_helpers.h"
+#include "base/macros.h"
 #include "base/memory/ptr_util.h"
 #include "base/strings/utf_string_conversions.h"
+#include "components/autofill/core/browser/address_normalizer.h"
 #include "components/autofill/core/browser/autofill_data_util.h"
 #include "components/autofill/core/browser/autofill_profile.h"
 #include "components/autofill/core/browser/field_types.h"
@@ -18,34 +22,61 @@ namespace {
 constexpr int kAddressNormalizationTimeoutSeconds = 5;
 }  // namespace
 
+// Implements the AddressNormalizer::Delegate interface, and notifies its parent
+// AddressNormalizationManager when normalization has completed.
+class AddressNormalizationManager::NormalizerDelegate {
+ public:
+  // |owner| is the parent AddressNormalizationManager, |address_normalizer|
+  // is a pointer to an instance of AddressNormalizer which will handle
+  // normalization of |profile|. |profile| will be updated when normalization
+  // is complete.
+  NormalizerDelegate(AddressNormalizationManager* owner,
+                     AddressNormalizer* address_normalizer,
+                     AutofillProfile* profile);
+
+  // Returns whether this delegate has completed or not.
+  bool has_completed() const { return has_completed_; }
+
+  // To be used as AddressNormalizer::NormalizationCallback.
+  void OnAddressNormalized(bool success, const AutofillProfile& profile);
+
+ private:
+  // Helper method that handles when normalization has completed.
+  void OnCompletion(const AutofillProfile& profile);
+
+  bool has_completed_ = false;
+  AddressNormalizationManager* owner_ = nullptr;
+  AutofillProfile* profile_ = nullptr;
+
+  DISALLOW_COPY_AND_ASSIGN(NormalizerDelegate);
+};
+
 AddressNormalizationManager::AddressNormalizationManager(
     AddressNormalizer* address_normalizer,
-    const std::string& default_country_code)
-    : default_country_code_(default_country_code),
-      address_normalizer_(address_normalizer) {
-  DCHECK(autofill::data_util::IsValidCountryCode(default_country_code));
+    const std::string& app_locale)
+    : app_locale_(app_locale), address_normalizer_(address_normalizer) {
   DCHECK(address_normalizer_);
 }
 
 AddressNormalizationManager::~AddressNormalizationManager() {}
 
-void AddressNormalizationManager::FinalizePendingRequestsWithCompletionCallback(
-    base::OnceClosure completion_callback) {
-  DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
-  DCHECK(!completion_callback_);
-  completion_callback_ = std::move(completion_callback);
-  accepting_requests_ = false;
-  MaybeRunCompletionCallback();
-}
-
-void AddressNormalizationManager::StartNormalizingAddress(
+void AddressNormalizationManager::NormalizeAddressUntilFinalized(
     AutofillProfile* profile) {
   DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
   DCHECK(accepting_requests_) << "FinalizeWithCompletionCallback has been "
                                  "called, cannot normalize more addresses";
 
   delegates_.push_back(
-      base::MakeUnique<NormalizerDelegate>(this, address_normalizer_, profile));
+      std::make_unique<NormalizerDelegate>(this, address_normalizer_, profile));
+}
+
+void AddressNormalizationManager::FinalizeWithCompletionCallback(
+    base::OnceClosure completion_callback) {
+  DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
+  DCHECK(!completion_callback_);
+  completion_callback_ = std::move(completion_callback);
+  accepting_requests_ = false;
+  MaybeRunCompletionCallback();
 }
 
 void AddressNormalizationManager::MaybeRunCompletionCallback() {
@@ -74,25 +105,18 @@ AddressNormalizationManager::NormalizerDelegate::NormalizerDelegate(
   DCHECK(owner_);
   DCHECK(profile_);
 
-  std::string country_code =
-      base::UTF16ToUTF8(profile_->GetRawInfo(ADDRESS_HOME_COUNTRY));
-  if (!autofill::data_util::IsValidCountryCode(country_code))
-    country_code = owner_->default_country_code_;
-
-  address_normalizer->StartAddressNormalization(
-      *profile_, country_code, kAddressNormalizationTimeoutSeconds, this);
+  address_normalizer->NormalizeAddressAsync(
+      *profile_, kAddressNormalizationTimeoutSeconds,
+      base::BindOnce(&NormalizerDelegate::OnAddressNormalized,
+                     base::Unretained(this)));
 }
 
 void AddressNormalizationManager::NormalizerDelegate::OnAddressNormalized(
+    bool success,
     const AutofillProfile& normalized_profile) {
-  OnCompletion(normalized_profile);
-}
-
-void AddressNormalizationManager::NormalizerDelegate::OnCouldNotNormalize(
-    const AutofillProfile& profile) {
   // Since the phone number is formatted in either case, this profile should
-  // be used.
-  OnCompletion(profile);
+  // be used regardless of |success|.
+  OnCompletion(normalized_profile);
 }
 
 void AddressNormalizationManager::NormalizerDelegate::OnCompletion(

@@ -25,8 +25,9 @@
 
 #include "modules/speech/testing/PlatformSpeechSynthesizerMock.h"
 
-#include "core/dom/TaskRunnerHelper.h"
+#include "core/dom/ExecutionContext.h"
 #include "platform/speech/PlatformSpeechSynthesisUtterance.h"
+#include "public/platform/TaskType.h"
 
 namespace blink {
 
@@ -45,11 +46,11 @@ PlatformSpeechSynthesizerMock::PlatformSpeechSynthesizerMock(
     ExecutionContext* context)
     : PlatformSpeechSynthesizer(client),
       speaking_error_occurred_timer_(
-          TaskRunnerHelper::Get(TaskType::kUnspecedTimer, context),
+          context->GetTaskRunner(TaskType::kUnspecedTimer),
           this,
           &PlatformSpeechSynthesizerMock::SpeakingErrorOccurred),
       speaking_finished_timer_(
-          TaskRunnerHelper::Get(TaskType::kUnspecedTimer, context),
+          context->GetTaskRunner(TaskType::kUnspecedTimer),
           this,
           &PlatformSpeechSynthesizerMock::SpeakingFinished) {}
 
@@ -114,7 +115,8 @@ void PlatformSpeechSynthesizerMock::SpeakNow() {
 
   // Give the fake speech job some time so that pause and other functions have
   // time to be called.
-  speaking_finished_timer_.StartOneShot(.1, BLINK_FROM_HERE);
+  speaking_finished_timer_.StartOneShot(TimeDelta::FromMilliseconds(100),
+                                        BLINK_FROM_HERE);
 }
 
 void PlatformSpeechSynthesizerMock::Cancel() {
@@ -125,7 +127,8 @@ void PlatformSpeechSynthesizerMock::Cancel() {
   queued_utterances_.clear();
 
   speaking_finished_timer_.Stop();
-  speaking_error_occurred_timer_.StartOneShot(.1, BLINK_FROM_HERE);
+  speaking_error_occurred_timer_.StartOneShot(TimeDelta::FromMilliseconds(100),
+                                              BLINK_FROM_HERE);
 }
 
 void PlatformSpeechSynthesizerMock::Pause() {
@@ -142,7 +145,7 @@ void PlatformSpeechSynthesizerMock::Resume() {
   Client()->DidResumeSpeaking(current_utterance_);
 }
 
-DEFINE_TRACE(PlatformSpeechSynthesizerMock) {
+void PlatformSpeechSynthesizerMock::Trace(blink::Visitor* visitor) {
   visitor->Trace(current_utterance_);
   visitor->Trace(queued_utterances_);
   PlatformSpeechSynthesizer::Trace(visitor);

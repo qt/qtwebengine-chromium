@@ -8,14 +8,14 @@
 #include "base/memory/ptr_util.h"
 #include "base/run_loop.h"
 #include "base/test/scoped_task_environment.h"
-#include "device/hid/hid_device_filter.h"
-#include "device/hid/public/interfaces/hid.mojom.h"
 #include "device/u2f/fake_hid_impl_for_testing.h"
 #include "device/u2f/u2f_apdu_command.h"
 #include "device/u2f/u2f_apdu_response.h"
 #include "device/u2f/u2f_hid_device.h"
 #include "device/u2f/u2f_packet.h"
 #include "mojo/public/cpp/bindings/interface_request.h"
+#include "services/device/public/cpp/hid/hid_device_filter.h"
+#include "services/device/public/interfaces/hid.mojom.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -39,7 +39,7 @@ class U2fDeviceEnumerate {
                                  base::Unretained(this))),
         hid_manager_(hid_manager),
         run_loop_() {}
-  ~U2fDeviceEnumerate() {}
+  ~U2fDeviceEnumerate() = default;
 
   void ReceivedCallback(std::vector<device::mojom::HidDeviceInfoPtr> devices) {
     std::list<std::unique_ptr<U2fHidDevice>> u2f_devices;
@@ -76,14 +76,14 @@ class TestVersionCallback {
  public:
   TestVersionCallback()
       : closure_(),
-        callback_(base::Bind(&TestVersionCallback::ReceivedCallback,
-                             base::Unretained(this))),
+        callback_(base::BindOnce(&TestVersionCallback::ReceivedCallback,
+                                 base::Unretained(this))),
         run_loop_() {}
-  ~TestVersionCallback() {}
+  ~TestVersionCallback() = default;
 
   void ReceivedCallback(bool success, U2fDevice::ProtocolVersion version) {
     version_ = version;
-    closure_.Run();
+    std::move(closure_).Run();
   }
 
   U2fDevice::ProtocolVersion WaitForCallback() {
@@ -92,11 +92,11 @@ class TestVersionCallback {
     return version_;
   }
 
-  const U2fDevice::VersionCallback& callback() { return callback_; }
+  U2fDevice::VersionCallback callback() { return std::move(callback_); }
 
  private:
   U2fDevice::ProtocolVersion version_;
-  base::Closure closure_;
+  base::OnceClosure closure_;
   U2fDevice::VersionCallback callback_;
   base::RunLoop run_loop_;
 };
@@ -108,7 +108,7 @@ class TestDeviceCallback {
         callback_(base::Bind(&TestDeviceCallback::ReceivedCallback,
                              base::Unretained(this))),
         run_loop_() {}
-  ~TestDeviceCallback() {}
+  ~TestDeviceCallback() = default;
 
   void ReceivedCallback(bool success,
                         std::unique_ptr<U2fApduResponse> response) {
@@ -165,7 +165,7 @@ TEST_F(U2fHidDeviceTest, TestHidDeviceVersion) {
     U2fDevice::ProtocolVersion version = vc.WaitForCallback();
     EXPECT_EQ(version, U2fDevice::ProtocolVersion::U2F_V2);
   }
-};
+}
 
 TEST_F(U2fHidDeviceTest, TestMultipleRequests) {
   if (!U2fHidDevice::IsTestEnabled())
@@ -187,21 +187,21 @@ TEST_F(U2fHidDeviceTest, TestMultipleRequests) {
     version = vc2.WaitForCallback();
     EXPECT_EQ(version, U2fDevice::ProtocolVersion::U2F_V2);
   }
-};
+}
 
 TEST_F(U2fHidDeviceTest, TestConnectionFailure) {
   // Setup and enumerate mock device
   U2fDeviceEnumerate callback(hid_manager_.get());
 
-  HidCollectionInfo c_info;
-  c_info.usage = HidUsageAndPage(1, 0xf1d0);
+  auto c_info = device::mojom::HidCollectionInfo::New();
+  c_info->usage = device::mojom::HidUsageAndPage::New(1, 0xf1d0);
 
   auto hid_device = device::mojom::HidDeviceInfo::New();
   hid_device->guid = "A";
   hid_device->product_name = "Test Fido device";
   hid_device->serial_number = "123FIDO";
   hid_device->bus_type = device::mojom::HidBusType::kHIDBusTypeUSB;
-  hid_device->collections.push_back(c_info);
+  hid_device->collections.push_back(std::move(c_info));
   hid_device->max_input_report_size = 64;
   hid_device->max_output_report_size = 64;
 
@@ -222,14 +222,14 @@ TEST_F(U2fHidDeviceTest, TestConnectionFailure) {
   // Add pending transactions manually and ensure they are processed
   std::unique_ptr<U2fApduResponse> response1(
       U2fApduResponse::CreateFromMessage(std::vector<uint8_t>({0x0, 0x0})));
-  device->pending_transactions_.push_back(
-      {U2fApduCommand::CreateVersion(),
-       base::Bind(&ResponseCallback, &response1)});
+  device->pending_transactions_.emplace(
+      U2fApduCommand::CreateVersion(),
+      base::BindOnce(&ResponseCallback, &response1));
   std::unique_ptr<U2fApduResponse> response2(
       U2fApduResponse::CreateFromMessage(std::vector<uint8_t>({0x0, 0x0})));
-  device->pending_transactions_.push_back(
-      {U2fApduCommand::CreateVersion(),
-       base::Bind(&ResponseCallback, &response2)});
+  device->pending_transactions_.emplace(
+      U2fApduCommand::CreateVersion(),
+      base::BindOnce(&ResponseCallback, &response2));
   std::unique_ptr<U2fApduResponse> response3(
       U2fApduResponse::CreateFromMessage(std::vector<uint8_t>({0x0, 0x0})));
   device->DeviceTransact(U2fApduCommand::CreateVersion(),
@@ -238,21 +238,21 @@ TEST_F(U2fHidDeviceTest, TestConnectionFailure) {
   EXPECT_EQ(nullptr, response1);
   EXPECT_EQ(nullptr, response2);
   EXPECT_EQ(nullptr, response3);
-};
+}
 
 TEST_F(U2fHidDeviceTest, TestDeviceError) {
   // Setup and enumerate mock device
   U2fDeviceEnumerate callback(hid_manager_.get());
 
-  HidCollectionInfo c_info;
-  c_info.usage = HidUsageAndPage(1, static_cast<HidUsageAndPage::Page>(0xf1d0));
+  auto c_info = device::mojom::HidCollectionInfo::New();
+  c_info->usage = device::mojom::HidUsageAndPage::New(1, 0xf1d0);
 
   auto hid_device = device::mojom::HidDeviceInfo::New();
   hid_device->guid = "A";
   hid_device->product_name = "Test Fido device";
   hid_device->serial_number = "123FIDO";
   hid_device->bus_type = device::mojom::HidBusType::kHIDBusTypeUSB;
-  hid_device->collections.push_back(c_info);
+  hid_device->collections.push_back(std::move(c_info));
   hid_device->max_input_report_size = 64;
   hid_device->max_output_report_size = 64;
 
@@ -277,14 +277,14 @@ TEST_F(U2fHidDeviceTest, TestDeviceError) {
   // Add pending transactions manually and ensure they are processed
   std::unique_ptr<U2fApduResponse> response1(
       U2fApduResponse::CreateFromMessage(std::vector<uint8_t>({0x0, 0x0})));
-  device->pending_transactions_.push_back(
-      {U2fApduCommand::CreateVersion(),
-       base::Bind(&ResponseCallback, &response1)});
+  device->pending_transactions_.emplace(
+      U2fApduCommand::CreateVersion(),
+      base::BindOnce(&ResponseCallback, &response1));
   std::unique_ptr<U2fApduResponse> response2(
       U2fApduResponse::CreateFromMessage(std::vector<uint8_t>({0x0, 0x0})));
-  device->pending_transactions_.push_back(
-      {U2fApduCommand::CreateVersion(),
-       base::Bind(&ResponseCallback, &response2)});
+  device->pending_transactions_.emplace(
+      U2fApduCommand::CreateVersion(),
+      base::BindOnce(&ResponseCallback, &response2));
   std::unique_ptr<U2fApduResponse> response3(
       U2fApduResponse::CreateFromMessage(std::vector<uint8_t>({0x0, 0x0})));
   device->DeviceTransact(U2fApduCommand::CreateVersion(),
@@ -295,6 +295,6 @@ TEST_F(U2fHidDeviceTest, TestDeviceError) {
   EXPECT_EQ(nullptr, response1);
   EXPECT_EQ(nullptr, response2);
   EXPECT_EQ(nullptr, response3);
-};
+}
 
 }  // namespace device

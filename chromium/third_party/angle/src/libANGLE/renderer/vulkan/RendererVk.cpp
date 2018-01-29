@@ -41,7 +41,7 @@ VkResult VerifyExtensionsPresent(const std::vector<VkExtensionProperties> &exten
         extensionNames.insert(extensionProp.extensionName);
     }
 
-    for (const auto &extensionName : enabledExtensionNames)
+    for (const char *extensionName : enabledExtensionNames)
     {
         if (extensionNames.count(extensionName) == 0)
         {
@@ -96,7 +96,8 @@ RendererVk::RendererVk()
       mGlslangWrapper(nullptr),
       mLastCompletedQueueSerial(mQueueSerialFactory.generate()),
       mCurrentQueueSerial(mQueueSerialFactory.generate()),
-      mInFlightCommands()
+      mInFlightCommands(),
+      mCurrentRenderPassFramebuffer(nullptr)
 {
 }
 
@@ -119,7 +120,7 @@ RendererVk::~RendererVk()
 
     if (mCommandBuffer.valid())
     {
-        mCommandBuffer.destroy(mDevice);
+        mCommandBuffer.destroy(mDevice, mCommandPool);
     }
 
     if (mCommandPool.valid())
@@ -342,6 +343,9 @@ vk::Error RendererVk::initialize(const egl::AttributeMap &attribs, const char *w
 
     mGlslangWrapper = GlslangWrapper::GetReference();
 
+    // Initialize the format table.
+    mFormatTable.initialize(mPhysicalDevice, &mNativeTextureCaps);
+
     return vk::NoError();
 }
 
@@ -424,8 +428,6 @@ vk::Error RendererVk::initializeDevice(uint32_t queueFamilyIndex)
     commandPoolInfo.queueFamilyIndex = mCurrentQueueFamilyIndex;
 
     ANGLE_TRY(mCommandPool.init(mDevice, commandPoolInfo));
-
-    mCommandBuffer.setCommandPool(&mCommandPool);
 
     return vk::NoError();
 }
@@ -533,6 +535,7 @@ void RendererVk::generateCaps(gl::Caps *outCaps,
     outCaps->maxElementIndex              = std::numeric_limits<GLuint>::max() - 1;
     outCaps->maxFragmentUniformVectors    = 8;
     outCaps->maxVertexUniformVectors      = 8;
+    outCaps->maxColorAttachments          = 1;
 
     // Enable this for simple buffer readback testing, but some functionality is missing.
     // TODO(jmadill): Support full mapBufferRange extension.
@@ -564,16 +567,16 @@ const gl::Limitations &RendererVk::getNativeLimitations() const
     return mNativeLimitations;
 }
 
-vk::Error RendererVk::getStartedCommandBuffer(vk::CommandBuffer **commandBufferOut)
+vk::Error RendererVk::getStartedCommandBuffer(vk::CommandBufferAndState **commandBufferOut)
 {
-    ANGLE_TRY(mCommandBuffer.begin(mDevice));
+    ANGLE_TRY(mCommandBuffer.ensureStarted(mDevice, mCommandPool, VK_COMMAND_BUFFER_LEVEL_PRIMARY));
     *commandBufferOut = &mCommandBuffer;
     return vk::NoError();
 }
 
-vk::Error RendererVk::submitCommandBuffer(vk::CommandBuffer *commandBuffer)
+vk::Error RendererVk::submitCommandBuffer(vk::CommandBufferAndState *commandBuffer)
 {
-    ANGLE_TRY(commandBuffer->end());
+    ANGLE_TRY(commandBuffer->ensureFinished());
 
     VkFenceCreateInfo fenceInfo;
     fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
@@ -597,7 +600,7 @@ vk::Error RendererVk::submitCommandBuffer(vk::CommandBuffer *commandBuffer)
     return vk::NoError();
 }
 
-vk::Error RendererVk::submitAndFinishCommandBuffer(vk::CommandBuffer *commandBuffer)
+vk::Error RendererVk::submitAndFinishCommandBuffer(vk::CommandBufferAndState *commandBuffer)
 {
     ANGLE_TRY(submitCommandBuffer(commandBuffer));
     ANGLE_TRY(finish());
@@ -605,7 +608,7 @@ vk::Error RendererVk::submitAndFinishCommandBuffer(vk::CommandBuffer *commandBuf
     return vk::NoError();
 }
 
-vk::Error RendererVk::submitCommandsWithSync(vk::CommandBuffer *commandBuffer,
+vk::Error RendererVk::submitCommandsWithSync(vk::CommandBufferAndState *commandBuffer,
                                              const vk::Semaphore &waitSemaphore,
                                              const vk::Semaphore &signalSemaphore)
 {
@@ -642,19 +645,19 @@ void RendererVk::freeAllInFlightResources()
 {
     for (auto &fence : mInFlightFences)
     {
-        fence.destroy(mDevice);
+        fence.get().destroy(mDevice);
     }
     mInFlightFences.clear();
 
     for (auto &command : mInFlightCommands)
     {
-        command.destroy(mDevice);
+        command.get().destroy(mDevice, mCommandPool);
     }
     mInFlightCommands.clear();
 
     for (auto &garbage : mGarbage)
     {
-        garbage->destroy(mDevice);
+        garbage.destroy(mDevice);
     }
     mGarbage.clear();
 }
@@ -676,7 +679,7 @@ vk::Error RendererVk::checkInFlightCommands()
 
         // Release the fence handle.
         // TODO(jmadill): Re-use fences.
-        inFlightFence->destroy(mDevice);
+        inFlightFence->get().destroy(mDevice);
     }
 
     if (finishedIndex == 0)
@@ -693,7 +696,7 @@ vk::Error RendererVk::checkInFlightCommands()
             break;
 
         completedCBIndex = cbIndex + 1;
-        inFlightCB->destroy(mDevice);
+        inFlightCB->get().destroy(mDevice, mCommandPool);
     }
 
     if (completedCBIndex == 0)
@@ -705,7 +708,7 @@ vk::Error RendererVk::checkInFlightCommands()
     size_t freeIndex = 0;
     for (; freeIndex < mGarbage.size(); ++freeIndex)
     {
-        if (!mGarbage[freeIndex]->destroyIfComplete(mDevice, finishedSerial))
+        if (!mGarbage[freeIndex].destroyIfComplete(mDevice, finishedSerial))
             break;
     }
 
@@ -770,7 +773,7 @@ vk::Error RendererVk::createStagingImage(TextureDimension dimension,
                                          vk::StagingImage *imageOut)
 {
     ANGLE_TRY(imageOut->init(mDevice, mCurrentQueueFamilyIndex, mMemoryProperties, dimension,
-                             format.native, extent, usage));
+                             format.vkTextureFormat, extent, usage));
     return vk::NoError();
 }
 
@@ -782,6 +785,51 @@ GlslangWrapper *RendererVk::getGlslangWrapper()
 Serial RendererVk::getCurrentQueueSerial() const
 {
     return mCurrentQueueSerial;
+}
+
+gl::Error RendererVk::ensureInRenderPass(const gl::Context *context, FramebufferVk *framebufferVk)
+{
+    if (mCurrentRenderPassFramebuffer == framebufferVk)
+    {
+        return gl::NoError();
+    }
+
+    if (mCurrentRenderPassFramebuffer)
+    {
+        endRenderPass();
+    }
+    ANGLE_TRY(
+        framebufferVk->beginRenderPass(context, mDevice, &mCommandBuffer, mCurrentQueueSerial));
+    mCurrentRenderPassFramebuffer = framebufferVk;
+    return gl::NoError();
+}
+
+void RendererVk::endRenderPass()
+{
+    if (mCurrentRenderPassFramebuffer)
+    {
+        ASSERT(mCommandBuffer.started());
+        mCommandBuffer.endRenderPass();
+        mCurrentRenderPassFramebuffer = nullptr;
+    }
+}
+
+void RendererVk::onReleaseRenderPass(const FramebufferVk *framebufferVk)
+{
+    if (mCurrentRenderPassFramebuffer == framebufferVk)
+    {
+        endRenderPass();
+    }
+}
+
+bool RendererVk::isResourceInUse(const ResourceVk &resource)
+{
+    return isSerialInUse(resource.getQueueSerial());
+}
+
+bool RendererVk::isSerialInUse(Serial serial)
+{
+    return serial > mLastCompletedQueueSerial;
 }
 
 }  // namespace rx

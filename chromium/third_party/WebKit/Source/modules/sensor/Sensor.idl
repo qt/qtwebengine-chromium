@@ -7,7 +7,7 @@
 
 [
     ActiveScriptWrappable,
-    DependentLifetime,
+    SecureContext,
     OriginTrialEnabled=Sensor
 ] interface Sensor : EventTarget {
     [MeasureAs=GenericSensorActivated] readonly attribute boolean activated;

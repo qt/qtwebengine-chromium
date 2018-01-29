@@ -74,9 +74,7 @@ source_set("common") {
     "cache_storage/cache_storage_types.h",
     "child_process_host_impl.cc",
     "child_process_host_impl.h",
-    "child_process_messages.h",
     "clipboard_format.h",
-    "clipboard_messages.h",
     "common_sandbox_support_linux.cc",
     "content_constants_internal.cc",
     "content_constants_internal.h",
@@ -114,18 +112,6 @@ source_set("common") {
     "cursors/webcursor_mac.mm",
     "cursors/webcursor_ozone.cc",
     "date_time_suggestion.h",
-    "devtools/devtools_network_conditions.cc",
-    "devtools/devtools_network_conditions.h",
-    "devtools/devtools_network_controller.cc",
-    "devtools/devtools_network_controller.h",
-    "devtools/devtools_network_interceptor.cc",
-    "devtools/devtools_network_interceptor.h",
-    "devtools/devtools_network_transaction.cc",
-    "devtools/devtools_network_transaction.h",
-    "devtools/devtools_network_transaction_factory.cc",
-    "devtools/devtools_network_transaction_factory.h",
-    "devtools/devtools_network_upload_data_stream.cc",
-    "devtools/devtools_network_upload_data_stream.h",
     "devtools_messages.h",
     "dom_storage/dom_storage_map.cc",
     "dom_storage/dom_storage_map.h",
@@ -138,8 +124,6 @@ source_set("common") {
     "drag_traits.h",
     "dwrite_font_proxy_messages.h",
     "edit_command.h",
-    "feature_policy/feature_policy.cc",
-    "feature_policy/feature_policy.h",
     "fileapi/file_system_messages.h",
     "fileapi/webblob_messages.h",
     "font_cache_dispatcher_win.cc",
@@ -182,8 +166,7 @@ source_set("common") {
     "input/input_event.h",
     "input/input_event_ack.cc",
     "input/input_event_ack.h",
-    "input/input_event_ack_source.h",
-    "input/input_event_ack_state.h",
+    "input/input_event_ack_state.cc",
     "input/input_event_dispatch_type.h",
     "input/input_event_stream_validator.cc",
     "input/input_event_stream_validator.h",
@@ -222,8 +205,6 @@ source_set("common") {
     "loader_util.h",
     "mac/attributed_string_coder.h",
     "mac/attributed_string_coder.mm",
-    "mac/font_descriptor.h",
-    "mac/font_descriptor.mm",
     "mac/font_loader.h",
     "mac/font_loader.mm",
     "media/aec_dump_messages.h",
@@ -247,6 +228,8 @@ source_set("common") {
     "navigation_gesture.h",
     "navigation_params.cc",
     "navigation_params.h",
+    "navigation_subresource_loader_params.cc",
+    "navigation_subresource_loader_params.h",
     "net/url_fetcher.cc",
     "net/url_request_service_worker_data.cc",
     "net/url_request_service_worker_data.h",
@@ -280,44 +263,15 @@ source_set("common") {
     "quarantine/quarantine_linux.cc",
     "quarantine/quarantine_mac.mm",
     "quarantine/quarantine_win.cc",
-    "quota_messages.h",
-    "render_process_messages.h",
     "render_widget_surface_properties.cc",
     "render_widget_surface_properties.h",
     "resize_params.cc",
     "resize_params.h",
     "resource_messages.cc",
     "resource_messages.h",
+    "sandbox_init_linux.cc",
     "sandbox_init_mac.cc",
-    "sandbox_init_mac.h",
     "sandbox_init_win.cc",
-    "sandbox_linux/bpf_cdm_policy_linux.cc",
-    "sandbox_linux/bpf_cdm_policy_linux.h",
-    "sandbox_linux/bpf_cros_amd_gpu_policy_linux.cc",
-    "sandbox_linux/bpf_cros_amd_gpu_policy_linux.h",
-    "sandbox_linux/bpf_cros_arm_gpu_policy_linux.cc",
-    "sandbox_linux/bpf_cros_arm_gpu_policy_linux.h",
-    "sandbox_linux/bpf_gpu_policy_linux.cc",
-    "sandbox_linux/bpf_gpu_policy_linux.h",
-    "sandbox_linux/bpf_pdf_compositor_policy_linux.cc",
-    "sandbox_linux/bpf_pdf_compositor_policy_linux.h",
-    "sandbox_linux/bpf_ppapi_policy_linux.cc",
-    "sandbox_linux/bpf_ppapi_policy_linux.h",
-    "sandbox_linux/bpf_renderer_policy_linux.cc",
-    "sandbox_linux/bpf_renderer_policy_linux.h",
-    "sandbox_linux/bpf_utility_policy_linux.cc",
-    "sandbox_linux/bpf_utility_policy_linux.h",
-    "sandbox_linux/sandbox_bpf_base_policy_linux.cc",
-    "sandbox_linux/sandbox_bpf_base_policy_linux.h",
-    "sandbox_linux/sandbox_debug_handling_linux.cc",
-    "sandbox_linux/sandbox_debug_handling_linux.h",
-    "sandbox_linux/sandbox_init_linux.cc",
-    "sandbox_linux/sandbox_linux.cc",
-    "sandbox_linux/sandbox_linux.h",
-    "sandbox_linux/sandbox_seccomp_bpf_linux.cc",
-    "sandbox_linux/sandbox_seccomp_bpf_linux.h",
-    "sandbox_win.cc",
-    "sandbox_win.h",
     "savable_subframe.h",
     "send_zygote_child_ping_linux.cc",
     "service_manager/service_manager_connection_impl.cc",
@@ -353,6 +307,8 @@ source_set("common") {
     "throttling_url_loader.h",
     "unique_name_helper.cc",
     "unique_name_helper.h",
+    "url_loader_factory_bundle.cc",
+    "url_loader_factory_bundle.h",
     "url_request_struct_traits.cc",
     "url_request_struct_traits.h",
     "url_schemes.cc",
@@ -377,6 +333,7 @@ source_set("common") {
     "//services/service_manager/sandbox",
     "//third_party/WebKit/common:blink_common",
     "//third_party/WebKit/public:blink_headers",
+    "//ui/accessibility",
   ]
   deps = [
     ":features",
@@ -436,7 +393,6 @@ source_set("common") {
     "//third_party/angle:angle_gpu_info_util",
     "//third_party/boringssl",
     "//third_party/icu",
-    "//ui/accessibility",
     "//ui/base",
     "//ui/base/ime",
     "//ui/display",
@@ -467,8 +423,8 @@ source_set("common") {
   if (is_android && use_seccomp_bpf) {
     set_sources_assignment_filter([])
     sources += [
-      "sandbox_linux/sandbox_bpf_base_policy_linux.cc",
-      "sandbox_linux/sandbox_bpf_base_policy_linux.h",
+      "//services/service_manager/sandbox/linux/bpf_base_policy_linux.cc",
+      "//services/service_manager/sandbox/linux/bpf_base_policy_linux.h",
     ]
     set_sources_assignment_filter(sources_assignment_filter)
   }
@@ -546,8 +502,10 @@ source_set("common") {
   }
 
   if (!use_seccomp_bpf) {
-    if (is_linux) {
+    if (is_linux && current_cpu != "s390x" && current_cpu != "ppc64") {
       sources -= [
+        "sandbox_linux/bpf_base_policy_linux.cc",
+        "sandbox_linux/bpf_base_policy_linux.h",
         "sandbox_linux/bpf_cros_amd_gpu_policy_linux.cc",
         "sandbox_linux/bpf_cros_amd_gpu_policy_linux.h",
         "sandbox_linux/bpf_cros_arm_gpu_policy_linux.cc",
@@ -560,8 +518,6 @@ source_set("common") {
         "sandbox_linux/bpf_renderer_policy_linux.h",
         "sandbox_linux/bpf_utility_policy_linux.cc",
         "sandbox_linux/bpf_utility_policy_linux.h",
-        "sandbox_linux/sandbox_bpf_base_policy_linux.cc",
-        "sandbox_linux/sandbox_bpf_base_policy_linux.h",
       ]
     }
   }
@@ -605,9 +561,13 @@ mojom("mojo_bindings") {
   cpp_only = true
 
   sources = [
+    "appcache.mojom",
     "associated_interfaces.mojom",
     "child.mojom",
+    "child_control.mojom",
     "child_memory_coordinator.mojom",
+    "clipboard.mojom",
+    "devtools.mojom",
     "field_trial_recorder.mojom",
     "file_utilities.mojom",
     "frame.mojom",
@@ -620,12 +580,13 @@ mojom("mojo_bindings") {
     "input/input_injector.mojom",
     "leveldb_wrapper.mojom",
     "manifest_observer.mojom",
-    "media/media_devices.mojom",
     "media/media_stream.mojom",
     "media/renderer_audio_output_stream_factory.mojom",
     "memory_coordinator.mojom",
     "native_types.mojom",
+    "page_state.mojom",
     "push_messaging.mojom",
+    "quota_dispatcher_host.mojom",
     "render_frame_message_filter.mojom",
     "render_message_filter.mojom",
     "render_widget_window_tree_client_factory.mojom",
@@ -639,7 +600,6 @@ mojom("mojo_bindings") {
     "service_worker/service_worker_fetch_response_callback.mojom",
     "service_worker/service_worker_installed_scripts_manager.mojom",
     "service_worker/service_worker_provider.mojom",
-    "service_worker/service_worker_types.mojom",
     "shared_worker/shared_worker.mojom",
     "shared_worker/shared_worker_client.mojom",
     "shared_worker/shared_worker_connector.mojom",
@@ -647,10 +607,14 @@ mojom("mojo_bindings") {
     "shared_worker/shared_worker_host.mojom",
     "shared_worker/shared_worker_info.mojom",
     "storage_partition_service.mojom",
+    "url_loader_factory_bundle.mojom",
     "video_capture.mojom",
-    "web_database.mojom",
     "widget.mojom",
   ]
+
+  if (is_win) {
+    sources += [ "font_cache_win.mojom" ]
+  }
 
   import_dirs = [ "//mojo/services" ]
 
@@ -667,20 +631,15 @@ mojom("mojo_bindings") {
     "//services/video_capture/public/interfaces",
     "//services/viz/public/interfaces",
     "//skia/public/interfaces",
-    "//storage/public/interfaces",
+    "//storage/common:mojo_bindings",
     "//third_party/WebKit/public:mojo_bindings",
+    "//ui/base/clipboard/mojom:mojo_bindings",
     "//ui/base/mojo:mojo_bindings",
     "//ui/gfx/geometry/mojo",
     "//ui/gfx/mojo",
     "//url/mojo:url_mojom_gurl",
     "//url/mojo:url_mojom_origin",
   ]
-
-  # //storage/public/interfaces is configured to be exported
-  # as STORAGE_COMMON, so override the dependencies to make it
-  # depend via //storage/common.
-  overridden_deps = [ "//storage/public/interfaces" ]
-  component_deps = [ "//storage/common" ]
 
   component_output_prefix = "content_common_mojo_bindings"
   export_class_attribute = "CONTENT_EXPORT"

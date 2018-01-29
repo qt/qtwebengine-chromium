@@ -7,6 +7,7 @@
 
 #include <string>
 
+#include "base/callback_forward.h"
 #include "third_party/libaddressinput/chromium/chrome_address_validator.h"
 
 namespace autofill {
@@ -16,37 +17,29 @@ class AutofillProfile;
 // A class used to normalize addresses.
 class AddressNormalizer : public autofill::LoadRulesListener {
  public:
-  // The interface for the normalization delegates.
-  class Delegate {
-   public:
-    virtual void OnAddressNormalized(
-        const AutofillProfile& normalized_profile) = 0;
+  using NormalizationCallback =
+      base::OnceCallback<void(bool /*success*/,
+                              const AutofillProfile& /*normalized_profile*/)>;
 
-    virtual void OnCouldNotNormalize(const AutofillProfile& profile) = 0;
-
-   protected:
-    virtual ~Delegate() {}
-  };
-
-  // Start loading the validation rules for the specified |region_code|.
+  // Start loading the validation rules for the specified |region_code|. Get
+  // the region code from data_util::GetCountryCodeWithFallback.
   virtual void LoadRulesForRegion(const std::string& region_code) = 0;
 
-  // Returns whether the rules for the specified |region_code| have finished
-  // loading.
-  virtual bool AreRulesLoadedForRegion(const std::string& region_code) = 0;
+  // Normalize |profile| asynchronously based on the profile's set region code.
+  // If the normalization is not completed in |timeout_seconds|, |callback| will
+  // be called with success=false. If |timeout_seconds| is 0, |callback| is
+  // called immediately, and may have success=false if the rules had not already
+  // been loaded. Will start loading the rules for the profile's region code if
+  // they had not started loading. The phone number gets normalized to the E.164
+  // format, which is notably compatible with Payment Request. See documentation
+  // of PhoneNumberFormat::E164 for details.
+  virtual void NormalizeAddressAsync(const AutofillProfile& profile,
+                                     int timeout_seconds,
+                                     NormalizationCallback callback) = 0;
 
-  // Starts the normalization of the |profile| based on the |region_code|. The
-  // normalized profile will be returned to the |requester| possibly
-  // asynchronously. If the normalization is not completed in |timeout_seconds|
-  // the requester will be informed and the request cancelled. This value should
-  // be greater or equal to 0, for which it means that the normalization should
-  // happen synchronously, or not at all if the rules are not already loaded.
-  // Will start loading the rules for the |region_code| if they had not started
-  // loading.
-  virtual void StartAddressNormalization(const AutofillProfile& profile,
-                                         const std::string& region_code,
-                                         int timeout_seconds,
-                                         Delegate* requester) = 0;
+  // Normalizes |profile| and returns whether it was successful. Callers should
+  // call |AreRulesLoadedForRegion| to ensure success.
+  virtual bool NormalizeAddressSync(AutofillProfile* profile) = 0;
 };
 
 }  // namespace autofill

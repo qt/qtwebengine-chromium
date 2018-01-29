@@ -227,7 +227,7 @@ SkBitmap ImageFrameGenerator::TryToResumeDecode(
   TRACE_EVENT1("blink", "ImageFrameGenerator::tryToResumeDecode", "frame index",
                static_cast<int>(index));
 
-  ImageDecoder* decoder = 0;
+  ImageDecoder* decoder = nullptr;
 
   // Lock the mutex, so only one thread can use the decoder at once.
   MutexLocker lock(decode_mutex_);
@@ -382,7 +382,7 @@ ImageFrame* ImageFrameGenerator::Decode(SegmentReader* data,
   // we have to do it before clearing SegmentReader.
   if (used_external_allocator)
     (*decoder)->SetMemoryAllocator(nullptr);
-  (*decoder)->SetData(RefPtr<SegmentReader>(nullptr),
+  (*decoder)->SetData(scoped_refptr<SegmentReader>(nullptr),
                       false);  // Unref SegmentReader from ImageDecoder.
   (*decoder)->ClearCacheExceptFrame(index);
 

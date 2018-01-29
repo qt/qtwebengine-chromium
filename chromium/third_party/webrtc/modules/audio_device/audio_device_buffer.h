@@ -76,7 +76,6 @@ class AudioDeviceBuffer {
   AudioDeviceBuffer();
   virtual ~AudioDeviceBuffer();
 
-  void SetId(uint32_t id) {};
   int32_t RegisterAudioCallback(AudioTransport* audio_callback);
 
   void StartPlayout();
@@ -93,8 +92,6 @@ class AudioDeviceBuffer {
   int32_t SetPlayoutChannels(size_t channels);
   size_t RecordingChannels() const;
   size_t PlayoutChannels() const;
-  int32_t SetRecordingChannel(const AudioDeviceModule::ChannelType channel);
-  int32_t RecordingChannel(AudioDeviceModule::ChannelType& channel) const;
 
   virtual int32_t SetRecordedBuffer(const void* audio_buffer,
                                     size_t samples_per_channel);
@@ -198,7 +195,7 @@ class AudioDeviceBuffer {
   // dynamically.
   rtc::BufferT<int16_t> rec_buffer_ RTC_ACCESS_ON(recording_thread_checker_);
 
-  // AGC parameters.
+// AGC parameters.
 #if !defined(WEBRTC_WIN)
   uint32_t current_mic_level_ RTC_ACCESS_ON(recording_thread_checker_);
 #else

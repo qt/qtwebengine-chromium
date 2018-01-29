@@ -298,7 +298,13 @@ IN_PROC_BROWSER_TEST_F(DumpAccessibilityEventsTest,
 }
 
 IN_PROC_BROWSER_TEST_F(DumpAccessibilityEventsTest,
-                       AccessibilityEventsLiveRegionRemove) {
+                       AccessibilityEventsLiveRegionIgnoresClick) {
+  RunEventTest(FILE_PATH_LITERAL("live-region-ignores-click.html"));
+}
+
+// http:/crbug.com/786848
+IN_PROC_BROWSER_TEST_F(DumpAccessibilityEventsTest,
+                       DISABLED_AccessibilityEventsLiveRegionRemove) {
   RunEventTest(FILE_PATH_LITERAL("live-region-remove.html"));
 }
 

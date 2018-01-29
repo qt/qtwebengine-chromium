@@ -12,6 +12,7 @@
 
 #include <cstdlib>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "api/mediaconstraintsinterface.h"
@@ -155,8 +156,8 @@ bool NewFormatWithConstraints(
     // regardless of the format.
     return true;
   }
-  LOG(LS_WARNING) << "Found unknown MediaStream constraint. Name:"
-                  << constraint.key << " Value:" << constraint.value;
+  RTC_LOG(LS_WARNING) << "Found unknown MediaStream constraint. Name:"
+                      << constraint.key << " Value:" << constraint.value;
   return false;
 }
 
@@ -245,7 +246,7 @@ bool ExtractOption(const MediaConstraintsInterface* all_constraints,
   size_t mandatory = 0;
   bool value;
   if (FindConstraint(all_constraints, key, &value, &mandatory)) {
-    *option = rtc::Optional<bool>(value);
+    *option = value;
     return true;
   }
 
@@ -337,15 +338,15 @@ void VideoCapturerTrackSource::Initialize(
   }
 
   if (formats.size() == 0) {
-    LOG(LS_WARNING) << "Failed to find a suitable video format.";
+    RTC_LOG(LS_WARNING) << "Failed to find a suitable video format.";
     SetState(kEnded);
     return;
   }
 
   if (!ExtractOption(constraints, MediaConstraintsInterface::kNoiseReduction,
                      &needs_denoising_)) {
-    LOG(LS_WARNING) << "Invalid mandatory value for"
-                    << MediaConstraintsInterface::kNoiseReduction;
+    RTC_LOG(LS_WARNING) << "Invalid mandatory value for"
+                        << MediaConstraintsInterface::kNoiseReduction;
     SetState(kEnded);
     return;
   }

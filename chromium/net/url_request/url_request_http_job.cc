@@ -34,6 +34,9 @@
 #include "net/base/trace_constants.h"
 #include "net/base/url_util.h"
 #include "net/cert/cert_status_flags.h"
+#include "net/cert/ct_policy_status.h"
+#include "net/cert/known_roots.h"
+#include "net/cookies/canonical_cookie.h"
 #include "net/cookies/cookie_store.h"
 #include "net/filter/brotli_source_stream.h"
 #include "net/filter/filter_source_stream.h"
@@ -59,7 +62,6 @@
 #include "net/ssl/ssl_cert_request_info.h"
 #include "net/ssl/ssl_config_service.h"
 #include "net/url_request/http_user_agent_settings.h"
-#include "net/url_request/network_error_logging_delegate.h"
 #include "net/url_request/url_request.h"
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_error_job.h"
@@ -76,9 +78,68 @@
 #if BUILDFLAG(ENABLE_REPORTING)
 #include "net/reporting/reporting_header_parser.h"
 #include "net/reporting/reporting_service.h"
+#include "net/url_request/network_error_logging_delegate.h"
 #endif  // BUILDFLAG(ENABLE_REPORTING)
 
 namespace {
+
+// Records details about the most-specific trust anchor in |spki_hashes|,
+// which is expected to be ordered with the leaf cert first and the root cert
+// last. This complements the per-verification histogram
+// Net.Certificate.TrustAnchor.Verify
+void LogTrustAnchor(const net::HashValueVector& spki_hashes) {
+  // Don't record metrics if there are no hashes; this is true if the HTTP
+  // load did not come from an active network connection, such as the disk
+  // cache or a synthesized response.
+  if (spki_hashes.empty())
+    return;
+
+  int32_t id = 0;
+  for (const auto& hash : spki_hashes) {
+    id = net::GetNetTrustAnchorHistogramIdForSPKI(hash);
+    if (id != 0)
+      break;
+  }
+  UMA_HISTOGRAM_SPARSE_SLOWLY("Net.Certificate.TrustAnchor.Request", id);
+}
+
+// Records per-request histograms relating to Certificate Transparency
+// compliance.
+void RecordCTHistograms(const net::SSLInfo& ssl_info) {
+  if (ssl_info.ct_policy_compliance ==
+      net::ct::CTPolicyCompliance::CT_POLICY_COMPLIANCE_DETAILS_NOT_AVAILABLE) {
+    return;
+  }
+  if (!ssl_info.is_issued_by_known_root)
+    return;
+
+  // Connections with major errors other than CERTIFICATE_TRANSPARENCY_REQUIRED
+  // would have failed anyway, so do not record these histograms for such
+  // requests.
+  net::CertStatus other_errors =
+      ssl_info.cert_status &
+      ~net::CERT_STATUS_CERTIFICATE_TRANSPARENCY_REQUIRED;
+  if (net::IsCertStatusError(other_errors) &&
+      !net::IsCertStatusMinorError(other_errors)) {
+    return;
+  }
+
+  // Record the CT compliance of each request, to give a picture of the
+  // percentage of overall requests that are CT-compliant.
+  UMA_HISTOGRAM_ENUMERATION(
+      "Net.CertificateTransparency.RequestComplianceStatus",
+      ssl_info.ct_policy_compliance,
+      net::ct::CTPolicyCompliance::CT_POLICY_MAX);
+  // Record the CT compliance of each request which was required to be CT
+  // compliant. This gives a picture of the sites that are supposed to be
+  // compliant and how well they do at actually being compliant.
+  if (ssl_info.ct_policy_compliance_required) {
+    UMA_HISTOGRAM_ENUMERATION(
+        "Net.CertificateTransparency.CTRequiredRequestComplianceStatus",
+        ssl_info.ct_policy_compliance,
+        net::ct::CTPolicyCompliance::CT_POLICY_MAX);
+  }
+}
 
 // Logs whether the CookieStore used for this request matches the
 // ChannelIDService used when establishing the connection that this request is
@@ -369,8 +430,10 @@ void URLRequestHttpJob::NotifyHeadersComplete() {
   ProcessStrictTransportSecurityHeader();
   ProcessPublicKeyPinsHeader();
   ProcessExpectCTHeader();
+#if BUILDFLAG(ENABLE_REPORTING)
   ProcessReportToHeader();
   ProcessNetworkErrorLoggingHeader();
+#endif  // BUILDFLAG(ENABLE_REPORTING)
 
   // The HTTP transaction may be restarted several times for the purposes
   // of sending authorization information. Each time it restarts, we get
@@ -614,7 +677,8 @@ void URLRequestHttpJob::SetCookieHeaderAndStart(const CookieList& cookie_list) {
       LogCookieAgeForNonSecureRequest(cookie_list, *request_);
 
     request_info_.extra_headers.SetHeader(
-        HttpRequestHeaders::kCookie, CookieStore::BuildCookieLine(cookie_list));
+        HttpRequestHeaders::kCookie,
+        CanonicalCookie::BuildCookieLine(cookie_list));
     // Disable privacy mode as we are sending cookies anyway.
     request_info_.privacy_mode = PRIVACY_MODE_DISABLED;
   }
@@ -646,14 +710,17 @@ void URLRequestHttpJob::SaveCookiesAndNotifyHeadersComplete(int result) {
     // Set all cookies, without waiting for them to be set. Any subsequent read
     // will see the combined result of all cookie operation.
     const base::StringPiece name("Set-Cookie");
-    std::string cookie;
+    std::string cookie_line;
     size_t iter = 0;
     HttpResponseHeaders* headers = GetResponseHeaders();
-    while (headers->EnumerateHeader(&iter, name, &cookie)) {
-      if (cookie.empty() || !CanSetCookie(cookie, &options))
+    while (headers->EnumerateHeader(&iter, name, &cookie_line)) {
+      std::unique_ptr<CanonicalCookie> cookie = net::CanonicalCookie::Create(
+          request_->url(), cookie_line, base::Time::Now(), options);
+      if (!cookie || !CanSetCookie(*cookie, &options))
         continue;
       request_->context()->cookie_store()->SetCookieWithOptionsAsync(
-          request_->url(), cookie, options, CookieStore::SetCookiesCallback());
+          request_->url(), cookie_line, options,
+          CookieStore::SetCookiesCallback());
     }
   }
 
@@ -744,10 +811,10 @@ void URLRequestHttpJob::ProcessExpectCTHeader() {
   }
 }
 
+#if BUILDFLAG(ENABLE_REPORTING)
 void URLRequestHttpJob::ProcessReportToHeader() {
   DCHECK(response_info_);
 
-#if BUILDFLAG(ENABLE_REPORTING)
   HttpResponseHeaders* headers = GetResponseHeaders();
   std::string value;
   if (!headers->GetNormalizedHeader("Report-To", &value))
@@ -773,7 +840,6 @@ void URLRequestHttpJob::ProcessReportToHeader() {
   }
 
   service->ProcessHeader(request_info_.url.GetOrigin(), value);
-#endif  // BUILDFLAG(ENABLE_REPORTING)
 }
 
 void URLRequestHttpJob::ProcessNetworkErrorLoggingHeader() {
@@ -797,8 +863,9 @@ void URLRequestHttpJob::ProcessNetworkErrorLoggingHeader() {
   if (!ssl_info.is_valid() || IsCertStatusError(ssl_info.cert_status))
     return;
 
-  delegate->OnHeader(url::Origin(request_info_.url), value);
+  delegate->OnHeader(url::Origin::Create(request_info_.url), value);
 }
+#endif  // BUILDFLAG(ENABLE_REPORTING)
 
 void URLRequestHttpJob::OnStartCompleted(int result) {
   TRACE_EVENT0(kNetTracingCategory, "URLRequestHttpJob::OnStartCompleted");
@@ -812,6 +879,17 @@ void URLRequestHttpJob::OnStartCompleted(int result) {
   receive_headers_end_ = base::TimeTicks::Now();
 
   const URLRequestContext* context = request_->context();
+
+  if (transaction_ && transaction_->GetResponseInfo()) {
+    const SSLInfo& ssl_info = transaction_->GetResponseInfo()->ssl_info;
+    if (!IsCertificateError(result) ||
+        (IsCertStatusError(ssl_info.cert_status) &&
+         IsCertStatusMinorError(ssl_info.cert_status))) {
+      LogTrustAnchor(ssl_info.public_key_hashes);
+    }
+
+    RecordCTHistograms(ssl_info);
+  }
 
   if (result == OK) {
     if (transaction_ && transaction_->GetResponseInfo()) {

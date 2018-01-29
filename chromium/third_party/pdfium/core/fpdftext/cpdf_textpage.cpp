@@ -44,13 +44,13 @@ float NormalizeThreshold(float threshold) {
 float CalculateBaseSpace(const CPDF_TextObject* pTextObj,
                          const CFX_Matrix& matrix) {
   float baseSpace = 0.0;
-  const int nItems = pTextObj->CountItems();
+  const size_t nItems = pTextObj->CountItems();
   if (pTextObj->m_TextState.GetCharSpace() && nItems >= 3) {
     bool bAllChar = true;
     float spacing =
         matrix.TransformDistance(pTextObj->m_TextState.GetCharSpace());
     baseSpace = spacing;
-    for (int i = 0; i < nItems; i++) {
+    for (size_t i = 0; i < nItems; ++i) {
       CPDF_TextObjectItem item;
       pTextObj->GetItemInfo(i, &item);
       if (item.m_CharCode == static_cast<uint32_t>(-1)) {
@@ -436,49 +436,27 @@ void CPDF_TextPage::CheckMarkedContentObject(int32_t& start,
   }
 }
 
-WideString CPDF_TextPage::GetPageText(int start, int nCount) const {
-  if (!m_bIsParsed || nCount == 0)
+WideString CPDF_TextPage::GetPageText(int start, int count) const {
+  if (start < 0 || start >= CountChars() || count <= 0 || !m_bIsParsed ||
+      m_CharList.empty() || m_TextBuf.GetLength() == 0) {
+    return L"";
+  }
+
+  int text_start = TextIndexFromCharIndex(start);
+  if (text_start < 0)
     return L"";
 
-  if (start < 0)
-    start = 0;
+  count = std::min(count, CountChars() - start);
 
-  if (nCount == -1) {
-    nCount = pdfium::CollectionSize<int>(m_CharList) - start;
-    WideStringView wsTextBuf = m_TextBuf.AsStringView();
-    return WideString(wsTextBuf.Right(wsTextBuf.GetLength() - start));
-  }
-  if (nCount <= 0 || m_CharList.empty())
+  int last = start + count - 1;
+  int text_last = TextIndexFromCharIndex(last);
+  if (text_last < 0 || text_last < text_start)
     return L"";
-  if (nCount + start > pdfium::CollectionSize<int>(m_CharList) - 1)
-    nCount = pdfium::CollectionSize<int>(m_CharList) - start;
-  if (nCount <= 0)
-    return L"";
-  CheckMarkedContentObject(start, nCount);
-  int startindex = 0;
-  PAGECHAR_INFO charinfo = m_CharList[start];
-  int startOffset = 0;
-  while (charinfo.m_Index == -1) {
-    startOffset++;
-    if (startOffset > nCount ||
-        start + startOffset >= pdfium::CollectionSize<int>(m_CharList)) {
-      return L"";
-    }
-    charinfo = m_CharList[start + startOffset];
-  }
-  startindex = charinfo.m_Index;
-  charinfo = m_CharList[start + nCount - 1];
-  int nCountOffset = 0;
-  while (charinfo.m_Index == -1) {
-    nCountOffset++;
-    if (nCountOffset >= nCount)
-      return L"";
-    charinfo = m_CharList[start + nCount - nCountOffset - 1];
-  }
-  nCount = start + nCount - nCountOffset - startindex;
-  if (nCount <= 0)
-    return L"";
-  return WideString(m_TextBuf.AsStringView().Mid(startindex, nCount));
+
+  int text_count = text_last - text_start + 1;
+
+  return WideString(m_TextBuf.AsStringView().Mid(
+      static_cast<size_t>(text_start), static_cast<size_t>(text_count)));
 }
 
 int CPDF_TextPage::CountRects(int start, int nCount) {
@@ -605,12 +583,12 @@ void CPDF_TextPage::ProcessObject() {
 
 void CPDF_TextPage::ProcessFormObject(CPDF_FormObject* pFormObj,
                                       const CFX_Matrix& formMatrix) {
-  CPDF_PageObjectList* pObjectList = pFormObj->m_pForm->GetPageObjectList();
+  const CPDF_PageObjectList* pObjectList =
+      pFormObj->form()->GetPageObjectList();
   if (pObjectList->empty())
     return;
 
-  CFX_Matrix curFormMatrix;
-  curFormMatrix = pFormObj->m_FormMatrix;
+  CFX_Matrix curFormMatrix = pFormObj->form_matrix();
   curFormMatrix.Concat(formMatrix);
 
   for (auto it = pObjectList->begin(); it != pObjectList->end(); ++it) {
@@ -758,8 +736,11 @@ void CPDF_TextPage::ProcessTextObject(
     return;
 
   PDFTEXT_Obj prev_Obj = m_LineObj[count - 1];
+  size_t nItem = prev_Obj.m_pTextObj->CountItems();
+  if (nItem == 0)
+    return;
+
   CPDF_TextObjectItem item;
-  int nItem = prev_Obj.m_pTextObj->CountItems();
   prev_Obj.m_pTextObj->GetItemInfo(nItem - 1, &item);
   float prev_width =
       GetCharWidth(item.m_CharCode, prev_Obj.m_pTextObj->GetFont()) *
@@ -810,16 +791,15 @@ FPDFText_MarkedContent CPDF_TextPage::PreMarkedContent(PDFTEXT_Obj Obj) {
   if (!pTextObj->m_ContentMark.HasRef())
     return FPDFText_MarkedContent::Pass;
 
-  int nContentMark = pTextObj->m_ContentMark.CountItems();
-  if (nContentMark < 1)
+  size_t nContentMark = pTextObj->m_ContentMark.CountItems();
+  if (nContentMark == 0)
     return FPDFText_MarkedContent::Pass;
 
   WideString actText;
   bool bExist = false;
   CPDF_Dictionary* pDict = nullptr;
-  int n = 0;
-  for (n = 0; n < nContentMark; n++) {
-    const CPDF_ContentMarkItem& item = pTextObj->m_ContentMark.GetItem(n);
+  for (size_t i = 0; i < nContentMark; ++i) {
+    const CPDF_ContentMarkItem& item = pTextObj->m_ContentMark.GetItem(i);
     pDict = item.GetParam();
     if (!pDict)
       continue;
@@ -832,10 +812,12 @@ FPDFText_MarkedContent CPDF_TextPage::PreMarkedContent(PDFTEXT_Obj Obj) {
   if (!bExist)
     return FPDFText_MarkedContent::Pass;
 
-  if (m_pPreTextObj && m_pPreTextObj->m_ContentMark.HasRef() &&
-      m_pPreTextObj->m_ContentMark.CountItems() == n &&
-      pDict == m_pPreTextObj->m_ContentMark.GetItem(n - 1).GetParam()) {
-    return FPDFText_MarkedContent::Done;
+  if (m_pPreTextObj) {
+    const CPDF_ContentMark& mark = m_pPreTextObj->m_ContentMark;
+    if (mark.HasRef() && mark.CountItems() == nContentMark &&
+        mark.GetItem(nContentMark - 1).GetParam() == pDict) {
+      return FPDFText_MarkedContent::Done;
+    }
   }
 
   if (actText.IsEmpty())
@@ -938,9 +920,9 @@ void CPDF_TextPage::SwapTempTextBuf(int32_t iCharListStartAppend,
 
 bool CPDF_TextPage::IsRightToLeft(const CPDF_TextObject* pTextObj,
                                   const CPDF_Font* pFont,
-                                  int nItems) const {
+                                  size_t nItems) const {
   WideString str;
-  for (int32_t i = 0; i < nItems; i++) {
+  for (size_t i = 0; i < nItems; ++i) {
     CPDF_TextObjectItem item;
     pTextObj->GetItemInfo(i, &item);
     if (item.m_CharCode == static_cast<uint32_t>(-1))
@@ -1035,7 +1017,7 @@ void CPDF_TextPage::ProcessTextObject(PDFTEXT_Obj Obj) {
   }
   m_pPreTextObj = pTextObj;
   m_perMatrix = formMatrix;
-  int nItems = pTextObj->CountItems();
+  size_t nItems = pTextObj->CountItems();
   float baseSpace = CalculateBaseSpace(pTextObj, matrix);
 
   const bool bR2L = IsRightToLeft(pTextObj, pFont, nItems);
@@ -1046,7 +1028,7 @@ void CPDF_TextPage::ProcessTextObject(PDFTEXT_Obj Obj) {
       pdfium::CollectionSize<int32_t>(m_TempCharList);
 
   float spacing = 0;
-  for (int i = 0; i < nItems; i++) {
+  for (size_t i = 0; i < nItems; ++i) {
     CPDF_TextObjectItem item;
     PAGECHAR_INFO charinfo;
     pTextObj->GetItemInfo(i, &item);
@@ -1189,8 +1171,8 @@ void CPDF_TextPage::ProcessTextObject(PDFTEXT_Obj Obj) {
 
 CPDF_TextPage::TextOrientation CPDF_TextPage::GetTextObjectWritingMode(
     const CPDF_TextObject* pTextObj) const {
-  int32_t nChars = pTextObj->CountChars();
-  if (nChars == 1)
+  size_t nChars = pTextObj->CountChars();
+  if (nChars <= 1)
     return m_TextlineDir;
 
   CPDF_TextObjectItem first, last;
@@ -1259,13 +1241,19 @@ CPDF_TextPage::GenerateCharacter CPDF_TextPage::ProcessInsertObject(
   if (WritingMode == TextOrientation::Unknown)
     WritingMode = GetTextObjectWritingMode(m_pPreTextObj.Get());
 
+  size_t nItem = m_pPreTextObj->CountItems();
+  if (nItem == 0)
+    return GenerateCharacter::None;
+
+  CPDF_TextObjectItem PrevItem;
+  m_pPreTextObj->GetItemInfo(nItem - 1, &PrevItem);
+
+  CPDF_TextObjectItem item;
+  pObj->GetItemInfo(0, &item);
+
   CFX_FloatRect this_rect = pObj->GetRect();
   CFX_FloatRect prev_rect = m_pPreTextObj->GetRect();
-  CPDF_TextObjectItem PrevItem;
-  CPDF_TextObjectItem item;
-  int nItem = m_pPreTextObj->CountItems();
-  m_pPreTextObj->GetItemInfo(nItem - 1, &PrevItem);
-  pObj->GetItemInfo(0, &item);
+
   WideString wstrItem = pObj->GetFont()->UnicodeFromCharCode(item.m_CharCode);
   if (wstrItem.IsEmpty())
     wstrItem += static_cast<wchar_t>(item.m_CharCode);
@@ -1349,8 +1337,7 @@ CPDF_TextPage::GenerateCharacter CPDF_TextPage::ProcessInsertObject(
                              : GenerateCharacter::LineBreak;
   }
 
-  int32_t nChars = pObj->CountChars();
-  if (nChars == 1 && (0x2D == curChar || 0xAD == curChar) &&
+  if (pObj->CountChars() == 1 && (0x2D == curChar || 0xAD == curChar) &&
       IsHyphen(curChar)) {
     return GenerateCharacter::Hyphen;
   }
@@ -1423,17 +1410,18 @@ bool CPDF_TextPage::IsSameTextObject(CPDF_TextObject* pTextObj1,
     if (pTextObj2->GetFontSize() != pTextObj1->GetFontSize())
       return false;
   }
-  int nPreCount = pTextObj2->CountItems();
-  int nCurCount = pTextObj1->CountItems();
-  if (nPreCount != nCurCount)
+
+  size_t nPreCount = pTextObj2->CountItems();
+  if (nPreCount != pTextObj1->CountItems())
     return false;
+
   // If both objects have no items, consider them same.
-  if (!nPreCount)
+  if (nPreCount == 0)
     return true;
 
   CPDF_TextObjectItem itemPer;
   CPDF_TextObjectItem itemCur;
-  for (int i = 0; i < nPreCount; i++) {
+  for (size_t i = 0; i < nPreCount; ++i) {
     pTextObj2->GetItemInfo(i, &itemPer);
     pTextObj1->GetItemInfo(i, &itemCur);
     if (itemCur.m_CharCode != itemPer.m_CharCode)

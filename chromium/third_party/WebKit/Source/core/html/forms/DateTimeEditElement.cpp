@@ -522,7 +522,7 @@ DateTimeEditElement::DateTimeEditElement(Document& document,
 
 DateTimeEditElement::~DateTimeEditElement() {}
 
-DEFINE_TRACE(DateTimeEditElement) {
+void DateTimeEditElement::Trace(blink::Visitor* visitor) {
   visitor->Trace(fields_);
   visitor->Trace(edit_control_owner_);
   HTMLDivElement::Trace(visitor);
@@ -563,11 +563,11 @@ DateTimeEditElement* DateTimeEditElement::Create(
   return container;
 }
 
-RefPtr<ComputedStyle> DateTimeEditElement::CustomStyleForLayoutObject() {
+scoped_refptr<ComputedStyle> DateTimeEditElement::CustomStyleForLayoutObject() {
   // FIXME: This is a kind of layout. We might want to introduce new
   // layoutObject.
-  RefPtr<ComputedStyle> original_style = OriginalStyleForLayoutObject();
-  RefPtr<ComputedStyle> style = ComputedStyle::Clone(*original_style);
+  scoped_refptr<ComputedStyle> original_style = OriginalStyleForLayoutObject();
+  scoped_refptr<ComputedStyle> style = ComputedStyle::Clone(*original_style);
   float width = 0;
   for (Node* child = FieldsWrapperElement()->firstChild(); child;
        child = child->nextSibling()) {
@@ -606,7 +606,7 @@ void DateTimeEditElement::DisabledStateChanged() {
 }
 
 DateTimeFieldElement* DateTimeEditElement::FieldAt(size_t field_index) const {
-  return field_index < fields_.size() ? fields_[field_index].Get() : 0;
+  return field_index < fields_.size() ? fields_[field_index].Get() : nullptr;
 }
 
 size_t DateTimeEditElement::FieldIndexOf(

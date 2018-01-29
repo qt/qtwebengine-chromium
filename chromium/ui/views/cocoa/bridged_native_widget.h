@@ -20,6 +20,7 @@
 #import "ui/views/focus/focus_manager.h"
 #include "ui/views/views_export.h"
 #include "ui/views/widget/widget.h"
+#include "ui/views/window/dialog_observer.h"
 
 @class BridgedContentView;
 @class ModalShowAnimationWithLayer;
@@ -50,7 +51,8 @@ class VIEWS_EXPORT BridgedNativeWidget
       public CocoaMouseCaptureDelegate,
       public FocusChangeListener,
       public ui::AcceleratedWidgetMacNSView,
-      public BridgedNativeWidgetOwner {
+      public BridgedNativeWidgetOwner,
+      public DialogObserver {
  public:
   // Contains NativeViewHost->gfx::NativeView associations.
   using AssociatedViews = std::map<const views::View*, NSView*>;
@@ -79,6 +81,9 @@ class VIEWS_EXPORT BridgedNativeWidget
   // Initialize the bridge, "retains" ownership of |window|.
   void Init(base::scoped_nsobject<NSWindow> window,
             const Widget::InitParams& params);
+
+  // Invoked at the end of Widget::Init().
+  void OnWidgetInitDone();
 
   // Sets or clears the focus manager to use for tracking focused views.
   // This does NOT take ownership of |focus_manager|.
@@ -282,7 +287,6 @@ class VIEWS_EXPORT BridgedNativeWidget
 
   // Overridden from ui::LayerDelegate:
   void OnPaintLayer(const ui::PaintContext& context) override;
-  void OnDelegatedFrameDamage(const gfx::Rect& damage_rect_in_dip) override;
   void OnDeviceScaleFactorChanged(float old_device_scale_factor,
                                   float new_device_scale_factor) override;
 
@@ -297,6 +301,9 @@ class VIEWS_EXPORT BridgedNativeWidget
   gfx::Vector2d GetChildWindowOffset() const override;
   bool IsVisibleParent() const override;
   void RemoveChildWindow(BridgedNativeWidget* child) override;
+
+  // DialogObserver:
+  void OnDialogModelChanged() override;
 
   views::NativeWidgetMac* native_widget_mac_;  // Weak. Owns this.
   base::scoped_nsobject<NSWindow> window_;

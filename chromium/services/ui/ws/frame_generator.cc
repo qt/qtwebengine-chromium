@@ -86,6 +86,17 @@ void FrameGenerator::ReclaimResources(
 void FrameGenerator::DidReceiveCompositorFrameAck(
     const std::vector<viz::ReturnedResource>& resources) {}
 
+void FrameGenerator::DidPresentCompositorFrame(uint32_t presentation_token,
+                                               base::TimeTicks time,
+                                               base::TimeDelta refresh,
+                                               uint32_t flags) {
+  NOTIMPLEMENTED();
+}
+
+void FrameGenerator::DidDiscardCompositorFrame(uint32_t presentation_token) {
+  NOTIMPLEMENTED();
+}
+
 void FrameGenerator::OnBeginFrame(const viz::BeginFrameArgs& begin_frame_args) {
   DCHECK(compositor_frame_sink_);
   current_begin_frame_ack_ = viz::BeginFrameAck(
@@ -207,8 +218,9 @@ void FrameGenerator::DrawWindow(viz::RenderPass* pass) {
   quad->SetAll(sqs, bounds_at_origin /* rect */,
                bounds_at_origin /* visible_rect */, true /* needs_blending*/,
                window_manager_surface_info_.id(),
-               viz::SurfaceDrawQuadType::PRIMARY,
-               SK_ColorWHITE /* default_background_color */, nullptr);
+               window_manager_surface_info_.id(),
+               SK_ColorWHITE /* default_background_color */,
+               false /* stretch_content_to_fill_bounds */);
 }
 
 void FrameGenerator::SetNeedsBeginFrame(bool needs_begin_frame) {

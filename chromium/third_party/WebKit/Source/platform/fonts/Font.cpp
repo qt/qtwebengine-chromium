@@ -37,6 +37,7 @@
 #include "platform/geometry/FloatRect.h"
 #include "platform/graphics/paint/PaintCanvas.h"
 #include "platform/graphics/paint/PaintFlags.h"
+#include "platform/graphics/paint/PaintTextBlob.h"
 #include "platform/text/BidiResolver.h"
 #include "platform/text/Character.h"
 #include "platform/text/TextRun.h"
@@ -75,10 +76,10 @@ Font& Font::operator=(const Font& other) {
 
 bool Font::operator==(const Font& other) const {
   FontSelector* first =
-      font_fallback_list_ ? font_fallback_list_->GetFontSelector() : 0;
+      font_fallback_list_ ? font_fallback_list_->GetFontSelector() : nullptr;
   FontSelector* second = other.font_fallback_list_
                              ? other.font_fallback_list_->GetFontSelector()
-                             : 0;
+                             : nullptr;
 
   return first == second && font_description_ == other.font_description_ &&
          (font_fallback_list_
@@ -128,7 +129,7 @@ void DrawBlobs(PaintCanvas* canvas,
 
 }  // anonymous ns
 
-bool Font::DrawText(PaintCanvas* canvas,
+void Font::DrawText(PaintCanvas* canvas,
                     const TextRunPaintInfo& run_info,
                     const FloatPoint& point,
                     float device_scale_factor,
@@ -136,7 +137,7 @@ bool Font::DrawText(PaintCanvas* canvas,
   // Don't draw anything while we are using custom fonts that are in the process
   // of loading.
   if (ShouldSkipDrawing())
-    return false;
+    return;
 
   ShapeResultBloberizer bloberizer(*this, device_scale_factor);
   CachingWordShaper word_shaper(*this);
@@ -144,10 +145,9 @@ bool Font::DrawText(PaintCanvas* canvas,
   word_shaper.FillResultBuffer(run_info, &buffer);
   bloberizer.FillGlyphs(run_info, buffer);
   DrawBlobs(canvas, flags, bloberizer.Blobs(), point);
-  return true;
 }
 
-bool Font::DrawText(PaintCanvas* canvas,
+void Font::DrawText(PaintCanvas* canvas,
                     const NGTextFragmentPaintInfo& text_info,
                     const FloatPoint& point,
                     float device_scale_factor,
@@ -155,13 +155,12 @@ bool Font::DrawText(PaintCanvas* canvas,
   // Don't draw anything while we are using custom fonts that are in the process
   // of loading.
   if (ShouldSkipDrawing())
-    return false;
+    return;
 
   ShapeResultBloberizer bloberizer(*this, device_scale_factor);
   bloberizer.FillGlyphs(text_info.text, text_info.from, text_info.to,
                         text_info.shape_result);
   DrawBlobs(canvas, flags, bloberizer.Blobs(), point);
-  return true;
 }
 
 bool Font::DrawBidiText(PaintCanvas* canvas,
@@ -296,8 +295,9 @@ unsigned InterceptsFromBlobs(const ShapeResultBloberizer::BlobBuffer& blobs,
     SkScalar* offset_intercepts_buffer = nullptr;
     if (intercepts_buffer)
       offset_intercepts_buffer = &intercepts_buffer[num_intervals];
-    num_intervals += paint.getTextBlobIntercepts(
-        blob_info.blob.get(), bounds_array, offset_intercepts_buffer);
+    num_intervals +=
+        paint.getTextBlobIntercepts(blob_info.blob->ToSkTextBlob().get(),
+                                    bounds_array, offset_intercepts_buffer);
   }
   return num_intervals;
 }
@@ -380,6 +380,13 @@ FloatRect Font::SelectionRectForText(const TextRun& run,
       FloatRect(point.X() + range.start, point.Y(), range.Width(), height));
 }
 
+FloatRect Font::BoundingBox(const TextRun& run) const {
+  FontCachePurgePreventer purge_preventer;
+  CachingWordShaper shaper(*this);
+  CharacterRange range = shaper.GetCharacterRange(run, 0, run.length());
+  return FloatRect(range.start, -range.ascent, range.Width(), range.Height());
+}
+
 int Font::OffsetForPosition(const TextRun& run,
                             float x_float,
                             bool include_partial_glyphs) const {
@@ -430,7 +437,7 @@ void Font::WillUseFontData(const String& text) const {
         GetFontDescription(), family.Family(), text);
 }
 
-RefPtr<FontFallbackIterator> Font::CreateFontFallbackIterator(
+scoped_refptr<FontFallbackIterator> Font::CreateFontFallbackIterator(
     FontFallbackPriority fallback_priority) const {
   return FontFallbackIterator::Create(font_description_, font_fallback_list_,
                                       fallback_priority);

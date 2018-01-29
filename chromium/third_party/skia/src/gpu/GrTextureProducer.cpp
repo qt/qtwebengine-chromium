@@ -16,17 +16,16 @@
 
 sk_sp<GrTextureProxy> GrTextureProducer::CopyOnGpu(GrContext* context,
                                                    sk_sp<GrTextureProxy> inputProxy,
-                                                   const SkIRect* subset,
                                                    const CopyParams& copyParams,
                                                    bool dstWillRequireMipMaps) {
-    SkASSERT(!subset || !subset->isEmpty());
     SkASSERT(context);
 
     const SkRect dstRect = SkRect::MakeIWH(copyParams.fWidth, copyParams.fHeight);
+    GrMipMapped mipMapped = dstWillRequireMipMaps ? GrMipMapped::kYes : GrMipMapped::kNo;
 
     sk_sp<GrRenderTargetContext> copyRTC = context->makeDeferredRenderTargetContextWithFallback(
         SkBackingFit::kExact, dstRect.width(), dstRect.height(), inputProxy->config(), nullptr,
-        0, dstWillRequireMipMaps, inputProxy->origin());
+        0, mipMapped, inputProxy->origin());
     if (!copyRTC) {
         return nullptr;
     }
@@ -34,23 +33,13 @@ sk_sp<GrTextureProxy> GrTextureProducer::CopyOnGpu(GrContext* context,
     GrPaint paint;
     paint.setGammaCorrect(true);
 
-    SkRect localRect;
-    if (subset) {
-        localRect = SkRect::Make(*subset);
-    } else {
-        localRect = SkRect::MakeWH(inputProxy->width(), inputProxy->height());
-    }
+    SkRect localRect = SkRect::MakeWH(inputProxy->width(), inputProxy->height());
 
     bool needsDomain = false;
     if (copyParams.fFilter != GrSamplerState::Filter::kNearest) {
         bool resizing = localRect.width()  != dstRect.width() ||
                         localRect.height() != dstRect.height();
-
-        if (GrResourceProvider::IsFunctionallyExact(inputProxy.get())) {
-            needsDomain = subset && resizing;
-        } else {
-            needsDomain = resizing;
-        }
+        needsDomain = resizing && !GrResourceProvider::IsFunctionallyExact(inputProxy.get());
     }
 
     if (needsDomain) {
@@ -59,11 +48,11 @@ sk_sp<GrTextureProxy> GrTextureProducer::CopyOnGpu(GrContext* context,
         // better!
         SkASSERT(copyParams.fFilter != GrSamplerState::Filter::kMipMap);
         paint.addColorFragmentProcessor(
-            GrTextureDomainEffect::Make(std::move(inputProxy), nullptr, SkMatrix::I(),
-                                        domain, GrTextureDomain::kClamp_Mode, copyParams.fFilter));
+            GrTextureDomainEffect::Make(std::move(inputProxy), SkMatrix::I(), domain,
+                                        GrTextureDomain::kClamp_Mode, copyParams.fFilter));
     } else {
         GrSamplerState samplerState(GrSamplerState::WrapMode::kClamp, copyParams.fFilter);
-        paint.addColorTextureProcessor(std::move(inputProxy), nullptr, SkMatrix::I(), samplerState);
+        paint.addColorTextureProcessor(std::move(inputProxy), SkMatrix::I(), samplerState);
     }
     paint.setPorterDuffXPFactory(SkBlendMode::kSrc);
 
@@ -89,17 +78,11 @@ GrTextureProducer::DomainMode GrTextureProducer::DetermineDomainMode(
         FilterConstraint filterConstraint,
         bool coordsLimitedToConstraintRect,
         GrTextureProxy* proxy,
-        const SkIRect* contentRect,
         const GrSamplerState::Filter* filterModeOrNullForBicubic,
         SkRect* domainRect) {
     const SkIRect proxyBounds = SkIRect::MakeWH(proxy->width(), proxy->height());
 
     SkASSERT(proxyBounds.contains(constraintRect));
-    // We only expect a content area rect if there is some non-content area.
-    SkASSERT(!contentRect ||
-             (!contentRect->contains(proxyBounds) &&
-              proxyBounds.contains(*contentRect) &&
-              contentRect->contains(constraintRect)));
 
     const bool proxyIsExact = GrResourceProvider::IsFunctionallyExact(proxy);
 
@@ -108,16 +91,12 @@ GrTextureProducer::DomainMode GrTextureProducer::DetermineDomainMode(
         return kNoDomain_DomainMode;
     }
 
-    if (!contentRect && !proxyIsExact) {
-        contentRect = &proxyBounds;
-    }
-
     bool restrictFilterToRect = (filterConstraint == GrTextureProducer::kYes_FilterConstraint);
 
     // If we can filter outside the constraint rect, and there is no non-content area of the
     // proxy, and we aren't going to generate sample coords outside the constraint rect then we
     // don't need a domain.
-    if (!restrictFilterToRect && !contentRect && coordsLimitedToConstraintRect) {
+    if (!restrictFilterToRect && proxyIsExact && coordsLimitedToConstraintRect) {
         return kNoDomain_DomainMode;
     }
 
@@ -136,7 +115,7 @@ GrTextureProducer::DomainMode GrTextureProducer::DetermineDomainMode(
                 filterHalfWidth = .5f;
                 break;
             case GrSamplerState::Filter::kMipMap:
-                if (restrictFilterToRect || contentRect) {
+                if (restrictFilterToRect || !proxyIsExact) {
                     // No domain can save us here.
                     return kTightCopy_DomainMode;
                 }
@@ -156,10 +135,10 @@ GrTextureProducer::DomainMode GrTextureProducer::DetermineDomainMode(
     // the domain.
     if (restrictFilterToRect) {
         *domainRect = constraintRect.makeInset(kDomainInset, kDomainInset);
-    } else if (contentRect) {
-        // If we got here then: there is a contentRect, the coords are limited to the
+    } else if (!proxyIsExact) {
+        // If we got here then: proxy is not exact, the coords are limited to the
         // constraint rect, and we're allowed to filter across the constraint rect boundary. So
-        // we check whether the filter would reach across the edge of the content area.
+        // we check whether the filter would reach across the edge of the proxy.
         // We will only set the sides that are required.
 
         domainRect->setLargest();
@@ -167,24 +146,12 @@ GrTextureProducer::DomainMode GrTextureProducer::DetermineDomainMode(
             // We may be able to use the fact that the texture coords are limited to the constraint
             // rect in order to avoid having to add a domain.
             bool needContentAreaConstraint = false;
-            if (contentRect->fLeft > 0 &&
-                contentRect->fLeft + filterHalfWidth > constraintRect.fLeft) {
-                domainRect->fLeft = contentRect->fLeft + kDomainInset;
+            if (proxyBounds.fRight - filterHalfWidth < constraintRect.fRight) {
+                domainRect->fRight = proxyBounds.fRight - kDomainInset;
                 needContentAreaConstraint = true;
             }
-            if (contentRect->fTop > 0 &&
-                contentRect->fTop + filterHalfWidth > constraintRect.fTop) {
-                domainRect->fTop = contentRect->fTop + kDomainInset;
-                needContentAreaConstraint = true;
-            }
-            if ((!proxyIsExact || contentRect->fRight < proxy->width()) &&
-                contentRect->fRight - filterHalfWidth < constraintRect.fRight) {
-                domainRect->fRight = contentRect->fRight - kDomainInset;
-                needContentAreaConstraint = true;
-            }
-            if ((!proxyIsExact || contentRect->fBottom < proxy->height()) &&
-                contentRect->fBottom - filterHalfWidth < constraintRect.fBottom) {
-                domainRect->fBottom = contentRect->fBottom - kDomainInset;
+            if (proxyBounds.fBottom - filterHalfWidth < constraintRect.fBottom) {
+                domainRect->fBottom = proxyBounds.fBottom - kDomainInset;
                 needContentAreaConstraint = true;
             }
             if (!needContentAreaConstraint) {
@@ -193,18 +160,8 @@ GrTextureProducer::DomainMode GrTextureProducer::DetermineDomainMode(
         } else {
             // Our sample coords for the texture are allowed to be outside the constraintRect so we
             // don't consider it when computing the domain.
-            if (contentRect->fLeft > 0) {
-                domainRect->fLeft = contentRect->fLeft + kDomainInset;
-            }
-            if (contentRect->fTop > 0) {
-                domainRect->fTop = contentRect->fTop + kDomainInset;
-            }
-            if (!proxyIsExact || contentRect->fRight < proxy->width()) {
-                domainRect->fRight = contentRect->fRight - kDomainInset;
-            }
-            if (!proxyIsExact || contentRect->fBottom < proxy->height()) {
-                domainRect->fBottom = contentRect->fBottom - kDomainInset;
-            }
+            domainRect->fRight = proxyBounds.fRight - kDomainInset;
+            domainRect->fBottom = proxyBounds.fBottom - kDomainInset;
         }
     } else {
         return kNoDomain_DomainMode;
@@ -221,7 +178,6 @@ GrTextureProducer::DomainMode GrTextureProducer::DetermineDomainMode(
 
 std::unique_ptr<GrFragmentProcessor> GrTextureProducer::CreateFragmentProcessorForDomainAndFilter(
         sk_sp<GrTextureProxy> proxy,
-        sk_sp<GrColorSpaceXform> colorSpaceXform,
         const SkMatrix& textureMatrix,
         DomainMode domainMode,
         const SkRect& domain,
@@ -229,24 +185,20 @@ std::unique_ptr<GrFragmentProcessor> GrTextureProducer::CreateFragmentProcessorF
     SkASSERT(kTightCopy_DomainMode != domainMode);
     if (filterOrNullForBicubic) {
         if (kDomain_DomainMode == domainMode) {
-            return GrTextureDomainEffect::Make(std::move(proxy),
-                                               std::move(colorSpaceXform), textureMatrix,
-                                               domain, GrTextureDomain::kClamp_Mode,
+            return GrTextureDomainEffect::Make(std::move(proxy), textureMatrix, domain,
+                                               GrTextureDomain::kClamp_Mode,
                                                *filterOrNullForBicubic);
         } else {
             GrSamplerState samplerState(GrSamplerState::WrapMode::kClamp, *filterOrNullForBicubic);
-            return GrSimpleTextureEffect::Make(std::move(proxy), std::move(colorSpaceXform),
-                                               textureMatrix, samplerState);
+            return GrSimpleTextureEffect::Make(std::move(proxy), textureMatrix, samplerState);
         }
     } else {
         if (kDomain_DomainMode == domainMode) {
-            return GrBicubicEffect::Make(std::move(proxy), std::move(colorSpaceXform),
-                                         textureMatrix, domain);
+            return GrBicubicEffect::Make(std::move(proxy), textureMatrix, domain);
         } else {
             static const GrSamplerState::WrapMode kClampClamp[] = {
                     GrSamplerState::WrapMode::kClamp, GrSamplerState::WrapMode::kClamp};
-            return GrBicubicEffect::Make(std::move(proxy), std::move(colorSpaceXform),
-                                         textureMatrix, kClampClamp);
+            return GrBicubicEffect::Make(std::move(proxy), textureMatrix, kClampClamp);
         }
     }
 }

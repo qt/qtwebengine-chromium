@@ -2977,7 +2977,8 @@ bool WebGLImageConversion::PackImageData(
   params.alignment = 1;
   if (ComputeImageSizeInBytes(format, type, source_image_sub_rectangle.Width(),
                               source_image_sub_rectangle.Height(), depth,
-                              params, &packed_size, 0, 0) != GL_NO_ERROR)
+                              params, &packed_size, nullptr,
+                              nullptr) != GL_NO_ERROR)
     return false;
   data.resize(packed_size);
 
@@ -3011,7 +3012,8 @@ bool WebGLImageConversion::ExtractImageData(
   params.alignment = 1;
   if (ComputeImageSizeInBytes(format, type, source_image_sub_rectangle.Width(),
                               source_image_sub_rectangle.Height(), depth,
-                              params, &packed_size, 0, 0) != GL_NO_ERROR)
+                              params, &packed_size, nullptr,
+                              nullptr) != GL_NO_ERROR)
     return false;
   data.resize(packed_size);
 
@@ -3025,15 +3027,16 @@ bool WebGLImageConversion::ExtractImageData(
   return true;
 }
 
-bool WebGLImageConversion::ExtractTextureData(unsigned width,
-                                              unsigned height,
-                                              GLenum format,
-                                              GLenum type,
-                                              unsigned unpack_alignment,
-                                              bool flip_y,
-                                              bool premultiply_alpha,
-                                              const void* pixels,
-                                              Vector<uint8_t>& data) {
+bool WebGLImageConversion::ExtractTextureData(
+    unsigned width,
+    unsigned height,
+    GLenum format,
+    GLenum type,
+    const PixelStoreParams& unpack_params,
+    bool flip_y,
+    bool premultiply_alpha,
+    const void* pixels,
+    Vector<uint8_t>& data) {
   // Assumes format, type, etc. have already been validated.
   DataFormat source_data_format = GetDataFormat(format, type);
   if (source_data_format == kDataFormatNumFormats)
@@ -3047,9 +3050,18 @@ bool WebGLImageConversion::ExtractTextureData(unsigned width,
   unsigned bytes_per_pixel = components_per_pixel * bytes_per_component;
   data.resize(width * height * bytes_per_pixel);
 
-  if (!PackPixels(static_cast<const uint8_t*>(pixels), source_data_format,
-                  width, height, IntRect(0, 0, width, height), 1,
-                  unpack_alignment, 0, format, type,
+  unsigned image_size_in_bytes, skip_size_in_bytes;
+  ComputeImageSizeInBytes(format, type, width, height, 1, unpack_params,
+                          &image_size_in_bytes, nullptr, &skip_size_in_bytes);
+  const uint8_t* src_data = static_cast<const uint8_t*>(pixels);
+  if (skip_size_in_bytes) {
+    src_data += skip_size_in_bytes;
+  }
+
+  if (!PackPixels(src_data, source_data_format,
+                  unpack_params.row_length ? unpack_params.row_length : width,
+                  height, IntRect(0, 0, width, height), 1,
+                  unpack_params.alignment, 0, format, type,
                   (premultiply_alpha ? kAlphaDoPremultiply : kAlphaDoNothing),
                   data.data(), flip_y))
     return false;

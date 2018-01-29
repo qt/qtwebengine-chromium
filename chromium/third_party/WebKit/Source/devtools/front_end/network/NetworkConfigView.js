@@ -142,7 +142,6 @@ Network.NetworkConfigView = class extends UI.VBox {
   }
 };
 
-
 /** @type {!Array.<{title: string, values: !Array.<{title: string, value: string}>}>} */
 Network.NetworkConfigView._userAgentGroups = [
   {
@@ -202,6 +201,10 @@ Network.NetworkConfigView._userAgentGroups = [
         title: 'Chrome \u2014 iPad',
         value:
             'Mozilla/5.0 (iPad; CPU OS 9_1 like Mac OS X) AppleWebKit/601.1 (KHTML, like Gecko) CriOS/%s Mobile/13B143 Safari/601.1.46'
+      },
+      {
+        title: 'Chrome \u2014 Chrome OS',
+        value: 'Mozilla/5.0 (X11; CrOS x86_64 10066.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/%s Safari/537.36'
       },
       {
         title: 'Chrome \u2014 Mac',

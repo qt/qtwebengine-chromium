@@ -15,7 +15,6 @@
 #include "platform/Supplementable.h"
 #include "platform/heap/Handle.h"
 #include "platform/wtf/Noncopyable.h"
-#include "public/platform/WebVector.h"
 
 namespace blink {
 
@@ -35,7 +34,7 @@ class MODULES_EXPORT NavigatorVR final
  public:
   static NavigatorVR* From(Document&);
   static NavigatorVR& From(Navigator&);
-  virtual ~NavigatorVR();
+  ~NavigatorVR() override;
 
   // Latest API
   static VR* vr(Navigator&);
@@ -63,7 +62,7 @@ class MODULES_EXPORT NavigatorVR final
   void DidRemoveEventListener(LocalDOMWindow*, const AtomicString&) override;
   void DidRemoveAllEventListeners(LocalDOMWindow*) override;
 
-  DECLARE_VIRTUAL_TRACE();
+  void Trace(blink::Visitor*) override;
 
  private:
   friend class VRDisplay;

@@ -49,6 +49,17 @@ struct ParsingTestcase {
   const std::vector<UrlComponent> components;
 };
 
+base::string16 FormatAndElideUrlSimple(const GURL& url,
+                                       const gfx::FontList& font_list,
+                                       float available_pixel_width,
+                                       url::Parsed* parsed) {
+  const base::string16 url_string = url_formatter::FormatUrl(
+      url, url_formatter::kFormatUrlOmitDefaults, net::UnescapeRule::SPACES,
+      parsed, nullptr, nullptr);
+  return url_formatter::ElideUrlSimple(url, url_string, font_list,
+                                       available_pixel_width, parsed);
+}
+
 base::string16 Elide(const GURL& url,
                      const gfx::FontList& font_list,
                      float available_width,
@@ -56,8 +67,7 @@ base::string16 Elide(const GURL& url,
   switch (method) {
     case kMethodSimple: {
       url::Parsed parsed;
-      return url_formatter::ElideUrlSimple(url, font_list, available_width,
-                                           &parsed);
+      return FormatAndElideUrlSimple(url, font_list, available_width, &parsed);
     }
 #if !defined(OS_ANDROID)
     case kMethodOriginal:
@@ -642,13 +652,13 @@ TEST(TextEliderTest, FormatUrlForSecurityDisplay) {
 TEST(TextEliderTest, FormatOriginForSecurityDisplay) {
   for (size_t i = 0; i < arraysize(common_tests); ++i) {
     base::string16 formatted = url_formatter::FormatOriginForSecurityDisplay(
-        url::Origin(GURL(common_tests[i].input)));
+        url::Origin::Create(GURL(common_tests[i].input)));
     EXPECT_EQ(base::WideToUTF16(common_tests[i].output), formatted)
         << common_tests[i].description;
 
     base::string16 formatted_omit_web_scheme =
         url_formatter::FormatOriginForSecurityDisplay(
-            url::Origin(GURL(common_tests[i].input)),
+            url::Origin::Create(GURL(common_tests[i].input)),
             url_formatter::SchemeDisplay::OMIT_HTTP_AND_HTTPS);
     EXPECT_EQ(base::WideToUTF16(common_tests[i].output_omit_web_scheme),
               formatted_omit_web_scheme)
@@ -656,7 +666,7 @@ TEST(TextEliderTest, FormatOriginForSecurityDisplay) {
 
     base::string16 formatted_omit_cryptographic_scheme =
         url_formatter::FormatOriginForSecurityDisplay(
-            url::Origin(GURL(common_tests[i].input)),
+            url::Origin::Create(GURL(common_tests[i].input)),
             url_formatter::SchemeDisplay::OMIT_CRYPTOGRAPHIC);
     EXPECT_EQ(
         base::WideToUTF16(common_tests[i].output_omit_cryptographic_scheme),
@@ -692,13 +702,13 @@ TEST(TextEliderTest, FormatOriginForSecurityDisplay) {
 
   for (size_t i = 0; i < arraysize(tests); ++i) {
     base::string16 formatted = url_formatter::FormatOriginForSecurityDisplay(
-        url::Origin(GURL(tests[i].input)));
+        url::Origin::Create(GURL(tests[i].input)));
     EXPECT_EQ(base::WideToUTF16(tests[i].output), formatted)
         << tests[i].description;
 
     base::string16 formatted_omit_web_scheme =
         url_formatter::FormatOriginForSecurityDisplay(
-            url::Origin(GURL(tests[i].input)),
+            url::Origin::Create(GURL(tests[i].input)),
             url_formatter::SchemeDisplay::OMIT_HTTP_AND_HTTPS);
     EXPECT_EQ(base::WideToUTF16(tests[i].output_omit_web_scheme),
               formatted_omit_web_scheme)
@@ -706,27 +716,28 @@ TEST(TextEliderTest, FormatOriginForSecurityDisplay) {
 
     base::string16 formatted_omit_cryptographic_scheme =
         url_formatter::FormatOriginForSecurityDisplay(
-            url::Origin(GURL(tests[i].input)),
+            url::Origin::Create(GURL(tests[i].input)),
             url_formatter::SchemeDisplay::OMIT_CRYPTOGRAPHIC);
     EXPECT_EQ(base::WideToUTF16(tests[i].output_omit_cryptographic_scheme),
               formatted_omit_cryptographic_scheme)
         << tests[i].description;
   }
 
-  base::string16 formatted =
-      url_formatter::FormatOriginForSecurityDisplay(url::Origin(GURL()));
+  base::string16 formatted = url_formatter::FormatOriginForSecurityDisplay(
+      url::Origin::Create(GURL()));
   EXPECT_EQ(base::string16(), formatted)
       << "Explicitly test the url::Origin which takes an empty, invalid URL";
 
   base::string16 formatted_omit_scheme =
       url_formatter::FormatOriginForSecurityDisplay(
-          url::Origin(GURL()),
+          url::Origin::Create(GURL()),
           url_formatter::SchemeDisplay::OMIT_HTTP_AND_HTTPS);
   EXPECT_EQ(base::string16(), formatted_omit_scheme)
       << "Explicitly test the url::Origin which takes an empty, invalid URL";
 
   formatted_omit_scheme = url_formatter::FormatOriginForSecurityDisplay(
-      url::Origin(GURL()), url_formatter::SchemeDisplay::OMIT_CRYPTOGRAPHIC);
+      url::Origin::Create(GURL()),
+      url_formatter::SchemeDisplay::OMIT_CRYPTOGRAPHIC);
   EXPECT_EQ(base::string16(), formatted_omit_scheme)
       << "Explicitly test the url::Origin which takes an empty, invalid URL";
 }
@@ -795,7 +806,7 @@ void RunElisionParsingTest(const std::vector<ParsingTestcase>& testcases) {
 
     url::Parsed parsed;
     auto elided =
-        url_formatter::ElideUrlSimple(url, font_list, available_width, &parsed);
+        FormatAndElideUrlSimple(url, font_list, available_width, &parsed);
     EXPECT_EQ(base::UTF8ToUTF16(testcase.output), elided);
 
     // Build an expected Parsed struct from the sparse test expectations.

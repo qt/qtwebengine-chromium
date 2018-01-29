@@ -28,17 +28,13 @@ namespace webrtc {
 namespace vcm {
 
 VideoSender::VideoSender(Clock* clock,
-                         EncodedImageCallback* post_encode_callback,
-                         VCMSendStatisticsCallback* send_stats_callback)
-    : clock_(clock),
-      _encoder(nullptr),
-      _mediaOpt(clock_),
+                         EncodedImageCallback* post_encode_callback)
+    : _encoder(nullptr),
+      _mediaOpt(clock),
       _encodedFrameCallback(post_encode_callback, &_mediaOpt),
       post_encode_callback_(post_encode_callback),
-      send_stats_callback_(send_stats_callback),
       _codecDataBase(&_encodedFrameCallback),
       frame_dropper_enabled_(true),
-      _sendStatsTimer(VCMProcessTimer::kDefaultProcessIntervalMs, clock_),
       current_codec_(),
       encoder_params_({BitrateAllocation(), 0, 0, 0}),
       encoder_has_internal_source_(false),
@@ -51,24 +47,6 @@ VideoSender::VideoSender(Clock* clock,
 }
 
 VideoSender::~VideoSender() {}
-
-// TODO(asapersson): Remove _sendStatsTimer and send_stats_callback_.
-void VideoSender::Process() {
-  if (_sendStatsTimer.TimeUntilProcess() == 0) {
-    // |_sendStatsTimer.Processed()| must be called. Otherwise
-    // VideoSender::Process() will be called in an infinite loop.
-    _sendStatsTimer.Processed();
-    if (send_stats_callback_) {
-      uint32_t bitRate = 0;
-      uint32_t frameRate = 0;
-      send_stats_callback_->SendStatistics(bitRate, frameRate);
-    }
-  }
-}
-
-int64_t VideoSender::TimeUntilNextProcess() {
-  return _sendStatsTimer.TimeUntilProcess();
-}
 
 // Register the send codec to be used.
 int32_t VideoSender::RegisterSendCodec(const VideoCodec* sendCodec,
@@ -91,8 +69,8 @@ int32_t VideoSender::RegisterSendCodec(const VideoCodec* sendCodec,
   current_codec_ = *sendCodec;
 
   if (!ret) {
-    LOG(LS_ERROR) << "Failed to initialize set encoder with payload name '"
-                  << sendCodec->plName << "'.";
+    RTC_LOG(LS_ERROR) << "Failed to initialize set encoder with payload name '"
+                      << sendCodec->plName << "'.";
     return VCM_CODEC_ERROR;
   }
 
@@ -132,10 +110,10 @@ int32_t VideoSender::RegisterSendCodec(const VideoCodec* sendCodec,
     encoder_has_internal_source_ = _encoder->InternalSource();
   }
 
-  LOG(LS_VERBOSE) << " max bitrate " << sendCodec->maxBitrate
-                  << " start bitrate " << sendCodec->startBitrate
-                  << " max frame rate " << sendCodec->maxFramerate
-                  << " max payload size " << maxPayloadSize;
+  RTC_LOG(LS_VERBOSE) << " max bitrate " << sendCodec->maxBitrate
+                      << " start bitrate " << sendCodec->startBitrate
+                      << " max frame rate " << sendCodec->maxFramerate
+                      << " max payload size " << maxPayloadSize;
   _mediaOpt.SetEncodingData(sendCodec->maxBitrate * 1000,
                             sendCodec->startBitrate * 1000,
                             sendCodec->maxFramerate);
@@ -318,20 +296,22 @@ int32_t VideoSender::AddVideoFrame(const VideoFrame& videoFrame,
     return VCM_UNINITIALIZED;
   SetEncoderParameters(encoder_params, encoder_has_internal_source);
   if (_mediaOpt.DropFrame()) {
-    LOG(LS_VERBOSE) << "Drop Frame "
-                    << "target bitrate "
-                    << encoder_params.target_bitrate.get_sum_bps()
-                    << " loss rate " << encoder_params.loss_rate << " rtt "
-                    << encoder_params.rtt << " input frame rate "
-                    << encoder_params.input_frame_rate;
-    post_encode_callback_->OnDroppedFrame();
+    RTC_LOG(LS_VERBOSE) << "Drop Frame "
+                        << "target bitrate "
+                        << encoder_params.target_bitrate.get_sum_bps()
+                        << " loss rate " << encoder_params.loss_rate << " rtt "
+                        << encoder_params.rtt << " input frame rate "
+                        << encoder_params.input_frame_rate;
+    post_encode_callback_->OnDroppedFrame(
+        EncodedImageCallback::DropReason::kDroppedByMediaOptimizations);
     return VCM_OK;
   }
   // TODO(pbos): Make sure setting send codec is synchronized with video
   // processing so frame size always matches.
   if (!_codecDataBase.MatchesCurrentResolution(videoFrame.width(),
                                                videoFrame.height())) {
-    LOG(LS_ERROR) << "Incoming frame doesn't match set resolution. Dropping.";
+    RTC_LOG(LS_ERROR)
+        << "Incoming frame doesn't match set resolution. Dropping.";
     return VCM_PARAMETER_ERROR;
   }
   VideoFrame converted_frame = videoFrame;
@@ -348,7 +328,7 @@ int32_t VideoSender::AddVideoFrame(const VideoFrame& videoFrame,
         converted_frame.video_frame_buffer()->ToI420());
 
     if (!converted_buffer) {
-      LOG(LS_ERROR) << "Frame conversion failed, dropping frame.";
+      RTC_LOG(LS_ERROR) << "Frame conversion failed, dropping frame.";
       return VCM_PARAMETER_ERROR;
     }
     converted_frame = VideoFrame(converted_buffer,
@@ -359,7 +339,7 @@ int32_t VideoSender::AddVideoFrame(const VideoFrame& videoFrame,
   int32_t ret =
       _encoder->Encode(converted_frame, codecSpecificInfo, next_frame_types);
   if (ret < 0) {
-    LOG(LS_ERROR) << "Failed to encode frame. Error code: " << ret;
+    RTC_LOG(LS_ERROR) << "Failed to encode frame. Error code: " << ret;
     return ret;
   }
 

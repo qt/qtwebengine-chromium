@@ -62,6 +62,7 @@ source_set("payments") {
   ]
   deps = [
     ":payments_ui",
+    "resources:ic_add",
     "//base",
     "//components/autofill/core/browser",
     "//components/autofill/ios/browser",
@@ -109,6 +110,7 @@ source_set("payments_ui") {
     "payment_request_edit_view_controller.mm",
     "payment_request_edit_view_controller_actions.h",
     "payment_request_edit_view_controller_data_source.h",
+    "payment_request_edit_view_controller_validator.h",
     "payment_request_editor_field.h",
     "payment_request_editor_field.mm",
     "payment_request_error_view_controller.h",
@@ -166,8 +168,10 @@ source_set("unit_tests") {
     "credit_card_edit_mediator_unittest.mm",
     "full_card_requester_unittest.mm",
     "payment_items_display_coordinator_unittest.mm",
+    "payment_items_display_mediator_unittest.mm",
     "payment_items_display_view_controller_unittest.mm",
     "payment_method_selection_coordinator_unittest.mm",
+    "payment_method_selection_mediator_unittest.mm",
     "payment_request_coordinator_unittest.mm",
     "payment_request_edit_view_controller_unittest.mm",
     "payment_request_error_coordinator_unittest.mm",
@@ -177,7 +181,9 @@ source_set("unit_tests") {
     "payment_request_view_controller_unittest.mm",
     "region_data_loader_unittest.mm",
     "shipping_address_selection_coordinator_unittest.mm",
+    "shipping_address_selection_mediator_unittest.mm",
     "shipping_option_selection_coordinator_unittest.mm",
+    "shipping_option_selection_mediator_unittest.mm",
   ]
   deps = [
     ":payments",
@@ -214,6 +220,7 @@ source_set("unit_tests") {
     "//ios/web/public/test",
     "//testing/gmock",
     "//testing/gtest",
+    "//third_party/libaddressinput:strings_grit",
     "//third_party/ocmock",
     "//ui/base",
   ]
@@ -232,6 +239,7 @@ source_set("eg_tests") {
     "payment_request_egtest_base.mm",
     "payment_request_journey_logger_egtest.mm",
     "payment_request_misc_egtest.mm",
+    "payment_request_modifiers_egtest.mm",
     "payment_request_payment_app_egtest.mm",
     "payment_request_payment_method_identifier_egtest.mm",
     "payment_request_payment_response_egtest.mm",
@@ -251,7 +259,7 @@ source_set("eg_tests") {
     "//ios/chrome/browser/payments",
     "//ios/chrome/browser/ui/autofill",
     "//ios/chrome/browser/ui/payments/cells",
-    "//ios/chrome/browser/ui/tools_menu",
+    "//ios/chrome/browser/ui/tools_menu/public",
     "//ios/chrome/test/app:test_support",
     "//ios/chrome/test/earl_grey:test_support",
     "//ios/testing:ios_test_support",

@@ -317,9 +317,10 @@ class ServiceWorkerWriteToCacheJobTest : public testing::Test {
         TRAFFIC_ANNOTATION_FOR_TESTS);
     ServiceWorkerRequestHandler::InitializeHandler(
         request_.get(), context_wrapper(), &blob_storage_context_, process_id,
-        provider_id, false, FETCH_REQUEST_MODE_NO_CORS,
-        FETCH_CREDENTIALS_MODE_OMIT, FetchRedirectMode::FOLLOW_MODE,
-        std::string() /* integrity */, RESOURCE_TYPE_SERVICE_WORKER,
+        provider_id, false, network::mojom::FetchRequestMode::kNoCORS,
+        network::mojom::FetchCredentialsMode::kOmit,
+        FetchRedirectMode::FOLLOW_MODE, std::string() /* integrity */,
+        false /* keepalive */, RESOURCE_TYPE_SERVICE_WORKER,
         REQUEST_CONTEXT_TYPE_SERVICE_WORKER, REQUEST_CONTEXT_FRAME_TYPE_NONE,
         scoped_refptr<ResourceRequestBody>());
   }
@@ -472,7 +473,7 @@ TEST_F(ServiceWorkerWriteToCacheJobTest, SSLCertificateError) {
   request_->Start();
   base::RunLoop().RunUntilIdle();
   EXPECT_EQ(net::URLRequestStatus::FAILED, request_->status().status());
-  EXPECT_EQ(net::ERR_INSECURE_RESPONSE, request_->status().error());
+  EXPECT_EQ(net::ERR_CERT_DATE_INVALID, request_->status().error());
   EXPECT_EQ(kInvalidServiceWorkerResourceId,
             version_->script_cache_map()->LookupResourceId(script_url_));
 }
@@ -507,7 +508,7 @@ TEST_F(ServiceWorkerWriteToCacheLocalhostTest, SSLCertificateError) {
   request_->Start();
   base::RunLoop().RunUntilIdle();
   EXPECT_EQ(net::URLRequestStatus::FAILED, request_->status().status());
-  EXPECT_EQ(net::ERR_INSECURE_RESPONSE, request_->status().error());
+  EXPECT_EQ(net::ERR_CERT_DATE_INVALID, request_->status().error());
   EXPECT_EQ(kInvalidServiceWorkerResourceId,
             version_->script_cache_map()->LookupResourceId(script_url_));
 }
@@ -533,7 +534,7 @@ TEST_F(ServiceWorkerWriteToCacheLocalhostTest, CertStatusError) {
   request_->Start();
   base::RunLoop().RunUntilIdle();
   EXPECT_EQ(net::URLRequestStatus::FAILED, request_->status().status());
-  EXPECT_EQ(net::ERR_INSECURE_RESPONSE, request_->status().error());
+  EXPECT_EQ(net::ERR_CERT_DATE_INVALID, request_->status().error());
   EXPECT_EQ(kInvalidServiceWorkerResourceId,
             version_->script_cache_map()->LookupResourceId(script_url_));
 }
@@ -544,7 +545,7 @@ TEST_F(ServiceWorkerWriteToCacheJobTest, CertStatusError) {
   request_->Start();
   base::RunLoop().RunUntilIdle();
   EXPECT_EQ(net::URLRequestStatus::FAILED, request_->status().status());
-  EXPECT_EQ(net::ERR_INSECURE_RESPONSE, request_->status().error());
+  EXPECT_EQ(net::ERR_CERT_DATE_INVALID, request_->status().error());
   EXPECT_EQ(kInvalidServiceWorkerResourceId,
             version_->script_cache_map()->LookupResourceId(script_url_));
 }

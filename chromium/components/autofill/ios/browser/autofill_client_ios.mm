@@ -66,6 +66,10 @@ ukm::UkmRecorder* AutofillClientIOS::GetUkmRecorder() {
   return nullptr;
 }
 
+AddressNormalizer* AutofillClientIOS::GetAddressNormalizer() {
+  return nullptr;
+}
+
 SaveCardBubbleController* AutofillClientIOS::GetSaveCardBubbleController() {
   return nullptr;
 }
@@ -140,6 +144,8 @@ void AutofillClientIOS::DidFillOrPreviewField(
 scoped_refptr<AutofillWebDataService> AutofillClientIOS::GetDatabase() {
   return autofill_web_data_service_;
 }
+
+void AutofillClientIOS::DidInteractWithNonsecureCreditCardInput() {}
 
 bool AutofillClientIOS::IsContextSecure() {
   // This implementation differs slightly from other platforms. Other platforms'

@@ -55,13 +55,10 @@ bool CXFA_FFComboBox::LoadWidget() {
     pComboBox->AddString(label.AsStringView());
 
   std::vector<int32_t> iSelArray = m_pDataAcc->GetSelectedItems();
-  if (!iSelArray.empty()) {
+  if (iSelArray.empty())
+    pComboBox->SetEditText(m_pDataAcc->GetValue(XFA_VALUEPICTURE_Raw));
+  else
     pComboBox->SetCurSel(iSelArray.front());
-  } else {
-    WideString wsText;
-    m_pDataAcc->GetValue(wsText, XFA_VALUEPICTURE_Raw);
-    pComboBox->SetEditText(wsText);
-  }
 
   UpdateWidgetProperty();
   m_pNormalWidget->UnlockUpdate();
@@ -80,7 +77,7 @@ void CXFA_FFComboBox::UpdateWidgetProperty() {
     dwEditStyles &= ~FWL_STYLEEXT_EDT_ReadOnly;
     dwExtendedStyle |= FWL_STYLEEXT_CMB_DropDown;
   }
-  if (m_pDataAcc->GetAccess() != XFA_ATTRIBUTEENUM_Open ||
+  if (!m_pDataAcc->IsOpenAccess() ||
       !m_pDataAcc->GetDoc()->GetXFADoc()->IsInteractive()) {
     dwEditStyles |= FWL_STYLEEXT_EDT_ReadOnly;
     dwExtendedStyle |= FWL_STYLEEXT_CMB_ReadOnly;
@@ -88,7 +85,7 @@ void CXFA_FFComboBox::UpdateWidgetProperty() {
   dwExtendedStyle |= GetAlignment();
   m_pNormalWidget->ModifyStylesEx(dwExtendedStyle, 0xFFFFFFFF);
 
-  if (m_pDataAcc->GetHorizontalScrollPolicy() != XFA_ATTRIBUTEENUM_Off)
+  if (!m_pDataAcc->IsHorizontalScrollPolicyOff())
     dwEditStyles |= FWL_STYLEEXT_EDT_AutoHScroll;
 
   pComboBox->EditModifyStylesEx(dwEditStyles, 0xFFFFFFFF);
@@ -115,7 +112,7 @@ void CXFA_FFComboBox::OpenDropDownList() {
 }
 
 bool CXFA_FFComboBox::CommitData() {
-  return m_pDataAcc->SetValue(m_wsNewValue, XFA_VALUEPICTURE_Raw);
+  return m_pDataAcc->SetValue(XFA_VALUEPICTURE_Raw, m_wsNewValue);
 }
 
 bool CXFA_FFComboBox::IsDataChanged() {
@@ -125,12 +122,9 @@ bool CXFA_FFComboBox::IsDataChanged() {
   if (iCursel >= 0) {
     WideString wsSel = pFWLcombobox->GetTextByIndex(iCursel);
     if (wsSel == wsText)
-      m_pDataAcc->GetChoiceListItem(wsText, iCursel, true);
+      wsText = m_pDataAcc->GetChoiceListItem(iCursel, true).value_or(L"");
   }
-
-  WideString wsOldValue;
-  m_pDataAcc->GetValue(wsOldValue, XFA_VALUEPICTURE_Raw);
-  if (wsOldValue == wsText)
+  if (m_pDataAcc->GetValue(XFA_VALUEPICTURE_Raw) == wsText)
     return false;
 
   m_wsNewValue = wsText;
@@ -141,28 +135,28 @@ void CXFA_FFComboBox::FWLEventSelChange(CXFA_EventParam* pParam) {
   pParam->m_eType = XFA_EVENT_Change;
   pParam->m_pTarget = m_pDataAcc.Get();
   pParam->m_wsNewText = ToComboBox(m_pNormalWidget.get())->GetEditText();
-  m_pDataAcc->ProcessEvent(XFA_ATTRIBUTEENUM_Change, pParam);
+  m_pDataAcc->ProcessEvent(XFA_AttributeEnum::Change, pParam);
 }
 
 uint32_t CXFA_FFComboBox::GetAlignment() {
-  CXFA_Para para = m_pDataAcc->GetPara();
-  if (!para)
+  CXFA_ParaData paraData = m_pDataAcc->GetParaData();
+  if (!paraData.HasValidNode())
     return 0;
 
   uint32_t dwExtendedStyle = 0;
-  switch (para.GetHorizontalAlign()) {
-    case XFA_ATTRIBUTEENUM_Center:
+  switch (paraData.GetHorizontalAlign()) {
+    case XFA_AttributeEnum::Center:
       dwExtendedStyle |=
           FWL_STYLEEXT_CMB_EditHCenter | FWL_STYLEEXT_CMB_ListItemCenterAlign;
       break;
-    case XFA_ATTRIBUTEENUM_Justify:
+    case XFA_AttributeEnum::Justify:
       dwExtendedStyle |= FWL_STYLEEXT_CMB_EditJustified;
       break;
-    case XFA_ATTRIBUTEENUM_JustifyAll:
+    case XFA_AttributeEnum::JustifyAll:
       break;
-    case XFA_ATTRIBUTEENUM_Radix:
+    case XFA_AttributeEnum::Radix:
       break;
-    case XFA_ATTRIBUTEENUM_Right:
+    case XFA_AttributeEnum::Right:
       break;
     default:
       dwExtendedStyle |=
@@ -170,11 +164,11 @@ uint32_t CXFA_FFComboBox::GetAlignment() {
       break;
   }
 
-  switch (para.GetVerticalAlign()) {
-    case XFA_ATTRIBUTEENUM_Middle:
+  switch (paraData.GetVerticalAlign()) {
+    case XFA_AttributeEnum::Middle:
       dwExtendedStyle |= FWL_STYLEEXT_CMB_EditVCenter;
       break;
-    case XFA_ATTRIBUTEENUM_Bottom:
+    case XFA_AttributeEnum::Bottom:
       dwExtendedStyle |= FWL_STYLEEXT_CMB_EditVFar;
       break;
     default:
@@ -193,10 +187,8 @@ bool CXFA_FFComboBox::UpdateFWLData() {
   if (!iSelArray.empty()) {
     pComboBox->SetCurSel(iSelArray.front());
   } else {
-    WideString wsText;
     pComboBox->SetCurSel(-1);
-    m_pDataAcc->GetValue(wsText, XFA_VALUEPICTURE_Raw);
-    pComboBox->SetEditText(wsText);
+    pComboBox->SetEditText(m_pDataAcc->GetValue(XFA_VALUEPICTURE_Raw));
   }
   pComboBox->Update();
   return true;
@@ -227,14 +219,13 @@ bool CXFA_FFComboBox::CanCopy() {
 }
 
 bool CXFA_FFComboBox::CanCut() {
-  return m_pDataAcc->GetAccess() == XFA_ATTRIBUTEENUM_Open &&
+  return m_pDataAcc->IsOpenAccess() &&
          m_pDataAcc->IsChoiceListAllowTextEntry() &&
          ToComboBox(m_pNormalWidget.get())->EditCanCut();
 }
 
 bool CXFA_FFComboBox::CanPaste() {
-  return m_pDataAcc->IsChoiceListAllowTextEntry() &&
-         m_pDataAcc->GetAccess() == XFA_ATTRIBUTEENUM_Open;
+  return m_pDataAcc->IsChoiceListAllowTextEntry() && m_pDataAcc->IsOpenAccess();
 }
 
 bool CXFA_FFComboBox::CanSelectAll() {
@@ -293,33 +284,31 @@ void CXFA_FFComboBox::DeleteItem(int32_t nIndex) {
 void CXFA_FFComboBox::OnTextChanged(CFWL_Widget* pWidget,
                                     const WideString& wsChanged) {
   CXFA_EventParam eParam;
-  m_pDataAcc->GetValue(eParam.m_wsPrevText, XFA_VALUEPICTURE_Raw);
+  eParam.m_wsPrevText = m_pDataAcc->GetValue(XFA_VALUEPICTURE_Raw);
   eParam.m_wsChange = wsChanged;
   FWLEventSelChange(&eParam);
 }
 
 void CXFA_FFComboBox::OnSelectChanged(CFWL_Widget* pWidget, bool bLButtonUp) {
   CXFA_EventParam eParam;
-  m_pDataAcc->GetValue(eParam.m_wsPrevText, XFA_VALUEPICTURE_Raw);
+  eParam.m_wsPrevText = m_pDataAcc->GetValue(XFA_VALUEPICTURE_Raw);
   FWLEventSelChange(&eParam);
-  if (m_pDataAcc->GetChoiceListCommitOn() == XFA_ATTRIBUTEENUM_Select &&
-      bLButtonUp) {
+  if (m_pDataAcc->IsChoiceListCommitOnSelect() && bLButtonUp)
     m_pDocView->SetFocusWidgetAcc(nullptr);
-  }
 }
 
 void CXFA_FFComboBox::OnPreOpen(CFWL_Widget* pWidget) {
   CXFA_EventParam eParam;
   eParam.m_eType = XFA_EVENT_PreOpen;
   eParam.m_pTarget = m_pDataAcc.Get();
-  m_pDataAcc->ProcessEvent(XFA_ATTRIBUTEENUM_PreOpen, &eParam);
+  m_pDataAcc->ProcessEvent(XFA_AttributeEnum::PreOpen, &eParam);
 }
 
 void CXFA_FFComboBox::OnPostOpen(CFWL_Widget* pWidget) {
   CXFA_EventParam eParam;
   eParam.m_eType = XFA_EVENT_PostOpen;
   eParam.m_pTarget = m_pDataAcc.Get();
-  m_pDataAcc->ProcessEvent(XFA_ATTRIBUTEENUM_PostOpen, &eParam);
+  m_pDataAcc->ProcessEvent(XFA_AttributeEnum::PostOpen, &eParam);
 }
 
 void CXFA_FFComboBox::OnProcessMessage(CFWL_Message* pMessage) {

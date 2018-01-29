@@ -20,15 +20,14 @@ class IFX_SystemFontInfo {
   static std::unique_ptr<IFX_SystemFontInfo> CreateDefault(
       const char** pUserPaths);
 
-  virtual ~IFX_SystemFontInfo() {}
+  virtual ~IFX_SystemFontInfo() = default;
 
   virtual bool EnumFontList(CFX_FontMapper* pMapper) = 0;
   virtual void* MapFont(int weight,
                         bool bItalic,
                         int charset,
                         int pitch_family,
-                        const char* face,
-                        int& iExact) = 0;
+                        const char* face) = 0;
 
 #ifdef PDF_ENABLE_XFA
   virtual void* MapFontByUnicode(uint32_t dwUnicode,

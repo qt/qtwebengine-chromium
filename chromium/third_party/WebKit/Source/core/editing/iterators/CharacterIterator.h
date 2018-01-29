@@ -63,14 +63,9 @@ class CORE_EXPORT CharacterIteratorAlgorithm {
   void CopyTextTo(ForwardsTextBuffer* output);
 
   int CharacterOffset() const { return offset_; }
-  EphemeralRangeTemplate<Strategy> Range() const;
-
-  bool IsInTextSecurityMode() const {
-    return text_iterator_.IsInTextSecurityMode();
-  }
 
   Document* OwnerDocument() const;
-  Node* CurrentContainer() const;
+  const Node* CurrentContainer() const;
   int StartOffset() const;
   int EndOffset() const;
   PositionTemplate<Strategy> StartPosition() const;

@@ -10,6 +10,7 @@
 #include "third_party/skia/include/core/SkMatrix44.h"
 #include "ui/display/display_layout.h"
 #include "ui/display/manager/chromeos/display_configurator.h"
+#include "ui/display/manager/chromeos/touch_device_manager.h"
 #include "ui/display/manager/chromeos/touch_transform_setter.h"
 #include "ui/display/manager/display_manager.h"
 #include "ui/display/manager/managed_display_info.h"
@@ -23,13 +24,12 @@ namespace display {
 
 namespace {
 
-ui::TouchscreenDevice FindTouchscreenByIdentifier(uint32_t identifier) {
+ui::TouchscreenDevice FindTouchscreenByIdentifier(
+    const TouchDeviceIdentifier& identifier) {
   const std::vector<ui::TouchscreenDevice>& touchscreens =
       ui::InputDeviceManager::GetInstance()->GetTouchscreenDevices();
   for (const auto& touchscreen : touchscreens) {
-    uint32_t touch_device_identifier =
-        TouchCalibrationData::GenerateTouchDeviceIdentifier(touchscreen);
-    if (touch_device_identifier == identifier)
+    if (TouchDeviceIdentifier::FromDevice(touchscreen) == identifier)
       return touchscreen;
   }
 
@@ -221,15 +221,16 @@ gfx::Transform TouchTransformController::GetTouchTransform(
   // transform as we want to use the raw native touch input data for calibration
   if (is_calibrating_)
     return ctm;
-  uint32_t touch_device_identifier =
-      TouchCalibrationData::GenerateTouchDeviceIdentifier(touchscreen);
+
+  TouchCalibrationData calibration_data =
+      display_manager_->touch_device_manager()->GetCalibrationData(
+          touchscreen, touch_display.id());
   // If touch calibration data is unavailable, use naive approach.
-  if (!touch_display.HasTouchCalibrationData(touch_device_identifier)) {
+  if (calibration_data.IsEmpty()) {
     return GetUncalibratedTransform(ctm, display, touch_display, touch_area,
                                     touch_native_size);
   }
-  const TouchCalibrationData& calibration_data =
-      touch_display.GetTouchCalibrationData(touch_device_identifier);
+
   // The resolution at which the touch calibration was performed.
   gfx::SizeF touch_calib_size(calibration_data.bounds);
 
@@ -270,10 +271,6 @@ gfx::Transform TouchTransformController::GetTouchTransform(
     // storing the calibration associated data. This will allow us to explicitly
     // inform the user with proper UX.
 
-    // Clear stored calibration data as it does not produce a valid calibration.
-    display_manager_->ClearTouchCalibrationData(touch_display.id(),
-                                                touch_device_identifier);
-
     // Return uncalibrated transform.
     return GetUncalibratedTransform(ctm, display, touch_display, touch_area,
                                     touch_native_size);
@@ -289,20 +286,23 @@ TouchTransformController::TouchTransformController(
     std::unique_ptr<TouchTransformSetter> setter)
     : display_configurator_(display_configurator),
       display_manager_(display_manager),
-      setter_(std::move(setter)) {}
+      touch_transform_setter_(std::move(setter)) {}
 
 TouchTransformController::~TouchTransformController() {}
 
 void TouchTransformController::UpdateTouchTransforms() const {
   UpdateData update_data;
   UpdateTouchTransforms(&update_data);
-  setter_->ConfigureTouchDevices(update_data.touch_device_transforms);
+  touch_transform_setter_->ConfigureTouchDevices(
+      update_data.touch_device_transforms);
 }
 
 void TouchTransformController::UpdateTouchRadius(
     const ManagedDisplayInfo& display,
     UpdateData* update_data) const {
-  for (const auto& identifier : display.touch_device_identifiers()) {
+  for (const auto& identifier :
+       display_manager_->touch_device_manager()
+           ->GetAssociatedTouchDevicesForDisplay(display.id())) {
     DCHECK_EQ(0u, update_data->device_to_scale.count(identifier));
     update_data->device_to_scale.emplace(
         identifier, GetTouchResolutionScale(
@@ -317,7 +317,9 @@ void TouchTransformController::UpdateTouchTransform(
     UpdateData* update_data) const {
   ui::TouchDeviceTransform touch_device_transform;
   touch_device_transform.display_id = target_display_id;
-  for (const auto& identifier : touch_display.touch_device_identifiers()) {
+  for (const auto& identifier :
+       display_manager_->touch_device_manager()
+           ->GetAssociatedTouchDevicesForDisplay(touch_display.id())) {
     ui::TouchscreenDevice device = FindTouchscreenByIdentifier(identifier);
     touch_device_transform.device_id = device.id;
     touch_device_transform.transform =

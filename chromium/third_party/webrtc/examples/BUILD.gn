@@ -49,7 +49,7 @@ group("examples") {
 }
 
 if (is_android) {
-  android_apk("AppRTCMobile") {
+  rtc_android_apk("AppRTCMobile") {
     testonly = true
     apk_name = "AppRTCMobile"
     android_manifest = "androidapp/AndroidManifest.xml"
@@ -62,12 +62,9 @@ if (is_android) {
     ]
 
     shared_libraries = [ "../sdk/android:libjingle_peerconnection_so" ]
-
-    # TODO(sakal): Fix build hooks crbug.com/webrtc/8148
-    no_build_hooks = true
   }
 
-  android_library("AppRTCMobile_javalib") {
+  rtc_android_library("AppRTCMobile_javalib") {
     testonly = true
     android_manifest = "androidapp/AndroidManifest.xml"
 
@@ -103,9 +100,6 @@ if (is_android) {
       "../sdk/android:libjingle_peerconnection_metrics_default_java",
       "androidapp/third_party/autobanh:autobanh_java",
     ]
-
-    # TODO(sakal): Fix build hooks crbug.com/webrtc/8148
-    no_build_hooks = true
   }
 
   android_resources("AppRTCMobile_resources") {
@@ -114,7 +108,7 @@ if (is_android) {
     custom_package = "org.appspot.apprtc"
   }
 
-  instrumentation_test_apk("AppRTCMobileTest") {
+  rtc_instrumentation_test_apk("AppRTCMobileTest") {
     apk_name = "AppRTCMobileTest"
     android_manifest = "androidtests/AndroidManifest.xml"
 
@@ -125,16 +119,12 @@ if (is_android) {
     deps = [
       ":AppRTCMobile_javalib",
       "../sdk/android:libjingle_peerconnection_java",
-      "//base:base_java_test_support",
       "//third_party/android_support_test_runner:runner_java",
       "//third_party/junit",
     ]
-
-    # TODO(sakal): Fix build hooks crbug.com/webrtc/8148
-    no_build_hooks = true
   }
 
-  instrumentation_test_apk("AppRTCMobileTestStubbedVideoIO") {
+  rtc_instrumentation_test_apk("AppRTCMobileTestStubbedVideoIO") {
     apk_name = "AppRTCMobileTestStubbedVideoIO"
     android_manifest = "androidtests/AndroidManifest.xml"
 
@@ -155,9 +145,6 @@ if (is_android) {
     data = [
       "../resources/reference_video_640x360_30fps.y4m",
     ]
-
-    # TODO(sakal): Fix build hooks crbug.com/webrtc/8148
-    no_build_hooks = true
   }
 }
 
@@ -218,8 +205,6 @@ if (is_ios || (is_mac && target_cpu != "x86")) {
       "objc/AppRTCMobile/ARDMessageResponse.h",
       "objc/AppRTCMobile/ARDMessageResponse.m",
       "objc/AppRTCMobile/ARDRoomServerClient.h",
-      "objc/AppRTCMobile/ARDSDPUtils.h",
-      "objc/AppRTCMobile/ARDSDPUtils.m",
       "objc/AppRTCMobile/ARDSettingsModel+Private.h",
       "objc/AppRTCMobile/ARDSettingsModel.h",
       "objc/AppRTCMobile/ARDSettingsModel.m",
@@ -233,10 +218,6 @@ if (is_ios || (is_mac && target_cpu != "x86")) {
       "objc/AppRTCMobile/ARDTURNClient+Internal.h",
       "objc/AppRTCMobile/ARDTURNClient.h",
       "objc/AppRTCMobile/ARDTURNClient.m",
-      "objc/AppRTCMobile/ARDVideoDecoderFactory.h",
-      "objc/AppRTCMobile/ARDVideoDecoderFactory.m",
-      "objc/AppRTCMobile/ARDVideoEncoderFactory.h",
-      "objc/AppRTCMobile/ARDVideoEncoderFactory.m",
       "objc/AppRTCMobile/ARDWebSocketChannel.h",
       "objc/AppRTCMobile/ARDWebSocketChannel.m",
       "objc/AppRTCMobile/RTCIceCandidate+JSON.h",
@@ -268,6 +249,8 @@ if (is_ios || (is_mac && target_cpu != "x86")) {
       testonly = true
       sources = [
         "objc/AppRTCMobile/ios/ARDAppDelegate.m",
+        "objc/AppRTCMobile/ios/ARDFileCaptureController.h",
+        "objc/AppRTCMobile/ios/ARDFileCaptureController.m",
         "objc/AppRTCMobile/ios/ARDMainView.h",
         "objc/AppRTCMobile/ios/ARDMainView.m",
         "objc/AppRTCMobile/ios/ARDMainViewController.h",
@@ -280,6 +263,8 @@ if (is_ios || (is_mac && target_cpu != "x86")) {
         "objc/AppRTCMobile/ios/ARDVideoCallView.m",
         "objc/AppRTCMobile/ios/ARDVideoCallViewController.h",
         "objc/AppRTCMobile/ios/ARDVideoCallViewController.m",
+        "objc/AppRTCMobile/ios/RTCVideoCodecInfo+HumanReadable.h",
+        "objc/AppRTCMobile/ios/RTCVideoCodecInfo+HumanReadable.m",
         "objc/AppRTCMobile/ios/UIImage+ARDUtilities.h",
         "objc/AppRTCMobile/ios/UIImage+ARDUtilities.m",
       ]
@@ -328,6 +313,9 @@ if (is_ios || (is_mac && target_cpu != "x86")) {
     bundle_data("AppRTCMobile_ios_bundle_data") {
       sources = [
         "objc/AppRTCMobile/ios/resources/Roboto-Regular.ttf",
+
+        # Sample video taken from https://media.xiph.org/video/derf/
+        "objc/AppRTCMobile/ios/resources/foreman.mp4",
         "objc/AppRTCMobile/ios/resources/iPhone5@2x.png",
         "objc/AppRTCMobile/ios/resources/iPhone6@2x.png",
         "objc/AppRTCMobile/ios/resources/iPhone6p@3x.png",
@@ -437,7 +425,7 @@ if (is_ios || (is_mac && target_cpu != "x86")) {
         testonly = true
         sources = [
           "objc/AppRTCMobile/tests/ARDAppClient_xctest.mm",
-          "objc/AppRTCMobile/tests/ARDSDPUtils_xctest.mm",
+          "objc/AppRTCMobile/tests/ARDFileCaptureController_xctest.mm",
           "objc/AppRTCMobile/tests/ARDSettingsModel_xctest.mm",
         ]
         deps = [
@@ -510,7 +498,9 @@ if (is_linux || is_win) {
       # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
       suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
     }
-    deps = []
+    deps = [
+      "../api:video_frame_api_i420",
+    ]
     if (is_win) {
       sources += [
         "peerconnection/client/flagdefs.h",
@@ -542,6 +532,8 @@ if (is_linux || is_win) {
     deps += [
       "../api:libjingle_peerconnection_test_api",
       "../api:video_frame_api",
+      "../api/audio_codecs:builtin_audio_decoder_factory",
+      "../api/audio_codecs:builtin_audio_encoder_factory",
       "../media:rtc_media",
       "../modules/video_capture:video_capture_module",
       "../pc:libjingle_peerconnection",
@@ -680,7 +672,7 @@ if (is_win || is_android) {
 }
 
 if (is_android) {
-  android_library("webrtc_unity_java") {
+  rtc_android_library("webrtc_unity_java") {
     java_files = [ "unityplugin/java/src/org/webrtc/UnityUtility.java" ]
     deps = [
       "../rtc_base:base_java",

@@ -113,6 +113,8 @@ rtc_source_set("rtc_base_approved_generic") {
     "bind.h",
     "bitbuffer.cc",
     "bitbuffer.h",
+    "bitrateallocationstrategy.cc",
+    "bitrateallocationstrategy.h",
     "buffer.h",
     "bufferqueue.cc",
     "bufferqueue.h",
@@ -127,8 +129,6 @@ rtc_source_set("rtc_base_approved_generic") {
     "criticalsection.cc",
     "criticalsection.h",
     "deprecation.h",
-    "event.cc",
-    "event.h",
     "event_tracer.cc",
     "event_tracer.h",
     "file.cc",
@@ -140,8 +140,14 @@ rtc_source_set("rtc_base_approved_generic") {
     "ignore_wundef.h",
     "location.cc",
     "location.h",
-    "mod_ops.h",
-    "moving_max_counter.h",
+    "numerics/histogram_percentile_counter.cc",
+    "numerics/histogram_percentile_counter.h",
+    "numerics/mod_ops.h",
+    "numerics/moving_max_counter.h",
+    "numerics/safe_compare.h",
+    "numerics/safe_conversions.h",
+    "numerics/safe_conversions_impl.h",
+    "numerics/safe_minmax.h",
     "onetimeevent.h",
     "pathutils.cc",
     "pathutils.h",
@@ -163,10 +169,7 @@ rtc_source_set("rtc_base_approved_generic") {
     "ratetracker.h",
     "refcount.h",
     "refcountedobject.h",
-    "safe_compare.h",
-    "safe_conversions.h",
-    "safe_conversions_impl.h",
-    "safe_minmax.h",
+    "refcounter.h",
     "sanitizer.h",
     "scoped_ref_ptr.h",
     "string_to_number.cc",
@@ -208,11 +211,15 @@ rtc_source_set("rtc_base_approved_generic") {
     # Dependency on chromium's logging (in //base).
     deps += [ "//base:base" ]
     sources += [
+      "../../webrtc_overrides/rtc_base/event.cc",
+      "../../webrtc_overrides/rtc_base/event.h",
       "../../webrtc_overrides/rtc_base/logging.cc",
       "../../webrtc_overrides/rtc_base/logging.h",
     ]
   } else {
     sources += [
+      "event.cc",
+      "event.h",
       "logging.cc",
       "logging.h",
     ]
@@ -345,32 +352,27 @@ rtc_source_set("rtc_task_queue_impl") {
     ":rtc_base_approved",
     ":rtc_task_queue_api",
   ]
-  if (build_with_chromium) {
+  if (rtc_build_libevent) {
+    deps += [ "//base/third_party/libevent" ]
+  }
+  if (rtc_enable_libevent) {
     sources = [
-      "../../webrtc_overrides/rtc_base/task_queue.cc",
+      "task_queue_libevent.cc",
+      "task_queue_posix.cc",
+      "task_queue_posix.h",
     ]
   } else {
-    if (rtc_build_libevent) {
-      deps += [ "//base/third_party/libevent" ]
-    }
-    if (rtc_enable_libevent) {
+    if (is_mac || is_ios) {
       sources = [
-        "task_queue_libevent.cc",
+        "task_queue_gcd.cc",
         "task_queue_posix.cc",
         "task_queue_posix.h",
       ]
-    } else {
-      if (is_mac || is_ios) {
-        sources = [
-          "task_queue_gcd.cc",
-          "task_queue_posix.cc",
-        ]
-      }
-      if (is_win) {
-        sources = [
-          "task_queue_win.cc",
-        ]
-      }
+    }
+    if (is_win) {
+      sources = [
+        "task_queue_win.cc",
+      ]
     }
   }
 }
@@ -402,10 +404,13 @@ rtc_static_library("rtc_numerics") {
   sources = [
     "numerics/exp_filter.cc",
     "numerics/exp_filter.h",
+    "numerics/moving_median_filter.h",
     "numerics/percentile_filter.h",
+    "numerics/sequence_number_util.h",
   ]
   deps = [
     ":rtc_base_approved",
+    "../api:optional",
   ]
 }
 
@@ -522,6 +527,8 @@ rtc_static_library("rtc_base_generic") {
     "messagehandler.h",
     "messagequeue.cc",
     "messagequeue.h",
+    "nethelper.cc",
+    "nethelper.h",
     "nethelpers.cc",
     "nethelpers.h",
     "network.cc",
@@ -605,7 +612,7 @@ rtc_static_library("rtc_base_generic") {
       "callback.h",
       "logsinks.cc",
       "logsinks.h",
-      "mathutils.h",
+      "numerics/mathutils.h",
       "optionsfile.cc",
       "optionsfile.h",
       "rollingaccumulator.h",
@@ -716,10 +723,6 @@ rtc_static_library("rtc_base_generic") {
     defines += [ "timezone=_timezone" ]
     sources -= [ "ifaddrs_converter.cc" ]
   }
-  if (is_win && is_clang) {
-    # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
-    suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
-  }
 }
 
 rtc_source_set("gtest_prod") {
@@ -752,6 +755,7 @@ rtc_source_set("rtc_base_tests_utils") {
     "fakeclock.cc",
     "fakeclock.h",
     "fakenetwork.h",
+    "fakesslidentity.cc",
     "fakesslidentity.h",
     "firewallsocketserver.cc",
     "firewallsocketserver.h",
@@ -782,7 +786,9 @@ rtc_source_set("rtc_base_tests_utils") {
     "testbase64.h",
     "testclient.cc",
     "testclient.h",
+    "testechoserver.cc",
     "testechoserver.h",
+    "testutils.cc",
     "testutils.h",
     "timedelta.h",
     "virtualsocketserver.cc",
@@ -799,11 +805,6 @@ rtc_source_set("rtc_base_tests_utils") {
     "//testing/gmock",
     "//testing/gtest",
   ]
-
-  if (!build_with_chromium && is_clang) {
-    # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
-    suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
-  }
 }
 
 if (rtc_include_tests) {
@@ -825,23 +826,11 @@ if (rtc_include_tests) {
       "//testing/gmock",
       "//testing/gtest",
     ]
-
-    if (!build_with_chromium && is_clang) {
-      # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
-      suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
-    }
   }
 
   rtc_source_set("rtc_base_nonparallel_tests") {
     testonly = true
 
-    # Skip restricting visibility on mobile platforms since the tests on those
-    # gets additional generated targets which would require many lines here to
-    # cover (which would be confusing to read and hard to maintain).
-    if (!is_android && !is_ios) {
-      # TODO(kjellander): Reenable after finishing https://bugs.webrtc.org/7634.
-      #visibility = [ "..:webrtc_nonparallel_tests" ]
-    }
     sources = [
       "cpu_time_unittest.cc",
       "filerotatingstream_unittest.cc",
@@ -862,29 +851,18 @@ if (rtc_include_tests) {
     if (is_win) {
       sources += [ "win32socketserver_unittest.cc" ]
     }
-
-    if (!build_with_chromium && is_clang) {
-      # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
-      suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
-    }
   }
 
   rtc_source_set("rtc_base_approved_unittests") {
     testonly = true
 
-    # Skip restricting visibility on mobile platforms since the tests on those
-    # gets additional generated targets which would require many lines here to
-    # cover (which would be confusing to read and hard to maintain).
-    if (!is_android && !is_ios) {
-      # TODO(kjellander): Reenable after finishing https://bugs.webrtc.org/7634.
-      #visibility = [ "..:rtc_unittests" ]
-    }
     sources = [
       "atomicops_unittest.cc",
       "base64_unittest.cc",
       "basictypes_unittest.cc",
       "bind_unittest.cc",
       "bitbuffer_unittest.cc",
+      "bitrateallocationstrategy_unittest.cc",
       "buffer_unittest.cc",
       "bufferqueue_unittest.cc",
       "bytebuffer_unittest.cc",
@@ -897,8 +875,11 @@ if (rtc_include_tests) {
       "function_view_unittest.cc",
       "logging_unittest.cc",
       "md5digest_unittest.cc",
-      "mod_ops_unittest.cc",
-      "moving_max_counter_unittest.cc",
+      "numerics/histogram_percentile_counter_unittest.cc",
+      "numerics/mod_ops_unittest.cc",
+      "numerics/moving_max_counter_unittest.cc",
+      "numerics/safe_compare_unittest.cc",
+      "numerics/safe_minmax_unittest.cc",
       "onetimeevent_unittest.cc",
       "pathutils_unittest.cc",
       "platform_thread_unittest.cc",
@@ -907,8 +888,6 @@ if (rtc_include_tests) {
       "rate_statistics_unittest.cc",
       "ratetracker_unittest.cc",
       "refcountedobject_unittest.cc",
-      "safe_compare_unittest.cc",
-      "safe_minmax_unittest.cc",
       "string_to_number_unittest.cc",
       "stringencode_unittest.cc",
       "stringize_macros_unittest.cc",
@@ -930,22 +909,11 @@ if (rtc_include_tests) {
       "../system_wrappers:system_wrappers",
       "../test:test_support",
     ]
-    if (!build_with_chromium && is_clang) {
-      # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
-      suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
-    }
   }
 
   rtc_source_set("rtc_task_queue_unittests") {
     testonly = true
 
-    # Skip restricting visibility on mobile platforms since the tests on those
-    # gets additional generated targets which would require many lines here to
-    # cover (which would be confusing to read and hard to maintain).
-    if (!is_android && !is_ios) {
-      # TODO(kjellander): Reenable after finishing https://bugs.webrtc.org/7634.
-      #visibility = [ "..:rtc_unittests" ]
-    }
     sources = [
       "task_queue_unittest.cc",
     ]
@@ -956,22 +924,11 @@ if (rtc_include_tests) {
       ":rtc_task_queue",
       "../test:test_support",
     ]
-    if (!build_with_chromium && is_clang) {
-      # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
-      suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
-    }
   }
 
   rtc_source_set("sequenced_task_checker_unittests") {
     testonly = true
 
-    # Skip restricting visibility on mobile platforms since the tests on those
-    # gets additional generated targets which would require many lines here to
-    # cover (which would be confusing to read and hard to maintain).
-    if (!is_android && !is_ios) {
-      # TODO(kjellander): Reenable after finishing https://bugs.webrtc.org/7634.
-      #visibility = [ "..:rtc_unittests" ]
-    }
     sources = [
       "sequenced_task_checker_unittest.cc",
     ]
@@ -987,13 +944,6 @@ if (rtc_include_tests) {
   rtc_source_set("weak_ptr_unittests") {
     testonly = true
 
-    # Skip restricting visibility on mobile platforms since the tests on those
-    # gets additional generated targets which would require many lines here to
-    # cover (which would be confusing to read and hard to maintain).
-    if (!is_android && !is_ios) {
-      # TODO(kjellander): Reenable after finishing https://bugs.webrtc.org/7634.
-      #visibility = [ "..:rtc_unittests" ]
-    }
     sources = [
       "weak_ptr_unittest.cc",
     ]
@@ -1009,16 +959,11 @@ if (rtc_include_tests) {
   rtc_source_set("rtc_numerics_unittests") {
     testonly = true
 
-    # Skip restricting visibility on mobile platforms since the tests on those
-    # gets additional generated targets which would require many lines here to
-    # cover (which would be confusing to read and hard to maintain).
-    if (!is_android && !is_ios) {
-      # TODO(kjellander): Reenable after finishing https://bugs.webrtc.org/7634.
-      #visibility = [ "..:rtc_unittests" ]
-    }
     sources = [
       "numerics/exp_filter_unittest.cc",
+      "numerics/moving_median_filter_unittest.cc",
       "numerics/percentile_filter_unittest.cc",
+      "numerics/sequence_number_util_unittest.cc",
     ]
     deps = [
       ":rtc_base_approved",
@@ -1036,13 +981,6 @@ if (rtc_include_tests) {
   rtc_source_set("rtc_base_unittests") {
     testonly = true
 
-    # Skip restricting visibility on mobile platforms since the tests on those
-    # gets additional generated targets which would require many lines here to
-    # cover (which would be confusing to read and hard to maintain).
-    if (!is_android && !is_ios) {
-      # TODO(kjellander): Reenable after finishing https://bugs.webrtc.org/7634.
-      #visibility = [ "..:rtc_unittests" ]
-    }
     sources = [
       "callback_unittest.cc",
       "crc32_unittest.cc",
@@ -1095,10 +1033,6 @@ if (rtc_include_tests) {
       ":rtc_base",
     ]
     configs += [ ":rtc_base_unittests_config" ]
-    if (!build_with_chromium && is_clang) {
-      # Suppress warnings from the Chromium Clang plugin (bugs.webrtc.org/163).
-      suppressed_configs += [ "//build/config/clang:find_bad_constructs" ]
-    }
     if (build_with_chromium) {
       include_dirs = [ "../../boringssl/src/include" ]
     }
@@ -1111,15 +1045,12 @@ if (rtc_include_tests) {
 }
 
 if (is_android) {
-  android_library("base_java") {
+  rtc_android_library("base_java") {
     java_files = [
       "java/src/org/webrtc/ContextUtils.java",
       "java/src/org/webrtc/Logging.java",
       "java/src/org/webrtc/Size.java",
       "java/src/org/webrtc/ThreadUtils.java",
     ]
-
-    # TODO(sakal): Fix build hooks crbug.com/webrtc/8148
-    no_build_hooks = true
   }
 }

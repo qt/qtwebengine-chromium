@@ -17,6 +17,9 @@
 #include "testing/fx_string_testhelpers.h"
 #include "third_party/base/ptr_util.h"
 
+// Support up to 512 MB. This prevents trivial OOM when MSAN is on.
+const int kXFACodecFuzzerPixelLimit = 512000000;
+
 class XFACodecFuzzer {
  public:
   static int Fuzz(const uint8_t* data, size_t size, FXCODEC_IMAGE_TYPE type) {
@@ -33,14 +36,23 @@ class XFACodecFuzzer {
     if (status != FXCODEC_STATUS_FRAME_READY)
       return 0;
 
+    // Skipping very large images, since they will take a long time and may lead
+    // to OOM.
+    FX_SAFE_UINT32 bitmap_size = decoder->GetHeight();
+    bitmap_size *= decoder->GetWidth();
+    bitmap_size *= 4;  // From CFX_DIBitmap impl.
+    if (!bitmap_size.IsValid() ||
+        bitmap_size.ValueOrDie() > kXFACodecFuzzerPixelLimit) {
+      return 0;
+    }
+
     auto bitmap = pdfium::MakeRetain<CFX_DIBitmap>();
     bitmap->Create(decoder->GetWidth(), decoder->GetHeight(), FXDIB_Argb);
 
-    int32_t frames;
-    if (decoder->GetFrames(&frames) != FXCODEC_STATUS_DECODE_READY ||
-        frames == 0) {
+    size_t frames;
+    std::tie(status, frames) = decoder->GetFrames();
+    if (status != FXCODEC_STATUS_DECODE_READY || frames == 0)
       return 0;
-    }
 
     status = decoder->StartDecode(bitmap, 0, 0, bitmap->GetWidth(),
                                   bitmap->GetHeight());

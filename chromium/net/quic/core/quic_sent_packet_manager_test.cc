@@ -16,10 +16,8 @@
 #include "net/quic/test_tools/quic_test_utils.h"
 
 using testing::AnyNumber;
-using testing::ElementsAre;
 using testing::IsEmpty;
 using testing::Not;
-using testing::Pair;
 using testing::Pointwise;
 using testing::Return;
 using testing::StrictMock;
@@ -1332,13 +1330,8 @@ TEST_F(QuicSentPacketManagerTest, NegotiateCongestionControlFromOptions) {
   QuicConfigPeer::SetReceivedConnectionOptions(&config, options);
   EXPECT_CALL(*network_change_visitor_, OnCongestionChange());
   manager_.SetFromConfig(config);
-  if (!FLAGS_quic_reloadable_flag_quic_disable_packets_based_cc) {
-    EXPECT_EQ(kReno, QuicSentPacketManagerPeer::GetSendAlgorithm(manager_)
-                         ->GetCongestionControlType());
-  } else {
-    EXPECT_EQ(kRenoBytes, QuicSentPacketManagerPeer::GetSendAlgorithm(manager_)
-                              ->GetCongestionControlType());
-  }
+  EXPECT_EQ(kRenoBytes, QuicSentPacketManagerPeer::GetSendAlgorithm(manager_)
+                            ->GetCongestionControlType());
 
   options.clear();
   options.push_back(kTBBR);
@@ -1353,14 +1346,8 @@ TEST_F(QuicSentPacketManagerTest, NegotiateCongestionControlFromOptions) {
   QuicConfigPeer::SetReceivedConnectionOptions(&config, options);
   EXPECT_CALL(*network_change_visitor_, OnCongestionChange());
   manager_.SetFromConfig(config);
-  if (!FLAGS_quic_reloadable_flag_quic_disable_packets_based_cc) {
-    EXPECT_EQ(kCubic, QuicSentPacketManagerPeer::GetSendAlgorithm(manager_)
-                          ->GetCongestionControlType());
-  } else {
-    EXPECT_EQ(kCubicBytes, QuicSentPacketManagerPeer::GetSendAlgorithm(manager_)
-                               ->GetCongestionControlType());
-  }
-
+  EXPECT_EQ(kCubicBytes, QuicSentPacketManagerPeer::GetSendAlgorithm(manager_)
+                             ->GetCongestionControlType());
   options.clear();
   options.push_back(kRENO);
   options.push_back(kBYTE);
@@ -1389,13 +1376,8 @@ TEST_F(QuicSentPacketManagerTest, NegotiateClientCongestionControlFromOptions) {
   QuicSentPacketManagerPeer::SetPerspective(&manager_, Perspective::IS_CLIENT);
   EXPECT_CALL(*network_change_visitor_, OnCongestionChange());
   manager_.SetFromConfig(config);
-  if (!FLAGS_quic_reloadable_flag_quic_disable_packets_based_cc) {
-    EXPECT_EQ(kReno, QuicSentPacketManagerPeer::GetSendAlgorithm(manager_)
-                         ->GetCongestionControlType());
-  } else {
-    EXPECT_EQ(kRenoBytes, QuicSentPacketManagerPeer::GetSendAlgorithm(manager_)
-                              ->GetCongestionControlType());
-  }
+  EXPECT_EQ(kRenoBytes, QuicSentPacketManagerPeer::GetSendAlgorithm(manager_)
+                            ->GetCongestionControlType());
 
   options.clear();
   options.push_back(kTBBR);
@@ -1410,13 +1392,8 @@ TEST_F(QuicSentPacketManagerTest, NegotiateClientCongestionControlFromOptions) {
   config.SetClientConnectionOptions(options);
   EXPECT_CALL(*network_change_visitor_, OnCongestionChange());
   manager_.SetFromConfig(config);
-  if (!FLAGS_quic_reloadable_flag_quic_disable_packets_based_cc) {
-    EXPECT_EQ(kCubic, QuicSentPacketManagerPeer::GetSendAlgorithm(manager_)
-                          ->GetCongestionControlType());
-  } else {
-    EXPECT_EQ(kCubicBytes, QuicSentPacketManagerPeer::GetSendAlgorithm(manager_)
-                               ->GetCongestionControlType());
-  }
+  EXPECT_EQ(kCubicBytes, QuicSentPacketManagerPeer::GetSendAlgorithm(manager_)
+                             ->GetCongestionControlType());
 
   options.clear();
   options.push_back(kRENO);

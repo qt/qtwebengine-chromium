@@ -58,7 +58,7 @@ class URLRequestJob::URLRequestJobSourceStream : public SourceStream {
     DCHECK(job_);
   }
 
-  ~URLRequestJobSourceStream() override {}
+  ~URLRequestJobSourceStream() override = default;
 
   // SourceStream implementation:
   int Read(IOBuffer* dest_buffer,
@@ -251,6 +251,10 @@ void URLRequestJob::FollowDeferredRedirect() {
   FollowRedirect(*redirect_info);
 }
 
+int64_t URLRequestJob::prefilter_bytes_read() const {
+  return prefilter_bytes_read_;
+}
+
 bool URLRequestJob::GetMimeType(std::string* mime_type) const {
   return false;
 }
@@ -295,8 +299,9 @@ GURL URLRequestJob::ComputeReferrerForPolicy(URLRequest::ReferrerPolicy policy,
   bool secure_referrer_but_insecure_destination =
       original_referrer.SchemeIsCryptographic() &&
       !destination.SchemeIsCryptographic();
-  url::Origin referrer_origin(original_referrer);
-  bool same_origin = referrer_origin.IsSameOriginWith(url::Origin(destination));
+  url::Origin referrer_origin = url::Origin::Create(original_referrer);
+  bool same_origin =
+      referrer_origin.IsSameOriginWith(url::Origin::Create(destination));
   switch (policy) {
     case URLRequest::CLEAR_REFERRER_ON_TRANSITION_FROM_SECURE_TO_INSECURE:
       return secure_referrer_but_insecure_destination ? GURL()
@@ -351,9 +356,9 @@ bool URLRequestJob::CanGetCookies(const CookieList& cookie_list) const {
   return request_->CanGetCookies(cookie_list);
 }
 
-bool URLRequestJob::CanSetCookie(const std::string& cookie_line,
+bool URLRequestJob::CanSetCookie(const net::CanonicalCookie& cookie,
                                  CookieOptions* options) const {
-  return request_->CanSetCookie(cookie_line, options);
+  return request_->CanSetCookie(cookie, options);
 }
 
 bool URLRequestJob::CanEnablePrivacyMode() const {

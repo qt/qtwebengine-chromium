@@ -21,11 +21,12 @@ namespace media {
 
 class MockCdmAuxiliaryHelper : public CdmAuxiliaryHelper {
  public:
-  MockCdmAuxiliaryHelper(std::unique_ptr<CdmAllocator> allocator);
+  explicit MockCdmAuxiliaryHelper(std::unique_ptr<CdmAllocator> allocator);
   ~MockCdmAuxiliaryHelper() override;
 
-  MOCK_METHOD1(CreateCdmFileIO,
-               std::unique_ptr<CdmFileIO>(cdm::FileIOClient* client));
+  // CdmAuxiliaryHelper implementation.
+  void SetFileReadCB(FileReadCB file_read_cb) override;
+  cdm::FileIO* CreateCdmFileIO(cdm::FileIOClient* client) override;
 
   cdm::Buffer* CreateCdmBuffer(size_t capacity) override;
   std::unique_ptr<VideoFrameImpl> CreateCdmVideoFrame() override;
@@ -51,6 +52,7 @@ class MockCdmAuxiliaryHelper : public CdmAuxiliaryHelper {
 
  private:
   std::unique_ptr<CdmAllocator> allocator_;
+
   DISALLOW_COPY_AND_ASSIGN(MockCdmAuxiliaryHelper);
 };
 

@@ -66,6 +66,11 @@ class PacedSender : public Pacer {
               PacketSender* packet_sender,
               RtcEventLog* event_log);
 
+  PacedSender(const Clock* clock,
+              PacketSender* packet_sender,
+              RtcEventLog* event_log,
+              std::unique_ptr<PacketQueue> packets);
+
   ~PacedSender() override;
 
   virtual void CreateProbeCluster(int bitrate_bps);
@@ -107,6 +112,12 @@ class PacedSender : public Pacer {
                     size_t bytes,
                     bool retransmission) override;
 
+  // Currently audio traffic is not accounted by pacer and passed through.
+  // With the introduction of audio BWE audio traffic will be accounted for
+  // the pacer budget calculation. The audio traffic still will be injected
+  // at high priority.
+  void SetAccountForAudioPackets(bool account_for_audio) override;
+
   // Returns the time since the oldest queued packet was enqueued.
   virtual int64_t QueueInMs() const;
 
@@ -127,11 +138,6 @@ class PacedSender : public Pacer {
   // traffic on network is limited due to application not having enough
   // traffic to meet the current channel capacity.
   virtual rtc::Optional<int64_t> GetApplicationLimitedRegionStartTime() const;
-
-  // Returns the average time since being enqueued, in milliseconds, for all
-  // packets currently in the pacer queue, excluding any time the pacer has been
-  // paused. Returns 0 if queue is empty.
-  virtual int64_t AverageQueueTimeMs();
 
   // Returns the number of milliseconds until the module want a worker thread
   // to call Process.
@@ -161,20 +167,22 @@ class PacedSender : public Pacer {
 
   const Clock* const clock_;
   PacketSender* const packet_sender_;
-  std::unique_ptr<AlrDetector> alr_detector_ RTC_GUARDED_BY(critsect_);
+  const std::unique_ptr<AlrDetector> alr_detector_ RTC_PT_GUARDED_BY(critsect_);
 
   rtc::CriticalSection critsect_;
   bool paused_ RTC_GUARDED_BY(critsect_);
   // This is the media budget, keeping track of how many bits of media
   // we can pace out during the current interval.
-  std::unique_ptr<IntervalBudget> media_budget_ RTC_GUARDED_BY(critsect_);
+  const std::unique_ptr<IntervalBudget> media_budget_
+      RTC_PT_GUARDED_BY(critsect_);
   // This is the padding budget, keeping track of how many bits of padding we're
   // allowed to send out during the current interval. This budget will be
   // utilized when there's no media to send.
-  std::unique_ptr<IntervalBudget> padding_budget_ RTC_GUARDED_BY(critsect_);
+  const std::unique_ptr<IntervalBudget> padding_budget_
+      RTC_PT_GUARDED_BY(critsect_);
 
-  std::unique_ptr<BitrateProber> prober_ RTC_GUARDED_BY(critsect_);
-  bool probing_send_failure_;
+  const std::unique_ptr<BitrateProber> prober_ RTC_PT_GUARDED_BY(critsect_);
+  bool probing_send_failure_ RTC_GUARDED_BY(critsect_);
   // Actual configured bitrates (media_budget_ may temporarily be higher in
   // order to meet pace time constraint).
   uint32_t estimated_bitrate_bps_ RTC_GUARDED_BY(critsect_);
@@ -185,12 +193,13 @@ class PacedSender : public Pacer {
   int64_t time_last_update_us_ RTC_GUARDED_BY(critsect_);
   int64_t first_sent_packet_ms_ RTC_GUARDED_BY(critsect_);
 
-  std::unique_ptr<PacketQueue> packets_ RTC_GUARDED_BY(critsect_);
-  uint64_t packet_counter_;
+  const std::unique_ptr<PacketQueue> packets_ RTC_PT_GUARDED_BY(critsect_);
+  uint64_t packet_counter_ RTC_GUARDED_BY(critsect_);
   ProcessThread* process_thread_ = nullptr;
 
   float pacing_factor_ RTC_GUARDED_BY(critsect_);
   int64_t queue_time_limit RTC_GUARDED_BY(critsect_);
+  bool account_for_audio_ RTC_GUARDED_BY(critsect_);
 };
 }  // namespace webrtc
 #endif  // MODULES_PACING_PACED_SENDER_H_

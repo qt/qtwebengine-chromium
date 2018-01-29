@@ -28,8 +28,7 @@
 #include "core/html/HTMLFrameElementBase.h"
 #include "core/html/HTMLIFrameElementSandbox.h"
 #include "platform/Supplementable.h"
-#include "public/platform/WebFeaturePolicy.h"
-#include "public/platform/WebVector.h"
+#include "third_party/WebKit/common/feature_policy/feature_policy.h"
 
 namespace blink {
 
@@ -41,11 +40,11 @@ class CORE_EXPORT HTMLIFrameElement final
 
  public:
   DECLARE_NODE_FACTORY(HTMLIFrameElement);
-  DECLARE_VIRTUAL_TRACE();
+  virtual void Trace(blink::Visitor*);
   ~HTMLIFrameElement() override;
   DOMTokenList* sandbox() const;
 
-  Vector<WebParsedFeaturePolicyDeclaration> ConstructContainerPolicy(
+  ParsedFeaturePolicy ConstructContainerPolicy(
       Vector<String>* /* messages */,
       bool* /* old_syntax */) const override;
 
@@ -56,9 +55,10 @@ class CORE_EXPORT HTMLIFrameElement final
 
   void ParseAttribute(const AttributeModificationParams&) override;
   bool IsPresentationAttribute(const QualifiedName&) const override;
-  void CollectStyleForPresentationAttribute(const QualifiedName&,
-                                            const AtomicString&,
-                                            MutableStylePropertySet*) override;
+  void CollectStyleForPresentationAttribute(
+      const QualifiedName&,
+      const AtomicString&,
+      MutableCSSPropertyValueSet*) override;
 
   InsertionNotificationRequest InsertedInto(ContainerNode*) override;
   void RemovedFrom(ContainerNode*) override;

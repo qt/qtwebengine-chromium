@@ -1,4 +1,4 @@
-// Copyright 2016 PDFium Authors. All rights reserved.
+// Copyright 2017 PDFium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,22 +6,27 @@
 
 #include "xfa/fxfa/parser/cxfa_binditems.h"
 
-#include "xfa/fxfa/parser/cxfa_node.h"
+namespace {
 
-CXFA_BindItems::CXFA_BindItems(CXFA_Node* pNode) : CXFA_Data(pNode) {}
+const CXFA_Node::AttributeData kAttributeData[] = {
+    {XFA_Attribute::Ref, XFA_AttributeType::CData, nullptr},
+    {XFA_Attribute::Connection, XFA_AttributeType::CData, nullptr},
+    {XFA_Attribute::LabelRef, XFA_AttributeType::CData, nullptr},
+    {XFA_Attribute::ValueRef, XFA_AttributeType::CData, nullptr},
+    {XFA_Attribute::Unknown, XFA_AttributeType::Integer, nullptr}};
 
-void CXFA_BindItems::GetLabelRef(WideStringView& wsLabelRef) {
-  m_pNode->TryCData(XFA_ATTRIBUTE_LabelRef, wsLabelRef);
-}
+constexpr wchar_t kName[] = L"bindItems";
 
-void CXFA_BindItems::GetValueRef(WideStringView& wsValueRef) {
-  m_pNode->TryCData(XFA_ATTRIBUTE_ValueRef, wsValueRef);
-}
+}  // namespace
 
-void CXFA_BindItems::GetRef(WideStringView& wsRef) {
-  m_pNode->TryCData(XFA_ATTRIBUTE_Ref, wsRef);
-}
+CXFA_BindItems::CXFA_BindItems(CXFA_Document* doc, XFA_PacketType packet)
+    : CXFA_Node(doc,
+                packet,
+                (XFA_XDPPACKET_Template | XFA_XDPPACKET_Form),
+                XFA_ObjectType::Node,
+                XFA_Element::BindItems,
+                nullptr,
+                kAttributeData,
+                kName) {}
 
-bool CXFA_BindItems::SetConnection(const WideString& wsConnection) {
-  return m_pNode->SetCData(XFA_ATTRIBUTE_Connection, wsConnection);
-}
+CXFA_BindItems::~CXFA_BindItems() {}

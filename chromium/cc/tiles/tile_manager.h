@@ -248,8 +248,7 @@ class CC_EXPORT TileManager : CheckerImageTrackerClient {
     return has_scheduled_tile_tasks_;
   }
 
-  void OnRasterTaskCompleted(std::unique_ptr<RasterBuffer> raster_buffer,
-                             Tile::Id tile_id,
+  void OnRasterTaskCompleted(Tile::Id tile_id,
                              Resource* resource,
                              bool was_canceled);
 
@@ -270,6 +269,10 @@ class CC_EXPORT TileManager : CheckerImageTrackerClient {
 
   CheckerImageTracker& checker_image_tracker() {
     return checker_image_tracker_;
+  }
+
+  const std::vector<DrawImage>& decode_tasks_for_testing(Tile::Id id) {
+    return scheduled_draw_images_[id];
   }
 
  protected:
@@ -365,6 +368,7 @@ class CC_EXPORT TileManager : CheckerImageTrackerClient {
       const gfx::ColorSpace& raster_color_space,
       std::vector<DrawImage>* sync_decoded_images,
       std::vector<PaintImage>* checkered_images,
+      const gfx::Rect* invalidated_rect,
       base::flat_map<PaintImage::Id, size_t>* image_to_frame_index = nullptr);
   void AddCheckeredImagesToDecodeQueue(
       const PrioritizedTile& prioritized_tile,

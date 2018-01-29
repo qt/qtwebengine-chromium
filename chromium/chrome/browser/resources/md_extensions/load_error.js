@@ -10,6 +10,7 @@ cr.define('extensions', function() {
     /**
      * Attempts to load the previously-attempted unpacked extension.
      * @param {string} retryId
+     * @return {!Promise}
      */
     retryLoadUnpacked(retryId) {}
   }
@@ -22,6 +23,9 @@ cr.define('extensions', function() {
 
       /** @type {chrome.developerPrivate.LoadError} */
       loadError: Object,
+
+      /** @private */
+      retrying_: Boolean,
     },
 
     observers: [
@@ -38,8 +42,18 @@ cr.define('extensions', function() {
 
     /** @private */
     onRetryTap_: function() {
-      this.delegate.retryLoadUnpacked(this.loadError.retryGuid);
-      this.close();
+      this.retrying_ = true;
+      this.delegate.retryLoadUnpacked(this.loadError.retryGuid)
+          .then(
+              () => {
+                this.close();
+              },
+              loadError => {
+                this.loadError =
+                    /** @type {chrome.developerPrivate.LoadError} */ (
+                        loadError);
+                this.retrying_ = false;
+              });
     },
 
     /** @private */

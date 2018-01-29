@@ -75,10 +75,7 @@ static const VersionParam kAllVersions[] = {
     {TLS1_VERSION, VersionParam::is_tls, "TLS1"},
     {TLS1_1_VERSION, VersionParam::is_tls, "TLS1_1"},
     {TLS1_2_VERSION, VersionParam::is_tls, "TLS1_2"},
-// TLS 1.3 requires RSA-PSS, which is disabled for Android system builds.
-#if !defined(BORINGSSL_ANDROID_SYSTEM)
     {TLS1_3_VERSION, VersionParam::is_tls, "TLS1_3"},
-#endif
     {DTLS1_VERSION, VersionParam::is_dtls, "DTLS1"},
     {DTLS1_2_VERSION, VersionParam::is_dtls, "DTLS1_2"},
 };
@@ -375,6 +372,15 @@ static const CurveTest kCurveTests[] = {
   },
   {
     "P-256:P-384:P-521:X25519",
+    {
+      SSL_CURVE_SECP256R1,
+      SSL_CURVE_SECP384R1,
+      SSL_CURVE_SECP521R1,
+      SSL_CURVE_X25519,
+    },
+  },
+  {
+    "prime256v1:secp384r1:secp521r1:x25519",
     {
       SSL_CURVE_SECP256R1,
       SSL_CURVE_SECP384R1,
@@ -1974,8 +1980,6 @@ TEST(SSLTest, ClientHello) {
       0x01, 0x00, 0x00, 0x1f, 0xff, 0x01, 0x00, 0x01, 0x00, 0x00, 0x17, 0x00,
       0x00, 0x00, 0x23, 0x00, 0x00, 0x00, 0x0b, 0x00, 0x02, 0x01, 0x00, 0x00,
       0x0a, 0x00, 0x08, 0x00, 0x06, 0x00, 0x1d, 0x00, 0x17, 0x00, 0x18}},
-  // This test assumes RSA-PSS, which is disabled for Android system builds.
-#if !defined(BORINGSSL_ANDROID_SYSTEM)
     {TLS1_2_VERSION,
      {0x16, 0x03, 0x01, 0x00, 0x8e, 0x01, 0x00, 0x00, 0x8a, 0x03, 0x03, 0x00,
       0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
@@ -1990,7 +1994,6 @@ TEST(SSLTest, ClientHello) {
       0x05, 0x05, 0x01, 0x08, 0x06, 0x06, 0x01, 0x02, 0x01, 0x00, 0x0b, 0x00,
       0x02, 0x01, 0x00, 0x00, 0x0a, 0x00, 0x08, 0x00, 0x06, 0x00, 0x1d, 0x00,
       0x17, 0x00, 0x18}},
-#endif
     // TODO(davidben): Add a change detector for TLS 1.3 once the spec and our
     // implementation has settled enough that it won't change.
   };
@@ -3760,45 +3763,88 @@ TEST_P(SSLVersionTest, SessionVersion) {
   EXPECT_EQ(version(), SSL_SESSION_get_protocol_version(session.get()));
 }
 
-// Test that a handshake-level errors are sticky.
-TEST_P(SSLVersionTest, StickyErrorHandshake_ParseClientHello) {
-  UniquePtr<SSL_CTX> ctx = CreateContext();
-  ASSERT_TRUE(ctx);
-  UniquePtr<SSL> ssl(SSL_new(ctx.get()));
+TEST_P(SSLVersionTest, SSLPending) {
+  UniquePtr<SSL> ssl(SSL_new(client_ctx_.get()));
   ASSERT_TRUE(ssl);
-  SSL_set_accept_state(ssl.get());
+  EXPECT_EQ(0, SSL_pending(ssl.get()));
 
-  // Pass in an empty ClientHello.
-  if (is_dtls()) {
-    static const uint8_t kBadClientHello[] = {
-        0x16, 0xfe, 0xff, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x0c, 0x01, 0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
-    SSL_set0_rbio(ssl.get(),
-                  BIO_new_mem_buf(kBadClientHello, sizeof(kBadClientHello)));
-  } else {
-    static const uint8_t kBadClientHello[] = {0x16, 0x03, 0x01, 0x00, 0x04,
-                                              0x01, 0x00, 0x00, 0x00};
-    SSL_set0_rbio(ssl.get(),
-                  BIO_new_mem_buf(kBadClientHello, sizeof(kBadClientHello)));
-  }
+  ASSERT_TRUE(Connect());
+  EXPECT_EQ(0, SSL_pending(client_.get()));
 
-  SSL_set0_wbio(ssl.get(), BIO_new(BIO_s_mem()));
+  ASSERT_EQ(5, SSL_write(server_.get(), "hello", 5));
+  ASSERT_EQ(5, SSL_write(server_.get(), "world", 5));
+  EXPECT_EQ(0, SSL_pending(client_.get()));
 
-  // The handshake logic should reject the ClientHello.
-  int ret = SSL_do_handshake(ssl.get());
-  EXPECT_NE(1, ret);
-  EXPECT_EQ(SSL_ERROR_SSL, SSL_get_error(ssl.get(), ret));
-  EXPECT_EQ(ERR_LIB_SSL, ERR_GET_LIB(ERR_peek_error()));
-  EXPECT_EQ(SSL_R_DECODE_ERROR, ERR_GET_REASON(ERR_peek_error()));
-  ERR_clear_error();
+  char buf[10];
+  ASSERT_EQ(1, SSL_peek(client_.get(), buf, 1));
+  EXPECT_EQ(5, SSL_pending(client_.get()));
 
-  // If we drive the handshake again, the error is replayed.
-  ret = SSL_do_handshake(ssl.get());
-  EXPECT_NE(1, ret);
-  EXPECT_EQ(SSL_ERROR_SSL, SSL_get_error(ssl.get(), ret));
-  EXPECT_EQ(ERR_LIB_SSL, ERR_GET_LIB(ERR_peek_error()));
-  EXPECT_EQ(SSL_R_DECODE_ERROR, ERR_GET_REASON(ERR_peek_error()));
+  ASSERT_EQ(1, SSL_read(client_.get(), buf, 1));
+  EXPECT_EQ(4, SSL_pending(client_.get()));
+
+  ASSERT_EQ(4, SSL_read(client_.get(), buf, 10));
+  EXPECT_EQ(0, SSL_pending(client_.get()));
+
+  ASSERT_EQ(2, SSL_read(client_.get(), buf, 2));
+  EXPECT_EQ(3, SSL_pending(client_.get()));
+}
+
+// Test that post-handshake tickets consumed by |SSL_shutdown| are ignored.
+TEST(SSLTest, ShutdownIgnoresTickets) {
+  bssl::UniquePtr<SSL_CTX> ctx(SSL_CTX_new(TLS_method()));
+  ASSERT_TRUE(ctx);
+  ASSERT_TRUE(SSL_CTX_set_min_proto_version(ctx.get(), TLS1_3_VERSION));
+  ASSERT_TRUE(SSL_CTX_set_max_proto_version(ctx.get(), TLS1_3_VERSION));
+
+  bssl::UniquePtr<X509> cert = GetTestCertificate();
+  bssl::UniquePtr<EVP_PKEY> key = GetTestKey();
+  ASSERT_TRUE(cert);
+  ASSERT_TRUE(key);
+  ASSERT_TRUE(SSL_CTX_use_certificate(ctx.get(), cert.get()));
+  ASSERT_TRUE(SSL_CTX_use_PrivateKey(ctx.get(), key.get()));
+
+  SSL_CTX_set_session_cache_mode(ctx.get(), SSL_SESS_CACHE_BOTH);
+
+  bssl::UniquePtr<SSL> client, server;
+  ASSERT_TRUE(ConnectClientAndServer(&client, &server, ctx.get(), ctx.get()));
+
+  SSL_CTX_sess_set_new_cb(ctx.get(), [](SSL *ssl, SSL_SESSION *session) -> int {
+    ADD_FAILURE() << "New session callback called during SSL_shutdown";
+    return 0;
+  });
+
+  // Send close_notify.
+  EXPECT_EQ(0, SSL_shutdown(server.get()));
+  EXPECT_EQ(0, SSL_shutdown(client.get()));
+
+  // Receive close_notify.
+  EXPECT_EQ(1, SSL_shutdown(server.get()));
+  EXPECT_EQ(1, SSL_shutdown(client.get()));
+}
+
+TEST(SSLTest, SignatureAlgorithmProperties) {
+  EXPECT_EQ(EVP_PKEY_NONE, SSL_get_signature_algorithm_key_type(0x1234));
+  EXPECT_EQ(nullptr, SSL_get_signature_algorithm_digest(0x1234));
+  EXPECT_FALSE(SSL_is_signature_algorithm_rsa_pss(0x1234));
+
+  EXPECT_EQ(EVP_PKEY_RSA,
+            SSL_get_signature_algorithm_key_type(SSL_SIGN_RSA_PKCS1_MD5_SHA1));
+  EXPECT_EQ(EVP_md5_sha1(),
+            SSL_get_signature_algorithm_digest(SSL_SIGN_RSA_PKCS1_MD5_SHA1));
+  EXPECT_FALSE(SSL_is_signature_algorithm_rsa_pss(SSL_SIGN_RSA_PKCS1_MD5_SHA1));
+
+  EXPECT_EQ(EVP_PKEY_EC, SSL_get_signature_algorithm_key_type(
+                             SSL_SIGN_ECDSA_SECP256R1_SHA256));
+  EXPECT_EQ(EVP_sha256(), SSL_get_signature_algorithm_digest(
+                              SSL_SIGN_ECDSA_SECP256R1_SHA256));
+  EXPECT_FALSE(
+      SSL_is_signature_algorithm_rsa_pss(SSL_SIGN_ECDSA_SECP256R1_SHA256));
+
+  EXPECT_EQ(EVP_PKEY_RSA,
+            SSL_get_signature_algorithm_key_type(SSL_SIGN_RSA_PSS_SHA384));
+  EXPECT_EQ(EVP_sha384(),
+            SSL_get_signature_algorithm_digest(SSL_SIGN_RSA_PSS_SHA384));
+  EXPECT_TRUE(SSL_is_signature_algorithm_rsa_pss(SSL_SIGN_RSA_PSS_SHA384));
 }
 
 // TODO(davidben): Convert this file to GTest properly.

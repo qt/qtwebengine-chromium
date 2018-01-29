@@ -153,9 +153,33 @@ bool ChromeVirtualKeyboardDelegate::ShowLanguageSettings() {
 }
 
 bool ChromeVirtualKeyboardDelegate::SetVirtualKeyboardMode(int mode_enum) {
-  // TODO(blakeo): remove this. The virtual keyboard's implementation of mode
-  // was removed, and so this should be removed from the JS API side as well.
-  return false;
+  keyboard::KeyboardController* controller =
+      keyboard::KeyboardController::GetInstance();
+  if (!controller)
+    return false;
+
+  switch (mode_enum) {
+    case keyboard_api::KEYBOARD_MODE_FULL_WIDTH:
+      controller->SetContainerType(keyboard::ContainerType::FULL_WIDTH);
+      break;
+    case keyboard_api::KEYBOARD_MODE_FLOATING:
+      controller->SetContainerType(keyboard::ContainerType::FLOATING);
+      break;
+    default:
+      NOTREACHED();
+      break;
+  }
+  return true;
+}
+
+bool ChromeVirtualKeyboardDelegate::SetDraggableArea(
+    const api::virtual_keyboard_private::Bounds& rect) {
+  keyboard::KeyboardController* controller =
+      keyboard::KeyboardController::GetInstance();
+  if (!controller)
+    return false;
+  return controller->SetDraggableArea(
+      gfx::Rect(rect.top, rect.left, rect.width, rect.height));
 }
 
 bool ChromeVirtualKeyboardDelegate::SetRequestedKeyboardState(int state_enum) {
@@ -192,8 +216,17 @@ void ChromeVirtualKeyboardDelegate::OnHasInputDevices(
   results->SetBoolean("hotrodmode", keyboard::GetHotrodKeyboardEnabled());
   std::unique_ptr<base::ListValue> features(new base::ListValue());
 
+  // 'floatingvirtualkeyboard' is the name of the feature flag for the legacy
+  // floating keyboard that was prototyped quite some time ago. It is currently
+  // referenced by the extension even though we never enable this value and so
+  // re-using that value is not feasible due to the semi-tandem nature of the
+  // keyboard extension. The 'floatingkeybard' flag represents the new floating
+  // keyboard and should be used for new extension-side feature work for the
+  // floating keyboard.
+  // TODO(blakeo): once the old flag's usages have been removed from the
+  // extension and all pushes have settled, remove this overly verbose comment.
   features->AppendString(GenerateFeatureFlag(
-      "floatingvirtualkeyboard", keyboard::IsFloatingVirtualKeyboardEnabled()));
+      "floatingkeyboard", keyboard::IsFloatingVirtualKeyboardEnabled()));
   features->AppendString(
       GenerateFeatureFlag("gesturetyping", keyboard::IsGestureTypingEnabled()));
   features->AppendString(GenerateFeatureFlag(

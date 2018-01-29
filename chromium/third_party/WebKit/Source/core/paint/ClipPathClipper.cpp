@@ -9,13 +9,13 @@
 #include "core/layout/svg/SVGLayoutSupport.h"
 #include "core/layout/svg/SVGResources.h"
 #include "core/layout/svg/SVGResourcesCache.h"
-#include "core/paint/LayoutObjectDrawingRecorder.h"
 #include "core/paint/PaintInfo.h"
 #include "core/paint/TransformRecorder.h"
 #include "core/style/ClipPathOperation.h"
 #include "platform/graphics/paint/ClipPathDisplayItem.h"
 #include "platform/graphics/paint/ClipPathRecorder.h"
 #include "platform/graphics/paint/DrawingDisplayItem.h"
+#include "platform/graphics/paint/DrawingRecorder.h"
 #include "platform/graphics/paint/PaintController.h"
 #include "platform/graphics/paint/PaintRecordBuilder.h"
 
@@ -159,8 +159,8 @@ bool ClipPathClipper::PrepareEffect(const FloatRect& target_bounding_box,
   mask_clip_recorder_.emplace(context_, layout_object_, SkBlendMode::kSrcOver,
                               1, &visual_rect);
   {
-    if (!DrawClipAsMask(target_bounding_box, visual_rect,
-                        animated_local_transform, layer_position_offset)) {
+    if (!DrawClipAsMask(target_bounding_box, animated_local_transform,
+                        layer_position_offset)) {
       // End the clip mask's compositor.
       mask_clip_recorder_.reset();
       return false;
@@ -170,19 +170,25 @@ bool ClipPathClipper::PrepareEffect(const FloatRect& target_bounding_box,
   // Masked content layer start.
   mask_content_recorder_.emplace(context_, layout_object_, SkBlendMode::kSrcIn,
                                  1, &visual_rect);
-
+  // This is a hack to make sure masked content layer's visual rect at least
+  // as big as the clip mask layer, so it won't get culled out inadvertently.
+  if (!DrawingRecorder::UseCachedDrawingIfPossible(
+          context_, layout_object_, DisplayItem::kSVGClipBoundsHack)) {
+    DrawingRecorder recorder(context_, layout_object_,
+                             DisplayItem::kSVGClipBoundsHack);
+    context_.FillRect(FloatRect());
+  }
   return true;
 }
 
 bool ClipPathClipper::DrawClipAsMask(const FloatRect& target_bounding_box,
-                                     const FloatRect& target_visual_rect,
                                      const AffineTransform& local_transform,
                                      const FloatPoint& layer_position_offset) {
-  if (LayoutObjectDrawingRecorder::UseCachedDrawingIfPossible(
-          context_, layout_object_, DisplayItem::kSVGClip))
+  if (DrawingRecorder::UseCachedDrawingIfPossible(context_, layout_object_,
+                                                  DisplayItem::kSVGClip))
     return true;
 
-  PaintRecordBuilder mask_builder(target_visual_rect, nullptr, &context_);
+  PaintRecordBuilder mask_builder(nullptr, &context_);
   GraphicsContext& mask_context = mask_builder.Context();
   {
     TransformRecorder recorder(mask_context, layout_object_, local_transform);
@@ -211,12 +217,11 @@ bool ClipPathClipper::DrawClipAsMask(const FloatRect& target_bounding_box,
                                                    content_transform);
       mask_context.GetPaintController().CreateAndAppend<DrawingDisplayItem>(
           layout_object_, DisplayItem::kSVGClip,
-          resource_clipper_->CreatePaintRecord(), target_bounding_box);
+          resource_clipper_->CreatePaintRecord());
     }
   }
 
-  LayoutObjectDrawingRecorder drawing_recorder(
-      context_, layout_object_, DisplayItem::kSVGClip, target_visual_rect);
+  DrawingRecorder recorder(context_, layout_object_, DisplayItem::kSVGClip);
   context_.DrawRecord(mask_builder.EndRecording());
   return true;
 }

@@ -9,10 +9,10 @@
 #include <memory>
 #include <string>
 
-#include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
 #include "base/strings/stringprintf.h"
 #include "base/synchronization/waitable_event.h"
+#include "base/test/scoped_task_environment.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "content/child/child_process.h"
 #include "content/renderer/media/media_stream_video_source.h"
@@ -38,7 +38,6 @@ namespace content {
 class WebRtcMediaStreamAdapterTest : public ::testing::Test {
  public:
   void SetUp() override {
-    child_process_.reset(new ChildProcess());
     dependency_factory_.reset(new MockPeerConnectionDependencyFactory());
     track_adapter_map_ =
         new WebRtcMediaStreamTrackAdapterMap(dependency_factory_.get());
@@ -50,8 +49,10 @@ class WebRtcMediaStreamAdapterTest : public ::testing::Test {
   }
 
  protected:
-  base::MessageLoop message_loop_;
-  std::unique_ptr<ChildProcess> child_process_;
+  // The ScopedTaskEnvironment prevents the ChildProcess from leaking a
+  // TaskScheduler.
+  base::test::ScopedTaskEnvironment scoped_task_environment_;
+  ChildProcess child_process_;
   std::unique_ptr<MockPeerConnectionDependencyFactory> dependency_factory_;
   scoped_refptr<WebRtcMediaStreamTrackAdapterMap> track_adapter_map_;
 };
@@ -145,21 +146,33 @@ class RemoteWebRtcMediaStreamAdapterTest : public WebRtcMediaStreamAdapterTest {
     return adapter;
   }
 
+  // Adds the track and gets the adapters for the stream's resulting tracks.
   template <typename TrackType>
-  void AddTrack(webrtc::MediaStreamInterface* webrtc_stream,
-                TrackType* webrtc_track) {
+  WebRtcMediaStreamAdapter::TrackAdapterRefs AddTrack(
+      webrtc::MediaStreamInterface* webrtc_stream,
+      TrackType* webrtc_track) {
     typedef bool (webrtc::MediaStreamInterface::*AddTrack)(TrackType*);
     dependency_factory_->GetWebRtcSignalingThread()->PostTask(
         FROM_HERE, base::BindOnce(base::IgnoreResult<AddTrack>(
                                       &webrtc::MediaStreamInterface::AddTrack),
                                   base::Unretained(webrtc_stream),
                                   base::Unretained(webrtc_track)));
+    WebRtcMediaStreamAdapter::TrackAdapterRefs track_refs;
+    dependency_factory_->GetWebRtcSignalingThread()->PostTask(
+        FROM_HERE,
+        base::BindOnce(&RemoteWebRtcMediaStreamAdapterTest::
+                           GetStreamTrackRefsOnSignalingThread,
+                       base::Unretained(this), base::Unretained(webrtc_stream),
+                       base::Unretained(&track_refs)));
     RunMessageLoopsUntilIdle();
+    return track_refs;
   }
 
+  // Removes the track and gets the adapters for the stream's resulting tracks.
   template <typename TrackType>
-  void RemoveTrack(webrtc::MediaStreamInterface* webrtc_stream,
-                   TrackType* webrtc_track) {
+  WebRtcMediaStreamAdapter::TrackAdapterRefs RemoveTrack(
+      webrtc::MediaStreamInterface* webrtc_stream,
+      TrackType* webrtc_track) {
     typedef bool (webrtc::MediaStreamInterface::*RemoveTrack)(TrackType*);
     dependency_factory_->GetWebRtcSignalingThread()->PostTask(
         FROM_HERE,
@@ -167,7 +180,15 @@ class RemoteWebRtcMediaStreamAdapterTest : public WebRtcMediaStreamAdapterTest {
                            &webrtc::MediaStreamInterface::RemoveTrack),
                        base::Unretained(webrtc_stream),
                        base::Unretained(webrtc_track)));
+    WebRtcMediaStreamAdapter::TrackAdapterRefs track_refs;
+    dependency_factory_->GetWebRtcSignalingThread()->PostTask(
+        FROM_HERE,
+        base::BindOnce(&RemoteWebRtcMediaStreamAdapterTest::
+                           GetStreamTrackRefsOnSignalingThread,
+                       base::Unretained(this), base::Unretained(webrtc_stream),
+                       base::Unretained(&track_refs)));
     RunMessageLoopsUntilIdle();
+    return track_refs;
   }
 
  private:
@@ -180,6 +201,21 @@ class RemoteWebRtcMediaStreamAdapterTest : public WebRtcMediaStreamAdapterTest {
     EXPECT_FALSE((*adapter)->is_initialized());
   }
 
+  void GetStreamTrackRefsOnSignalingThread(
+      webrtc::MediaStreamInterface* webrtc_stream,
+      WebRtcMediaStreamAdapter::TrackAdapterRefs* out_track_refs) {
+    WebRtcMediaStreamAdapter::TrackAdapterRefs track_refs;
+    for (auto& audio_track : webrtc_stream->GetAudioTracks()) {
+      track_refs.push_back(
+          track_adapter_map_->GetOrCreateRemoteTrackAdapter(audio_track.get()));
+    }
+    for (auto& video_track : webrtc_stream->GetVideoTracks()) {
+      track_refs.push_back(
+          track_adapter_map_->GetOrCreateRemoteTrackAdapter(video_track.get()));
+    }
+    *out_track_refs = std::move(track_refs);
+  }
+
   // Runs message loops on the webrtc signaling thread and the main thread until
   // idle.
   void RunMessageLoopsUntilIdle() {
@@ -190,6 +226,7 @@ class RemoteWebRtcMediaStreamAdapterTest : public WebRtcMediaStreamAdapterTest {
         FROM_HERE,
         base::BindOnce(&RemoteWebRtcMediaStreamAdapterTest::SignalEvent,
                        base::Unretained(this), &waitable_event));
+    // TODO(hbos): Use base::RunLoop instead of WaitableEvent.
     waitable_event.Wait();
     base::RunLoop().RunUntilIdle();
   }
@@ -334,21 +371,23 @@ TEST_F(RemoteWebRtcMediaStreamAdapterTest, RemoveAndAddTrack) {
   // Modify the webrtc layer stream, make sure the web layer stream is updated.
   rtc::scoped_refptr<webrtc::AudioTrackInterface> webrtc_audio_track =
       webrtc_stream->GetAudioTracks()[0];
-  RemoveTrack(webrtc_stream.get(), webrtc_audio_track.get());
+  adapter->SetTracks(
+      RemoveTrack(webrtc_stream.get(), webrtc_audio_track.get()));
   adapter->web_stream().AudioTracks(web_audio_tracks);
   EXPECT_EQ(0u, web_audio_tracks.size());
 
   rtc::scoped_refptr<webrtc::VideoTrackInterface> webrtc_video_track =
       webrtc_stream->GetVideoTracks()[0];
-  RemoveTrack(webrtc_stream.get(), webrtc_video_track.get());
+  adapter->SetTracks(
+      RemoveTrack(webrtc_stream.get(), webrtc_video_track.get()));
   adapter->web_stream().VideoTracks(web_video_tracks);
   EXPECT_EQ(0u, web_video_tracks.size());
 
-  AddTrack(webrtc_stream.get(), webrtc_audio_track.get());
+  adapter->SetTracks(AddTrack(webrtc_stream.get(), webrtc_audio_track.get()));
   adapter->web_stream().AudioTracks(web_audio_tracks);
   EXPECT_EQ(1u, web_audio_tracks.size());
 
-  AddTrack(webrtc_stream.get(), webrtc_video_track.get());
+  adapter->SetTracks(AddTrack(webrtc_stream.get(), webrtc_video_track.get()));
   adapter->web_stream().VideoTracks(web_video_tracks);
   EXPECT_EQ(1u, web_video_tracks.size());
 }

@@ -14,6 +14,7 @@
 #include "angle_gl.h"
 #include "compiler/translator/ASTMetadataHLSL.h"
 #include "compiler/translator/Compiler.h"
+#include "compiler/translator/FlagStd140Structs.h"
 #include "compiler/translator/IntermTraverse.h"
 
 class BuiltInFunctionEmulator;
@@ -22,6 +23,8 @@ namespace sh
 {
 class StructureHLSL;
 class TextureFunctionHLSL;
+class TSymbolTable;
+class ImageFunctionHLSL;
 class UnfoldShortCircuit;
 class UniformHLSL;
 
@@ -37,7 +40,9 @@ class OutputHLSL : public TIntermTraverser
                ShShaderOutput outputType,
                int numRenderTargets,
                const std::vector<Uniform> &uniforms,
-               ShCompileOptions compileOptions);
+               ShCompileOptions compileOptions,
+               TSymbolTable *symbolTable,
+               PerformanceDiagnostics *perfDiagnostics);
 
     ~OutputHLSL();
 
@@ -57,7 +62,9 @@ class OutputHLSL : public TIntermTraverser
     static bool canWriteAsHLSLLiteral(TIntermTyped *expression);
 
   protected:
-    void header(TInfoSinkBase &out, const BuiltInFunctionEmulator *builtInFunctionEmulator);
+    void header(TInfoSinkBase &out,
+                const std::vector<MappedStruct> &std140Structs,
+                const BuiltInFunctionEmulator *builtInFunctionEmulator) const;
 
     void writeFloat(TInfoSinkBase &out, float f);
     void writeSingleConstant(TInfoSinkBase &out, const TConstantUnion *const constUnion);
@@ -97,12 +104,7 @@ class OutputHLSL : public TIntermTraverser
     void outputLineDirective(TInfoSinkBase &out, int line);
     TString argumentString(const TIntermSymbol *symbol);
 
-    // Emit constructor. Called with literal names so using const char* instead of TString.
-    void outputConstructor(TInfoSinkBase &out,
-                           Visit visit,
-                           const TType &type,
-                           const char *name,
-                           const TIntermSequence *parameters);
+    void outputConstructor(TInfoSinkBase &out, Visit visit, TIntermAggregate *node);
     const TConstantUnion *writeConstantUnion(TInfoSinkBase &out,
                                              const TType &type,
                                              const TConstantUnion *constUnion);
@@ -111,7 +113,6 @@ class OutputHLSL : public TIntermTraverser
     void outputAssign(Visit visit, const TType &type, TInfoSinkBase &out);
 
     void writeEmulatedFunctionTriplet(TInfoSinkBase &out, Visit visit, TOperator op);
-    void makeFlaggedStructMaps(const std::vector<TIntermTyped *> &flaggedStructs);
 
     // Returns true if it found a 'same symbol' initializer (initializer that references the
     // variable it's initting)
@@ -162,6 +163,7 @@ class OutputHLSL : public TIntermTraverser
     StructureHLSL *mStructureHLSL;
     UniformHLSL *mUniformHLSL;
     TextureFunctionHLSL *mTextureFunctionHLSL;
+    ImageFunctionHLSL *mImageFunctionHLSL;
 
     // Parameters determining what goes in the header output
     bool mUsesFragColor;
@@ -199,10 +201,7 @@ class OutputHLSL : public TIntermTraverser
 
     TIntermSymbol *mExcessiveLoopIndex;
 
-    TString structInitializerString(int indent, const TType &type, const TString &name);
-
-    std::map<TIntermTyped *, TString> mFlaggedStructMappedNames;
-    std::map<TIntermTyped *, TString> mFlaggedStructOriginalNames;
+    TString structInitializerString(int indent, const TType &type, const TString &name) const;
 
     struct HelperFunction
     {
@@ -237,7 +236,10 @@ class OutputHLSL : public TIntermTraverser
     // arrays can't be return values in HLSL.
     std::vector<ArrayHelperFunction> mArrayConstructIntoFunctions;
 
+    PerformanceDiagnostics *mPerfDiagnostics;
+
   private:
+    TString generateStructMapping(const std::vector<MappedStruct> &std140Structs) const;
     TString samplerNamePrefixFromStruct(TIntermTyped *node);
     bool ancestorEvaluatesToSamplerInStruct();
 };

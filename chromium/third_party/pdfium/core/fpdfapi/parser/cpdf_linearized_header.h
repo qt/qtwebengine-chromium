@@ -14,12 +14,13 @@
 
 class CPDF_Dictionary;
 class CPDF_Object;
+class CPDF_SyntaxParser;
 
 class CPDF_LinearizedHeader {
  public:
   ~CPDF_LinearizedHeader();
-  static std::unique_ptr<CPDF_LinearizedHeader> CreateForObject(
-      std::unique_ptr<CPDF_Object> pObj);
+  static std::unique_ptr<CPDF_LinearizedHeader> Parse(
+      CPDF_SyntaxParser* parser);
 
   // Will only return values > 0.
   FX_FILESIZE GetFileSize() const { return m_szFileSize; }
@@ -33,6 +34,8 @@ class CPDF_LinearizedHeader {
   FX_FILESIZE GetFirstPageEndOffset() const { return m_szFirstPageEndOffset; }
   // Will only return values > 0.
   uint32_t GetFirstPageObjNum() const { return m_FirstPageObjNum; }
+  // Will only return values > 0.
+  FX_FILESIZE GetLastXRefOffset() const { return m_szLastXRefOffset; }
 
   bool HasHintTable() const;
   // Will only return values > 0.
@@ -40,15 +43,17 @@ class CPDF_LinearizedHeader {
   uint32_t GetHintLength() const { return m_HintLength; }
 
  protected:
-  explicit CPDF_LinearizedHeader(const CPDF_Dictionary* pDict);
+  CPDF_LinearizedHeader(const CPDF_Dictionary* pDict,
+                        FX_FILESIZE szLastXRefOffset);
 
  private:
-  FX_FILESIZE m_szFileSize = 0;
-  uint32_t m_dwFirstPageNo = 0;
-  FX_FILESIZE m_szMainXRefTableFirstEntryOffset = 0;
-  uint32_t m_PageCount = 0;
-  FX_FILESIZE m_szFirstPageEndOffset = 0;
-  uint32_t m_FirstPageObjNum = 0;
+  const FX_FILESIZE m_szFileSize;
+  const uint32_t m_dwFirstPageNo;
+  const FX_FILESIZE m_szMainXRefTableFirstEntryOffset;
+  const uint32_t m_PageCount;
+  const FX_FILESIZE m_szFirstPageEndOffset;
+  const uint32_t m_FirstPageObjNum;
+  const FX_FILESIZE m_szLastXRefOffset;
   FX_FILESIZE m_szHintStart = 0;
   uint32_t m_HintLength = 0;
 };

@@ -30,6 +30,7 @@
 
 #include "public/web/WebDocument.h"
 
+#include "base/memory/scoped_refptr.h"
 #include "bindings/core/v8/ExceptionState.h"
 #include "bindings/core/v8/ScriptValue.h"
 #include "bindings/core/v8/V8ElementRegistrationOptions.h"
@@ -55,7 +56,6 @@
 #include "core/loader/DocumentLoader.h"
 #include "platform/bindings/ScriptState.h"
 #include "platform/weborigin/SecurityOrigin.h"
-#include "platform/wtf/RefPtr.h"
 #include "public/platform/WebDistillability.h"
 #include "public/platform/WebURL.h"
 #include "public/web/WebDOMEvent.h"
@@ -74,6 +74,11 @@ WebSecurityOrigin WebDocument::GetSecurityOrigin() const {
   if (!ConstUnwrap<Document>())
     return WebSecurityOrigin();
   return WebSecurityOrigin(ConstUnwrap<Document>()->GetSecurityOrigin());
+}
+
+void WebDocument::GrantLoadLocalResources() {
+  if (Document* document = Unwrap<Document>())
+    document->GetMutableSecurityOrigin()->GrantLoadLocalResources();
 }
 
 bool WebDocument::IsSecureContext() const {
@@ -179,17 +184,18 @@ WebElement WebDocument::FocusedElement() const {
   return WebElement(ConstUnwrap<Document>()->FocusedElement());
 }
 
-WebStyleSheetId WebDocument::InsertStyleSheet(const WebString& source_code) {
+WebStyleSheetId WebDocument::InsertStyleSheet(const WebString& source_code,
+                                              CSSOrigin origin) {
   Document* document = Unwrap<Document>();
   DCHECK(document);
   StyleSheetContents* parsed_sheet =
       StyleSheetContents::Create(CSSParserContext::Create(*document));
   parsed_sheet->ParseString(source_code);
-  return document->GetStyleEngine().InjectAuthorSheet(parsed_sheet);
+  return document->GetStyleEngine().InjectSheet(parsed_sheet, origin);
 }
 
 void WebDocument::RemoveInsertedStyleSheet(WebStyleSheetId stylesheet_id) {
-  Unwrap<Document>()->GetStyleEngine().RemoveInjectedAuthorSheet(stylesheet_id);
+  Unwrap<Document>()->GetStyleEngine().RemoveInjectedSheet(stylesheet_id);
 }
 
 void WebDocument::WatchCSSSelectors(const WebVector<WebString>& web_selectors) {
@@ -261,6 +267,14 @@ bool WebDocument::ManifestUseCredentials() const {
   return EqualIgnoringASCIICase(
       link_element->FastGetAttribute(HTMLNames::crossoriginAttr),
       "use-credentials");
+}
+
+WebURL WebDocument::CanonicalUrlForSharing() const {
+  const Document* document = ConstUnwrap<Document>();
+  HTMLLinkElement* link_element = document->LinkCanonical();
+  if (!link_element)
+    return WebURL();
+  return link_element->Href();
 }
 
 WebDistillabilityFeatures WebDocument::DistillabilityFeatures() {

@@ -23,7 +23,7 @@
 #include "glsl/GrGLSLGeometryProcessor.h"
 #include "glsl/GrGLSLProgramDataManager.h"
 #include "glsl/GrGLSLUtil.h"
-#include "glsl/GrGLSLVertexShaderBuilder.h"
+#include "glsl/GrGLSLVertexGeoBuilder.h"
 #include "ops/GrMeshDrawOp.h"
 #include "ops/GrRectOpFactory.h"
 
@@ -141,7 +141,7 @@ public:
             varyingHandler->addPassThroughAttribute(qp.inColor(), args.fOutputColor);
 
             GrGLSLVertToFrag uv(kFloat2_GrSLType);
-            varyingHandler->addVarying("uv", &uv, kHigh_GrSLPrecision);
+            varyingHandler->addVarying("uv", &uv);
             vsBuilder->codeAppendf("%s = %s;", uv.vsOut(), qp.inUV()->fName);
 
             // Setup position
@@ -637,8 +637,10 @@ bool GrMSAAPathRenderer::internalDrawPath(GrRenderTargetContext* renderTargetCon
     }
 
     SkRect devBounds;
-    GetPathDevBounds(path, renderTargetContext->width(), renderTargetContext->height(), viewMatrix,
-                     &devBounds);
+    GetPathDevBounds(path,
+                     renderTargetContext->asRenderTargetProxy()->worstCaseWidth(),
+                     renderTargetContext->asRenderTargetProxy()->worstCaseHeight(),
+                     viewMatrix, &devBounds);
 
     SkASSERT(passes[0]);
     {  // First pass

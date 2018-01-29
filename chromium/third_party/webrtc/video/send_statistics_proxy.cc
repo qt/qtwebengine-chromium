@@ -31,7 +31,7 @@ const int64_t kBucketSizeMs = 100;
 const size_t kBucketCount = 10;
 
 const char kVp8ForcedFallbackEncoderFieldTrial[] =
-    "WebRTC-VP8-Forced-Fallback-Encoder";
+    "WebRTC-VP8-Forced-Fallback-Encoder-v2";
 const char kVp8SwCodecName[] = "libvpx";
 
 // Used by histograms. Values of entries should not be changed.
@@ -85,29 +85,36 @@ bool IsForcedFallbackPossible(const CodecSpecificInfo* codec_info) {
           codec_info->codecSpecific.VP8.temporalIdx == kNoTemporalIdx);
 }
 
-rtc::Optional<int> GetFallbackIntervalFromFieldTrial() {
-  if (!webrtc::field_trial::IsEnabled(kVp8ForcedFallbackEncoderFieldTrial))
-    return rtc::Optional<int>();
-
-  std::string group =
-      webrtc::field_trial::FindFullName(kVp8ForcedFallbackEncoderFieldTrial);
+rtc::Optional<int> GetFallbackMaxPixels(const std::string& group) {
   if (group.empty())
     return rtc::Optional<int>();
 
-  int low_kbps;
-  int high_kbps;
-  int min_low_ms;
   int min_pixels;
-  if (sscanf(group.c_str(), "Enabled-%d,%d,%d,%d", &low_kbps, &high_kbps,
-             &min_low_ms, &min_pixels) != 4) {
+  int max_pixels;
+  int min_bps;
+  if (sscanf(group.c_str(), "-%d,%d,%d", &min_pixels, &max_pixels, &min_bps) !=
+      3) {
     return rtc::Optional<int>();
   }
 
-  if (min_low_ms <= 0 || min_pixels <= 0 || low_kbps <= 0 ||
-      high_kbps <= low_kbps) {
+  if (min_pixels <= 0 || max_pixels <= 0 || max_pixels < min_pixels)
     return rtc::Optional<int>();
-  }
-  return rtc::Optional<int>(min_low_ms);
+
+  return rtc::Optional<int>(max_pixels);
+}
+
+rtc::Optional<int> GetFallbackMaxPixelsIfFieldTrialEnabled() {
+  std::string group =
+      webrtc::field_trial::FindFullName(kVp8ForcedFallbackEncoderFieldTrial);
+  return (group.find("Enabled") == 0) ? GetFallbackMaxPixels(group.substr(7))
+                                      : rtc::Optional<int>();
+}
+
+rtc::Optional<int> GetFallbackMaxPixelsIfFieldTrialDisabled() {
+  std::string group =
+      webrtc::field_trial::FindFullName(kVp8ForcedFallbackEncoderFieldTrial);
+  return (group.find("Disabled") == 0) ? GetFallbackMaxPixels(group.substr(8))
+                                       : rtc::Optional<int>();
 }
 }  // namespace
 
@@ -121,7 +128,8 @@ SendStatisticsProxy::SendStatisticsProxy(
     : clock_(clock),
       payload_name_(config.encoder_settings.payload_name),
       rtp_config_(config.rtp),
-      min_first_fallback_interval_ms_(GetFallbackIntervalFromFieldTrial()),
+      fallback_max_pixels_(GetFallbackMaxPixelsIfFieldTrialEnabled()),
+      fallback_max_pixels_disabled_(GetFallbackMaxPixelsIfFieldTrialDisabled()),
       content_type_(content_type),
       start_ms_(clock->TimeInMilliseconds()),
       encode_time_(kEncodeTimeWeigthFactor),
@@ -240,14 +248,15 @@ void SendStatisticsProxy::UmaSamplesContainer::UpdateHistograms(
                                 in_width);
     RTC_HISTOGRAMS_COUNTS_10000(kIndex, uma_prefix_ + "InputHeightInPixels",
                                 in_height);
-    LOG(LS_INFO) << uma_prefix_ << "InputWidthInPixels " << in_width;
-    LOG(LS_INFO) << uma_prefix_ << "InputHeightInPixels " << in_height;
+    RTC_LOG(LS_INFO) << uma_prefix_ << "InputWidthInPixels " << in_width;
+    RTC_LOG(LS_INFO) << uma_prefix_ << "InputHeightInPixels " << in_height;
   }
   AggregatedStats in_fps = input_fps_counter_.GetStats();
   if (in_fps.num_samples >= kMinRequiredPeriodicSamples) {
     RTC_HISTOGRAMS_COUNTS_100(kIndex, uma_prefix_ + "InputFramesPerSecond",
                               in_fps.average);
-    LOG(LS_INFO) << uma_prefix_ + "InputFramesPerSecond, " << in_fps.ToString();
+    RTC_LOG(LS_INFO) << uma_prefix_ + "InputFramesPerSecond, "
+                     << in_fps.ToString();
   }
 
   int sent_width = sent_width_counter_.Avg(kMinRequiredMetricsSamples);
@@ -257,15 +266,15 @@ void SendStatisticsProxy::UmaSamplesContainer::UpdateHistograms(
                                 sent_width);
     RTC_HISTOGRAMS_COUNTS_10000(kIndex, uma_prefix_ + "SentHeightInPixels",
                                 sent_height);
-    LOG(LS_INFO) << uma_prefix_ << "SentWidthInPixels " << sent_width;
-    LOG(LS_INFO) << uma_prefix_ << "SentHeightInPixels " << sent_height;
+    RTC_LOG(LS_INFO) << uma_prefix_ << "SentWidthInPixels " << sent_width;
+    RTC_LOG(LS_INFO) << uma_prefix_ << "SentHeightInPixels " << sent_height;
   }
   AggregatedStats sent_fps = sent_fps_counter_.GetStats();
   if (sent_fps.num_samples >= kMinRequiredPeriodicSamples) {
     RTC_HISTOGRAMS_COUNTS_100(kIndex, uma_prefix_ + "SentFramesPerSecond",
                               sent_fps.average);
-    LOG(LS_INFO) << uma_prefix_ + "SentFramesPerSecond, "
-                 << sent_fps.ToString();
+    RTC_LOG(LS_INFO) << uma_prefix_ + "SentFramesPerSecond, "
+                     << sent_fps.ToString();
   }
 
   if (in_fps.num_samples > kMinRequiredPeriodicSamples &&
@@ -283,8 +292,8 @@ void SendStatisticsProxy::UmaSamplesContainer::UpdateHistograms(
       RTC_HISTOGRAMS_PERCENTAGE(kIndex,
                                 uma_prefix_ + "SentToInputFpsRatioPercent",
                                 sent_to_in_fps_ratio_percent);
-      LOG(LS_INFO) << uma_prefix_ << "SentToInputFpsRatioPercent "
-                   << sent_to_in_fps_ratio_percent;
+      RTC_LOG(LS_INFO) << uma_prefix_ << "SentToInputFpsRatioPercent "
+                       << sent_to_in_fps_ratio_percent;
     }
   }
 
@@ -292,15 +301,15 @@ void SendStatisticsProxy::UmaSamplesContainer::UpdateHistograms(
   if (encode_ms != -1) {
     RTC_HISTOGRAMS_COUNTS_1000(kIndex, uma_prefix_ + "EncodeTimeInMs",
                                encode_ms);
-    LOG(LS_INFO) << uma_prefix_ << "EncodeTimeInMs " << encode_ms;
+    RTC_LOG(LS_INFO) << uma_prefix_ << "EncodeTimeInMs " << encode_ms;
   }
   int key_frames_permille =
       key_frame_counter_.Permille(kMinRequiredMetricsSamples);
   if (key_frames_permille != -1) {
     RTC_HISTOGRAMS_COUNTS_1000(kIndex, uma_prefix_ + "KeyFramesSentInPermille",
                                key_frames_permille);
-    LOG(LS_INFO) << uma_prefix_ << "KeyFramesSentInPermille "
-                 << key_frames_permille;
+    RTC_LOG(LS_INFO) << uma_prefix_ << "KeyFramesSentInPermille "
+                     << key_frames_permille;
   }
   int quality_limited =
       quality_limited_frame_counter_.Percent(kMinRequiredMetricsSamples);
@@ -308,8 +317,8 @@ void SendStatisticsProxy::UmaSamplesContainer::UpdateHistograms(
     RTC_HISTOGRAMS_PERCENTAGE(kIndex,
                               uma_prefix_ + "QualityLimitedResolutionInPercent",
                               quality_limited);
-    LOG(LS_INFO) << uma_prefix_ << "QualityLimitedResolutionInPercent "
-                 << quality_limited;
+    RTC_LOG(LS_INFO) << uma_prefix_ << "QualityLimitedResolutionInPercent "
+                     << quality_limited;
   }
   int downscales = quality_downscales_counter_.Avg(kMinRequiredMetricsSamples);
   if (downscales != -1) {
@@ -365,8 +374,8 @@ void SendStatisticsProxy::UmaSamplesContainer::UpdateHistograms(
         RTC_HISTOGRAMS_COUNTS_200(kIndex, uma_prefix_ + "Encoded.Qp.Vp8.S2",
                                   qp_vp8);
       } else {
-        LOG(LS_WARNING) << "QP stats not recorded for VP8 spatial idx "
-                        << spatial_idx;
+        RTC_LOG(LS_WARNING)
+            << "QP stats not recorded for VP8 spatial idx " << spatial_idx;
       }
     }
     int qp_vp9 = it.second.vp9.Avg(kMinRequiredMetricsSamples);
@@ -385,8 +394,8 @@ void SendStatisticsProxy::UmaSamplesContainer::UpdateHistograms(
         RTC_HISTOGRAMS_COUNTS_500(kIndex, uma_prefix_ + "Encoded.Qp.Vp9.S2",
                                   qp_vp9);
       } else {
-        LOG(LS_WARNING) << "QP stats not recorded for VP9 spatial layer "
-                        << spatial_idx;
+        RTC_LOG(LS_WARNING)
+            << "QP stats not recorded for VP9 spatial layer " << spatial_idx;
       }
     }
     int qp_h264 = it.second.h264.Avg(kMinRequiredMetricsSamples);
@@ -427,8 +436,8 @@ void SendStatisticsProxy::UmaSamplesContainer::UpdateHistograms(
       if (fraction_lost != -1) {
         RTC_HISTOGRAMS_PERCENTAGE(
             kIndex, uma_prefix_ + "SentPacketsLostInPercent", fraction_lost);
-        LOG(LS_INFO) << uma_prefix_ << "SentPacketsLostInPercent "
-                     << fraction_lost;
+        RTC_LOG(LS_INFO) << uma_prefix_ << "SentPacketsLostInPercent "
+                         << fraction_lost;
       }
 
       // The RTCP packet type counters, delivered via the
@@ -475,16 +484,16 @@ void SendStatisticsProxy::UmaSamplesContainer::UpdateHistograms(
     if (elapsed_sec >= metrics::kMinRunTimeInSeconds) {
       RTC_HISTOGRAMS_COUNTS_100(kIndex, uma_prefix_ + "NumberOfPauseEvents",
                                 target_rate_updates_.pause_resume_events);
-      LOG(LS_INFO) << uma_prefix_ << "NumberOfPauseEvents "
-                   << target_rate_updates_.pause_resume_events;
+      RTC_LOG(LS_INFO) << uma_prefix_ << "NumberOfPauseEvents "
+                       << target_rate_updates_.pause_resume_events;
 
       int paused_time_percent =
           paused_time_counter_.Percent(metrics::kMinRunTimeInSeconds * 1000);
       if (paused_time_percent != -1) {
         RTC_HISTOGRAMS_PERCENTAGE(kIndex, uma_prefix_ + "PausedTimeInPercent",
                                   paused_time_percent);
-        LOG(LS_INFO) << uma_prefix_ << "PausedTimeInPercent "
-                     << paused_time_percent;
+        RTC_LOG(LS_INFO) << uma_prefix_ << "PausedTimeInPercent "
+                         << paused_time_percent;
       }
     }
   }
@@ -508,23 +517,23 @@ void SendStatisticsProxy::UmaSamplesContainer::UpdateHistograms(
   if (total_bytes_per_sec.num_samples > kMinRequiredPeriodicSamples) {
     RTC_HISTOGRAMS_COUNTS_10000(kIndex, uma_prefix_ + "BitrateSentInKbps",
                                 total_bytes_per_sec.average * 8 / 1000);
-    LOG(LS_INFO) << uma_prefix_ << "BitrateSentInBps, "
-                 << total_bytes_per_sec.ToStringWithMultiplier(8);
+    RTC_LOG(LS_INFO) << uma_prefix_ << "BitrateSentInBps, "
+                     << total_bytes_per_sec.ToStringWithMultiplier(8);
   }
   AggregatedStats media_bytes_per_sec = media_byte_counter_.GetStats();
   if (media_bytes_per_sec.num_samples > kMinRequiredPeriodicSamples) {
     RTC_HISTOGRAMS_COUNTS_10000(kIndex, uma_prefix_ + "MediaBitrateSentInKbps",
                                 media_bytes_per_sec.average * 8 / 1000);
-    LOG(LS_INFO) << uma_prefix_ << "MediaBitrateSentInBps, "
-                 << media_bytes_per_sec.ToStringWithMultiplier(8);
+    RTC_LOG(LS_INFO) << uma_prefix_ << "MediaBitrateSentInBps, "
+                     << media_bytes_per_sec.ToStringWithMultiplier(8);
   }
   AggregatedStats padding_bytes_per_sec = padding_byte_counter_.GetStats();
   if (padding_bytes_per_sec.num_samples > kMinRequiredPeriodicSamples) {
     RTC_HISTOGRAMS_COUNTS_10000(kIndex,
                                 uma_prefix_ + "PaddingBitrateSentInKbps",
                                 padding_bytes_per_sec.average * 8 / 1000);
-    LOG(LS_INFO) << uma_prefix_ << "PaddingBitrateSentInBps, "
-                 << padding_bytes_per_sec.ToStringWithMultiplier(8);
+    RTC_LOG(LS_INFO) << uma_prefix_ << "PaddingBitrateSentInBps, "
+                     << padding_bytes_per_sec.ToStringWithMultiplier(8);
   }
   AggregatedStats retransmit_bytes_per_sec =
       retransmit_byte_counter_.GetStats();
@@ -532,16 +541,16 @@ void SendStatisticsProxy::UmaSamplesContainer::UpdateHistograms(
     RTC_HISTOGRAMS_COUNTS_10000(kIndex,
                                 uma_prefix_ + "RetransmittedBitrateSentInKbps",
                                 retransmit_bytes_per_sec.average * 8 / 1000);
-    LOG(LS_INFO) << uma_prefix_ << "RetransmittedBitrateSentInBps, "
-                 << retransmit_bytes_per_sec.ToStringWithMultiplier(8);
+    RTC_LOG(LS_INFO) << uma_prefix_ << "RetransmittedBitrateSentInBps, "
+                     << retransmit_bytes_per_sec.ToStringWithMultiplier(8);
   }
   if (!rtp_config.rtx.ssrcs.empty()) {
     AggregatedStats rtx_bytes_per_sec = rtx_byte_counter_.GetStats();
     int rtx_bytes_per_sec_avg = -1;
     if (rtx_bytes_per_sec.num_samples > kMinRequiredPeriodicSamples) {
       rtx_bytes_per_sec_avg = rtx_bytes_per_sec.average;
-      LOG(LS_INFO) << uma_prefix_ << "RtxBitrateSentInBps, "
-                   << rtx_bytes_per_sec.ToStringWithMultiplier(8);
+      RTC_LOG(LS_INFO) << uma_prefix_ << "RtxBitrateSentInBps, "
+                       << rtx_bytes_per_sec.ToStringWithMultiplier(8);
     } else if (total_bytes_per_sec.num_samples > kMinRequiredPeriodicSamples) {
       rtx_bytes_per_sec_avg = 0;  // RTX enabled but no RTX data sent, record 0.
     }
@@ -556,10 +565,27 @@ void SendStatisticsProxy::UmaSamplesContainer::UpdateHistograms(
     if (fec_bytes_per_sec.num_samples > kMinRequiredPeriodicSamples) {
       RTC_HISTOGRAMS_COUNTS_10000(kIndex, uma_prefix_ + "FecBitrateSentInKbps",
                                   fec_bytes_per_sec.average * 8 / 1000);
-      LOG(LS_INFO) << uma_prefix_ << "FecBitrateSentInBps, "
-                   << fec_bytes_per_sec.ToStringWithMultiplier(8);
+      RTC_LOG(LS_INFO) << uma_prefix_ << "FecBitrateSentInBps, "
+                       << fec_bytes_per_sec.ToStringWithMultiplier(8);
     }
   }
+  RTC_LOG(LS_INFO) << "Frames encoded " << current_stats.frames_encoded;
+  RTC_LOG(LS_INFO) << uma_prefix_ << "DroppedFrames.Capturer "
+                   << current_stats.frames_dropped_by_capturer;
+  RTC_HISTOGRAMS_COUNTS_1000(kIndex, uma_prefix_ + "DroppedFrames.Capturer",
+                             current_stats.frames_dropped_by_capturer);
+  RTC_LOG(LS_INFO) << uma_prefix_ << "DroppedFrames.EncoderQueue "
+                   << current_stats.frames_dropped_by_encoder_queue;
+  RTC_HISTOGRAMS_COUNTS_1000(kIndex, uma_prefix_ + "DroppedFrames.EncoderQueue",
+                             current_stats.frames_dropped_by_encoder_queue);
+  RTC_LOG(LS_INFO) << uma_prefix_ << "DroppedFrames.Encoder "
+                   << current_stats.frames_dropped_by_encoder;
+  RTC_HISTOGRAMS_COUNTS_1000(kIndex, uma_prefix_ + "DroppedFrames.Encoder",
+                             current_stats.frames_dropped_by_encoder);
+  RTC_LOG(LS_INFO) << uma_prefix_ << "DroppedFrames.Ratelimiter "
+                   << current_stats.frames_dropped_by_rate_limiter;
+  RTC_HISTOGRAMS_COUNTS_1000(kIndex, uma_prefix_ + "DroppedFrames.Ratelimiter",
+                             current_stats.frames_dropped_by_rate_limiter);
 }
 
 void SendStatisticsProxy::OnEncoderReconfigured(
@@ -710,9 +736,11 @@ void SendStatisticsProxy::OnSetEncoderTargetRate(uint32_t bitrate_bps) {
 }
 
 void SendStatisticsProxy::UpdateEncoderFallbackStats(
-    const CodecSpecificInfo* codec_info) {
-  if (!min_first_fallback_interval_ms_ ||
-      !uma_container_->fallback_info_.is_possible) {
+    const CodecSpecificInfo* codec_info,
+    int pixels) {
+  UpdateFallbackDisabledStats(codec_info, pixels);
+
+  if (!fallback_max_pixels_ || !uma_container_->fallback_info_.is_possible) {
     return;
   }
 
@@ -732,17 +760,13 @@ void SendStatisticsProxy::UpdateEncoderFallbackStats(
       // First or not a VP8 SW change, update stats on next call.
       return;
     }
-    if (is_active && fallback_info->on_off_events == 0) {
-      // The minimum set time should have passed for the first fallback (else
-      // skip to avoid fallback due to failure).
-      int64_t elapsed_ms = fallback_info->elapsed_ms;
-      if (fallback_info->last_update_ms)
-        elapsed_ms += now_ms - *(fallback_info->last_update_ms);
-      if (elapsed_ms < *min_first_fallback_interval_ms_) {
-        fallback_info->is_possible = false;
-        return;
-      }
+    if (is_active && (pixels > *fallback_max_pixels_)) {
+      // Pixels should not be above |fallback_max_pixels_|. If above skip to
+      // avoid fallbacks due to failure.
+      fallback_info->is_possible = false;
+      return;
     }
+    stats_.has_entered_low_resolution = true;
     ++fallback_info->on_off_events;
   }
 
@@ -760,6 +784,32 @@ void SendStatisticsProxy::UpdateEncoderFallbackStats(
   fallback_info->last_update_ms.emplace(now_ms);
 }
 
+void SendStatisticsProxy::UpdateFallbackDisabledStats(
+    const CodecSpecificInfo* codec_info,
+    int pixels) {
+  if (!fallback_max_pixels_disabled_ ||
+      !uma_container_->fallback_info_disabled_.is_possible ||
+      stats_.has_entered_low_resolution) {
+    return;
+  }
+
+  if (!IsForcedFallbackPossible(codec_info) ||
+      strcmp(codec_info->codec_name, kVp8SwCodecName) == 0) {
+    uma_container_->fallback_info_disabled_.is_possible = false;
+    return;
+  }
+
+  if (pixels <= *fallback_max_pixels_disabled_ ||
+      uma_container_->fallback_info_disabled_.min_pixel_limit_reached) {
+    stats_.has_entered_low_resolution = true;
+  }
+}
+
+void SendStatisticsProxy::OnMinPixelLimitReached() {
+  rtc::CritScope lock(&crit_);
+  uma_container_->fallback_info_disabled_.min_pixel_limit_reached = true;
+}
+
 void SendStatisticsProxy::OnSendEncodedImage(
     const EncodedImage& encoded_image,
     const CodecSpecificInfo* codec_info) {
@@ -774,14 +824,16 @@ void SendStatisticsProxy::OnSendEncodedImage(
       simulcast_idx = codec_info->codecSpecific.generic.simulcast_idx;
     }
     if (codec_info->codec_name) {
-      UpdateEncoderFallbackStats(codec_info);
+      UpdateEncoderFallbackStats(codec_info, encoded_image._encodedWidth *
+                                                 encoded_image._encodedHeight);
       stats_.encoder_implementation_name = codec_info->codec_name;
     }
   }
 
   if (simulcast_idx >= rtp_config_.ssrcs.size()) {
-    LOG(LS_ERROR) << "Encoded image outside simulcast range (" << simulcast_idx
-                  << " >= " << rtp_config_.ssrcs.size() << ").";
+    RTC_LOG(LS_ERROR) << "Encoded image outside simulcast range ("
+                      << simulcast_idx << " >= " << rtp_config_.ssrcs.size()
+                      << ").";
     return;
   }
   uint32_t ssrc = rtp_config_.ssrcs[simulcast_idx];
@@ -858,6 +910,31 @@ void SendStatisticsProxy::OnIncomingFrame(int width, int height) {
     uma_container_->cpu_limited_frame_counter_.Add(
         stats_.cpu_limited_resolution);
   }
+  if (encoded_frame_rate_tracker_.TotalSampleCount() == 0) {
+    // Set start time now instead of when first key frame is encoded to avoid a
+    // too high initial estimate.
+    encoded_frame_rate_tracker_.AddSamples(0);
+  }
+}
+
+void SendStatisticsProxy::OnFrameDroppedBySource() {
+  rtc::CritScope lock(&crit_);
+  ++stats_.frames_dropped_by_capturer;
+}
+
+void SendStatisticsProxy::OnFrameDroppedInEncoderQueue() {
+  rtc::CritScope lock(&crit_);
+  ++stats_.frames_dropped_by_encoder_queue;
+}
+
+void SendStatisticsProxy::OnFrameDroppedByEncoder() {
+  rtc::CritScope lock(&crit_);
+  ++stats_.frames_dropped_by_encoder;
+}
+
+void SendStatisticsProxy::OnFrameDroppedByMediaOptimizations() {
+  rtc::CritScope lock(&crit_);
+  ++stats_.frames_dropped_by_rate_limiter;
 }
 
 void SendStatisticsProxy::SetAdaptationStats(

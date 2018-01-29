@@ -30,7 +30,7 @@ void AXVirtualObject::AddChildren() {
     return;
 
   for (const auto& child : accessible_node_->GetChildren())
-    children_.push_back(AxObjectCache().GetOrCreate(child));
+    children_.push_back(AXObjectCache().GetOrCreate(child));
 }
 
 const AtomicString& AXVirtualObject::GetAOMPropertyOrARIAAttribute(
@@ -70,7 +70,7 @@ String AXVirtualObject::TextAlternative(bool recursive,
                              &found_text_alternative);
 }
 
-DEFINE_TRACE(AXVirtualObject) {
+void AXVirtualObject::Trace(blink::Visitor* visitor) {
   visitor->Trace(accessible_node_);
   AXObject::Trace(visitor);
 }

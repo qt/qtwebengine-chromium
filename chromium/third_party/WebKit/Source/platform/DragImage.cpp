@@ -27,6 +27,7 @@
 
 #include <algorithm>
 #include <memory>
+#include "base/memory/scoped_refptr.h"
 #include "platform/fonts/Font.h"
 #include "platform/fonts/FontCache.h"
 #include "platform/fonts/FontDescription.h"
@@ -47,7 +48,6 @@
 #include "platform/transforms/AffineTransform.h"
 #include "platform/weborigin/KURL.h"
 #include "platform/wtf/PtrUtil.h"
-#include "platform/wtf/RefPtr.h"
 #include "platform/wtf/text/WTFString.h"
 #include "skia/ext/image_operations.h"
 #include "third_party/skia/include/core/SkCanvas.h"
@@ -309,7 +309,7 @@ std::unique_ptr<DragImage> DragImage::Create(const KURL& url,
                           FloatPoint(text_pos), Font::kDoNotPaintIfFontNotReady,
                           device_scale_factor, text_paint);
 
-  RefPtr<StaticBitmapImage> image = buffer->NewImageSnapshot();
+  scoped_refptr<StaticBitmapImage> image = buffer->NewImageSnapshot();
   return DragImage::Create(image.get(), kDoNotRespectImageOrientation,
                            device_scale_factor);
 }

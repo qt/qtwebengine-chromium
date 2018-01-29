@@ -12,6 +12,7 @@
 
 #include <memory>
 #include <sstream>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -22,7 +23,6 @@
 #include "p2p/base/p2pconstants.h"
 #include "p2p/base/port.h"
 #include "pc/peerconnection.h"
-#include "pc/webrtcsession.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/stringutils.h"
 #include "rtc_base/timeutils.h"
@@ -77,7 +77,7 @@ std::string RTCTransportStatsIDFromTransportChannel(
 }
 
 std::string RTCTransportStatsIDFromBaseChannel(
-    const ProxyTransportMap& proxy_to_transport,
+    const std::map<std::string, std::string>& proxy_to_transport,
     const cricket::BaseChannel& base_channel) {
   auto proxy_it = proxy_to_transport.find(base_channel.content_name());
   if (proxy_it == proxy_to_transport.cend())
@@ -160,6 +160,24 @@ const char* DtlsTransportStateToRTCDtlsTransportState(
       RTC_NOTREACHED();
       return nullptr;
   }
+}
+
+const char* NetworkAdapterTypeToStatsType(rtc::AdapterType type) {
+  switch (type) {
+    case rtc::ADAPTER_TYPE_CELLULAR:
+      return RTCNetworkType::kCellular;
+    case rtc::ADAPTER_TYPE_ETHERNET:
+      return RTCNetworkType::kEthernet;
+    case rtc::ADAPTER_TYPE_WIFI:
+      return RTCNetworkType::kWifi;
+    case rtc::ADAPTER_TYPE_VPN:
+      return RTCNetworkType::kVpn;
+    case rtc::ADAPTER_TYPE_UNKNOWN:
+    case rtc::ADAPTER_TYPE_LOOPBACK:
+      return RTCNetworkType::kUnknown;
+  }
+  RTC_NOTREACHED();
+  return nullptr;
 }
 
 double DoubleAudioLevelFromIntAudioLevel(int audio_level) {
@@ -341,6 +359,13 @@ const std::string& ProduceIceCandidateStats(
     else
       candidate_stats.reset(new RTCRemoteIceCandidateStats(id, timestamp_us));
     candidate_stats->transport_id = transport_id;
+    if (is_local) {
+      candidate_stats->network_type =
+          NetworkAdapterTypeToStatsType(candidate.network_type());
+    } else {
+      // We don't expect to know the adapter type of remote candidates.
+      RTC_DCHECK_EQ(rtc::ADAPTER_TYPE_UNKNOWN, candidate.network_type());
+    }
     candidate_stats->ip = candidate.address().ipaddr().ToString();
     candidate_stats->port = static_cast<int32_t>(candidate.address().port());
     candidate_stats->protocol = candidate.protocol();
@@ -379,13 +404,13 @@ ProduceMediaStreamTrackStatsFromVoiceSenderInfo(
   audio_track_stats->total_audio_energy = voice_sender_info.total_input_energy;
   audio_track_stats->total_samples_duration =
       voice_sender_info.total_input_duration;
-  if (voice_sender_info.echo_return_loss != -100) {
-    audio_track_stats->echo_return_loss = static_cast<double>(
-        voice_sender_info.echo_return_loss);
+  if (voice_sender_info.apm_statistics.echo_return_loss) {
+    audio_track_stats->echo_return_loss =
+        *voice_sender_info.apm_statistics.echo_return_loss;
   }
-  if (voice_sender_info.echo_return_loss_enhancement != -100) {
-    audio_track_stats->echo_return_loss_enhancement = static_cast<double>(
-        voice_sender_info.echo_return_loss_enhancement);
+  if (voice_sender_info.apm_statistics.echo_return_loss_enhancement) {
+    audio_track_stats->echo_return_loss_enhancement =
+        *voice_sender_info.apm_statistics.echo_return_loss_enhancement;
   }
   return audio_track_stats;
 }
@@ -639,24 +664,23 @@ void RTCStatsCollector::GetStatsReport(
     // |ProducePartialResultsOnNetworkThread|.
     channel_name_pairs_.reset(new ChannelNamePairs());
     if (pc_->voice_channel()) {
-      channel_name_pairs_->voice = rtc::Optional<ChannelNamePair>(
+      channel_name_pairs_->voice =
           ChannelNamePair(pc_->voice_channel()->content_name(),
-                          pc_->voice_channel()->transport_name()));
+                          pc_->voice_channel()->transport_name());
     }
     if (pc_->video_channel()) {
-      channel_name_pairs_->video = rtc::Optional<ChannelNamePair>(
+      channel_name_pairs_->video =
           ChannelNamePair(pc_->video_channel()->content_name(),
-                          pc_->video_channel()->transport_name()));
+                          pc_->video_channel()->transport_name());
     }
     if (pc_->rtp_data_channel()) {
-      channel_name_pairs_->data = rtc::Optional<ChannelNamePair>(
+      channel_name_pairs_->data =
           ChannelNamePair(pc_->rtp_data_channel()->content_name(),
-                          pc_->rtp_data_channel()->transport_name()));
+                          pc_->rtp_data_channel()->transport_name());
     }
     if (pc_->sctp_content_name()) {
-      channel_name_pairs_->data =
-          rtc::Optional<ChannelNamePair>(ChannelNamePair(
-              *pc_->sctp_content_name(), *pc_->sctp_transport_name()));
+      channel_name_pairs_->data = ChannelNamePair(*pc_->sctp_content_name(),
+                                                  *pc_->sctp_transport_name());
     }
     // Prepare |track_media_info_map_| for use in
     // |ProducePartialResultsOnNetworkThread| and

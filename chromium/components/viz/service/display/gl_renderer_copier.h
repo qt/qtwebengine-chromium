@@ -10,6 +10,7 @@
 #include <array>
 #include <memory>
 
+#include "base/callback.h"
 #include "base/containers/flat_map.h"
 #include "base/macros.h"
 #include "base/memory/ref_counted.h"
@@ -27,7 +28,7 @@ namespace viz {
 
 class ContextProvider;
 class CopyOutputRequest;
-class TextureMailboxDeleter;
+class TextureDeleter;
 
 // Helper class for GLRenderer that executes CopyOutputRequests using GL, and
 // manages the caching of resources needed to ensure efficient video
@@ -47,17 +48,20 @@ class TextureMailboxDeleter;
 // "source" has ended.
 class VIZ_SERVICE_EXPORT GLRendererCopier {
  public:
-  // |texture_mailbox_deleter| must outlive this instance.
+  // A callback that calls GLRenderer::MoveFromDrawToWindowSpace().
+  using ComputeWindowRectCallback =
+      base::RepeatingCallback<gfx::Rect(const gfx::Rect&)>;
+
+  // |texture_deleter| must outlive this instance.
   GLRendererCopier(scoped_refptr<ContextProvider> context_provider,
-                   TextureMailboxDeleter* texture_mailbox_deleter);
+                   TextureDeleter* texture_deleter,
+                   ComputeWindowRectCallback window_rect_callback);
 
   ~GLRendererCopier();
 
   // Executes the |request|, copying from the currently-bound framebuffer of the
-  // given |internal_format|. The caller MUST set |request->area()|, which is
-  // the source rect to copy in the draw space of the RenderPass the request was
-  // attached to. |copy_rect| represents the identical source rect, but in
-  // window space (see DirectRenderer::MoveFromDrawToWindowSpace()).
+  // given |internal_format|. |output_rect| is the RenderPass's output Rect in
+  // draw space, and is used to translate and clip the result selection Rect.
   // |framebuffer_texture| and |framebuffer_texture_size| are optional: When
   // non-zero, the texture might be used as the source, to avoid making an extra
   // copy of the framebuffer. |color_space| specifies the color space of the
@@ -67,7 +71,7 @@ class VIZ_SERVICE_EXPORT GLRendererCopier {
   // caller must not make any assumptions about the original objects still being
   // bound to the same units.
   void CopyFromTextureOrFramebuffer(std::unique_ptr<CopyOutputRequest> request,
-                                    const gfx::Rect& copy_rect,
+                                    const gfx::Rect& output_rect,
                                     GLenum internal_format,
                                     GLuint framebuffer_texture,
                                     const gfx::Size& framebuffer_texture_size,
@@ -83,15 +87,23 @@ class VIZ_SERVICE_EXPORT GLRendererCopier {
 
   // The collection of resources that might be cached over multiple copy
   // requests from the same source.
+  //
+  // TODO(crbug.com/781986): Post-impl clean-up to make this mechanism simpler.
   struct VIZ_SERVICE_EXPORT CacheEntry {
     uint32_t purge_count_at_last_use = 0;
-    std::array<GLuint, 3> object_names{{0, 0, 0}};
+    std::array<GLuint, 8> object_names;
     std::unique_ptr<GLHelper::ScalerInterface> scaler;
+    std::unique_ptr<I420Converter> i420_converter;
 
     // Index in |object_names| of the various objects that might be cached.
     static constexpr int kFramebufferCopyTexture = 0;
     static constexpr int kResultTexture = 1;
-    static constexpr int kReadbackFramebuffer = 2;
+    static constexpr int kYPlaneTexture = 2;
+    static constexpr int kUPlaneTexture = 3;
+    static constexpr int kVPlaneTexture = 4;
+    static constexpr int kReadbackFramebuffer = 5;
+    static constexpr int kReadbackFramebufferU = 6;
+    static constexpr int kReadbackFramebufferV = 7;
 
     CacheEntry();
     CacheEntry(CacheEntry&&);
@@ -130,23 +142,37 @@ class VIZ_SERVICE_EXPORT GLRendererCopier {
                                     const gfx::ColorSpace& color_space);
 
   // Completes a copy request by packaging-up and sending the given
-  // |result_texture| in a TextureMailbox. This method takes ownership of
+  // |result_texture| in a mailbox. This method takes ownership of
   // |result_texture|.
   void SendTextureResult(std::unique_ptr<CopyOutputRequest> request,
                          GLuint result_texture,
                          const gfx::Rect& result_rect,
                          const gfx::ColorSpace& color_space);
 
-  // Returns a GL object name found in the cache, or creates a new one
-  // on-demand. The caller takes ownership of the object.
-  GLuint TakeCachedObjectOrCreate(const base::UnguessableToken& for_source,
-                                  int which);
+  // Processes the next phase of an I420_PLANES copy request by using the
+  // I420Converter to planarize the given |source_texture| and then starting
+  // readback of the planes via a pixel transfer buffer. This method does NOT
+  // take ownership of the |source_texture|.
+  void StartI420ReadbackFromTexture(std::unique_ptr<CopyOutputRequest> request,
+                                    GLuint source_texture,
+                                    const gfx::Size& source_texture_size,
+                                    const gfx::Rect& copy_rect,
+                                    const gfx::Rect& result_rect,
+                                    const gfx::ColorSpace& color_space);
 
-  // Stashes a GL object name into the cache, or deletes the object if it should
-  // not be cached.
-  void CacheObjectOrDelete(const base::UnguessableToken& for_source,
-                           int which,
-                           GLuint object_name);
+  // Returns the GL object names found in the cache, or creates new ones
+  // on-demand. The caller takes ownership of the objects.
+  void TakeCachedObjectsOrCreate(const base::UnguessableToken& for_source,
+                                 int first,
+                                 int count,
+                                 GLuint* names);
+
+  // Stashes GL object names into the cache, or deletes the objects if they
+  // should not be cached.
+  void CacheObjectsOrDelete(const base::UnguessableToken& for_source,
+                            int first,
+                            int count,
+                            const GLuint* names);
 
   // Returns a cached scaler for the given request, or creates one on-demand.
   std::unique_ptr<GLHelper::ScalerInterface> TakeCachedScalerOrCreate(
@@ -156,12 +182,32 @@ class VIZ_SERVICE_EXPORT GLRendererCopier {
   void CacheScalerOrDelete(const base::UnguessableToken& for_source,
                            std::unique_ptr<GLHelper::ScalerInterface> scaler);
 
+  // Returns a cached I420 converter for the given source, or creates one
+  // on-demand.
+  std::unique_ptr<I420Converter> TakeCachedI420ConverterOrCreate(
+      const base::UnguessableToken& for_source);
+
+  // Stashes an I420 converter into the cache, or deletes it if it should not be
+  // cached.
+  void CacheI420ConverterOrDelete(
+      const base::UnguessableToken& for_source,
+      std::unique_ptr<I420Converter> i420_converter);
+
   // Frees any objects currently stashed in the given CacheEntry.
   void FreeCachedResources(CacheEntry* entry);
 
+  // Queries the GL implementation to determine which is the more performance-
+  // optimal supported readback format: GL_RGBA or GL_BGRA_EXT, and memoizes the
+  // result for all future calls.
+  //
+  // Precondition: The GL context has a complete, bound framebuffer ready for
+  // readback.
+  GLenum GetOptimalReadbackFormat();
+
   // Injected dependencies.
   const scoped_refptr<ContextProvider> context_provider_;
-  TextureMailboxDeleter* const texture_mailbox_deleter_;
+  TextureDeleter* const texture_deleter_;
+  const ComputeWindowRectCallback window_rect_callback_;
 
   // Provides comprehensive, quality and efficient scaling and other utilities.
   GLHelper helper_;
@@ -176,6 +222,12 @@ class VIZ_SERVICE_EXPORT GLRendererCopier {
   // video captures, it is expected to almost always be zero or one entry in
   // size.
   base::flat_map<base::UnguessableToken, CacheEntry> cache_;
+
+  // This specifies whether the GPU+driver combination executes readback more
+  // efficiently using GL_RGBA or GL_BGRA_EXT format. This starts out as
+  // GL_NONE, which means "unknown," and will be determined at the time the
+  // first readback request is made.
+  GLenum optimal_readback_format_ = static_cast<GLenum>(GL_NONE);
 
   // Purge cache entries that have not been used after this many calls to
   // FreeUnusedCachedResources(). The choice of 60 is arbitrary, but on most

@@ -21,10 +21,13 @@ using base::Time;
 using base::TimeDelta;
 
 namespace safe_browsing {
-const base::FilePath::CharType kStoreSuffix[] = FILE_PATH_LITERAL(".store");
 
-// The Safe Browsing V4 server URL prefix.
+// Can be overriden by tests.
+const char* g_sbv4_url_prefix_for_testing = nullptr;
+
 const char kSbV4UrlPrefix[] = "https://safebrowsing.googleapis.com/v4";
+
+const base::FilePath::CharType kStoreSuffix[] = FILE_PATH_LITERAL(".store");
 
 namespace {
 
@@ -67,6 +70,10 @@ std::string Escape(const std::string& url) {
 }
 
 }  // namespace
+
+void SetSbV4UrlPrefixForTesting(const char* url_prefix) {
+  g_sbv4_url_prefix_for_testing = url_prefix;
+}
 
 std::ostream& operator<<(std::ostream& os, const ListIdentifier& id) {
   os << "{hash: " << id.hash() << "; platform_type: " << id.platform_type()
@@ -263,8 +270,11 @@ void V4ProtocolManagerUtil::GetRequestUrlAndHeaders(
     const V4ProtocolConfig& config,
     GURL* gurl,
     net::HttpRequestHeaders* headers) {
-  *gurl = GURL(ComposeUrl(kSbV4UrlPrefix, method_name, request_base64,
-                          config.key_param));
+  const char* url_prefix = g_sbv4_url_prefix_for_testing
+                               ? g_sbv4_url_prefix_for_testing
+                               : kSbV4UrlPrefix;
+  *gurl = GURL(
+      ComposeUrl(url_prefix, method_name, request_base64, config.key_param));
   UpdateHeaders(headers);
 }
 
@@ -345,7 +355,7 @@ void V4ProtocolManagerUtil::GenerateHostsToCheck(
     const GURL& url,
     std::vector<std::string>* hosts) {
   std::string canon_host;
-  CanonicalizeUrl(url, &canon_host, NULL, NULL);
+  CanonicalizeUrl(url, &canon_host, nullptr, nullptr);
   GenerateHostVariantsToCheck(canon_host, hosts);
 }
 
@@ -355,7 +365,7 @@ void V4ProtocolManagerUtil::GeneratePathsToCheck(
     std::vector<std::string>* paths) {
   std::string canon_path;
   std::string canon_query;
-  CanonicalizeUrl(url, NULL, &canon_path, &canon_query);
+  CanonicalizeUrl(url, nullptr, &canon_path, &canon_query);
   GeneratePathVariantsToCheck(canon_path, canon_query, paths);
 }
 
@@ -442,7 +452,8 @@ void V4ProtocolManagerUtil::CanonicalizeUrl(const GURL& url,
   url::StdStringCanonOutput output(&url_unescaped_with_can_hostpath);
   url::Parsed temp_parsed;
   url::ReplaceComponents(url_unescaped_str.data(), url_unescaped_str.length(),
-                         parsed, hp_replacements, NULL, &output, &temp_parsed);
+                         parsed, hp_replacements, nullptr, &output,
+                         &temp_parsed);
   output.Complete();
 
   // 6. Step needed to revert escaping done in url::ReplaceComponents.
@@ -594,6 +605,18 @@ bool V4ProtocolManagerUtil::IPAddressToEncodedIPV6Hash(
   hashed_encoded_ip->replace(0, hash.size(), hash);
   (*hashed_encoded_ip)[hash.size()] = static_cast<unsigned char>(128);
   return true;
+}
+
+// static
+void V4ProtocolManagerUtil::GetListClientStatesFromStoreStateMap(
+    const std::unique_ptr<StoreStateMap>& store_state_map,
+    std::vector<std::string>* list_client_states) {
+  std::transform(
+      store_state_map->begin(), store_state_map->end(),
+      std::back_inserter(*list_client_states),
+      [](const std::map<ListIdentifier, std::string>::value_type& pair) {
+        return pair.second;
+      });
 }
 
 }  // namespace safe_browsing

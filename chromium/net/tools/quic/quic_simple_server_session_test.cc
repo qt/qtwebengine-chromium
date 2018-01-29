@@ -92,7 +92,7 @@ class MockQuicCryptoServerStream : public QuicCryptoServerStream {
             FLAGS_quic_reloadable_flag_enable_quic_stateless_reject_support,
             session,
             helper) {}
-  ~MockQuicCryptoServerStream() override {}
+  ~MockQuicCryptoServerStream() override = default;
 
   MOCK_METHOD1(SendServerConfigUpdate,
                void(const CachedNetworkParameters* cached_network_parameters));
@@ -124,14 +124,11 @@ class MockQuicConnectionWithSendStreamData : public MockQuicConnection {
                            perspective,
                            supported_versions) {}
 
-  MOCK_METHOD5(
-      SendStreamData,
-      QuicConsumedData(
-          QuicStreamId id,
-          QuicIOVector iov,
-          QuicStreamOffset offset,
-          StreamSendingState state,
-          QuicReferenceCountedPointer<QuicAckListenerInterface> ack_listener));
+  MOCK_METHOD4(SendStreamData,
+               QuicConsumedData(QuicStreamId id,
+                                size_t write_length,
+                                QuicStreamOffset offset,
+                                StreamSendingState state));
 };
 
 class MockQuicSimpleServerSession : public QuicSimpleServerSession {
@@ -250,7 +247,7 @@ TEST_P(QuicSimpleServerSessionTest, CloseStreamDueToReset) {
   EXPECT_EQ(1u, session_->GetNumOpenIncomingStreams());
 
   // Receive a reset (and send a RST in response).
-  QuicRstStreamFrame rst1(GetNthClientInitiatedId(0),
+  QuicRstStreamFrame rst1(kInvalidControlFrameId, GetNthClientInitiatedId(0),
                           QUIC_ERROR_PROCESSING_STREAM, 0);
   EXPECT_CALL(owner_, OnRstStreamReceived(_)).Times(1);
   EXPECT_CALL(*connection_, SendRstStream(GetNthClientInitiatedId(0),
@@ -268,7 +265,7 @@ TEST_P(QuicSimpleServerSessionTest, CloseStreamDueToReset) {
 
 TEST_P(QuicSimpleServerSessionTest, NeverOpenStreamDueToReset) {
   // Send a reset (and expect the peer to send a RST in response).
-  QuicRstStreamFrame rst1(GetNthClientInitiatedId(0),
+  QuicRstStreamFrame rst1(kInvalidControlFrameId, GetNthClientInitiatedId(0),
                           QUIC_ERROR_PROCESSING_STREAM, 0);
   EXPECT_CALL(owner_, OnRstStreamReceived(_)).Times(1);
   EXPECT_CALL(*connection_, SendRstStream(GetNthClientInitiatedId(0),
@@ -297,7 +294,7 @@ TEST_P(QuicSimpleServerSessionTest, AcceptClosedStream) {
   EXPECT_EQ(2u, session_->GetNumOpenIncomingStreams());
 
   // Send a reset (and expect the peer to send a RST in response).
-  QuicRstStreamFrame rst(GetNthClientInitiatedId(0),
+  QuicRstStreamFrame rst(kInvalidControlFrameId, GetNthClientInitiatedId(0),
                          QUIC_ERROR_PROCESSING_STREAM, 0);
   EXPECT_CALL(owner_, OnRstStreamReceived(_)).Times(1);
   EXPECT_CALL(*connection_, SendRstStream(GetNthClientInitiatedId(0),
@@ -511,7 +508,7 @@ class QuicSimpleServerSessionServerPushTest
                     WriteHeadersMock(stream_id, _, false, kDefaultPriority, _));
         // Since flow control window is smaller than response body, not the
         // whole body will be sent.
-        EXPECT_CALL(*connection_, SendStreamData(stream_id, _, 0, NO_FIN, _))
+        EXPECT_CALL(*connection_, SendStreamData(stream_id, _, 0, NO_FIN))
             .WillOnce(
                 Return(QuicConsumedData(kStreamFlowControlWindowSize, false)));
         EXPECT_CALL(*connection_, SendBlocked(stream_id));
@@ -550,7 +547,7 @@ TEST_P(QuicSimpleServerSessionServerPushTest,
   EXPECT_CALL(*session_, WriteHeadersMock(next_out_going_stream_id, _, false,
                                           kDefaultPriority, _));
   EXPECT_CALL(*connection_,
-              SendStreamData(next_out_going_stream_id, _, 0, NO_FIN, _))
+              SendStreamData(next_out_going_stream_id, _, 0, NO_FIN))
       .WillOnce(Return(QuicConsumedData(kStreamFlowControlWindowSize, false)));
   EXPECT_CALL(*connection_, SendBlocked(next_out_going_stream_id));
   session_->StreamDraining(2);
@@ -572,7 +569,8 @@ TEST_P(QuicSimpleServerSessionServerPushTest,
   // Reset the last stream in the queue. It should be marked cancelled.
   QuicStreamId stream_got_reset =
       GetNthServerInitiatedId(kMaxStreamsForTest + 1);
-  QuicRstStreamFrame rst(stream_got_reset, QUIC_STREAM_CANCELLED, 0);
+  QuicRstStreamFrame rst(kInvalidControlFrameId, stream_got_reset,
+                         QUIC_STREAM_CANCELLED, 0);
   EXPECT_CALL(owner_, OnRstStreamReceived(_)).Times(1);
   EXPECT_CALL(*connection_,
               SendRstStream(stream_got_reset, QUIC_RST_ACKNOWLEDGEMENT, 0));
@@ -585,7 +583,7 @@ TEST_P(QuicSimpleServerSessionServerPushTest,
   InSequence s;
   EXPECT_CALL(*session_, WriteHeadersMock(stream_not_reset, _, false,
                                           kDefaultPriority, _));
-  EXPECT_CALL(*connection_, SendStreamData(stream_not_reset, _, 0, NO_FIN, _))
+  EXPECT_CALL(*connection_, SendStreamData(stream_not_reset, _, 0, NO_FIN))
       .WillOnce(Return(QuicConsumedData(kStreamFlowControlWindowSize, false)));
   EXPECT_CALL(*connection_, SendBlocked(stream_not_reset));
   EXPECT_CALL(*session_,
@@ -611,12 +609,13 @@ TEST_P(QuicSimpleServerSessionServerPushTest,
               SendRstStream(stream_got_reset, QUIC_RST_ACKNOWLEDGEMENT, _));
   EXPECT_CALL(*session_,
               WriteHeadersMock(stream_to_open, _, false, kDefaultPriority, _));
-  EXPECT_CALL(*connection_, SendStreamData(stream_to_open, _, 0, NO_FIN, _))
+  EXPECT_CALL(*connection_, SendStreamData(stream_to_open, _, 0, NO_FIN))
       .WillOnce(Return(QuicConsumedData(kStreamFlowControlWindowSize, false)));
 
   EXPECT_CALL(*connection_, SendBlocked(stream_to_open));
   EXPECT_CALL(owner_, OnRstStreamReceived(_)).Times(1);
-  QuicRstStreamFrame rst(stream_got_reset, QUIC_STREAM_CANCELLED, 0);
+  QuicRstStreamFrame rst(kInvalidControlFrameId, stream_got_reset,
+                         QUIC_STREAM_CANCELLED, 0);
   visitor_->OnRstStream(rst);
 }
 

@@ -24,7 +24,7 @@ WebRtcMediaStreamAdapter::CreateLocalStreamAdapter(
     PeerConnectionDependencyFactory* factory,
     scoped_refptr<WebRtcMediaStreamTrackAdapterMap> track_adapter_map,
     const blink::WebMediaStream& web_stream) {
-  return base::MakeUnique<LocalWebRtcMediaStreamAdapter>(
+  return std::make_unique<LocalWebRtcMediaStreamAdapter>(
       factory, std::move(track_adapter_map), web_stream);
 }
 
@@ -34,7 +34,7 @@ WebRtcMediaStreamAdapter::CreateRemoteStreamAdapter(
     scoped_refptr<base::SingleThreadTaskRunner> main_thread,
     scoped_refptr<WebRtcMediaStreamTrackAdapterMap> track_adapter_map,
     scoped_refptr<webrtc::MediaStreamInterface> webrtc_stream) {
-  return base::MakeUnique<RemoteWebRtcMediaStreamAdapter>(
+  return std::make_unique<RemoteWebRtcMediaStreamAdapter>(
       std::move(main_thread), std::move(track_adapter_map),
       std::move(webrtc_stream));
 }
@@ -108,6 +108,11 @@ const blink::WebMediaStream& LocalWebRtcMediaStreamAdapter::web_stream() const {
   return web_stream_;
 }
 
+void LocalWebRtcMediaStreamAdapter::SetTracks(
+    WebRtcMediaStreamAdapter::TrackAdapterRefs track_refs) {
+  NOTIMPLEMENTED() << "Not supported for local stream adapters.";
+}
+
 void LocalWebRtcMediaStreamAdapter::TrackAdded(
     const blink::WebMediaStreamTrack& web_track) {
   DCHECK(adapter_refs_.find(web_track.UniqueId()) == adapter_refs_.end());
@@ -148,100 +153,33 @@ void LocalWebRtcMediaStreamAdapter::TrackRemoved(
   adapter_refs_.erase(it);
 }
 
-class RemoteWebRtcMediaStreamAdapter::WebRtcStreamObserver
-    : public webrtc::ObserverInterface,
-      public base::RefCountedThreadSafe<WebRtcStreamObserver> {
- public:
-  WebRtcStreamObserver(
-      base::WeakPtr<RemoteWebRtcMediaStreamAdapter> adapter,
-      scoped_refptr<base::SingleThreadTaskRunner> main_thread,
-      scoped_refptr<WebRtcMediaStreamTrackAdapterMap> track_adapter_map,
-      scoped_refptr<webrtc::MediaStreamInterface> webrtc_stream)
-      : adapter_(adapter),
-        main_thread_(std::move(main_thread)),
-        track_adapter_map_(std::move(track_adapter_map)),
-        webrtc_stream_(std::move(webrtc_stream)) {
-    webrtc_stream_->RegisterObserver(this);
+// static
+bool RemoteWebRtcMediaStreamAdapter::RemoteAdapterRefsContainsTrack(
+    const RemoteAdapterRefs& adapter_refs,
+    webrtc::MediaStreamTrackInterface* webrtc_track) {
+  for (const auto& adapter_ref : adapter_refs) {
+    if (adapter_ref->webrtc_track() == webrtc_track)
+      return true;
   }
-
-  const scoped_refptr<base::SingleThreadTaskRunner>& main_thread() const {
-    return main_thread_;
-  }
-
-  const scoped_refptr<webrtc::MediaStreamInterface>& webrtc_stream() const {
-    return webrtc_stream_;
-  }
-
-  void InitializeOnMainThread(const std::string& label,
-                              RemoteAdapterRefMap adapter_refs,
-                              size_t audio_track_count,
-                              size_t video_track_count) {
-    DCHECK(main_thread_->BelongsToCurrentThread());
-    if (adapter_) {
-      adapter_->InitializeOnMainThread(label, std::move(adapter_refs),
-                                       audio_track_count, video_track_count);
-    }
-  }
-
-  // Uninitializes the observer, unregisters from receiving notifications and
-  // releases the webrtc stream. Must be called from the main thread before
-  // releasing the main reference.
-  void Unregister() {
-    DCHECK(main_thread_->BelongsToCurrentThread());
-    webrtc_stream_->UnregisterObserver(this);
-    // Since we're guaranteed to not get further notifications, it's safe to
-    // release the webrtc_stream_ here.
-    webrtc_stream_ = nullptr;
-  }
-
- private:
-  friend class base::RefCountedThreadSafe<WebRtcStreamObserver>;
-
-  ~WebRtcStreamObserver() override {
-    DCHECK(!webrtc_stream_.get()) << "Unregister hasn't been called";
-  }
-
-  // |webrtc::ObserverInterface| implementation.
-  void OnChanged() override {
-    RemoteAdapterRefMap new_adapter_refs =
-        RemoteWebRtcMediaStreamAdapter::GetRemoteAdapterRefMapFromWebRtcStream(
-            track_adapter_map_, webrtc_stream_.get());
-    main_thread_->PostTask(
-        FROM_HERE, base::BindOnce(&WebRtcStreamObserver::OnChangedOnMainThread,
-                                  this, base::Passed(&new_adapter_refs)));
-  }
-
-  void OnChangedOnMainThread(RemoteAdapterRefMap new_adapter_refs) {
-    DCHECK(main_thread_->BelongsToCurrentThread());
-    if (adapter_)
-      adapter_->OnChanged(std::move(new_adapter_refs));
-  }
-
-  base::WeakPtr<RemoteWebRtcMediaStreamAdapter> adapter_;
-  const scoped_refptr<base::SingleThreadTaskRunner> main_thread_;
-  const scoped_refptr<WebRtcMediaStreamTrackAdapterMap> track_adapter_map_;
-  scoped_refptr<webrtc::MediaStreamInterface> webrtc_stream_;
-};
+  return false;
+}
 
 // static
-RemoteWebRtcMediaStreamAdapter::RemoteAdapterRefMap
-RemoteWebRtcMediaStreamAdapter::GetRemoteAdapterRefMapFromWebRtcStream(
+RemoteWebRtcMediaStreamAdapter::RemoteAdapterRefs
+RemoteWebRtcMediaStreamAdapter::GetRemoteAdapterRefsFromWebRtcStream(
     const scoped_refptr<WebRtcMediaStreamTrackAdapterMap>& track_adapter_map,
     webrtc::MediaStreamInterface* webrtc_stream) {
-  RemoteAdapterRefMap adapter_refs;
+  // TODO(hbos): When adapter's |webrtc_track| can be called from any thread so
+  // can RemoteAdapterRefsContainsTrack and we can DCHECK here that we don't end
+  // up with duplicate entries. https://crbug.com/756436
+  RemoteAdapterRefs adapter_refs;
   for (auto& webrtc_audio_track : webrtc_stream->GetAudioTracks()) {
-    DCHECK(adapter_refs.find(webrtc_audio_track.get()) == adapter_refs.end());
-    adapter_refs.insert(
-        std::make_pair(webrtc_audio_track.get(),
-                       track_adapter_map->GetOrCreateRemoteTrackAdapter(
-                           webrtc_audio_track.get())));
+    adapter_refs.push_back(track_adapter_map->GetOrCreateRemoteTrackAdapter(
+        webrtc_audio_track.get()));
   }
   for (auto& webrtc_video_track : webrtc_stream->GetVideoTracks()) {
-    DCHECK(adapter_refs.find(webrtc_video_track.get()) == adapter_refs.end());
-    adapter_refs.insert(
-        std::make_pair(webrtc_video_track.get(),
-                       track_adapter_map->GetOrCreateRemoteTrackAdapter(
-                           webrtc_video_track.get())));
+    adapter_refs.push_back(track_adapter_map->GetOrCreateRemoteTrackAdapter(
+        webrtc_video_track.get()));
   }
   return adapter_refs;
 }
@@ -259,17 +197,13 @@ RemoteWebRtcMediaStreamAdapter::RemoteWebRtcMediaStreamAdapter(
       weak_factory_(this) {
   DCHECK(!main_thread_->BelongsToCurrentThread());
   DCHECK(track_adapter_map_);
-  observer_ = new RemoteWebRtcMediaStreamAdapter::WebRtcStreamObserver(
-      weak_factory_.GetWeakPtr(), main_thread_, track_adapter_map_,
-      webrtc_stream_);
 
-  RemoteAdapterRefMap adapter_refs = GetRemoteAdapterRefMapFromWebRtcStream(
+  RemoteAdapterRefs adapter_refs = GetRemoteAdapterRefsFromWebRtcStream(
       track_adapter_map_, webrtc_stream_.get());
   main_thread_->PostTask(
       FROM_HERE,
-      base::BindOnce(&RemoteWebRtcMediaStreamAdapter::WebRtcStreamObserver::
-                         InitializeOnMainThread,
-                     observer_, webrtc_stream_->label(),
+      base::BindOnce(&RemoteWebRtcMediaStreamAdapter::InitializeOnMainThread,
+                     weak_factory_.GetWeakPtr(), webrtc_stream_->label(),
                      base::Passed(&adapter_refs),
                      webrtc_stream_->GetAudioTracks().size(),
                      webrtc_stream_->GetVideoTracks().size()));
@@ -277,8 +211,7 @@ RemoteWebRtcMediaStreamAdapter::RemoteWebRtcMediaStreamAdapter(
 
 RemoteWebRtcMediaStreamAdapter::~RemoteWebRtcMediaStreamAdapter() {
   DCHECK(main_thread_->BelongsToCurrentThread());
-  observer_->Unregister();
-  OnChanged(RemoteAdapterRefMap());
+  SetTracks(RemoteAdapterRefs());
 }
 
 bool RemoteWebRtcMediaStreamAdapter::is_initialized() const {
@@ -302,7 +235,7 @@ const blink::WebMediaStream& RemoteWebRtcMediaStreamAdapter::web_stream()
 
 void RemoteWebRtcMediaStreamAdapter::InitializeOnMainThread(
     const std::string& label,
-    RemoteAdapterRefMap adapter_refs,
+    RemoteAdapterRefs adapter_refs,
     size_t audio_track_count,
     size_t video_track_count) {
   DCHECK(main_thread_->BelongsToCurrentThread());
@@ -315,8 +248,8 @@ void RemoteWebRtcMediaStreamAdapter::InitializeOnMainThread(
       video_track_count);
   size_t audio_i = 0;
   size_t video_i = 0;
-  for (const auto& it : adapter_refs_) {
-    const blink::WebMediaStreamTrack& web_track = it.second->web_track();
+  for (const auto& adapter_ref : adapter_refs_) {
+    const blink::WebMediaStreamTrack& web_track = adapter_ref->web_track();
     if (web_track.Source().GetType() == blink::WebMediaStreamSource::kTypeAudio)
       web_audio_tracks[audio_i++] = web_track;
     else
@@ -325,30 +258,33 @@ void RemoteWebRtcMediaStreamAdapter::InitializeOnMainThread(
 
   web_stream_.Initialize(blink::WebString::FromUTF8(label), web_audio_tracks,
                          web_video_tracks);
-  webrtc_stream_ = observer_->webrtc_stream();
 
   base::AutoLock scoped_lock(lock_);
   is_initialized_ = true;
 }
 
-void RemoteWebRtcMediaStreamAdapter::OnChanged(
-    RemoteAdapterRefMap new_adapter_refs) {
+void RemoteWebRtcMediaStreamAdapter::SetTracks(
+    WebRtcMediaStreamAdapter::TrackAdapterRefs track_refs) {
   DCHECK(main_thread_->BelongsToCurrentThread());
 
   // Find removed tracks.
-  for (auto it = adapter_refs_.begin(); it != adapter_refs_.end();) {
-    if (new_adapter_refs.find(it->first) == new_adapter_refs.end()) {
-      web_stream_.RemoveTrack(it->second->web_track());
-      it = adapter_refs_.erase(it);
-    } else {
-      ++it;
-    }
-  }
+  base::EraseIf(
+      adapter_refs_,
+      [this, &track_refs](
+          const std::unique_ptr<WebRtcMediaStreamTrackAdapterMap::AdapterRef>&
+              track_ref) {
+        bool erase = !RemoteAdapterRefsContainsTrack(track_refs,
+                                                     track_ref->webrtc_track());
+        if (erase)
+          web_stream_.RemoveTrack(track_ref->web_track());
+        return erase;
+      });
   // Find added tracks.
-  for (auto& it : new_adapter_refs) {
-    if (adapter_refs_.find(it.first) == adapter_refs_.end()) {
-      web_stream_.AddTrack(it.second->web_track());
-      adapter_refs_.insert(std::make_pair(it.first, std::move(it.second)));
+  for (auto& track_ref : track_refs) {
+    if (!RemoteAdapterRefsContainsTrack(adapter_refs_,
+                                        track_ref->webrtc_track())) {
+      web_stream_.AddTrack(track_ref->web_track());
+      adapter_refs_.push_back(std::move(track_ref));
     }
   }
 }

@@ -17,7 +17,6 @@
 #include <libaddressinput/address_data.h>
 #include <libaddressinput/preload_supplier.h>
 #include <libaddressinput/region_data.h>
-#include <libaddressinput/util/basictypes.h>
 
 #include <cassert>
 #include <cstddef>
@@ -29,6 +28,7 @@
 #include "lookup_key.h"
 #include "region_data_constants.h"
 #include "rule.h"
+#include "util/size.h"
 
 namespace i18n {
 namespace addressinput {
@@ -36,7 +36,7 @@ namespace addressinput {
 namespace {
 
 // The maximum depth of lookup keys.
-static const size_t kLookupKeysMaxDepth = arraysize(LookupKey::kHierarchy) - 1;
+static const size_t kLookupKeysMaxDepth = size(LookupKey::kHierarchy) - 1;
 
 // Does not take ownership of |parent_region|, which is not allowed to be
 // nullptr.
@@ -107,7 +107,7 @@ RegionData* BuildRegion(const std::map<std::string, const Rule*>& rules,
 
   RegionData* region = new RegionData(region_code);
 
-  // If there're sub-keys for field X, but field X is not used in this region
+  // If there are sub-keys for field X, but field X is not used in this region
   // code, then these sub-keys are skipped over. For example, CH has sub-keys
   // for field ADMIN_AREA, but CH does not use ADMIN_AREA field.
   size_t region_max_depth =

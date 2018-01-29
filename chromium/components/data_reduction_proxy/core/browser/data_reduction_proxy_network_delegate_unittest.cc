@@ -345,7 +345,7 @@ class DataReductionProxyNetworkDelegateTest : public testing::Test {
         lofi_ui_service_(nullptr),
         ssl_socket_data_provider_(net::ASYNC, net::OK) {
     ssl_socket_data_provider_.next_proto = net::kProtoHTTP11;
-    ssl_socket_data_provider_.cert = net::ImportCertFromFile(
+    ssl_socket_data_provider_.ssl_info.cert = net::ImportCertFromFile(
         net::GetTestCertsDirectory(), "unittest.selfsigned.der");
   }
 
@@ -918,6 +918,10 @@ TEST_F(DataReductionProxyNetworkDelegateTest, AuthenticationTest) {
 
 TEST_F(DataReductionProxyNetworkDelegateTest, LoFiTransitions) {
   Init(USE_INSECURE_PROXY, false);
+  base::test::ScopedFeatureList scoped_feature_list;
+  scoped_feature_list.InitAndEnableFeature(
+      features::kDataReductionProxyDecidesTransform);
+
   // Enable Lo-Fi.
   const struct {
     bool lofi_switch_enabled;
@@ -1179,7 +1183,8 @@ TEST_F(DataReductionProxyNetworkDelegateTest,
       data_reduction_proxy_info.UseDirect();
     else
       data_reduction_proxy_info.UseNamedProxy("some.other.proxy");
-    config()->UpdateConfigForTesting(test.data_reduction_proxy_enabled, true);
+    config()->UpdateConfigForTesting(test.data_reduction_proxy_enabled, true,
+                                     true);
     std::unique_ptr<net::URLRequest> request =
         context()->CreateRequest(GURL(kTestURL), net::RequestPriority::IDLE,
                                  nullptr, TRAFFIC_ANNOTATION_FOR_TESTS);
@@ -1344,7 +1349,6 @@ TEST_F(DataReductionProxyNetworkDelegateTest, NetHistograms) {
   };
 
   for (size_t i = 0; i < arraysize(tests); ++i) {
-    config()->ResetLoFiStatusForTest();
 
     base::test::ScopedFeatureList scoped_feature_list;
     if (tests[i].lofi_enabled) {

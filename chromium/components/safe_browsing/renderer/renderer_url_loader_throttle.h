@@ -11,6 +11,7 @@
 #include "components/safe_browsing/common/safe_browsing.mojom.h"
 #include "content/public/common/url_loader_throttle.h"
 #include "mojo/public/cpp/bindings/binding_set.h"
+#include "url/gurl.h"
 
 namespace safe_browsing {
 
@@ -35,7 +36,9 @@ class RendererURLLoaderThrottle : public content::URLLoaderThrottle,
                         bool* defer) override;
   void WillRedirectRequest(const net::RedirectInfo& redirect_info,
                            bool* defer) override;
-  void WillProcessResponse(bool* defer) override;
+  void WillProcessResponse(const GURL& response_url,
+                           const content::ResourceResponseHead& response_head,
+                           bool* defer) override;
 
   // mojom::UrlCheckNotifier implementation.
   void OnCompleteCheck(bool proceed, bool showed_interstitial) override;
@@ -78,6 +81,8 @@ class RendererURLLoaderThrottle : public content::URLLoaderThrottle,
   bool user_action_involved_ = false;
 
   std::unique_ptr<mojo::BindingSet<mojom::UrlCheckNotifier>> notifier_bindings_;
+
+  GURL original_url_;
 
   base::WeakPtrFactory<RendererURLLoaderThrottle> weak_factory_;
 };

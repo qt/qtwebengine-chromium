@@ -391,7 +391,7 @@ bool ThemePainterMac::PaintSliderTrack(const LayoutObject& o,
                                      shadow_blur, shadow_spread);
   paint_info.context.Restore();
 
-  RefPtr<Gradient> border_gradient =
+  scoped_refptr<Gradient> border_gradient =
       Gradient::CreateLinear(fill_bounds.MinXMinYCorner(),
                              is_vertical_slider ? fill_bounds.MaxXMinYCorner()
                                                 : fill_bounds.MinXMaxYCorner());
@@ -475,7 +475,7 @@ bool ThemePainterMac::PaintSliderThumb(const Node* node,
   paint_info.context.SetDrawLooper(nullptr);
 
   IntRect fill_bounds = EnclosedIntRect(unzoomed_rect);
-  RefPtr<Gradient> fill_gradient = Gradient::CreateLinear(
+  scoped_refptr<Gradient> fill_gradient = Gradient::CreateLinear(
       fill_bounds.MinXMinYCorner(), fill_bounds.MinXMaxYCorner());
   fill_gradient->AddColorStop(0.0, fill_gradient_top_color);
   fill_gradient->AddColorStop(0.52, fill_gradient_upper_middle_color);
@@ -485,7 +485,7 @@ bool ThemePainterMac::PaintSliderThumb(const Node* node,
   fill_gradient->ApplyToFlags(fill_flags, SkMatrix::I());
   paint_info.context.DrawOval(border_bounds, fill_flags);
 
-  RefPtr<Gradient> border_gradient = Gradient::CreateLinear(
+  scoped_refptr<Gradient> border_gradient = Gradient::CreateLinear(
       fill_bounds.MinXMinYCorner(), fill_bounds.MinXMaxYCorner());
   border_gradient->AddColorStop(0.0, border_gradient_top_color);
   border_gradient->AddColorStop(1.0, border_gradient_bottom_color);
@@ -553,21 +553,16 @@ bool ThemePainterMac::PaintSearchField(const Node* node,
   return false;
 }
 
-bool ThemePainterMac::PaintSearchFieldCancelButton(const LayoutObject& o,
-                                                   const PaintInfo& paint_info,
-                                                   const IntRect& r) {
-  if (!o.GetNode())
-    return false;
-  Element* input = o.GetNode()->OwnerShadowHost();
-  if (!input)
-    input = ToElement(o.GetNode());
-
-  if (!input->GetLayoutObject()->IsBox())
+bool ThemePainterMac::PaintSearchFieldCancelButton(
+    const LayoutObject& cancel_button,
+    const PaintInfo& paint_info,
+    const IntRect& r) {
+  if (!cancel_button.GetNode())
     return false;
 
   GraphicsContextStateSaver state_saver(paint_info.context);
 
-  float zoom_level = o.StyleRef().EffectiveZoom();
+  float zoom_level = cancel_button.StyleRef().EffectiveZoom();
   FloatRect unzoomed_rect(r);
   if (zoom_level != 1.0f) {
     unzoomed_rect.SetWidth(unzoomed_rect.Width() / zoom_level);
@@ -579,7 +574,7 @@ bool ThemePainterMac::PaintSearchFieldCancelButton(const LayoutObject& o,
 
   Color fill_color(200, 200, 200);
 
-  if (LayoutTheme::IsPressed(o.GetNode())) {
+  if (LayoutTheme::IsPressed(cancel_button.GetNode())) {
     Color tint_color(0, 0, 0, 32);
     fill_color = fill_color.Blend(tint_color);
   }

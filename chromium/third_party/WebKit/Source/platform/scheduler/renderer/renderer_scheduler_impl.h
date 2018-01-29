@@ -16,15 +16,16 @@
 #include "build/build_config.h"
 #include "device/base/synchronization/shared_memory_seqlock_buffer.h"
 #include "platform/PlatformExport.h"
-#include "platform/scheduler/base/pollable_thread_safe_flag.h"
-#include "platform/scheduler/base/queueing_time_estimator.h"
 #include "platform/scheduler/base/task_time_observer.h"
 #include "platform/scheduler/child/idle_canceled_delayed_task_sweeper.h"
 #include "platform/scheduler/child/idle_helper.h"
+#include "platform/scheduler/child/pollable_thread_safe_flag.h"
+#include "platform/scheduler/renderer/auto_advancing_virtual_time_domain.h"
 #include "platform/scheduler/renderer/deadline_task_runner.h"
 #include "platform/scheduler/renderer/idle_time_estimator.h"
 #include "platform/scheduler/renderer/main_thread_scheduler_helper.h"
 #include "platform/scheduler/renderer/main_thread_task_queue.h"
+#include "platform/scheduler/renderer/queueing_time_estimator.h"
 #include "platform/scheduler/renderer/render_widget_signals.h"
 #include "platform/scheduler/renderer/renderer_metrics_helper.h"
 #include "platform/scheduler/renderer/task_cost_estimator.h"
@@ -46,7 +47,6 @@ class RendererSchedulerImplForTest;
 class RendererSchedulerImplTest;
 FORWARD_DECLARE_TEST(RendererSchedulerImplTest, Tracing);
 }  // namespace renderer_scheduler_impl_unittest
-class AutoAdvancingVirtualTimeDomain;
 class RenderWidgetSchedulingState;
 class WebViewSchedulerImpl;
 class TaskQueueThrottler;
@@ -57,46 +57,51 @@ class PLATFORM_EXPORT RendererSchedulerImpl
       public MainThreadSchedulerHelper::Observer,
       public RenderWidgetSignals::Observer,
       public QueueingTimeEstimator::Client,
-      public base::trace_event::TraceLog::AsyncEnabledStateObserver {
+      public base::trace_event::TraceLog::AsyncEnabledStateObserver,
+      public AutoAdvancingVirtualTimeDomain::Observer {
  public:
   // Keep RendererScheduler::UseCaseToString in sync with this enum.
   enum class UseCase {
     // No active use case detected.
-    NONE,
+    kNone,
     // A continuous gesture (e.g., scroll, pinch) which is being driven by the
     // compositor thread.
-    COMPOSITOR_GESTURE,
+    kCompositorGesture,
     // An unspecified touch gesture which is being handled by the main thread.
     // Note that since we don't have a full view of the use case, we should be
     // careful to prioritize all work equally.
-    MAIN_THREAD_CUSTOM_INPUT_HANDLING,
+    kMainThreadCustomInputHandling,
     // A continuous gesture (e.g., scroll, pinch) which is being driven by the
     // compositor thread but also observed by the main thread. An example is
     // synchronized scrolling where a scroll listener on the main thread changes
     // page layout based on the current scroll position.
-    SYNCHRONIZED_GESTURE,
+    kSynchronizedGesture,
     // A gesture has recently started and we are about to run main thread touch
     // listeners to find out the actual gesture type. To minimize touch latency,
     // only input handling work should run in this state.
-    TOUCHSTART,
+    kTouchstart,
     // A page is loading.
-    LOADING,
+    kLoading,
     // A continuous gesture (e.g., scroll) which is being handled by the main
     // thread.
-    MAIN_THREAD_GESTURE,
+    kMainThreadGesture,
     // Must be the last entry.
-    USE_CASE_COUNT,
-    FIRST_USE_CASE = NONE,
+    kUseCaseCount,
+    kFirstUseCase = kNone,
   };
   static const char* UseCaseToString(UseCase use_case);
   static const char* RAILModeToString(v8::RAILMode rail_mode);
+  static const char* VirtualTimePolicyToString(
+      WebViewScheduler::VirtualTimePolicy virtual_time_policy);
 
-  RendererSchedulerImpl(scoped_refptr<SchedulerTqmDelegate> main_task_runner);
+  explicit RendererSchedulerImpl(
+      std::unique_ptr<TaskQueueManager> task_queue_manager);
   ~RendererSchedulerImpl() override;
 
   // RendererScheduler implementation:
   std::unique_ptr<WebThread> CreateMainThread() override;
   scoped_refptr<SingleThreadIdleTaskRunner> IdleTaskRunner() override;
+  scoped_refptr<base::SingleThreadTaskRunner> IPCTaskRunner() override;
   std::unique_ptr<RenderWidgetSchedulingState> NewRenderWidgetSchedulingState()
       override;
   void WillBeginFrame(const viz::BeginFrameArgs& args) override;
@@ -127,8 +132,6 @@ class PLATFORM_EXPORT RendererSchedulerImpl
   void RemoveTaskObserver(
       base::MessageLoop::TaskObserver* task_observer) override;
   void Shutdown() override;
-  void VirtualTimePaused() override;
-  void VirtualTimeResumed() override;
   void SetStoppingWhenBackgroundedEnabled(bool enabled) override;
   void SetTopLevelBlameContext(
       base::trace_event::BlameContext* blame_context) override;
@@ -136,6 +139,10 @@ class PLATFORM_EXPORT RendererSchedulerImpl
   bool MainThreadSeemsUnresponsive(
       base::TimeDelta main_thread_responsiveness_threshold) override;
   void SetRendererProcessType(RendererProcessType type) override;
+  WebScopedVirtualTimePauser CreateWebScopedVirtualTimePauser() override;
+
+  // AutoAdvancingVirtualTimeDomain::Observer implementation:
+  void OnVirtualTimeAdvanced() override;
 
   // RenderWidgetSignals::Observer implementation:
   void SetAllRenderWidgetsHidden(bool hidden) override;
@@ -150,11 +157,15 @@ class PLATFORM_EXPORT RendererSchedulerImpl
   // QueueingTimeEstimator::Client implementation:
   void OnQueueingTimeForWindowEstimated(base::TimeDelta queueing_time,
                                         bool is_disjoint_window) override;
+  void OnReportSplitExpectedQueueingTime(
+      const char* split_description,
+      base::TimeDelta queueing_time) override;
 
   scoped_refptr<MainThreadTaskQueue> DefaultTaskQueue();
   scoped_refptr<MainThreadTaskQueue> CompositorTaskQueue();
   scoped_refptr<MainThreadTaskQueue> LoadingTaskQueue();
   scoped_refptr<MainThreadTaskQueue> TimerTaskQueue();
+  scoped_refptr<MainThreadTaskQueue> kV8TaskQueue();
 
   // Returns a new task queue created with given params.
   scoped_refptr<MainThreadTaskQueue> NewTaskQueue(
@@ -162,7 +173,7 @@ class PLATFORM_EXPORT RendererSchedulerImpl
 
   // Returns a new loading task queue. This queue is intended for tasks related
   // to resource dispatch, foreground HTML parsing, etc...
-  // Note: Tasks posted to FRAME_LOADING_CONTROL queues must execute quickly.
+  // Note: Tasks posted to kFrameLoading_kControl queues must execute quickly.
   scoped_refptr<MainThreadTaskQueue> NewLoadingTaskQueue(
       MainThreadTaskQueue::QueueType queue_type);
 
@@ -180,11 +191,24 @@ class PLATFORM_EXPORT RendererSchedulerImpl
   void RegisterTimeDomain(TimeDomain* time_domain);
   void UnregisterTimeDomain(TimeDomain* time_domain);
 
-  // Tells the scheduler that all TaskQueues should use virtual time.
-  void EnableVirtualTime();
+  using VirtualTimePolicy = WebViewScheduler::VirtualTimePolicy;
+  using VirtualTimeObserver = WebViewScheduler::VirtualTimeObserver;
+
+  // Tells the scheduler that all TaskQueues should use virtual time. Returns
+  // the TimeTicks that virtual time offsets will be relative to.
+  base::TimeTicks EnableVirtualTime();
 
   // Migrates all task queues to real time.
   void DisableVirtualTimeForTesting();
+
+  // Returns true if virtual time is not paused.
+  bool VirtualTimeAllowedToAdvance() const;
+  void SetVirtualTimePolicy(VirtualTimePolicy virtual_time_policy);
+  void SetMaxVirtualTimeTaskStarvationCount(int max_task_starvation_count);
+  void AddVirtualTimeObserver(VirtualTimeObserver*);
+  void RemoveVirtualTimeObserver(VirtualTimeObserver*);
+  void IncrementVirtualTimePauseCount();
+  void DecrementVirtualTimePauseCount();
 
   void AddWebViewScheduler(WebViewSchedulerImpl* web_view_scheduler);
   void RemoveWebViewScheduler(WebViewSchedulerImpl* web_view_scheduler);
@@ -238,7 +262,7 @@ class PLATFORM_EXPORT RendererSchedulerImpl
 
   void OnFirstMeaningfulPaint();
 
-  void OnUnregisterTaskQueue(const scoped_refptr<MainThreadTaskQueue>& queue);
+  void OnShutdownTaskQueue(const scoped_refptr<MainThreadTaskQueue>& queue);
 
   void OnTaskStarted(MainThreadTaskQueue* queue,
                      const TaskQueue::Task& task,
@@ -271,12 +295,12 @@ class PLATFORM_EXPORT RendererSchedulerImpl
       renderer_scheduler_impl_unittest::RendererSchedulerImplTest,
       Tracing);
 
-  enum class ExpensiveTaskPolicy { RUN, BLOCK, THROTTLE };
+  enum class ExpensiveTaskPolicy { kRun, kBlock, kThrottle };
 
   enum class TimeDomainType {
-    REAL,
-    THROTTLED,
-    VIRTUAL,
+    kReal,
+    kThrottled,
+    kVirtual,
   };
 
   static const char* TimeDomainTypeToString(TimeDomainType domain_type);
@@ -293,7 +317,7 @@ class PLATFORM_EXPORT RendererSchedulerImpl
           is_blocked(false),
           is_stopped(false),
           use_virtual_time(false),
-          priority(TaskQueue::NORMAL_PRIORITY) {}
+          priority(TaskQueue::kNormalPriority) {}
 
     bool is_enabled;
     bool is_paused;
@@ -329,38 +353,38 @@ class PLATFORM_EXPORT RendererSchedulerImpl
 
     TaskQueuePolicy& compositor_queue_policy() {
       return policies_[static_cast<size_t>(
-          MainThreadTaskQueue::QueueClass::COMPOSITOR)];
+          MainThreadTaskQueue::QueueClass::kCompositor)];
     }
     const TaskQueuePolicy& compositor_queue_policy() const {
       return policies_[static_cast<size_t>(
-          MainThreadTaskQueue::QueueClass::COMPOSITOR)];
+          MainThreadTaskQueue::QueueClass::kCompositor)];
     }
 
     TaskQueuePolicy& loading_queue_policy() {
       return policies_[static_cast<size_t>(
-          MainThreadTaskQueue::QueueClass::LOADING)];
+          MainThreadTaskQueue::QueueClass::kLoading)];
     }
     const TaskQueuePolicy& loading_queue_policy() const {
       return policies_[static_cast<size_t>(
-          MainThreadTaskQueue::QueueClass::LOADING)];
+          MainThreadTaskQueue::QueueClass::kLoading)];
     }
 
     TaskQueuePolicy& timer_queue_policy() {
       return policies_[static_cast<size_t>(
-          MainThreadTaskQueue::QueueClass::TIMER)];
+          MainThreadTaskQueue::QueueClass::kTimer)];
     }
     const TaskQueuePolicy& timer_queue_policy() const {
       return policies_[static_cast<size_t>(
-          MainThreadTaskQueue::QueueClass::TIMER)];
+          MainThreadTaskQueue::QueueClass::kTimer)];
     }
 
     TaskQueuePolicy& default_queue_policy() {
       return policies_[static_cast<size_t>(
-          MainThreadTaskQueue::QueueClass::NONE)];
+          MainThreadTaskQueue::QueueClass::kNone)];
     }
     const TaskQueuePolicy& default_queue_policy() const {
       return policies_[static_cast<size_t>(
-          MainThreadTaskQueue::QueueClass::NONE)];
+          MainThreadTaskQueue::QueueClass::kNone)];
     }
 
     const TaskQueuePolicy& GetQueuePolicy(
@@ -388,7 +412,7 @@ class PLATFORM_EXPORT RendererSchedulerImpl
     bool should_disable_throttling_;
 
     std::array<TaskQueuePolicy,
-               static_cast<size_t>(MainThreadTaskQueue::QueueClass::COUNT)>
+               static_cast<size_t>(MainThreadTaskQueue::QueueClass::kCount)>
         policies_;
   };
 
@@ -453,7 +477,7 @@ class PLATFORM_EXPORT RendererSchedulerImpl
   // The amount of time to wait before suspending shared timers, and loading
   // etc. after the renderer has been backgrounded. This is used only if
   // background suspension is enabled.
-  static const int kStopWhenBackgroundedDelayMillis = 5 * 60 * 1000;
+  static const int kDelayForBackgroundTabStoppingMillis = 5 * 60 * 1000;
 
   // The time we should stay in a priority-escalated mode after a call to
   // DidAnimateForInputOnCompositorThread().
@@ -477,12 +501,12 @@ class PLATFORM_EXPORT RendererSchedulerImpl
   void ForceUpdatePolicy();
 
   enum class UpdateType {
-    MAY_EARLY_OUT_IF_POLICY_UNCHANGED,
-    FORCE_UPDATE,
+    kMayEarlyOutIfPolicyUnchanged,
+    kForceUpdate,
   };
 
   // The implelemtation of UpdatePolicy & ForceUpdatePolicy.  It is allowed to
-  // early out if |update_type| is MAY_EARLY_OUT_IF_POLICY_UNCHANGED.
+  // early out if |update_type| is kMayEarlyOutIfPolicyUnchanged.
   virtual void UpdatePolicyLocked(UpdateType update_type);
 
   // Helper for computing the use case. |expected_usecase_duration| will be
@@ -527,6 +551,20 @@ class PLATFORM_EXPORT RendererSchedulerImpl
   void PauseRendererImpl();
   void ResumeRendererImpl();
 
+  void NotifyVirtualTimePaused();
+  void SetVirtualTimeStopped(bool virtual_time_stopped);
+  void ApplyVirtualTimePolicy();
+
+  // Pauses the timer queues by inserting a fence that blocks any tasks posted
+  // after this point from running. Orthogonal to PauseTimerQueue. Care must
+  // be taken when using this API to avoid fighting with the TaskQueueThrottler.
+  void VirtualTimePaused();
+
+  // Removes the fence added by VirtualTimePaused allowing timers to execute
+  // normally. Care must be taken when using this API to avoid fighting with the
+  // TaskQueueThrottler.
+  void VirtualTimeResumed();
+
   MainThreadSchedulerHelper helper_;
   IdleHelper idle_helper_;
   IdleCanceledDelayedTaskSweeper idle_canceled_delayed_task_sweeper_;
@@ -547,6 +585,8 @@ class PLATFORM_EXPORT RendererSchedulerImpl
 
   scoped_refptr<MainThreadTaskQueue> default_loading_task_queue_;
   scoped_refptr<MainThreadTaskQueue> default_timer_task_queue_;
+  scoped_refptr<MainThreadTaskQueue> v8_task_queue_;
+  scoped_refptr<MainThreadTaskQueue> ipc_task_queue_;
 
   // Note |virtual_time_domain_| is lazily created.
   std::unique_ptr<AutoAdvancingVirtualTimeDomain> virtual_time_domain_;
@@ -559,6 +599,8 @@ class PLATFORM_EXPORT RendererSchedulerImpl
       device::SharedMemorySeqLockBuffer<QueueingTimeEstimator>;
 
   SeqLockQueueingTimeEstimator seqlock_queueing_time_estimator_;
+
+  base::TimeDelta delay_for_background_tab_stopping_;
 
   // We have decided to improve thread safety at the cost of some boilerplate
   // (the accessors) for the following data members.
@@ -585,12 +627,19 @@ class PLATFORM_EXPORT RendererSchedulerImpl
     base::Optional<base::TimeTicks> last_audio_state_change;
     int renderer_pause_count;  // Renderer is paused if non-zero.
     int navigation_task_expected_count;
-    ExpensiveTaskPolicy expensive_task_policy;
+    TraceableState<ExpensiveTaskPolicy, kTracingCategoryNameInfo>
+        expensive_task_policy;
+    TraceableState<v8::RAILMode, kTracingCategoryNameInfo>
+        rail_mode_for_tracing;  // Don't use except for tracing.
     bool renderer_hidden;
     TraceableState<bool, kTracingCategoryNameDefault> renderer_backgrounded;
     bool stopping_when_backgrounded_enabled;
     bool stopped_when_backgrounded;
     bool was_shutdown;
+    TraceableCounter<base::TimeDelta, kTracingCategoryNameInfo>
+        loading_task_estimated_cost;
+    TraceableCounter<base::TimeDelta, kTracingCategoryNameInfo>
+        timer_task_estimated_cost;
     TraceableState<bool, kTracingCategoryNameInfo> loading_tasks_seem_expensive;
     TraceableState<bool, kTracingCategoryNameInfo> timer_tasks_seem_expensive;
     TraceableState<bool, kTracingCategoryNameDefault> touchstart_expected_soon;
@@ -603,7 +652,6 @@ class PLATFORM_EXPORT RendererSchedulerImpl
     bool use_virtual_time;
     TraceableState<bool, kTracingCategoryNameDefault> is_audio_playing;
     bool compositor_will_send_main_frame_not_expected;
-    bool virtual_time_stopped;
     bool has_navigated;
     bool pause_timers_for_webview;
     std::unique_ptr<base::SingleSampleMetric> max_queueing_time_metric;
@@ -614,6 +662,22 @@ class PLATFORM_EXPORT RendererSchedulerImpl
     WakeUpBudgetPool* wake_up_budget_pool;                // Not owned.
     RendererMetricsHelper metrics_helper;
     RendererProcessType process_type;
+
+    base::ObserverList<VirtualTimeObserver> virtual_time_observers;
+    base::TimeTicks initial_virtual_time;
+    VirtualTimePolicy virtual_time_policy;
+
+    // In VirtualTimePolicy::kDeterministicLoading virtual time is only allowed
+    // to advance if this is zero.
+    int virtual_time_pause_count;
+
+    // The maximum number amount of delayed task starvation we will allow in
+    // VirtualTimePolicy::kAdvance or VirtualTimePolicy::kDeterministicLoading
+    // unless the run_loop is nested (in which case infinite starvation is
+    // allowed). NB a value of 0 allows infinite starvation.
+    int max_virtual_time_task_starvation_count;
+    bool virtual_time_stopped;
+    bool nested_runloop;
   };
 
   struct AnyThread {

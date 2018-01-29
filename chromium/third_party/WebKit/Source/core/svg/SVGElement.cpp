@@ -167,9 +167,9 @@ void SVGElement::ReportAttributeParsingError(SVGParsingError error,
 
 String SVGElement::title() const {
   // According to spec, we should not return titles when hovering over root
-  // <svg> elements (those <title> elements are the title of the document, not a
-  // tooltip) so we instantly return.
-  if (IsOutermostSVGSVGElement())
+  // <svg> elements imported as a standalone document(those <title> elements
+  // are the title of the document, not a tooltip) so we instantly return.
+  if (IsSVGSVGElement(*this) && this == GetDocument().documentElement())
     return String();
 
   if (InUseShadowTree()) {
@@ -336,8 +336,7 @@ static FloatRect ComputeTransformReferenceBox(const SVGElement& element) {
   }
   if (style.TransformBox() == ETransformBox::kFillBox)
     return layout_object.ObjectBoundingBox();
-  DCHECK(style.TransformBox() == ETransformBox::kBorderBox ||
-         style.TransformBox() == ETransformBox::kViewBox);
+  DCHECK_EQ(style.TransformBox(), ETransformBox::kViewBox);
   SVGLengthContext length_context(&element);
   FloatSize viewport_size;
   length_context.DetermineViewport(viewport_size);
@@ -690,7 +689,7 @@ const HeapHashSet<WeakMember<SVGElement>>& SVGElement::InstancesForElement()
 SVGElement* SVGElement::CorrespondingElement() const {
   DCHECK(!HasSVGRareData() || !SvgRareData()->CorrespondingElement() ||
          ContainingShadowRoot());
-  return HasSVGRareData() ? SvgRareData()->CorrespondingElement() : 0;
+  return HasSVGRareData() ? SvgRareData()->CorrespondingElement() : nullptr;
 }
 
 SVGUseElement* SVGElement::CorrespondingUseElement() const {
@@ -859,7 +858,7 @@ bool SVGElement::IsPresentationAttributeWithSVGDOM(
 void SVGElement::CollectStyleForPresentationAttribute(
     const QualifiedName& name,
     const AtomicString& value,
-    MutableStylePropertySet* style) {
+    MutableCSSPropertyValueSet* style) {
   CSSPropertyID property_id = CssPropertyIdForSVGAttributeName(name);
   if (property_id > 0)
     AddPropertyToPresentationAttributeStyle(style, property_id, value);
@@ -1068,7 +1067,7 @@ void SVGElement::SynchronizeAnimatedSVGAttribute(
   }
 }
 
-RefPtr<ComputedStyle> SVGElement::CustomStyleForLayoutObject() {
+scoped_refptr<ComputedStyle> SVGElement::CustomStyleForLayoutObject() {
   if (!CorrespondingElement())
     return GetDocument().EnsureStyleResolver().StyleForElement(this);
 
@@ -1093,13 +1092,13 @@ bool SVGElement::HasSVGParent() const {
          ParentOrShadowHostElement()->IsSVGElement();
 }
 
-MutableStylePropertySet* SVGElement::AnimatedSMILStyleProperties() const {
+MutableCSSPropertyValueSet* SVGElement::AnimatedSMILStyleProperties() const {
   if (HasSVGRareData())
     return SvgRareData()->AnimatedSMILStyleProperties();
   return nullptr;
 }
 
-MutableStylePropertySet* SVGElement::EnsureAnimatedSMILStyleProperties() {
+MutableCSSPropertyValueSet* SVGElement::EnsureAnimatedSMILStyleProperties() {
   return EnsureSVGRareData()->EnsureAnimatedSMILStyleProperties();
 }
 
@@ -1146,7 +1145,7 @@ void SVGElement::InvalidateInstances() {
 
   // Mark all use elements referencing 'element' for rebuilding
   for (SVGElement* instance : set) {
-    instance->SetCorrespondingElement(0);
+    instance->SetCorrespondingElement(nullptr);
 
     if (SVGUseElement* element = instance->CorrespondingUseElement()) {
       if (element->isConnected())
@@ -1350,7 +1349,7 @@ void SVGElement::RemoveAllOutgoingReferences() {
   outgoing_references.clear();
 }
 
-DEFINE_TRACE(SVGElement) {
+void SVGElement::Trace(blink::Visitor* visitor) {
   visitor->Trace(elements_with_relative_lengths_);
   visitor->Trace(attribute_to_property_map_);
   visitor->Trace(svg_rare_data_);

@@ -45,7 +45,7 @@ class TextFieldInputType : public InputType,
   USING_GARBAGE_COLLECTED_MIXIN(TextFieldInputType);
 
  public:
-  DECLARE_VIRTUAL_TRACE();
+  void Trace(blink::Visitor*) override;
   using InputType::GetElement;
 
  protected:

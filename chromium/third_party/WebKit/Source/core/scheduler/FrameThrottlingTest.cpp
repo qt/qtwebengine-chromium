@@ -449,15 +449,16 @@ TEST_P(FrameThrottlingTest, UnthrottlingTriggersRepaintInCompositedChild) {
 
   LoadURL("https://example.com/");
   main_resource.Complete("<iframe id=frame sandbox src=iframe.html></iframe>");
-  frame_resource.Complete(
-      "<style>"
-      "div { "
-      "  width: 100px;"
-      "  height: 100px;"
-      "  background-color: green;"
-      "  transform: translateZ(0);"
-      "}"
-      "</style><div></div>");
+  frame_resource.Complete(R"HTML(
+    <style>
+    div {
+      width: 100px;
+      height: 100px;
+      background-color: green;
+      transform: translateZ(0);
+    }
+    </style><div></div>
+  )HTML");
 
   // Move the frame offscreen to throttle it.
   auto* frame_element =
@@ -805,11 +806,12 @@ TEST_P(FrameThrottlingTest, ThrottledTopLevelEventHandlerIgnored) {
   LoadURL("https://example.com/");
   main_resource.Complete(
       "<iframe id=frame sandbox=allow-scripts src=iframe.html></iframe>");
-  frame_resource.Complete(
-      "<script>"
-      "window.addEventListener('touchstart', function(){}, {passive: false});"
-      "document.addEventListener('touchstart', function(){}, {passive: false});"
-      "</script>");
+  frame_resource.Complete(R"HTML(
+    <script>
+    window.addEventListener('touchstart', function(){}, {passive: false});
+    document.addEventListener('touchstart', function(){}, {passive: false});
+    </script>
+  )HTML");
   auto* frame_element =
       ToHTMLIFrameElement(GetDocument().getElementById("frame"));
   frame_element->setAttribute(styleAttr, "transform: translateY(480px)");
@@ -841,12 +843,13 @@ TEST_P(FrameThrottlingTest, ThrottledEventHandlerIgnored) {
   LoadURL("https://example.com/");
   main_resource.Complete(
       "<iframe id=frame sandbox=allow-scripts src=iframe.html></iframe>");
-  frame_resource.Complete(
-      "<div id=d>touch handler</div>"
-      "<script>"
-      "document.querySelector('#d').addEventListener('touchstart', "
-      "function(){});"
-      "</script>");
+  frame_resource.Complete(R"HTML(
+    <div id=d>touch handler</div>
+    <script>
+    document.querySelector('#d').addEventListener('touchstart',
+    function(){});
+    </script>
+  )HTML");
   auto* frame_element =
       ToHTMLIFrameElement(GetDocument().getElementById("frame"));
   frame_element->setAttribute(styleAttr, "transform: translateY(480px)");
@@ -1143,11 +1146,12 @@ TEST_P(FrameThrottlingTest, SynchronousLayoutInAnimationFrameCallback) {
   SimRequest second_frame_resource("https://thirdparty.com/second.html",
                                    "text/html");
   LoadURL("https://example.com/");
-  main_resource.Complete(
-      "<iframe id=first name=first "
-      "src='https://thirdparty.com/first.html'></iframe>\n"
-      "<iframe id=second name=second "
-      "src='https://thirdparty.com/second.html'></iframe>");
+  main_resource.Complete(R"HTML(
+    <iframe id=first name=first
+    src='https://thirdparty.com/first.html'></iframe>\n
+    <iframe id=second name=second
+    src='https://thirdparty.com/second.html'></iframe>
+  )HTML");
 
   // The first frame contains just a simple div. This frame will be made
   // throttled.
@@ -1192,10 +1196,11 @@ TEST_P(FrameThrottlingTest, AllowOneAnimationFrame) {
       "<iframe id=frame style=\"position: fixed; top: -10000px\" "
       "src='https://thirdparty.com/frame.html'></iframe>");
 
-  frame_resource.Complete(
-      "<script>"
-      "window.requestAnimationFrame(() => { window.didRaf = true; });"
-      "</script>");
+  frame_resource.Complete(R"HTML(
+    <script>
+    window.requestAnimationFrame(() => { window.didRaf = true; });
+    </script>
+  )HTML");
 
   auto* frame_element =
       ToHTMLIFrameElement(GetDocument().getElementById("frame"));
@@ -1230,7 +1235,7 @@ TEST_P(FrameThrottlingTest, UpdatePaintPropertiesOnUnthrottling) {
                               "transform: translateY(1000px)");
   CompositeFrame();
   EXPECT_TRUE(frame_document->View()->CanThrottleRendering());
-  EXPECT_FALSE(inner_div_object->FirstFragment());
+  EXPECT_FALSE(inner_div_object->FirstFragment().GetRarePaintData());
 
   // Mutating the throttled frame should not cause paint property update.
   inner_div->setAttribute(HTMLNames::styleAttr, "transform: translateY(20px)");
@@ -1241,7 +1246,7 @@ TEST_P(FrameThrottlingTest, UpdatePaintPropertiesOnUnthrottling) {
         GetDocument().Lifecycle());
     GetDocument().View()->UpdateAllLifecyclePhases();
   }
-  EXPECT_FALSE(inner_div_object->FirstFragment());
+  EXPECT_FALSE(inner_div_object->FirstFragment().GetRarePaintData());
 
   // Move the frame back on screen to unthrottle it.
   frame_element->setAttribute(HTMLNames::styleAttr, "");
@@ -1253,7 +1258,7 @@ TEST_P(FrameThrottlingTest, UpdatePaintPropertiesOnUnthrottling) {
   EXPECT_EQ(TransformationMatrix().Translate(0, 20),
             inner_div->GetLayoutObject()
                 ->FirstFragment()
-                ->PaintProperties()
+                .PaintProperties()
                 ->Transform()
                 ->Matrix());
 }
@@ -1328,11 +1333,12 @@ TEST_P(FrameThrottlingTest, RebuildCompositedLayerTreeOnLayerRemoval) {
   main_resource.Complete(
       "<iframe sandbox id='frame' src='iframe.html' style='position:relative; "
       "top:1000px;'></iframe>");
-  frame_resource.Complete(
-      "<div id='scroller' style='overflow:scroll; width:300px; height:200px;'>"
-      "  <div style='height:1000px;'></div>"
-      "  <div id='sibling' style='transform:translateZ(0);'>Foo</div>"
-      "</div>");
+  frame_resource.Complete(R"HTML(
+    <div id='scroller' style='overflow:scroll; width:300px; height:200px;'>
+      <div style='height:1000px;'></div>
+      <div id='sibling' style='transform:translateZ(0);'>Foo</div>
+    </div>
+  )HTML");
 
   CompositeFrame();
   auto* frame_element =

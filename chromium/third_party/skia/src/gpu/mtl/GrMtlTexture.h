@@ -17,8 +17,7 @@ class GrMtlGpu;
 class GrMtlTexture : public GrTexture {
 public:
     static sk_sp<GrMtlTexture> CreateNewTexture(GrMtlGpu*, SkBudgeted budgeted,
-                                                const GrSurfaceDesc&, int mipLevels,
-                                                bool wasFullMipMapDataProvided);
+                                                const GrSurfaceDesc&, int mipLevels);
 
     static sk_sp<GrMtlTexture> MakeWrappedTexture(GrMtlGpu*, const GrSurfaceDesc&,
                                                   GrWrapOwnership);
@@ -53,10 +52,13 @@ protected:
         fTexture = nil;
     }
 
+     bool onStealBackendTexture(GrBackendTexture*, SkImage::BackendTextureReleaseProc*) override {
+         return false;
+     }
+
 private:
     enum Wrapped { kWrapped };
-    GrMtlTexture(GrMtlGpu*, SkBudgeted, const GrSurfaceDesc&, id<MTLTexture>, bool isMipMapped,
-                 bool wasFullMipMapDataProvided);
+    GrMtlTexture(GrMtlGpu*, SkBudgeted, const GrSurfaceDesc&, id<MTLTexture>, GrMipMapsStatus);
    // GrMtlTexture(GrMtlGpu*, Wrapped, const GrSurfaceDesc&, GrMtlImage::Wrapped wrapped);
 
     id<MTLTexture> fTexture;

@@ -9,6 +9,13 @@
 #include "platform/graphics/GraphicsTypes.h"
 #include "third_party/skia/include/core/SkColorSpace.h"
 #include "third_party/skia/include/core/SkImageInfo.h"
+#include "ui/gfx/buffer_types.h"
+
+class SkCanvas;
+
+namespace cc {
+class PaintCanvas;
+}
 
 namespace gfx {
 class ColorSpace;
@@ -17,7 +24,6 @@ class ColorSpace;
 namespace blink {
 
 enum CanvasColorSpace {
-  kLegacyCanvasColorSpace,
   kSRGBCanvasColorSpace,
   kRec2020CanvasColorSpace,
   kP3CanvasColorSpace,
@@ -44,15 +50,23 @@ class PLATFORM_EXPORT CanvasColorParams {
   void SetCanvasPixelFormat(CanvasPixelFormat);
   void SetOpacityMode(OpacityMode);
 
-  // Returns true if the canvas does all blending and interpolation in linear
-  // color space. If false, then the canvas does blending and interpolation in
-  // the canvas' output color space.
-  // TODO(ccameron): This currently returns true iff the color space is legacy.
-  bool LinearPixelMath() const;
+  // Indicates whether rendering needs to go through an SkColorSpaceXformCanvas
+  // in order to enforce non-gamma-aware pixel math behaviour.
+  bool NeedsSkColorSpaceXformCanvas() const;
+
+  // Indicates if pixels in this canvas color settings require any color
+  // conversion to be used in the passed canvas color settings.
+  bool NeedsColorConversion(const CanvasColorParams&) const;
 
   // The SkColorSpace to use in the SkImageInfo for allocated SkSurfaces. This
-  // is nullptr in legacy rendering mode.
+  // is nullptr in legacy rendering mode and when the surface is supposed to be
+  // in sRGB (for which we wrap the canvas into a PaintCanvas along with an
+  // SkColorSpaceXformCanvas).
   sk_sp<SkColorSpace> GetSkColorSpaceForSkSurfaces() const;
+
+  // Wraps an SkCanvas into a PaintCanvas, along with an SkColorSpaceXformCanvas
+  // if necessary.
+  std::unique_ptr<cc::PaintCanvas> WrapCanvas(SkCanvas*) const;
 
   // The pixel format to use for allocating SkSurfaces.
   SkColorType GetSkColorType() const;
@@ -69,8 +83,13 @@ class PLATFORM_EXPORT CanvasColorParams {
   SkAlphaType GetSkAlphaType() const;
   const SkSurfaceProps* GetSkSurfaceProps() const;
 
+  // Gpu memory buffer parameters
+  gfx::BufferFormat GetBufferFormat() const;
+  uint32_t GLInternalFormat() const;
+  uint32_t GLType() const;
+
  private:
-  CanvasColorSpace color_space_ = kLegacyCanvasColorSpace;
+  CanvasColorSpace color_space_ = kSRGBCanvasColorSpace;
   CanvasPixelFormat pixel_format_ = kRGBA8CanvasPixelFormat;
   OpacityMode opacity_mode_ = kNonOpaque;
 };

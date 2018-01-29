@@ -13,7 +13,7 @@
 #include "platform/testing/FakeGraphicsLayer.h"
 #include "platform/testing/FakeGraphicsLayerClient.h"
 #include "platform/testing/RuntimeEnabledFeaturesTestHelpers.h"
-#include "platform/testing/TestingPlatformSupport.h"
+#include "platform/testing/TestingPlatformSupportWithMockScheduler.h"
 #include "public/platform/Platform.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -285,7 +285,7 @@ TEST_F(ScrollableAreaTest, PopupOverlayScrollbarShouldNotFadeOut) {
   scrollable_area->SetIsPopup();
 
   ScrollbarThemeOverlayMock& theme =
-      (ScrollbarThemeOverlayMock&)ScrollbarTheme::GetTheme();
+      (ScrollbarThemeOverlayMock&)scrollable_area->GetPageScrollbarTheme();
   theme.SetOverlayScrollbarFadeOutDelay(1);
   Scrollbar* scrollbar = Scrollbar::CreateForTesting(
       scrollable_area, kHorizontalScrollbar, kRegularScrollbar, &theme);

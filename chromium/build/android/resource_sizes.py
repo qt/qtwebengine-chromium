@@ -558,7 +558,7 @@ def PrintPakAnalysis(apk_filename, min_pak_resource_size, out_dir):
         f.write(apk.read(i.filename))
         f.flush()
         paks.append(Pak(i.filename, i.compress_size, i.file_size,
-                        data_pack.DataPack.ReadDataPack(f.name).resources))
+                        data_pack.ReadDataPack(f.name).resources))
   finally:
     apk.close()
 
@@ -827,8 +827,6 @@ def main():
                          dest='dump_sis',
                          help='Run dump-static-initializers.py to get the list'
                               'of static initializers (slow).')
-  argparser.add_argument('-d', '--device',
-                         help='Dummy option for perf runner.')
   argparser.add_argument('--estimate-patch-size',
                          action='store_true',
                          help='Include patch size estimates. Useful for perf '

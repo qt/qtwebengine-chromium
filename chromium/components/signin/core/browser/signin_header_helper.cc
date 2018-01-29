@@ -12,7 +12,7 @@
 #include "components/content_settings/core/browser/cookie_settings.h"
 #include "components/google/core/browser/google_util.h"
 #include "components/signin/core/browser/chrome_connected_header_helper.h"
-#include "components/signin/core/common/profile_management_switches.h"
+#include "components/signin/core/browser/profile_management_switches.h"
 #include "google_apis/gaia/gaia_auth_util.h"
 #include "google_apis/gaia/gaia_urls.h"
 #include "net/base/escape.h"
@@ -40,15 +40,32 @@ ManageAccountsParams::ManageAccountsParams(const ManageAccountsParams&) =
     default;
 
 // Trivial constructors and destructors.
-DiceResponseParams::DiceResponseParams() : user_intention(DiceAction::NONE) {}
+DiceResponseParams::DiceResponseParams() {}
 DiceResponseParams::~DiceResponseParams() {}
-DiceResponseParams::DiceResponseParams(const DiceResponseParams&) = default;
+DiceResponseParams::DiceResponseParams(DiceResponseParams&&) = default;
+DiceResponseParams& DiceResponseParams::operator=(DiceResponseParams&&) =
+    default;
+
+DiceResponseParams::AccountInfo::AccountInfo() {}
+DiceResponseParams::AccountInfo::AccountInfo(const std::string& gaia_id,
+                                             const std::string& email,
+                                             int session_index)
+    : gaia_id(gaia_id), email(email), session_index(session_index) {}
+DiceResponseParams::AccountInfo::~AccountInfo() {}
+DiceResponseParams::AccountInfo::AccountInfo(const AccountInfo&) = default;
+
 DiceResponseParams::SigninInfo::SigninInfo() {}
 DiceResponseParams::SigninInfo::~SigninInfo() {}
 DiceResponseParams::SigninInfo::SigninInfo(const SigninInfo&) = default;
+
 DiceResponseParams::SignoutInfo::SignoutInfo() {}
 DiceResponseParams::SignoutInfo::~SignoutInfo() {}
 DiceResponseParams::SignoutInfo::SignoutInfo(const SignoutInfo&) = default;
+
+DiceResponseParams::EnableSyncInfo::EnableSyncInfo() {}
+DiceResponseParams::EnableSyncInfo::~EnableSyncInfo() {}
+DiceResponseParams::EnableSyncInfo::EnableSyncInfo(const EnableSyncInfo&) =
+    default;
 
 bool SettingsAllowSigninCookies(
     const content_settings::CookieSettings* cookie_settings) {
@@ -131,9 +148,10 @@ void AppendOrRemoveMirrorRequestHeader(
     const GURL& redirect_url,
     const std::string& account_id,
     const content_settings::CookieSettings* cookie_settings,
+    bool is_mirror_enabled,
     int profile_mode_mask) {
   const GURL& url = redirect_url.is_empty() ? request->url() : redirect_url;
-  ChromeConnectedHeaderHelper chrome_connected_helper;
+  ChromeConnectedHeaderHelper chrome_connected_helper(is_mirror_enabled);
   std::string chrome_connected_header_value;
   if (chrome_connected_helper.ShouldBuildRequestHeader(url, cookie_settings)) {
     chrome_connected_header_value = chrome_connected_helper.BuildRequestHeader(
@@ -150,6 +168,7 @@ bool AppendOrRemoveDiceRequestHeader(
     const std::string& account_id,
     bool sync_enabled,
     bool sync_has_auth_error,
+    BooleanPrefMember* dice_pref_member,
     const content_settings::CookieSettings* cookie_settings) {
 #if BUILDFLAG(ENABLE_DICE_SUPPORT)
   const GURL& url = redirect_url.is_empty() ? request->url() : redirect_url;
@@ -157,8 +176,12 @@ bool AppendOrRemoveDiceRequestHeader(
                                sync_enabled);
   std::string dice_header_value;
   if (dice_helper.ShouldBuildRequestHeader(url, cookie_settings)) {
+    DiceHeaderHelper::SignoutMode signout_mode =
+        IsDiceEnabled(dice_pref_member)
+            ? DiceHeaderHelper::SignoutMode::kShowSignoutConfirmation
+            : DiceHeaderHelper::SignoutMode::kNoSignoutConfirmation;
     dice_header_value = dice_helper.BuildRequestHeader(
-        sync_enabled ? account_id : std::string());
+        sync_enabled ? account_id : std::string(), signout_mode);
   }
   return dice_helper.AppendOrRemoveRequestHeader(
       request, redirect_url, kDiceRequestHeader, dice_header_value);

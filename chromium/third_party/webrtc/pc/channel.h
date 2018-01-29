@@ -80,12 +80,12 @@ class BaseChannel
   BaseChannel(rtc::Thread* worker_thread,
               rtc::Thread* network_thread,
               rtc::Thread* signaling_thread,
-              MediaChannel* channel,
+              std::unique_ptr<MediaChannel> media_channel,
               const std::string& content_name,
               bool rtcp_mux_required,
               bool srtp_required);
   virtual ~BaseChannel();
-  bool Init_w(DtlsTransportInternal* rtp_dtls_transport,
+  void Init_w(DtlsTransportInternal* rtp_dtls_transport,
               DtlsTransportInternal* rtcp_dtls_transport,
               rtc::PacketTransportInternal* rtp_packet_transport,
               rtc::PacketTransportInternal* rtcp_packet_transport);
@@ -191,7 +191,7 @@ class BaseChannel
   bool HandlesPayloadType(int payload_type) const;
 
  protected:
-  virtual MediaChannel* media_channel() const { return media_channel_; }
+  virtual MediaChannel* media_channel() const { return media_channel_.get(); }
 
   void SetTransports_n(DtlsTransportInternal* rtp_dtls_transport,
                        DtlsTransportInternal* rtcp_dtls_transport,
@@ -243,11 +243,7 @@ class BaseChannel
 
   void OnDtlsState(DtlsTransportInternal* transport, DtlsTransportState state);
 
-  void OnSelectedCandidatePairChanged(
-      IceTransportInternal* ice_transport,
-      CandidatePairInterface* selected_candidate_pair,
-      int last_sent_packet_id,
-      bool ready_to_send);
+  void OnNetworkRouteChanged(rtc::Optional<rtc::NetworkRoute> network_route);
 
   bool PacketIsRtcp(const rtc::PacketTransportInternal* transport,
                     const char* data,
@@ -353,7 +349,7 @@ class BaseChannel
   void AddHandledPayloadType(int payload_type);
 
  private:
-  bool InitNetwork_n(DtlsTransportInternal* rtp_dtls_transport,
+  void InitNetwork_n(DtlsTransportInternal* rtp_dtls_transport,
                      DtlsTransportInternal* rtcp_dtls_transport,
                      rtc::PacketTransportInternal* rtp_packet_transport,
                      rtc::PacketTransportInternal* rtcp_packet_transport);
@@ -363,10 +359,20 @@ class BaseChannel
   void SignalSentPacket_w(const rtc::SentPacket& sent_packet);
   bool IsReadyToSendMedia_n() const;
   void CacheRtpAbsSendTimeHeaderExtension_n(int rtp_abs_sendtime_extn_id);
-  int GetTransportOverheadPerPacket() const;
-  void UpdateTransportOverhead();
   // Wraps the existing RtpTransport in an SrtpTransport.
   void EnableSrtpTransport_n();
+
+  // Cache the encrypted header extension IDs when setting the local/remote
+  // description and use them later together with other crypto parameters from
+  // DtlsTransport.
+  void CacheEncryptedHeaderExtensionIds(cricket::ContentSource source,
+                                        const std::vector<int>& extension_ids);
+
+  // Return true if the new header extension IDs are different from the existing
+  // ones.
+  bool EncryptedHeaderExtensionIdsChanged(
+      cricket::ContentSource source,
+      const std::vector<int>& new_extension_ids);
 
   rtc::Thread* const worker_thread_;
   rtc::Thread* const network_thread_;
@@ -400,7 +406,7 @@ class BaseChannel
 
   // MediaChannel related members that should be accessed from the worker
   // thread.
-  MediaChannel* const media_channel_;
+  std::unique_ptr<MediaChannel> media_channel_;
   // Currently the |enabled_| flag is accessed from the signaling thread as
   // well, but it can be changed only when signaling thread does a synchronous
   // call to the worker thread, so it should be safe.
@@ -409,7 +415,10 @@ class BaseChannel
   std::vector<StreamParams> remote_streams_;
   MediaContentDirection local_content_direction_ = MD_INACTIVE;
   MediaContentDirection remote_content_direction_ = MD_INACTIVE;
-  CandidatePairInterface* selected_candidate_pair_;
+
+  // The cached encrypted header extension IDs.
+  rtc::Optional<std::vector<int>> catched_send_extension_ids_;
+  rtc::Optional<std::vector<int>> catched_recv_extension_ids_;
 };
 
 // VoiceChannel is a specialization that adds support for early media, DTMF,
@@ -420,7 +429,7 @@ class VoiceChannel : public BaseChannel {
                rtc::Thread* network_thread,
                rtc::Thread* signaling_thread,
                MediaEngineInterface* media_engine,
-               VoiceMediaChannel* channel,
+               std::unique_ptr<VoiceMediaChannel> channel,
                const std::string& content_name,
                bool rtcp_mux_required,
                bool srtp_required);
@@ -517,7 +526,7 @@ class VoiceChannel : public BaseChannel {
 
   static const int kEarlyMediaTimeout = 1000;
   MediaEngineInterface* media_engine_;
-  bool received_media_;
+  bool received_media_ = false;
   std::unique_ptr<VoiceMediaMonitor> media_monitor_;
   std::unique_ptr<AudioMonitor> audio_monitor_;
 
@@ -535,7 +544,7 @@ class VideoChannel : public BaseChannel {
   VideoChannel(rtc::Thread* worker_thread,
                rtc::Thread* network_thread,
                rtc::Thread* signaling_thread,
-               VideoMediaChannel* channel,
+               std::unique_ptr<VideoMediaChannel> media_channel,
                const std::string& content_name,
                bool rtcp_mux_required,
                bool srtp_required);
@@ -612,12 +621,12 @@ class RtpDataChannel : public BaseChannel {
   RtpDataChannel(rtc::Thread* worker_thread,
                  rtc::Thread* network_thread,
                  rtc::Thread* signaling_thread,
-                 DataMediaChannel* channel,
+                 std::unique_ptr<DataMediaChannel> channel,
                  const std::string& content_name,
                  bool rtcp_mux_required,
                  bool srtp_required);
   ~RtpDataChannel();
-  bool Init_w(DtlsTransportInternal* rtp_dtls_transport,
+  void Init_w(DtlsTransportInternal* rtp_dtls_transport,
               DtlsTransportInternal* rtcp_dtls_transport,
               rtc::PacketTransportInternal* rtp_packet_transport,
               rtc::PacketTransportInternal* rtcp_packet_transport);

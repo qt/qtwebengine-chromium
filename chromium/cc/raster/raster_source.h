@@ -38,6 +38,7 @@ class CC_EXPORT RasterSource : public base::RefCountedThreadSafe<RasterSource> {
 
     // If set to true, we should use LCD text.
     bool use_lcd_text = true;
+    bool clear_canvas_before_raster = true;
 
     // The ImageProvider used to replace images during playback.
     ImageProvider* image_provider = nullptr;
@@ -101,8 +102,6 @@ class CC_EXPORT RasterSource : public base::RefCountedThreadSafe<RasterSource> {
   // Valid rectangle in which everything is recorded and can be rastered from.
   virtual gfx::Rect RecordedViewport() const;
 
-  gfx::Rect GetRectForImage(PaintImage::Id image_id) const;
-
   // Tracing functionality.
   virtual void DidBeginTracing();
   virtual void AsValueInto(base::trace_event::TracedValue* array) const;
@@ -113,7 +112,12 @@ class CC_EXPORT RasterSource : public base::RefCountedThreadSafe<RasterSource> {
     return display_list_;
   }
 
+  float recording_scale_factor() const { return recording_scale_factor_; }
+
   SkColor background_color() const { return background_color_; }
+
+  base::flat_map<PaintImage::Id, PaintImage::DecodingMode>
+  TakeDecodingModeMap();
 
  protected:
   // RecordingSource is the only class that can create a raster source.

@@ -28,6 +28,9 @@
 
 namespace {
 
+constexpr int kThousandthMinInt = std::numeric_limits<int>::min() / 1000;
+constexpr int kThousandthMaxInt = std::numeric_limits<int>::max() / 1000;
+
 struct OUTLINE_PARAMS {
   CFX_PathData* m_pPath;
   int m_CurX;
@@ -208,10 +211,6 @@ const uint8_t CFX_Font::s_WeightPow_SHIFTJIS[] = {
 
 CFX_Font::CFX_Font()
     :
-#ifdef PDF_ENABLE_XFA
-      m_bShallowCopy(false),
-      m_pOwnedStream(nullptr),
-#endif  // PDF_ENABLE_XFA
       m_Face(nullptr),
       m_FaceCache(nullptr),
       m_pFontData(nullptr),
@@ -225,49 +224,13 @@ CFX_Font::CFX_Font()
 }
 
 #ifdef PDF_ENABLE_XFA
-bool CFX_Font::LoadClone(const CFX_Font* pFont) {
-  if (!pFont)
-    return false;
-
-  m_bShallowCopy = true;
-  if (pFont->m_pSubstFont) {
-    m_pSubstFont = pdfium::MakeUnique<CFX_SubstFont>();
-    m_pSubstFont->m_Charset = pFont->m_pSubstFont->m_Charset;
-    m_pSubstFont->m_bFlagMM = pFont->m_pSubstFont->m_bFlagMM;
-    m_pSubstFont->m_bFlagExact = pFont->m_pSubstFont->m_bFlagExact;
-#ifdef PDF_ENABLE_XFA
-    m_pSubstFont->m_bFlagItalic = pFont->m_pSubstFont->m_bFlagItalic;
-#endif  // PDF_ENABLE_XFA
-    m_pSubstFont->m_Weight = pFont->m_pSubstFont->m_Weight;
-    m_pSubstFont->m_Family = pFont->m_pSubstFont->m_Family;
-    m_pSubstFont->m_ItalicAngle = pFont->m_pSubstFont->m_ItalicAngle;
-  }
-  m_Face = pFont->m_Face;
-  m_bEmbedded = pFont->m_bEmbedded;
-  m_bVertical = pFont->m_bVertical;
-  m_dwSize = pFont->m_dwSize;
-  m_pFontData = pFont->m_pFontData;
-  m_pGsubData = pFont->m_pGsubData;
-#if _FX_PLATFORM_ == _FX_PLATFORM_APPLE_
-  m_pPlatformFont = pFont->m_pPlatformFont;
-#endif
-  m_pOwnedStream = pFont->m_pOwnedStream;
-  m_FaceCache = pFont->GetFaceCache();
-  return true;
-}
-
 void CFX_Font::SetFace(FXFT_Face face) {
   ClearFaceCache();
   m_Face = face;
 }
-
 #endif  // PDF_ENABLE_XFA
 
 CFX_Font::~CFX_Font() {
-#ifdef PDF_ENABLE_XFA
-  if (m_bShallowCopy)
-    return;
-#endif  // PDF_ENABLE_XFA
   if (m_Face) {
 #ifndef PDF_ENABLE_XFA
     if (FXFT_Get_Face_External_Stream(m_Face)) {
@@ -276,11 +239,7 @@ CFX_Font::~CFX_Font() {
 #endif  // PDF_ENABLE_XFA
     DeleteFace();
   }
-#ifdef PDF_ENABLE_XFA
-  delete m_pOwnedStream;
-#endif  // PDF_ENABLE_XFA
-  FX_Free(m_pGsubData);
-#if _FX_PLATFORM_ == _FX_PLATFORM_APPLE_ && !defined _SKIA_SUPPORT_
+#if _FX_PLATFORM_ == _FX_PLATFORM_APPLE_
   ReleasePlatformResource();
 #endif
 }
@@ -326,7 +285,7 @@ bool CFX_Font::LoadFile(const RetainPtr<IFX_SeekableReadStream>& pFile,
   if (!LoadFileImp(library, &m_Face, pFile, nFaceIndex, &stream))
     return false;
 
-  m_pOwnedStream = stream.release();
+  m_pOwnedStream = std::move(stream);
   FXFT_Set_Pixel_Sizes(m_Face, 0, 64);
   return true;
 }
@@ -343,9 +302,11 @@ int CFX_Font::GetGlyphWidth(uint32_t glyph_index) {
   if (err)
     return 0;
 
-  int width = EM_ADJUST(FXFT_Get_Face_UnitsPerEM(m_Face),
-                        FXFT_Get_Glyph_HoriAdvance(m_Face));
-  return width;
+  int horiAdvance = FXFT_Get_Glyph_HoriAdvance(m_Face);
+  if (horiAdvance < kThousandthMinInt || horiAdvance > kThousandthMaxInt)
+    return 0;
+
+  return EM_ADJUST(FXFT_Get_Face_UnitsPerEM(m_Face), horiAdvance);
 }
 
 bool CFX_Font::LoadEmbedded(const uint8_t* data, uint32_t size) {
@@ -366,16 +327,22 @@ int CFX_Font::GetAscent() const {
   if (!m_Face)
     return 0;
 
-  return EM_ADJUST(FXFT_Get_Face_UnitsPerEM(m_Face),
-                   FXFT_Get_Face_Ascender(m_Face));
+  int ascender = FXFT_Get_Face_Ascender(m_Face);
+  if (ascender < kThousandthMinInt || ascender > kThousandthMaxInt)
+    return 0;
+
+  return EM_ADJUST(FXFT_Get_Face_UnitsPerEM(m_Face), ascender);
 }
 
 int CFX_Font::GetDescent() const {
   if (!m_Face)
     return 0;
 
-  return EM_ADJUST(FXFT_Get_Face_UnitsPerEM(m_Face),
-                   FXFT_Get_Face_Descender(m_Face));
+  int descender = FXFT_Get_Face_Descender(m_Face);
+  if (descender < kThousandthMinInt || descender > kThousandthMaxInt)
+    return 0;
+
+  return EM_ADJUST(FXFT_Get_Face_UnitsPerEM(m_Face), descender);
 }
 
 bool CFX_Font::GetGlyphBBox(uint32_t glyph_index, FX_RECT& bbox) {

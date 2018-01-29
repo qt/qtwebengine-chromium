@@ -173,7 +173,6 @@ public:
 
     // Delay information and control
     virtual int32_t PlayoutDelay(uint16_t& delayMS) const;
-    virtual int32_t RecordingDelay(uint16_t& delayMS) const;
 
     virtual int32_t EnableBuiltInAEC(bool enable);
 
@@ -284,8 +283,7 @@ private:    // thread functions
     UINT                                    _playAudioFrameSize;
     uint32_t                          _playSampleRate;
     uint32_t                          _devicePlaySampleRate;
-    uint32_t                          _playBlockSizeInFrames;
-    uint32_t                          _playBlockSizeInSamples;
+    uint32_t                          _playBlockSize;
     uint32_t                          _devicePlayBlockSize;
     uint32_t                          _playChannels;
     uint32_t                          _sndCardPlayDelay;

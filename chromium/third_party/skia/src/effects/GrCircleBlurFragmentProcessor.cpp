@@ -249,7 +249,6 @@ std::unique_ptr<GrFragmentProcessor> GrCircleBlurFragmentProcessor::Make(
     return std::unique_ptr<GrFragmentProcessor>(new GrCircleBlurFragmentProcessor(
             circle, textureRadius, solidRadius, std::move(profile), resourceProvider));
 }
-#include "glsl/GrGLSLColorSpaceXformHelper.h"
 #include "glsl/GrGLSLFragmentProcessor.h"
 #include "glsl/GrGLSLFragmentShaderBuilder.h"
 #include "glsl/GrGLSLProgramBuilder.h"
@@ -263,6 +262,12 @@ public:
         const GrCircleBlurFragmentProcessor& _outer =
                 args.fFp.cast<GrCircleBlurFragmentProcessor>();
         (void)_outer;
+        auto circleRect = _outer.circleRect();
+        (void)circleRect;
+        auto textureRadius = _outer.textureRadius();
+        (void)textureRadius;
+        auto solidRadius = _outer.solidRadius();
+        (void)solidRadius;
         fCircleDataVar = args.fUniformHandler->addUniform(kFragment_GrShaderFlag, kHalf4_GrSLType,
                                                           kDefault_GrSLPrecision, "circleData");
         fragBuilder->codeAppendf(

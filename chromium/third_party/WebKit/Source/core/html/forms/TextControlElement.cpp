@@ -45,6 +45,8 @@
 #include "core/frame/LocalFrame.h"
 #include "core/frame/UseCounter.h"
 #include "core/html/HTMLBRElement.h"
+#include "core/html/HTMLDivElement.h"
+#include "core/html/forms/TextControlInnerElements.h"
 #include "core/html/parser/HTMLParserIdioms.h"
 #include "core/html/shadow/ShadowElementNames.h"
 #include "core/html_names.h"
@@ -159,11 +161,14 @@ bool TextControlElement::IsPlaceholderEmpty() const {
 }
 
 bool TextControlElement::PlaceholderShouldBeVisible() const {
-  return SupportsPlaceholder() && IsEmptyValue() && IsEmptySuggestedValue() &&
-         !IsPlaceholderEmpty();
+  return SupportsPlaceholder() && InnerEditorValue().IsEmpty() &&
+         !IsPlaceholderEmpty() && SuggestedValue().IsEmpty();
 }
 
 HTMLElement* TextControlElement::PlaceholderElement() const {
+  if (!SupportsPlaceholder())
+    return nullptr;
+  DCHECK(UserAgentShadowRoot());
   return ToHTMLElementOrDie(
       UserAgentShadowRoot()->getElementById(ShadowElementNames::Placeholder()));
 }
@@ -177,13 +182,19 @@ void TextControlElement::UpdatePlaceholderVisibility() {
 
   bool place_holder_was_visible = IsPlaceholderVisible();
   SetPlaceholderVisibility(PlaceholderShouldBeVisible());
-  if (place_holder_was_visible == IsPlaceholderVisible())
-    return;
 
-  PseudoStateChanged(CSSSelector::kPseudoPlaceholderShown);
   placeholder->SetInlineStyleProperty(
-      CSSPropertyDisplay, IsPlaceholderVisible() ? CSSValueBlock : CSSValueNone,
+      CSSPropertyDisplay,
+      IsPlaceholderVisible() || !SuggestedValue().IsEmpty() ? CSSValueBlock
+                                                            : CSSValueNone,
       true);
+
+  // If there was a visibility change not caused by the suggested value, set
+  // that the pseudo state changed.
+  if (place_holder_was_visible != IsPlaceholderVisible() &&
+      SuggestedValue().IsEmpty()) {
+    PseudoStateChanged(CSSSelector::kPseudoPlaceholderShown);
+  }
 }
 
 void TextControlElement::setSelectionStart(unsigned start) {
@@ -503,22 +514,16 @@ unsigned TextControlElement::ComputeSelectionStart() const {
   LocalFrame* frame = GetDocument().GetFrame();
   if (!frame)
     return 0;
-  {
-    // To avoid regression on speedometer benchmark[1] test, we should not
-    // update layout tree in this code block.
-    // [1] http://browserbench.org/Speedometer/
-    DocumentLifecycle::DisallowTransitionScope disallow_transition(
-        GetDocument().Lifecycle());
-    const SelectionInDOMTree& selection =
-        frame->Selection().GetSelectionInDOMTree();
-    if (frame->Selection().Granularity() == TextGranularity::kCharacter) {
-      return IndexForPosition(InnerEditorElement(),
-                              selection.ComputeStartPosition());
-    }
-  }
-  const VisibleSelection& visible_selection =
-      frame->Selection().ComputeVisibleSelectionInDOMTreeDeprecated();
-  return IndexForPosition(InnerEditorElement(), visible_selection.Start());
+
+  // To avoid regression on speedometer benchmark[1] test, we should not
+  // update layout tree in this code block.
+  // [1] http://browserbench.org/Speedometer/
+  DocumentLifecycle::DisallowTransitionScope disallow_transition(
+      GetDocument().Lifecycle());
+  const SelectionInDOMTree& selection =
+      frame->Selection().GetSelectionInDOMTree();
+  return IndexForPosition(InnerEditorElement(),
+                          selection.ComputeStartPosition());
 }
 
 unsigned TextControlElement::selectionEnd() const {
@@ -534,22 +539,15 @@ unsigned TextControlElement::ComputeSelectionEnd() const {
   LocalFrame* frame = GetDocument().GetFrame();
   if (!frame)
     return 0;
-  {
-    // To avoid regression on speedometer benchmark[1] test, we should not
-    // update layout tree in this code block.
-    // [1] http://browserbench.org/Speedometer/
-    DocumentLifecycle::DisallowTransitionScope disallow_transition(
-        GetDocument().Lifecycle());
-    const SelectionInDOMTree& selection =
-        frame->Selection().GetSelectionInDOMTree();
-    if (frame->Selection().Granularity() == TextGranularity::kCharacter) {
-      return IndexForPosition(InnerEditorElement(),
-                              selection.ComputeEndPosition());
-    }
-  }
-  const VisibleSelection& visible_selection =
-      frame->Selection().ComputeVisibleSelectionInDOMTreeDeprecated();
-  return IndexForPosition(InnerEditorElement(), visible_selection.End());
+
+  // To avoid regression on speedometer benchmark[1] test, we should not
+  // update layout tree in this code block.
+  // [1] http://browserbench.org/Speedometer/
+  DocumentLifecycle::DisallowTransitionScope disallow_transition(
+      GetDocument().Lifecycle());
+  const SelectionInDOMTree& selection =
+      frame->Selection().GetSelectionInDOMTree();
+  return IndexForPosition(InnerEditorElement(), selection.ComputeEndPosition());
 }
 
 static const AtomicString& DirectionString(
@@ -633,8 +631,8 @@ SelectionInDOMTree TextControlElement::Selection() const {
   }
 
   int offset = 0;
-  Node* start_node = 0;
-  Node* end_node = 0;
+  Node* start_node = nullptr;
+  Node* end_node = nullptr;
   for (Node& node : NodeTraversal::DescendantsOf(*inner_text)) {
     DCHECK(!node.hasChildren());
     DCHECK(node.IsTextNode() || IsHTMLBRElement(node));
@@ -805,6 +803,8 @@ void TextControlElement::SetInnerEditorValue(const String& value) {
   if (!IsTextControl() || OpenShadowRoot())
     return;
 
+  DCHECK(InnerEditorElement());
+
   bool text_is_changed = value != InnerEditorValue();
   HTMLElement* inner_editor = InnerEditorElement();
   if (!text_is_changed && inner_editor->HasChildren())
@@ -878,7 +878,7 @@ static void GetNextSoftBreak(RootInlineBox*& line,
       return;
     }
   }
-  break_node = 0;
+  break_node = nullptr;
   break_offset = 0;
 }
 
@@ -895,6 +895,7 @@ String TextControlElement::ValueWithHardLineBreaks() const {
   if (!layout_object)
     return value();
 
+  DCHECK(CanUseInlineBox(*layout_object));
   Node* break_node;
   unsigned break_offset;
   RootInlineBox* line = layout_object->FirstRootBox();
@@ -946,7 +947,7 @@ TextControlElement* EnclosingTextControl(const Node* container) {
                  container->ContainingShadowRoot()->GetType() ==
                      ShadowRootType::kUserAgent
              ? ToTextControlElement(ancestor)
-             : 0;
+             : nullptr;
 }
 
 String TextControlElement::DirectionForFormData() const {
@@ -972,9 +973,51 @@ String TextControlElement::DirectionForFormData() const {
   return "ltr";
 }
 
-HTMLElement* TextControlElement::InnerEditorElement() const {
-  return ToHTMLElementOrDie(
-      UserAgentShadowRoot()->getElementById(ShadowElementNames::InnerEditor()));
+// TODO(crbug.com/772433): Create and use a new suggested-value element instead.
+void TextControlElement::SetSuggestedValue(const String& value) {
+  suggested_value_ = value;
+  if (!suggested_value_.IsEmpty() && !InnerEditorValue().IsEmpty()) {
+    // If there is an inner editor value, hide it so the suggested value can be
+    // shown to the user.
+    static_cast<TextControlInnerEditorElement*>(InnerEditorElement())
+        ->SetVisibility(false);
+  } else if (suggested_value_.IsEmpty() && InnerEditorElement()) {
+    // If there is no suggested value and there is an InnerEditorElement, reset
+    // its visibility.
+    static_cast<TextControlInnerEditorElement*>(InnerEditorElement())
+        ->SetVisibility(true);
+  }
+
+  UpdatePlaceholderText();
+
+  HTMLElement* placeholder = PlaceholderElement();
+  if (!placeholder)
+    return;
+
+  UpdatePlaceholderVisibility();
+
+  if (suggested_value_.IsEmpty()) {
+    // Reset the pseudo-id for placeholders to use the appropriated style
+    placeholder->SetShadowPseudoId(AtomicString("-webkit-input-placeholder"));
+  } else {
+    // Set the pseudo-id for suggested values to use the appropriated style.
+    placeholder->SetShadowPseudoId(AtomicString("-internal-input-suggested"));
+  }
+}
+
+HTMLElement* TextControlElement::CreateInnerEditorElement() {
+  DCHECK(!inner_editor_);
+  inner_editor_ = TextControlInnerEditorElement::Create(GetDocument());
+  return inner_editor_;
+}
+
+const String& TextControlElement::SuggestedValue() const {
+  return suggested_value_;
+}
+
+void TextControlElement::Trace(Visitor* visitor) {
+  visitor->Trace(inner_editor_);
+  HTMLFormControlElementWithState::Trace(visitor);
 }
 
 void TextControlElement::CopyNonAttributePropertiesFromElement(

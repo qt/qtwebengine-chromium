@@ -39,6 +39,7 @@
 #include "bindings/core/v8/event_listener_options_or_boolean.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/dom/events/Event.h"
+#include "core/dom/events/EventTargetImpl.h"
 #include "core/editing/Editor.h"
 #include "core/events/EventUtil.h"
 #include "core/events/PointerEvent.h"
@@ -151,11 +152,12 @@ EventTargetData::EventTargetData() {}
 
 EventTargetData::~EventTargetData() {}
 
-DEFINE_TRACE(EventTargetData) {
+void EventTargetData::Trace(blink::Visitor* visitor) {
   visitor->Trace(event_listener_map);
 }
 
-DEFINE_TRACE_WRAPPERS(EventTargetData) {
+void EventTargetData::TraceWrappers(
+    const ScriptWrappableVisitor* visitor) const {
   visitor->TraceWrappers(event_listener_map);
 }
 
@@ -185,6 +187,19 @@ MessagePort* EventTarget::ToMessagePort() {
 
 ServiceWorker* EventTarget::ToServiceWorker() {
   return nullptr;
+}
+
+// An instance of EventTargetImpl is returned because EventTarget
+// is an abstract class, and making it non-abstract is unfavorable
+// because it will increase the size of EventTarget and all of its
+// subclasses with code that are mostly unnecessary for them,
+// resulting in a performance decrease.
+// We also don't use ImplementedAs=EventTargetImpl in EventTarget.idl
+// because it will result in some complications with classes that are
+// currently derived from EventTarget.
+// Spec: https://dom.spec.whatwg.org/#dom-eventtarget-eventtarget
+EventTarget* EventTarget::Create(ScriptState* script_state) {
+  return EventTargetImpl::Create(script_state);
 }
 
 inline LocalDOMWindow* EventTarget::ExecutingWindow() {
@@ -667,6 +682,12 @@ bool EventTarget::FireEventListeners(Event* event,
           UseCounter::Count(*document, WebFeature::kSubFrameBeforeUnloadFired);
       } else if (CheckTypeThenUseCount(event, EventTypeNames::unload,
                                        WebFeature::kDocumentUnloadFired,
+                                       document)) {
+      } else if (CheckTypeThenUseCount(event, EventTypeNames::pagehide,
+                                       WebFeature::kDocumentPageHideFired,
+                                       document)) {
+      } else if (CheckTypeThenUseCount(event, EventTypeNames::pageshow,
+                                       WebFeature::kDocumentPageShowFired,
                                        document)) {
       } else if (CheckTypeThenUseCount(event, EventTypeNames::DOMFocusIn,
                                        WebFeature::kDOMFocusInOutEvent,

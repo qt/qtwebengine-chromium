@@ -30,7 +30,7 @@
 #include "core/css/CSSColorValue.h"
 #include "core/css/CSSComputedStyleDeclaration.h"
 #include "core/css/CSSIdentifierValue.h"
-#include "core/css/StylePropertySet.h"
+#include "core/css/CSSPropertyValueSet.h"
 #include "core/css/parser/CSSParser.h"
 #include "core/editing/EditingStyle.h"
 #include "core/editing/EditingUtilities.h"
@@ -72,7 +72,8 @@ EditingStyleUtilities::CreateWrappingStyleForAnnotatedSerialization(
 
   // Call collapseTextDecorationProperties first or otherwise it'll copy the
   // value over from in-effect to text-decorations.
-  wrapping_style->CollapseTextDecorationProperties();
+  wrapping_style->CollapseTextDecorationProperties(
+      context->GetDocument().GetSecureContextMode());
 
   return wrapping_style;
 }
@@ -100,7 +101,7 @@ EditingStyle* EditingStyleUtilities::CreateWrappingStyleForSerialization(
 EditingStyle* EditingStyleUtilities::CreateStyleAtSelectionStart(
     const VisibleSelection& selection,
     bool should_use_background_color_in_effect,
-    MutableStylePropertySet* style_to_check) {
+    MutableCSSPropertyValueSet* style_to_check) {
   if (selection.IsNone())
     return nullptr;
 
@@ -162,8 +163,11 @@ EditingStyle* EditingStyleUtilities::CreateStyleAtSelectionStart(
       (selection.IsRange() || HasTransparentBackgroundColor(style->Style()))) {
     const EphemeralRange range(selection.ToNormalizedEphemeralRange());
     if (const CSSValue* value =
-            BackgroundColorValueInEffect(range.CommonAncestorContainer()))
-      style->SetProperty(CSSPropertyBackgroundColor, value->CssText());
+            BackgroundColorValueInEffect(range.CommonAncestorContainer())) {
+      style->SetProperty(CSSPropertyBackgroundColor, value->CssText(),
+                         /* important */ false,
+                         document.GetSecureContextMode());
+    }
   }
 
   return style;
@@ -187,7 +191,7 @@ bool EditingStyleUtilities::HasTransparentBackgroundColor(
 }
 
 bool EditingStyleUtilities::HasTransparentBackgroundColor(
-    StylePropertySet* style) {
+    CSSPropertyValueSet* style) {
   const CSSValue* css_value =
       style->GetPropertyCSSValue(CSSPropertyBackgroundColor);
   return IsTransparentColorValue(css_value);
@@ -198,8 +202,10 @@ const CSSValue* EditingStyleUtilities::BackgroundColorValueInEffect(
   for (Node* ancestor = node; ancestor; ancestor = ancestor->parentNode()) {
     CSSComputedStyleDeclaration* ancestor_style =
         CSSComputedStyleDeclaration::Create(ancestor);
-    if (!HasTransparentBackgroundColor(ancestor_style))
-      return ancestor_style->GetPropertyCSSValue(CSSPropertyBackgroundColor);
+    if (!HasTransparentBackgroundColor(ancestor_style)) {
+      return ancestor_style->GetPropertyCSSValue(
+          GetCSSPropertyBackgroundColor());
+    }
   }
   return nullptr;
 }

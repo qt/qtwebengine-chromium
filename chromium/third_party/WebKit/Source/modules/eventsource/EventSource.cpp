@@ -39,7 +39,6 @@
 #include "bindings/core/v8/serialization/SerializedScriptValueFactory.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/dom/ExecutionContext.h"
-#include "core/dom/TaskRunnerHelper.h"
 #include "core/dom/events/Event.h"
 #include "core/events/MessageEvent.h"
 #include "core/frame/LocalDOMWindow.h"
@@ -50,13 +49,14 @@
 #include "core/loader/ThreadableLoader.h"
 #include "core/probe/CoreProbes.h"
 #include "modules/eventsource/EventSourceInit.h"
-#include "platform/http_names.h"
 #include "platform/loader/fetch/ResourceError.h"
 #include "platform/loader/fetch/ResourceLoaderOptions.h"
 #include "platform/loader/fetch/ResourceRequest.h"
 #include "platform/loader/fetch/ResourceResponse.h"
+#include "platform/network/http_names.h"
 #include "platform/weborigin/SecurityOrigin.h"
 #include "platform/wtf/text/StringBuilder.h"
+#include "public/platform/TaskType.h"
 #include "public/platform/WebURLRequest.h"
 
 namespace blink {
@@ -71,7 +71,7 @@ inline EventSource::EventSource(ExecutionContext* context,
       current_url_(url),
       with_credentials_(event_source_init.withCredentials()),
       state_(kConnecting),
-      connect_timer_(TaskRunnerHelper::Get(TaskType::kRemoteEvent, context),
+      connect_timer_(context->GetTaskRunner(TaskType::kRemoteEvent),
                      this,
                      &EventSource::ConnectTimerFired),
       reconnect_delay_(kDefaultReconnectDelay) {}
@@ -118,7 +118,7 @@ void EventSource::ScheduleInitialConnect() {
   DCHECK_EQ(kConnecting, state_);
   DCHECK(!loader_);
 
-  connect_timer_.StartOneShot(0, BLINK_FROM_HERE);
+  connect_timer_.StartOneShot(TimeDelta(), BLINK_FROM_HERE);
 }
 
 void EventSource::Connect() {
@@ -132,12 +132,15 @@ void EventSource::Connect() {
   request.SetHTTPHeaderField(HTTPNames::Accept, "text/event-stream");
   request.SetHTTPHeaderField(HTTPNames::Cache_Control, "no-cache");
   request.SetRequestContext(WebURLRequest::kRequestContextEventSource);
-  request.SetFetchRequestMode(WebURLRequest::kFetchRequestModeCORS);
+  request.SetFetchRequestMode(network::mojom::FetchRequestMode::kCORS);
   request.SetFetchCredentialsMode(
-      with_credentials_ ? WebURLRequest::kFetchCredentialsModeInclude
-                        : WebURLRequest::kFetchCredentialsModeSameOrigin);
+      with_credentials_ ? network::mojom::FetchCredentialsMode::kInclude
+                        : network::mojom::FetchCredentialsMode::kSameOrigin);
+  request.SetCacheMode(blink::mojom::FetchCacheMode::kNoStore);
   request.SetExternalRequestStateFromRequestorAddressSpace(
       execution_context.GetSecurityContext().AddressSpace());
+  request.SetCORSPreflightPolicy(
+      network::mojom::CORSPreflightPolicy::kPreventPreflight);
   if (parser_ && !parser_->LastEventId().IsEmpty()) {
     // HTTP headers are Latin-1 byte strings, but the Last-Event-ID header is
     // encoded as UTF-8.
@@ -153,7 +156,6 @@ void EventSource::Connect() {
   SecurityOrigin* origin = execution_context.GetSecurityOrigin();
 
   ThreadableLoaderOptions options;
-  options.preflight_policy = kPreventPreflight;
 
   ResourceLoaderOptions resource_loader_options;
   resource_loader_options.data_buffering_policy = kDoNotBufferData;
@@ -334,7 +336,7 @@ void EventSource::OnMessageEvent(const AtomicString& event_type,
                                  const AtomicString& last_event_id) {
   MessageEvent* e = MessageEvent::Create();
   e->initMessageEvent(event_type, false, false, data, event_stream_origin_,
-                      last_event_id, 0, nullptr);
+                      last_event_id, nullptr, nullptr);
 
   probe::willDispatchEventSourceEvent(GetExecutionContext(), this, event_type,
                                       last_event_id, data);
@@ -364,7 +366,7 @@ bool EventSource::HasPendingActivity() const {
   return state_ != kClosed;
 }
 
-DEFINE_TRACE(EventSource) {
+void EventSource::Trace(blink::Visitor* visitor) {
   visitor->Trace(parser_);
   visitor->Trace(loader_);
   EventTargetWithInlineData::Trace(visitor);

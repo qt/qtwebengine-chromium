@@ -12,6 +12,7 @@
 #include "base/logging.h"
 #include "base/run_loop.h"
 #include "base/test/fuzzed_data_provider.h"
+#include "base/test/scoped_task_environment.h"
 #include "net/base/address_family.h"
 #include "net/base/address_list.h"
 #include "net/base/net_errors.h"
@@ -41,7 +42,7 @@ class DnsRequest {
         dns_requests_(dns_requests),
         is_running_(false) {}
 
-  ~DnsRequest() {}
+  ~DnsRequest() = default;
 
   // Creates and starts a DNS request using fuzzed parameters. If the request
   // doesn't complete synchronously, adds it to |dns_requests|.
@@ -167,7 +168,6 @@ class DnsRequest {
       run_loop_.reset(new base::RunLoop());
       run_loop_->Run();
       run_loop_.reset();
-      DCHECK(request_);
     }
   }
 

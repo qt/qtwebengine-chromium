@@ -9,15 +9,14 @@
 #include <memory>
 #include <string>
 #include "core/editing/Forward.h"
-#include "core/testing/DummyPageHolder.h"
+#include "core/testing/PageTestBase.h"
 #include "platform/wtf/Forward.h"
 
 namespace blink {
 
 class FrameSelection;
-class LocalFrame;
 
-class EditingTestBase : public ::testing::Test {
+class EditingTestBase : public PageTestBase {
   USING_FAST_MALLOC(EditingTestBase);
 
  public:
@@ -52,26 +51,21 @@ class EditingTestBase : public ::testing::Test {
   SelectionInDOMTree SetSelectionText(HTMLElement*,
                                       const std::string& selection_text);
 
+  // Returns selection text for child nodes of BODY with specific |Position|.
+  std::string GetCaretTextFromBody(const Position&) const;
+
   // Returns selection text for child nodes of BODY with specified
   // |SelectionInDOMTree|.
   std::string GetSelectionTextFromBody(const SelectionInDOMTree&) const;
 
-  void SetUp() override;
+  // Returns selection text for child nodes of BODY with specified
+  // |SelectionInFlatTree|.
+  std::string GetSelectionTextInFlatTreeFromBody(
+      const SelectionInFlatTree&) const;
 
-  void SetupPageWithClients(Page::PageClients*);
-
-  Document& GetDocument() const;
-  DummyPageHolder& GetDummyPageHolder() const { return *dummy_page_holder_; }
-  LocalFrame& GetFrame() const;
-  FrameSelection& Selection() const;
-
-  void SetBodyContent(const std::string&);
   ShadowRoot* SetShadowContent(const char* shadow_content,
                                const char* shadow_host_id);
-  void UpdateAllLifecyclePhases();
 
- private:
-  std::unique_ptr<DummyPageHolder> dummy_page_holder_;
 };
 
 }  // namespace blink

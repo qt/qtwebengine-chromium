@@ -115,12 +115,15 @@ source_set("browser_sources") {
     "download_manager.h",
     "download_manager_delegate.cc",
     "download_manager_delegate.h",
+    "download_request_utils.h",
     "download_save_info.cc",
     "download_save_info.h",
+    "download_source.h",
     "download_url_parameters.cc",
     "download_url_parameters.h",
     "favicon_status.cc",
     "favicon_status.h",
+    "file_url_loader.h",
     "focused_node_details.h",
     "font_list_async.h",
     "frame_service_base.h",
@@ -137,7 +140,6 @@ source_set("browser_sources") {
     "guest_mode.cc",
     "guest_mode.h",
     "histogram_fetcher.h",
-    "ignore_errors_cert_verifier.h",
     "indexed_db_context.h",
     "indexed_db_info.h",
     "interstitial_page.h",
@@ -246,6 +248,7 @@ source_set("browser_sources") {
     "service_worker_usage_info.h",
     "session_storage_namespace.h",
     "session_storage_usage_info.h",
+    "shared_worker_service.h",
     "site_instance.h",
     "speech_recognition_event_listener.h",
     "speech_recognition_manager.h",
@@ -302,8 +305,6 @@ source_set("browser_sources") {
     "websocket_handshake_request_info.h",
     "webvr_service_provider.cc",
     "webvr_service_provider.h",
-    "worker_service.h",
-    "worker_service_observer.h",
     "zygote_handle_linux.h",
     "zygote_host_linux.h",
   ]
@@ -380,6 +381,8 @@ source_set("browser_sources") {
     sources += [
       "desktop_capture.cc",
       "desktop_capture.h",
+      "webrtc_log.cc",
+      "webrtc_log.h",
     ]
     deps += [ "//third_party/webrtc/modules/desktop_capture" ]
   }

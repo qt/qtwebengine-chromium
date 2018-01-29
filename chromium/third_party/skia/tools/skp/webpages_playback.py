@@ -99,7 +99,7 @@ DEVICE_TO_PLATFORM_PREFIX = {
 # How many times the record_wpr binary should be retried.
 RETRY_RECORD_WPR_COUNT = 5
 # How many times the run_benchmark binary should be retried.
-RETRY_RUN_MEASUREMENT_COUNT = 5
+RETRY_RUN_MEASUREMENT_COUNT = 3
 
 # Location of the credentials.json file in Google Storage.
 CREDENTIALS_GS_PATH = 'playback/credentials/credentials.json'
@@ -113,6 +113,11 @@ CHROMIUM_PAGE_SETS_PATH = os.path.join('tools', 'perf', 'page_sets')
 CHROMIUM_PAGE_SETS_TO_PREFIX = {
     'key_mobile_sites_smooth.py': 'keymobi',
     'top_25_smooth.py': 'top25desk',
+}
+
+PAGE_SETS_TO_EXCLUSIONS = {
+    # See skbug.com/7348
+    'key_mobile_sites_smooth.py': '"(digg|worldjournal)"',
 }
 
 
@@ -278,7 +283,7 @@ class SkPicturePlayback(object):
         # Get the webpages archive so that it can be replayed.
         self._DownloadWebpagesArchive(wpr_data_file, page_set_json_name)
 
-      run_benchmark_cmd = (
+      run_benchmark_cmd = [
           'PYTHONPATH=%s:%s:$PYTHONPATH' % (page_set_dir, self._catapult_dir),
           'DISPLAY=%s' % X11_DISPLAY,
           'timeout', '1800',
@@ -290,28 +295,28 @@ class SkPicturePlayback(object):
           '--page-set-name=%s' % page_set_basename,
           '--page-set-base-dir=%s' % page_set_dir,
           '--skp-outdir=%s' % TMP_SKP_DIR,
-          '--also-run-disabled-tests'
-      )
+          '--also-run-disabled-tests',
+      ]
+
+      exclusions = PAGE_SETS_TO_EXCLUSIONS.get(os.path.basename(page_set))
+      if exclusions:
+        run_benchmark_cmd.append('--story-filter-exclude=' + exclusions)
 
       for _ in range(RETRY_RUN_MEASUREMENT_COUNT):
         try:
           print '\n\n=======Capturing SKP of %s=======\n\n' % page_set
           subprocess.check_call(' '.join(run_benchmark_cmd), shell=True)
         except subprocess.CalledProcessError:
-          # skpicture_printer sometimes fails with AssertionError but the
-          # captured SKP is still valid. This is a known issue.
-          pass
-
-        # Rename generated SKP files into more descriptive names.
-        try:
-          self._RenameSkpFiles(page_set)
-          # Break out of the retry loop since there were no errors.
-          break
-        except Exception:
           # There was a failure continue with the loop.
           traceback.print_exc()
           print '\n\n=======Retrying %s=======\n\n' % page_set
           time.sleep(10)
+          continue
+
+        # Rename generated SKP files into more descriptive names.
+        self._RenameSkpFiles(page_set)
+        # Break out of the retry loop since there were no errors.
+        break
       else:
         # If we get here then run_benchmark did not succeed and thus did not
         # break out of the loop.

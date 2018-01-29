@@ -32,7 +32,7 @@ class ApmDataDumper;
 // Handles the state and the conditions for the echo removal functionality.
 class AecState {
  public:
-  explicit AecState(const AudioProcessing::Config::EchoCanceller3& config);
+  explicit AecState(const EchoCanceller3Config& config);
   ~AecState();
 
   // Returns whether the linear filter estimate is usable.
@@ -50,10 +50,16 @@ class AecState {
     return erle_estimator_.Erle();
   }
 
+  // Returns the time-domain ERLE.
+  float ErleTimeDomain() const { return erle_estimator_.ErleTimeDomain(); }
+
   // Returns the ERL.
   const std::array<float, kFftLengthBy2Plus1>& Erl() const {
     return erl_estimator_.Erl();
   }
+
+  // Returns the time-domain ERL.
+  float ErlTimeDomain() const { return erl_estimator_.ErlTimeDomain(); }
 
   // Returns the delay estimate based on the linear filter.
   rtc::Optional<size_t> FilterDelay() const { return filter_delay_; }
@@ -66,6 +72,9 @@ class AecState {
 
   // Returns whether the echo signal is saturated.
   bool SaturatedEcho() const { return echo_saturation_; }
+
+  // Returns whether the echo path can saturate.
+  bool SaturatingEchoPath() const { return saturating_echo_path_; }
 
   // Updates the capture signal saturation.
   void UpdateCaptureSaturation(bool capture_signal_saturation) {
@@ -93,20 +102,14 @@ class AecState {
   }
 
   // Returns whether the linear filter should have been able to adapt properly.
-  bool SufficientFilterUpdates() const {
-    return blocks_with_filter_adaptation_ >= kEchoPathChangeConvergenceBlocks;
-  }
+  bool SufficientFilterUpdates() const { return sufficient_filter_updates_; }
 
   // Returns whether the echo subtractor can be used to determine the residual
   // echo.
-  bool LinearEchoEstimate() const {
-    return UsableLinearEstimate() && !TransparentMode();
-  }
+  bool LinearEchoEstimate() const { return linear_echo_estimate_; }
 
   // Returns whether the AEC is in an initial state.
-  bool InitialState() const {
-    return capture_block_counter_ < 3 * kNumBlocksPerSecond;
-  }
+  bool InitialState() const { return initial_state_; }
 
   // Updates the aec state.
   void Update(const std::vector<std::array<float, kFftLengthBy2Plus1>>&
@@ -147,12 +150,14 @@ class AecState {
   ErleEstimator erle_estimator_;
   size_t capture_block_counter_ = 0;
   size_t blocks_with_filter_adaptation_ = 0;
+  size_t blocks_with_strong_render_ = 0;
   bool usable_linear_estimate_ = false;
   bool echo_leakage_detected_ = false;
   bool capture_signal_saturation_ = false;
   bool echo_saturation_ = false;
   bool transparent_mode_ = false;
   float previous_max_sample_ = 0.f;
+  std::array<float, kAdaptiveFilterLength> max_render_;
   bool force_zero_gain_ = false;
   bool render_received_ = false;
   size_t force_zero_gain_counter_ = 0;
@@ -163,8 +168,12 @@ class AecState {
   float reverb_decay_candidate_ = 0.f;
   float reverb_decay_candidate_residual_ = -1.f;
   EchoAudibility echo_audibility_;
-  const AudioProcessing::Config::EchoCanceller3 config_;
+  const EchoCanceller3Config config_;
   float reverb_decay_;
+  bool saturating_echo_path_ = false;
+  bool initial_state_ = true;
+  bool linear_echo_estimate_ = false;
+  bool sufficient_filter_updates_ = false;
 
   RTC_DISALLOW_COPY_AND_ASSIGN(AecState);
 };

@@ -21,8 +21,8 @@
 #include "rtc_base/criticalsection.h"
 #include "rtc_base/event.h"
 #include "rtc_base/logging.h"
+#include "rtc_base/numerics/safe_conversions.h"
 #include "rtc_base/race_checker.h"
-#include "rtc_base/safe_conversions.h"
 #include "rtc_base/scoped_ref_ptr.h"
 #include "rtc_base/thread_annotations.h"
 #include "rtc_base/thread_checker.h"
@@ -340,7 +340,7 @@ class MockAudioTransport : public test::MockAudioTransport {
                                       const bool typing_status,
                                       uint32_t& new_mic_level) {
     EXPECT_TRUE(rec_mode()) << "No test is expecting these callbacks.";
-    LOG(INFO) << "+";
+    RTC_LOG(INFO) << "+";
     // Store audio parameters once in the first callback. For all other
     // callbacks, verify that the provided audio parameters are maintained and
     // that each callback corresponds to 10ms for any given sample rate.
@@ -379,7 +379,7 @@ class MockAudioTransport : public test::MockAudioTransport {
                                int64_t* elapsed_time_ms,
                                int64_t* ntp_time_ms) {
     EXPECT_TRUE(play_mode()) << "No test is expecting these callbacks.";
-    LOG(INFO) << "-";
+    RTC_LOG(INFO) << "-";
     // Store audio parameters once in the first callback. For all other
     // callbacks, verify that the provided audio parameters are maintained and
     // that each callback corresponds to 10ms for any given sample rate.
@@ -461,17 +461,21 @@ class AudioDeviceTest : public ::testing::Test {
     // rtc::LogMessage::LogTimestamps();
     // rtc::LogMessage::LogThreads();
     audio_device_ =
-        AudioDeviceModule::Create(0, AudioDeviceModule::kPlatformDefaultAudio);
+        AudioDeviceModule::Create(AudioDeviceModule::kPlatformDefaultAudio);
     EXPECT_NE(audio_device_.get(), nullptr);
     AudioDeviceModule::AudioLayer audio_layer;
     int got_platform_audio_layer =
         audio_device_->ActiveAudioLayer(&audio_layer);
-    if (got_platform_audio_layer != 0 ||
-        audio_layer == AudioDeviceModule::kLinuxAlsaAudio) {
+    // First, ensure that a valid audio layer can be activated.
+    if (got_platform_audio_layer != 0) {
       requirements_satisfied_ = false;
     }
+    // Next, verify that the ADM can be initialized.
     if (requirements_satisfied_) {
-      EXPECT_EQ(0, audio_device_->Init());
+      requirements_satisfied_ = (audio_device_->Init() == 0);
+    }
+    // Finally, ensure that at least one valid device exists in each direction.
+    if (requirements_satisfied_) {
       const int16_t num_playout_devices = audio_device_->PlayoutDevices();
       const int16_t num_record_devices = audio_device_->RecordingDevices();
       requirements_satisfied_ =

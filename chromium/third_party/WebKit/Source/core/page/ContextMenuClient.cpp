@@ -30,6 +30,9 @@
 
 #include "core/page/ContextMenuClient.h"
 
+#include <algorithm>
+#include <utility>
+
 #include "bindings/core/v8/ExceptionState.h"
 #include "core/CSSPropertyNames.h"
 #include "core/css/CSSStyleDeclaration.h"
@@ -38,6 +41,7 @@
 #include "core/editing/EditingTriState.h"
 #include "core/editing/Editor.h"
 #include "core/editing/FrameSelection.h"
+#include "core/editing/ime/InputMethodController.h"
 #include "core/editing/markers/DocumentMarkerController.h"
 #include "core/editing/markers/SpellCheckMarker.h"
 #include "core/editing/spellcheck/SpellChecker.h"
@@ -51,10 +55,10 @@
 #include "core/html/HTMLAnchorElement.h"
 #include "core/html/HTMLFrameElementBase.h"
 #include "core/html/HTMLImageElement.h"
-#include "core/html/HTMLMediaElement.h"
 #include "core/html/HTMLPlugInElement.h"
 #include "core/html/forms/HTMLFormElement.h"
 #include "core/html/forms/HTMLInputElement.h"
+#include "core/html/media/HTMLMediaElement.h"
 #include "core/html_names.h"
 #include "core/input/ContextMenuAllowedScope.h"
 #include "core/input/EventHandler.h"
@@ -82,7 +86,6 @@
 #include "public/web/WebFrameClient.h"
 #include "public/web/WebMenuItemInfo.h"
 #include "public/web/WebPlugin.h"
-#include "public/web/WebSearchableFormData.h"
 #include "public/web/WebTextCheckClient.h"
 #include "public/web/WebViewClient.h"
 
@@ -170,33 +173,6 @@ static HTMLFormElement* ScanForForm(const Node* start) {
     }
   }
   return nullptr;
-}
-
-// We look for either the form containing the current focus, or for one
-// immediately after it
-static HTMLFormElement* CurrentForm(const FrameSelection& current_selection) {
-  // Start looking either at the active (first responder) node, or where the
-  // selection is.
-  const Node* start = current_selection.GetDocument().FocusedElement();
-  if (!start) {
-    start = current_selection.ComputeVisibleSelectionInDOMTree()
-                .Start()
-                .AnchorNode();
-  }
-  if (!start)
-    return nullptr;
-
-  // Try walking up the node tree to find a form element.
-  for (Node& node : NodeTraversal::InclusiveAncestorsOf(*start)) {
-    if (!node.IsHTMLElement())
-      break;
-    HTMLElement& element = ToHTMLElement(node);
-    if (HTMLFormElement* form = AssociatedFormElement(element))
-      return form;
-  }
-
-  // Try walking forward in the node tree to find a form element.
-  return ScanForForm(start);
 }
 
 bool ContextMenuClient::ShowContextMenu(const ContextMenu* default_menu,
@@ -355,23 +331,26 @@ bool ContextMenuClient::ShowContextMenu(const ContextMenu* default_menu,
     // in that case. See https://crbug.com/534561
     WebSecurityOrigin origin = web_view_->MainFrame()->GetSecurityOrigin();
     if (!origin.IsNull())
-      data.page_url = KURL(kParsedURLString, origin.ToString());
+      data.page_url = KURL(origin.ToString());
   } else {
     data.page_url =
         UrlFromFrame(ToLocalFrame(web_view_->GetPage()->MainFrame()));
   }
 
-  if (selected_frame != web_view_->GetPage()->MainFrame()) {
+  if (selected_frame != web_view_->GetPage()->MainFrame())
     data.frame_url = UrlFromFrame(selected_frame);
-    HistoryItem* history_item =
-        selected_frame->Loader().GetDocumentLoader()->GetHistoryItem();
-    if (history_item)
-      data.frame_history_item = WebHistoryItem(history_item);
-  }
 
+  data.selection_start_offset = 0;
   // HitTestResult::isSelected() ensures clean layout by performing a hit test.
-  if (r.IsSelected())
+  // If source_type is |kMenuSourceAdjustSelectionReset| we know the original
+  // HitTestResult in SelectionController passed the inside check already, so
+  // let it pass.
+  if (r.IsSelected() || source_type == kMenuSourceAdjustSelectionReset) {
     data.selected_text = selected_frame->SelectedText();
+    WebRange range =
+        selected_frame->GetInputMethodController().GetSelectionOffsets();
+    data.selection_start_offset = range.StartOffset();
+  }
 
   if (r.IsContentEditable()) {
     data.is_editable = true;
@@ -388,20 +367,11 @@ bool ContextMenuClient::ShowContextMenu(const ContextMenu* default_menu,
       Vector<String> suggestions;
       description.Split('\n', suggestions);
       data.dictionary_suggestions = suggestions;
-    } else if (selected_web_frame->TextCheckClient()) {
+    } else if (selected_web_frame->GetTextCheckerClient()) {
       int misspelled_offset, misspelled_length;
-      selected_web_frame->TextCheckClient()->CheckSpelling(
+      selected_web_frame->GetTextCheckerClient()->CheckSpelling(
           data.misspelled_word, misspelled_offset, misspelled_length,
           &data.dictionary_suggestions);
-    }
-
-    HTMLFormElement* form = CurrentForm(selected_frame->Selection());
-    if (form && IsHTMLInputElement(*r.InnerNode())) {
-      HTMLInputElement& selected_element = ToHTMLInputElement(*r.InnerNode());
-      WebSearchableFormData ws = WebSearchableFormData(
-          WebFormElement(form), WebInputElement(&selected_element));
-      if (ws.Url().IsValid())
-        data.keyword_url = ws.Url();
     }
   }
 

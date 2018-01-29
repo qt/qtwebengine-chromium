@@ -16,6 +16,7 @@ class ResourceFetcher;
 class SubresourceFilter;
 class WebTaskRunner;
 class WebURLLoader;
+class WebURLLoaderFactory;
 class WebWorkerFetchContext;
 class WorkerClients;
 class WorkerOrWorkletGlobalScope;
@@ -30,7 +31,7 @@ CORE_EXPORT void ProvideWorkerFetchContextToWorker(
 class WorkerFetchContext final : public BaseFetchContext {
  public:
   static WorkerFetchContext* Create(WorkerOrWorkletGlobalScope&);
-  virtual ~WorkerFetchContext();
+  ~WorkerFetchContext() override;
 
   // BaseFetchContext implementation:
   KURL GetSiteForCookies() const override;
@@ -64,8 +65,9 @@ class WorkerFetchContext final : public BaseFetchContext {
 
   // FetchContext implementation:
   SecurityOrigin* GetSecurityOrigin() const override;
-  std::unique_ptr<WebURLLoader> CreateURLLoader(const ResourceRequest&,
-                                                WebTaskRunner*) override;
+  std::unique_ptr<WebURLLoader> CreateURLLoader(
+      const ResourceRequest&,
+      scoped_refptr<WebTaskRunner>) override;
   void PrepareRequest(ResourceRequest&, RedirectType) override;
   bool IsControlledByServiceWorker() const override;
   int ApplicationCacheHostID() const override;
@@ -101,9 +103,9 @@ class WorkerFetchContext final : public BaseFetchContext {
                                const FetchParameters::ResourceWidth&,
                                ResourceRequest&) override;
   void SetFirstPartyCookieAndRequestorOrigin(ResourceRequest&) override;
-  RefPtr<WebTaskRunner> GetLoadingTaskRunner() override;
+  scoped_refptr<WebTaskRunner> GetLoadingTaskRunner() override;
 
-  DECLARE_VIRTUAL_TRACE();
+  void Trace(blink::Visitor*) override;
 
  private:
   WorkerFetchContext(WorkerOrWorkletGlobalScope&,
@@ -111,9 +113,15 @@ class WorkerFetchContext final : public BaseFetchContext {
 
   Member<WorkerOrWorkletGlobalScope> global_scope_;
   std::unique_ptr<WebWorkerFetchContext> web_context_;
+  std::unique_ptr<WebURLLoaderFactory> url_loader_factory_;
   Member<SubresourceFilter> subresource_filter_;
   Member<ResourceFetcher> resource_fetcher_;
-  RefPtr<WebTaskRunner> loading_task_runner_;
+  scoped_refptr<WebTaskRunner> loading_task_runner_;
+
+  // The value of |save_data_enabled_| is read once per frame from
+  // NetworkStateNotifier, which is guarded by a mutex lock, and cached locally
+  // here for performance.
+  const bool save_data_enabled_;
 };
 
 }  // namespace blink

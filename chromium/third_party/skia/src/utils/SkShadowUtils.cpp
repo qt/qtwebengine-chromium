@@ -38,8 +38,8 @@ public:
     }
 
 #if SK_SUPPORT_GPU
-    std::unique_ptr<GrFragmentProcessor> asFragmentProcessor(GrContext*,
-                                                             SkColorSpace*) const override;
+    std::unique_ptr<GrFragmentProcessor> asFragmentProcessor(
+            GrContext*, const GrColorSpaceInfo&) const override;
 #endif
 
     SK_TO_STRING_OVERRIDE()
@@ -70,8 +70,8 @@ void SkGaussianColorFilter::toString(SkString* str) const {
 #if SK_SUPPORT_GPU
 
 std::unique_ptr<GrFragmentProcessor> SkGaussianColorFilter::asFragmentProcessor(
-        GrContext*, SkColorSpace*) const {
-    return GrBlurredEdgeFragmentProcessor::Make(GrBlurredEdgeFragmentProcessor::kGaussian_Mode);
+        GrContext*, const GrColorSpaceInfo&) const {
+    return GrBlurredEdgeFragmentProcessor::Make(GrBlurredEdgeFragmentProcessor::Mode::kGaussian);
 }
 #endif
 
@@ -519,7 +519,7 @@ void SkBaseDevice::drawShadow(const SkPath& path, const SkDrawShadowRec& rec) {
     bool tiltZPlane = tilted(rec.fZPlaneParams);
     bool transparent = SkToBool(rec.fFlags & SkShadowFlags::kTransparentOccluder_ShadowFlag);
     bool uncached = tiltZPlane || path.isVolatile();
-    bool useTonalColor = SkToBool(rec.fFlags & kTonalColor_ShadowFlag);
+    bool useTonalColor = !SkToBool(rec.fFlags & kDisableTonalColor_ShadowFlag);
 
     SkColor color = rec.fColor;
     SkPoint3 zPlaneParams = rec.fZPlaneParams;

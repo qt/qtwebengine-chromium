@@ -12,9 +12,11 @@
 #include "core/animation/ComputedTimingProperties.h"
 #include "core/animation/EffectModel.h"
 #include "core/animation/ElementAnimation.h"
+#include "core/animation/ElementAnimations.h"
 #include "core/animation/KeyframeEffectModel.h"
 #include "core/animation/KeyframeEffectReadOnly.h"
 #include "core/animation/StringKeyframe.h"
+#include "core/animation/css/CSSAnimations.h"
 #include "core/css/CSSKeyframeRule.h"
 #include "core/css/CSSKeyframesRule.h"
 #include "core/css/CSSRuleList.h"
@@ -103,12 +105,9 @@ BuildObjectForAnimationEffect(KeyframeEffectReadOnly* effect,
   if (is_transition) {
     // Obtain keyframes and convert keyframes back to delay
     DCHECK(effect->Model()->IsKeyframeEffectModel());
-    const KeyframeEffectModelBase* model =
-        ToKeyframeEffectModelBase(effect->Model());
-    Vector<RefPtr<Keyframe>> keyframes =
-        KeyframeEffectModelBase::NormalizedKeyframesForInspector(
-            model->GetFrames());
+    const KeyframeVector& keyframes = effect->Model()->GetFrames();
     if (keyframes.size() == 3) {
+      DCHECK(!IsNull(keyframes.at(1)->Offset()));
       delay = keyframes.at(1)->Offset() * duration;
       duration -= delay;
       easing = keyframes.at(1)->Easing().ToString();
@@ -134,9 +133,9 @@ BuildObjectForAnimationEffect(KeyframeEffectReadOnly* effect,
 }
 
 static std::unique_ptr<protocol::Animation::KeyframeStyle>
-BuildObjectForStringKeyframe(const StringKeyframe* keyframe) {
-  Decimal decimal = Decimal::FromDouble(keyframe->Offset() * 100);
-  String offset = decimal.ToString();
+BuildObjectForStringKeyframe(const StringKeyframe* keyframe,
+                             double computed_offset) {
+  String offset = String::NumberToStringECMAScript(computed_offset * 100);
   offset.append('%');
 
   std::unique_ptr<protocol::Animation::KeyframeStyle> keyframe_object =
@@ -151,20 +150,20 @@ static std::unique_ptr<protocol::Animation::KeyframesRule>
 BuildObjectForAnimationKeyframes(const KeyframeEffectReadOnly* effect) {
   if (!effect || !effect->Model() || !effect->Model()->IsKeyframeEffectModel())
     return nullptr;
-  const KeyframeEffectModelBase* model =
-      ToKeyframeEffectModelBase(effect->Model());
-  Vector<RefPtr<Keyframe>> normalized_keyframes =
-      KeyframeEffectModelBase::NormalizedKeyframesForInspector(
-          model->GetFrames());
+  const KeyframeEffectModelBase* model = effect->Model();
+  Vector<double> computed_offsets =
+      KeyframeEffectModelBase::GetComputedOffsets(model->GetFrames());
   std::unique_ptr<protocol::Array<protocol::Animation::KeyframeStyle>>
       keyframes = protocol::Array<protocol::Animation::KeyframeStyle>::create();
 
-  for (const auto& keyframe : normalized_keyframes) {
+  for (size_t i = 0; i < model->GetFrames().size(); i++) {
+    const Keyframe* keyframe = model->GetFrames().at(i).get();
     // Ignore CSS Transitions
-    if (!keyframe.get()->IsStringKeyframe())
+    if (!keyframe->IsStringKeyframe())
       continue;
-    const StringKeyframe* string_keyframe = ToStringKeyframe(keyframe.get());
-    keyframes->addItem(BuildObjectForStringKeyframe(string_keyframe));
+    const StringKeyframe* string_keyframe = ToStringKeyframe(keyframe);
+    keyframes->addItem(
+        BuildObjectForStringKeyframe(string_keyframe, computed_offsets.at(i)));
   }
   return protocol::Animation::KeyframesRule::create()
       .setKeyframes(std::move(keyframes))
@@ -294,9 +293,8 @@ blink::Animation* InspectorAnimationAgent::AnimationClone(
     KeyframeEffectReadOnly* old_effect =
         ToKeyframeEffectReadOnly(animation->effect());
     DCHECK(old_effect->Model()->IsKeyframeEffectModel());
-    KeyframeEffectModelBase* old_model =
-        ToKeyframeEffectModelBase(old_effect->Model());
-    EffectModel* new_model = nullptr;
+    KeyframeEffectModelBase* old_model = old_effect->Model();
+    KeyframeEffectModelBase* new_model = nullptr;
     // Clone EffectModel.
     // TODO(samli): Determine if this is an animations bug.
     if (old_model->IsStringKeyframeEffectModel()) {
@@ -307,15 +305,6 @@ blink::Animation* InspectorAnimationAgent::AnimationClone(
       for (auto& old_keyframe : old_keyframes)
         new_keyframes.push_back(ToStringKeyframe(old_keyframe.get()));
       new_model = StringKeyframeEffectModel::Create(new_keyframes);
-    } else if (old_model->IsAnimatableValueKeyframeEffectModel()) {
-      AnimatableValueKeyframeEffectModel* old_animatable_value_keyframe_model =
-          ToAnimatableValueKeyframeEffectModel(old_model);
-      KeyframeVector old_keyframes =
-          old_animatable_value_keyframe_model->GetFrames();
-      AnimatableValueKeyframeVector new_keyframes;
-      for (auto& old_keyframe : old_keyframes)
-        new_keyframes.push_back(ToAnimatableValueKeyframe(old_keyframe.get()));
-      new_model = AnimatableValueKeyframeEffectModel::Create(new_keyframes);
     } else if (old_model->IsTransitionKeyframeEffectModel()) {
       TransitionKeyframeEffectModel* old_transition_keyframe_model =
           ToTransitionKeyframeEffectModel(old_model);
@@ -393,9 +382,8 @@ Response InspectorAnimationAgent::setTiming(const String& animation_id,
   String type = id_to_animation_type_.at(animation_id);
   if (type == AnimationType::CSSTransition) {
     KeyframeEffect* effect = ToKeyframeEffect(animation->effect());
-    KeyframeEffectModelBase* model = ToKeyframeEffectModelBase(effect->Model());
     const TransitionKeyframeEffectModel* old_model =
-        ToTransitionKeyframeEffectModel(model);
+        ToTransitionKeyframeEffectModel(effect->Model());
     // Refer to CSSAnimations::calculateTransitionUpdateForProperty() for the
     // structure of transitions.
     const KeyframeVector& frames = old_model->GetFrames();
@@ -406,7 +394,7 @@ Response InspectorAnimationAgent::setTiming(const String& animation_id,
     // Update delay, represented by the distance between the first two
     // keyframes.
     new_frames[1]->SetOffset(delay / (delay + duration));
-    model->SetFrames(new_frames);
+    effect->Model()->SetFrames(new_frames);
 
     AnimationEffectTiming* timing = effect->timing();
     UnrestrictedDoubleOrString unrestricted_duration;
@@ -568,7 +556,7 @@ double InspectorAnimationAgent::NormalizedStartTime(
                                      1000 * ReferenceTimeline().PlaybackRate();
 }
 
-DEFINE_TRACE(InspectorAnimationAgent) {
+void InspectorAnimationAgent::Trace(blink::Visitor* visitor) {
   visitor->Trace(inspected_frames_);
   visitor->Trace(css_agent_);
   visitor->Trace(id_to_animation_);

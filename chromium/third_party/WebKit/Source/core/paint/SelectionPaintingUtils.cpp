@@ -26,7 +26,7 @@ bool NodeIsSelectable(const ComputedStyle& style, Node* node) {
                                style.UserModify() == EUserModify::kReadOnly);
 }
 
-RefPtr<ComputedStyle> GetUncachedSelectionStyle(Node* node) {
+scoped_refptr<ComputedStyle> GetUncachedSelectionStyle(Node* node) {
   if (!node)
     return nullptr;
 
@@ -58,7 +58,7 @@ RefPtr<ComputedStyle> GetUncachedSelectionStyle(Node* node) {
 Color SelectionColor(const Document& document,
                      const ComputedStyle& style,
                      Node* node,
-                     int color_property,
+                     CSSPropertyID color_property,
                      const GlobalPaintFlags global_paint_flags) {
   // If the element is unselectable, or we are only painting the selection,
   // don't override the foreground color with the selection foreground color.
@@ -66,7 +66,8 @@ Color SelectionColor(const Document& document,
       (global_paint_flags & kGlobalPaintSelectionOnly))
     return style.VisitedDependentColor(color_property);
 
-  if (RefPtr<ComputedStyle> pseudo_style = GetUncachedSelectionStyle(node))
+  if (scoped_refptr<ComputedStyle> pseudo_style =
+          GetUncachedSelectionStyle(node))
     return pseudo_style->VisitedDependentColor(color_property);
   if (!LayoutTheme::GetTheme().SupportsSelectionForegroundColors())
     return style.VisitedDependentColor(color_property);
@@ -92,7 +93,8 @@ Color SelectionPaintingUtils::SelectionBackgroundColor(
   if (node && !NodeIsSelectable(style, node))
     return Color::kTransparent;
 
-  if (RefPtr<ComputedStyle> pseudo_style = GetUncachedSelectionStyle(node)) {
+  if (scoped_refptr<ComputedStyle> pseudo_style =
+          GetUncachedSelectionStyle(node)) {
     return pseudo_style->VisitedDependentColor(CSSPropertyBackgroundColor)
         .BlendWithWhite();
   }
@@ -128,7 +130,7 @@ TextPaintStyle SelectionPaintingUtils::SelectionPaintingStyle(
     const TextPaintStyle& text_style,
     const PaintInfo& paint_info) {
   TextPaintStyle selection_style = text_style;
-  bool uses_text_as_clip = paint_info.phase == kPaintPhaseTextClip;
+  bool uses_text_as_clip = paint_info.phase == PaintPhase::kTextClip;
   bool is_printing = paint_info.IsPrinting();
   const GlobalPaintFlags global_paint_flags = paint_info.GetGlobalPaintFlags();
 
@@ -147,12 +149,12 @@ TextPaintStyle SelectionPaintingUtils::SelectionPaintingStyle(
                                   CSSPropertyWebkitTextStrokeColor);
       selection_style.stroke_width = pseudo_style->TextStrokeWidth();
       selection_style.shadow =
-          uses_text_as_clip ? 0 : pseudo_style->TextShadow();
+          uses_text_as_clip ? nullptr : pseudo_style->TextShadow();
     }
 
     // Text shadows are disabled when printing. http://crbug.com/258321
     if (is_printing)
-      selection_style.shadow = 0;
+      selection_style.shadow = nullptr;
   }
 
   return selection_style;

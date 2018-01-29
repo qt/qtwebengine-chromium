@@ -29,7 +29,9 @@ BlockLayoutType GetBlockLayoutType(TLayoutBlockStorage blockStorage)
         case EbsShared:
             return BLOCKLAYOUT_SHARED;
         case EbsStd140:
-            return BLOCKLAYOUT_STANDARD;
+            return BLOCKLAYOUT_STD140;
+        case EbsStd430:
+            return BLOCKLAYOUT_STD430;
         default:
             UNREACHABLE();
             return BLOCKLAYOUT_SHARED;
@@ -82,6 +84,19 @@ void MarkStaticallyUsed(ShaderVariable *variable)
         }
         variable->staticUse = true;
     }
+}
+
+ShaderVariable *FindVariableInInterfaceBlock(const TString &name,
+                                             const TInterfaceBlock *interfaceBlock,
+                                             std::vector<InterfaceBlock> *infoList)
+{
+    ASSERT(interfaceBlock);
+    InterfaceBlock *namedBlock = FindVariable(interfaceBlock->name(), infoList);
+    ASSERT(namedBlock);
+
+    // Set static use on the parent interface block here
+    namedBlock->staticUse = true;
+    return FindVariable(name, &namedBlock->fields);
 }
 
 // Traverses the intermediate tree to collect all attributes, uniforms, varyings, fragment outputs,
@@ -247,9 +262,11 @@ void CollectVariablesTraverser::setBuiltInInfoFromSymbolTable(const char *name,
     info->name       = name;
     info->mappedName = name;
     info->type       = GLVariableType(type);
-    ASSERT(!type.isArrayOfArrays());
-    info->arraySize = type.isArray() ? type.getOutermostArraySize() : 0;
     info->precision = GLVariablePrecision(type);
+    if (auto *arraySizes = type.getArraySizes())
+    {
+        info->arraySizes.assign(arraySizes->begin(), arraySizes->end());
+    }
 }
 
 void CollectVariablesTraverser::recordBuiltInVaryingUsed(const char *name,
@@ -353,34 +370,27 @@ void CollectVariablesTraverser::visitSymbol(TIntermSymbol *symbol)
             info.name          = kName;
             info.mappedName    = kName;
             info.type          = GL_NONE;
-            info.arraySize     = 0;
             info.precision     = GL_NONE;
             info.staticUse     = true;
 
-            ShaderVariable nearInfo;
+            ShaderVariable nearInfo(GL_FLOAT);
             const char kNearName[] = "near";
             nearInfo.name          = kNearName;
             nearInfo.mappedName    = kNearName;
-            nearInfo.type          = GL_FLOAT;
-            nearInfo.arraySize     = 0;
             nearInfo.precision     = GL_HIGH_FLOAT;
             nearInfo.staticUse     = true;
 
-            ShaderVariable farInfo;
+            ShaderVariable farInfo(GL_FLOAT);
             const char kFarName[] = "far";
             farInfo.name          = kFarName;
             farInfo.mappedName    = kFarName;
-            farInfo.type          = GL_FLOAT;
-            farInfo.arraySize     = 0;
             farInfo.precision     = GL_HIGH_FLOAT;
             farInfo.staticUse     = true;
 
-            ShaderVariable diffInfo;
+            ShaderVariable diffInfo(GL_FLOAT);
             const char kDiffName[] = "diff";
             diffInfo.name          = kDiffName;
             diffInfo.mappedName    = kDiffName;
-            diffInfo.type          = GL_FLOAT;
-            diffInfo.arraySize     = 0;
             diffInfo.precision     = GL_HIGH_FLOAT;
             diffInfo.staticUse     = true;
 
@@ -408,13 +418,7 @@ void CollectVariablesTraverser::visitSymbol(TIntermSymbol *symbol)
                 const TInterfaceBlock *interfaceBlock = symbol->getType().getInterfaceBlock();
                 if (interfaceBlock)
                 {
-                    InterfaceBlock *namedBlock =
-                        FindVariable(interfaceBlock->name(), mUniformBlocks);
-                    ASSERT(namedBlock);
-                    var = FindVariable(symbolName, &namedBlock->fields);
-
-                    // Set static use on the parent interface block here
-                    namedBlock->staticUse = true;
+                    var = FindVariableInInterfaceBlock(symbolName, interfaceBlock, mUniformBlocks);
                 }
                 else
                 {
@@ -423,6 +427,13 @@ void CollectVariablesTraverser::visitSymbol(TIntermSymbol *symbol)
 
                 // It's an internal error to reference an undefined user uniform
                 ASSERT(symbolName.compare(0, 3, "gl_") != 0 || var);
+            }
+            break;
+            case EvqBuffer:
+            {
+                const TInterfaceBlock *interfaceBlock = symbol->getType().getInterfaceBlock();
+                var =
+                    FindVariableInInterfaceBlock(symbolName, interfaceBlock, mShaderStorageBlocks);
             }
             break;
             case EvqFragCoord:
@@ -447,7 +458,6 @@ void CollectVariablesTraverser::visitSymbol(TIntermSymbol *symbol)
                     info.name          = kName;
                     info.mappedName    = kName;
                     info.type          = GL_INT;
-                    info.arraySize     = 0;
                     info.precision     = GL_HIGH_INT;  // Defined by spec.
                     info.staticUse     = true;
                     info.location      = -1;
@@ -477,7 +487,8 @@ void CollectVariablesTraverser::visitSymbol(TIntermSymbol *symbol)
                     setBuiltInInfoFromSymbolTable("gl_FragData", &info);
                     if (!IsExtensionEnabled(mExtensionBehavior, TExtension::EXT_draw_buffers))
                     {
-                        info.arraySize = 1;
+                        ASSERT(info.arraySizes.size() == 1u);
+                        info.arraySizes.back() = 1u;
                     }
                     info.staticUse = true;
                     mOutputVariables->push_back(info);
@@ -573,10 +584,10 @@ void CollectVariablesTraverser::setCommonVariableProperties(const TType &type,
     variableOut->name       = name.getString().c_str();
     variableOut->mappedName = getMappedName(name);
 
-    // TODO(oetuaho@nvidia.com): Uniforms can be arrays of arrays, so this assert will need to be
-    // removed.
-    ASSERT(!type.isArrayOfArrays());
-    variableOut->arraySize = type.isArray() ? type.getOutermostArraySize() : 0;
+    if (auto *arraySizes = type.getArraySizes())
+    {
+        variableOut->arraySizes.assign(arraySizes->begin(), arraySizes->end());
+    }
 }
 
 Attribute CollectVariablesTraverser::recordAttribute(const TIntermSymbol &variable) const
@@ -619,6 +630,7 @@ Varying CollectVariablesTraverser::recordVarying(const TIntermSymbol &variable) 
         case EvqSmoothOut:
         case EvqFlatOut:
         case EvqCentroidOut:
+        case EvqGeometryOut:
             if (mSymbolTable->isVaryingInvariant(std::string(variable.getSymbol().c_str())) ||
                 type.isInvariant())
             {

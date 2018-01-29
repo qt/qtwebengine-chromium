@@ -10,6 +10,7 @@ group("media") {
   public_deps = [
     "//chromecast/media/audio",
     "//chromecast/media/base",
+    "//chromecast/media/base:media_resource_tracker",
     "//chromecast/media/cdm",
     "//chromecast/media/cma",
   ]
@@ -28,6 +29,10 @@ group("libcast_media") {
         "//chromecast/media/cma/backend:cast_media_android_dummy",
       ]
     }
+  } else if (is_fuchsia) {
+    deps = [
+      "//chromecast/media/cma/backend/fuchsia",
+    ]
   } else {
     deps = [
       "//chromecast/media/cma/backend:libcast_media_1.0",
@@ -41,6 +46,7 @@ test("cast_media_unittests") {
     "audio/cast_audio_mixer_unittest.cc",
     "audio/cast_audio_output_stream_unittest.cc",
     "base/media_resource_tracker_unittest.cc",
+    "base/slew_volume_unittests.cc",
     "base/supported_codec_profile_levels_memo_unittest.cc",
     "test/run_all_unittests.cc",
   ]

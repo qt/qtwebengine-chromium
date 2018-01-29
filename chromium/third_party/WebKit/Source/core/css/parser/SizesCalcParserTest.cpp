@@ -27,8 +27,9 @@ static void VerifyCSSCalc(String text,
                           unsigned viewport_width,
                           unsigned viewport_height) {
   CSSLengthArray length_array;
-  const CSSValue* css_value =
-      CSSParser::ParseSingleValue(CSSPropertyLeft, text);
+  const CSSValue* css_value = CSSParser::ParseSingleValue(
+      CSSPropertyLeft, text,
+      StrictCSSParserContext(SecureContextMode::kInsecureContext));
   const CSSPrimitiveValue* primitive_value = ToCSSPrimitiveValue(css_value);
   if (primitive_value)
     primitive_value->AccumulateLengthArray(length_array);
@@ -96,7 +97,7 @@ TEST(SizesCalcParserTest, Basic) {
       {"calc(100px @ 2)", 0, false, false},
       {"calc(1 flim 2)", 0, false, false},
       {"calc(1 flim (2))", 0, false, false},
-      {0, 0, true, false}  // Do not remove the terminator line.
+      {nullptr, 0, true, false}  // Do not remove the terminator line.
   };
 
   MediaValuesCached::MediaValuesCachedData data;

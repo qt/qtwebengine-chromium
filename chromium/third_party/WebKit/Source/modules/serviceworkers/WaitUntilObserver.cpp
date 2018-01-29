@@ -52,7 +52,7 @@ class WaitUntilObserver::ThenFunction final : public ScriptFunction {
     return self->BindToV8Function();
   }
 
-  DEFINE_INLINE_VIRTUAL_TRACE() {
+  void Trace(blink::Visitor* visitor) override {
     visitor->Trace(observer_);
     ScriptFunction::Trace(visitor);
   }
@@ -71,7 +71,7 @@ class WaitUntilObserver::ThenFunction final : public ScriptFunction {
     DCHECK(observer_);
     DCHECK(resolve_type_ == kFulfilled || resolve_type_ == kRejected);
     if (callback_)
-      callback_(value);
+      callback_.Run(value);
     // According from step 4 of ExtendableEvent::waitUntil() in spec:
     // https://w3c.github.io/ServiceWorker/#dom-extendableevent-waituntil
     // "Upon fulfillment or rejection of f, queue a microtask to run these
@@ -262,6 +262,7 @@ void WaitUntilObserver::MaybeCompleteEvent() {
       client->DidHandleFetchEvent(event_id_, status, event_dispatch_time_);
       break;
     case kInstall:
+      ToServiceWorkerGlobalScope(execution_context_)->SetIsInstalling(false);
       client->DidHandleInstallEvent(event_id_, status, event_dispatch_time_);
       break;
     case kMessage:
@@ -314,7 +315,7 @@ void WaitUntilObserver::ConsumeWindowInteraction(TimerBase*) {
   execution_context_->ConsumeWindowInteraction();
 }
 
-DEFINE_TRACE(WaitUntilObserver) {
+void WaitUntilObserver::Trace(blink::Visitor* visitor) {
   visitor->Trace(execution_context_);
 }
 

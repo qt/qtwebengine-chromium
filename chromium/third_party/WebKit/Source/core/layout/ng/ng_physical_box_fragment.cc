@@ -4,26 +4,31 @@
 
 #include "core/layout/ng/ng_physical_box_fragment.h"
 
+#include "core/layout/LayoutBox.h"
+#include "core/layout/LayoutObject.h"
+
 namespace blink {
 
 NGPhysicalBoxFragment::NGPhysicalBoxFragment(
     LayoutObject* layout_object,
     const ComputedStyle& style,
     NGPhysicalSize size,
+    Vector<scoped_refptr<NGPhysicalFragment>>& children,
     const NGPhysicalOffsetRect& contents_visual_rect,
-    Vector<RefPtr<NGPhysicalFragment>>& children,
     Vector<NGBaseline>& baselines,
+    NGBoxType box_type,
     unsigned border_edges,  // NGBorderEdges::Physical
-    RefPtr<NGBreakToken> break_token)
+    scoped_refptr<NGBreakToken> break_token)
     : NGPhysicalContainerFragment(layout_object,
                                   style,
                                   size,
                                   kFragmentBox,
                                   children,
+                                  contents_visual_rect,
                                   std::move(break_token)),
-      contents_visual_rect_(contents_visual_rect),
       baselines_(std::move(baselines)) {
   DCHECK(baselines.IsEmpty());  // Ensure move semantics is used.
+  box_type_ = box_type;
   border_edge_ = border_edges;
 }
 
@@ -36,18 +41,64 @@ const NGBaseline* NGPhysicalBoxFragment::Baseline(
   return nullptr;
 }
 
-const NGPhysicalOffsetRect NGPhysicalBoxFragment::LocalVisualRect() const {
-  // TODO(kojii): Add its own visual overflow (e.g., box-shadow)
+bool NGPhysicalBoxFragment::HasSelfPaintingLayer() const {
+  const LayoutObject* layout_object = GetLayoutObject();
+  DCHECK(layout_object);
+  DCHECK(layout_object->IsBoxModelObject());
+  return ToLayoutBoxModelObject(layout_object)->HasSelfPaintingLayer() &&
+         BoxType() != kAnonymousBox;
+}
+
+bool NGPhysicalBoxFragment::HasOverflowClip() const {
+  const LayoutObject* layout_object = GetLayoutObject();
+  DCHECK(layout_object);
+  return layout_object->HasOverflowClip() && BoxType() != kAnonymousBox;
+}
+
+bool NGPhysicalBoxFragment::ShouldClipOverflow() const {
+  const LayoutObject* layout_object = GetLayoutObject();
+  DCHECK(layout_object);
+  return layout_object->IsBox() &&
+         ToLayoutBox(layout_object)->ShouldClipOverflow() &&
+         BoxType() != kAnonymousBox;
+}
+
+NGPhysicalOffsetRect NGPhysicalBoxFragment::SelfVisualRect() const {
+  const ComputedStyle& style = Style();
+  if (!style.HasVisualOverflowingEffect())
+    return {{}, Size()};
+
+  LayoutObject* layout_object = GetLayoutObject();
+  if (layout_object->IsBox()) {
+    // TODO(kojii): Should move the logic to a common place.
+    LayoutRect visual_rect({}, Size().ToLayoutSize());
+    visual_rect.Expand(
+        ToLayoutBox(layout_object)->ComputeVisualEffectOverflowOutsets());
+    return NGPhysicalOffsetRect(visual_rect);
+  }
+
+  // TODO(kojii): Implement for inline boxes.
+  DCHECK(layout_object->IsLayoutInline());
   return {{}, Size()};
 }
 
-RefPtr<NGPhysicalFragment> NGPhysicalBoxFragment::CloneWithoutOffset() const {
-  Vector<RefPtr<NGPhysicalFragment>> children_copy(children_);
+NGPhysicalOffsetRect NGPhysicalBoxFragment::VisualRectWithContents() const {
+  if (HasOverflowClip() || Style().HasMask())
+    return SelfVisualRect();
+
+  NGPhysicalOffsetRect visual_rect = SelfVisualRect();
+  visual_rect.Unite(ContentsVisualRect());
+  return visual_rect;
+}
+
+scoped_refptr<NGPhysicalFragment> NGPhysicalBoxFragment::CloneWithoutOffset()
+    const {
+  Vector<scoped_refptr<NGPhysicalFragment>> children_copy(children_);
   Vector<NGBaseline> baselines_copy(baselines_);
-  RefPtr<NGPhysicalFragment> physical_fragment =
-      WTF::AdoptRef(new NGPhysicalBoxFragment(
-          layout_object_, Style(), size_, contents_visual_rect_, children_copy,
-          baselines_copy, border_edge_, break_token_));
+  scoped_refptr<NGPhysicalFragment> physical_fragment =
+      base::AdoptRef(new NGPhysicalBoxFragment(
+          layout_object_, Style(), size_, children_copy, contents_visual_rect_,
+          baselines_copy, BoxType(), border_edge_, break_token_));
   return physical_fragment;
 }
 

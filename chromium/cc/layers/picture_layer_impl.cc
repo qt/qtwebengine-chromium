@@ -211,7 +211,11 @@ void PictureLayerImpl::AppendQuads(viz::RenderPass* render_pass,
       render_pass->CreateAndAppendSharedQuadState();
 
   if (raster_source_->IsSolidColor()) {
-    float max_contents_scale = GetIdealContentsScale();
+    float max_contents_scale = CanHaveTilings()
+                                   ? ideal_contents_scale_
+                                   : std::min(kMaxIdealContentsScale,
+                                              std::max(GetIdealContentsScale(),
+                                                       MinimumContentsScale()));
 
     // The downstream CA layers use shared_quad_state to generate resources of
     // the right size even if it is a solid color picture layer.
@@ -696,6 +700,10 @@ void PictureLayerImpl::UpdateRasterSource(
     tilings_->UpdateTilingsToCurrentRasterSourceForCommit(
         raster_source_, invalidation_, MinimumContentsScale(),
         MaximumContentsScale());
+    // We're in a commit, make sure to update the state of the checker image
+    // tracker with the new async attribute data.
+    layer_tree_impl()->UpdateImageDecodingHints(
+        raster_source_->TakeDecodingModeMap());
   }
 }
 
@@ -811,7 +819,12 @@ gfx::Rect PictureLayerImpl::GetEnclosingRectInTargetSpace() const {
 }
 
 bool PictureLayerImpl::ShouldAnimate(PaintImage::Id paint_image_id) const {
+  // If we are registered with the animation controller, which queries whether
+  // the image should be animated, then we must have recordings with this image.
   DCHECK(raster_source_);
+  DCHECK(raster_source_->GetDisplayItemList());
+  DCHECK(
+      !raster_source_->GetDisplayItemList()->discardable_image_map().empty());
 
   // Only animate images for layers which HasValidTilePriorities. This check is
   // important for 2 reasons:
@@ -825,9 +838,17 @@ bool PictureLayerImpl::ShouldAnimate(PaintImage::Id paint_image_id) const {
   //
   //  Additionally only animate images which are on-screen, animations are
   //  paused once they are not visible.
-  return HasValidTilePriorities() &&
-         raster_source_->GetRectForImage(paint_image_id)
-             .Intersects(visible_layer_rect());
+  if (!HasValidTilePriorities())
+    return false;
+
+  const auto& rects = raster_source_->GetDisplayItemList()
+                          ->discardable_image_map()
+                          .GetRectsForImage(paint_image_id);
+  for (const auto& r : rects.container()) {
+    if (r.Intersects(visible_layer_rect()))
+      return true;
+  }
+  return false;
 }
 
 gfx::Size PictureLayerImpl::CalculateTileSize(
@@ -1217,9 +1238,16 @@ void PictureLayerImpl::RecalculateRasterScales() {
           static_cast<int64_t>(bounds_at_maximum_scale.width()) *
           static_cast<int64_t>(bounds_at_maximum_scale.height());
       gfx::Size viewport = layer_tree_impl()->device_viewport_size();
-      int64_t viewport_area = static_cast<int64_t>(viewport.width()) *
-                              static_cast<int64_t>(viewport.height());
-      if (maximum_area <= viewport_area)
+
+      // Use the square of the maximum viewport dimension direction, to
+      // compensate for viewports with different aspect ratios.
+      int64_t max_viewport_dimension =
+          std::max(static_cast<int64_t>(viewport.width()),
+                   static_cast<int64_t>(viewport.height()));
+      int64_t squared_viewport_area =
+          max_viewport_dimension * max_viewport_dimension;
+
+      if (maximum_area <= squared_viewport_area)
         can_raster_at_maximum_scale = true;
     }
     if (starting_scale && starting_scale > maximum_scale) {
@@ -1558,23 +1586,36 @@ bool PictureLayerImpl::HasValidTilePriorities() const {
 
 void PictureLayerImpl::InvalidateRegionForImages(
     const PaintImageIdFlatSet& images_to_invalidate) {
-  TRACE_EVENT_BEGIN0("cc", "PictureLayerImpl::InvalidateRegionForImages");
+  TRACE_EVENT0("cc", "PictureLayerImpl::InvalidateRegionForImages");
+
+  if (!raster_source_ || !raster_source_->GetDisplayItemList() ||
+      raster_source_->GetDisplayItemList()->discardable_image_map().empty()) {
+    TRACE_EVENT0("cc", "PictureLayerImpl::InvalidateRegionForImages NoImages");
+    return;
+  }
 
   InvalidationRegion image_invalidation;
-  for (auto image_id : images_to_invalidate)
-    image_invalidation.Union(raster_source_->GetRectForImage(image_id));
+  for (auto image_id : images_to_invalidate) {
+    const auto& rects = raster_source_->GetDisplayItemList()
+                            ->discardable_image_map()
+                            .GetRectsForImage(image_id);
+    for (const auto& r : rects.container())
+      image_invalidation.Union(r);
+  }
   Region invalidation;
   image_invalidation.Swap(&invalidation);
 
   if (invalidation.IsEmpty()) {
-    TRACE_EVENT_END1("cc", "PictureLayerImpl::InvalidateRegionForImages",
-                     "Invalidation", invalidation.ToString());
+    TRACE_EVENT0("cc",
+                 "PictureLayerImpl::InvalidateRegionForImages NoInvalidation");
     return;
   }
 
   // Make sure to union the rect from this invalidation with the update_rect
   // instead of over-writing it. We don't want to reset the update that came
   // from the main thread.
+  // Note: We can use a rect here since this is only used to track damage for a
+  // frame and not raster invalidation.
   gfx::Rect new_update_rect = invalidation.bounds();
   new_update_rect.Union(update_rect());
   SetUpdateRect(new_update_rect);
@@ -1582,8 +1623,8 @@ void PictureLayerImpl::InvalidateRegionForImages(
   invalidation_.Union(invalidation);
   tilings_->Invalidate(invalidation);
   SetNeedsPushProperties();
-  TRACE_EVENT_END1("cc", "PictureLayerImpl::InvalidateRegionForImages",
-                   "Invalidation", invalidation.ToString());
+  TRACE_EVENT1("cc", "PictureLayerImpl::InvalidateRegionForImages Invalidation",
+               "Invalidation", invalidation.ToString());
 }
 
 void PictureLayerImpl::RegisterAnimatedImages() {

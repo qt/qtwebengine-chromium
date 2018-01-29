@@ -21,6 +21,7 @@
 #include "base/test/histogram_tester.h"
 #include "net/base/auth.h"
 #include "net/base/request_priority.h"
+#include "net/cert/ct_policy_status.h"
 #include "net/cookies/cookie_store_test_helpers.h"
 #include "net/http/http_transaction_factory.h"
 #include "net/http/http_transaction_test_util.h"
@@ -45,7 +46,6 @@
 #include "url/url_constants.h"
 
 #if defined(OS_ANDROID)
-#include "base/android/build_info.h"
 #include "base/android/jni_android.h"
 #include "jni/AndroidNetworkLibraryTestUtil_jni.h"
 #endif
@@ -75,6 +75,14 @@ const char kSimpleHeadMockWrite[] =
     "Accept-Encoding: gzip, deflate\r\n"
     "Accept-Language: en-us,fr\r\n\r\n";
 
+const char kTrustAnchorRequestHistogram[] =
+    "Net.Certificate.TrustAnchor.Request";
+
+const char kCTComplianceHistogramName[] =
+    "Net.CertificateTransparency.RequestComplianceStatus";
+const char kCTRequiredHistogramName[] =
+    "Net.CertificateTransparency.CTRequiredRequestComplianceStatus";
+
 // Inherit from URLRequestHttpJob to expose the priority and some
 // other hidden functions.
 class TestURLRequestHttpJob : public URLRequestHttpJob {
@@ -85,7 +93,7 @@ class TestURLRequestHttpJob : public URLRequestHttpJob {
                           request->context()->http_user_agent_settings()),
         use_null_source_stream_(false) {}
 
-  ~TestURLRequestHttpJob() override {}
+  ~TestURLRequestHttpJob() override = default;
 
   // URLRequestJob implementation:
   std::unique_ptr<SourceStream> SetUpSourceStream() override {
@@ -958,6 +966,300 @@ TEST_F(URLRequestHttpJobWithMockSocketsTest,
   }
 }
 
+TEST_F(URLRequestHttpJobWithMockSocketsTest,
+       TestHttpJobRecordsTrustAnchorHistograms) {
+  SSLSocketDataProvider ssl_socket_data(net::ASYNC, net::OK);
+  ssl_socket_data.ssl_info.cert =
+      ImportCertFromFile(GetTestCertsDirectory(), "ok_cert.pem");
+  // Simulate a certificate chain issued by "C=US, O=Google Trust Services LLC,
+  // CN=GTS Root R4". This publicly-trusted root was chosen as it was included
+  // in 2017 and is not anticipated to be removed from all supported platforms
+  // for a few decades.
+  // Note: The actual cert in |cert| does not matter for this testing.
+  SHA256HashValue leaf_hash = {{0}};
+  SHA256HashValue intermediate_hash = {{1}};
+  SHA256HashValue root_hash = {
+      {0x98, 0x47, 0xe5, 0x65, 0x3e, 0x5e, 0x9e, 0x84, 0x75, 0x16, 0xe5,
+       0xcb, 0x81, 0x86, 0x06, 0xaa, 0x75, 0x44, 0xa1, 0x9b, 0xe6, 0x7f,
+       0xd7, 0x36, 0x6d, 0x50, 0x69, 0x88, 0xe8, 0xd8, 0x43, 0x47}};
+  ssl_socket_data.ssl_info.public_key_hashes.push_back(HashValue(leaf_hash));
+  ssl_socket_data.ssl_info.public_key_hashes.push_back(
+      HashValue(intermediate_hash));
+  ssl_socket_data.ssl_info.public_key_hashes.push_back(HashValue(root_hash));
+
+  const base::HistogramBase::Sample kGTSRootR4HistogramID = 486;
+
+  socket_factory_.AddSSLSocketDataProvider(&ssl_socket_data);
+
+  MockWrite writes[] = {MockWrite(kSimpleGetMockWrite)};
+  MockRead reads[] = {MockRead("HTTP/1.1 200 OK\r\n"
+                               "Content-Length: 12\r\n\r\n"),
+                      MockRead("Test Content")};
+  StaticSocketDataProvider socket_data(reads, arraysize(reads), writes,
+                                       arraysize(writes));
+  socket_factory_.AddSocketDataProvider(&socket_data);
+
+  base::HistogramTester histograms;
+  histograms.ExpectTotalCount(kTrustAnchorRequestHistogram, 0);
+
+  TestDelegate delegate;
+  std::unique_ptr<URLRequest> request = context_->CreateRequest(
+      GURL("https://www.example.com/"), DEFAULT_PRIORITY, &delegate,
+      TRAFFIC_ANNOTATION_FOR_TESTS);
+  request->Start();
+  base::RunLoop().Run();
+  EXPECT_THAT(delegate.request_status(), IsOk());
+
+  histograms.ExpectTotalCount(kTrustAnchorRequestHistogram, 1);
+  histograms.ExpectUniqueSample(kTrustAnchorRequestHistogram,
+                                kGTSRootR4HistogramID, 1);
+}
+
+TEST_F(URLRequestHttpJobWithMockSocketsTest,
+       TestHttpJobDoesNotRecordTrustAnchorHistogramsWhenNoNetworkLoad) {
+  SSLSocketDataProvider ssl_socket_data(net::ASYNC, net::OK);
+  ssl_socket_data.ssl_info.cert =
+      ImportCertFromFile(GetTestCertsDirectory(), "ok_cert.pem");
+  // Simulate a request loaded from a non-network source, such as a disk
+  // cache.
+  ssl_socket_data.ssl_info.public_key_hashes.clear();
+
+  socket_factory_.AddSSLSocketDataProvider(&ssl_socket_data);
+
+  MockWrite writes[] = {MockWrite(kSimpleGetMockWrite)};
+  MockRead reads[] = {MockRead("HTTP/1.1 200 OK\r\n"
+                               "Content-Length: 12\r\n\r\n"),
+                      MockRead("Test Content")};
+  StaticSocketDataProvider socket_data(reads, arraysize(reads), writes,
+                                       arraysize(writes));
+  socket_factory_.AddSocketDataProvider(&socket_data);
+
+  base::HistogramTester histograms;
+  histograms.ExpectTotalCount(kTrustAnchorRequestHistogram, 0);
+
+  TestDelegate delegate;
+  std::unique_ptr<URLRequest> request = context_->CreateRequest(
+      GURL("https://www.example.com/"), DEFAULT_PRIORITY, &delegate,
+      TRAFFIC_ANNOTATION_FOR_TESTS);
+  request->Start();
+  base::RunLoop().Run();
+  EXPECT_THAT(delegate.request_status(), IsOk());
+
+  histograms.ExpectTotalCount(kTrustAnchorRequestHistogram, 0);
+}
+
+TEST_F(URLRequestHttpJobWithMockSocketsTest,
+       TestHttpJobRecordsMostSpecificTrustAnchorHistograms) {
+  SSLSocketDataProvider ssl_socket_data(net::ASYNC, net::OK);
+  ssl_socket_data.ssl_info.cert =
+      ImportCertFromFile(GetTestCertsDirectory(), "ok_cert.pem");
+  // Simulate a certificate chain issued by "C=US, O=Google Trust Services LLC,
+  // CN=GTS Root R4". This publicly-trusted root was chosen as it was included
+  // in 2017 and is not anticipated to be removed from all supported platforms
+  // for a few decades.
+  // Note: The actual cert in |cert| does not matter for this testing.
+  SHA256HashValue leaf_hash = {{0}};
+  SHA256HashValue intermediate_hash = {{1}};
+  SHA256HashValue gts_root_r3_hash = {
+      {0x41, 0x79, 0xed, 0xd9, 0x81, 0xef, 0x74, 0x74, 0x77, 0xb4, 0x96,
+       0x26, 0x40, 0x8a, 0xf4, 0x3d, 0xaa, 0x2c, 0xa7, 0xab, 0x7f, 0x9e,
+       0x08, 0x2c, 0x10, 0x60, 0xf8, 0x40, 0x96, 0x77, 0x43, 0x48}};
+  SHA256HashValue gts_root_r4_hash = {
+      {0x98, 0x47, 0xe5, 0x65, 0x3e, 0x5e, 0x9e, 0x84, 0x75, 0x16, 0xe5,
+       0xcb, 0x81, 0x86, 0x06, 0xaa, 0x75, 0x44, 0xa1, 0x9b, 0xe6, 0x7f,
+       0xd7, 0x36, 0x6d, 0x50, 0x69, 0x88, 0xe8, 0xd8, 0x43, 0x47}};
+  ssl_socket_data.ssl_info.public_key_hashes.push_back(HashValue(leaf_hash));
+  ssl_socket_data.ssl_info.public_key_hashes.push_back(
+      HashValue(intermediate_hash));
+  ssl_socket_data.ssl_info.public_key_hashes.push_back(
+      HashValue(gts_root_r3_hash));
+  ssl_socket_data.ssl_info.public_key_hashes.push_back(
+      HashValue(gts_root_r4_hash));
+
+  const base::HistogramBase::Sample kGTSRootR3HistogramID = 485;
+
+  socket_factory_.AddSSLSocketDataProvider(&ssl_socket_data);
+
+  MockWrite writes[] = {MockWrite(kSimpleGetMockWrite)};
+  MockRead reads[] = {MockRead("HTTP/1.1 200 OK\r\n"
+                               "Content-Length: 12\r\n\r\n"),
+                      MockRead("Test Content")};
+  StaticSocketDataProvider socket_data(reads, arraysize(reads), writes,
+                                       arraysize(writes));
+  socket_factory_.AddSocketDataProvider(&socket_data);
+
+  base::HistogramTester histograms;
+  histograms.ExpectTotalCount(kTrustAnchorRequestHistogram, 0);
+
+  TestDelegate delegate;
+  std::unique_ptr<URLRequest> request = context_->CreateRequest(
+      GURL("https://www.example.com/"), DEFAULT_PRIORITY, &delegate,
+      TRAFFIC_ANNOTATION_FOR_TESTS);
+  request->Start();
+  base::RunLoop().Run();
+  EXPECT_THAT(delegate.request_status(), IsOk());
+
+  histograms.ExpectTotalCount(kTrustAnchorRequestHistogram, 1);
+  histograms.ExpectUniqueSample(kTrustAnchorRequestHistogram,
+                                kGTSRootR3HistogramID, 1);
+}
+
+// Tests that the CT compliance histogram is recorded, even if CT is not
+// required.
+TEST_F(URLRequestHttpJobWithMockSocketsTest,
+       TestHttpJobRecordsCTComplianceHistograms) {
+  SSLSocketDataProvider ssl_socket_data(net::ASYNC, net::OK);
+  ssl_socket_data.ssl_info.cert =
+      ImportCertFromFile(GetTestCertsDirectory(), "ok_cert.pem");
+  ssl_socket_data.ssl_info.is_issued_by_known_root = true;
+  ssl_socket_data.ssl_info.ct_policy_compliance_required = false;
+  ssl_socket_data.ssl_info.ct_policy_compliance =
+      ct::CTPolicyCompliance::CT_POLICY_NOT_DIVERSE_SCTS;
+
+  socket_factory_.AddSSLSocketDataProvider(&ssl_socket_data);
+
+  MockWrite writes[] = {MockWrite(kSimpleGetMockWrite)};
+  MockRead reads[] = {MockRead("HTTP/1.1 200 OK\r\n"
+                               "Content-Length: 12\r\n\r\n"),
+                      MockRead("Test Content")};
+  StaticSocketDataProvider socket_data(reads, arraysize(reads), writes,
+                                       arraysize(writes));
+  socket_factory_.AddSocketDataProvider(&socket_data);
+
+  base::HistogramTester histograms;
+
+  TestDelegate delegate;
+  std::unique_ptr<URLRequest> request = context_->CreateRequest(
+      GURL("https://www.example.com/"), DEFAULT_PRIORITY, &delegate,
+      TRAFFIC_ANNOTATION_FOR_TESTS);
+  request->Start();
+  base::RunLoop().Run();
+  EXPECT_THAT(delegate.request_status(), IsOk());
+
+  histograms.ExpectUniqueSample(
+      kCTComplianceHistogramName,
+      static_cast<int32_t>(ct::CTPolicyCompliance::CT_POLICY_NOT_DIVERSE_SCTS),
+      1);
+  // CTRequiredRequestComplianceStatus should *not* have been recorded because
+  // it is only recorded for requests which are required to be compliant.
+  histograms.ExpectTotalCount(kCTRequiredHistogramName, 0);
+}
+
+// Tests that the CT compliance histograms are not recorded for
+// locally-installed trust anchors.
+TEST_F(URLRequestHttpJobWithMockSocketsTest,
+       TestHttpJobDoesNotRecordCTComplianceHistogramsForLocalRoot) {
+  SSLSocketDataProvider ssl_socket_data(net::ASYNC, net::OK);
+  ssl_socket_data.ssl_info.cert =
+      ImportCertFromFile(GetTestCertsDirectory(), "ok_cert.pem");
+  ssl_socket_data.ssl_info.is_issued_by_known_root = false;
+  ssl_socket_data.ssl_info.ct_policy_compliance_required = false;
+  ssl_socket_data.ssl_info.ct_policy_compliance =
+      ct::CTPolicyCompliance::CT_POLICY_NOT_DIVERSE_SCTS;
+
+  socket_factory_.AddSSLSocketDataProvider(&ssl_socket_data);
+
+  MockWrite writes[] = {MockWrite(kSimpleGetMockWrite)};
+  MockRead reads[] = {MockRead("HTTP/1.1 200 OK\r\n"
+                               "Content-Length: 12\r\n\r\n"),
+                      MockRead("Test Content")};
+  StaticSocketDataProvider socket_data(reads, arraysize(reads), writes,
+                                       arraysize(writes));
+  socket_factory_.AddSocketDataProvider(&socket_data);
+
+  base::HistogramTester histograms;
+
+  TestDelegate delegate;
+  std::unique_ptr<URLRequest> request = context_->CreateRequest(
+      GURL("https://www.example.com/"), DEFAULT_PRIORITY, &delegate,
+      TRAFFIC_ANNOTATION_FOR_TESTS);
+  request->Start();
+  base::RunLoop().Run();
+  EXPECT_THAT(delegate.request_status(), IsOk());
+
+  histograms.ExpectTotalCount(kCTComplianceHistogramName, 0);
+  histograms.ExpectTotalCount(kCTRequiredHistogramName, 0);
+}
+
+// Tests that the CT compliance histogram is recorded when CT is required but
+// not compliant.
+TEST_F(URLRequestHttpJobWithMockSocketsTest,
+       TestHttpJobRecordsCTRequiredHistogram) {
+  SSLSocketDataProvider ssl_socket_data(net::ASYNC, net::OK);
+  ssl_socket_data.ssl_info.cert =
+      ImportCertFromFile(GetTestCertsDirectory(), "ok_cert.pem");
+  ssl_socket_data.ssl_info.is_issued_by_known_root = true;
+  ssl_socket_data.ssl_info.ct_policy_compliance_required = true;
+  ssl_socket_data.ssl_info.ct_policy_compliance =
+      ct::CTPolicyCompliance::CT_POLICY_NOT_DIVERSE_SCTS;
+
+  socket_factory_.AddSSLSocketDataProvider(&ssl_socket_data);
+
+  MockWrite writes[] = {MockWrite(kSimpleGetMockWrite)};
+  MockRead reads[] = {MockRead("HTTP/1.1 200 OK\r\n"
+                               "Content-Length: 12\r\n\r\n"),
+                      MockRead("Test Content")};
+  StaticSocketDataProvider socket_data(reads, arraysize(reads), writes,
+                                       arraysize(writes));
+  socket_factory_.AddSocketDataProvider(&socket_data);
+
+  base::HistogramTester histograms;
+
+  TestDelegate delegate;
+  std::unique_ptr<URLRequest> request = context_->CreateRequest(
+      GURL("https://www.example.com/"), DEFAULT_PRIORITY, &delegate,
+      TRAFFIC_ANNOTATION_FOR_TESTS);
+  request->Start();
+  base::RunLoop().Run();
+  EXPECT_THAT(delegate.request_status(), IsOk());
+
+  histograms.ExpectUniqueSample(
+      kCTComplianceHistogramName,
+      static_cast<int32_t>(ct::CTPolicyCompliance::CT_POLICY_NOT_DIVERSE_SCTS),
+      1);
+  histograms.ExpectUniqueSample(
+      kCTRequiredHistogramName,
+      static_cast<int32_t>(ct::CTPolicyCompliance::CT_POLICY_NOT_DIVERSE_SCTS),
+      1);
+}
+
+// Tests that the CT compliance histograms are not recorded when there is an
+// unrelated certificate error.
+TEST_F(URLRequestHttpJobWithMockSocketsTest,
+       TestHttpJobDoesNotRecordCTHistogramWithCertError) {
+  SSLSocketDataProvider ssl_socket_data(net::ASYNC, net::OK);
+  ssl_socket_data.ssl_info.cert =
+      ImportCertFromFile(GetTestCertsDirectory(), "ok_cert.pem");
+  ssl_socket_data.ssl_info.is_issued_by_known_root = true;
+  ssl_socket_data.ssl_info.ct_policy_compliance_required = true;
+  ssl_socket_data.ssl_info.ct_policy_compliance =
+      ct::CTPolicyCompliance::CT_POLICY_NOT_DIVERSE_SCTS;
+  ssl_socket_data.ssl_info.cert_status = net::CERT_STATUS_DATE_INVALID;
+
+  socket_factory_.AddSSLSocketDataProvider(&ssl_socket_data);
+
+  MockWrite writes[] = {MockWrite(kSimpleGetMockWrite)};
+  MockRead reads[] = {MockRead("HTTP/1.1 200 OK\r\n"
+                               "Content-Length: 12\r\n\r\n"),
+                      MockRead("Test Content")};
+  StaticSocketDataProvider socket_data(reads, arraysize(reads), writes,
+                                       arraysize(writes));
+  socket_factory_.AddSocketDataProvider(&socket_data);
+
+  base::HistogramTester histograms;
+
+  TestDelegate delegate;
+  std::unique_ptr<URLRequest> request = context_->CreateRequest(
+      GURL("https://www.example.com/"), DEFAULT_PRIORITY, &delegate,
+      TRAFFIC_ANNOTATION_FOR_TESTS);
+  request->Start();
+  base::RunLoop().Run();
+  EXPECT_THAT(delegate.request_status(), IsOk());
+
+  histograms.ExpectTotalCount(kCTComplianceHistogramName, 0);
+  histograms.ExpectTotalCount(kCTRequiredHistogramName, 0);
+}
+
 TEST_F(URLRequestHttpJobTest, TestCancelWhileReadingCookies) {
   DelayedCookieMonster cookie_monster;
   TestURLRequestContext context(true);
@@ -1121,8 +1423,9 @@ TEST_F(URLRequestHttpJobWithBrotliSupportTest, NoBrotliAdvertisementOverHttp) {
 TEST_F(URLRequestHttpJobWithBrotliSupportTest, BrotliAdvertisement) {
   net::SSLSocketDataProvider ssl_socket_data_provider(net::ASYNC, net::OK);
   ssl_socket_data_provider.next_proto = kProtoHTTP11;
-  ssl_socket_data_provider.cert =
+  ssl_socket_data_provider.ssl_info.cert =
       ImportCertFromFile(GetTestCertsDirectory(), "unittest.selfsigned.der");
+  ASSERT_TRUE(ssl_socket_data_provider.ssl_info.cert);
   socket_factory_.AddSSLSocketDataProvider(&ssl_socket_data_provider);
 
   MockWrite writes[] = {
@@ -1158,19 +1461,30 @@ TEST_F(URLRequestHttpJobWithBrotliSupportTest, BrotliAdvertisement) {
 TEST_F(URLRequestHttpJobTest, AndroidCleartextPermittedTest) {
   context_.set_check_cleartext_permitted(true);
 
-  struct TestCase {
+  static constexpr struct TestCase {
     const char* url;
     bool cleartext_permitted;
     bool should_block;
-  } cases[] = {
-      {"http://blocked.test/", true, false},
-      {"https://blocked.test/", true, false},
-      {"http://blocked.test/", false, true},
-      {"https://blocked.test/", false, false},
+    int expected_per_host_call_count;
+    int expected_default_call_count;
+  } kTestCases[] = {
+      {"http://unblocked.test/", true, false, 1, 0},
+      {"https://unblocked.test/", true, false, 0, 0},
+      {"http://blocked.test/", false, true, 1, 0},
+      {"https://blocked.test/", false, false, 0, 0},
+      // If determining the per-host cleartext policy causes an
+      // IllegalArgumentException (because the hostname is invalid),
+      // the default configuration should be applied, and the
+      // exception should not cause a JNI error.
+      {"http://./", false, true, 1, 1},
+      {"http://./", true, false, 1, 1},
+      // Even if the host name would be considered invalid, https
+      // schemes should not trigger cleartext policy checks.
+      {"https://./", false, false, 0, 0},
   };
 
-  for (const TestCase& test : cases) {
-    JNIEnv* env = base::android::AttachCurrentThread();
+  JNIEnv* env = base::android::AttachCurrentThread();
+  for (const TestCase& test : kTestCases) {
     Java_AndroidNetworkLibraryTestUtil_setUpSecurityPolicyForTesting(
         env, test.cleartext_permitted);
 
@@ -1181,16 +1495,19 @@ TEST_F(URLRequestHttpJobTest, AndroidCleartextPermittedTest) {
     request->Start();
     base::RunLoop().Run();
 
-    int sdk_int = base::android::BuildInfo::GetInstance()->sdk_int();
-    bool expect_blocked = (sdk_int >= base::android::SDK_VERSION_MARSHMALLOW &&
-                           test.should_block);
-    if (expect_blocked) {
+    if (test.should_block) {
       EXPECT_THAT(delegate.request_status(),
                   IsError(ERR_CLEARTEXT_NOT_PERMITTED));
     } else {
       // Should fail since there's no test server running
       EXPECT_THAT(delegate.request_status(), IsError(ERR_FAILED));
     }
+    EXPECT_EQ(
+        Java_AndroidNetworkLibraryTestUtil_getPerHostCleartextCheckCount(env),
+        test.expected_per_host_call_count);
+    EXPECT_EQ(
+        Java_AndroidNetworkLibraryTestUtil_getDefaultCleartextCheckCount(env),
+        test.expected_default_call_count);
   }
 }
 #endif

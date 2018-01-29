@@ -103,9 +103,9 @@ void LayoutTable::StyleDidChange(StyleDifference diff,
     // explicit width is specified on the table. Auto width implies auto table
     // layout.
     if (Style()->IsFixedTableLayout())
-      table_layout_ = WTF::MakeUnique<TableLayoutAlgorithmFixed>(this);
+      table_layout_ = std::make_unique<TableLayoutAlgorithmFixed>(this);
     else
-      table_layout_ = WTF::MakeUnique<TableLayoutAlgorithmAuto>(this);
+      table_layout_ = std::make_unique<TableLayoutAlgorithmAuto>(this);
   }
 
   if (!old_style)
@@ -131,7 +131,7 @@ static inline void ResetSectionPointerIfNotBefore(LayoutTableSection*& ptr,
   while (o && o != ptr)
     o = o->PreviousSibling();
   if (!o)
-    ptr = 0;
+    ptr = nullptr;
 }
 
 static inline bool NeedsTableSection(LayoutObject* object) {
@@ -224,7 +224,7 @@ void LayoutTable::AddChild(LayoutObject* child, LayoutObject* before_child) {
 
   if (before_child && !before_child->IsTableSection() &&
       NeedsTableSection(before_child))
-    before_child = 0;
+    before_child = nullptr;
 
   LayoutTableSection* section =
       LayoutTableSection::CreateAnonymousWithParent(this);
@@ -304,7 +304,9 @@ void LayoutTable::UpdateLogicalWidth() {
         MinimumValueForLength(Style()->MarginStart(), available_logical_width);
     LayoutUnit margin_end =
         MinimumValueForLength(Style()->MarginEnd(), available_logical_width);
-    LayoutUnit margin_total = margin_start + margin_end;
+    LayoutUnit margin_total = RuntimeEnabledFeatures::LayoutNGEnabled()
+                                  ? LayoutUnit()
+                                  : margin_start + margin_end;
 
     // Subtract out our margins to get the available content width.
     LayoutUnit available_content_logical_width =
@@ -312,7 +314,8 @@ void LayoutTable::UpdateLogicalWidth() {
             .ClampNegativeToZero();
     if (ShrinkToAvoidFloats() && cb->IsLayoutBlockFlow() &&
         ToLayoutBlockFlow(cb)->ContainsFloats() &&
-        !has_perpendicular_containing_block)
+        !has_perpendicular_containing_block &&
+        !RuntimeEnabledFeatures::LayoutNGEnabled())
       available_content_logical_width = ShrinkLogicalWidthToAvoidFloats(
           margin_start, margin_end, ToLayoutBlockFlow(cb));
 
@@ -533,18 +536,14 @@ void LayoutTable::DistributeExtraLogicalHeight(int extra_logical_height) {
     extra_logical_height -=
         section->DistributeExtraLogicalHeightToRows(extra_logical_height);
 
-  // crbug.com/690087: We really would like to enable this ASSERT to ensure that
-  // all the extra space has been distributed.
-  // However our current distribution algorithm does not round properly and thus
-  // we can have some remaining height.
-  // DCHECK(!topSection() || !extraLogicalHeight);
+  DCHECK(!FirstBody() || !extra_logical_height);
 }
 
 void LayoutTable::SimplifiedNormalFlowLayout() {
   // FIXME: We should walk through the items in the tree in tree order to do the
   // layout here instead of walking through individual parts of the tree.
   // crbug.com/442737
-  for (auto& caption : captions_)
+  for (auto*& caption : captions_)
     caption->LayoutIfNeeded();
 
   for (LayoutTableSection* section = TopSection(); section;
@@ -557,8 +556,9 @@ void LayoutTable::SimplifiedNormalFlowLayout() {
   }
 }
 
-bool LayoutTable::RecalcChildOverflowAfterStyleChange() {
-  DCHECK(ChildNeedsOverflowRecalcAfterStyleChange());
+bool LayoutTable::RecalcOverflowAfterStyleChange() {
+  if (!ChildNeedsOverflowRecalcAfterStyleChange())
+    return false;
   ClearChildNeedsOverflowRecalcAfterStyleChange();
 
   // If the table sections we keep pointers to have gone away then the table
@@ -569,11 +569,8 @@ bool LayoutTable::RecalcChildOverflowAfterStyleChange() {
   bool children_overflow_changed = false;
   for (LayoutTableSection* section = TopSection(); section;
        section = SectionBelow(section)) {
-    if (!section->ChildNeedsOverflowRecalcAfterStyleChange())
-      continue;
     children_overflow_changed =
-        section->RecalcChildOverflowAfterStyleChange() ||
-        children_overflow_changed;
+        section->RecalcOverflowAfterStyleChange() || children_overflow_changed;
   }
   return RecalcPositionedDescendantsOverflowAfterStyleChange() ||
          children_overflow_changed;
@@ -623,8 +620,8 @@ void LayoutTable::UpdateLayout() {
       LayoutCaption(*captions_[i], layouter);
     }
 
-    LayoutTableSection* top_section = this->TopSection();
-    LayoutTableSection* bottom_section = this->BottomSection();
+    LayoutTableSection* top_section = TopSection();
+    LayoutTableSection* bottom_section = BottomSection();
 
     // This is the border-before edge of the "table box", relative to the "table
     // wrapper box", i.e. right after all top captions.
@@ -1279,7 +1276,7 @@ LayoutTableSection* LayoutTable::SectionAbove(
   RecalcSectionsIfNeeded();
 
   if (section == head_)
-    return 0;
+    return nullptr;
 
   LayoutObject* prev_section =
       section == foot_ ? LastChild() : section->PreviousSibling();
@@ -1449,7 +1446,7 @@ LayoutUnit LayoutTable::FirstLineBoxBaseline() const {
 
   RecalcSectionsIfNeeded();
 
-  const LayoutTableSection* top_non_empty_section = this->TopNonEmptySection();
+  const LayoutTableSection* top_non_empty_section = TopNonEmptySection();
   if (!top_non_empty_section)
     return LayoutUnit(-1);
 
@@ -1470,6 +1467,14 @@ LayoutUnit LayoutTable::FirstLineBoxBaseline() const {
 LayoutRect LayoutTable::OverflowClipRect(
     const LayoutPoint& location,
     OverlayScrollbarClipBehavior overlay_scrollbar_clip_behavior) const {
+  if (ShouldCollapseBorders()) {
+    // Though the outer halves of the collapsed borders are considered as the
+    // the border area of the table by means of the box model, they are actually
+    // contents of the table and should not be clipped off. The overflow clip
+    // rect is BorderBoxRect() + location.
+    return LayoutRect(location, Size());
+  }
+
   LayoutRect rect =
       LayoutBlock::OverflowClipRect(location, overlay_scrollbar_clip_behavior);
 
@@ -1538,7 +1543,7 @@ bool LayoutTable::NodeAtPoint(HitTestResult& result,
 
 LayoutTable* LayoutTable::CreateAnonymousWithParent(
     const LayoutObject* parent) {
-  RefPtr<ComputedStyle> new_style =
+  scoped_refptr<ComputedStyle> new_style =
       ComputedStyle::CreateAnonymousStyleWithDisplay(
           parent->StyleRef(),
           parent->IsLayoutInline() ? EDisplay::kInlineTable : EDisplay::kTable);

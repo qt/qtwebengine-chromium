@@ -190,16 +190,38 @@ class FakeIceTransport : public IceTransportInternal {
     SignalSentPacket(this, sent_packet);
     return static_cast<int>(len);
   }
-  int SetOption(rtc::Socket::Option opt, int value) override { return true; }
-  bool GetOption(rtc::Socket::Option opt, int* value) override { return true; }
+
+  int SetOption(rtc::Socket::Option opt, int value) override {
+    socket_options_[opt] = value;
+    return true;
+  }
+  bool GetOption(rtc::Socket::Option opt, int* value) override {
+    auto it = socket_options_.find(opt);
+    if (it != socket_options_.end()) {
+      *value = it->second;
+      return true;
+    } else {
+      return false;
+    }
+  }
+
   int GetError() override { return 0; }
+
+  rtc::CopyOnWriteBuffer last_sent_packet() { return last_sent_packet_; }
+
+  rtc::Optional<rtc::NetworkRoute> network_route() const override {
+    return network_route_;
+  }
+  void SetNetworkRoute(rtc::Optional<rtc::NetworkRoute> network_route) {
+    network_route_ = network_route;
+  }
 
  private:
   void set_writable(bool writable) {
     if (writable_ == writable) {
       return;
     }
-    LOG(INFO) << "set_writable from:" << writable_ << " to " << writable;
+    RTC_LOG(INFO) << "set_writable from:" << writable_ << " to " << writable;
     writable_ = writable;
     if (writable_) {
       SignalReadyToSend(this);
@@ -217,6 +239,7 @@ class FakeIceTransport : public IceTransportInternal {
 
   void SendPacketInternal(const rtc::CopyOnWriteBuffer& packet) {
     if (dest_) {
+      last_sent_packet_ = packet;
       dest_->SignalReadPacket(dest_, packet.data<char>(), packet.size(),
                               rtc::CreatePacketTime(0), 0);
     }
@@ -244,6 +267,9 @@ class FakeIceTransport : public IceTransportInternal {
   bool receiving_ = false;
   bool combine_outgoing_packets_ = false;
   rtc::CopyOnWriteBuffer send_packet_;
+  rtc::Optional<rtc::NetworkRoute> network_route_;
+  std::map<rtc::Socket::Option, int> socket_options_;
+  rtc::CopyOnWriteBuffer last_sent_packet_;
 };
 
 }  // namespace cricket

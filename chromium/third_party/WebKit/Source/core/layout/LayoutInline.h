@@ -305,13 +305,7 @@ class CORE_EXPORT LayoutInline : public LayoutBoxModelObject {
 
   virtual InlineFlowBox* CreateInlineFlowBox();  // Subclassed by SVG and Ruby
 
-  void DirtyLinesFromChangedChild(
-      LayoutObject* child,
-      MarkingBehavior marking_behaviour = kMarkContainerChain) final {
-    line_boxes_.DirtyLinesFromChangedChild(
-        LineLayoutItem(this), LineLayoutItem(child),
-        marking_behaviour == kMarkContainerChain);
-  }
+  void DirtyLinesFromChangedChild(LayoutObject*, MarkingBehavior) final;
 
   // TODO(leviw): This should probably be an int. We don't snap equivalent lines
   // to different heights.
@@ -329,7 +323,9 @@ class CORE_EXPORT LayoutInline : public LayoutBoxModelObject {
 
   void UpdateHitTestResult(HitTestResult&, const LayoutPoint&) final;
 
-  void ImageChanged(WrappedImagePtr, const IntRect* = nullptr) final;
+  void ImageChanged(WrappedImagePtr,
+                    CanDeferInvalidation,
+                    const IntRect* = nullptr) final;
 
   void AddAnnotatedRegions(Vector<AnnotatedRegionValue>&) final;
 

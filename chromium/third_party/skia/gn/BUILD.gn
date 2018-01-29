@@ -288,6 +288,11 @@ config("warnings") {
       "/wd4291",  # no matching operator delete found;
                   # memory will not be freed if initialization throws an exception
     ]
+    if (is_clang) {
+      # Shouldn't be necessary for local builds. With distributed builds, files may lose
+      # their case during copy, causing case-sensitivity mismatch on remote machines.
+      cflags += [ "-Wno-nonportable-include-path" ]
+    }
   } else {
     cflags += [
       "-Wall",
@@ -308,9 +313,8 @@ config("warnings") {
         "-Wno-unknown-warning-option",  # Let older Clangs ignore newer Clangs' warnings.
       ]
 
-      if ((target_cpu == "x86" && is_android) ||
-          (target_cpu == "arm" && is_ios)) {
-        # Clang seems to think new/malloc will only be 4-byte aligned on x86 Android and 32-bit iOS.
+      if (target_cpu == "arm" && is_ios) {
+        # Clang seems to think new/malloc will only be 4-byte aligned on 32-bit iOS.
         # We're pretty sure it's actually 8-byte alignment.
         cflags += [ "-Wno-over-aligned" ]
       }

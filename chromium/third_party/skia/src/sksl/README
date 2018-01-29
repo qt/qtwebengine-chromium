@@ -41,6 +41,7 @@ Differences from GLSL
 * use sk_Position instead of gl_Position
 * use sk_PointSize instead of gl_PointSize
 * use sk_VertexID instead of gl_VertexID
+* use sk_InstanceID instead of gl_InstanceID
 * the fragment coordinate is sk_FragCoord, and is always relative to the upper
   left.
 * you do not need to include ".0" to make a number a float (meaning that
@@ -109,10 +110,6 @@ Within an '.fp' fragment processor file:
   coordinates. sk_TransformedCoords2D[0] is equivalent to calling
   fragBuilder->ensureCoords2D(args.fTransformedCoords[0]) (and the result is
   cached, so you need not worry about using the value repeatedly).
-* 'colorSpaceXform' is a supported type. It is reflected within SkSL as a mat4,
-  and on the C++ side as sk_sp<GrColorSpaceXform>.
-* the texture() function can be passed a colorSpaceXform as an additional
-  parameter
 * Uniform variables support an additional 'when' layout key.
   'layout(when=foo) uniform int x;' means that this uniform will only be
   emitted when the 'foo' expression is true.
@@ -121,3 +118,6 @@ Within an '.fp' fragment processor file:
   the program's key. Matrix variables additionally support 'key=identity',
   which causes the key to consider only whether or not the matrix is an
   identity matrix.
+* 'float4' / 'half4' variables support an additional 'ctype' layout key,
+  providing the type they should be represented as from within the C++ code.
+  Currently the only two supported ctypes are 'SkRect' and 'SkPMColor'.

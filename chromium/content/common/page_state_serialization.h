@@ -24,6 +24,8 @@
 
 namespace content {
 
+constexpr int kMaxScrollAnchorSelectorLength = 500;
+
 struct CONTENT_EXPORT ExplodedHttpBody {
   base::Optional<base::string16> http_content_type;
   scoped_refptr<ResourceRequestBody> request_body;
@@ -48,6 +50,9 @@ struct CONTENT_EXPORT ExplodedFrameState {
   double page_scale_factor;
   blink::WebReferrerPolicy referrer_policy;
   ExplodedHttpBody http_body;
+  base::Optional<base::string16> scroll_anchor_selector;
+  gfx::PointF scroll_anchor_offset;
+  uint64_t scroll_anchor_simhash;
   std::vector<ExplodedFrameState> children;
 
   ExplodedFrameState();
@@ -79,9 +84,10 @@ CONTENT_EXPORT int DecodePageStateForTesting(const std::string& encoded,
                                              ExplodedPageState* exploded);
 CONTENT_EXPORT void EncodePageState(const ExplodedPageState& exploded,
                                     std::string* encoded);
-CONTENT_EXPORT void EncodePageStateForTesting(const ExplodedPageState& exploded,
-                                              int version,
-                                              std::string* encoded);
+CONTENT_EXPORT void LegacyEncodePageStateForTesting(
+    const ExplodedPageState& exploded,
+    int version,
+    std::string* encoded);
 
 #if defined(OS_ANDROID)
 CONTENT_EXPORT bool DecodePageStateWithDeviceScaleFactorForTesting(

@@ -55,12 +55,15 @@ DEFINE_VARIATION_PARAM(kIPHDownloadPageScreenshotFeature,
 DEFINE_VARIATION_PARAM(kIPHChromeHomeExpandFeature, "IPH_ChromeHomeExpand");
 DEFINE_VARIATION_PARAM(kIPHChromeHomeMenuHeaderFeature,
                        "IPH_ChromeHomeMenuHeader");
+DEFINE_VARIATION_PARAM(kIPHChromeHomePullToRefreshFeature,
+                       "IPH_ChromeHomePullToRefresh");
 DEFINE_VARIATION_PARAM(kIPHMediaDownloadFeature, "IPH_MediaDownload");
-DEFINE_VARIATION_PARAM(kIPHContextualSearchFeature, "IPH_ContextualSearch");
-DEFINE_VARIATION_PARAM(kIPHContextualSearchTapFeature,
-                       "IPH_ContextualSearchTap");
-DEFINE_VARIATION_PARAM(kIPHContextualSearchPanelFeature,
-                       "IPH_ContextualSearchPanel");
+DEFINE_VARIATION_PARAM(kIPHContextualSearchWebSearchFeature,
+                       "IPH_ContextualSearchWebSearch");
+DEFINE_VARIATION_PARAM(kIPHContextualSearchPromoteTapFeature,
+                       "IPH_ContextualSearchPromoteTap");
+DEFINE_VARIATION_PARAM(kIPHContextualSearchPromotePanelOpenFeature,
+                       "IPH_ContextualSearchPromotePanelOpen");
 DEFINE_VARIATION_PARAM(kIPHContextualSearchOptInFeature,
                        "IPH_ContextualSearchOptIn");
 #endif  // defined(OS_ANDROID)
@@ -90,12 +93,13 @@ constexpr flags_ui::FeatureEntry::FeatureVariation
         VARIATION_ENTRY(kIPHDownloadPageScreenshotFeature),
         VARIATION_ENTRY(kIPHChromeHomeExpandFeature),
         VARIATION_ENTRY(kIPHChromeHomeMenuHeaderFeature),
+        VARIATION_ENTRY(kIPHChromeHomePullToRefreshFeature),
         VARIATION_ENTRY(kIPHMediaDownloadFeature),
-        VARIATION_ENTRY(kIPHContextualSearchFeature),
-        VARIATION_ENTRY(kIPHContextualSearchTapFeature),
-        VARIATION_ENTRY(kIPHContextualSearchPanelFeature),
+        VARIATION_ENTRY(kIPHContextualSearchWebSearchFeature),
+        VARIATION_ENTRY(kIPHContextualSearchPromoteTapFeature),
+        VARIATION_ENTRY(kIPHContextualSearchPromotePanelOpenFeature),
         VARIATION_ENTRY(kIPHContextualSearchOptInFeature),
-#elif defined(OS_WIN) || (defined(OS_LINUX) && !defined(OS_CHROMEOS))
+#elif BUILDFLAG(ENABLE_DESKTOP_IN_PRODUCT_HELP)
         VARIATION_ENTRY(kIPHBookmarkFeature),
         VARIATION_ENTRY(kIPHIncognitoWindowFeature),
         VARIATION_ENTRY(kIPHNewTabFeature),

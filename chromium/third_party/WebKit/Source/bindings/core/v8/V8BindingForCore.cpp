@@ -53,8 +53,7 @@
 #include "core/inspector/InspectorTraceEvents.h"
 #include "core/loader/FrameLoader.h"
 #include "core/typed_arrays/FlexibleArrayBufferView.h"
-#include "core/workers/WorkerGlobalScope.h"
-#include "core/workers/WorkletGlobalScope.h"
+#include "core/workers/WorkerOrWorkletGlobalScope.h"
 #include "core/xml/XPathNSResolver.h"
 #include "platform/bindings/RuntimeCallStats.h"
 #include "platform/bindings/V8BindingMacros.h"
@@ -687,18 +686,18 @@ XPathNSResolver* ToXPathNSResolver(ScriptState* script_state,
 
 DOMWindow* ToDOMWindow(v8::Isolate* isolate, v8::Local<v8::Value> value) {
   if (value.IsEmpty() || !value->IsObject())
-    return 0;
+    return nullptr;
 
   v8::Local<v8::Object> window_wrapper = V8Window::findInstanceInPrototypeChain(
       v8::Local<v8::Object>::Cast(value), isolate);
   if (!window_wrapper.IsEmpty())
     return V8Window::ToImpl(window_wrapper);
-  return 0;
+  return nullptr;
 }
 
 LocalDOMWindow* ToLocalDOMWindow(v8::Local<v8::Context> context) {
   if (context.IsEmpty())
-    return 0;
+    return nullptr;
   return ToLocalDOMWindow(
       ToDOMWindow(context->GetIsolate(), context->Global()));
 }
@@ -789,7 +788,7 @@ v8::Local<v8::Context> ToV8Context(ExecutionContext* context,
   if (context->IsDocument()) {
     if (LocalFrame* frame = ToDocument(context)->GetFrame())
       return ToV8Context(frame, world);
-  } else if (context->IsWorkerGlobalScope()) {
+  } else if (context->IsWorkerOrWorkletGlobalScope()) {
     if (WorkerOrWorkletScriptController* script =
             ToWorkerOrWorkletGlobalScope(context)->ScriptController()) {
       if (script->GetScriptState()->ContextIsValid())

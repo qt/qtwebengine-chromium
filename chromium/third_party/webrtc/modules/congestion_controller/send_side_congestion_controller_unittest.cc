@@ -14,6 +14,7 @@
 #include "modules/congestion_controller/include/mock/mock_congestion_observer.h"
 #include "modules/congestion_controller/include/send_side_congestion_controller.h"
 #include "modules/pacing/mock/mock_paced_sender.h"
+#include "modules/pacing/packet_router.h"
 #include "modules/remote_bitrate_estimator/include/bwe_defines.h"
 #include "modules/rtp_rtcp/include/rtp_rtcp_defines.h"
 #include "modules/rtp_rtcp/source/rtcp_packet/transport_feedback.h"
@@ -37,12 +38,6 @@ namespace {
 const webrtc::PacedPacketInfo kPacingInfo0(0, 5, 2000);
 const webrtc::PacedPacketInfo kPacingInfo1(1, 8, 4000);
 
-class MockPacketRouter : public PacketRouter {
- public:
-  MOCK_METHOD2(OnReceiveBitrateChanged,
-               void(const std::vector<uint32_t>& ssrcs, uint32_t bitrate));
-};
-
 const uint32_t kInitialBitrateBps = 60000;
 
 }  // namespace
@@ -59,8 +54,7 @@ class SendSideCongestionControllerTest : public ::testing::Test {
     pacer_.reset(new NiceMock<MockPacedSender>());
     controller_.reset(new SendSideCongestionController(
         &clock_, &observer_, &event_log_, pacer_.get()));
-    bandwidth_observer_.reset(
-        controller_->GetBitrateController()->CreateRtcpBandwidthObserver());
+    bandwidth_observer_ = controller_->GetBandwidthObserver();
 
     // Set the initial bitrate estimate and expect the |observer| and |pacer_|
     // to be updated.
@@ -100,7 +94,7 @@ class SendSideCongestionControllerTest : public ::testing::Test {
                           uint8_t fraction_loss,  // 0 - 255.
                           int64_t rtt_ms,
                           int64_t probing_interval_ms) override {
-      owner_->target_bitrate_bps_ = rtc::Optional<uint32_t>(bitrate_bps);
+      owner_->target_bitrate_bps_ = bitrate_bps;
     }
 
    private:
@@ -140,7 +134,7 @@ class SendSideCongestionControllerTest : public ::testing::Test {
   StrictMock<MockCongestionObserver> observer_;
   TargetBitrateObserver target_bitrate_observer_;
   NiceMock<MockRtcEventLog> event_log_;
-  std::unique_ptr<RtcpBandwidthObserver> bandwidth_observer_;
+  RtcpBandwidthObserver* bandwidth_observer_;
   PacketRouter packet_router_;
   std::unique_ptr<NiceMock<MockPacedSender>> pacer_;
   std::unique_ptr<SendSideCongestionController> controller_;

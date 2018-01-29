@@ -347,7 +347,7 @@ bool GIFFrameContext::Decode(FastSharedBufferReader* reader,
     if (!IsDataSizeDefined() || !IsHeaderDefined())
       return true;
 
-    lzw_context_ = WTF::MakeUnique<GIFLZWContext>(client, this);
+    lzw_context_ = std::make_unique<GIFLZWContext>(client, this);
     if (!lzw_context_->PrepareToDecode()) {
       lzw_context_.reset();
       return false;
@@ -366,7 +366,7 @@ bool GIFFrameContext::Decode(FastSharedBufferReader* reader,
       return false;
 
     while (block_size) {
-      const char* segment = 0;
+      const char* segment = nullptr;
       size_t segment_length = reader->GetSomeData(segment, block_position);
       size_t decode_size = std::min(segment_length, block_size);
       if (!lzw_context_->DoLZW(reinterpret_cast<const unsigned char*>(segment),

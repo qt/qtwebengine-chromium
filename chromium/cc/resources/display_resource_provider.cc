@@ -14,6 +14,12 @@ using gpu::gles2::GLES2Interface;
 
 namespace cc {
 
+namespace {
+// The resource id in DisplayResourceProvider starts from 2 to avoid
+// conflicts with id from LayerTreeResourceProvider.
+const unsigned int kDisplayInitialResourceId = 2;
+}  // namespace
+
 DisplayResourceProvider::DisplayResourceProvider(
     viz::ContextProvider* compositor_context_provider,
     viz::SharedBitmapManager* shared_bitmap_manager,
@@ -23,7 +29,8 @@ DisplayResourceProvider::DisplayResourceProvider(
                        shared_bitmap_manager,
                        gpu_memory_buffer_manager,
                        false,
-                       resource_settings) {}
+                       resource_settings,
+                       kDisplayInitialResourceId) {}
 
 DisplayResourceProvider::~DisplayResourceProvider() {
   while (!children_.empty())
@@ -45,11 +52,11 @@ void DisplayResourceProvider::SendPromotionHints(
     if (it->second.marked_for_deletion)
       continue;
 
-    const Resource* resource = LockForRead(id);
+    const viz::internal::Resource* resource = LockForRead(id);
     DCHECK(resource->wants_promotion_hint);
 
     // Insist that this is backed by a GPU texture.
-    if (ResourceProvider::IsGpuResourceType(resource->type)) {
+    if (resource->is_gpu_resource_type()) {
       DCHECK(resource->gl_id);
       auto iter = promotion_hints.find(id);
       bool promotable = iter != promotion_hints.end();
@@ -155,13 +162,14 @@ void DisplayResourceProvider::DeleteAndReturnUnusedResourcesToChild(
   to_return.reserve(unused.size());
   std::vector<viz::ReturnedResource*> need_synchronization_resources;
   std::vector<GLbyte*> unverified_sync_tokens;
+  std::vector<size_t> to_return_indices_unverified;
 
   GLES2Interface* gl = ContextGL();
 
   for (viz::ResourceId local_id : unused) {
     ResourceMap::iterator it = resources_.find(local_id);
     CHECK(it != resources_.end());
-    Resource& resource = it->second;
+    viz::internal::Resource& resource = it->second;
 
     DCHECK(!resource.locked_for_write);
 
@@ -169,7 +177,7 @@ void DisplayResourceProvider::DeleteAndReturnUnusedResourcesToChild(
     DCHECK(child_info->child_to_parent_map.count(child_id));
 
     bool is_lost = resource.lost ||
-                   (IsGpuResourceType(resource.type) && lost_context_provider_);
+                   (resource.is_gpu_resource_type() && lost_context_provider_);
     if (resource.exported_count > 0 || resource.lock_for_read_count > 0) {
       if (style != FOR_SHUTDOWN) {
         // Defer this resource deletion.
@@ -190,7 +198,7 @@ void DisplayResourceProvider::DeleteAndReturnUnusedResourcesToChild(
       is_lost = true;
     }
 
-    if (IsGpuResourceType(resource.type) &&
+    if (resource.is_gpu_resource_type() &&
         resource.filter != resource.original_filter) {
       DCHECK(resource.target);
       DCHECK(resource.gl_id);
@@ -205,18 +213,20 @@ void DisplayResourceProvider::DeleteAndReturnUnusedResourcesToChild(
 
     viz::ReturnedResource returned;
     returned.id = child_id;
-    returned.sync_token = resource.mailbox().sync_token();
+    returned.sync_token = resource.sync_token();
     returned.count = resource.imported_count;
     returned.lost = is_lost;
     to_return.push_back(returned);
 
-    if (IsGpuResourceType(resource.type) && child_info->needs_sync_tokens) {
+    if (resource.is_gpu_resource_type() && child_info->needs_sync_tokens) {
       if (resource.needs_sync_token()) {
         need_synchronization_resources.push_back(&to_return.back());
       } else if (returned.sync_token.HasData() &&
                  !returned.sync_token.verified_flush()) {
-        // Before returning any sync tokens, they must be verified.
-        unverified_sync_tokens.push_back(returned.sync_token.GetData());
+        // Before returning any sync tokens, they must be verified. Store an
+        // index into |to_return| instead of a pointer as vectors may realloc
+        // and move their data.
+        to_return_indices_unverified.push_back(to_return.size() - 1);
       }
     }
 
@@ -224,6 +234,9 @@ void DisplayResourceProvider::DeleteAndReturnUnusedResourcesToChild(
     resource.imported_count = 0;
     DeleteResourceInternal(it, style);
   }
+
+  for (size_t i : to_return_indices_unverified)
+    unverified_sync_tokens.push_back(to_return[i].sync_token.GetData());
 
   gpu::SyncToken new_sync_token;
   if (!need_synchronization_resources.empty()) {
@@ -268,7 +281,8 @@ void DisplayResourceProvider::ReceiveFromChild(
     ResourceIdMap::iterator resource_in_map_it =
         child_info.child_to_parent_map.find(it->id);
     if (resource_in_map_it != child_info.child_to_parent_map.end()) {
-      Resource* resource = GetResource(resource_in_map_it->second);
+      viz::internal::Resource* resource =
+          GetResource(resource_in_map_it->second);
       resource->marked_for_deletion = false;
       resource->imported_count++;
       continue;
@@ -285,21 +299,30 @@ void DisplayResourceProvider::ReceiveFromChild(
     }
 
     viz::ResourceId local_id = next_id_++;
-    Resource* resource = nullptr;
+    viz::internal::Resource* resource = nullptr;
     if (it->is_software) {
-      resource = InsertResource(local_id,
-                                Resource(it->mailbox_holder.mailbox, it->size,
-                                         Resource::DELEGATED, GL_LINEAR));
+      resource = InsertResource(
+          local_id,
+          viz::internal::Resource(it->size, viz::internal::Resource::DELEGATED,
+                                  viz::ResourceTextureHint::kDefault,
+                                  viz::ResourceType::kBitmap, viz::RGBA_8888,
+                                  it->color_space));
+      resource->has_shared_bitmap_id = true;
+      resource->shared_bitmap_id = it->mailbox_holder.mailbox;
     } else {
       resource = InsertResource(
           local_id,
-          Resource(0, it->size, Resource::DELEGATED,
-                   it->mailbox_holder.texture_target, it->filter,
-                   TEXTURE_HINT_DEFAULT, RESOURCE_TYPE_GL_TEXTURE, it->format));
+          viz::internal::Resource(it->size, viz::internal::Resource::DELEGATED,
+                                  viz::ResourceTextureHint::kDefault,
+                                  viz::ResourceType::kTexture, it->format,
+                                  it->color_space));
+      resource->target = it->mailbox_holder.texture_target;
+      resource->filter = it->filter;
+      resource->original_filter = it->filter;
+      resource->min_filter = it->filter;
       resource->buffer_format = it->buffer_format;
-      resource->SetMailbox(viz::TextureMailbox(
-          it->mailbox_holder.mailbox, it->mailbox_holder.sync_token,
-          it->mailbox_holder.texture_target));
+      resource->mailbox = it->mailbox_holder.mailbox;
+      resource->UpdateSyncToken(it->mailbox_holder.sync_token);
       resource->read_lock_fences_enabled = it->read_lock_fences_enabled;
       resource->is_overlay_candidate = it->is_overlay_candidate;
 #if defined(OS_ANDROID)
@@ -308,7 +331,6 @@ void DisplayResourceProvider::ReceiveFromChild(
       if (resource->wants_promotion_hint)
         wants_promotion_hints_set_.insert(local_id);
 #endif
-      resource->color_space = it->color_space;
     }
     resource->child_id = child;
     // Don't allocate a texture for a child.
@@ -353,16 +375,17 @@ DisplayResourceProvider::ScopedReadLockGL::ScopedReadLockGL(
     DisplayResourceProvider* resource_provider,
     viz::ResourceId resource_id)
     : resource_provider_(resource_provider), resource_id_(resource_id) {
-  const Resource* resource = resource_provider->LockForRead(resource_id);
+  const viz::internal::Resource* resource =
+      resource_provider->LockForRead(resource_id);
   texture_id_ = resource->gl_id;
   target_ = resource->target;
   size_ = resource->size;
   color_space_ = resource->color_space;
 }
 
-const ResourceProvider::Resource* DisplayResourceProvider::LockForRead(
+const viz::internal::Resource* DisplayResourceProvider::LockForRead(
     viz::ResourceId id) {
-  Resource* resource = GetResource(id);
+  viz::internal::Resource* resource = GetResource(id);
   DCHECK(!resource->locked_for_write)
       << "locked for write: " << resource->locked_for_write;
   DCHECK_EQ(resource->exported_count, 0);
@@ -371,16 +394,17 @@ const ResourceProvider::Resource* DisplayResourceProvider::LockForRead(
 
   // Mailbox sync_tokens must be processed by a call to WaitSyncToken() prior to
   // calling LockForRead().
-  DCHECK_NE(Resource::NEEDS_WAIT, resource->synchronization_state());
+  DCHECK_NE(viz::internal::Resource::NEEDS_WAIT,
+            resource->synchronization_state());
 
-  if (IsGpuResourceType(resource->type) && !resource->gl_id) {
-    DCHECK(resource->origin != Resource::INTERNAL);
-    DCHECK(resource->mailbox().IsTexture());
+  if (resource->is_gpu_resource_type() && !resource->gl_id) {
+    DCHECK(resource->origin != viz::internal::Resource::INTERNAL);
+    DCHECK(!resource->mailbox.IsZero());
 
     GLES2Interface* gl = ContextGL();
     DCHECK(gl);
     resource->gl_id = gl->CreateAndConsumeTextureCHROMIUM(
-        resource->mailbox().target(), resource->mailbox().name());
+        resource->target, resource->mailbox.name);
     resource->SetLocallyUsed();
   }
 
@@ -390,8 +414,8 @@ const ResourceProvider::Resource* DisplayResourceProvider::LockForRead(
         shared_bitmap_manager_->GetSharedBitmapFromId(
             resource->size, resource->shared_bitmap_id);
     if (bitmap) {
-      resource->shared_bitmap = bitmap.release();
-      resource->pixels = resource->shared_bitmap->pixels();
+      resource->SetSharedBitmap(bitmap.get());
+      resource->owned_shared_bitmap = std::move(bitmap);
     }
   }
 
@@ -410,7 +434,7 @@ void DisplayResourceProvider::UnlockForRead(viz::ResourceId id) {
   ResourceMap::iterator it = resources_.find(id);
   CHECK(it != resources_.end());
 
-  Resource* resource = &it->second;
+  viz::internal::Resource* resource = &it->second;
   DCHECK_GT(resource->lock_for_read_count, 0);
   DCHECK_EQ(resource->exported_count, 0);
   resource->lock_for_read_count--;
@@ -458,7 +482,8 @@ DisplayResourceProvider::ScopedReadLockSkImage::ScopedReadLockSkImage(
     DisplayResourceProvider* resource_provider,
     viz::ResourceId resource_id)
     : resource_provider_(resource_provider), resource_id_(resource_id) {
-  const Resource* resource = resource_provider->LockForRead(resource_id);
+  const viz::internal::Resource* resource =
+      resource_provider->LockForRead(resource_id);
   if (resource_provider_->resource_sk_image_.find(resource_id) !=
       resource_provider_->resource_sk_image_.end()) {
     // Use cached sk_image.
@@ -499,7 +524,8 @@ DisplayResourceProvider::ScopedReadLockSoftware::ScopedReadLockSoftware(
     DisplayResourceProvider* resource_provider,
     viz::ResourceId resource_id)
     : resource_provider_(resource_provider), resource_id_(resource_id) {
-  const Resource* resource = resource_provider->LockForRead(resource_id);
+  const viz::internal::Resource* resource =
+      resource_provider->LockForRead(resource_id);
   resource_provider->PopulateSkBitmapWithResource(&sk_bitmap_, resource);
 }
 

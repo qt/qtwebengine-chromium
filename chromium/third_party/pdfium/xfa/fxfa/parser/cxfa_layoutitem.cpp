@@ -76,20 +76,24 @@ CFX_RectF CXFA_LayoutItem::GetRect(bool bRelative) const {
       CXFA_Node* pMarginNode =
           pLayoutItem->m_pFormNode->GetFirstChildByClass(XFA_Element::Margin);
       if (pMarginNode) {
-        sPos += CFX_PointF(pMarginNode->GetMeasure(XFA_ATTRIBUTE_LeftInset)
-                               .ToUnit(XFA_UNIT_Pt),
-                           pMarginNode->GetMeasure(XFA_ATTRIBUTE_TopInset)
-                               .ToUnit(XFA_UNIT_Pt));
+        sPos += CFX_PointF(pMarginNode->JSNode()
+                               ->GetMeasure(XFA_Attribute::LeftInset)
+                               .ToUnit(XFA_Unit::Pt),
+                           pMarginNode->JSNode()
+                               ->GetMeasure(XFA_Attribute::TopInset)
+                               .ToUnit(XFA_Unit::Pt));
       }
       continue;
     }
 
     if (pLayoutItem->m_pFormNode->GetElementType() ==
         XFA_Element::ContentArea) {
-      sPos += CFX_PointF(pLayoutItem->m_pFormNode->GetMeasure(XFA_ATTRIBUTE_X)
-                             .ToUnit(XFA_UNIT_Pt),
-                         pLayoutItem->m_pFormNode->GetMeasure(XFA_ATTRIBUTE_Y)
-                             .ToUnit(XFA_UNIT_Pt));
+      sPos += CFX_PointF(pLayoutItem->m_pFormNode->JSNode()
+                             ->GetMeasure(XFA_Attribute::X)
+                             .ToUnit(XFA_Unit::Pt),
+                         pLayoutItem->m_pFormNode->JSNode()
+                             ->GetMeasure(XFA_Attribute::Y)
+                             .ToUnit(XFA_Unit::Pt));
       break;
     }
     if (pLayoutItem->m_pFormNode->GetElementType() == XFA_Element::PageArea)

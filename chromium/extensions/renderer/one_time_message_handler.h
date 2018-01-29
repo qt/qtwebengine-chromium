@@ -59,12 +59,6 @@ class OneTimeMessageHandler {
       NativeExtensionBindingsSystem* bindings_system);
   ~OneTimeMessageHandler();
 
-  // The event corresponding with the message.
-  enum class Event {
-    ON_MESSAGE,  // For runtime.sendMessage and extension.sendMessage.
-    ON_REQUEST,  // For the deprecated extension.sendRequest.
-  };
-
   // Returns true if the given context has a port with the specified id.
   bool HasPort(ScriptContext* script_context, const PortId& port_id);
 
@@ -82,7 +76,7 @@ class OneTimeMessageHandler {
   void AddReceiver(ScriptContext* script_context,
                    const PortId& target_port_id,
                    v8::Local<v8::Object> sender,
-                   Event event);
+                   const std::string& event_name);
 
   // Delivers a message to the port, either the event listener or in response
   // to the sender, if one exists with the specified |target_port_id|. Returns
@@ -117,6 +111,10 @@ class OneTimeMessageHandler {
   // Triggered when a receiver responds to a message.
   void OnOneTimeMessageResponse(const PortId& port_id,
                                 gin::Arguments* arguments);
+
+  // Triggered when the callback to reply is garbage collected.
+  void OnResponseCallbackCollected(ScriptContext* script_context,
+                                   const PortId& port_id);
 
   // The associated bindings system. Outlives this object.
   NativeExtensionBindingsSystem* const bindings_system_;

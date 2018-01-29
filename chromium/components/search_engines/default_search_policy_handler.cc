@@ -31,7 +31,7 @@ void SetListInPref(const PolicyMap& policies,
                    base::DictionaryValue* dict) {
   DCHECK(dict);
   const base::Value* policy_value = policies.GetValue(policy_name);
-  const base::ListValue* policy_list = NULL;
+  const base::ListValue* policy_list = nullptr;
   if (policy_value) {
     bool is_list = policy_value->GetAsList(&policy_list);
     DCHECK(is_list);
@@ -101,7 +101,8 @@ bool DefaultSearchPolicyHandler::CheckPolicySettings(const PolicyMap& policies,
   if (!CheckIndividualPolicies(policies, errors))
     return false;
 
-  if (DefaultSearchProviderIsDisabled(policies)) {
+  if (!DefaultSearchProviderPolicyIsSet(policies) ||
+      DefaultSearchProviderIsDisabled(policies)) {
     // Add an error for all specified default search policies except
     // DefaultSearchProviderEnabled.
 
@@ -127,6 +128,10 @@ bool DefaultSearchPolicyHandler::CheckPolicySettings(const PolicyMap& policies,
 
 void DefaultSearchPolicyHandler::ApplyPolicySettings(const PolicyMap& policies,
                                                      PrefValueMap* prefs) {
+  // If the main switch is not set don't set anything.
+  if (!DefaultSearchProviderPolicyIsSet(policies))
+    return;
+
   if (DefaultSearchProviderIsDisabled(policies)) {
     std::unique_ptr<base::DictionaryValue> dict(new base::DictionaryValue);
     dict->SetBoolean(DefaultSearchManager::kDisabledByPolicy, true);
@@ -209,7 +214,7 @@ bool DefaultSearchPolicyHandler::CheckIndividualPolicies(
     // It's important to check policy type for all policies and not just exit on
     // the first error, so we report all policy errors.
     const base::Value* value = policies.GetValue(policy_map_entry.policy_name);
-    if (value && !value->IsType(policy_map_entry.value_type)) {
+    if (value && value->type() != policy_map_entry.value_type) {
       errors->AddError(policy_map_entry.policy_name, IDS_POLICY_TYPE_ERROR,
                        base::Value::GetTypeName(policy_map_entry.value_type));
       all_ok = false;
@@ -221,7 +226,7 @@ bool DefaultSearchPolicyHandler::CheckIndividualPolicies(
 bool DefaultSearchPolicyHandler::HasDefaultSearchPolicy(
     const PolicyMap& policies,
     const char* policy_name) {
-  return policies.Get(policy_name) != NULL;
+  return policies.Get(policy_name) != nullptr;
 }
 
 bool DefaultSearchPolicyHandler::AnyDefaultSearchPoliciesSpecified(
@@ -240,6 +245,11 @@ bool DefaultSearchPolicyHandler::DefaultSearchProviderIsDisabled(
   bool enabled = true;
   return provider_enabled && provider_enabled->GetAsBoolean(&enabled) &&
       !enabled;
+}
+
+bool DefaultSearchPolicyHandler::DefaultSearchProviderPolicyIsSet(
+    const PolicyMap& policies) {
+  return HasDefaultSearchPolicy(policies, key::kDefaultSearchProviderEnabled);
 }
 
 bool DefaultSearchPolicyHandler::DefaultSearchURLIsValid(

@@ -22,7 +22,6 @@
 #include "content/browser/plugin_service_impl.h"
 #include "content/browser/renderer_host/render_message_filter.h"
 #include "content/common/child_process_host_impl.h"
-#include "content/common/child_process_messages.h"
 #include "content/common/content_switches_internal.h"
 #include "content/public/browser/content_browser_client.h"
 #include "content/public/common/content_constants.h"
@@ -36,6 +35,7 @@
 #include "net/base/network_change_notifier.h"
 #include "ppapi/proxy/ppapi_messages.h"
 #include "services/service_manager/sandbox/sandbox_type.h"
+#include "services/service_manager/sandbox/switches.h"
 #include "ui/base/ui_base_switches.h"
 
 #if defined(OS_POSIX)
@@ -45,9 +45,9 @@
 #if defined(OS_WIN)
 #include "base/win/windows_version.h"
 #include "content/browser/renderer_host/dwrite_font_proxy_message_filter_win.h"
-#include "content/common/sandbox_win.h"
 #include "sandbox/win/src/process_mitigations.h"
 #include "sandbox/win/src/sandbox_policy.h"
+#include "services/service_manager/sandbox/win/sandbox_win.h"
 #include "ui/display/win/dpi.h"
 #include "ui/gfx/font_render_params.h"
 #endif
@@ -88,8 +88,9 @@ class PpapiPluginSandboxedProcessLauncherDelegate
 #if !defined(NACL_WIN64)
     // We don't support PPAPI win32k lockdown prior to Windows 10.
     if (base::win::GetVersion() >= base::win::VERSION_WIN10 &&
-        IsWin32kLockdownEnabled()) {
-      result = AddWin32kLockdownPolicy(policy, true);
+        service_manager::IsWin32kLockdownEnabled()) {
+      result =
+          service_manager::SandboxWin::AddWin32kLockdownPolicy(policy, true);
       if (result != sandbox::SBOX_ALL_OK)
         return false;
     }
@@ -97,7 +98,7 @@ class PpapiPluginSandboxedProcessLauncherDelegate
     const base::string16& sid =
         browser_client->GetAppContainerSidForSandboxType(GetSandboxType());
     if (!sid.empty())
-      AddAppContainerPolicy(policy, sid.c_str());
+      service_manager::SandboxWin::AddAppContainerPolicy(policy, sid.c_str());
 
     return true;
   }
@@ -132,33 +133,18 @@ class PpapiPluginSandboxedProcessLauncherDelegate
 };
 
 class PpapiPluginProcessHost::PluginNetworkObserver
-    : public net::NetworkChangeNotifier::IPAddressObserver,
-      public net::NetworkChangeNotifier::ConnectionTypeObserver {
+    : public net::NetworkChangeNotifier::NetworkChangeObserver {
  public:
   explicit PluginNetworkObserver(PpapiPluginProcessHost* process_host)
       : process_host_(process_host) {
-    net::NetworkChangeNotifier::AddIPAddressObserver(this);
-    net::NetworkChangeNotifier::AddConnectionTypeObserver(this);
+    net::NetworkChangeNotifier::AddNetworkChangeObserver(this);
   }
 
   ~PluginNetworkObserver() override {
-    net::NetworkChangeNotifier::RemoveConnectionTypeObserver(this);
-    net::NetworkChangeNotifier::RemoveIPAddressObserver(this);
+    net::NetworkChangeNotifier::RemoveNetworkChangeObserver(this);
   }
 
-  // IPAddressObserver implementation.
-  void OnIPAddressChanged() override {
-    // TODO(brettw) bug 90246: This doesn't seem correct. The online/offline
-    // notification seems like it should be sufficient, but I don't see that
-    // when I unplug and replug my network cable. Sending this notification when
-    // "something" changes seems to make Flash reasonably happy, but seems
-    // wrong. We should really be able to provide the real online state in
-    // OnConnectionTypeChanged().
-    process_host_->Send(new PpapiMsg_SetNetworkState(true));
-  }
-
-  // ConnectionTypeObserver implementation.
-  void OnConnectionTypeChanged(
+  void OnNetworkChanged(
       net::NetworkChangeNotifier::ConnectionType type) override {
     process_host_->Send(new PpapiMsg_SetNetworkState(
         type != net::NetworkChangeNotifier::CONNECTION_NONE));
@@ -185,7 +171,7 @@ PpapiPluginProcessHost* PpapiPluginProcessHost::CreatePluginHost(
     return plugin_host;
 
   NOTREACHED();  // Init is not expected to fail.
-  return NULL;
+  return nullptr;
 }
 
 // static
@@ -197,7 +183,7 @@ PpapiPluginProcessHost* PpapiPluginProcessHost::CreateBrokerHost(
     return plugin_host;
 
   NOTREACHED();  // Init is not expected to fail.
-  return NULL;
+  return nullptr;
 }
 
 // static
@@ -294,8 +280,8 @@ PpapiPluginProcessHost::PpapiPluginProcessHost(
 
   // We don't have to do any whitelisting for APIs in this process host, so
   // don't bother passing a browser context or document url here.
-  if (GetContentClient()->browser()->IsPluginAllowedToUseDevChannelAPIs(
-          NULL, GURL()))
+  if (GetContentClient()->browser()->IsPluginAllowedToUseDevChannelAPIs(nullptr,
+                                                                        GURL()))
     base_permissions |= ppapi::PERMISSION_DEV_CHANNEL;
   permissions_ = ppapi::PpapiPermissions::GetForCommandLine(base_permissions);
 
@@ -363,7 +349,7 @@ bool PpapiPluginProcessHost::Init(const PepperPluginInfo& info) {
   }
 
   std::unique_ptr<base::CommandLine> cmd_line =
-      base::MakeUnique<base::CommandLine>(exe_path);
+      std::make_unique<base::CommandLine>(exe_path);
   cmd_line->AppendSwitchASCII(switches::kProcessType,
                               is_broker_ ? switches::kPpapiBrokerProcess
                                          : switches::kPpapiPluginProcess);
@@ -383,7 +369,7 @@ bool PpapiPluginProcessHost::Init(const PepperPluginInfo& info) {
 
   if (!is_broker_) {
     static const char* const kPluginForwardSwitches[] = {
-      switches::kDisableSeccompFilterSandbox,
+      service_manager::switches::kDisableSeccompFilterSandbox,
 #if defined(OS_MACOSX)
       switches::kEnableSandboxLogging,
 #endif
@@ -410,7 +396,7 @@ bool PpapiPluginProcessHost::Init(const PepperPluginInfo& info) {
 #if defined(OS_WIN)
   cmd_line->AppendSwitchASCII(
       switches::kDeviceScaleFactor,
-      base::DoubleToString(display::win::GetDPIScale()));
+      base::NumberToString(display::win::GetDPIScale()));
   const gfx::FontRenderParams font_params =
       gfx::GetFontRenderParams(gfx::FontRenderParamsQuery(), nullptr);
   cmd_line->AppendSwitchASCII(switches::kPpapiAntialiasedTextEnabled,
@@ -427,7 +413,7 @@ bool PpapiPluginProcessHost::Init(const PepperPluginInfo& info) {
   // we are not using a plugin launcher - having a plugin launcher means we need
   // to use another process instead of just forking the zygote.
   process_->Launch(
-      base::MakeUnique<PpapiPluginSandboxedProcessLauncherDelegate>(is_broker_),
+      std::make_unique<PpapiPluginSandboxedProcessLauncherDelegate>(is_broker_),
       std::move(cmd_line), true);
   return true;
 }

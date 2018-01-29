@@ -29,7 +29,8 @@
 
 #include "core/editing/serializers/StyledMarkupSerializer.h"
 
-#include "core/css/StylePropertySet.h"
+#include "base/macros.h"
+#include "core/css/CSSPropertyValueSet.h"
 #include "core/dom/Document.h"
 #include "core/dom/Element.h"
 #include "core/dom/ElementShadow.h"
@@ -87,7 +88,6 @@ using namespace HTMLNames;
 
 template <typename Strategy>
 class StyledMarkupTraverser {
-  WTF_MAKE_NONCOPYABLE(StyledMarkupTraverser);
   STACK_ALLOCATED();
 
  public:
@@ -110,6 +110,7 @@ class StyledMarkupTraverser {
   StyledMarkupAccumulator* accumulator_;
   Member<Node> last_closed_;
   Member<EditingStyle> wrapping_style_;
+  DISALLOW_COPY_AND_ASSIGN(StyledMarkupTraverser);
 };
 
 template <typename Strategy>
@@ -256,11 +257,14 @@ String StyledMarkupSerializer<Strategy>::CreateMarkup() {
              !fully_selected_root_style->Style() ||
              !fully_selected_root_style->Style()->GetPropertyCSSValue(
                  CSSPropertyBackgroundImage)) &&
-            fully_selected_root->hasAttribute(backgroundAttr))
+            fully_selected_root->hasAttribute(backgroundAttr)) {
           fully_selected_root_style->Style()->SetProperty(
               CSSPropertyBackgroundImage,
               "url('" + fully_selected_root->getAttribute(backgroundAttr) +
-                  "')");
+                  "')",
+              /* important */ false,
+              fully_selected_root->GetDocument().GetSecureContextMode());
+        }
 
         if (fully_selected_root_style->Style()) {
           // Reset the CSS properties to avoid an assertion error in

@@ -152,8 +152,9 @@ TEST_F(VideoSendStreamTest, SupportsAbsoluteSendTime) {
         // unpopulated value we'll wait for a packet with non-zero send time.
         observation_complete_.Set();
       } else {
-        LOG(LS_WARNING) << "Got a packet with zero absoluteSendTime, waiting"
-                           " for another packet...";
+        RTC_LOG(LS_WARNING)
+            << "Got a packet with zero absoluteSendTime, waiting"
+               " for another packet...";
       }
 
       return SEND_PACKET;
@@ -880,7 +881,7 @@ void VideoSendStreamTest::TestPacketFragmentationSize(VideoFormat format,
           accumulated_payload_(0),
           fec_packet_received_(false),
           current_size_rtp_(start_size),
-          current_size_frame_(static_cast<int32_t>(start_size)) {
+          current_size_frame_(static_cast<int>(start_size)) {
       // Fragmentation required, this test doesn't make sense without it.
       encoder_.SetFrameSize(start_size);
       RTC_DCHECK_GT(stop_size, max_packet_size);
@@ -954,6 +955,8 @@ void VideoSendStreamTest::TestPacketFragmentationSize(VideoFormat format,
           } else if (fec_packet_received_) {
             fec_packet_received_ = false;
             ++current_size_rtp_;
+
+            rtc::CritScope lock(&mutex_);
             ++current_size_frame_;
           }
         }
@@ -984,13 +987,13 @@ void VideoSendStreamTest::TestPacketFragmentationSize(VideoFormat format,
     }
 
     void EncodedFrameCallback(const EncodedFrame& encoded_frame) override {
+      rtc::CritScope lock(&mutex_);
       // Increase frame size for next encoded frame, in the context of the
       // encoder thread.
-      if (!use_fec_ &&
-          current_size_frame_.Value() < static_cast<int32_t>(stop_size_)) {
+      if (!use_fec_ && current_size_frame_ < static_cast<int32_t>(stop_size_)) {
         ++current_size_frame_;
       }
-      encoder_.SetFrameSize(static_cast<size_t>(current_size_frame_.Value()));
+      encoder_.SetFrameSize(static_cast<size_t>(current_size_frame_));
     }
 
     Call::Config GetSenderCallConfig() override {
@@ -1071,7 +1074,8 @@ void VideoSendStreamTest::TestPacketFragmentationSize(VideoFormat format,
     bool fec_packet_received_;
 
     size_t current_size_rtp_;
-    Atomic32 current_size_frame_;
+    rtc::CriticalSection mutex_;
+    int current_size_frame_ RTC_GUARDED_BY(mutex_);
   };
 
   // Don't auto increment if FEC is used; continue sending frame size until
@@ -1233,8 +1237,7 @@ TEST_F(VideoSendStreamTest, SuspendBelowMinBitrate) {
       rtcp_sender.SetRTCPStatus(RtcpMode::kReducedSize);
       rtcp_sender.SetRemoteSSRC(kVideoSendSsrcs[0]);
       if (remb_value > 0) {
-        rtcp_sender.SetREMBStatus(true);
-        rtcp_sender.SetREMBData(remb_value, std::vector<uint32_t>());
+        rtcp_sender.SetRemb(remb_value, std::vector<uint32_t>());
       }
       RTCPSender::FeedbackState feedback_state;
       EXPECT_EQ(0, rtcp_sender.SendRTCP(feedback_state, kRtcpRr));
@@ -1445,8 +1448,8 @@ TEST_F(VideoSendStreamTest, MinTransmitBitrateRespectsRemb) {
                           "bps",
                           false);
         if (total_bitrate_bps > kHighBitrateBps) {
-          rtp_rtcp_->SetREMBData(kRembBitrateBps,
-                                 std::vector<uint32_t>(1, header.ssrc));
+          rtp_rtcp_->SetRemb(kRembBitrateBps,
+                             std::vector<uint32_t>(1, header.ssrc));
           rtp_rtcp_->Process();
           bitrate_capped_ = true;
         } else if (bitrate_capped_ &&
@@ -1466,7 +1469,6 @@ TEST_F(VideoSendStreamTest, MinTransmitBitrateRespectsRemb) {
       config.outgoing_transport = feedback_transport_.get();
       config.retransmission_rate_limiter = &retranmission_rate_limiter_;
       rtp_rtcp_.reset(RtpRtcp::CreateRtpRtcp(config));
-      rtp_rtcp_->SetREMBStatus(true);
       rtp_rtcp_->SetRTCPStatus(RtcpMode::kReducedSize);
     }
 
@@ -3113,8 +3115,23 @@ class Vp9HeaderObserver : public test::SendTest {
     EXPECT_EQ(kMaxTwoBytePictureId, vp9.max_picture_id);       // M:1
     EXPECT_NE(kNoPictureId, vp9.picture_id);                   // I:1
     EXPECT_EQ(vp9_settings_.flexibleMode, vp9.flexible_mode);  // F
-    EXPECT_GE(vp9.spatial_idx, 0);                             // S
-    EXPECT_LT(vp9.spatial_idx, vp9_settings_.numberOfSpatialLayers);
+
+    if (vp9_settings_.numberOfSpatialLayers > 1) {
+      EXPECT_LT(vp9.spatial_idx, vp9_settings_.numberOfSpatialLayers);
+    } else if (vp9_settings_.numberOfTemporalLayers > 1) {
+      EXPECT_EQ(vp9.spatial_idx, 0);
+    } else {
+      EXPECT_EQ(vp9.spatial_idx, kNoSpatialIdx);
+    }
+
+    if (vp9_settings_.numberOfTemporalLayers > 1) {
+      EXPECT_LT(vp9.temporal_idx, vp9_settings_.numberOfTemporalLayers);
+    } else if (vp9_settings_.numberOfSpatialLayers > 1) {
+      EXPECT_EQ(vp9.temporal_idx, 0);
+    } else {
+      EXPECT_EQ(vp9.temporal_idx, kNoTemporalIdx);
+    }
+
     if (vp9.ss_data_available)  // V
       VerifySsData(vp9);
 
@@ -3256,16 +3273,27 @@ void VideoSendStreamTest::TestVp9NonFlexMode(uint8_t num_temporal_layers,
     }
 
     void InspectHeader(const RTPVideoHeaderVP9& vp9) override {
-      bool ss_data_expected = !vp9.inter_pic_predicted &&
-                              vp9.beginning_of_frame && vp9.spatial_idx == 0;
+      bool ss_data_expected =
+          !vp9.inter_pic_predicted && vp9.beginning_of_frame &&
+          (vp9.spatial_idx == 0 || vp9.spatial_idx == kNoSpatialIdx);
       EXPECT_EQ(ss_data_expected, vp9.ss_data_available);
-      EXPECT_EQ(vp9.spatial_idx > 0, vp9.inter_layer_predicted);  // D
+      if (num_spatial_layers_ > 1) {
+        EXPECT_EQ(vp9.spatial_idx > 0, vp9.inter_layer_predicted);
+      } else {
+        EXPECT_FALSE(vp9.inter_layer_predicted);
+      }
+
       EXPECT_EQ(!vp9.inter_pic_predicted,
                 frames_sent_ % kKeyFrameInterval == 0);
 
       if (IsNewPictureId(vp9)) {
-        EXPECT_EQ(0, vp9.spatial_idx);
-        EXPECT_EQ(num_spatial_layers_ - 1, last_vp9_.spatial_idx);
+        if (num_temporal_layers_ == 1 && num_spatial_layers_ == 1) {
+          EXPECT_EQ(kNoSpatialIdx, vp9.spatial_idx);
+        } else {
+          EXPECT_EQ(0, vp9.spatial_idx);
+        }
+        if (num_spatial_layers_ > 1)
+          EXPECT_EQ(num_spatial_layers_ - 1, last_vp9_.spatial_idx);
       }
 
       VerifyFixedTemporalLayerStructure(vp9,
@@ -3514,7 +3542,7 @@ TEST_F(VideoSendStreamTest, SendsKeepAlive) {
 TEST_F(VideoSendStreamTest, ConfiguresAlrWhenSendSideOn) {
   const std::string kAlrProbingExperiment =
       std::string(AlrDetector::kScreenshareProbingBweExperimentName) +
-      "/1.1,2875,85,20,-20,0/";
+      "/1.0,2875,80,40,-60,3/";
   test::ScopedFieldTrials alr_experiment(kAlrProbingExperiment);
   class PacingFactorObserver : public test::SendTest {
    public:
@@ -3579,7 +3607,7 @@ TEST_F(VideoSendStreamTest, ConfiguresAlrWhenSendSideOn) {
   };
 
   // Send-side bwe on, use pacing factor from |kAlrProbingExperiment| above.
-  PacingFactorObserver test_with_send_side(true, 1.1f);
+  PacingFactorObserver test_with_send_side(true, 1.0f);
   RunBaseTest(&test_with_send_side);
 
   // Send-side bwe off, use default pacing factor.

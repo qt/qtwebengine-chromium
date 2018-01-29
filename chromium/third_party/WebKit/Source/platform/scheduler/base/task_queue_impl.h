@@ -19,6 +19,7 @@
 #include "base/trace_event/trace_event.h"
 #include "base/trace_event/trace_event_argument.h"
 #include "platform/scheduler/base/enqueue_order.h"
+#include "platform/scheduler/base/graceful_queue_shutdown_helper.h"
 #include "platform/scheduler/base/intrusive_heap.h"
 #include "platform/scheduler/base/task_queue.h"
 #include "platform/wtf/Deque.h"
@@ -85,7 +86,6 @@ class PLATFORM_EXPORT TaskQueueImpl {
 
   class PLATFORM_EXPORT Task : public TaskQueue::Task {
    public:
-    Task();
     Task(TaskQueue::PostedTask task,
          base::TimeTicks desired_run_time,
          EnqueueOrder sequence_number);
@@ -158,7 +158,7 @@ class PLATFORM_EXPORT TaskQueueImpl {
   void InsertFence(TaskQueue::InsertFencePosition position);
   void InsertFenceAt(base::TimeTicks time);
   void RemoveFence();
-  bool HasFence() const;
+  bool HasActiveFence();
   bool BlockedByFence() const;
   // Implementation of TaskQueue::SetObserver.
   void SetOnNextWakeUpChangedCallback(OnNextWakeUpChangedCallback callback);
@@ -265,6 +265,8 @@ class PLATFORM_EXPORT TaskQueueImpl {
   bool RequiresTaskTiming() const;
 
   base::WeakPtr<TaskQueueManager> GetTaskQueueManagerWeakPtr();
+
+  scoped_refptr<GracefulQueueShutdownHelper> GetGracefulQueueShutdownHelper();
 
   // Returns true if this queue is unregistered or task queue manager is deleted
   // and this queue can be safely deleted on any thread.

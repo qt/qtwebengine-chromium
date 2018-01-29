@@ -6,7 +6,9 @@
 
 #include "xfa/fxfa/cxfa_ffnotify.h"
 
-#include "fxjs/cfxjse_value.h"
+#include <memory>
+#include <utility>
+
 #include "xfa/fxfa/cxfa_ffapp.h"
 #include "xfa/fxfa/cxfa_ffarc.h"
 #include "xfa/fxfa/cxfa_ffbarcode.h"
@@ -52,13 +54,6 @@ CXFA_FFComboBox* ToComboBox(CXFA_FFWidget* widget) {
 }
 
 }  // namespace
-
-static void XFA_FFDeleteWidgetAcc(void* pData) {
-  delete ToWidgetAcc(pData);
-}
-
-static XFA_MAPDATABLOCKCALLBACKINFO gs_XFADeleteWidgetAcc = {
-    XFA_FFDeleteWidgetAcc, nullptr};
 
 CXFA_FFNotify::CXFA_FFNotify(CXFA_FFDoc* pDoc) : m_pDoc(pDoc) {}
 
@@ -208,25 +203,22 @@ bool CXFA_FFNotify::FindSplitPos(CXFA_Node* pItem,
 }
 
 bool CXFA_FFNotify::RunScript(CXFA_Node* pScript, CXFA_Node* pFormItem) {
-  bool bRet = false;
   CXFA_FFDocView* pDocView = m_pDoc->GetDocView();
   if (!pDocView)
-    return bRet;
+    return false;
 
   CXFA_WidgetAcc* pWidgetAcc = ToWidgetAcc(pFormItem->GetWidgetData());
   if (!pWidgetAcc)
-    return bRet;
+    return false;
 
   CXFA_EventParam EventParam;
   EventParam.m_eType = XFA_EVENT_Unknown;
-  CFXJSE_Value* pRetValue = nullptr;
-  int32_t iRet =
-      pWidgetAcc->ExecuteScript(CXFA_Script(pScript), &EventParam, &pRetValue);
-  if (iRet == XFA_EVENTERROR_Success && pRetValue) {
-    bRet = pRetValue->ToBoolean();
-    delete pRetValue;
-  }
-  return bRet;
+
+  int32_t iRet;
+  bool bRet;
+  std::tie(iRet, bRet) =
+      pWidgetAcc->ExecuteBoolScript(CXFA_ScriptData(pScript), &EventParam);
+  return iRet == XFA_EVENTERROR_Success && bRet;
 }
 
 int32_t CXFA_FFNotify::ExecEventByDeepFirst(CXFA_Node* pFormNode,
@@ -288,14 +280,11 @@ void CXFA_FFNotify::OpenDropDownList(CXFA_FFWidget* hWidget) {
 }
 
 WideString CXFA_FFNotify::GetCurrentDateTime() {
-  CFX_DateTime dataTime;
-  dataTime.Now();
-
-  WideString wsDateTime;
-  wsDateTime.Format(L"%d%02d%02dT%02d%02d%02d", dataTime.GetYear(),
-                    dataTime.GetMonth(), dataTime.GetDay(), dataTime.GetHour(),
-                    dataTime.GetMinute(), dataTime.GetSecond());
-  return wsDateTime;
+  CFX_DateTime dataTime = CFX_DateTime::Now();
+  return WideString::Format(L"%d%02d%02dT%02d%02d%02d", dataTime.GetYear(),
+                            dataTime.GetMonth(), dataTime.GetDay(),
+                            dataTime.GetHour(), dataTime.GetMinute(),
+                            dataTime.GetSecond());
 }
 
 void CXFA_FFNotify::ResetData(CXFA_WidgetData* pWidgetData) {
@@ -352,8 +341,8 @@ void CXFA_FFNotify::OnNodeReady(CXFA_Node* pNode) {
 
   XFA_Element eType = pNode->GetElementType();
   if (XFA_IsCreateWidget(eType)) {
-    CXFA_WidgetAcc* pAcc = new CXFA_WidgetAcc(pDocView, pNode);
-    pNode->SetObject(XFA_ATTRIBUTE_WidgetData, pAcc, &gs_XFADeleteWidgetAcc);
+    pNode->JSNode()->SetWidgetData(
+        pdfium::MakeUnique<CXFA_WidgetAcc>(pDocView, pNode));
     return;
   }
   switch (eType) {
@@ -368,10 +357,10 @@ void CXFA_FFNotify::OnNodeReady(CXFA_Node* pNode) {
   }
 }
 
-void CXFA_FFNotify::OnValueChanging(CXFA_Node* pSender, XFA_ATTRIBUTE eAttr) {
-  if (eAttr != XFA_ATTRIBUTE_Presence)
+void CXFA_FFNotify::OnValueChanging(CXFA_Node* pSender, XFA_Attribute eAttr) {
+  if (eAttr != XFA_Attribute::Presence)
     return;
-  if (pSender->GetPacketID() & XFA_XDPPACKET_Datasets)
+  if (pSender->GetPacketType() == XFA_PacketType::Datasets)
     return;
   if (!pSender->IsFormContainer())
     return;
@@ -394,15 +383,15 @@ void CXFA_FFNotify::OnValueChanging(CXFA_Node* pSender, XFA_ATTRIBUTE eAttr) {
 }
 
 void CXFA_FFNotify::OnValueChanged(CXFA_Node* pSender,
-                                   XFA_ATTRIBUTE eAttr,
+                                   XFA_Attribute eAttr,
                                    CXFA_Node* pParentNode,
                                    CXFA_Node* pWidgetNode) {
   CXFA_FFDocView* pDocView = m_pDoc->GetDocView();
   if (!pDocView)
     return;
 
-  if (!(pSender->GetPacketID() & XFA_XDPPACKET_Form)) {
-    if (eAttr == XFA_ATTRIBUTE_Value)
+  if (pSender->GetPacketType() != XFA_PacketType::Form) {
+    if (eAttr == XFA_Attribute::Value)
       pDocView->AddCalculateNodeNotify(pSender);
     return;
   }
@@ -431,10 +420,10 @@ void CXFA_FFNotify::OnValueChanged(CXFA_Node* pSender,
     default:
       break;
   }
-  if (bIsContainerNode && eAttr == XFA_ATTRIBUTE_Access)
+  if (bIsContainerNode && eAttr == XFA_Attribute::Access)
     bUpdateProperty = true;
 
-  if (eAttr == XFA_ATTRIBUTE_Value) {
+  if (eAttr == XFA_Attribute::Value) {
     pDocView->AddCalculateNodeNotify(pSender);
     if (eType == XFA_Element::Value || bIsContainerNode) {
       if (bIsContainerNode) {

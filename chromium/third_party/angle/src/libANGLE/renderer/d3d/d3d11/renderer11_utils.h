@@ -43,7 +43,7 @@ D3D11_BLEND ConvertBlendFunc(GLenum glBlend, bool isAlpha);
 D3D11_BLEND_OP ConvertBlendOp(GLenum glBlendOp);
 UINT8 ConvertColorMask(bool maskRed, bool maskGreen, bool maskBlue, bool maskAlpha);
 
-D3D11_CULL_MODE ConvertCullMode(bool cullEnabled, GLenum cullMode);
+D3D11_CULL_MODE ConvertCullMode(bool cullEnabled, gl::CullFaceMode cullMode);
 
 D3D11_COMPARISON_FUNC ConvertComparison(GLenum comparison);
 D3D11_DEPTH_WRITE_MASK ConvertDepthMask(bool depthWriteEnabled);
@@ -128,7 +128,10 @@ struct BlendStateKey final
     BlendStateKey();
 
     gl::BlendState blendState;
-    bool mrt;
+
+    // An int so struct size rounds nicely.
+    uint32_t rtvMax;
+
     uint8_t rtvMasks[D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT];
 };
 
@@ -141,7 +144,9 @@ struct RasterizerStateKey final
     RasterizerStateKey();
 
     gl::RasterizerState rasterizerState;
-    bool scissorEnabled;
+
+    // Use a 32-bit int to round the struct nicely.
+    uint32_t scissorEnabled;
 };
 
 bool operator==(const RasterizerStateKey &a, const RasterizerStateKey &b);
@@ -197,18 +202,12 @@ class LazyResource : angle::NonCopyable
 
   protected:
     LazyResource(LazyResource &&other) : mResource(std::move(other.mResource)) {}
+
+    // Specialized in the cpp file to avoid MSVS/Clang specific code.
     gl::Error resolveImpl(Renderer11 *renderer,
                           const GetDescType<ResourceT> &desc,
                           GetInitDataType<ResourceT> *initData,
-                          const char *name)
-    {
-        if (!mResource.valid())
-        {
-            ANGLE_TRY(renderer->allocateResource(desc, initData, &mResource));
-            mResource.setDebugName(name);
-        }
-        return gl::NoError();
-    }
+                          const char *name);
 
     Resource11<GetD3D11Type<ResourceT>> mResource;
 };
@@ -243,16 +242,12 @@ class LazyShader final : public LazyResource<GetResourceTypeFromD3D11<D3D11Shade
 class LazyInputLayout final : public LazyResource<ResourceType::InputLayout>
 {
   public:
-    constexpr LazyInputLayout(const D3D11_INPUT_ELEMENT_DESC *inputDesc,
-                              size_t inputDescLen,
-                              const BYTE *byteCode,
-                              size_t byteCodeLen,
-                              const char *debugName)
-        : mInputDesc(inputDesc, inputDescLen),
-          mByteCode(byteCode, byteCodeLen),
-          mDebugName(debugName)
-    {
-    }
+    LazyInputLayout(const D3D11_INPUT_ELEMENT_DESC *inputDesc,
+                    size_t inputDescLen,
+                    const BYTE *byteCode,
+                    size_t byteCodeLen,
+                    const char *debugName);
+    ~LazyInputLayout() override;
 
     gl::Error resolve(Renderer11 *renderer) override;
 
@@ -267,7 +262,7 @@ class LazyBlendState final : public LazyResource<ResourceType::BlendState>
   public:
     LazyBlendState(const D3D11_BLEND_DESC &desc, const char *debugName);
 
-    gl::Error resolve(Renderer11 *renderer);
+    gl::Error resolve(Renderer11 *renderer) override;
 
   private:
     D3D11_BLEND_DESC mDesc;
@@ -333,7 +328,7 @@ class TextureHelper11 : public Resource11Base<ID3D11Resource, std::shared_ptr, G
     TextureHelper11();
     TextureHelper11(TextureHelper11 &&other);
     TextureHelper11(const TextureHelper11 &other);
-    ~TextureHelper11();
+    ~TextureHelper11() override;
     TextureHelper11 &operator=(TextureHelper11 &&other);
     TextureHelper11 &operator=(const TextureHelper11 &other);
 
@@ -351,7 +346,7 @@ class TextureHelper11 : public Resource11Base<ID3D11Resource, std::shared_ptr, G
         std::swap(mData->manager, texture.mData->manager);
 
         // Can't use std::swap because texture is typed, and here we use ID3D11Resource.
-        auto temp             = mData->object;
+        ID3D11Resource *temp  = mData->object;
         mData->object         = texture.mData->object;
         texture.mData->object = static_cast<ResourceT *>(temp);
 
@@ -394,6 +389,32 @@ enum class StagingAccess
 };
 
 bool UsePresentPathFast(const Renderer11 *renderer, const gl::FramebufferAttachment *colorbuffer);
+bool UsePrimitiveRestartWorkaround(bool primitiveRestartFixedIndexEnabled, GLenum type);
+bool IsStreamingIndexData(const gl::Context *context, GLenum srcType);
+
+enum class IndexStorageType
+{
+    // Dynamic indexes are re-streamed every frame. They come from a client data pointer or
+    // from buffers that are updated frequently.
+    Dynamic,
+
+    // Static indexes are translated from the original storage once, and re-used multiple times.
+    Static,
+
+    // Direct indexes are never transated and are used directly from the source buffer. They are
+    // the fastest available path.
+    Direct,
+
+    // Not a real storage type.
+    Invalid,
+};
+
+IndexStorageType ClassifyIndexStorage(const gl::State &glState,
+                                      const gl::Buffer *elementArrayBuffer,
+                                      GLenum elementType,
+                                      GLenum destElementType,
+                                      unsigned int offset,
+                                      bool *needsTranslation);
 
 // Used for state change notifications between buffers and vertex arrays.
 using OnBufferDataDirtyBinding  = angle::ChannelBinding<size_t, const gl::Context *>;

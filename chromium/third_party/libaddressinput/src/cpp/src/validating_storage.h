@@ -20,7 +20,6 @@
 #define I18N_ADDRESSINPUT_VALIDATING_STORAGE_H_
 
 #include <libaddressinput/storage.h>
-#include <libaddressinput/util/basictypes.h>
 
 #include <memory>
 #include <string>
@@ -37,25 +36,26 @@ namespace addressinput {
 //    storage.Get("key", *data_ready);
 class ValidatingStorage : public Storage {
  public:
+  ValidatingStorage(const ValidatingStorage&) = delete;
+  ValidatingStorage& operator=(const ValidatingStorage&) = delete;
+
   // Takes ownership of |storage|.
   explicit ValidatingStorage(Storage* storage);
-  virtual ~ValidatingStorage();
+  ~ValidatingStorage() override;
 
   // Storage implementation.
-  virtual void Put(const std::string& key, std::string* data);
+  void Put(const std::string& key, std::string* data) override;
 
   // Storage implementation.
   // If the data is invalid, then |data_ready| will be called with (false, key,
   // empty-string). If the data is valid, but stale, then |data_ready| will be
   // called with (false, key, stale-data). If the data is valid and fresh, then
   // |data_ready| will be called with (true, key, fresh-data).
-  virtual void Get(const std::string& key, const Callback& data_ready) const;
+  void Get(const std::string& key, const Callback& data_ready) const override;
 
  private:
   // The storage being wrapped.
   std::unique_ptr<Storage> wrapped_storage_;
-
-  DISALLOW_COPY_AND_ASSIGN(ValidatingStorage);
 };
 
 }  // namespace addressinput

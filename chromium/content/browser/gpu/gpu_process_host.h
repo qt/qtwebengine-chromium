@@ -29,21 +29,17 @@
 #include "gpu/config/gpu_info.h"
 #include "gpu/ipc/common/surface_handle.h"
 #include "ipc/ipc_sender.h"
-#include "ipc/message_filter.h"
 #include "mojo/public/cpp/bindings/binding.h"
-#include "services/ui/gpu/interfaces/gpu_main.mojom.h"
+#include "services/viz/privileged/interfaces/compositing/frame_sink_manager.mojom.h"
 #include "services/viz/privileged/interfaces/gl/gpu_host.mojom.h"
 #include "services/viz/privileged/interfaces/gl/gpu_service.mojom.h"
+#include "services/viz/privileged/interfaces/viz_main.mojom.h"
 #include "ui/gfx/geometry/size.h"
 #include "ui/gfx/gpu_memory_buffer.h"
 #include "url/gurl.h"
 
 namespace base {
 class Thread;
-}
-
-namespace IPC {
-struct ChannelHandle;
 }
 
 namespace gpu {
@@ -73,7 +69,7 @@ class GpuProcessHost : public BrowserChildProcessHostDelegate,
     SUCCESS
   };
   using EstablishChannelCallback =
-      base::Callback<void(const IPC::ChannelHandle&,
+      base::Callback<void(mojo::ScopedMessagePipeHandle channel_handle,
                           const gpu::GPUInfo&,
                           const gpu::GpuFeatureInfo&,
                           EstablishChannelStatus status)>;
@@ -87,8 +83,8 @@ class GpuProcessHost : public BrowserChildProcessHostDelegate,
                           BufferCreationStatus status)>;
 
   using RequestGPUInfoCallback = base::Callback<void(const gpu::GPUInfo&)>;
+  using RequestHDRStatusCallback = base::Callback<void(bool)>;
 
-  static bool gpu_enabled() { return gpu_enabled_; }
   static int gpu_crash_count() { return gpu_crash_count_; }
 
   // Creates a new GpuProcessHost (if |force_create| is turned on) or gets an
@@ -102,7 +98,7 @@ class GpuProcessHost : public BrowserChildProcessHostDelegate,
       bool force_create = true);
 
   // Returns whether there is an active GPU process or not.
-  static void GetHasGpuProcess(const base::Callback<void(bool)>& callback);
+  static void GetHasGpuProcess(base::OnceCallback<void(bool)> callback);
 
   // Helper function to run a callback on the IO thread. The callback receives
   // the appropriate GpuProcessHost instance. Note that the callback can be
@@ -148,7 +144,16 @@ class GpuProcessHost : public BrowserChildProcessHostDelegate,
                               int client_id,
                               const gpu::SyncToken& sync_token);
 
+  // Connects to FrameSinkManager running in the viz process. In this
+  // configuration the display compositor runs in the viz process and the
+  // browser must submit CompositorFrames over IPC.
+  void ConnectFrameSinkManager(
+      viz::mojom::FrameSinkManagerRequest request,
+      viz::mojom::FrameSinkManagerClientPtrInfo client,
+      viz::mojom::CompositingModeWatcherPtrInfo mode_watcher);
+
   void RequestGPUInfo(RequestGPUInfoCallback request_cb);
+  void RequestHDRStatus(RequestHDRStatusCallback request_cb);
 
 #if defined(OS_ANDROID)
   // Tells the GPU process that the given surface is being destroyed so that it
@@ -193,6 +198,7 @@ class GpuProcessHost : public BrowserChildProcessHostDelegate,
   void DidInitialize(const gpu::GPUInfo& gpu_info,
                      const gpu::GpuFeatureInfo& gpu_feature_info) override;
   void DidFailInitialize() override;
+  void DidCreateContextSuccessfully() override;
   void DidCreateOffscreenContext(const GURL& url) override;
   void DidDestroyOffscreenContext(const GURL& url) override;
   void DidDestroyChannel(int32_t client_id) override;
@@ -273,8 +279,7 @@ class GpuProcessHost : public BrowserChildProcessHostDelegate,
   base::TimeTicks init_start_time_;
 
   // Master switch for enabling/disabling GPU acceleration for the current
-  // browser session. It does not change the acceleration settings for
-  // existing tabs, just the future ones.
+  // browser session.
   static bool gpu_enabled_;
 
   static bool hardware_gpu_enabled_;
@@ -305,7 +310,7 @@ class GpuProcessHost : public BrowserChildProcessHostDelegate,
   bool wake_up_gpu_before_drawing_ = false;
   bool dont_disable_webgl_when_compositor_context_lost_ = false;
 
-  ui::mojom::GpuMainAssociatedPtr gpu_main_ptr_;
+  viz::mojom::VizMainAssociatedPtr gpu_main_ptr_;
   viz::mojom::GpuServicePtr gpu_service_ptr_;
   mojo::Binding<viz::mojom::GpuHost> gpu_host_binding_;
   gpu::GpuProcessHostActivityFlags activity_flags_;

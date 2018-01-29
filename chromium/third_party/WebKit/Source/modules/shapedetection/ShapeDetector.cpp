@@ -10,8 +10,8 @@
 #include "core/frame/LocalFrame.h"
 #include "core/geometry/DOMRect.h"
 #include "core/html/HTMLImageElement.h"
-#include "core/html/HTMLVideoElement.h"
 #include "core/html/ImageData.h"
+#include "core/html/media/HTMLVideoElement.h"
 #include "core/imagebitmap/ImageBitmap.h"
 #include "core/loader/resource/ImageResourceContent.h"
 #include "platform/graphics/Image.h"
@@ -88,11 +88,10 @@ ScriptPromise ShapeDetector::detect(
   // there is a local WebCam associated, there might be sophisticated ways to
   // detect faces on it. Until then, treat as a normal <video> element.
 
-  const FloatSize size(canvas_image_source->SourceWidth(),
-                       canvas_image_source->SourceHeight());
+  const FloatSize size(canvas_image_source->ElementSize(FloatSize()));
 
   SourceImageStatus source_image_status = kInvalidSourceImageStatus;
-  RefPtr<Image> image = canvas_image_source->GetSourceImageForCanvas(
+  scoped_refptr<Image> image = canvas_image_source->GetSourceImageForCanvas(
       &source_image_status, kPreferNoAcceleration, kSnapshotReasonDrawImage,
       size);
   if (!image || source_image_status != kNormalSourceImageStatus) {
@@ -106,7 +105,7 @@ ScriptPromise ShapeDetector::detect(
   }
 
   SkPixmap pixmap;
-  RefPtr<Uint8Array> pixel_data;
+  scoped_refptr<Uint8Array> pixel_data;
   uint8_t* pixel_data_ptr = nullptr;
   WTF::CheckedNumeric<int> allocation_size = 0;
 

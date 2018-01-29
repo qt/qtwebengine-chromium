@@ -476,10 +476,19 @@ CHAR-LIMIT guidelines:
       <message name="IDS_PASSWORD_GENERATION_POPUP_CONTENT_DESCRIPTION" desc="The text announced by the screen reader when the password generation popup is shown.">
         Showing password generation popup
       </message>
+      <message name="IDS_SAVE_PASSWORD_PREFERENCES_EXPORT_ACTION_TITLE" desc="The title of a menu item to trigger exporting passwords from the password settings.">
+        Export passwords...
+      </message>
+      <message name="IDS_SAVE_PASSWORD_PREFERENCES_EXPORT_ACTION_DESCRIPTION" desc="The description of a menu item to trigger exporting passwords from the password settings.">
+        Export passwords stored with Chrome
+      </message>
 
       <!-- Lock Screen Fragment -->
-      <message name="IDS_LOCKSCREEN_DESCRIPTION" desc='Text on lockscreen explaining to user that they need to unlock the device to continue setup.'>
-        Unlock to continue setting up your phone
+      <message name="IDS_LOCKSCREEN_DESCRIPTION_COPY" desc="When a user attempts to copy a password for a particular website into clipboard in Chrome's settings, Chrome launches a lock screen to verify the user's identity and displays the following explanation.">
+        Unlock to copy your password
+      </message>
+      <message name="IDS_LOCKSCREEN_DESCRIPTION_VIEW" desc="When a user attempts to view a password for a particular website in Chrome's settings, Chrome launches a lock screen to verify the user's identity and displays the following explanation.">
+        Unlock to view your password
       </message>
 
       <!-- Homepage preferences -->
@@ -547,35 +556,11 @@ CHAR-LIMIT guidelines:
       <message name="IDS_SAFE_BROWSING_SUMMARY" desc="Summary for safe browsing.">
         Protect you and your device from dangerous sites
       </message>
-      <message name="IDS_NTP_SITES_EXPLORATION_CATEGORY_PERSONALIZED_TITLE" desc="In the Sites Explore UI, title of the Personalized category.">
-        Personalized
+      <message name="IDS_NETWORK_PREDICTIONS_TITLE" desc="Title of a setting in Chrome settings. Followed by a body that describes the setting. If setting is turned on, Chrome will download certain pages to the user’s phone automatically for offline reading. 'predictions' convey the idea that Chrome is using predictive models to figure out pages likely of interest to the user.">
+        Use page predictions
       </message>
-      <message name="IDS_NTP_SITES_EXPLORATION_CATEGORY_NEWS_TITLE" desc="In the Sites Explore UI, title of the News category.">
-        News
-      </message>
-      <message name="IDS_NTP_SITES_EXPLORATION_CATEGORY_SOCIAL_TITLE" desc="In the Sites Explore UI, title of the Social category.">
-        Social
-      </message>
-      <message name="IDS_NTP_SITES_EXPLORATION_CATEGORY_ENTERTAINMENT_TITLE" desc="In the Sites Explore UI, title of the Entertainment category.">
-        Entertainment
-      </message>
-      <message name="IDS_NTP_SITES_EXPLORATION_CATEGORY_ECOMMERCE_TITLE" desc="In the Sites Explore UI, title of the Ecommerce category.">
-        E-commerce
-      </message>
-      <message name="IDS_NTP_SITES_EXPLORATION_CATEGORY_TOOLS_TITLE" desc="In the Sites Explore UI, title of the Tools category.">
-        Tools
-      </message>
-      <message name="IDS_NTP_SITES_EXPLORATION_CATEGORY_TRAVEL_TITLE" desc="In the Sites Explore UI, title of the Travel category.">
-        Travel
-      </message>
-      <message name="IDS_NTP_SITES_EXPLORATION_CATEGORY_OTHER_TITLE" desc="In the Sites Explore UI, title of the Unknown category.">
-        Other
-      </message>
-      <message name="IDS_NETWORK_PREDICTIONS_TITLE" desc="Title of a setting in Chrome settings. Followed by a body that describes what pages are downloaded. If setting is turned on, Chrome will download certain pages to the user’s phone automatically for offline reading. “Download” is a verb, imperative. ">
-        Automatically download pages
-      </message>
-      <message name="IDS_NETWORK_PREDICTIONS_SUMMARY" desc="Body text for the “Automatically download pages” setting in Chrome settings. Describes what happens if the setting is turned on. Load pages refers to how quickly website pages load. Offline reading refers to the ability to access the pages without a network connection.">
-        Load pages more quickly and save popular pages for offline reading
+      <message name="IDS_NETWORK_PREDICTIONS_SUMMARY" desc="Body text for the “Use page predictions” setting in Chrome settings. Describes what happens if the setting is turned on. 'Preload' conveys the idea that Chrome is getting pages for the user without their explicit interaction or consent.">
+        Preload pages for faster loading and offline reading
       </message>
       <message name="IDS_CONTEXTUAL_SEARCH_TITLE" desc="Name for the Contextual Search feature, which allows users to search for a term in a web page by tapping on it.">
         Touch to Search
@@ -594,12 +579,6 @@ To adjust your search term, long press to select. To refine your search, slide t
       <message name="IDS_CONTEXTUAL_SEARCH_NO_THANKS_BUTTON" desc="A button to confirm and dismiss opt out promo">
         No thanks
       </message>
-      <message name="IDS_CONTEXTUAL_SEARCH_PEEK_PROMO_TEXT" desc="A promotional message introducing the Touch to Search feature">
-        Now you can search with one touch
-      </message>
-      <message name="IDS_CONTEXTUAL_SEARCH_PEEK_PROMO_NEW" desc="A word that gets placed next to the promotional message to highlight the new Touch To Search feature">
-        New
-      </message>
       <message name="IDS_DO_NOT_TRACK_TITLE" desc="Title for 'Do Not Track' preference">
         “Do Not Track”
       </message>
@@ -614,25 +593,13 @@ For example, some websites may respond to this request by showing you ads that a
       <message name="IDS_CLEAR_BROWSING_DATA_SUMMARY" desc="Summary of the settings item that opens the Clear Browsing Data dialog.">
         Clear history, cookies, site data, cache…
       </message>
-      <message name="IDS_CLEAR_BROWSING_DATA_FOOTNOTE_SITE_SETTINGS" desc="A summary string at the bottom of the Clear Browsing Data dialog, informing the user that not all data can be cleared through this dialog.">
-        Saved site settings will not be deleted and may reflect your browsing habits. <ph name="BEGIN_LINK">&lt;link&gt;</ph>Learn more<ph name="END_LINK">&lt;/link&gt;</ph>
-      </message>
-      <message name="IDS_CLEAR_BROWSING_DATA_FOOTNOTE_SYNC_AND_SITE_SETTINGS" desc="A summary string at the bottom of the Clear Browsing Data dialog, informing the user that synced data types are deleted across devices, and also that not all data can be cleared through this dialog.">
-        This clears synced data from all devices. Saved site settings will not be deleted and may reflect your browsing habits. <ph name="BEGIN_LINK">&lt;link&gt;</ph>Learn more<ph name="END_LINK">&lt;/link&gt;</ph>
-      </message>
-      <message name="IDS_CLEAR_BROWSING_DATA_FOOTNOTE_SIGNED" desc="A summary string at the bottom of the Clear Browsing Data dialog, informing the user that deleting cookies will not sign them out of their Google account.">
-        You won’t be signed out of your Google account.
-      </message>
-      <message name="IDS_CLEAR_BROWSING_DATA_FOOTNOTE_SIGNED_AND_OTHER_FORMS_OF_HISTORY" desc="A summary string at the bottom of the Clear Browsing Data dialog, informing the user that deleting cookies will not sign them out of their Google account, and also that there are other forms of browsing history present.">
-        You won’t be signed out of your Google account. Your Google account may have other forms of browsing history at <ph name="BEGIN_LINK">&lt;link&gt;</ph>history.google.com<ph name="END_LINK">&lt;/link&gt;</ph>.
-      </message>
       <message name="IDS_CLEAR_BROWSING_DATA_HISTORY_DIALOG_TITLE" desc="Title of a dialog that is shown after the deletion of browsing history finished.">
         Cleared Chrome data
       </message>
       <message name="IDS_CLEAR_BROWSING_DATA_HISTORY_DIALOG_DATA_TEXT" desc="Text of the dialog that is shown after the deletion of browsing history items finished, indicating that the selected data has been removed, but there may be other forms of browsing history still present in user's Google account.">
         The selected data has been removed from Chrome and your synced devices.
 
-Your Google account may have other forms of browsing history like searches and activity from other Google services at <ph name="BEGIN_LINK">&lt;link&gt;</ph>history.google.com<ph name="END_LINK">&lt;/link&gt;</ph>.
+Your Google account may have other forms of browsing history like searches and activity from other Google services at <ph name="BEGIN_LINK">&lt;link&gt;</ph>myactivity.google.com<ph name="END_LINK">&lt;/link&gt;</ph>.
       </message>
       <message name="IDS_CLEAR_CACHE_TITLE" desc="Title for Clear Cache in Clear Browsing Data dialog">
         Cached images and files
@@ -642,9 +609,6 @@ Your Google account may have other forms of browsing history like searches and a
       </message>
       <message name="IDS_CLEAR_COOKIES_AND_SITE_DATA_TITLE" desc="Title for Clear Cookies and site data in Clear Browsing Data dialog">
         Cookies and site data
-      </message>
-      <message name="IDS_CLEAR_COOKIES_AND_SITE_DATA_SUMMARY" desc="A summary for the 'Cookies and site data' option in the 'Clear Browsing Data' screen, explaining that deleting cookies and site data will sign the user out of most websites.">
-        This will sign you out of most websites.
       </message>
       <message name="IDS_CLEAR_COOKIES_AND_SITE_DATA_SUMMARY_BASIC" desc="A summary for the 'Cookies and site data' option in the 'Clear Browsing Data' screen, explaining that deleting cookies and site data will sign the user out of most websites.">
         Signs you out of most sites.
@@ -679,24 +643,6 @@ Your Google account may have other forms of browsing history like searches and a
       <message name="IDS_CLEAR_BROWSING_DATA_PROGRESS_MESSAGE" desc='Message on the progress dialog used when waiting for "clear browsing data" to complete.'>
         Please wait…
       </message>
-      <message name="IDS_CLEAR_BROWSING_DATA_PERIOD_TITLE" desc="Label of the dropdown that selects the time period for which browsing data will be deleted. This sentence can be followed by any option, such as 'Clear data from the past day' or 'Clear data from the past hour'.">
-        Clear data from the
-      </message>
-      <message name="IDS_CLEAR_BROWSING_DATA_PERIOD_HOUR" desc="The option to delete browsing data from the past hour. This is the direct object of the sentence 'Clear data from the past hour'.">
-        past hour
-      </message>
-      <message name="IDS_CLEAR_BROWSING_DATA_PERIOD_DAY" desc="The option to delete browsing data from the past day. This is the direct object of the sentence 'Clear data from the past day'.">
-        past day
-      </message>
-      <message name="IDS_CLEAR_BROWSING_DATA_PERIOD_WEEK" desc="The option to delete browsing data from the past week. This is the direct object of the sentence 'Clear data from the past week'.">
-        past week
-      </message>
-      <message name="IDS_CLEAR_BROWSING_DATA_PERIOD_FOUR_WEEKS" desc="The option to delete browsing data from the last 4 weeks. This is the direct object of the sentence 'Clear data from the last 4 weeks'.">
-        last 4 weeks
-      </message>
-      <message name="IDS_CLEAR_BROWSING_DATA_PERIOD_EVERYTHING" desc="The option to delete browsing data from the beginning of time. This is the direct object of the sentence 'Clear data from the beginning of time'.">
-        beginning of time
-      </message>
       <message name="IDS_CLEAR_BROWSING_DATA_TAB_PERIOD_TITLE" desc="Label of the dropdown that selects the time range for which browsing data will be deleted.">
         Time range
       </message>
@@ -711,6 +657,9 @@ Your Google account may have other forms of browsing history like searches and a
       </message>
       <message name="IDS_CLEAR_BROWSING_DATA_TAB_PERIOD_FOUR_WEEKS" desc="The option to delete browsing data from the last 4 weeks.">
         Last 4 weeks
+      </message>
+      <message name="IDS_CLEAR_BROWSING_DATA_TAB_PERIOD_OLDER_THAN_30_DAYS" desc="The option to delete browsing data older than 30 days.">
+        Older than 30 days
       </message>
       <message name="IDS_CLEAR_BROWSING_DATA_TAB_PERIOD_EVERYTHING" desc="The option to delete browsing data from the beginning of time.">
         All time
@@ -728,9 +677,6 @@ Your Google account may have other forms of browsing history like searches and a
         Basic
       </message>
       <message name="IDS_ANDROID_HISTORY_OTHER_FORMS_OF_HISTORY" desc="The notification at the top of the history page indicating that deleting Chrome browsing history will not delete other forms of history stored at Google My Activity.">
-        Your Google Account may have other forms of browsing history at <ph name="BEGIN_LINK">&lt;link&gt;</ph>history.google.com<ph name="END_LINK">&lt;/link&gt;</ph>.
-      </message>
-      <message name="IDS_ANDROID_HISTORY_OTHER_FORMS_OF_HISTORY_NEW" desc="The notification at the top of the history page indicating that deleting Chrome browsing history will not delete other forms of history stored at Google My Activity.">
         Your Google Account may have other forms of browsing history at <ph name="BEGIN_LINK">&lt;link&gt;</ph>myactivity.google.com<ph name="END_LINK">&lt;/link&gt;</ph>.
       </message>
       <message name="IDS_ANDROID_HISTORY_BLOCKED_SITE" desc="The text displayed in the history page indicating that a visit to a web site was blocked due to an administrator policy.">
@@ -760,11 +706,11 @@ Your Google account may have other forms of browsing history like searches and a
       <message name="IDS_FORCE_ENABLE_ZOOM_SUMMARY" desc="Summary of preference that allows the user to zoom in on any webpage, even if the page tries to disable zooming.">
         Override a website’s request to prevent zooming in
       </message>
-      <message name="IDS_READER_FOR_ACCESSIBILITY_TITLE" desc="Title of preference that allows the user to use Simplified View on any articles, even if the page is mobile-friendly. Simplified View is the new user-facing name for Reader Mode, which extracts the content of an article and removes clutter from a web page and puts the result in a easier-to-read format.">
-        Simplified View
+      <message name="IDS_READER_FOR_ACCESSIBILITY_TITLE" desc="Title of preference that allows the user to use simplified view on any articles, even if the page is mobile-friendly. Simplified view is the new user-facing name for Reader Mode, which extracts the content of an article and removes clutter from a web page and puts the result in a easier-to-read format.">
+        Simplified view
       </message>
-      <message name="IDS_READER_FOR_ACCESSIBILITY_SUMMARY" desc="Summary of preference that allows the user to use Simplified View on any articles, even if the page is mobile-friendly.">
-        Enable Simplified View on all articles
+      <message name="IDS_READER_FOR_ACCESSIBILITY_SUMMARY" desc="Summary of preference that allows the user to use simplified view on any articles, even if the page is mobile-friendly.">
+        Enable simplified view on all articles
       </message>
 
       <!-- Site settings -->
@@ -840,8 +786,11 @@ Your Google account may have other forms of browsing history like searches and a
       <message name="IDS_WEBSITE_SETTINGS_ADD_SITE_DESCRIPTION_BACKGROUND_SYNC" desc="The description for the allow Background Sync for website dialog.">
         Allow Background Sync for a specific site.
       </message>
-      <message name="IDS_WEBSITE_SETTINGS_ADD_SITE_DESCRIPTION_SOUND" desc="The description for the mute sound for website dialog.">
-        Mute Sound for a specific site.
+      <message name="IDS_WEBSITE_SETTINGS_ADD_SITE_DESCRIPTION_SOUND_ALLOW" desc="The description for the allow sound for website dialog.">
+        Allow sound for a specific site.
+      </message>
+      <message name="IDS_WEBSITE_SETTINGS_ADD_SITE_DESCRIPTION_SOUND_BLOCK" desc="The description for the mute sound for website dialog.">
+        Mute sound for a specific site.
       </message>
       <message name="IDS_WEBSITE_SETTINGS_ADD_SITE_SITE_URL" desc="The label for the input field where the user can type a website URL.">
         Site URL
@@ -903,6 +852,15 @@ Your Google account may have other forms of browsing history like searches and a
       <message name="IDS_WEBSITE_SETTINGS_CATEGORY_JAVASCRIPT_ALLOWED" desc="Summary text explaining that sites are allowed to run Javascript and that it is the recommended setting.">
         Allow sites to run JavaScript (recommended)
       </message>
+      <message name="IDS_WEBSITE_SETTINGS_CATEGORY_SOUND_ALLOWED" desc="Summary text explaining that sites are allowed to play sound and that it is the recommended setting.">
+        Allow sites to play sound (recommended)
+      </message>
+      <message name="IDS_WEBSITE_SETTINGS_CATEGORY_SOUND_BLOCKED" desc="Summary text explaining that sound is being muted on some sites.">
+        Mute sites that play sound
+      </message>
+      <message name="IDS_WEBSITE_SETTINGS_CATEGORY_SOUND_BLOCKED_LIST" desc="Summary text explaining that the sound permission is set to mute sound on some sites. To be shown in the list of permission categories.">
+        Muted
+      </message>
       <message name="IDS_WEBSITE_SETTINGS_CATEGORY_POPUPS_BLOCKED" desc="Summary text explaining that sites are blocked from showing popups and that it is the recommended setting.">
         Block sites from showing pop-ups (recommended)
       </message>
@@ -961,6 +919,23 @@ Your Google account may have other forms of browsing history like searches and a
       <!-- Single site settings -->
       <message name="IDS_NO_SAVED_WEBSITE_SETTINGS" desc="Text to display when there are no saved website settings.">
         You have no saved website settings.
+      </message>
+
+      <!-- Languages preferences -->
+      <message name="IDS_PREFS_LANGUAGES" desc="Title for the Languages settings screen that allows users to manage their languages preferences. [CHAR-LIMIT=32]">
+        Languages
+      </message>
+      <message name="IDS_PREFS_ADD_LANGUAGE" desc="Title for the screen that allows users to add languages to their preferred language list. [CHAR-LIMIT=32]">
+        Add language
+      </message>
+      <message name="IDS_LANGUAGES_LIST_PREFS_DESCRIPTION" desc="Description on the Languages settings screen. Appears above a list of one or more languages that the user selects, to tell Chrome which languages they prefer to use to read website content.">
+        Websites will show text in your preferred language, when possible.
+      </message>
+      <message name="IDS_LANGUAGES_OFFER_TRANSLATE_SWITCH" desc="Appears next to the 'offer to translate' switch that controls whether or not Chrome will display the Google Translate UI on web pages that are not in the user's preferred language(s).">
+        Offer to translate pages in other languages
+      </message>
+      <message name="IDS_LANGUAGES_ITEM_OPTION_OFFER_TO_TRANSLATE" desc="Option in language item menu. User can click the 'Offer to translate' option to toggle whether they want Chrome to translate pages in this language. [CHAR-LIMIT=32]">
+        Offer to translate
       </message>
 
       <!-- Location preferences -->
@@ -1300,7 +1275,7 @@ To obtain new licenses, connect to the internet and play your downloaded content
         Sign in
       </message>
       <message name="IDS_SIGN_IN_GETTING_ACCOUNT_MANAGEMENT_POLICY" desc="Title of progress bar dialog for getting management policy">
-        Contacting Google…this may take a minute
+        Contacting Google. This may take a minute…
       </message>
       <message name="IDS_SIGN_IN_TIMEOUT_TITLE" desc="Title of sign in timeout alert dialog">
         Can’t sign in
@@ -1481,8 +1456,8 @@ To obtain new licenses, connect to the internet and play your downloaded content
       <message name="IDS_BLUETOOTH_NOT_SEEING_IT_IDLE" desc="The message to show at the bottom of the dialog when Bluetooth scanning has uncovered some items but is no longer discovering devices. Allows the user to restart the scan, in case their device is not listed.">
         <ph name="BEGIN_LINK1">&lt;link1&gt;</ph>Get help<ph name="END_LINK1">&lt;/link1&gt;</ph> or <ph name="BEGIN_LINK2">&lt;link2&gt;</ph>re-scan<ph name="END_LINK2">&lt;/link2&gt;</ph>
       </message>
-      <message name="IDS_BLUETOOTH_NOT_FOUND" desc="The message to show when no items were found during Bluetooth device scanning.">
-        No Bluetooth devices found
+      <message name="IDS_BLUETOOTH_NOT_FOUND" desc="The label shown to the user to inform them that no Bluetooth devices were found matching the requirements that the application provided.">
+        No compatible devices found
       </message>
       <message name="IDS_BLUETOOTH_ADAPTER_OFF" desc="The message to show when scanning cannot start because the bluetooth adapter is turned off.">
         <ph name="BEGIN_LINK">&lt;link&gt;</ph>Turn on Bluetooth<ph name="END_LINK">&lt;/link&gt;</ph> to allow pairing
@@ -1606,11 +1581,6 @@ To obtain new licenses, connect to the internet and play your downloaded content
       </message>
       <message name="IDS_DUPLICATE_DOWNLOAD_INFOBAR_DOWNLOAD_BUTTON" desc="Label for the button that confirms that a user wants to download the file again. [CHAR-LIMIT=32]">
         Download
-      </message>
-
-      <!-- PermissionInfoBar -->
-      <message name="IDS_PERMISSION_PROMPT_PERSIST_TEXT" desc="Toggle to persist a permission prompt decision">
-        Remember my decision
       </message>
 
       <!-- TranslateInfoBar -->
@@ -2233,6 +2203,9 @@ To obtain new licenses, connect to the internet and play your downloaded content
       </message>
 
       <!-- First Run strings -->
+      <message name="IDS_FRE_ACTIVITY_LABEL" desc="Label for first run dialog in Android Recents.">
+        Chrome First Run Experience
+      </message>
       <message name="IDS_FRE_SKIP_TEXT" desc="Text for second page skip button">
         No thanks
       </message>
@@ -2242,11 +2215,11 @@ To obtain new licenses, connect to the internet and play your downloaded content
       <message name="IDS_FRE_TOS_AND_PRIVACY_CHILD_ACCOUNT" desc="Message explaining that use of Chrome is governed by Chrome's terms of service and privacy notice, and Family Link's privacy notice for children.">
         By using this application, you agree to Chrome’s <ph name="BEGIN_LINK1">&lt;LINK1&gt;</ph>Terms of Service<ph name="END_LINK1">&lt;/LINK1&gt;</ph> and <ph name="BEGIN_LINK2">&lt;LINK2&gt;</ph>Privacy Notice<ph name="END_LINK2">&lt;/LINK2&gt;</ph>, and the <ph name="BEGIN_LINK3">&lt;LINK3&gt;</ph>Privacy Notice for Google Accounts Managed with Family Link<ph name="END_LINK3">&lt;/LINK3&gt;</ph>.
       </message>
-      <message name="IDS_LIGHTWEIGHT_FRE_TOS_AND_PRIVACY" desc="Message explaining that use of Chrome is governed by Chrome's terms of service and privacy notice.">
-        By continuing, you agree to Chrome’s <ph name="BEGIN_LINK1">&lt;LINK1&gt;</ph>Terms of Service<ph name="END_LINK1">&lt;/LINK1&gt;</ph> and <ph name="BEGIN_LINK2">&lt;LINK2&gt;</ph>Privacy Notice<ph name="END_LINK2">&lt;/LINK2&gt;</ph>.
+      <message name="IDS_LIGHTWEIGHT_FRE_ASSOCIATED_APP_TOS_AND_PRIVACY" desc="Message explaining that use of Chrome is governed by Chrome's terms of service and privacy notice.">
+        <ph name="APP_NAME">%1$s<ex>Google Maps</ex></ph> will open in Chrome. By continuing, you agree to Chrome’s <ph name="BEGIN_LINK1">&lt;LINK1&gt;</ph>Terms of Service<ph name="END_LINK1">&lt;/LINK1&gt;</ph> and <ph name="BEGIN_LINK2">&lt;LINK2&gt;</ph>Privacy Notice<ph name="END_LINK2">&lt;/LINK2&gt;</ph>.
       </message>
-      <message name="IDS_LIGHTWEIGHT_FRE_TOS_AND_PRIVACY_CHILD_ACCOUNT" desc="Message explaining that use of Chrome is governed by Chrome's terms of service and privacy notice, and Family Link's privacy notice for children.">
-        By continuing, you agree to Chrome's <ph name="BEGIN_LINK1">&lt;LINK1&gt;</ph>Terms of Service<ph name="END_LINK1">&lt;/LINK1&gt;</ph> and <ph name="BEGIN_LINK2">&lt;LINK2&gt;</ph>Privacy Notice<ph name="END_LINK2">&lt;/LINK2&gt;</ph>, and the <ph name="BEGIN_LINK3">&lt;LINK3&gt;</ph>Privacy Notice for Google Accounts Managed with Family Link<ph name="END_LINK3">&lt;/LINK3&gt;</ph>.
+      <message name="IDS_LIGHTWEIGHT_FRE_ASSOCIATED_APP_TOS_AND_PRIVACY_CHILD_ACCOUNT" desc="Message explaining that use of Chrome is governed by Chrome's terms of service and privacy notice, and Family Link's privacy notice for children.">
+        <ph name="APP_NAME">%1$s<ex>Google Maps</ex></ph> will open in Chrome. By continuing, you agree to Chrome's <ph name="BEGIN_LINK1">&lt;LINK1&gt;</ph>Terms of Service<ph name="END_LINK1">&lt;/LINK1&gt;</ph> and <ph name="BEGIN_LINK2">&lt;LINK2&gt;</ph>Privacy Notice<ph name="END_LINK2">&lt;/LINK2&gt;</ph>, and the <ph name="BEGIN_LINK3">&lt;LINK3&gt;</ph>Privacy Notice for Google Accounts Managed with Family Link<ph name="END_LINK3">&lt;/LINK3&gt;</ph>.
       </message>
       <message name="IDS_FRE_SEND_REPORT_CHECK" desc="Text for asking the user to allow sending stats and crash reports">
         Help make Chrome better by sending usage statistics and crash reports to Google.
@@ -2426,6 +2399,9 @@ To obtain new licenses, connect to the internet and play your downloaded content
       </message>
       <message name="IDS_NTP_SUGGESTIONS_FETCH_FAILED" desc="Snackbar text shown when the user presses the More button to get more suggestions, but this fails (eg, no internet connectivity).">
         Can’t get suggestions
+      </message>
+      <message name="IDS_NTP_SUGGESTIONS_FETCH_NO_NEW_SUGGESTIONS" desc="Snackbar text shown when the user presses the More button to get more suggestions, the fetch succeeds but provides no new suggestions.">
+        No new suggestions
       </message>
       <message name="IDS_NTP_ALL_DISMISSED_REFRESH" desc="Text label for button to refresh the New Tab Page when all suggested content has been dismissed. [CHAR-LIMIT=20]">
         Refresh
@@ -2666,7 +2642,7 @@ To obtain new licenses, connect to the internet and play your downloaded content
         Make page mobile-friendly
       </message>
       <message name="IDS_READER_VIEW_TEXT_ALT" desc='Message shown on the reader mode button bar, to invite the user to tap to open a reader mode. Reader mode extracts content and removes clutter from a web page and puts the result in a panel making it easier to read. This is used when "Reader Mode for Accessibility" is available.'>
-        Simplify page
+        Show simplified view
       </message>
       <message name="IDS_CONTENT_PROVIDER_SEARCH_DESCRIPTION" desc="Description for Chrome's entry in QSB's list of search suggestion providers [CHAR-LIMIT=32]">
         Bookmarks and web history
@@ -2674,7 +2650,7 @@ To obtain new licenses, connect to the internet and play your downloaded content
       <message name="IDS_URL_COPIED" desc="Notification telling the user that the url has been copied to clipboard. [CHAR-LIMIT=32]">
         URL copied.
       </message>
-      <message name="IDS_SURVEY_PROMPT" desc="Message shown that invites the user to take a survey about Chrome. 'Help' and 'improve' are imperative verbs. 'Take survey' is a tappable link. When tapped, a survey about Chrome opens.">
+      <message name="IDS_CHROME_HOME_SURVEY_PROMPT" desc="Message shown that invites the user to take a survey about Chrome. 'Help' and 'improve' are imperative verbs. 'Take survey' is a tappable link. When tapped, a survey about Chrome opens.">
         Help improve Chrome. <ph name="BEGIN_LINK">&lt;LINK&gt;</ph>Take survey.<ph name="END_LINK">&lt;/LINK&gt;</ph>
       </message>
 
@@ -2760,9 +2736,6 @@ To obtain new licenses, connect to the internet and play your downloaded content
       <message name="IDS_ACCESSIBILITY_OMNIBOX_BTN_REFINE" desc="Content description for the omnibox refine button.">
         Refine
       </message>
-      <message name="IDS_ACCESSIBILITY_BOOKMARK_MORE_INFO" desc="Content description for the button that shows option menu for a bookmark.">
-        Options
-      </message>
       <message name="IDS_ACCESSIBILITY_CANCEL_SELECTION" desc="Content description for the cancel selection button that deselects the selected items in a selectable list view.">
         Cancel selection
       </message>
@@ -2771,6 +2744,9 @@ To obtain new licenses, connect to the internet and play your downloaded content
       </message>
       <message name="IDS_ACCESSIBILITY_DRAWER_TOGGLE_BTN_CLOSE" desc="Content description for the button to close the navigation drawer.">
         Close navigation drawer
+      </message>
+      <message name="IDS_ACCESSIBILITY_LIST_MENU_BUTTON" desc="Content description for the button that shows option menu for a list item.">
+        Options
       </message>
       <message name="IDS_ACCESSIBILITY_TOOLBAR_SCREEN_POSITION" desc="Accessibility announcement to inform users about a toolbar's location.">
         Options available near top of the screen
@@ -2837,6 +2813,15 @@ However, you aren’t invisible. Going incognito doesn’t hide your browsing fr
       </message>
       <message name="IDS_CONTEXTUAL_SEARCH_QUICK_ACTION_CAPTION_GENERIC_WEBSITE" desc="Caption displayed in the Contextual Search bar prompting the user to navigate to a web page.">
         Go to page
+      </message>
+      <message name="IDS_CONTEXTUAL_SEARCH_IPH_ENTITY" desc="An in-product-help message for the Touch to Search feature on Chrome Android. The message encourages users to open a panel that contains search results for the word or phrase they tapped on.">
+        See instant search results in this panel
+      </message>
+      <message name="IDS_CONTEXTUAL_SEARCH_IPH_SEARCH_RESULT" desc="An in-product-help message for the Touch to Search feature. It encourages users to open the Touch to Search panel to see search results for a word or phrase they have tapped.">
+        Tap a word to search instantly or see related actions
+      </message>
+      <message name="IDS_CONTEXTUAL_SEARCH_IPH_TAP" desc="An in-product-help message for encouraging users to tap instead of long pressing to trigger the Touch to Search feature.">
+        You can also search with a quick tap on a word
       </message>
 
       <!-- Web apps -->
@@ -2985,8 +2970,8 @@ You must have Bluetooth and Location turned on in order to use the Physical Web.
       <message name="IDS_USB_CHOOSER_DIALOG_PROMPT" desc="The text that is used to introduce the USB chooser dialog to the user.">
         <ph name="SITE">%1$s<ex>https://www.google.com</ex></ph> wants to connect
       </message>
-      <message name="IDS_USB_CHOOSER_DIALOG_NO_DEVICES_FOUND_PROMPT" desc="The text that is used to inform the user that no devices found in the USB chooser dialog.">
-        No devices found
+      <message name="IDS_USB_CHOOSER_DIALOG_NO_DEVICES_FOUND_PROMPT" desc="The label shown to the user to inform them that no USB devices were found matching the requirements that the application provided.">
+        No compatible devices found
       </message>
       <message name="IDS_USB_CHOOSER_DIALOG_CONNECT_BUTTON_TEXT" desc="The text that is shown on the connect button in the USB chooser dialog.">
         Connect
@@ -3031,14 +3016,20 @@ You must have Bluetooth and Location turned on in order to use the Physical Web.
       <message name="IDS_WEBAPK_RUNNING_IN_CHROME_DISCLOSURE" desc="Message on the notification that indicates a WebApk may use Chrome data.">
         This app is running in Chrome.
       </message>
-      <message name="IDS_WEBAPP_RUNS_IN_CHROME_DISCLOSURE" desc="Message on the notification that indicates a Web App is run by Chrome.">
-        <ph name="WEB_APP_NAME">%1$s<ex>Twitter</ex></ph> runs in Chrome
+      <message name="IDS_WEBAPP_TAP_TO_COPY_URL" desc="Message on the notification that indicates that taping it will copy a Web App's URL into the clipboard.">
+        Tap to copy the URL for this app
+      </message>
+      <message name="IDS_WEBAPP_TWA_OFFLINE_DIALOG" desc="The message on the dialog shown when launching a Webapp or TWA needs network connection.">
+        To use <ph name="APP_NAME">%1$s<ex>PWA List</ex></ph>, please connect to the internet.
       </message>
       <message name="IDS_WEBAPK_OFFLINE_DIALOG" desc="The message on the dialog shown when launching a WebAPK needs network connection.">
         To use <ph name="APP_NAME">%1$s<ex>PWA List</ex></ph> for the first time, please connect to the internet.
       </message>
-      <message name="IDS_WEBAPK_OFFLINE_DIALOG_QUIT_BUTTON" desc="The text on the quit button on the dialog shown when launching a WebAPK needs network connection.">
-        OK
+      <message name="IDS_WEBAPP_CANNOT_CONNECT_TO_SITE" desc="The message on the dialog shown when launching a WebAPK or a TWA with network failure.">
+        Can't connect to the site
+      </message>
+      <message name="IDS_WEBAPP_NETWORK_ERROR_MESSAGE_TUNNEL_CONNECTION_FAILED" desc="The error message for ERROR_TUNNEL_CONNECTION_FAILED.">
+        Establishing a tunnel via proxy server failed
       </message>
 
       <!-- Keyboard shortcuts in Android N-->
@@ -3193,8 +3184,11 @@ You must have Bluetooth and Location turned on in order to use the Physical Web.
       <message name="IDS_BOTTOM_SHEET_HELP_BUBBLE_MESSAGE" desc="Text displayed in a help bubble above the bottom navigation sheet prompting users to pull the sheet up to see their bookmarks and other content.">
         Pull up to see bookmarks and more
       </message>
-      <message name="IDS_BOTTOM_SHEET_EXPAND_BUTTON_HELP_BUBBLE_MESSAGE" desc="Text displayed in a help bubble above the toolbar expand button prompting users to tap the button to see their bookmarks and other content.">
-        Tap to see bookmarks and more
+      <message name="IDS_BOTTOM_SHEET_PULL_TO_REFRESH_HELP_BUBBLE_MESSAGE" desc="Text displayed in a help bubble above the address bar. “access” is a verb (imperative). The intent of the string is to help users find the address bar at the bottom of the screen.">
+        Access the address bar here
+      </message>
+      <message name="IDS_BOTTOM_SHEET_PULL_TO_REFRESH_HELP_BUBBLE_ACCESSIBILITY_MESSAGE" desc="Text displayed in a help bubble above the address bar when TalkBack is enabled. “access” is a verb (imperative). The intent of the string is to help users find the address bar at the bottom of the screen.">
+        Access the address bar at the bottom of your screen
       </message>
       <message name="IDS_BOTTOM_SHEET_ACCESSIBILITY_EXPAND_BUTTON_HELP_BUBBLE_MESSAGE" desc="Text displayed in a help bubble above the toolbar expand button prompting users to tap the button to see their bookmarks and other content when accessibility is enabled.">
         Tap to see downloads, bookmarks, and history
@@ -3235,8 +3229,8 @@ You must have Bluetooth and Location turned on in order to use the Physical Web.
       <message name="IDS_CHROME_HOME_PROMO_DIALOG_MESSAGE_ACCESSIBILITY" desc="Dialog body text when accessibility is enabled. Dialog describes a new feature called “Chrome Home” (which is a placeholder name, official naming is underway; for now, do not translate the feature name). “Swipe up” (imperative) refers to the gesture on a mobile phone. “access” is a noun. “Popular” modifies both “sites and articles.” “Downloads” refers to items the user has downloaded in Chrome.">
         Swipe up from the bottom of the screen or tap the expand button for easy access to popular sites and articles, downloads, and more
       </message>
-      <message name="IDS_CHROME_HOME_PROMO_DIALOG_NOT_NOW" desc="Dialog button text that is visible if the new Chrome is disabled and will dismiss the dialog when pressed without changing the state of Chrome.">
-        Not now
+      <message name="IDS_CHROME_HOME_PROMO_DIALOG_NOT_YET" desc="Dialog button text that is visible if the new Chrome is disabled and will dismiss the dialog when pressed without changing the state of Chrome.">
+        Not yet
       </message>
       <message name="IDS_CHROME_HOME_PROMO_DIALOG_TITLE" desc="Dialog title text. Dialog describes the new Chrome. Object is omitted; intended meaning is that we wish to introduce you, the user, to a new version of Chrome. Infinitive or other verb form may be used if the gerund is not appropriate in your language.">
         Introducing the new Chrome
@@ -3271,6 +3265,20 @@ You must have Bluetooth and Location turned on in order to use the Physical Web.
       <!-- Migration strings -->
       <message name="IDS_UPDATING_CHROME" desc="String that indicates that Chrome is updating">
         Updating Chrome...
+      </message>
+
+      <!-- Interventions -->
+      <message name="IDS_REDIRECT_BLOCKED_MESSAGE" desc="The message stating that a redirect (noun) was blocked on this page. This will be followed on a separate line with the address the user was being redirected to.">
+         Chrome stopped this site from taking you to
+      </message>
+      <message name="IDS_REDIRECT_BLOCKED_SHORT_MESSAGE" desc="The short message stating that a redirect (noun) was blocked on this page.">
+         Redirect blocked.
+      </message>
+      <message name="IDS_NEAR_OOM_INTERVENTION_MESSAGE" desc="The message stating that the browser intervened to stop the page using too much memory.">
+         This page uses too much memory, so Chrome paused it.
+      </message>
+      <message name="IDS_NEAR_OOM_INTERVENTION_DECLINE" desc="The text of the button letting the user decline the browser's intervention, so that the page can resume what it was doing.">
+         Resume
       </message>
     </messages>
   </release>

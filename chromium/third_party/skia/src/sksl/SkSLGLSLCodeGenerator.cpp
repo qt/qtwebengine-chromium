@@ -7,8 +7,6 @@
 
 #include "SkSLGLSLCodeGenerator.h"
 
-#include "GLSL.std.450.h"
-
 #include "SkSLCompiler.h"
 #include "ir/SkSLExpressionStatement.h"
 #include "ir/SkSLExtension.h"
@@ -449,6 +447,9 @@ void GLSLCodeGenerator::writeVariableReference(const VariableReference& ref) {
         case SK_VERTEXID_BUILTIN:
             this->write("gl_VertexID");
             break;
+        case SK_INSTANCEID_BUILTIN:
+            this->write("gl_InstanceID");
+            break;
         case SK_CLIPDISTANCE_BUILTIN:
             this->write("gl_ClipDistance");
             break;
@@ -786,7 +787,9 @@ void GLSLCodeGenerator::writeTypePrecision(const Type& type) {
 }
 
 void GLSLCodeGenerator::writeVarDeclarations(const VarDeclarations& decl, bool global) {
-    ASSERT(decl.fVars.size() > 0);
+    if (!decl.fVars.size()) {
+        return;
+    }
     bool wroteType = false;
     for (const auto& stmt : decl.fVars) {
         VarDeclaration& var = (VarDeclaration&) *stmt;
@@ -1019,6 +1022,8 @@ void GLSLCodeGenerator::writeProgramElement(const ProgramElement& e) {
             this->writeLine(";");
             break;
         }
+        case ProgramElement::kEnum_Kind:
+            break;
         default:
             printf("%s\n", e.description().c_str());
             ABORT("unsupported program element");

@@ -53,6 +53,7 @@
 #include "components/sync/model/sync_error_factory.h"
 #include "components/variations/variations_associated_data.h"
 #include "third_party/skia/include/core/SkBitmap.h"
+#include "ui/base/page_transition_types.h"
 
 #if defined(OS_IOS)
 #include "base/critical_closure.h"
@@ -380,8 +381,9 @@ void HistoryService::AddPage(const GURL& url,
                              bool did_replace_entry) {
   DCHECK(thread_checker_.CalledOnValidThread());
   AddPage(HistoryAddPageArgs(url, time, context_id, nav_entry_id, referrer,
-                             redirects, transition, visit_source,
-                             did_replace_entry, true));
+                             redirects, transition,
+                             !ui::PageTransitionIsMainFrame(transition),
+                             visit_source, did_replace_entry, true));
 }
 
 void HistoryService::AddPage(const GURL& url,
@@ -389,8 +391,8 @@ void HistoryService::AddPage(const GURL& url,
                              VisitSource visit_source) {
   DCHECK(thread_checker_.CalledOnValidThread());
   AddPage(HistoryAddPageArgs(url, time, nullptr, 0, GURL(), RedirectList(),
-                             ui::PAGE_TRANSITION_LINK, visit_source, false,
-                             true));
+                             ui::PAGE_TRANSITION_LINK, false, visit_source,
+                             false, true));
 }
 
 void HistoryService::AddPage(const HistoryAddPageArgs& add_page_args) {
@@ -522,7 +524,7 @@ base::CancelableTaskTracker::TaskId HistoryService::GetFavicon(
 
 base::CancelableTaskTracker::TaskId HistoryService::GetFaviconsForURL(
     const GURL& page_url,
-    int icon_types,
+    const favicon_base::IconTypeSet& icon_types,
     const std::vector<int>& desired_sizes,
     const favicon_base::FaviconResultsCallback& callback,
     base::CancelableTaskTracker* tracker) {
@@ -540,7 +542,7 @@ base::CancelableTaskTracker::TaskId HistoryService::GetFaviconsForURL(
 
 base::CancelableTaskTracker::TaskId HistoryService::GetLargestFaviconForURL(
     const GURL& page_url,
-    const std::vector<int>& icon_types,
+    const std::vector<favicon_base::IconTypeSet>& icon_types,
     int minimum_size_in_pixels,
     const favicon_base::FaviconRawBitmapCallback& callback,
     base::CancelableTaskTracker* tracker) {
@@ -593,6 +595,18 @@ HistoryService::UpdateFaviconMappingsAndFetch(
       base::Bind(&RunWithFaviconResults, callback, base::Owned(results)));
 }
 
+void HistoryService::DeleteFaviconMappings(
+    const base::flat_set<GURL>& page_urls,
+    favicon_base::IconType icon_type) {
+  TRACE_EVENT0("browser", "HistoryService::DeleteFaviconMappings");
+  DCHECK(backend_task_runner_) << "History service being called after cleanup";
+  DCHECK(thread_checker_.CalledOnValidThread());
+
+  ScheduleTask(PRIORITY_NORMAL,
+               base::Bind(&HistoryBackend::DeleteFaviconMappings,
+                          history_backend_, page_urls, icon_type));
+}
+
 void HistoryService::MergeFavicon(
     const GURL& page_url,
     const GURL& icon_url,
@@ -631,6 +645,19 @@ void HistoryService::SetFavicons(const base::flat_set<GURL>& page_urls,
   ScheduleTask(PRIORITY_NORMAL,
                base::Bind(&HistoryBackend::SetFavicons, history_backend_,
                           page_urls_to_save, icon_type, icon_url, bitmaps));
+}
+
+void HistoryService::CloneFaviconMappingsForPages(
+    const GURL& page_url_to_read,
+    const favicon_base::IconTypeSet& icon_types,
+    const base::flat_set<GURL>& page_urls_to_write) {
+  DCHECK(backend_task_runner_) << "History service being called after cleanup";
+  DCHECK(thread_checker_.CalledOnValidThread());
+
+  ScheduleTask(PRIORITY_NORMAL,
+               base::Bind(&HistoryBackend::CloneFaviconMappingsForPages,
+                          history_backend_, page_url_to_read, icon_types,
+                          page_urls_to_write));
 }
 
 void HistoryService::SetOnDemandFavicons(const GURL& page_url,

@@ -28,9 +28,11 @@
 #include "modules/include/module_common_types.h"
 #include "rtc_base/flags.h"
 #include "rtc_base/ignore_wundef.h"
+#include "rtc_base/numerics/safe_conversions.h"
 #include "rtc_base/protobuf_utils.h"
 #include "rtc_base/sha1digest.h"
 #include "rtc_base/stringencode.h"
+#include "test/field_trial.h"
 #include "test/gtest.h"
 #include "test/testsupport/fileutils.h"
 #include "typedefs.h"  // NOLINT(build/include)
@@ -52,11 +54,16 @@ namespace webrtc {
 namespace {
 
 const std::string& PlatformChecksum(const std::string& checksum_general,
-                                    const std::string& checksum_android,
+                                    const std::string& checksum_android_32,
+                                    const std::string& checksum_android_64,
                                     const std::string& checksum_win_32,
                                     const std::string& checksum_win_64) {
 #if defined(WEBRTC_ANDROID)
-    return checksum_android;
+  #ifdef WEBRTC_ARCH_64_BITS
+    return checksum_android_64;
+  #else
+    return checksum_android_32;
+  #endif  // WEBRTC_ARCH_64_BITS
 #elif defined(WEBRTC_WIN)
   #ifdef WEBRTC_ARCH_64_BITS
     return checksum_win_64;
@@ -444,8 +451,7 @@ void NetEqDecodingTest::PopulateCng(int frame_index,
 
 #if !defined(WEBRTC_IOS) && defined(WEBRTC_NETEQ_UNITTEST_BITEXACT) && \
     (defined(WEBRTC_CODEC_ISAC) || defined(WEBRTC_CODEC_ISACFX)) &&    \
-    defined(WEBRTC_CODEC_ILBC) && defined(WEBRTC_CODEC_G722) &&        \
-    !defined(WEBRTC_ARCH_ARM64)
+    defined(WEBRTC_CODEC_ILBC) && !defined(WEBRTC_ARCH_ARM64)
 #define MAYBE_TestBitExactness TestBitExactness
 #else
 #define MAYBE_TestBitExactness DISABLED_TestBitExactness
@@ -457,18 +463,21 @@ TEST_F(NetEqDecodingTest, MAYBE_TestBitExactness) {
   const std::string output_checksum = PlatformChecksum(
       "09fa7646e2ad032a0b156177b95f09012430f81f",
       "1c64eb8b55ce8878676c6a1e6ddd78f48de0668b",
+      "not used",
       "09fa7646e2ad032a0b156177b95f09012430f81f",
       "759fef89a5de52bd17e733dc255c671ce86be909");
 
   const std::string network_stats_checksum =
       PlatformChecksum("5b4262ca328e5f066af5d34f3380521583dd20de",
                        "80235b6d727281203acb63b98f9a9e85d95f7ec0",
+                       "not used",
                        "5b4262ca328e5f066af5d34f3380521583dd20de",
                        "5b4262ca328e5f066af5d34f3380521583dd20de");
 
   const std::string rtcp_stats_checksum = PlatformChecksum(
       "b8880bf9fed2487efbddcb8d94b9937a29ae521d",
       "f3f7b3d3e71d7e635240b5373b57df6a7e4ce9d4",
+      "not used",
       "b8880bf9fed2487efbddcb8d94b9937a29ae521d",
       "b8880bf9fed2487efbddcb8d94b9937a29ae521d");
 
@@ -479,7 +488,7 @@ TEST_F(NetEqDecodingTest, MAYBE_TestBitExactness) {
                    FLAG_gen_ref);
 }
 
-#if !defined(WEBRTC_IOS) && !defined(WEBRTC_ANDROID) &&             \
+#if !defined(WEBRTC_IOS) &&                                         \
     defined(WEBRTC_NETEQ_UNITTEST_BITEXACT) &&                      \
     defined(WEBRTC_CODEC_OPUS)
 #define MAYBE_TestOpusBitExactness TestOpusBitExactness
@@ -491,18 +500,21 @@ TEST_F(NetEqDecodingTest, MAYBE_TestOpusBitExactness) {
       webrtc::test::ResourcePath("audio_coding/neteq_opus", "rtp");
 
   const std::string output_checksum = PlatformChecksum(
-      "721e1e0c6effe4b2401536a4eef11512c9fb709c",
-      "721e1e0c6effe4b2401536a4eef11512c9fb709c",
-      "721e1e0c6effe4b2401536a4eef11512c9fb709c",
-      "721e1e0c6effe4b2401536a4eef11512c9fb709c");
+      "7ea28d7edf9395f4ac8e8d8dd3a9e5c620b1bf48",
+      "5b1e691ab1c4465c742d6d944bc71e3b1c0e4c0e",
+      "b096114dd8c233eaf2b0ce9802ac95af13933772",
+      "7ea28d7edf9395f4ac8e8d8dd3a9e5c620b1bf48",
+      "7ea28d7edf9395f4ac8e8d8dd3a9e5c620b1bf48");
 
   const std::string network_stats_checksum =
-      PlatformChecksum("4e749c46e2611877120ac7a20cbbe555cfbd70ea",
-                       "4e749c46e2611877120ac7a20cbbe555cfbd70ea",
-                       "4e749c46e2611877120ac7a20cbbe555cfbd70ea",
-                       "4e749c46e2611877120ac7a20cbbe555cfbd70ea");
+      PlatformChecksum("9e72233c78baf685e500dd6c94212b30a4c5f27d",
+                       "9a37270e4242fbd31e80bb47dc5e7ab82cf2d557",
+                       "4f1e9734bc80a290faaf9d611efcb8d7802dbc4f",
+                       "9e72233c78baf685e500dd6c94212b30a4c5f27d",
+                       "9e72233c78baf685e500dd6c94212b30a4c5f27d");
 
   const std::string rtcp_stats_checksum = PlatformChecksum(
+      "e37c797e3de6a64dda88c9ade7a013d022a2e1e0",
       "e37c797e3de6a64dda88c9ade7a013d022a2e1e0",
       "e37c797e3de6a64dda88c9ade7a013d022a2e1e0",
       "e37c797e3de6a64dda88c9ade7a013d022a2e1e0",
@@ -513,6 +525,48 @@ TEST_F(NetEqDecodingTest, MAYBE_TestOpusBitExactness) {
                    network_stats_checksum,
                    rtcp_stats_checksum,
                    FLAG_gen_ref);
+}
+
+// This test fixture is identical to NetEqDecodingTest, except that it enables
+// the WebRTC-NetEqOpusDtxDelayFix field trial.
+// TODO(bugs.webrtc.org/8488): When the field trial is over and the feature is
+// default enabled, remove this fixture class and let the
+// TestOpusDtxBitExactness test build directly on NetEqDecodingTest.
+class NetEqDecodingTestWithOpusDtxFieldTrial : public NetEqDecodingTest {
+ public:
+  NetEqDecodingTestWithOpusDtxFieldTrial()
+      : override_field_trials_("WebRTC-NetEqOpusDtxDelayFix/Enabled/") {}
+
+ private:
+  test::ScopedFieldTrials override_field_trials_;
+};
+
+#if !defined(WEBRTC_IOS) &&                                         \
+    defined(WEBRTC_NETEQ_UNITTEST_BITEXACT) &&                      \
+    defined(WEBRTC_CODEC_OPUS)
+#define MAYBE_TestOpusDtxBitExactness TestOpusDtxBitExactness
+#else
+#define MAYBE_TestOpusDtxBitExactness DISABLED_TestOpusDtxBitExactness
+#endif
+TEST_F(NetEqDecodingTestWithOpusDtxFieldTrial, MAYBE_TestOpusDtxBitExactness) {
+  const std::string input_rtp_file =
+      webrtc::test::ResourcePath("audio_coding/neteq_opus_dtx", "rtp");
+
+  const std::string output_checksum =
+      PlatformChecksum("713af6c92881f5aab1285765ee6680da9d1c06ce",
+                       "3ec991b96872123f1554c03c543ca5d518431e46",
+                       "da9f9a2d94e0c2d67342fad4965d7b91cda50b25",
+                       "713af6c92881f5aab1285765ee6680da9d1c06ce",
+                       "713af6c92881f5aab1285765ee6680da9d1c06ce");
+
+  const std::string network_stats_checksum =
+      "bab58dc587d956f326056d7340c96eb9d2d3cc21";
+
+  const std::string rtcp_stats_checksum =
+      "ac27a7f305efb58b39bf123dccee25dee5758e63";
+
+  DecodeAndCompare(input_rtp_file, output_checksum, network_stats_checksum,
+                   rtcp_stats_checksum, FLAG_gen_ref);
 }
 
 // Use fax mode to avoid time-scaling. This is to simplify the testing of
@@ -533,8 +587,8 @@ TEST_F(NetEqDecodingTestFaxMode, TestFrameWaitingTimeStatistics) {
   for (size_t i = 0; i < num_frames; ++i) {
     const uint8_t payload[kPayloadBytes] = {0};
     RTPHeader rtp_info;
-    rtp_info.sequenceNumber = i;
-    rtp_info.timestamp = i * kSamples;
+    rtp_info.sequenceNumber = rtc::checked_cast<uint16_t>(i);
+    rtp_info.timestamp = rtc::checked_cast<uint32_t>(i * kSamples);
     rtp_info.ssrc = 0x1234;     // Just an arbitrary SSRC.
     rtp_info.payloadType = 94;  // PCM16b WB codec.
     rtp_info.markerBit = 0;
@@ -963,9 +1017,11 @@ class NetEqBgnTest : public NetEqDecodingTest {
       ASSERT_EQ(AudioFrame::kNormalSpeech, output.speech_type_);
 
       // Next packet.
-      rtp_info.timestamp += expected_samples_per_channel;
+      rtp_info.timestamp += rtc::checked_cast<uint32_t>(
+          expected_samples_per_channel);
       rtp_info.sequenceNumber++;
-      receive_timestamp += expected_samples_per_channel;
+      receive_timestamp += rtc::checked_cast<uint32_t>(
+          expected_samples_per_channel);
     }
 
     output.Reset();

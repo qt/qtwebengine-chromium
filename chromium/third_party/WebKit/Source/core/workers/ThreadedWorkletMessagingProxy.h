@@ -21,17 +21,18 @@ class CORE_EXPORT ThreadedWorkletMessagingProxy
 
  public:
   // WorkletGlobalScopeProxy implementation.
-  void FetchAndInvokeScript(const KURL& module_url_record,
-                            WorkletModuleResponsesMap*,
-                            WebURLRequest::FetchCredentialsMode,
-                            RefPtr<WebTaskRunner> outside_settings_task_runner,
-                            WorkletPendingTasks*) final;
+  void FetchAndInvokeScript(
+      const KURL& module_url_record,
+      WorkletModuleResponsesMap*,
+      network::mojom::FetchCredentialsMode,
+      scoped_refptr<WebTaskRunner> outside_settings_task_runner,
+      WorkletPendingTasks*) final;
   void WorkletObjectDestroyed() final;
   void TerminateWorkletGlobalScope() final;
 
   void Initialize();
 
-  DECLARE_VIRTUAL_TRACE();
+  void Trace(blink::Visitor*) override;
 
  protected:
   ThreadedWorkletMessagingProxy(ExecutionContext*, WorkerClients*);

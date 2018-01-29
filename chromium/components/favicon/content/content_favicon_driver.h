@@ -5,6 +5,8 @@
 #ifndef COMPONENTS_FAVICON_CONTENT_CONTENT_FAVICON_DRIVER_H_
 #define COMPONENTS_FAVICON_CONTENT_CONTENT_FAVICON_DRIVER_H_
 
+#include <vector>
+
 #include "base/macros.h"
 #include "base/optional.h"
 #include "components/favicon/core/favicon_driver_impl.h"
@@ -70,6 +72,9 @@ class ContentFaviconDriver
                         const GURL& icon_url,
                         bool icon_url_changed,
                         const gfx::Image& image) override;
+  void OnFaviconDeleted(const GURL& page_url,
+                        FaviconDriverObserver::NotificationIconType
+                            notification_icon_type) override;
 
   // content::WebContentsObserver implementation.
   void DidUpdateFaviconURL(
@@ -80,7 +85,9 @@ class ContentFaviconDriver
       content::NavigationHandle* navigation_handle) override;
   void DidFinishNavigation(
       content::NavigationHandle* navigation_handle) override;
+  void DocumentOnLoadCompletedInMainFrame() override;
 
+  bool document_on_load_completed_;
   GURL bypass_cache_page_url_;
   // nullopt until the actual list is reported via DidUpdateFaviconURL().
   base::Optional<std::vector<content::FaviconURL>> favicon_urls_;

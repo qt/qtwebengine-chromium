@@ -389,7 +389,7 @@ PpapiCdmAdapter::PpapiCdmAdapter(PP_Instance instance, pp::Module* module)
   callback_factory_.Initialize(this);
 }
 
-PpapiCdmAdapter::~PpapiCdmAdapter() {}
+PpapiCdmAdapter::~PpapiCdmAdapter() = default;
 
 CdmWrapper* PpapiCdmAdapter::CreateCdmInstance(const std::string& key_system) {
   // The Pepper plugin will be staticly linked to the CDM, so pass the plugin's
@@ -741,15 +741,6 @@ void PpapiCdmAdapter::OnRejectPromise(uint32_t promise_id,
                                       uint32_t system_code,
                                       const char* error_message,
                                       uint32_t error_message_size) {
-  // UMA to investigate http://crbug.com/410630
-  // TODO(xhwang): Remove after bug is fixed.
-  if (system_code == 0x27) {
-    pp::UMAPrivate uma_interface(this);
-    uma_interface.HistogramCustomCounts("Media.EME.CdmFileIO.FileSizeKBOnError",
-                                        last_read_file_size_kb_, kSizeKBMin,
-                                        kSizeKBMax, kSizeKBBuckets);
-  }
-
   RejectPromise(promise_id, exception, system_code,
                 std::string(error_message, error_message_size));
 }
@@ -1209,6 +1200,8 @@ void PpapiCdmAdapter::OnDeferredInitializationDone(cdm::StreamType stream_type,
 }
 
 void PpapiCdmAdapter::RequestStorageId(uint32_t version) {
+  PP_DCHECK(version < 0x80000000);  // Reserved versions not allowed.
+
   // If persistent storage is not allowed, no need to get the Storage ID.
   // As well, only allow the request if the current version (or "latest")
   // is requested.

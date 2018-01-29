@@ -13,6 +13,7 @@
 #include <EGL/eglext.h>
 
 #include "common/debug.h"
+#include "libANGLE/Display.h"
 #include "libANGLE/renderer/gl/cgl/PbufferSurfaceCGL.h"
 #include "libANGLE/renderer/gl/cgl/WindowSurfaceCGL.h"
 
@@ -36,7 +37,7 @@ class FunctionsGLCGL : public FunctionsGL
     ~FunctionsGLCGL() override { dlclose(mDylibHandle); }
 
   private:
-    void *loadProcAddress(const std::string &function) override
+    void *loadProcAddress(const std::string &function) const override
     {
         return dlsym(mDylibHandle, function.c_str());
     }
@@ -91,7 +92,7 @@ egl::Error DisplayCGL::initialize(egl::Display *display)
     }
 
     mFunctions = new FunctionsGLCGL(handle);
-    mFunctions->initialize();
+    mFunctions->initialize(display->getAttributeMap());
 
     return DisplayGL::initialize(display);
 }

@@ -308,14 +308,16 @@ bool CXFA_FFTabOrderPageWidgetIterator::SetCurrentWidget(
 CXFA_FFWidget* CXFA_FFTabOrderPageWidgetIterator::GetTraverseWidget(
     CXFA_FFWidget* pWidget) {
   CXFA_WidgetAcc* pAcc = pWidget->GetDataAcc();
-  CXFA_Node* pTraversal = pAcc->GetNode()->GetChild(0, XFA_Element::Traversal);
+  CXFA_Node* pTraversal =
+      pAcc->GetNode()->GetChild(0, XFA_Element::Traversal, false);
   if (pTraversal) {
-    CXFA_Node* pTraverse = pTraversal->GetChild(0, XFA_Element::Traverse);
+    CXFA_Node* pTraverse =
+        pTraversal->GetChild(0, XFA_Element::Traverse, false);
     if (pTraverse) {
-      WideString wsTraverseWidgetName;
-      if (pTraverse->GetAttribute(XFA_ATTRIBUTE_Ref, wsTraverseWidgetName)) {
-        return FindWidgetByName(wsTraverseWidgetName, pWidget);
-      }
+      pdfium::Optional<WideString> traverseWidgetName =
+          pTraverse->JSNode()->TryAttribute(XFA_Attribute::Ref, true);
+      if (traverseWidgetName)
+        return FindWidgetByName(*traverseWidgetName, pWidget);
     }
   }
   return nullptr;

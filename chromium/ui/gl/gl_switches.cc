@@ -24,6 +24,11 @@ const char kANGLEImplementationOpenGLName[]   = "gl";
 const char kANGLEImplementationOpenGLESName[] = "gles";
 const char kANGLEImplementationNullName[]     = "null";
 
+// Special switches for "NULL"/stub driver implementations.
+const char kANGLEImplementationD3D11NULLName[] = "d3d11-null";
+const char kANGLEImplementationOpenGLNULLName[] = "gl-null";
+const char kANGLEImplementationOpenGLESNULLName[] = "gles-null";
+
 }  // namespace gl
 
 namespace switches {
@@ -109,11 +114,14 @@ const char kEnableDirectCompositionLayers[] =
 const char kDisableDirectCompositionLayers[] =
     "disable-direct-composition-layers";
 
+// Enables the presentation callback for SwapBuffers, SwapBuffersAsync, etc.
+const char kEnablePresentationCallback[] = "enable-presentation-callback";
 
 // This is the list of switches passed from this file that are passed from the
 // GpuProcessHost to the GPU Process. Add your switch to this list if you need
 // to read it in the GPU process, else don't add it.
 const char* const kGLSwitchesCopiedFromGpuProcessHost[] = {
+    kDisableDirectComposition,
     kDisableGpuVsync,
     kDisableD3D11,
     kDisableES3GLContext,
@@ -127,6 +135,7 @@ const char* const kGLSwitchesCopiedFromGpuProcessHost[] = {
     kEnableSwapBuffersWithBounds,
     kEnableDirectCompositionLayers,
     kDisableDirectCompositionLayers,
+    kEnablePresentationCallback,
 };
 const int kGLSwitchesCopiedFromGpuProcessHostNumSwitches =
     arraysize(kGLSwitchesCopiedFromGpuProcessHost);

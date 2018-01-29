@@ -88,8 +88,6 @@
 #include "core/html/HTMLContentElement.h"
 #include "core/html/HTMLIFrameElement.h"
 #include "core/html/HTMLImageElement.h"
-#include "core/html/HTMLMediaElement.h"
-#include "core/html/HTMLVideoElement.h"
 #include "core/html/canvas/CanvasFontCache.h"
 #include "core/html/canvas/CanvasRenderingContext.h"
 #include "core/html/forms/FormController.h"
@@ -97,6 +95,8 @@
 #include "core/html/forms/HTMLSelectElement.h"
 #include "core/html/forms/HTMLTextAreaElement.h"
 #include "core/html/forms/TextControlInnerElements.h"
+#include "core/html/media/HTMLMediaElement.h"
+#include "core/html/media/HTMLVideoElement.h"
 #include "core/html/shadow/ShadowElementNames.h"
 #include "core/html_names.h"
 #include "core/input/EventHandler.h"
@@ -188,7 +188,7 @@ class UseCounterObserverImpl final : public UseCounter::Observer {
     return true;
   }
 
-  DEFINE_INLINE_VIRTUAL_TRACE() {
+  virtual void Trace(blink::Visitor* visitor) {
     UseCounter::Observer::Trace(visitor);
     visitor->Trace(resolver_);
   }
@@ -229,7 +229,7 @@ static WTF::Optional<DocumentMarker::MarkerTypes> MarkerTypesFrom(
 
 static SpellCheckRequester* GetSpellCheckRequester(Document* document) {
   if (!document || !document->GetFrame())
-    return 0;
+    return nullptr;
   return &document->GetFrame()->GetSpellChecker().GetSpellCheckRequester();
 }
 
@@ -296,10 +296,10 @@ LocalFrame* Internals::GetFrame() const {
 
 InternalSettings* Internals::settings() const {
   if (!document_)
-    return 0;
+    return nullptr;
   Page* page = document_->GetPage();
   if (!page)
-    return 0;
+    return nullptr;
   return InternalSettings::From(*page);
 }
 
@@ -383,11 +383,11 @@ Element* Internals::elementFromPoint(Document* doc,
   if (!doc) {
     exception_state.ThrowDOMException(kInvalidAccessError,
                                       "Must supply document to check");
-    return 0;
+    return nullptr;
   }
 
   if (doc->GetLayoutViewItem().IsNull())
-    return 0;
+    return nullptr;
 
   HitTestRequest::HitTestRequestType hit_type =
       HitTestRequest::kReadOnly | HitTestRequest::kActive;
@@ -413,6 +413,16 @@ void Internals::clearHitTestCache(Document* doc,
     return;
 
   doc->GetLayoutViewItem().ClearHitTestCache();
+}
+
+Element* Internals::innerEditorElement(Element* container,
+                                       ExceptionState& exception_state) const {
+  if (IsTextControlElement(container))
+    return ToTextControlElement(container)->InnerEditorElement();
+
+  exception_state.ThrowDOMException(kNotSupportedError,
+                                    "Not a text control element.");
+  return nullptr;
 }
 
 bool Internals::isPreloaded(const String& url) {
@@ -447,15 +457,15 @@ bool Internals::isLoadingFromMemoryCache(const String& url) {
 
 int Internals::getResourcePriority(const String& url, Document* document) {
   if (!document)
-    return ResourceLoadPriority::kResourceLoadPriorityUnresolved;
+    return static_cast<int>(ResourceLoadPriority::kUnresolved);
 
   Resource* resource = document->Fetcher()->AllResources().at(
       URLTestHelpers::ToKURL(url.Utf8().data()));
 
   if (!resource)
-    return ResourceLoadPriority::kResourceLoadPriorityUnresolved;
+    return static_cast<int>(ResourceLoadPriority::kUnresolved);
 
-  return resource->GetResourceRequest().Priority();
+  return static_cast<int>(resource->GetResourceRequest().Priority());
 }
 
 String Internals::getResourceHeader(const String& url,
@@ -491,7 +501,7 @@ Node* Internals::treeScopeRootNode(Node* node) {
 Node* Internals::parentTreeScope(Node* node) {
   DCHECK(node);
   const TreeScope* parent_tree_scope = node->GetTreeScope().ParentTreeScope();
-  return parent_tree_scope ? &parent_tree_scope->RootNode() : 0;
+  return parent_tree_scope ? &parent_tree_scope->RootNode() : nullptr;
 }
 
 unsigned short Internals::compareTreeScopePosition(
@@ -504,13 +514,13 @@ unsigned short Internals::compareTreeScopePosition(
           ? static_cast<const TreeScope*>(ToDocument(node1))
           : node1->IsShadowRoot()
                 ? static_cast<const TreeScope*>(ToShadowRoot(node1))
-                : 0;
+                : nullptr;
   const TreeScope* tree_scope2 =
       node2->IsDocumentNode()
           ? static_cast<const TreeScope*>(ToDocument(node2))
           : node2->IsShadowRoot()
                 ? static_cast<const TreeScope*>(ToShadowRoot(node2))
-                : 0;
+                : nullptr;
   if (!tree_scope1 || !tree_scope2) {
     exception_state.ThrowDOMException(
         kInvalidAccessError,
@@ -586,7 +596,7 @@ void Internals::advanceTimeForImage(Element* image,
     return;
   }
 
-  image_data->AdvanceTime(delta_time_in_seconds);
+  image_data->AdvanceTime(TimeDelta::FromSecondsD(delta_time_in_seconds));
 }
 
 void Internals::advanceImageAnimation(Element* image,
@@ -654,7 +664,7 @@ Node* Internals::nextSiblingInFlatTree(Node* node,
     exception_state.ThrowDOMException(
         kInvalidAccessError,
         "The node argument doesn't particite in the flat tree.");
-    return 0;
+    return nullptr;
   }
   return FlatTreeTraversal::NextSibling(*node);
 }
@@ -666,7 +676,7 @@ Node* Internals::firstChildInFlatTree(Node* node,
     exception_state.ThrowDOMException(
         kInvalidAccessError,
         "The node argument doesn't particite in the flat tree");
-    return 0;
+    return nullptr;
   }
   return FlatTreeTraversal::FirstChild(*node);
 }
@@ -678,7 +688,7 @@ Node* Internals::lastChildInFlatTree(Node* node,
     exception_state.ThrowDOMException(
         kInvalidAccessError,
         "The node argument doesn't particite in the flat tree.");
-    return 0;
+    return nullptr;
   }
   return FlatTreeTraversal::LastChild(*node);
 }
@@ -689,7 +699,7 @@ Node* Internals::nextInFlatTree(Node* node, ExceptionState& exception_state) {
     exception_state.ThrowDOMException(
         kInvalidAccessError,
         "The node argument doesn't particite in the flat tree.");
-    return 0;
+    return nullptr;
   }
   return FlatTreeTraversal::Next(*node);
 }
@@ -701,7 +711,7 @@ Node* Internals::previousInFlatTree(Node* node,
     exception_state.ThrowDOMException(
         kInvalidAccessError,
         "The node argument doesn't particite in the flat tree.");
-    return 0;
+    return nullptr;
   }
   return FlatTreeTraversal::Previous(*node);
 }
@@ -756,14 +766,14 @@ ShadowRoot* Internals::youngestShadowRoot(Element* host) {
   DCHECK(host);
   if (ElementShadow* shadow = host->Shadow())
     return &shadow->YoungestShadowRoot();
-  return 0;
+  return nullptr;
 }
 
 ShadowRoot* Internals::oldestShadowRoot(Element* host) {
   DCHECK(host);
   if (ElementShadow* shadow = host->Shadow())
     return &shadow->OldestShadowRoot();
-  return 0;
+  return nullptr;
 }
 
 ShadowRoot* Internals::youngerShadowRoot(Node* shadow,
@@ -772,7 +782,7 @@ ShadowRoot* Internals::youngerShadowRoot(Node* shadow,
   if (!shadow->IsShadowRoot()) {
     exception_state.ThrowDOMException(
         kInvalidAccessError, "The node provided is not a shadow root.");
-    return 0;
+    return nullptr;
   }
 
   return ToShadowRoot(shadow)->YoungerShadowRoot();
@@ -850,7 +860,7 @@ bool Internals::hasAutofocusRequest(Document* document) {
 }
 
 bool Internals::hasAutofocusRequest() {
-  return hasAutofocusRequest(0);
+  return hasAutofocusRequest(nullptr);
 }
 
 Vector<String> Internals::formControlStateOfHistoryItem(
@@ -1014,13 +1024,13 @@ DocumentMarker* Internals::MarkerAt(Node* node,
     exception_state.ThrowDOMException(
         kSyntaxError,
         "The marker type provided ('" + marker_type + "') is invalid.");
-    return 0;
+    return nullptr;
   }
 
   DocumentMarkerVector markers =
       node->GetDocument().Markers().MarkersFor(node, marker_types.value());
   if (markers.size() <= index)
-    return 0;
+    return nullptr;
   return markers[index];
 }
 
@@ -1044,6 +1054,28 @@ String Internals::markerDescriptionForNode(Node* node,
   if (!marker || !IsSpellCheckMarker(*marker))
     return String();
   return ToSpellCheckMarker(marker)->Description();
+}
+
+unsigned Internals::markerBackgroundColorForNode(
+    Node* node,
+    const String& marker_type,
+    unsigned index,
+    ExceptionState& exception_state) {
+  DocumentMarker* marker = MarkerAt(node, marker_type, index, exception_state);
+  if (!marker || !IsStyleableMarker(*marker))
+    return 0;
+  return ToStyleableMarker(marker)->BackgroundColor().Rgb();
+}
+
+unsigned Internals::markerUnderlineColorForNode(
+    Node* node,
+    const String& marker_type,
+    unsigned index,
+    ExceptionState& exception_state) {
+  DocumentMarker* marker = MarkerAt(node, marker_type, index, exception_state);
+  if (!marker || !IsStyleableMarker(*marker))
+    return 0;
+  return ToStyleableMarker(marker)->UnderlineColor().Rgb();
 }
 
 static WTF::Optional<TextMatchMarker::MatchStatus> MatchStatusFrom(
@@ -1347,6 +1379,35 @@ void Internals::setSuggestedValue(Element* element,
     select->SetSuggestedValue(value);
 }
 
+void Internals::setAutofilledValue(Element* element,
+                                   const String& value,
+                                   ExceptionState& exception_state) {
+  DCHECK(element);
+  if (!element->IsFormControlElement()) {
+    exception_state.ThrowDOMException(
+        kInvalidNodeTypeError,
+        "The element provided is not a form control element.");
+    return;
+  }
+
+  if (auto* input = ToHTMLInputElementOrNull(*element)) {
+    input->DispatchScopedEvent(Event::CreateBubble(EventTypeNames::keydown));
+    input->setValue(value, kDispatchInputAndChangeEvent);
+    input->DispatchScopedEvent(Event::CreateBubble(EventTypeNames::keyup));
+  }
+
+  if (auto* textarea = ToHTMLTextAreaElementOrNull(*element)) {
+    textarea->DispatchScopedEvent(Event::CreateBubble(EventTypeNames::keydown));
+    textarea->setValue(value, kDispatchInputAndChangeEvent);
+    textarea->DispatchScopedEvent(Event::CreateBubble(EventTypeNames::keyup));
+  }
+
+  if (auto* select = ToHTMLSelectElementOrNull(*element))
+    select->setValue(value, kDispatchInputAndChangeEvent);
+
+  ToHTMLFormControlElement(element)->SetAutofilled(true);
+}
+
 void Internals::setEditingValue(Element* element,
                                 const String& value,
                                 ExceptionState& exception_state) {
@@ -1426,7 +1487,7 @@ DOMPoint* Internals::touchPositionAdjustedToBestClickableNode(
   if (!document->GetFrame()) {
     exception_state.ThrowDOMException(kInvalidAccessError,
                                       "The document provided is invalid.");
-    return 0;
+    return nullptr;
   }
 
   document->UpdateStyleAndLayout();
@@ -1443,7 +1504,7 @@ DOMPoint* Internals::touchPositionAdjustedToBestClickableNode(
           HitTestRequest::kListBased,
       LayoutSize(radius));
 
-  Node* target_node = 0;
+  Node* target_node = nullptr;
   IntPoint adjusted_point;
 
   bool found_node = event_handler.BestClickableNodeForHitTestResult(
@@ -1451,7 +1512,7 @@ DOMPoint* Internals::touchPositionAdjustedToBestClickableNode(
   if (found_node)
     return DOMPoint::Create(adjusted_point.X(), adjusted_point.Y());
 
-  return 0;
+  return nullptr;
 }
 
 Node* Internals::touchNodeAdjustedToBestClickableNode(
@@ -1465,7 +1526,7 @@ Node* Internals::touchNodeAdjustedToBestClickableNode(
   if (!document->GetFrame()) {
     exception_state.ThrowDOMException(kInvalidAccessError,
                                       "The document provided is invalid.");
-    return 0;
+    return nullptr;
   }
 
   document->UpdateStyleAndLayout();
@@ -1482,7 +1543,7 @@ Node* Internals::touchNodeAdjustedToBestClickableNode(
           HitTestRequest::kListBased,
       LayoutSize(radius));
 
-  Node* target_node = 0;
+  Node* target_node = nullptr;
   IntPoint adjusted_point;
   document->GetFrame()->GetEventHandler().BestClickableNodeForHitTestResult(
       result, adjusted_point, target_node);
@@ -1500,7 +1561,7 @@ DOMPoint* Internals::touchPositionAdjustedToBestContextMenuNode(
   if (!document->GetFrame()) {
     exception_state.ThrowDOMException(kInvalidAccessError,
                                       "The document provided is invalid.");
-    return 0;
+    return nullptr;
   }
 
   document->UpdateStyleAndLayout();
@@ -1517,7 +1578,7 @@ DOMPoint* Internals::touchPositionAdjustedToBestContextMenuNode(
           HitTestRequest::kListBased,
       LayoutSize(radius));
 
-  Node* target_node = 0;
+  Node* target_node = nullptr;
   IntPoint adjusted_point;
 
   bool found_node = event_handler.BestContextMenuNodeForHitTestResult(
@@ -1539,7 +1600,7 @@ Node* Internals::touchNodeAdjustedToBestContextMenuNode(
   if (!document->GetFrame()) {
     exception_state.ThrowDOMException(kInvalidAccessError,
                                       "The document provided is invalid.");
-    return 0;
+    return nullptr;
   }
 
   document->UpdateStyleAndLayout();
@@ -1556,7 +1617,7 @@ Node* Internals::touchNodeAdjustedToBestContextMenuNode(
           HitTestRequest::kListBased,
       LayoutSize(radius));
 
-  Node* target_node = 0;
+  Node* target_node = nullptr;
   IntPoint adjusted_point;
   event_handler.BestContextMenuNodeForHitTestResult(result, adjusted_point,
                                                     target_node);
@@ -1582,7 +1643,7 @@ DOMRectReadOnly* Internals::bestZoomableAreaForTouchPoint(
   IntSize radius(width / 2, height / 2);
   IntPoint point(x + radius.Width(), y + radius.Height());
 
-  Node* target_node = 0;
+  Node* target_node = nullptr;
   IntRect zoomable_area;
   bool found_node =
       document->GetFrame()->GetEventHandler().BestZoomableAreaForTouchPoint(
@@ -1699,9 +1760,9 @@ unsigned Internals::mediaKeySessionCount() {
       InstanceCounters::kMediaKeySessionCounter);
 }
 
-unsigned Internals::suspendableObjectCount(Document* document) {
+unsigned Internals::pausableObjectCount(Document* document) {
   DCHECK(document);
-  return document->SuspendableObjectCount();
+  return document->PausableObjectCount();
 }
 
 static unsigned EventHandlerCount(
@@ -1809,7 +1870,7 @@ static PaintLayer* FindLayerForGraphicsLayer(PaintLayer* search_root,
   GraphicsLayer* layer_for_scrolling =
       search_root->GetScrollableArea()
           ? search_root->GetScrollableArea()->LayerForScrolling()
-          : 0;
+          : nullptr;
   if (graphics_layer == layer_for_scrolling) {
     *layer_type = "scrolling";
     return search_root;
@@ -1831,7 +1892,7 @@ static PaintLayer* FindLayerForGraphicsLayer(PaintLayer* search_root,
   GraphicsLayer* layer_for_horizontal_scrollbar =
       search_root->GetScrollableArea()
           ? search_root->GetScrollableArea()->LayerForHorizontalScrollbar()
-          : 0;
+          : nullptr;
   if (graphics_layer == layer_for_horizontal_scrollbar) {
     *layer_type = "horizontalScrollbar";
     return search_root;
@@ -1840,7 +1901,7 @@ static PaintLayer* FindLayerForGraphicsLayer(PaintLayer* search_root,
   GraphicsLayer* layer_for_vertical_scrollbar =
       search_root->GetScrollableArea()
           ? search_root->GetScrollableArea()->LayerForVerticalScrollbar()
-          : 0;
+          : nullptr;
   if (graphics_layer == layer_for_vertical_scrollbar) {
     *layer_type = "verticalScrollbar";
     return search_root;
@@ -1849,7 +1910,7 @@ static PaintLayer* FindLayerForGraphicsLayer(PaintLayer* search_root,
   GraphicsLayer* layer_for_scroll_corner =
       search_root->GetScrollableArea()
           ? search_root->GetScrollableArea()->LayerForScrollCorner()
-          : 0;
+          : nullptr;
   if (graphics_layer == layer_for_scroll_corner) {
     *layer_type = "scrollCorner";
     return search_root;
@@ -1865,7 +1926,7 @@ static PaintLayer* FindLayerForGraphicsLayer(PaintLayer* search_root,
       return found_layer;
   }
 
-  return 0;
+  return nullptr;
 }
 
 // Given a vector of rects, merge those that are adjacent, leaving empty rects
@@ -1924,7 +1985,8 @@ static void AccumulateLayerRectList(PaintLayerCompositor* compositor,
     IntSize layer_offset;
     PaintLayer* paint_layer = FindLayerForGraphicsLayer(
         compositor->RootLayer(), graphics_layer, &layer_offset, &layer_type);
-    Node* node = paint_layer ? paint_layer->GetLayoutObject().GetNode() : 0;
+    Node* node =
+        paint_layer ? paint_layer->GetLayoutObject().GetNode() : nullptr;
     for (size_t i = 0; i < layer_rects.size(); ++i) {
       if (!layer_rects[i].IsEmpty()) {
         rects->Append(node, layer_type, layer_offset.Width(),
@@ -1950,8 +2012,15 @@ LayerRectList* Internals::touchEventTargetLayerRects(
   }
 
   if (ScrollingCoordinator* scrolling_coordinator =
-          document->GetPage()->GetScrollingCoordinator())
-    scrolling_coordinator->UpdateAfterCompositingChangeIfNeeded();
+          document->GetPage()->GetScrollingCoordinator()) {
+    FrameView* view = document->GetPage()->MainFrame()->View();
+    if (view->IsLocalFrameView()) {
+      scrolling_coordinator->UpdateAfterCompositingChangeIfNeeded(
+          static_cast<LocalFrameView*>(view));
+    } else {
+      NOTREACHED();
+    }
+  }
 
   LayoutViewItem view = document->GetLayoutViewItem();
   if (!view.IsNull()) {
@@ -2116,7 +2185,7 @@ bool Internals::canHyphenate(const AtomicString& locale) {
 
 void Internals::setMockHyphenation(const AtomicString& locale) {
   LayoutLocale::SetHyphenationForTesting(locale,
-                                         WTF::AdoptRef(new MockHyphenation));
+                                         base::AdoptRef(new MockHyphenation));
 }
 
 bool Internals::isOverwriteModeEnabled(Document* document) {
@@ -2808,7 +2877,7 @@ bool Internals::fakeMouseMovePending() const {
 }
 
 DOMArrayBuffer* Internals::serializeObject(
-    RefPtr<SerializedScriptValue> value) const {
+    scoped_refptr<SerializedScriptValue> value) const {
   StringView view = value->GetWireData();
   DCHECK(view.Is8Bit());
   DOMArrayBuffer* buffer =
@@ -2818,7 +2887,7 @@ DOMArrayBuffer* Internals::serializeObject(
   return buffer;
 }
 
-RefPtr<SerializedScriptValue> Internals::deserializeBuffer(
+scoped_refptr<SerializedScriptValue> Internals::deserializeBuffer(
     DOMArrayBuffer* buffer) const {
   String value(static_cast<const UChar*>(buffer->Data()),
                buffer->ByteLength() / sizeof(UChar));
@@ -2832,7 +2901,7 @@ DOMArrayBuffer* Internals::serializeWithInlineWasm(ScriptValue value) const {
   v8::Local<v8::Value> v8_value = value.V8Value();
   SerializedScriptValue::SerializeOptions options;
   options.wasm_policy = SerializedScriptValue::SerializeOptions::kSerialize;
-  RefPtr<SerializedScriptValue> obj = SerializedScriptValue::Serialize(
+  scoped_refptr<SerializedScriptValue> obj = SerializedScriptValue::Serialize(
       isolate, v8_value, options, exception_state);
   if (exception_state.HadException())
     return nullptr;
@@ -3130,9 +3199,10 @@ ScriptPromise Internals::promiseCheckOverload(ScriptState* script_state,
                              V8String(script_state->GetIsolate(), "done"));
 }
 
-DEFINE_TRACE(Internals) {
+void Internals::Trace(blink::Visitor* visitor) {
   visitor->Trace(runtime_flags_);
   visitor->Trace(document_);
+  ScriptWrappable::Trace(visitor);
 }
 
 void Internals::setValueForUser(HTMLInputElement* element,
@@ -3252,6 +3322,10 @@ void Internals::setNetworkQualityInfoOverride(const String& effective_type,
       web_effective_type);
 }
 
+void Internals::setSaveDataEnabled(bool enabled) {
+  GetNetworkStateNotifier().SetSaveDataEnabledOverride(enabled);
+}
+
 void Internals::clearNetworkConnectionInfoOverride() {
   GetNetworkStateNotifier().ClearOverride();
 }
@@ -3361,7 +3435,7 @@ Vector<String> Internals::getCSSPropertyLonghands() const {
   Vector<String> result;
   for (int id = firstCSSProperty; id <= lastCSSProperty; ++id) {
     CSSPropertyID property = static_cast<CSSPropertyID>(id);
-    if (!isShorthandProperty(property)) {
+    if (CSSProperty::Get(property).IsLonghand()) {
       result.push_back(getPropertyNameString(property));
     }
   }
@@ -3372,7 +3446,7 @@ Vector<String> Internals::getCSSPropertyShorthands() const {
   Vector<String> result;
   for (int id = firstCSSProperty; id <= lastCSSProperty; ++id) {
     CSSPropertyID property = static_cast<CSSPropertyID>(id);
-    if (isShorthandProperty(property)) {
+    if (CSSProperty::Get(property).IsShorthand()) {
       result.push_back(getPropertyNameString(property));
     }
   }
@@ -3450,7 +3524,7 @@ bool Internals::setScrollbarVisibilityInScrollableArea(Node* node,
     scrollable_area->SetScrollbarsHidden(!visible);
     scrollable_area->GetScrollAnimator().SetScrollbarsVisibleForTesting(
         visible);
-    return ScrollbarTheme::GetTheme().UsesOverlayScrollbars();
+    return scrollable_area->GetPageScrollbarTheme().UsesOverlayScrollbars();
   }
   return false;
 }
@@ -3479,7 +3553,7 @@ DOMRect* Internals::visualRect(Node* node) {
     return DOMRect::Create();
 
   return DOMRect::FromFloatRect(
-      FloatRect(node->GetLayoutObject()->VisualRect()));
+      FloatRect(node->GetLayoutObject()->FragmentsVisualRectBoundingBox()));
 }
 
 void Internals::crash() {

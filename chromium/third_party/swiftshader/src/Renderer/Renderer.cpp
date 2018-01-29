@@ -15,21 +15,21 @@
 #include "Renderer.hpp"
 
 #include "Clipper.hpp"
-#include "Math.hpp"
-#include "FrameBuffer.hpp"
-#include "Timer.hpp"
 #include "Surface.hpp"
-#include "Half.hpp"
 #include "Primitive.hpp"
 #include "Polygon.hpp"
-#include "SwiftConfig.hpp"
-#include "MutexLock.hpp"
-#include "CPUID.hpp"
-#include "Memory.hpp"
-#include "Resource.hpp"
-#include "Constants.hpp"
-#include "Debug.hpp"
+#include "Main/FrameBuffer.hpp"
+#include "Main/SwiftConfig.hpp"
 #include "Reactor/Reactor.hpp"
+#include "Shader/Constants.hpp"
+#include "Common/MutexLock.hpp"
+#include "Common/CPUID.hpp"
+#include "Common/Memory.hpp"
+#include "Common/Resource.hpp"
+#include "Common/Half.hpp"
+#include "Common/Math.hpp"
+#include "Common/Timer.hpp"
+#include "Common/Debug.hpp"
 
 #undef max
 
@@ -61,8 +61,8 @@ namespace sw
 	extern bool precacheSetup;
 	extern bool precachePixel;
 
-	int batchSize = 128;
-	int threadCount = 1;
+	static const int batchSize = 128;
+	AtomicInt threadCount(1);
 	AtomicInt Renderer::unitCount(1);
 	AtomicInt Renderer::clusterCount(1);
 

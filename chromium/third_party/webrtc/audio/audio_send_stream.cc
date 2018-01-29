@@ -95,7 +95,7 @@ AudioSendStream::AudioSendStream(
                            kRecoverablePacketLossRateMinNumAckedPairs),
       rtp_rtcp_module_(nullptr),
       suspended_rtp_state_(suspended_rtp_state) {
-  LOG(LS_INFO) << "AudioSendStream: " << config.ToString();
+  RTC_LOG(LS_INFO) << "AudioSendStream: " << config.ToString();
   RTC_DCHECK_NE(config.voe_channel_id, -1);
   RTC_DCHECK(audio_state_.get());
   RTC_DCHECK(transport);
@@ -119,7 +119,7 @@ AudioSendStream::AudioSendStream(
 
 AudioSendStream::~AudioSendStream() {
   RTC_DCHECK(worker_thread_checker_.CalledOnValidThread());
-  LOG(LS_INFO) << "~AudioSendStream: " << config_.ToString();
+  RTC_LOG(LS_INFO) << "~AudioSendStream: " << config_.ToString();
   transport_->send_side_cc()->DeRegisterPacketFeedbackObserver(this);
   channel_proxy_->RegisterTransport(nullptr);
   channel_proxy_->ResetSenderCongestionControlObjects();
@@ -141,7 +141,7 @@ void AudioSendStream::ConfigureStream(
     webrtc::internal::AudioSendStream* stream,
     const webrtc::AudioSendStream::Config& new_config,
     bool first_time) {
-  LOG(LS_INFO) << "AudioSendStream::Configuring: " << new_config.ToString();
+  RTC_LOG(LS_INFO) << "AudioSendStream::Configuring: " << new_config.ToString();
   const auto& channel_proxy = stream->channel_proxy_;
   const auto& old_config = stream->config_;
 
@@ -204,29 +204,32 @@ void AudioSendStream::ConfigureStream(
     channel_proxy->SetSendAudioLevelIndicationStatus(new_ids.audio_level != 0,
                                                      new_ids.audio_level);
   }
-  // Transport sequence number
-  if (first_time ||
-      new_ids.transport_sequence_number != old_ids.transport_sequence_number) {
+  bool transport_seq_num_id_changed =
+      new_ids.transport_sequence_number != old_ids.transport_sequence_number;
+  if (first_time || transport_seq_num_id_changed) {
     if (!first_time) {
       channel_proxy->ResetSenderCongestionControlObjects();
-      stream->bandwidth_observer_.reset();
     }
 
-    if (new_ids.transport_sequence_number != 0) {
+    RtcpBandwidthObserver* bandwidth_observer = nullptr;
+    bool has_transport_sequence_number = new_ids.transport_sequence_number != 0;
+    if (has_transport_sequence_number) {
       channel_proxy->EnableSendTransportSequenceNumber(
           new_ids.transport_sequence_number);
+      // Probing in application limited region is only used in combination with
+      // send side congestion control, wich depends on feedback packets which
+      // requires transport sequence numbers to be enabled.
       stream->transport_->send_side_cc()->EnablePeriodicAlrProbing(true);
-      stream->bandwidth_observer_.reset(stream->transport_->send_side_cc()
-                                            ->GetBitrateController()
-                                            ->CreateRtcpBandwidthObserver());
+      bandwidth_observer =
+          stream->transport_->send_side_cc()->GetBandwidthObserver();
     }
 
-    channel_proxy->RegisterSenderCongestionControlObjects(
-        stream->transport_, stream->bandwidth_observer_.get());
+    channel_proxy->RegisterSenderCongestionControlObjects(stream->transport_,
+                                                          bandwidth_observer);
   }
 
   if (!ReconfigureSendCodec(stream, new_config)) {
-    LOG(LS_ERROR) << "Failed to set up send codec state.";
+    RTC_LOG(LS_ERROR) << "Failed to set up send codec state.";
   }
 
   ReconfigureBitrateObserver(stream, new_config);
@@ -236,13 +239,15 @@ void AudioSendStream::ConfigureStream(
 void AudioSendStream::Start() {
   RTC_DCHECK(worker_thread_checker_.CalledOnValidThread());
   if (config_.min_bitrate_bps != -1 && config_.max_bitrate_bps != -1) {
+    // Audio BWE is enabled.
+    transport_->packet_sender()->SetAccountForAudioPackets(true);
     ConfigureBitrateObserver(config_.min_bitrate_bps, config_.max_bitrate_bps);
   }
 
   ScopedVoEInterface<VoEBase> base(voice_engine());
   int error = base->StartSend(config_.voe_channel_id);
   if (error != 0) {
-    LOG(LS_ERROR) << "AudioSendStream::Start failed with error: " << error;
+    RTC_LOG(LS_ERROR) << "AudioSendStream::Start failed with error: " << error;
   }
 }
 
@@ -253,7 +258,7 @@ void AudioSendStream::Stop() {
   ScopedVoEInterface<VoEBase> base(voice_engine());
   int error = base->StopSend(config_.voe_channel_id);
   if (error != 0) {
-    LOG(LS_ERROR) << "AudioSendStream::Stop failed with error: " << error;
+    RTC_LOG(LS_ERROR) << "AudioSendStream::Stop failed with error: " << error;
   }
 }
 
@@ -272,6 +277,11 @@ void AudioSendStream::SetMuted(bool muted) {
 }
 
 webrtc::AudioSendStream::Stats AudioSendStream::GetStats() const {
+  return GetStats(true);
+}
+
+webrtc::AudioSendStream::Stats AudioSendStream::GetStats(
+    bool has_remote_tracks) const {
   RTC_DCHECK(worker_thread_checker_.CalledOnValidThread());
   webrtc::AudioSendStream::Stats stats;
   stats.local_ssrc = config_.rtp.ssrc;
@@ -284,14 +294,10 @@ webrtc::AudioSendStream::Stats AudioSendStream::GetStats() const {
   if (call_stats.rttMs > 0) {
     stats.rtt_ms = call_stats.rttMs;
   }
-  // TODO(solenberg): [was ajm]: Re-enable this metric once we have a reliable
-  //                  implementation.
-  stats.aec_quality_min = -1;
-
   if (config_.send_codec_spec) {
     const auto& spec = *config_.send_codec_spec;
     stats.codec_name = spec.format.name;
-    stats.codec_payload_type = rtc::Optional<int>(spec.payload_type);
+    stats.codec_payload_type = spec.payload_type;
 
     // Get data from the last remote RTCP report.
     for (const auto& block : channel_proxy_->GetRemoteRTCPReportBlocks()) {
@@ -318,23 +324,13 @@ webrtc::AudioSendStream::Stats AudioSendStream::GetStats() const {
   stats.total_input_energy = base->transmit_mixer()->GetTotalInputEnergy();
   stats.total_input_duration = base->transmit_mixer()->GetTotalInputDuration();
 
-  RTC_DCHECK(audio_state_->audio_processing());
-  auto audio_processing_stats =
-      audio_state_->audio_processing()->GetStatistics();
-  stats.echo_delay_median_ms = audio_processing_stats.delay_median;
-  stats.echo_delay_std_ms = audio_processing_stats.delay_standard_deviation;
-  stats.echo_return_loss = audio_processing_stats.echo_return_loss.instant();
-  stats.echo_return_loss_enhancement =
-      audio_processing_stats.echo_return_loss_enhancement.instant();
-  stats.residual_echo_likelihood =
-      audio_processing_stats.residual_echo_likelihood;
-  stats.residual_echo_likelihood_recent_max =
-      audio_processing_stats.residual_echo_likelihood_recent_max;
-
   internal::AudioState* audio_state =
       static_cast<internal::AudioState*>(audio_state_.get());
   stats.typing_noise_detected = audio_state->typing_noise_detected();
   stats.ana_statistics = channel_proxy_->GetANAStatistics();
+  RTC_DCHECK(audio_state_->audio_processing());
+  stats.apm_statistics =
+      audio_state_->audio_processing()->GetStatistics(has_remote_tracks);
 
   return stats;
 }
@@ -445,7 +441,7 @@ bool AudioSendStream::SetupSendCodec(AudioSendStream* stream,
                                                    spec.format);
 
   if (!encoder) {
-    LOG(LS_ERROR) << "Unable to create encoder for " << spec.format;
+    RTC_LOG(LS_ERROR) << "Unable to create encoder for " << spec.format;
     return false;
   }
   // If a bitrate has been specified for the codec, use it over the
@@ -458,8 +454,8 @@ bool AudioSendStream::SetupSendCodec(AudioSendStream* stream,
   if (new_config.audio_network_adaptor_config) {
     if (encoder->EnableAudioNetworkAdaptor(
             *new_config.audio_network_adaptor_config, stream->event_log_)) {
-      LOG(LS_INFO) << "Audio network adaptor enabled on SSRC "
-                   << new_config.rtp.ssrc;
+      RTC_LOG(LS_INFO) << "Audio network adaptor enabled on SSRC "
+                       << new_config.rtp.ssrc;
     } else {
       RTC_NOTREACHED();
     }
@@ -539,8 +535,8 @@ void AudioSendStream::ReconfigureANA(AudioSendStream* stream,
     CallEncoder(stream->channel_proxy_, [&](AudioEncoder* encoder) {
       if (encoder->EnableAudioNetworkAdaptor(
               *new_config.audio_network_adaptor_config, stream->event_log_)) {
-        LOG(LS_INFO) << "Audio network adaptor enabled on SSRC "
-                     << new_config.rtp.ssrc;
+        RTC_LOG(LS_INFO) << "Audio network adaptor enabled on SSRC "
+                         << new_config.rtp.ssrc;
       } else {
         RTC_NOTREACHED();
       }
@@ -549,8 +545,8 @@ void AudioSendStream::ReconfigureANA(AudioSendStream* stream,
     CallEncoder(stream->channel_proxy_, [&](AudioEncoder* encoder) {
       encoder->DisableAudioNetworkAdaptor();
     });
-    LOG(LS_INFO) << "Audio network adaptor disabled on SSRC "
-                 << new_config.rtp.ssrc;
+    RTC_LOG(LS_INFO) << "Audio network adaptor disabled on SSRC "
+                     << new_config.rtp.ssrc;
   }
 }
 
@@ -627,7 +623,7 @@ void AudioSendStream::ConfigureBitrateObserver(int min_bitrate_bps,
     config_.min_bitrate_bps = min_bitrate_bps;
     config_.max_bitrate_bps = max_bitrate_bps;
     bitrate_allocator_->AddObserver(this, min_bitrate_bps, max_bitrate_bps, 0,
-                                    true);
+                                    true, config_.track_id);
     thread_sync_event.Set();
   });
   thread_sync_event.Wait(rtc::Event::kForever);
@@ -649,8 +645,8 @@ void AudioSendStream::RegisterCngPayloadType(int payload_type,
   if (rtp_rtcp_module_->RegisterSendPayload(codec) != 0) {
     rtp_rtcp_module_->DeRegisterSendPayload(codec.pltype);
     if (rtp_rtcp_module_->RegisterSendPayload(codec) != 0) {
-      LOG(LS_ERROR) << "RegisterCngPayloadType() failed to register CN to "
-                       "RTP/RTCP module";
+      RTC_LOG(LS_ERROR) << "RegisterCngPayloadType() failed to register CN to "
+                           "RTP/RTCP module";
     }
   }
 }

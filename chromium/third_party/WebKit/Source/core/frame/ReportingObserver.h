@@ -15,9 +15,7 @@ namespace blink {
 class ExecutionContext;
 class Report;
 
-class CORE_EXPORT ReportingObserver final
-    : public GarbageCollected<ReportingObserver>,
-      public ScriptWrappable {
+class CORE_EXPORT ReportingObserver final : public ScriptWrappable {
   DEFINE_WRAPPERTYPEINFO();
 
  public:
@@ -30,7 +28,7 @@ class CORE_EXPORT ReportingObserver final
   void observe();
   void disconnect();
 
-  DECLARE_TRACE();
+  void Trace(blink::Visitor*);
 
  private:
   explicit ReportingObserver(ExecutionContext*, V8ReportingObserverCallback*);

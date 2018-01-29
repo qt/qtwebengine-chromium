@@ -20,6 +20,7 @@
 #include "SkValidationUtils.h"
 #include "SkWriteBuffer.h"
 #if SK_SUPPORT_GPU
+#include "GrColorSpaceXform.h"
 #include "GrContext.h"
 #include "GrFixedClip.h"
 #include "GrRenderTargetContext.h"
@@ -305,7 +306,7 @@ sk_sp<SkSpecialImage> SkImageFilter::DrawWithFP(GrContext* context,
     if (!renderTargetContext) {
         return nullptr;
     }
-    paint.setGammaCorrect(renderTargetContext->isGammaCorrect());
+    paint.setGammaCorrect(renderTargetContext->colorSpaceInfo().isGammaCorrect());
 
     SkIRect dstIRect = SkIRect::MakeWH(bounds.width(), bounds.height());
     SkRect srcRect = SkRect::Make(bounds);
@@ -314,10 +315,10 @@ sk_sp<SkSpecialImage> SkImageFilter::DrawWithFP(GrContext* context,
     renderTargetContext->fillRectToRect(clip, std::move(paint), GrAA::kNo, SkMatrix::I(), dstRect,
                                         srcRect);
 
-    return SkSpecialImage::MakeDeferredFromGpu(context, dstIRect,
-                                               kNeedNewImageUniqueID_SpecialImage,
-                                               renderTargetContext->asTextureProxyRef(),
-                                               renderTargetContext->refColorSpace());
+    return SkSpecialImage::MakeDeferredFromGpu(
+            context, dstIRect, kNeedNewImageUniqueID_SpecialImage,
+            renderTargetContext->asTextureProxyRef(),
+            renderTargetContext->colorSpaceInfo().refColorSpace());
 }
 #endif
 
@@ -367,8 +368,11 @@ sk_sp<SkSpecialImage> SkImageFilter::ImageToColorSpace(SkSpecialImage* src,
     // object. If that produces something, then both are tagged, and the source is in a different
     // gamut than the dest. There is some overhead to making the xform, but those are cached, and
     // if we get one back, that means we're about to use it during the conversion anyway.
-    sk_sp<GrColorSpaceXform> colorSpaceXform = GrColorSpaceXform::Make(src->getColorSpace(),
-                                                                       outProps.colorSpace());
+    //
+    // TODO: Fix this check, to handle wider support of transfer functions, config mismatch, etc.
+    // For now, continue to just check if gamut is different, which may not be sufficient.
+    auto colorSpaceXform = GrColorSpaceXform::MakeGamutXform(src->getColorSpace(),
+                                                             outProps.colorSpace());
 
     if (!colorSpaceXform) {
         // No xform needed, just return the original image

@@ -58,6 +58,7 @@ class TestPlatformDisplayDelegate : public PlatformDisplayDelegate {
   void OnAcceleratedWidgetAvailable() override {}
   void OnNativeCaptureLost() override {}
   OzonePlatform* GetOzonePlatform() override { return ozone_platform_; }
+  bool IsHostingViz() const override { return true; }
 
  private:
   TestEventSink* event_sink_;
@@ -87,7 +88,7 @@ class TestOzonePlatform : public OzonePlatform {
   std::unique_ptr<PlatformWindow> CreatePlatformWindow(
       PlatformWindowDelegate* delegate,
       const gfx::Rect& bounds) override {
-    return base::MakeUnique<StubWindow>(
+    return std::make_unique<StubWindow>(
         delegate, false /* use_default_accelerated_widget */);
   }
   std::unique_ptr<display::NativeDisplayDelegate> CreateNativeDisplayDelegate()
@@ -120,7 +121,7 @@ TEST(PlatformDisplayDefaultTest, DISABLED_EventDispatch) {
       base::ThreadTaskRunnerHandle::Get();
   ImageCursorsSet image_cursors_set;
   std::unique_ptr<ThreadedImageCursors> threaded_image_cursors =
-      base::MakeUnique<ThreadedImageCursors>(task_runner,
+      std::make_unique<ThreadedImageCursors>(task_runner,
                                              image_cursors_set.GetWeakPtr());
   PlatformDisplayDefault display(nullptr, metrics,
                                  std::move(threaded_image_cursors));

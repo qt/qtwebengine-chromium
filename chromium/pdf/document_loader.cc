@@ -8,9 +8,9 @@
 #include <stdint.h>
 
 #include <algorithm>
+#include <memory>
 
 #include "base/logging.h"
-#include "base/memory/ptr_util.h"
 #include "base/numerics/safe_math.h"
 #include "base/strings/string_util.h"
 #include "pdf/url_loader_wrapper.h"
@@ -52,11 +52,11 @@ bool IsValidContentType(const std::string& type) {
 
 }  // namespace
 
-DocumentLoader::Client::~Client() {}
+DocumentLoader::Client::~Client() = default;
 
-DocumentLoader::Chunk::Chunk() {}
+DocumentLoader::Chunk::Chunk() = default;
 
-DocumentLoader::Chunk::~Chunk() {}
+DocumentLoader::Chunk::~Chunk() = default;
 
 void DocumentLoader::Chunk::Clear() {
   chunk_index = 0;
@@ -67,7 +67,7 @@ void DocumentLoader::Chunk::Clear() {
 DocumentLoader::DocumentLoader(Client* client)
     : client_(client), loader_factory_(this) {}
 
-DocumentLoader::~DocumentLoader() {}
+DocumentLoader::~DocumentLoader() = default;
 
 bool DocumentLoader::Init(std::unique_ptr<URLLoaderWrapper> loader,
                           const std::string& url) {
@@ -328,7 +328,7 @@ bool DocumentLoader::SaveChunkData(char* input, uint32_t input_size) {
   bool loading_pending_request = pending_requests_.Contains(chunk_.chunk_index);
   while (input_size > 0) {
     if (chunk_.data_size == 0) {
-      chunk_.chunk_data = base::MakeUnique<DataStream::ChunkData>();
+      chunk_.chunk_data = std::make_unique<DataStream::ChunkData>();
     }
     const uint32_t new_chunk_data_len =
         std::min(DataStream::kChunkSize - chunk_.data_size, input_size);

@@ -91,7 +91,7 @@ SVGTextContentElement::SVGTextContentElement(const QualifiedName& tag_name,
   AddToPropertyMap(length_adjust_);
 }
 
-DEFINE_TRACE(SVGTextContentElement) {
+void SVGTextContentElement::Trace(blink::Visitor* visitor) {
   visitor->Trace(text_length_);
   visitor->Trace(length_adjust_);
   SVGGraphicsElement::Trace(visitor);
@@ -251,7 +251,7 @@ bool SVGTextContentElement::IsPresentationAttribute(
 void SVGTextContentElement::CollectStyleForPresentationAttribute(
     const QualifiedName& name,
     const AtomicString& value,
-    MutableStylePropertySet* style) {
+    MutableCSSPropertyValueSet* style) {
   if (name.Matches(XMLNames::spaceAttr)) {
     DEFINE_STATIC_LOCAL(const AtomicString, preserve_string, ("preserve"));
 
@@ -306,7 +306,7 @@ SVGTextContentElement* SVGTextContentElement::ElementFromLineLayoutItem(
   SVGElement* element = ToSVGElement(line_layout_item.GetNode());
   DCHECK(element);
   return IsSVGTextContentElement(*element) ? ToSVGTextContentElement(element)
-                                           : 0;
+                                           : nullptr;
 }
 
 }  // namespace blink

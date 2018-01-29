@@ -56,9 +56,7 @@ GrCCPRPathProcessor::GrCCPRPathProcessor(GrResourceProvider* rp, sk_sp<GrTexture
     this->addInstanceAttrib("devbounds45", kFloat4_GrVertexAttribType);
     this->addInstanceAttrib("view_matrix", kFloat4_GrVertexAttribType);
     this->addInstanceAttrib("view_translate", kFloat2_GrVertexAttribType);
-    // FIXME: this could be a vector of two shorts if it were supported by Ganesh.
-    // Note: this should be doable now with kUShort2_GrVertexAttribType
-    this->addInstanceAttrib("atlas_offset", kInt2_GrVertexAttribType);
+    this->addInstanceAttrib("atlas_offset", kShort2_GrVertexAttribType);
     this->addInstanceAttrib("color", kUByte4_norm_GrVertexAttribType);
 
     SkASSERT(offsetof(Instance, fDevBounds) ==
@@ -126,9 +124,9 @@ void GLSLPathProcessor::onEmitCode(EmitArgs& args, GrGPArgs* gpArgs) {
 
     GrGLSLVertToFrag texcoord(kFloat2_GrSLType);
     GrGLSLVertToFrag color(kHalf4_GrSLType);
-    varyingHandler->addVarying("texcoord", &texcoord, kHigh_GrSLPrecision);
+    varyingHandler->addVarying("texcoord", &texcoord);
     varyingHandler->addFlatPassThroughAttribute(&proc.getInstanceAttrib(InstanceAttribs::kColor),
-                                                args.fOutputColor, kLow_GrSLPrecision);
+                                                args.fOutputColor);
 
     // Vertex shader.
     GrGLSLVertexBuilder* v = args.fVertBuilder;

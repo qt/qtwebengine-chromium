@@ -4,16 +4,12 @@
 
 #include "content/browser/background_fetch/background_fetch_service_impl.h"
 
+#include <memory>
+
 #include "base/guid.h"
-#include "base/logging.h"
-#include "base/memory/ptr_util.h"
-#include "base/optional.h"
 #include "content/browser/background_fetch/background_fetch_context.h"
-#include "content/browser/background_fetch/background_fetch_job_controller.h"
 #include "content/browser/background_fetch/background_fetch_registration_id.h"
 #include "content/browser/bad_message.h"
-#include "content/browser/service_worker/service_worker_context_wrapper.h"
-#include "content/common/background_fetch/background_fetch_types.h"
 #include "content/common/service_worker/service_worker_types.h"
 #include "content/public/browser/browser_thread.h"
 #include "mojo/public/cpp/bindings/strong_binding.h"
@@ -38,7 +34,7 @@ void BackgroundFetchServiceImpl::Create(
     blink::mojom::BackgroundFetchServiceRequest request) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
   mojo::MakeStrongBinding(
-      base::MakeUnique<BackgroundFetchServiceImpl>(
+      std::make_unique<BackgroundFetchServiceImpl>(
           render_process_id, std::move(background_fetch_context)),
       std::move(request));
 }
@@ -97,28 +93,25 @@ void BackgroundFetchServiceImpl::UpdateUI(const std::string& unique_id,
     return;
   }
 
-  background_fetch_context_->data_manager().UpdateRegistrationUI(
-      unique_id, title, std::move(callback));
+  background_fetch_context_->UpdateUI(unique_id, title, std::move(callback));
 }
 
-void BackgroundFetchServiceImpl::Abort(const std::string& unique_id,
+void BackgroundFetchServiceImpl::Abort(int64_t service_worker_registration_id,
+                                       const url::Origin& origin,
+                                       const std::string& developer_id,
+                                       const std::string& unique_id,
                                        AbortCallback callback) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
-  if (!ValidateUniqueId(unique_id)) {
+  if (!ValidateDeveloperId(developer_id) || !ValidateUniqueId(unique_id)) {
     std::move(callback).Run(
         blink::mojom::BackgroundFetchError::INVALID_ARGUMENT);
     return;
   }
 
-  BackgroundFetchJobController* controller =
-      background_fetch_context_->GetActiveFetch(unique_id);
-
-  if (controller)
-    controller->Abort();
-
-  std::move(callback).Run(controller
-                              ? blink::mojom::BackgroundFetchError::NONE
-                              : blink::mojom::BackgroundFetchError::INVALID_ID);
+  background_fetch_context_->Abort(
+      BackgroundFetchRegistrationId(service_worker_registration_id, origin,
+                                    developer_id, unique_id),
+      std::move(callback));
 }
 
 void BackgroundFetchServiceImpl::GetRegistration(
@@ -134,9 +127,9 @@ void BackgroundFetchServiceImpl::GetRegistration(
     return;
   }
 
-  background_fetch_context_->data_manager().GetRegistration(
-      service_worker_registration_id, origin, developer_id,
-      std::move(callback));
+  background_fetch_context_->GetRegistration(service_worker_registration_id,
+                                             origin, developer_id,
+                                             std::move(callback));
 }
 
 void BackgroundFetchServiceImpl::GetDeveloperIds(
@@ -144,8 +137,8 @@ void BackgroundFetchServiceImpl::GetDeveloperIds(
     const url::Origin& origin,
     GetDeveloperIdsCallback callback) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
-  background_fetch_context_->data_manager().GetDeveloperIdsForServiceWorker(
-      service_worker_registration_id, std::move(callback));
+  background_fetch_context_->GetDeveloperIdsForServiceWorker(
+      service_worker_registration_id, origin, std::move(callback));
 }
 
 void BackgroundFetchServiceImpl::AddRegistrationObserver(
@@ -172,7 +165,7 @@ bool BackgroundFetchServiceImpl::ValidateDeveloperId(
 
 bool BackgroundFetchServiceImpl::ValidateUniqueId(
     const std::string& unique_id) {
-  if (!base::IsValidGUID(unique_id)) {
+  if (!base::IsValidGUIDOutputString(unique_id)) {
     bad_message::ReceivedBadMessage(render_process_id_,
                                     bad_message::BFSI_INVALID_UNIQUE_ID);
     return false;

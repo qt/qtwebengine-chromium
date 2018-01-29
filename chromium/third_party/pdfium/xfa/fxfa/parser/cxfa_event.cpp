@@ -1,4 +1,4 @@
-// Copyright 2016 PDFium Authors. All rights reserved.
+// Copyright 2017 PDFium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,44 +6,39 @@
 
 #include "xfa/fxfa/parser/cxfa_event.h"
 
-#include "xfa/fxfa/parser/cxfa_node.h"
+namespace {
 
-CXFA_Event::CXFA_Event(CXFA_Node* pNode) : CXFA_Data(pNode) {}
+const CXFA_Node::PropertyData kPropertyData[] = {
+    {XFA_Element::Execute, 1, XFA_PROPERTYFLAG_OneOf},
+    {XFA_Element::Script, 1, XFA_PROPERTYFLAG_OneOf},
+    {XFA_Element::SignData, 1, XFA_PROPERTYFLAG_OneOf},
+    {XFA_Element::Extras, 1, 0},
+    {XFA_Element::Submit, 1, XFA_PROPERTYFLAG_OneOf},
+    {XFA_Element::Unknown, 0, 0}};
+const CXFA_Node::AttributeData kAttributeData[] = {
+    {XFA_Attribute::Id, XFA_AttributeType::CData, nullptr},
+    {XFA_Attribute::Name, XFA_AttributeType::CData, nullptr},
+    {XFA_Attribute::Ref, XFA_AttributeType::CData, nullptr},
+    {XFA_Attribute::Use, XFA_AttributeType::CData, nullptr},
+    {XFA_Attribute::Listen, XFA_AttributeType::Enum,
+     (void*)XFA_AttributeEnum::RefOnly},
+    {XFA_Attribute::Usehref, XFA_AttributeType::CData, nullptr},
+    {XFA_Attribute::Activity, XFA_AttributeType::Enum,
+     (void*)XFA_AttributeEnum::Click},
+    {XFA_Attribute::Unknown, XFA_AttributeType::Integer, nullptr}};
 
-int32_t CXFA_Event::GetActivity() {
-  return m_pNode->GetEnum(XFA_ATTRIBUTE_Activity);
-}
+constexpr wchar_t kName[] = L"event";
 
-XFA_Element CXFA_Event::GetEventType() const {
-  CXFA_Node* pChild = m_pNode->GetNodeItem(XFA_NODEITEM_FirstChild);
-  while (pChild) {
-    XFA_Element eType = pChild->GetElementType();
-    if (eType != XFA_Element::Extras)
-      return eType;
+}  // namespace
 
-    pChild = pChild->GetNodeItem(XFA_NODEITEM_NextSibling);
-  }
-  return XFA_Element::Unknown;
-}
+CXFA_Event::CXFA_Event(CXFA_Document* doc, XFA_PacketType packet)
+    : CXFA_Node(doc,
+                packet,
+                (XFA_XDPPACKET_Template | XFA_XDPPACKET_Form),
+                XFA_ObjectType::Node,
+                XFA_Element::Event,
+                kPropertyData,
+                kAttributeData,
+                kName) {}
 
-void CXFA_Event::GetRef(WideStringView& wsRef) {
-  m_pNode->TryCData(XFA_ATTRIBUTE_Ref, wsRef);
-}
-
-CXFA_Script CXFA_Event::GetScript() const {
-  return CXFA_Script(m_pNode->GetChild(0, XFA_Element::Script));
-}
-
-CXFA_Submit CXFA_Event::GetSubmit() const {
-  return CXFA_Submit(m_pNode->GetChild(0, XFA_Element::Submit));
-}
-
-void CXFA_Event::GetSignDataTarget(WideString& wsTarget) {
-  CXFA_Node* pNode = m_pNode->GetProperty(0, XFA_Element::SignData);
-  if (!pNode)
-    return;
-
-  WideStringView wsCData;
-  pNode->TryCData(XFA_ATTRIBUTE_Target, wsCData);
-  wsTarget = wsCData;
-}
+CXFA_Event::~CXFA_Event() {}

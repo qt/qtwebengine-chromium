@@ -438,8 +438,8 @@ void GrVkGpuRTCommandBuffer::addAdditionalRenderPass() {
     cbInfo.currentCmdBuf()->begin(fGpu, vkRT->framebuffer(), cbInfo.fRenderPass);
 }
 
-void GrVkGpuRTCommandBuffer::inlineUpload(GrOpFlushState* state, GrDrawOp::DeferredUploadFn& upload) {
-
+void GrVkGpuRTCommandBuffer::inlineUpload(GrOpFlushState* state,
+                                          GrDeferredTextureUploadFn& upload) {
     if (!fCommandBufferInfos[fCurrentCmdInfo].fIsEmpty) {
         this->addAdditionalRenderPass();
     }
@@ -498,15 +498,14 @@ void GrVkGpuRTCommandBuffer::bindGeometry(const GrPrimitiveProcessor& primProc,
     }
 }
 
-sk_sp<GrVkPipelineState> GrVkGpuRTCommandBuffer::prepareDrawState(
-                                                               const GrPipeline& pipeline,
-                                                               const GrPrimitiveProcessor& primProc,
-                                                               GrPrimitiveType primitiveType,
-                                                               bool hasDynamicState) {
+GrVkPipelineState* GrVkGpuRTCommandBuffer::prepareDrawState(const GrPipeline& pipeline,
+                                                            const GrPrimitiveProcessor& primProc,
+                                                            GrPrimitiveType primitiveType,
+                                                            bool hasDynamicState) {
     CommandBufferInfo& cbInfo = fCommandBufferInfos[fCurrentCmdInfo];
     SkASSERT(cbInfo.fRenderPass);
 
-    sk_sp<GrVkPipelineState> pipelineState =
+    GrVkPipelineState* pipelineState =
         fGpu->resourceProvider().findOrCreateCompatiblePipelineState(pipeline,
                                                                      primProc,
                                                                      primitiveType,
@@ -516,11 +515,11 @@ sk_sp<GrVkPipelineState> GrVkGpuRTCommandBuffer::prepareDrawState(
     }
 
     if (!cbInfo.fIsEmpty &&
-        fLastPipelineState && fLastPipelineState != pipelineState.get() &&
+        fLastPipelineState && fLastPipelineState != pipelineState &&
         fGpu->vkCaps().newCBOnPipelineChange()) {
         this->addAdditionalCommandBuffer();
     }
-    fLastPipelineState = pipelineState.get();
+    fLastPipelineState = pipelineState;
 
     pipelineState->setData(fGpu, primProc, pipeline);
 
@@ -570,7 +569,7 @@ static void prepare_sampled_images(const GrResourceIOProcessor& processor, GrVkG
         if (GrSamplerState::Filter::kMipMap == sampler.samplerState().filter()) {
             if (vkTexture->texturePriv().mipMapsAreDirty()) {
                 gpu->generateMipmap(vkTexture, sampler.proxy()->origin());
-                vkTexture->texturePriv().dirtyMipMaps(false);
+                vkTexture->texturePriv().markMipMapsClean();
             }
         }
         set_texture_layout(vkTexture, gpu);
@@ -598,10 +597,10 @@ void GrVkGpuRTCommandBuffer::onDraw(const GrPipeline& pipeline,
     }
 
     GrPrimitiveType primitiveType = meshes[0].primitiveType();
-    sk_sp<GrVkPipelineState> pipelineState = this->prepareDrawState(pipeline,
-                                                                    primProc,
-                                                                    primitiveType,
-                                                                    SkToBool(dynamicStates));
+    GrVkPipelineState* pipelineState = this->prepareDrawState(pipeline,
+                                                              primProc,
+                                                              primitiveType,
+                                                              SkToBool(dynamicStates));
     if (!pipelineState) {
         return;
     }

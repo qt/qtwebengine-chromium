@@ -89,6 +89,8 @@ class FakeFrameSinkManagerClient : public mojom::FrameSinkManagerClient {
   void SwitchActiveAggregatedHitTestRegionList(
       const FrameSinkId& frame_sink_id,
       uint8_t active_handle_index) override {}
+  void OnFrameTokenChanged(const FrameSinkId& frame_sink_id,
+                           uint32_t frame_token) override {}
 
  private:
   mojom::FrameSinkManager* const manager_;
@@ -209,7 +211,7 @@ TEST_F(CompositorFrameSinkSupportTest, ResourceLifetimeSimple) {
 
   // The second frame references no resources of first frame and thus should
   // make all resources of first frame available to be returned.
-  SubmitCompositorFrameWithResources(NULL, 0);
+  SubmitCompositorFrameWithResources(nullptr, 0);
 
   ResourceId expected_returned_ids[] = {1, 2, 3};
   int expected_returned_counts[] = {1, 1, 1};
@@ -261,7 +263,7 @@ TEST_F(CompositorFrameSinkSupportTest,
 
   // The second frame references no resources and thus should make all resources
   // available to be returned as soon as the resource provider releases them.
-  SubmitCompositorFrameWithResources(NULL, 0);
+  SubmitCompositorFrameWithResources(nullptr, 0);
 
   EXPECT_EQ(0u, fake_support_client_.returned_resources().size());
   fake_support_client_.clear_returned_resources();
@@ -291,14 +293,14 @@ TEST_F(CompositorFrameSinkSupportTest, ResourceReusedBeforeReturn) {
                                      arraysize(first_frame_ids));
 
   // This removes all references to resource id 7.
-  SubmitCompositorFrameWithResources(NULL, 0);
+  SubmitCompositorFrameWithResources(nullptr, 0);
 
   // This references id 7 again.
   SubmitCompositorFrameWithResources(first_frame_ids,
                                      arraysize(first_frame_ids));
 
   // This removes it again.
-  SubmitCompositorFrameWithResources(NULL, 0);
+  SubmitCompositorFrameWithResources(nullptr, 0);
 
   // Now it should be returned.
   // We don't care how many entries are in the returned array for 7, so long as
@@ -335,7 +337,7 @@ TEST_F(CompositorFrameSinkSupportTest, ResourceRefMultipleTimes) {
 
   // Submit a frame with no resources to remove all current frame refs from
   // submitted resources.
-  SubmitCompositorFrameWithResources(NULL, 0);
+  SubmitCompositorFrameWithResources(nullptr, 0);
 
   EXPECT_EQ(0u, fake_support_client_.returned_resources().size());
   fake_support_client_.clear_returned_resources();
@@ -482,7 +484,7 @@ TEST_F(CompositorFrameSinkSupportTest, ResourceLifetime) {
 
   // If we submit an empty frame, however, they should become available.
   // Resources that were previously unref'd also return at this point.
-  SubmitCompositorFrameWithResources(NULL, 0u);
+  SubmitCompositorFrameWithResources(nullptr, 0u);
 
   {
     SCOPED_TRACE("fourth frame, second unref");
@@ -505,10 +507,13 @@ TEST_F(CompositorFrameSinkSupportTest, AddDuringEviction) {
   LocalSurfaceId local_surface_id(6, kArbitraryToken);
   support->SubmitCompositorFrame(local_surface_id, test::MakeCompositorFrame());
 
+  SurfaceManager* surface_manager = manager_.surface_manager();
+
   EXPECT_CALL(mock_client, DidReceiveCompositorFrameAck(_))
-      .WillOnce(testing::InvokeWithoutArgs([&support, &mock_client]() {
+      .WillOnce(testing::InvokeWithoutArgs([&]() {
         LocalSurfaceId new_id(7, base::UnguessableToken::Create());
         support->SubmitCompositorFrame(new_id, test::MakeCompositorFrame());
+        surface_manager->GarbageCollectSurfaces();
       }))
       .WillRepeatedly(testing::Return());
   support->EvictCurrentSurface();
@@ -543,6 +548,7 @@ TEST_F(CompositorFrameSinkSupportTest, EvictCurrentSurface) {
   EXPECT_CALL(mock_client, DidReceiveCompositorFrameAck(returned_resources))
       .Times(1);
   support->EvictCurrentSurface();
+  manager_.surface_manager()->GarbageCollectSurfaces();
   EXPECT_FALSE(GetSurfaceForId(id));
   manager_.InvalidateFrameSinkId(kAnotherArbitraryFrameSinkId);
 }
@@ -624,6 +630,7 @@ TEST_F(CompositorFrameSinkSupportTest, DuplicateCopyRequest) {
 
   support_->EvictCurrentSurface();
   local_surface_id_ = LocalSurfaceId();
+  manager_.surface_manager()->GarbageCollectSurfaces();
   EXPECT_TRUE(called1);
   EXPECT_TRUE(called2);
   EXPECT_TRUE(called3);
@@ -696,6 +703,7 @@ TEST_F(CompositorFrameSinkSupportTest, FrameSizeMismatch) {
   frame.render_pass_list.push_back(std::move(pass));
   EXPECT_FALSE(
       support_->SubmitCompositorFrame(local_surface_id_, std::move(frame)));
+  manager_.surface_manager()->GarbageCollectSurfaces();
   EXPECT_FALSE(GetSurfaceForId(id));
 }
 
@@ -718,6 +726,7 @@ TEST_F(CompositorFrameSinkSupportTest, DeviceScaleFactorMismatch) {
   frame.metadata.device_scale_factor = 0.4f;
   EXPECT_FALSE(
       support_->SubmitCompositorFrame(local_surface_id_, std::move(frame)));
+  manager_.surface_manager()->GarbageCollectSurfaces();
   EXPECT_FALSE(GetSurfaceForId(id));
 }
 

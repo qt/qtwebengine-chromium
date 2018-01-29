@@ -55,10 +55,10 @@ _cronet_deps = [
   "//base:base",
   "//components/grpc_support",
   "//components/metrics:metrics",
-  "//components/metrics/proto:proto",
+  "//third_party/metrics_proto",
   "//components/prefs:prefs",
   "//ios/net:net",
-  "//ios/web:user_agent",
+  "//ios/web/public:user_agent",
   "//ios/web/public/global_state",
   "//net",
   "//url",
@@ -79,6 +79,8 @@ _cronet_sources = [
   "Cronet.mm",
   "cronet_environment.h",
   "cronet_environment.mm",
+  "cronet_metrics.h",
+  "cronet_metrics.mm",
 ]
 
 _cronet_public_headers = [ "Cronet.h" ]

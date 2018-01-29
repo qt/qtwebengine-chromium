@@ -143,11 +143,11 @@ static LayerStickyPositionConstraint StickyPositionConstraint(
   return layer->test_properties()->sticky_position_constraint;
 }
 
-static LayerImplList& Children(LayerImpl* layer) {
+static LayerImplList& LayerChildren(LayerImpl* layer) {
   return layer->test_properties()->children;
 }
 
-static const LayerList& Children(Layer* layer) {
+static const LayerList& LayerChildren(Layer* layer) {
   return layer->children();
 }
 
@@ -895,7 +895,7 @@ bool UpdateSubtreeHasCopyRequestRecursive(LayerType* layer) {
   bool subtree_has_copy_request = false;
   if (HasCopyRequest(layer))
     subtree_has_copy_request = true;
-  for (size_t i = 0; i < Children(layer).size(); ++i) {
+  for (size_t i = 0; i < LayerChildren(layer).size(); ++i) {
     LayerType* current_child = ChildAt(layer, i);
     subtree_has_copy_request |=
         UpdateSubtreeHasCopyRequestRecursive(current_child);
@@ -1048,13 +1048,12 @@ static inline bool UserScrollableVertical(LayerImpl* layer) {
   return layer->test_properties()->user_scrollable_vertical;
 }
 
-static inline ScrollBoundaryBehavior GetScrollBoundaryBehavior(Layer* layer) {
-  return layer->scroll_boundary_behavior();
+static inline OverscrollBehavior GetOverscrollBehavior(Layer* layer) {
+  return layer->overscroll_behavior();
 }
 
-static inline ScrollBoundaryBehavior GetScrollBoundaryBehavior(
-    LayerImpl* layer) {
-  return layer->test_properties()->scroll_boundary_behavior;
+static inline OverscrollBehavior GetOverscrollBehavior(LayerImpl* layer) {
+  return layer->test_properties()->overscroll_behavior;
 }
 
 template <typename LayerType>
@@ -1114,7 +1113,7 @@ void PropertyTreeBuilderContext<LayerType>::AddScrollNodeIfNeeded(
     node.user_scrollable_vertical = UserScrollableVertical(layer);
     node.element_id = layer->element_id();
     node.transform_id = data_for_children->transform_tree_parent;
-    node.scroll_boundary_behavior = GetScrollBoundaryBehavior(layer);
+    node.overscroll_behavior = GetOverscrollBehavior(layer);
 
     node_id = scroll_tree_.Insert(node, parent_id);
     data_for_children->scroll_tree_parent = node_id;
@@ -1212,7 +1211,7 @@ void PropertyTreeBuilderContext<LayerType>::BuildPropertyTreesInternal(
   data_for_children.not_axis_aligned_since_last_clip =
       !has_non_axis_aligned_clip;
 
-  for (size_t i = 0; i < Children(layer).size(); ++i) {
+  for (size_t i = 0; i < LayerChildren(layer).size(); ++i) {
     LayerType* current_child = ChildAt(layer, i);
     SetLayerPropertyChangedForChild(layer, current_child);
     if (!ScrollParent(current_child)) {

@@ -68,7 +68,7 @@ class CPDFXFA_DocEnvironment : public IXFA_DocEnvironment {
    *Submit data to email, http, ftp.
    * @param[in] hDoc The document handler.
    * @param[in] eFormat Determines the format in which the data will be
-   *submitted. XFA_ATTRIBUTEENUM_Xdp, XFA_ATTRIBUTEENUM_Xml...
+   *submitted. XFA_AttributeEnum::Xdp, XFA_AttributeEnum::Xml...
    * @param[in] wsTarget The URL to which the data will be submitted.
    * @param[in] eEncoding The encoding of text content.
    * @param[in] pXDPContent Controls what subset of the data is submitted, used
@@ -76,7 +76,7 @@ class CPDFXFA_DocEnvironment : public IXFA_DocEnvironment {
    * @param[in] bEmbedPDF, specifies whether PDF is embedded in the submitted
    *content or not.
    */
-  bool SubmitData(CXFA_FFDoc* hDoc, CXFA_Submit submit) override;
+  bool SubmitData(CXFA_FFDoc* hDoc, CXFA_SubmitData submitData) override;
 
   bool GetGlobalProperty(CXFA_FFDoc* hDoc,
                          const ByteStringView& szPropName,
@@ -93,7 +93,7 @@ class CPDFXFA_DocEnvironment : public IXFA_DocEnvironment {
   bool OnBeforeNotifySubmit();
   void OnAfterNotifySubmit();
   bool NotifySubmit(bool bPrevOrPost);
-  bool SubmitDataInternal(CXFA_FFDoc* hDoc, CXFA_Submit submit);
+  bool SubmitDataInternal(CXFA_FFDoc* hDoc, CXFA_SubmitData submitData);
   bool MailToInfo(WideString& csURL,
                   WideString& csToAddress,
                   WideString& csCCAddress,

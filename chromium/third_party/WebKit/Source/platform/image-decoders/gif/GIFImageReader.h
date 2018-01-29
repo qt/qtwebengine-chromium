@@ -97,7 +97,7 @@ class GIFLZWContext final {
         ipass(0),
         irow(0),
         rows_remaining(0),
-        row_iter(0),
+        row_iter(nullptr),
         client_(client),
         frame_context_(frame_context) {}
 
@@ -287,7 +287,7 @@ class PLATFORM_EXPORT GIFImageReader final {
   WTF_MAKE_NONCOPYABLE(GIFImageReader);
 
  public:
-  GIFImageReader(blink::GIFImageDecoder* client = 0)
+  GIFImageReader(blink::GIFImageDecoder* client = nullptr)
       : client_(client),
         state_(kGIFType),
         // Number of bytes for GIF type, either "GIF87a" or "GIF89a".
@@ -302,7 +302,9 @@ class PLATFORM_EXPORT GIFImageReader final {
 
   ~GIFImageReader() {}
 
-  void SetData(RefPtr<blink::SegmentReader> data) { data_ = std::move(data); }
+  void SetData(scoped_refptr<blink::SegmentReader> data) {
+    data_ = std::move(data);
+  }
   bool Parse(blink::GIFImageDecoder::GIFParseQuery);
   bool Decode(size_t frame_index);
 
@@ -322,7 +324,7 @@ class PLATFORM_EXPORT GIFImageReader final {
   const GIFColorMap& GlobalColorMap() const { return global_color_map_; }
 
   const GIFFrameContext* FrameContext(size_t index) const {
-    return index < frames_.size() ? frames_[index].get() : 0;
+    return index < frames_.size() ? frames_[index].get() : nullptr;
   }
 
   bool ParseCompleted() const { return parse_completed_; }
@@ -360,7 +362,7 @@ class PLATFORM_EXPORT GIFImageReader final {
 
   Vector<std::unique_ptr<GIFFrameContext>> frames_;
 
-  RefPtr<blink::SegmentReader> data_;
+  scoped_refptr<blink::SegmentReader> data_;
   bool parse_completed_;
 };
 

@@ -12,6 +12,7 @@
 #include "content/browser/browser_plugin/browser_plugin_guest.h"
 #include "content/browser/frame_host/interstitial_page_impl.h"
 #include "content/browser/frame_host/render_widget_host_view_guest.h"
+#include "content/browser/mus_util.h"
 #include "content/browser/renderer_host/render_view_host_factory.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
 #include "content/browser/web_contents/web_contents_impl.h"
@@ -55,7 +56,7 @@ gfx::NativeView WebContentsViewGuest::GetNativeView() const {
 gfx::NativeView WebContentsViewGuest::GetContentNativeView() const {
   RenderWidgetHostView* rwhv = web_contents_->GetRenderWidgetHostView();
   if (!rwhv)
-    return NULL;
+    return nullptr;
   return rwhv->GetNativeView();
 }
 
@@ -77,14 +78,17 @@ void WebContentsViewGuest::OnGuestAttached(WebContentsView* parent_view) {
   // view hierarchy. We add this view as embedder's child here.
   // This would go in WebContentsViewGuest::CreateView, but that is too early to
   // access embedder_web_contents(). Therefore, we do it here.
-  parent_view->GetNativeView()->AddChild(platform_view_->GetNativeView());
+  if (!IsUsingMus())
+    parent_view->GetNativeView()->AddChild(platform_view_->GetNativeView());
 #endif  // defined(USE_AURA)
 }
 
 void WebContentsViewGuest::OnGuestDetached(WebContentsView* old_parent_view) {
 #if defined(USE_AURA)
-  old_parent_view->GetNativeView()->RemoveChild(
-      platform_view_->GetNativeView());
+  if (!IsUsingMus()) {
+    old_parent_view->GetNativeView()->RemoveChild(
+        platform_view_->GetNativeView());
+  }
 #endif  // defined(USE_AURA)
 }
 
@@ -198,9 +202,13 @@ void WebContentsViewGuest::StoreFocus() {
   platform_view_->StoreFocus();
 }
 
+void WebContentsViewGuest::FocusThroughTabTraversal(bool reverse) {
+  platform_view_->FocusThroughTabTraversal(reverse);
+}
+
 DropData* WebContentsViewGuest::GetDropData() const {
   NOTIMPLEMENTED();
-  return NULL;
+  return nullptr;
 }
 
 void WebContentsViewGuest::UpdateDragCursor(WebDragOperation operation) {
@@ -216,6 +224,7 @@ void WebContentsViewGuest::UpdateDragCursor(WebDragOperation operation) {
 
 void WebContentsViewGuest::ShowContextMenu(RenderFrameHost* render_frame_host,
                                            const ContextMenuParams& params) {
+  DCHECK(platform_view_delegate_view_);
   platform_view_delegate_view_->ShowContextMenu(render_frame_host, params);
 }
 

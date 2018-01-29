@@ -69,7 +69,7 @@ AudioReceiveStream::AudioReceiveStream(
     const rtc::scoped_refptr<webrtc::AudioState>& audio_state,
     webrtc::RtcEventLog* event_log)
     : config_(config), audio_state_(audio_state) {
-  LOG(LS_INFO) << "AudioReceiveStream: " << config_.ToString();
+  RTC_LOG(LS_INFO) << "AudioReceiveStream: " << config_.ToString();
   RTC_DCHECK_NE(config_.voe_channel_id, -1);
   RTC_DCHECK(audio_state_.get());
   RTC_DCHECK(packet_router);
@@ -117,7 +117,7 @@ AudioReceiveStream::AudioReceiveStream(
 
 AudioReceiveStream::~AudioReceiveStream() {
   RTC_DCHECK_RUN_ON(&worker_thread_checker_);
-  LOG(LS_INFO) << "~AudioReceiveStream: " << config_.ToString();
+  RTC_LOG(LS_INFO) << "~AudioReceiveStream: " << config_.ToString();
   if (playing_) {
     Stop();
   }
@@ -135,12 +135,13 @@ void AudioReceiveStream::Start() {
 
   int error = SetVoiceEnginePlayout(true);
   if (error != 0) {
-    LOG(LS_ERROR) << "AudioReceiveStream::Start failed with error: " << error;
+    RTC_LOG(LS_ERROR) << "AudioReceiveStream::Start failed with error: "
+                      << error;
     return;
   }
 
   if (!audio_state()->mixer()->AddSource(this)) {
-    LOG(LS_ERROR) << "Failed to add source to mixer.";
+    RTC_LOG(LS_ERROR) << "Failed to add source to mixer.";
     SetVoiceEnginePlayout(false);
     return;
   }
@@ -179,7 +180,7 @@ webrtc::AudioReceiveStream::Stats AudioReceiveStream::GetStats() const {
   stats.capture_start_ntp_time_ms = call_stats.capture_start_ntp_time_ms_;
   if (codec_inst.pltype != -1) {
     stats.codec_name = codec_inst.plname;
-    stats.codec_payload_type = rtc::Optional<int>(codec_inst.pltype);
+    stats.codec_payload_type = codec_inst.pltype;
   }
   stats.ext_seqnum = call_stats.extendedMax;
   if (codec_inst.plfreq / 1000 > 0) {
@@ -271,18 +272,18 @@ rtc::Optional<Syncable::Info> AudioReceiveStream::GetInfo() const {
   if (!rtp_receiver->GetLatestTimestamps(
           &info.latest_received_capture_timestamp,
           &info.latest_receive_time_ms)) {
-    return rtc::Optional<Syncable::Info>();
+    return rtc::nullopt;
   }
   if (rtp_rtcp->RemoteNTP(&info.capture_time_ntp_secs,
                           &info.capture_time_ntp_frac,
                           nullptr,
                           nullptr,
                           &info.capture_time_source_clock) != 0) {
-    return rtc::Optional<Syncable::Info>();
+    return rtc::nullopt;
   }
 
   info.current_delay_ms = channel_proxy_->GetDelayEstimate();
-  return rtc::Optional<Syncable::Info>(info);
+  return info;
 }
 
 uint32_t AudioReceiveStream::GetPlayoutTimestamp() const {

@@ -73,13 +73,14 @@ TEST_F(HTMLInputElementTest, FilteredDataListOptionsContain) {
 }
 
 TEST_F(HTMLInputElementTest, FilteredDataListOptionsForMultipleEmail) {
-  GetDocument().documentElement()->SetInnerHTMLFromString(
-      "<input id=test value='foo@example.com, tkent' list=dl3 type=email "
-      "multiple>"
-      "<datalist id=dl3>"
-      "<option>keishi@chromium.org</option>"
-      "<option>tkent@chromium.org</option>"
-      "</datalist>");
+  GetDocument().documentElement()->SetInnerHTMLFromString(R"HTML(
+    <input id=test value='foo@example.com, tkent' list=dl3 type=email
+    multiple>
+    <datalist id=dl3>
+    <option>keishi@chromium.org</option>
+    <option>tkent@chromium.org</option>
+    </datalist>
+  )HTML");
   auto options = TestElement().FilteredDataListOptions();
   EXPECT_EQ(1u, options.size());
   EXPECT_EQ("tkent@chromium.org", options[0]->value().Utf8());
@@ -190,6 +191,22 @@ TEST_F(HTMLInputElementTest, StepDownOverflow) {
   // InputType::applyStep() should not pass an out-of-range value to
   // setValueAsDecimal, and WTF::msToYear() should not cause a DCHECK failure.
   input->stepDown(1, ASSERT_NO_EXCEPTION);
+}
+
+TEST_F(HTMLInputElementTest, CheckboxHasNoShadowRoot) {
+  GetDocument().body()->SetInnerHTMLFromString("<input type='checkbox' />");
+  HTMLInputElement* input =
+      ToHTMLInputElement(GetDocument().body()->firstChild());
+  EXPECT_EQ(nullptr, input->UserAgentShadowRoot());
+}
+
+TEST_F(HTMLInputElementTest, ChangingInputTypeCausesShadowRootToBeCreated) {
+  GetDocument().body()->SetInnerHTMLFromString("<input type='checkbox' />");
+  HTMLInputElement* input =
+      ToHTMLInputElement(GetDocument().body()->firstChild());
+  EXPECT_EQ(nullptr, input->UserAgentShadowRoot());
+  input->setAttribute(HTMLNames::typeAttr, "text");
+  EXPECT_NE(nullptr, input->UserAgentShadowRoot());
 }
 
 }  // namespace blink

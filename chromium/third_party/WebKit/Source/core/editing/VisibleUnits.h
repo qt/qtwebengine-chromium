@@ -238,15 +238,11 @@ VisiblePosition NextParagraphPosition(const VisiblePosition&, LayoutUnit x);
 CORE_EXPORT bool IsStartOfParagraph(
     const VisiblePosition&,
     EditingBoundaryCrossingRule = kCannotCrossEditingBoundary);
-CORE_EXPORT bool IsStartOfParagraph(
-    const VisiblePositionInFlatTree&,
-    EditingBoundaryCrossingRule = kCannotCrossEditingBoundary);
+CORE_EXPORT bool IsStartOfParagraph(const VisiblePositionInFlatTree&);
 CORE_EXPORT bool IsEndOfParagraph(
     const VisiblePosition&,
     EditingBoundaryCrossingRule = kCannotCrossEditingBoundary);
-CORE_EXPORT bool IsEndOfParagraph(
-    const VisiblePositionInFlatTree&,
-    EditingBoundaryCrossingRule = kCannotCrossEditingBoundary);
+CORE_EXPORT bool IsEndOfParagraph(const VisiblePositionInFlatTree&);
 bool InSameParagraph(const VisiblePosition&,
                      const VisiblePosition&,
                      EditingBoundaryCrossingRule = kCannotCrossEditingBoundary);
@@ -284,7 +280,7 @@ CORE_EXPORT LocalCaretRect
 LocalCaretRectOfPosition(const PositionWithAffinity&);
 CORE_EXPORT LocalCaretRect
 LocalCaretRectOfPosition(const PositionInFlatTreeWithAffinity&);
-bool HasRenderedNonAnonymousDescendantsWithHeight(LayoutObject*);
+bool HasRenderedNonAnonymousDescendantsWithHeight(const LayoutObject*);
 
 // Returns a hit-tested VisiblePosition for the given point in contents-space
 // coordinates.
@@ -312,12 +308,20 @@ typedef unsigned (*BoundarySearchFunction)(const UChar*,
                                            BoundarySearchContextAvailability,
                                            bool& need_more_context);
 
-Position NextBoundary(const VisiblePosition&, BoundarySearchFunction);
+CORE_EXPORT Position NextBoundary(const VisiblePosition&,
+                                  BoundarySearchFunction);
 PositionInFlatTree NextBoundary(const VisiblePositionInFlatTree&,
                                 BoundarySearchFunction);
 Position PreviousBoundary(const VisiblePosition&, BoundarySearchFunction);
 PositionInFlatTree PreviousBoundary(const VisiblePositionInFlatTree&,
                                     BoundarySearchFunction);
+
+PositionWithAffinity HonorEditingBoundaryAtOrAfter(const PositionWithAffinity&,
+                                                   const Position&);
+
+PositionInFlatTreeWithAffinity HonorEditingBoundaryAtOrAfter(
+    const PositionInFlatTreeWithAffinity&,
+    const PositionInFlatTree&);
 
 PositionWithAffinity HonorEditingBoundaryAtOrBefore(const PositionWithAffinity&,
                                                     const Position&);

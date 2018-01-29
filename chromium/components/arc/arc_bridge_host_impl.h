@@ -11,7 +11,7 @@
 #include "base/macros.h"
 #include "base/threading/thread_checker.h"
 #include "components/arc/common/arc_bridge.mojom.h"
-#include "components/arc/instance_holder.h"
+#include "components/arc/connection_holder.h"
 #include "mojo/public/cpp/bindings/binding.h"
 #include "mojo/public/cpp/bindings/interface_ptr.h"
 
@@ -43,6 +43,8 @@ class ArcBridgeHostImpl : public mojom::ArcBridgeHost {
   void OnAppInstanceReady(mojom::AppInstancePtr app_ptr) override;
   void OnAudioInstanceReady(mojom::AudioInstancePtr audio_ptr) override;
   void OnAuthInstanceReady(mojom::AuthInstancePtr auth_ptr) override;
+  void OnBackupSettingsInstanceReady(
+      mojom::BackupSettingsInstancePtr backup_settings_ptr) override;
   void OnBluetoothInstanceReady(
       mojom::BluetoothInstancePtr bluetooth_ptr) override;
   void OnBootPhaseMonitorInstanceReady(
@@ -101,8 +103,9 @@ class ArcBridgeHostImpl : public mojom::ArcBridgeHost {
 
   // The common implementation to handle ArcBridgeHost overrides.
   // |T| is a ARC Mojo Instance type.
-  template <typename T>
-  void OnInstanceReady(InstanceHolder<T>* holder, mojo::InterfacePtr<T> ptr);
+  template <typename InstanceType, typename HostType>
+  void OnInstanceReady(ConnectionHolder<InstanceType, HostType>* holder,
+                       mojo::InterfacePtr<InstanceType> ptr);
 
   // Called if one of the established channels is closed.
   void OnChannelClosed(MojoChannel* channel);

@@ -66,11 +66,17 @@ class GpuChannelHost;
 namespace leveldb {
 class LevelDBMojoProxy;
 }
+namespace media {
+class BlockingUrlProtocol;
+}
 namespace mojo {
 class SyncCallRestrictions;
 namespace edk {
 class ScopedIPCSupport;
 }
+}
+namespace rlz_lib {
+class FinancialPing;
 }
 namespace ui {
 class CommandBufferClientImpl;
@@ -78,8 +84,8 @@ class CommandBufferLocal;
 class GpuState;
 }
 namespace net {
+class MultiThreadedCertVerifierScopedAllowBaseSyncPrimitives;
 class NetworkChangeNotifierMac;
-class OCSPScopedAllowBaseSyncPrimitives;
 namespace internal {
 class AddressTrackerLinux;
 }
@@ -87,6 +93,14 @@ class AddressTrackerLinux;
 
 namespace remoting {
 class AutoThread;
+}
+
+namespace resource_coordinator {
+class TabManagerDelegate;
+}
+
+namespace shell_integration {
+class LaunchXdgUtilityScopedAllowBaseSyncPrimitives;
 }
 
 namespace ui {
@@ -111,6 +125,7 @@ namespace internal {
 class TaskTracker;
 }
 
+class GetAppOutputScopedAllowBaseSyncPrimitives;
 class SequencedWorkerPool;
 class SimpleThread;
 class StackSamplingProfiler;
@@ -133,6 +148,26 @@ class ThreadTestHelper;
 // Acquiring a low contention lock is not considered a blocking call.
 
 // Asserts that blocking calls are allowed in the current scope.
+//
+// Style tip: It's best if you put AssertBlockingAllowed() checks as close to
+// the blocking call as possible. For example:
+//
+// void ReadFile() {
+//   PreWork();
+//
+//   base::AssertBlockingAllowed();
+//   fopen(...);
+//
+//   PostWork();
+// }
+//
+// void Bar() {
+//   ReadFile();
+// }
+//
+// void Foo() {
+//   Bar();
+// }
 INLINE_IF_DCHECK_IS_OFF void AssertBlockingAllowed()
     EMPTY_BODY_IF_DCHECK_IS_OFF;
 
@@ -165,6 +200,7 @@ class BASE_EXPORT ScopedAllowBlocking {
   FRIEND_TEST_ALL_PREFIXES(ThreadRestrictionsTest, ScopedAllowBlocking);
   friend class cronet::CronetPrefsManager;
   friend class cronet::CronetURLRequestContextAdapter;
+  friend class resource_coordinator::TabManagerDelegate;  // crbug.com/778703
   friend class ScopedAllowBlockingForTesting;
 
   ScopedAllowBlocking() EMPTY_BODY_IF_DCHECK_IS_OFF;
@@ -190,8 +226,10 @@ class ScopedAllowBlockingForTesting {
   DISALLOW_COPY_AND_ASSIGN(ScopedAllowBlockingForTesting);
 };
 
-// "Waiting on a //base sync primitive" refers to calling
-// base::WaitableEvent::*Wait* or base::ConditionVariable::*Wait*.
+// "Waiting on a //base sync primitive" refers to calling one of these methods:
+// - base::WaitableEvent::*Wait*
+// - base::ConditionVariable::*Wait*
+// - base::Process::WaitForExit*
 
 // Disallows waiting on a //base sync primitive on the current thread.
 INLINE_IF_DCHECK_IS_OFF void DisallowBaseSyncPrimitives()
@@ -200,11 +238,15 @@ INLINE_IF_DCHECK_IS_OFF void DisallowBaseSyncPrimitives()
 // ScopedAllowBaseSyncPrimitives(ForTesting)(OutsideBlockingScope) allow waiting
 // on a //base sync primitive within a scope where this is normally disallowed.
 //
-// Avoid using this. Instead of waiting on a WaitableEvent or a
-// ConditionVariable, put the work that should happen after the wait in a
-// callback and post that callback from where the WaitableEvent or
-// ConditionVariable would have been signaled. If something needs to be
-// scheduled after many tasks have executed, use base::BarrierClosure.
+// Avoid using this.
+//
+// Instead of waiting on a WaitableEvent or a ConditionVariable, put the work
+// that should happen after the wait in a callback and post that callback from
+// where the WaitableEvent or ConditionVariable would have been signaled. If
+// something needs to be scheduled after many tasks have executed, use
+// base::BarrierClosure.
+//
+// On Windows, join processes asynchronously using base::win::ObjectWatcher.
 
 // This can only be used in a scope where blocking is allowed.
 class BASE_EXPORT ScopedAllowBaseSyncPrimitives {
@@ -218,8 +260,12 @@ class BASE_EXPORT ScopedAllowBaseSyncPrimitives {
                            ScopedAllowBaseSyncPrimitivesResetsState);
   FRIEND_TEST_ALL_PREFIXES(ThreadRestrictionsTest,
                            ScopedAllowBaseSyncPrimitivesWithBlockingDisallowed);
+  friend class base::GetAppOutputScopedAllowBaseSyncPrimitives;
   friend class leveldb::LevelDBMojoProxy;
-  friend class net::OCSPScopedAllowBaseSyncPrimitives;
+  friend class media::BlockingUrlProtocol;
+  friend class net::MultiThreadedCertVerifierScopedAllowBaseSyncPrimitives;
+  friend class rlz_lib::FinancialPing;
+  friend class shell_integration::LaunchXdgUtilityScopedAllowBaseSyncPrimitives;
 
   ScopedAllowBaseSyncPrimitives() EMPTY_BODY_IF_DCHECK_IS_OFF;
   ~ScopedAllowBaseSyncPrimitives() EMPTY_BODY_IF_DCHECK_IS_OFF;
@@ -283,32 +329,6 @@ INLINE_IF_DCHECK_IS_OFF void ResetThreadRestrictionsForTesting()
 
 }  // namespace internal
 
-// Certain behavior is disallowed on certain threads.  ThreadRestrictions helps
-// enforce these rules.  Examples of such rules:
-//
-// * Do not do blocking IO (makes the thread janky)
-// * Do not access Singleton/LazyInstance (may lead to shutdown crashes)
-//
-// Here's more about how the protection works:
-//
-// 1) If a thread should not be allowed to make IO calls, mark it:
-//      base::ThreadRestrictions::SetIOAllowed(false);
-//    By default, threads *are* allowed to make IO calls.
-//    In Chrome browser code, IO calls should be proxied to a TaskRunner with
-//    the base::MayBlock() trait.
-//
-// 2) If a function makes a call that will go out to disk, check whether the
-//    current thread is allowed:
-//      base::ThreadRestrictions::AssertIOAllowed();
-//
-//
-// Style tip: where should you put AssertIOAllowed checks?  It's best
-// if you put them as close to the disk access as possible, at the
-// lowest level.  This rule is simple to follow and helps catch all
-// callers.  For example, if your function GoDoSomeBlockingDiskCall()
-// only calls other functions in Chrome and not fopen(), you should go
-// add the AssertIOAllowed checks in the helper functions.
-
 class BASE_EXPORT ThreadRestrictions {
  public:
   // Constructing a ScopedAllowIO temporarily allows IO for the current
@@ -334,13 +354,6 @@ class BASE_EXPORT ThreadRestrictions {
   // DEPRECATED. Use ScopedAllowBlocking(ForTesting) or ScopedDisallowBlocking.
   static bool SetIOAllowed(bool allowed);
 
-  // Check whether the current thread is allowed to make IO calls,
-  // and DCHECK if not.  See the block comment above the class for
-  // a discussion of where to add these checks.
-  //
-  // DEPRECATED. Use AssertBlockingAllowed.
-  static void AssertIOAllowed();
-
   // Set whether the current thread can use singletons.  Returns the previous
   // value.
   static bool SetSingletonAllowed(bool allowed);
@@ -358,7 +371,6 @@ class BASE_EXPORT ThreadRestrictions {
   // Inline the empty definitions of these functions so that they can be
   // compiled out.
   static bool SetIOAllowed(bool allowed) { return true; }
-  static void AssertIOAllowed() {}
   static bool SetSingletonAllowed(bool allowed) { return true; }
   static void AssertSingletonAllowed() {}
   static void DisallowWaiting() {}

@@ -52,21 +52,21 @@ class OptionalRotation {
 
 class CSSRotateNonInterpolableValue : public NonInterpolableValue {
  public:
-  static RefPtr<CSSRotateNonInterpolableValue> Create(
+  static scoped_refptr<CSSRotateNonInterpolableValue> Create(
       const OptionalRotation& rotation) {
-    return WTF::AdoptRef(new CSSRotateNonInterpolableValue(
+    return base::AdoptRef(new CSSRotateNonInterpolableValue(
         true, rotation, OptionalRotation(), false, false));
   }
 
-  static RefPtr<CSSRotateNonInterpolableValue> Create(
+  static scoped_refptr<CSSRotateNonInterpolableValue> Create(
       const CSSRotateNonInterpolableValue& start,
       const CSSRotateNonInterpolableValue& end) {
-    return WTF::AdoptRef(new CSSRotateNonInterpolableValue(
+    return base::AdoptRef(new CSSRotateNonInterpolableValue(
         false, start.GetOptionalRotation(), end.GetOptionalRotation(),
         start.IsAdditive(), end.IsAdditive()));
   }
 
-  RefPtr<CSSRotateNonInterpolableValue> Composite(
+  scoped_refptr<CSSRotateNonInterpolableValue> Composite(
       const CSSRotateNonInterpolableValue& other,
       double other_progress) {
     DCHECK(is_single_ && !is_start_additive_);

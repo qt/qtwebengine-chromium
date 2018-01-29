@@ -101,10 +101,9 @@ TEST_F(MessageQueueTest, DisposeNotLocked) {
 class DeletedMessageHandler : public MessageHandler {
  public:
   explicit DeletedMessageHandler(bool* deleted) : deleted_(deleted) { }
-  ~DeletedMessageHandler() {
-    *deleted_ = true;
-  }
-  void OnMessage(Message* msg) { }
+  ~DeletedMessageHandler() override { *deleted_ = true; }
+  void OnMessage(Message* msg) override {}
+
  private:
   bool* deleted_;
 };
@@ -135,9 +134,10 @@ struct UnwrapMainThreadScope {
 TEST(MessageQueueManager, Clear) {
   UnwrapMainThreadScope s;
   if (MessageQueueManager::IsInitialized()) {
-    LOG(LS_INFO) << "Unable to run MessageQueueManager::Clear test, since the "
-                 << "MessageQueueManager was already initialized by some "
-                 << "other test in this run.";
+    RTC_LOG(LS_INFO)
+        << "Unable to run MessageQueueManager::Clear test, since the "
+        << "MessageQueueManager was already initialized by some "
+        << "other test in this run.";
     return;
   }
   bool deleted = false;

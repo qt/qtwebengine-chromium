@@ -6,7 +6,7 @@
 #define PaintArtifactCompositor_h
 
 #include <memory>
-#include "base/memory/ref_counted.h"
+#include "base/memory/scoped_refptr.h"
 #include "platform/PlatformExport.h"
 #include "platform/graphics/GraphicsLayerClient.h"
 #include "platform/graphics/compositing/PropertyTreeManager.h"
@@ -96,7 +96,7 @@ class PLATFORM_EXPORT PaintArtifactCompositor final
 
   std::unique_ptr<JSONObject> LayersAsJSON(LayerTreeFlags) const;
 
-#ifndef NDEBUG
+#if DCHECK_IS_ON()
   void ShowDebugData();
 #endif
 

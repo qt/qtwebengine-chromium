@@ -349,9 +349,9 @@ PersistentMemoryAllocator::PersistentMemoryAllocator(Memory memory,
 
   // These atomics operate inter-process and so must be lock-free. The local
   // casts are to make sure it can be evaluated at compile time to a constant.
-  CHECK(((SharedMetadata*)0)->freeptr.is_lock_free());
-  CHECK(((SharedMetadata*)0)->flags.is_lock_free());
-  CHECK(((BlockHeader*)0)->next.is_lock_free());
+  CHECK(((SharedMetadata*)nullptr)->freeptr.is_lock_free());
+  CHECK(((SharedMetadata*)nullptr)->flags.is_lock_free());
+  CHECK(((BlockHeader*)nullptr)->next.is_lock_free());
   CHECK(corrupt_.is_lock_free());
 
   if (shared_meta()->cookie != kGlobalCookie) {
@@ -1029,7 +1029,7 @@ SharedPersistentMemoryAllocator::SharedPersistentMemoryAllocator(
           read_only),
       shared_memory_(std::move(memory)) {}
 
-SharedPersistentMemoryAllocator::~SharedPersistentMemoryAllocator() {}
+SharedPersistentMemoryAllocator::~SharedPersistentMemoryAllocator() = default;
 
 // static
 bool SharedPersistentMemoryAllocator::IsSharedMemoryAcceptable(
@@ -1054,14 +1054,9 @@ FilePersistentMemoryAllocator::FilePersistentMemoryAllocator(
           id,
           name,
           read_only),
-      mapped_file_(std::move(file)) {
-  // Ensure the disk-copy of the data reflects the fully-initialized memory as
-  // there is no guarantee as to what order the pages might be auto-flushed by
-  // the OS in the future.
-  Flush(true);
-}
+      mapped_file_(std::move(file)) {}
 
-FilePersistentMemoryAllocator::~FilePersistentMemoryAllocator() {}
+FilePersistentMemoryAllocator::~FilePersistentMemoryAllocator() = default;
 
 // static
 bool FilePersistentMemoryAllocator::IsFileAcceptable(
@@ -1072,12 +1067,13 @@ bool FilePersistentMemoryAllocator::IsFileAcceptable(
 
 void FilePersistentMemoryAllocator::FlushPartial(size_t length, bool sync) {
   if (sync)
-    ThreadRestrictions::AssertIOAllowed();
+    AssertBlockingAllowed();
   if (IsReadonly())
     return;
 
 #if defined(OS_WIN)
-  // Windows doesn't support a synchronous flush.
+  // Windows doesn't support asynchronous flush.
+  AssertBlockingAllowed();
   BOOL success = ::FlushViewOfFile(data(), length);
   DPCHECK(success);
 #elif defined(OS_MACOSX)
@@ -1163,7 +1159,7 @@ DelayedPersistentAllocation::DelayedPersistentAllocation(
   DCHECK(reference_);
 }
 
-DelayedPersistentAllocation::~DelayedPersistentAllocation() {}
+DelayedPersistentAllocation::~DelayedPersistentAllocation() = default;
 
 void* DelayedPersistentAllocation::Get() const {
   // Relaxed operations are acceptable here because it's not protecting the

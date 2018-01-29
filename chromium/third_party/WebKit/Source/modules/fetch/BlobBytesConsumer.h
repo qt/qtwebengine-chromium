@@ -6,12 +6,12 @@
 #define BlobBytesConsumer_h
 
 #include <memory>
+#include "base/memory/scoped_refptr.h"
 #include "core/dom/ContextLifecycleObserver.h"
 #include "core/loader/ThreadableLoaderClient.h"
 #include "modules/ModulesExport.h"
 #include "modules/fetch/BytesConsumer.h"
 #include "platform/heap/Handle.h"
-#include "platform/wtf/RefPtr.h"
 
 namespace blink {
 
@@ -32,14 +32,15 @@ class MODULES_EXPORT BlobBytesConsumer final : public BytesConsumer,
 
  public:
   // |handle| can be null. In that case this consumer gets closed.
-  BlobBytesConsumer(ExecutionContext*, RefPtr<BlobDataHandle> /* handle */);
+  BlobBytesConsumer(ExecutionContext*,
+                    scoped_refptr<BlobDataHandle> /* handle */);
   ~BlobBytesConsumer() override;
 
   // BytesConsumer implementation
   Result BeginRead(const char** buffer, size_t* available) override;
   Result EndRead(size_t read_size) override;
-  RefPtr<BlobDataHandle> DrainAsBlobDataHandle(BlobSizePolicy) override;
-  RefPtr<EncodedFormData> DrainAsFormData() override;
+  scoped_refptr<BlobDataHandle> DrainAsBlobDataHandle(BlobSizePolicy) override;
+  scoped_refptr<EncodedFormData> DrainAsFormData() override;
   void SetClient(BytesConsumer::Client*) override;
   void ClearClient() override;
   void Cancel() override;
@@ -61,15 +62,15 @@ class MODULES_EXPORT BlobBytesConsumer final : public BytesConsumer,
   void DidFail(const ResourceError&) override;
   void DidFailRedirectCheck() override;
 
-  DECLARE_TRACE();
+  void Trace(blink::Visitor*) override;
 
   static BlobBytesConsumer* CreateForTesting(ExecutionContext*,
-                                             RefPtr<BlobDataHandle>,
+                                             scoped_refptr<BlobDataHandle>,
                                              ThreadableLoader*);
 
  private:
   BlobBytesConsumer(ExecutionContext*,
-                    RefPtr<BlobDataHandle>,
+                    scoped_refptr<BlobDataHandle>,
                     ThreadableLoader*);
   ThreadableLoader* CreateLoader();
   void DidFailInternal();
@@ -79,7 +80,7 @@ class MODULES_EXPORT BlobBytesConsumer final : public BytesConsumer,
   void Clear();
 
   KURL blob_url_;
-  RefPtr<BlobDataHandle> blob_data_handle_;
+  scoped_refptr<BlobDataHandle> blob_data_handle_;
   Member<BytesConsumer> body_;
   Member<BytesConsumer::Client> client_;
   Member<ThreadableLoader> loader_;

@@ -12,6 +12,8 @@
 #include "base/command_line.h"
 #include "base/logging.h"
 #include "base/macros.h"
+#include "base/memory/protected_memory.h"
+#include "base/memory/protected_memory_cfi.h"
 #include "base/memory/ptr_util.h"
 #include "base/stl_util.h"
 #include "base/strings/string_piece.h"
@@ -43,13 +45,29 @@ typedef std::vector<base::NativeLibrary> LibraryArray;
 
 GLImplementation g_gl_implementation = kGLImplementationNone;
 LibraryArray* g_libraries;
-GLGetProcAddressProc g_get_proc_address;
+// Place the function pointer for GetProcAddress in read-only memory after being
+// resolved to prevent it being tampered with. See crbug.com/771365 for details.
+PROTECTED_MEMORY_SECTION base::ProtectedMemory<GLGetProcAddressProc>
+    g_get_proc_address;
 
-void CleanupNativeLibraries(void* unused) {
+void CleanupNativeLibraries(void* due_to_fallback) {
   if (g_libraries) {
     // We do not call base::UnloadNativeLibrary() for these libraries as
     // unloading libGL without closing X display is not allowed. See
     // crbug.com/250813 for details.
+    bool unload_libraries = false;
+#if defined(OS_WIN)
+    // However during fallback from ANGLE to SwiftShader ANGLE library needs to
+    // be unloaded, otherwise software SwiftShader loading will fail. See
+    // crbug.com/760063 for details.
+    unload_libraries = due_to_fallback &&
+                       *static_cast<bool*>(due_to_fallback) &&
+                       GetGLImplementation() == kGLImplementationEGLGLES2;
+#endif
+    if (unload_libraries) {
+      for (auto* library : *g_libraries)
+        base::UnloadNativeLibrary(library);
+    }
     delete g_libraries;
     g_libraries = NULL;
   }
@@ -146,13 +164,14 @@ void AddGLNativeLibrary(base::NativeLibrary library) {
   g_libraries->push_back(library);
 }
 
-void UnloadGLNativeLibraries() {
-  CleanupNativeLibraries(NULL);
+void UnloadGLNativeLibraries(bool due_to_fallback) {
+  CleanupNativeLibraries(&due_to_fallback);
 }
 
 void SetGLGetProcAddressProc(GLGetProcAddressProc proc) {
   DCHECK(proc);
-  g_get_proc_address = proc;
+  auto writer = base::AutoWritableMemory::Create(g_get_proc_address);
+  *g_get_proc_address = proc;
 }
 
 GLFunctionPointerType GetGLProcAddress(const char* name) {
@@ -166,8 +185,9 @@ GLFunctionPointerType GetGLProcAddress(const char* name) {
         return proc;
     }
   }
-  if (g_get_proc_address) {
-    GLFunctionPointerType proc = g_get_proc_address(name);
+  if (*g_get_proc_address) {
+    GLFunctionPointerType proc =
+        base::UnsanitizedCfiCall(g_get_proc_address)(name);
     if (proc)
       return proc;
   }

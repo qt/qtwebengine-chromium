@@ -68,7 +68,7 @@ CPDF_Page::CPDF_Page(CPDF_Document* pDocument,
       break;
   }
 
-  m_Transparency = PDFTRANS_ISOLATED;
+  m_iTransparency = PDFTRANS_ISOLATED;
   LoadTransInfo();
 }
 
@@ -82,8 +82,7 @@ void CPDF_Page::StartParse() {
   if (m_ParseState == CONTENT_PARSED || m_ParseState == CONTENT_PARSING)
     return;
 
-  m_pParser = pdfium::MakeUnique<CPDF_ContentParser>();
-  m_pParser->Start(this);
+  m_pParser = pdfium::MakeUnique<CPDF_ContentParser>(this);
   m_ParseState = CONTENT_PARSING;
 }
 

@@ -13,7 +13,6 @@
 #include "modules/fetch/Headers.h"
 #include "platform/bindings/ScriptWrappable.h"
 #include "platform/heap/Handle.h"
-#include "platform/network/EncodedFormData.h"
 #include "platform/weborigin/KURL.h"
 #include "platform/wtf/text/WTFString.h"
 #include "public/platform/WebURLRequest.h"
@@ -21,7 +20,6 @@
 namespace blink {
 
 class BodyStreamBuffer;
-class EncodedFormData;
 class RequestInit;
 class WebServiceWorkerRequest;
 
@@ -65,6 +63,7 @@ class MODULES_EXPORT Request final : public Body {
   String cache() const;
   String redirect() const;
   String integrity() const;
+  bool keepalive() const;
 
   // From Request.idl:
   // This function must be called with entering an appropriate V8 context.
@@ -77,11 +76,8 @@ class MODULES_EXPORT Request final : public Body {
   const BodyStreamBuffer* BodyBuffer() const override {
     return request_->Buffer();
   }
-  RefPtr<EncodedFormData> AttachedCredential() const {
-    return request_->AttachedCredential();
-  }
 
-  DECLARE_VIRTUAL_TRACE();
+  void Trace(blink::Visitor*) override;
 
  private:
   Request(ScriptState*, FetchRequestData*, Headers*);

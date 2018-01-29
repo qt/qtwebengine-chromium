@@ -13,7 +13,6 @@
 #include "platform/bindings/TraceWrapperMember.h"
 #include "platform/bindings/TraceWrapperV8Reference.h"
 #include "platform/geometry/IntSize.h"
-#include "platform/geometry/LayoutSize.h"
 #include "platform/heap/Handle.h"
 #include "v8/include/v8.h"
 
@@ -47,12 +46,10 @@ class CSSPaintDefinition final
   // This may return a nullptr (representing an invalid image) if javascript
   // throws an error.
   //
-  // The |container_size| is the container size with subpixel snapping, where
-  // the |logical_size| is without it. Both sizes include zoom.
-  RefPtr<Image> Paint(const ImageResourceObserver&,
-                      const IntSize& container_size,
-                      const CSSStyleValueVector*,
-                      const LayoutSize* logical_size);
+  // The |container_size| is the container size with subpixel snapping.
+  scoped_refptr<Image> Paint(const ImageResourceObserver&,
+                             const IntSize& container_size,
+                             const CSSStyleValueVector*);
   const Vector<CSSPropertyID>& NativeInvalidationProperties() const {
     return native_invalidation_properties_;
   }
@@ -73,8 +70,8 @@ class CSSPaintDefinition final
     return paint_.NewLocal(isolate);
   }
 
-  DEFINE_INLINE_TRACE(){};
-  DECLARE_TRACE_WRAPPERS();
+  void Trace(blink::Visitor* visitor){};
+  void TraceWrappers(const ScriptWrappableVisitor*) const override;
 
  private:
   CSSPaintDefinition(
@@ -88,7 +85,7 @@ class CSSPaintDefinition final
 
   void MaybeCreatePaintInstance();
 
-  RefPtr<ScriptState> script_state_;
+  scoped_refptr<ScriptState> script_state_;
 
   // This object keeps the class instance object, constructor function and
   // paint function alive. It participates in wrapper tracing as it holds onto

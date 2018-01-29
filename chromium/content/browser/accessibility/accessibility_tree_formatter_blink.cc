@@ -151,6 +151,12 @@ void AccessibilityTreeFormatterBlink::AddProperties(
                    node.GetData().transform &&
                    !node.GetData().transform->IsIdentity());
 
+  gfx::Rect unclipped_bounds = node.GetPageBoundsRect(&offscreen, false);
+  dict->SetInteger("unclippedBoundsX", unclipped_bounds.x());
+  dict->SetInteger("unclippedBoundsY", unclipped_bounds.y());
+  dict->SetInteger("unclippedBoundsWidth", unclipped_bounds.width());
+  dict->SetInteger("unclippedBoundsHeight", unclipped_bounds.height());
+
   for (int state_index = ui::AX_STATE_NONE;
        state_index <= ui::AX_STATE_LAST;
        ++state_index) {
@@ -203,7 +209,7 @@ void AccessibilityTreeFormatterBlink::AddProperties(
     if (node.HasIntListAttribute(attr)) {
       std::vector<int32_t> values;
       node.GetIntListAttribute(attr, &values);
-      auto value_list = base::MakeUnique<base::ListValue>();
+      auto value_list = std::make_unique<base::ListValue>();
       for (size_t i = 0; i < values.size(); ++i) {
         if (ui::IsNodeIdIntListAttribute(attr)) {
           BrowserAccessibility* target = node.manager()->GetFromID(values[i]);
@@ -242,8 +248,13 @@ void AccessibilityTreeFormatterBlink::AddProperties(
     dict->SetString("actions", base::JoinString(actions_strings, ","));
 }
 
-base::string16 AccessibilityTreeFormatterBlink::ToString(
-    const base::DictionaryValue& dict) {
+base::string16 AccessibilityTreeFormatterBlink::ProcessTreeForOutput(
+    const base::DictionaryValue& dict,
+    base::DictionaryValue* filtered_dict_result) {
+  base::string16 error_value;
+  if (dict.GetString("error", &error_value))
+    return error_value;
+
   base::string16 line;
 
   if (show_ids()) {
@@ -290,6 +301,14 @@ base::string16 AccessibilityTreeFormatterBlink::ToString(
   WriteAttribute(false,
                  FormatCoordinates("pageSize",
                                    "pageBoundsWidth", "pageBoundsHeight", dict),
+                 &line);
+  WriteAttribute(false,
+                 FormatCoordinates("unclippedLocation", "unclippedBoundsX",
+                                   "unclippedBoundsY", dict),
+                 &line);
+  WriteAttribute(false,
+                 FormatCoordinates("unclippedSize", "unclippedBoundsWidth",
+                                   "unclippedBoundsHeight", dict),
                  &line);
 
   bool transform;

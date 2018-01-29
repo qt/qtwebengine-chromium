@@ -22,7 +22,6 @@
 #include "base/values.h"
 #include "build/build_config.h"
 #include "content/browser/tracing/file_tracing_provider_impl.h"
-#include "content/browser/tracing/power_tracing_agent.h"
 #include "content/browser/tracing/tracing_ui.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/content_browser_client.h"
@@ -108,8 +107,60 @@ std::string GetClockString() {
   return std::string();
 }
 
-std::unique_ptr<base::DictionaryValue> GenerateSystemMetadataDict() {
-  auto metadata_dict = base::MakeUnique<base::DictionaryValue>();
+}  // namespace
+
+TracingController* TracingController::GetInstance() {
+  return TracingControllerImpl::GetInstance();
+}
+
+TracingControllerImpl::TracingControllerImpl()
+    : delegate_(GetContentClient()->browser()->GetTracingDelegate()) {
+  DCHECK(!g_tracing_controller);
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
+  // Deliberately leaked, like this class.
+  base::FileTracing::SetProvider(new FileTracingProviderImpl);
+  AddAgents();
+  g_tracing_controller = this;
+}
+
+TracingControllerImpl::~TracingControllerImpl() = default;
+
+void TracingControllerImpl::AddAgents() {
+  auto* connector =
+      content::ServiceManagerConnection::GetForProcess()->GetConnector();
+  connector->BindInterface(resource_coordinator::mojom::kServiceName,
+                           &coordinator_);
+
+// Register tracing agents.
+#if defined(ENABLE_POWER_TRACING)
+  agents_.push_back(std::make_unique<PowerTracingAgent>(connector));
+#endif
+
+#if defined(OS_CHROMEOS)
+  agents_.push_back(std::make_unique<CrOSTracingAgent>(connector));
+  agents_.push_back(std::make_unique<ArcTracingAgentImpl>(connector));
+#elif defined(OS_WIN)
+  agents_.push_back(std::make_unique<EtwTracingAgent>(connector));
+#endif
+
+  auto chrome_agent =
+      std::make_unique<tracing::ChromeTraceEventAgent>(connector);
+  // For adding general CPU, network, OS, and other system information to the
+  // metadata.
+  chrome_agent->AddMetadataGeneratorFunction(base::BindRepeating(
+      &TracingControllerImpl::GenerateMetadataDict, base::Unretained(this)));
+  if (delegate_) {
+    chrome_agent->AddMetadataGeneratorFunction(
+        base::BindRepeating(&TracingDelegate::GenerateMetadataDict,
+                            base::Unretained(delegate_.get())));
+  }
+  agents_.push_back(std::move(chrome_agent));
+}
+
+std::unique_ptr<base::DictionaryValue>
+TracingControllerImpl::GenerateMetadataDict() const {
+  auto metadata_dict = std::make_unique<base::DictionaryValue>();
+  metadata_dict->SetString("trace-config", trace_config_->ToString());
 
   metadata_dict->SetString("network-type", GetNetworkTypeString());
   metadata_dict->SetString("product-version", GetContentClient()->GetProduct());
@@ -146,13 +197,7 @@ std::unique_ptr<base::DictionaryValue> GenerateSystemMetadataDict() {
   metadata_dict->SetInteger("physical-memory",
                             base::SysInfo::AmountOfPhysicalMemoryMB());
 
-  std::string cpu_brand = cpu.cpu_brand();
-  // Workaround for crbug.com/249713.
-  // TODO(oysteine): Remove workaround when bug is fixed.
-  size_t null_pos = cpu_brand.find('\0');
-  if (null_pos != std::string::npos)
-    cpu_brand.erase(null_pos);
-  metadata_dict->SetString("cpu-brand", cpu_brand);
+  metadata_dict->SetString("cpu-brand", cpu.cpu_brand());
 
   // GPU
   gpu::GPUInfo gpu_info = content::GpuDataManager::GetInstance()->GetGPUInfo();
@@ -188,66 +233,24 @@ std::unique_ptr<base::DictionaryValue> GenerateSystemMetadataDict() {
       ctime.hour, ctime.minute, ctime.second);
   metadata_dict->SetString("trace-capture-datetime", time_string);
 
-  return metadata_dict;
-}
-
-}  // namespace
-
-TracingController* TracingController::GetInstance() {
-  return TracingControllerImpl::GetInstance();
-}
-
-TracingControllerImpl::TracingControllerImpl()
-    : delegate_(GetContentClient()->browser()->GetTracingDelegate()) {
-  DCHECK(!g_tracing_controller);
-  DCHECK_CURRENTLY_ON(BrowserThread::UI);
-  // Deliberately leaked, like this class.
-  base::FileTracing::SetProvider(new FileTracingProviderImpl);
-  AddAgents();
-  g_tracing_controller = this;
-}
-
-TracingControllerImpl::~TracingControllerImpl() = default;
-
-void TracingControllerImpl::AddAgents() {
-  auto* connector =
-      content::ServiceManagerConnection::GetForProcess()->GetConnector();
-  connector->BindInterface(resource_coordinator::mojom::kServiceName,
-                           &coordinator_);
-
-// Register tracing agents.
-#if defined(ENABLE_POWER_TRACING)
-  agents_.push_back(base::MakeUnique<PowerTracingAgent>(connector));
-#endif
-
-#if defined(OS_CHROMEOS)
-  agents_.push_back(base::MakeUnique<CrOSTracingAgent>(connector));
-  agents_.push_back(base::MakeUnique<ArcTracingAgentImpl>(connector));
-#elif defined(OS_WIN)
-  agents_.push_back(base::MakeUnique<EtwTracingAgent>(connector));
-#endif
-
-  auto chrome_agent =
-      base::MakeUnique<tracing::ChromeTraceEventAgent>(connector);
-  // For adding general CPU, network, OS, and other system information to the
-  // metadata.
-  chrome_agent->AddMetadataGeneratorFunction(
-      base::BindRepeating(&GenerateSystemMetadataDict));
-  // For adding controller information to the metadata.
-  chrome_agent->AddMetadataGeneratorFunction(base::BindRepeating(
-      &TracingControllerImpl::GenerateMetadataDict, base::Unretained(this)));
-  if (delegate_) {
-    chrome_agent->AddMetadataGeneratorFunction(
-        base::BindRepeating(&TracingDelegate::GenerateMetadataDict,
-                            base::Unretained(delegate_.get())));
+  // TODO(crbug.com/737049): The central controller doesn't know about
+  // metadata filters, so we temporarily filter here as the controller is
+  // what assembles the full trace data.
+  MetadataFilterPredicate metadata_filter;
+  if (trace_config_->IsArgumentFilterEnabled()) {
+    if (delegate_)
+      metadata_filter = delegate_->GetMetadataFilterPredicate();
   }
-  agents_.push_back(std::move(chrome_agent));
-}
 
-std::unique_ptr<base::DictionaryValue>
-TracingControllerImpl::GenerateMetadataDict() const {
-  auto metadata_dict = base::MakeUnique<base::DictionaryValue>();
-  metadata_dict->SetString("trace-config", trace_config_->ToString());
+  if (!metadata_filter.is_null()) {
+    for (base::DictionaryValue::Iterator it(*metadata_dict); !it.IsAtEnd();
+         it.Advance()) {
+      if (!metadata_filter.Run(it.key())) {
+        metadata_dict->SetString(it.key(), "__stripped__");
+      }
+    }
+  }
+
   return metadata_dict;
 }
 
@@ -280,8 +283,12 @@ bool TracingControllerImpl::StartTracing(
     const base::trace_event::TraceConfig& trace_config,
     const StartTracingDoneCallback& callback) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
+  // TODO(chiniforooshan): The actual value should be received by callback and
+  // this function should return void.
+  if (IsTracing())
+    return false;
   trace_config_ =
-      base::MakeUnique<base::trace_event::TraceConfig>(trace_config);
+      std::make_unique<base::trace_event::TraceConfig>(trace_config);
   coordinator_->StartTracing(
       trace_config.ToString(),
       base::BindRepeating(
@@ -365,7 +372,7 @@ void TracingControllerImpl::OnDataAvailable(const void* data,
   if (trace_data_endpoint_) {
     const std::string chunk(static_cast<const char*>(data), num_bytes);
     trace_data_endpoint_->ReceiveTraceChunk(
-        base::MakeUnique<std::string>(chunk));
+        std::make_unique<std::string>(chunk));
   }
 }
 
@@ -374,6 +381,7 @@ void TracingControllerImpl::CompleteFlush() {
     trace_data_endpoint_->ReceiveTraceFinalContents(
         std::move(filtered_metadata_));
   }
+  filtered_metadata_.reset(nullptr);
   trace_data_endpoint_ = nullptr;
   trace_config_ = nullptr;
 }
@@ -396,12 +404,12 @@ void TracingControllerImpl::OnMetadataAvailable(
   if (metadata_filter.is_null()) {
     filtered_metadata_ = std::move(metadata);
   } else {
-    filtered_metadata_ = base::MakeUnique<base::DictionaryValue>();
+    filtered_metadata_ = std::make_unique<base::DictionaryValue>();
     for (base::DictionaryValue::Iterator it(*metadata); !it.IsAtEnd();
          it.Advance()) {
       if (metadata_filter.Run(it.key())) {
         filtered_metadata_->Set(
-            it.key(), base::MakeUnique<base::Value>(it.value().Clone()));
+            it.key(), std::make_unique<base::Value>(it.value().Clone()));
       } else {
         filtered_metadata_->SetString(it.key(), "__stripped__");
       }

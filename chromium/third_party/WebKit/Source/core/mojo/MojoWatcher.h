@@ -5,10 +5,10 @@
 #ifndef MojoWatcher_h
 #define MojoWatcher_h
 
+#include "bindings/core/v8/ActiveScriptWrappable.h"
 #include "core/dom/ContextLifecycleObserver.h"
 #include "mojo/public/cpp/system/handle.h"
 #include "mojo/public/cpp/system/watcher.h"
-#include "platform/bindings/ActiveScriptWrappable.h"
 #include "platform/bindings/ScriptWrappable.h"
 #include "platform/bindings/TraceWrapperMember.h"
 
@@ -18,9 +18,8 @@ class ExecutionContext;
 class MojoHandleSignals;
 class V8MojoWatchCallback;
 
-class MojoWatcher final : public GarbageCollectedFinalized<MojoWatcher>,
+class MojoWatcher final : public ScriptWrappable,
                           public ActiveScriptWrappable<MojoWatcher>,
-                          public ScriptWrappable,
                           public ContextLifecycleObserver {
   DEFINE_WRAPPERTYPEINFO();
   USING_GARBAGE_COLLECTED_MIXIN(MojoWatcher);
@@ -34,8 +33,8 @@ class MojoWatcher final : public GarbageCollectedFinalized<MojoWatcher>,
 
   MojoResult cancel();
 
-  DECLARE_TRACE();
-  DECLARE_TRACE_WRAPPERS();
+  void Trace(blink::Visitor*);
+  void TraceWrappers(const ScriptWrappableVisitor*) const;
 
   // ActiveScriptWrappable
   bool HasPendingActivity() const final;
@@ -56,7 +55,7 @@ class MojoWatcher final : public GarbageCollectedFinalized<MojoWatcher>,
                             MojoWatcherNotificationFlags);
   void RunReadyCallback(MojoResult);
 
-  RefPtr<WebTaskRunner> task_runner_;
+  scoped_refptr<WebTaskRunner> task_runner_;
   TraceWrapperMember<V8MojoWatchCallback> callback_;
   mojo::ScopedWatcherHandle watcher_handle_;
   mojo::Handle handle_;

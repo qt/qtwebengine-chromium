@@ -73,12 +73,12 @@ class ImageEventListener : public EventListener {
   static const ImageEventListener* Cast(const EventListener* listener) {
     return listener->GetType() == kImageEventListenerType
                ? static_cast<const ImageEventListener*>(listener)
-               : 0;
+               : nullptr;
   }
 
   bool operator==(const EventListener& other) const override;
 
-  DEFINE_INLINE_VIRTUAL_TRACE() {
+  virtual void Trace(blink::Visitor* visitor) {
     visitor->Trace(doc_);
     EventListener::Trace(visitor);
   }
@@ -158,7 +158,7 @@ void ImageDocumentParser::Finish() {
     cached_image->SetResponse(loader->GetResponse());
     cached_image->Finish(
         loader->GetTiming().ResponseEnd(),
-        TaskRunnerHelper::Get(TaskType::kUnspecedLoading, GetDocument()).get());
+        GetDocument()->GetTaskRunner(TaskType::kUnspecedLoading).get());
 
     // Report the natural image size in the page title, regardless of zoom
     // level.  At a zoom level of 1 the image is guaranteed to have an integer
@@ -213,10 +213,9 @@ DocumentParser* ImageDocument::CreateParser() {
 IntSize ImageDocument::ImageSize() const {
   DCHECK(image_element_);
   DCHECK(image_element_->CachedImage());
-  return FlooredIntSize(image_element_->CachedImage()->ImageSize(
+  return image_element_->CachedImage()->IntrinsicSize(
       LayoutObject::ShouldRespectImageOrientation(
-          image_element_->GetLayoutObject()),
-      1.0f));
+          image_element_->GetLayoutObject()));
 }
 
 void ImageDocument::CreateDocumentStructure() {
@@ -598,7 +597,7 @@ bool ImageDocument::ShouldShrinkToFit() const {
   return GetFrame()->IsMainFrame() && !is_wrap_content_web_view;
 }
 
-DEFINE_TRACE(ImageDocument) {
+void ImageDocument::Trace(blink::Visitor* visitor) {
   visitor->Trace(div_element_);
   visitor->Trace(image_element_);
   HTMLDocument::Trace(visitor);

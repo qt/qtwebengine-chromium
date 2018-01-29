@@ -469,8 +469,30 @@ class JPEGImageReader final {
           JOCTET* profile = nullptr;
           unsigned profile_length = 0;
           if (read_icc_profile(Info(), &profile, &profile_length)) {
-            Decoder()->SetEmbeddedColorProfile(reinterpret_cast<char*>(profile),
-                                               profile_length);
+            sk_sp<SkColorSpace> color_space =
+                SkColorSpace::MakeICC(profile, profile_length);
+            if (color_space) {
+              const SkColorSpace::Type type = color_space->type();
+              switch (info_.jpeg_color_space) {
+                case JCS_CMYK:
+                case JCS_YCCK:
+                  if (type != SkColorSpace::kCMYK_Type)
+                    color_space = nullptr;
+                  break;
+                case JCS_GRAYSCALE:
+                  if (type != SkColorSpace::kGray_Type &&
+                      type != SkColorSpace::kRGB_Type)
+                    color_space = nullptr;
+                  break;
+                default:
+                  if (type != SkColorSpace::kRGB_Type)
+                    color_space = nullptr;
+                  break;
+              }
+              Decoder()->SetEmbeddedColorSpace(std::move(color_space));
+            } else {
+              DLOG(ERROR) << "Failed to parse image ICC profile";
+            }
             free(profile);
           }
           if (Decoder()->ColorTransform()) {
@@ -522,7 +544,7 @@ class JPEGImageReader final {
         info_.enable_external_quant = false;
         info_.enable_1pass_quant = false;
         info_.quantize_colors = false;
-        info_.colormap = 0;
+        info_.colormap = nullptr;
 
         // Make a one-row-high sample array that will go away when done with
         // image. Always make it big enough to hold one RGBA row. Since this
@@ -660,7 +682,7 @@ class JPEGImageReader final {
     last_set_byte_ = nullptr;
   }
 
-  RefPtr<SegmentReader> data_;
+  scoped_refptr<SegmentReader> data_;
   JPEGImageDecoder* decoder_;
 
   // Input reading: True if we need to back up to restart_position_.
@@ -700,7 +722,7 @@ void emit_message(j_common_ptr cinfo, int msg_level) {
   err->pub.num_warnings++;
 
   // Detect and count corrupt JPEG warning messages.
-  const char* warning = 0;
+  const char* warning = nullptr;
   int code = err->pub.msg_code;
   if (code > 0 && code <= err->pub.last_jpeg_message)
     warning = err->pub.jpeg_message_table[code];
@@ -881,10 +903,12 @@ bool OutputRows(JPEGImageReader* reader, ImageFrame& buffer) {
       SetPixel<colorSpace>(pixel, samples, x);
 
     SkColorSpaceXform* xform = reader->Decoder()->ColorTransform();
-    if (JCS_RGB == colorSpace && xform) {
+    if (xform) {
       ImageFrame::PixelData* row = buffer.GetAddr(0, y);
-      xform->apply(XformColorFormat(), row, XformColorFormat(), row, width,
-                   kOpaque_SkAlphaType);
+      bool color_converison_successful =
+          xform->apply(XformColorFormat(), row, XformColorFormat(), row, width,
+                       kOpaque_SkAlphaType);
+      DCHECK(color_converison_successful);
     }
   }
 
@@ -990,8 +1014,10 @@ bool JPEGImageDecoder::OutputScanlines() {
 
       SkColorSpaceXform* xform = ColorTransform();
       if (xform) {
-        xform->apply(XformColorFormat(), row, XformColorFormat(), row,
-                     info->output_width, kOpaque_SkAlphaType);
+        bool color_converison_successful =
+            xform->apply(XformColorFormat(), row, XformColorFormat(), row,
+                         info->output_width, kOpaque_SkAlphaType);
+        DCHECK(color_converison_successful);
       }
     }
     buffer.SetPixelsChanged(true);

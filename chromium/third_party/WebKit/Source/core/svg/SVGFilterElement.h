@@ -33,6 +33,8 @@
 
 namespace blink {
 
+class SVGFilterPrimitiveStandardAttributes;
+
 class CORE_EXPORT SVGFilterElement final : public SVGElement,
                                            public SVGURIReference {
   DEFINE_WRAPPERTYPEINFO();
@@ -40,7 +42,7 @@ class CORE_EXPORT SVGFilterElement final : public SVGElement,
 
  public:
   DECLARE_NODE_FACTORY(SVGFilterElement);
-  DECLARE_VIRTUAL_TRACE();
+  virtual void Trace(blink::Visitor*);
 
   ~SVGFilterElement() override;
 
@@ -54,6 +56,13 @@ class CORE_EXPORT SVGFilterElement final : public SVGElement,
   SVGAnimatedEnumeration<SVGUnitTypes::SVGUnitType>* primitiveUnits() {
     return primitive_units_.Get();
   }
+
+  // Fine-grained invalidation of a specific property on a specific primitive.
+  void PrimitiveAttributeChanged(SVGFilterPrimitiveStandardAttributes&,
+                                 const QualifiedName&);
+
+  // Invalidate the entire filter chain.
+  void InvalidateFilterChain();
 
  private:
   explicit SVGFilterElement(Document&);

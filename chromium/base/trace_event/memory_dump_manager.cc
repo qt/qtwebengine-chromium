@@ -60,9 +60,7 @@ void DoGlobalDumpWithoutCallback(
     MemoryDumpManager::RequestGlobalDumpFunction global_dump_fn,
     MemoryDumpType dump_type,
     MemoryDumpLevelOfDetail level_of_detail) {
-  // The actual dump_guid will be set by service. TODO(primiano): remove
-  // guid from the request args API.
-  MemoryDumpRequestArgs args{0 /* dump_guid */, dump_type, level_of_detail};
+  GlobalMemoryDumpRequestArgs args{dump_type, level_of_detail};
   global_dump_fn.Run(args);
 }
 
@@ -265,7 +263,7 @@ bool MemoryDumpManager::EnableHeapProfiling(HeapProfilingMode profiling_mode) {
 
     case kHeapProfilingModeBackground:
       AllocationContextTracker::SetCaptureMode(
-          AllocationContextTracker::CaptureMode::PSEUDO_STACK);
+          AllocationContextTracker::CaptureMode::MIXED_STACK);
       break;
 
     case kHeapProfilingModePseudo:
@@ -598,18 +596,32 @@ void MemoryDumpManager::SetupNextMemoryDump(
   // If we are in background tracing, we should invoke only the whitelisted
   // providers. Ignore other providers and continue.
   if (pmd_async_state->req_args.level_of_detail ==
-          MemoryDumpLevelOfDetail::BACKGROUND &&
-      !mdpinfo->whitelisted_for_background_mode) {
-    pmd_async_state->pending_dump_providers.pop_back();
-    return SetupNextMemoryDump(std::move(pmd_async_state));
+      MemoryDumpLevelOfDetail::BACKGROUND) {
+    // TODO(ssid): This is a temporary hack to fix crashes
+    // https://crbug.com/797784. We could still cause stack overflow in a
+    // detailed mode dump or when there are lot of providers whitelisted.
+    while (!mdpinfo->whitelisted_for_background_mode) {
+      pmd_async_state->pending_dump_providers.pop_back();
+      if (pmd_async_state->pending_dump_providers.empty())
+        return FinishAsyncProcessDump(std::move(pmd_async_state));
+      mdpinfo = pmd_async_state->pending_dump_providers.back().get();
+    }
   }
 
   // If we are in summary mode, we only need to invoke the providers
   // whitelisted for summary mode.
-  if (pmd_async_state->req_args.dump_type == MemoryDumpType::SUMMARY_ONLY &&
-      !mdpinfo->whitelisted_for_summary_mode) {
-    pmd_async_state->pending_dump_providers.pop_back();
-    return SetupNextMemoryDump(std::move(pmd_async_state));
+  if (pmd_async_state->req_args.dump_type == MemoryDumpType::SUMMARY_ONLY) {
+    // TODO(ssid): This is a temporary hack to fix crashes
+    // https://crbug.com/797784. We could still cause stack overflow in a
+    // detailed mode dump or when there are lot of providers whitelisted. It is
+    // assumed here that a provider whitelisted for summary mode is also
+    // whitelisted for background mode and skip the check.
+    while (!mdpinfo->whitelisted_for_summary_mode) {
+      pmd_async_state->pending_dump_providers.pop_back();
+      if (pmd_async_state->pending_dump_providers.empty())
+        return FinishAsyncProcessDump(std::move(pmd_async_state));
+      mdpinfo = pmd_async_state->pending_dump_providers.back().get();
+    }
   }
 
   // If the dump provider did not specify a task runner affinity, dump on
@@ -643,8 +655,8 @@ void MemoryDumpManager::SetupNextMemoryDump(
   // The utility thread is normally shutdown when disabling the trace and
   // getting here in this case is expected.
   if (mdpinfo->task_runner) {
-    LOG(ERROR) << "Disabling MemoryDumpProvider \"" << mdpinfo->name
-               << "\". Failed to post task on the task runner provided.";
+    DLOG(ERROR) << "Disabling MemoryDumpProvider \"" << mdpinfo->name
+                << "\". Failed to post task on the task runner provided.";
 
     // A locked access is required to R/W |disabled| (for the
     // UnregisterAndDeleteDumpProviderSoon() case).
@@ -932,8 +944,8 @@ MemoryDumpManager::ProcessMemoryDumpAsyncState::ProcessMemoryDumpAsyncState(
       MakeUnique<ProcessMemoryDump>(heap_profiler_serialization_state, args);
 }
 
-MemoryDumpManager::ProcessMemoryDumpAsyncState::~ProcessMemoryDumpAsyncState() {
-}
+MemoryDumpManager::ProcessMemoryDumpAsyncState::~ProcessMemoryDumpAsyncState() =
+    default;
 
 }  // namespace trace_event
 }  // namespace base

@@ -83,8 +83,8 @@ class MockAudioManager : public AudioManagerPlatform {
 
     for (size_t i = 0; i < num_input_devices_; i++) {
       device_names->push_back(media::AudioDeviceName(
-          std::string("fake_device_name_") + base::SizeTToString(i),
-          std::string("fake_device_id_") + base::SizeTToString(i)));
+          std::string("fake_device_name_") + base::NumberToString(i),
+          std::string("fake_device_id_") + base::NumberToString(i)));
     }
   }
 
@@ -98,8 +98,8 @@ class MockAudioManager : public AudioManagerPlatform {
 
     for (size_t i = 0; i < num_output_devices_; i++) {
       device_names->push_back(media::AudioDeviceName(
-          std::string("fake_device_name_") + base::SizeTToString(i),
-          std::string("fake_device_id_") + base::SizeTToString(i)));
+          std::string("fake_device_name_") + base::NumberToString(i),
+          std::string("fake_device_id_") + base::NumberToString(i)));
     }
   }
 
@@ -160,7 +160,7 @@ class MediaStreamManagerTest : public ::testing::Test {
     const int render_frame_id = 1;
     const int page_request_id = 1;
     const url::Origin security_origin;
-    MediaStreamManager::MediaRequestResponseCallback callback =
+    MediaStreamManager::MediaAccessRequestCallback callback =
         base::BindOnce(&MediaStreamManagerTest::ResponseCallback,
                        base::Unretained(this), index);
     StreamControls controls(true, true);
@@ -207,7 +207,7 @@ TEST_F(MediaStreamManagerTest, MakeMultipleRequests) {
   int page_request_id = 2;
   url::Origin security_origin;
   StreamControls controls(true, true);
-  MediaStreamManager::MediaRequestResponseCallback callback = base::BindOnce(
+  MediaStreamManager::MediaAccessRequestCallback callback = base::BindOnce(
       &MediaStreamManagerTest::ResponseCallback, base::Unretained(this), 1);
   std::string label2 = media_stream_manager_->MakeMediaAccessRequest(
       render_process_id, render_frame_id, page_request_id, controls,
@@ -233,7 +233,7 @@ TEST_F(MediaStreamManagerTest, MakeAndCancelMultipleRequests) {
 }
 
 TEST_F(MediaStreamManagerTest, DeviceID) {
-  url::Origin security_origin(GURL("http://localhost"));
+  url::Origin security_origin = url::Origin::Create(GURL("http://localhost"));
   const std::string unique_default_id(
       media::AudioDeviceDescription::kDefaultDeviceId);
   const std::string hashed_default_id =

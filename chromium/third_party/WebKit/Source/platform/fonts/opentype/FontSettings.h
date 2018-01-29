@@ -5,10 +5,11 @@
 #ifndef FontSettings_h
 #define FontSettings_h
 
+#include "base/macros.h"
+#include "base/memory/scoped_refptr.h"
 #include "platform/PlatformExport.h"
 #include "platform/wtf/Allocator.h"
 #include "platform/wtf/RefCounted.h"
-#include "platform/wtf/RefPtr.h"
 #include "platform/wtf/Vector.h"
 #include "platform/wtf/text/AtomicString.h"
 #include "platform/wtf/text/StringBuilder.h"
@@ -38,8 +39,6 @@ class FontTagValuePair {
 
 template <typename T>
 class FontSettings {
-  WTF_MAKE_NONCOPYABLE(FontSettings);
-
  public:
   void Append(const T& feature) { list_.push_back(feature); }
   size_t size() const { return list_.size(); }
@@ -63,10 +62,12 @@ class FontSettings {
   }
 
  protected:
-  FontSettings(){};
+  FontSettings() = default;
 
  private:
   Vector<T, 0> list_;
+
+  DISALLOW_COPY_AND_ASSIGN(FontSettings);
 };
 
 using FontFeature = FontTagValuePair<int>;
@@ -75,11 +76,11 @@ using FontVariationAxis = FontTagValuePair<float>;
 class PLATFORM_EXPORT FontFeatureSettings
     : public FontSettings<FontFeature>,
       public RefCounted<FontFeatureSettings> {
-  WTF_MAKE_NONCOPYABLE(FontFeatureSettings);
+  DISALLOW_COPY_AND_ASSIGN(FontFeatureSettings);
 
  public:
-  static RefPtr<FontFeatureSettings> Create() {
-    return WTF::AdoptRef(new FontFeatureSettings());
+  static scoped_refptr<FontFeatureSettings> Create() {
+    return base::AdoptRef(new FontFeatureSettings());
   }
 
  private:
@@ -89,11 +90,11 @@ class PLATFORM_EXPORT FontFeatureSettings
 class PLATFORM_EXPORT FontVariationSettings
     : public FontSettings<FontVariationAxis>,
       public RefCounted<FontVariationSettings> {
-  WTF_MAKE_NONCOPYABLE(FontVariationSettings);
+  DISALLOW_COPY_AND_ASSIGN(FontVariationSettings);
 
  public:
-  static RefPtr<FontVariationSettings> Create() {
-    return WTF::AdoptRef(new FontVariationSettings());
+  static scoped_refptr<FontVariationSettings> Create() {
+    return base::AdoptRef(new FontVariationSettings());
   }
 
   unsigned GetHash() const;

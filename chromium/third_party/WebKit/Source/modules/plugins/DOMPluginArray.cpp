@@ -29,7 +29,6 @@
 #include "modules/plugins/NavigatorPlugins.h"
 #include "platform/plugins/PluginData.h"
 #include "platform/wtf/Vector.h"
-#include "platform/wtf/debug/Alias.h"
 #include "platform/wtf/text/AtomicString.h"
 
 namespace blink {
@@ -40,10 +39,11 @@ DOMPluginArray::DOMPluginArray(LocalFrame* frame)
   UpdatePluginData();
 }
 
-DEFINE_TRACE(DOMPluginArray) {
+void DOMPluginArray::Trace(blink::Visitor* visitor) {
+  visitor->Trace(dom_plugins_);
+  ScriptWrappable::Trace(visitor);
   ContextLifecycleObserver::Trace(visitor);
   PluginsChangedObserver::Trace(visitor);
-  visitor->Trace(dom_plugins_);
 }
 
 unsigned DOMPluginArray::length() const {

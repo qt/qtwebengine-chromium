@@ -155,7 +155,7 @@ void MediaStreamVideoTrack::FrameDeliverer::SetEnabledOnIO(bool enabled) {
   DCHECK(io_task_runner_->BelongsToCurrentThread());
   enabled_ = enabled;
   if (enabled_)
-    black_frame_ = NULL;
+    black_frame_ = nullptr;
 }
 
 void MediaStreamVideoTrack::FrameDeliverer::DeliverFrameOnIO(
@@ -258,7 +258,7 @@ MediaStreamVideoTrack::MediaStreamVideoTrack(
       frame_deliverer_(
           new MediaStreamVideoTrack::FrameDeliverer(source->io_task_runner(),
                                                     enabled)),
-      adapter_settings_(base::MakeUnique<VideoTrackAdapterSettings>(
+      adapter_settings_(std::make_unique<VideoTrackAdapterSettings>(
           VideoTrackAdapterSettings())),
       is_screencast_(false),
       source_(source->GetWeakPtr()) {
@@ -282,7 +282,7 @@ MediaStreamVideoTrack::MediaStreamVideoTrack(
           new MediaStreamVideoTrack::FrameDeliverer(source->io_task_runner(),
                                                     enabled)),
       adapter_settings_(
-          base::MakeUnique<VideoTrackAdapterSettings>(adapter_settings)),
+          std::make_unique<VideoTrackAdapterSettings>(adapter_settings)),
       noise_reduction_(noise_reduction),
       is_screencast_(is_screen_cast),
       min_frame_rate_(min_frame_rate),
@@ -348,11 +348,13 @@ void MediaStreamVideoTrack::SetContentHint(
     sink->OnContentHintChanged(content_hint);
 }
 
-void MediaStreamVideoTrack::Stop() {
+void MediaStreamVideoTrack::StopAndNotify(base::OnceClosure callback) {
   DCHECK(main_render_thread_checker_.CalledOnValidThread());
   if (source_) {
-    source_->RemoveTrack(this);
-    source_ = NULL;
+    source_->RemoveTrack(this, std::move(callback));
+    source_ = nullptr;
+  } else if (callback) {
+    std::move(callback).Run();
   }
   OnReadyStateChanged(blink::WebMediaStreamSource::kReadyStateEnded);
 }

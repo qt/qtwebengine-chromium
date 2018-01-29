@@ -578,6 +578,7 @@ int FuzzerDriver(int *argc, char ***argv, UserCallback Callback) {
   Options.ReloadIntervalSec = Flags.reload;
   Options.OnlyASCII = Flags.only_ascii;
   Options.DetectLeaks = Flags.detect_leaks;
+  Options.PurgeAllocatorIntervalSec = Flags.purge_allocator_interval;
   Options.TraceMalloc = Flags.trace_malloc;
   Options.RssLimitMb = Flags.rss_limit_mb;
   if (Flags.runs >= 0)
@@ -605,6 +606,7 @@ int FuzzerDriver(int *argc, char ***argv, UserCallback Callback) {
   Options.PrintCoverage = Flags.print_coverage;
   Options.DumpCoverage = Flags.dump_coverage;
   Options.UseClangCoverage = Flags.use_clang_coverage;
+  Options.UseFeatureFrequency = Flags.use_feature_frequency;
   if (Flags.exit_on_src_pos)
     Options.ExitOnSrcPos = Flags.exit_on_src_pos;
   if (Flags.exit_on_item)
@@ -637,6 +639,8 @@ int FuzzerDriver(int *argc, char ***argv, UserCallback Callback) {
   Options.HandleSegv = Flags.handle_segv;
   Options.HandleTerm = Flags.handle_term;
   Options.HandleXfsz = Flags.handle_xfsz;
+  Options.HandleUsr1 = Flags.handle_usr1;
+  Options.HandleUsr2 = Flags.handle_usr2;
   SetSignalHandler(Options);
 
   std::atexit(Fuzzer::StaticExitCallback);
@@ -699,19 +703,21 @@ int FuzzerDriver(int *argc, char ***argv, UserCallback Callback) {
   }
 
   if (Flags.merge) {
-    const size_t kDefaultMaxMergeLen = 1 << 20;
-    if (Options.MaxLen == 0)
-      F->SetMaxInputLen(kDefaultMaxMergeLen);
-
-    if (Flags.merge_control_file)
-      F->CrashResistantMergeInternalStep(Flags.merge_control_file);
-    else
-      F->CrashResistantMerge(Args, *Inputs,
-                             Flags.load_coverage_summary,
-                             Flags.save_coverage_summary);
+    F->CrashResistantMerge(Args, *Inputs,
+                           Flags.load_coverage_summary,
+                           Flags.save_coverage_summary,
+                           Flags.merge_control_file);
     exit(0);
   }
 
+  if (Flags.merge_inner) {
+    const size_t kDefaultMaxMergeLen = 1 << 20;
+    if (Options.MaxLen == 0)
+      F->SetMaxInputLen(kDefaultMaxMergeLen);
+    assert(Flags.merge_control_file);
+    F->CrashResistantMergeInternalStep(Flags.merge_control_file);
+    exit(0);
+  }
 
   if (Flags.analyze_dict) {
     size_t MaxLen = INT_MAX;  // Large max length.

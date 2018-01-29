@@ -77,6 +77,10 @@ bool NGLayoutInputNode::IsReplaced() const {
   return box_->IsLayoutReplaced();
 }
 
+bool NGLayoutInputNode::ShouldBeConsideredAsReplaced() const {
+  return box_->ShouldBeConsideredAsReplaced();
+}
+
 bool NGLayoutInputNode::IsQuirkyContainer() const {
   return box_->GetDocument().InQuirksMode() &&
          (box_->IsBody() || box_->IsTableCell());
@@ -94,8 +98,9 @@ bool NGLayoutInputNode::CreatesNewFormattingContext() const {
   return IsBlock() && box_->AvoidsFloats();
 }
 
-RefPtr<NGLayoutResult> NGLayoutInputNode::Layout(const NGConstraintSpace& space,
-                                                 NGBreakToken* break_token) {
+scoped_refptr<NGLayoutResult> NGLayoutInputNode::Layout(
+    const NGConstraintSpace& space,
+    NGBreakToken* break_token) {
   return IsInline() ? ToNGInlineNode(*this).Layout(space, break_token)
                     : ToNGBlockNode(*this).Layout(space, break_token);
 }
@@ -136,6 +141,10 @@ NGLayoutInputNode NGLayoutInputNode::NextSibling() {
                     : ToNGBlockNode(*this).NextSibling();
 }
 
+Document& NGLayoutInputNode::GetDocument() const {
+  return box_->GetDocument();
+}
+
 LayoutObject* NGLayoutInputNode::GetLayoutObject() const {
   return box_;
 }
@@ -152,7 +161,7 @@ String NGLayoutInputNode::ToString() const {
 #ifndef NDEBUG
 void NGLayoutInputNode::ShowNodeTree() const {
   StringBuilder string_builder;
-  string_builder.Append("\n.:: LayoutNG Node Tree ::.\n\n");
+  string_builder.Append(".:: LayoutNG Node Tree ::.\n");
   AppendNodeToString(*this, &string_builder);
   fprintf(stderr, "%s\n", string_builder.ToString().Utf8().data());
 }

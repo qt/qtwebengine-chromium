@@ -185,6 +185,9 @@ class PLATFORM_EXPORT IntRect {
 
   String ToString() const;
 
+  // Return false if x + width or y + height overflows.
+  bool IsValid() const;
+
  private:
   IntPoint location_;
   IntSize size_;
@@ -219,6 +222,8 @@ inline bool operator==(const IntRect& a, const IntRect& b) {
 inline bool operator!=(const IntRect& a, const IntRect& b) {
   return a.Location() != b.Location() || a.Size() != b.Size();
 }
+
+PLATFORM_EXPORT std::ostream& operator<<(std::ostream&, const IntRect&);
 
 // Redeclared here to avoid ODR issues.
 // See platform/testing/GeometryPrinters.h.

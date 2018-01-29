@@ -17,7 +17,7 @@
         'angle_build_winrt%': '<(angle_build_winrt)',
 
         'deqp_path': '<(DEPTH)/third_party/deqp/src',
-        'libpng_path': '<(DEPTH)/third_party/libpng',
+        'libpng_path': '<(DEPTH)/third_party/libpng/src',
         'zlib_path': '<(DEPTH)/third_party/zlib',
 
         'angle_build_deqp_libraries%' : 0,
@@ -108,8 +108,6 @@
             '<(deqp_path)/modules/gles31/stress',
             '<(deqp_path)/modules/glshared',
             '<(deqp_path)/modules/glusecases',
-            '<(libpng_path)',
-            '<(zlib_path)',
         ],
         'deqp_gles2_sources':
         [
@@ -1200,6 +1198,11 @@
             'third_party/gpu_test_expectations/gpu_test_expectations_parser.cc',
             'third_party/gpu_test_expectations/gpu_test_expectations_parser.h',
         ],
+        'deqp_gpu_test_expectations_sources_mac':
+        [
+            'third_party/gpu_test_expectations/gpu_test_config_mac.mm',
+            'third_party/gpu_test_expectations/gpu_test_config_mac.h',
+        ],
         'conditions':
         [
             ['(OS=="win" or OS=="linux" or OS=="mac")',
@@ -1468,7 +1471,12 @@
                             '-fno-exceptions',
                             '-fno-rtti',
                         ],
-                        'include_dirs': ['<@(deqp_include_dirs)'],
+                        'include_dirs':
+                        [
+                            '<@(deqp_include_dirs)',
+                            '<(libpng_path)',
+                            '<(zlib_path)',
+                        ],
                         'defines': ['<@(deqp_defines)'],
                         'defines!': [ '<@(deqp_undefines)' ],
                         'msvs_settings':
@@ -1854,8 +1862,7 @@
                             {
                                 'sources':
                                 [
-                                    'third_party/gpu_test_expectations/gpu_test_config_mac.h',
-                                    'third_party/gpu_test_expectations/gpu_test_config_mac.mm',
+                                    '<@(deqp_gpu_test_expectations_sources_mac)',
                                 ],
                             }],
                         ],

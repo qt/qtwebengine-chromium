@@ -91,7 +91,6 @@
 <translation id="5941711191222866238">Minimiziraj</translation>
 <translation id="5943826764092288734">{HOURS,plural, =1{1 sat}one{# sat}few{# sata}other{# sati}}</translation>
 <translation id="5948410903763073882">Alt+<ph name="KEY_COMBO_NAME" /></translation>
-<translation id="598033046487663418">Sve aplikacije</translation>
 <translation id="6012623610530968780"><ph name="SELECTED_PAGE" />. stranica od <ph name="TOTAL_PAGE_NUM" /></translation>
 <translation id="6022924867608035986">Brisanje teksta u okviru za pretraživanje</translation>
 <translation id="6040143037577758943">Zatvori</translation>
@@ -144,6 +143,7 @@
 <translation id="8352146631962686268">{YEARS,plural, =1{1 godina}one{# godina}few{# godine}other{# godina}}</translation>
 <translation id="8371695176452482769">Govorite sad</translation>
 <translation id="838869780401515933">označi</translation>
+<translation id="8393700583063109961">Pošaljite poruku</translation>
 <translation id="8394908167088220973">Reproduciraj/pauziraj Medije</translation>
 <translation id="8400147561352026160">Shift+<ph name="KEY_COMBO_NAME" /></translation>
 <translation id="8458811141851741261">{YEARS,plural, =1{1 g}one{# g}few{# g}other{# g}}</translation>

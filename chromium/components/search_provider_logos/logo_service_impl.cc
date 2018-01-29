@@ -146,12 +146,12 @@ LogoServiceImpl::LogoServiceImpl(
     TemplateURLService* template_url_service,
     std::unique_ptr<image_fetcher::ImageDecoder> image_decoder,
     scoped_refptr<net::URLRequestContextGetter> request_context_getter,
-    bool use_gray_background)
+    base::RepeatingCallback<bool()> want_gray_logo_getter)
     : LogoService(),
       cache_directory_(cache_directory),
       template_url_service_(template_url_service),
       request_context_getter_(request_context_getter),
-      use_gray_background_(use_gray_background),
+      want_gray_logo_getter_(std::move(want_gray_logo_getter)),
       image_decoder_(std::move(image_decoder)) {}
 
 LogoServiceImpl::~LogoServiceImpl() = default;
@@ -198,8 +198,7 @@ void LogoServiceImpl::GetLogo(LogoCallbacks callbacks) {
   const bool is_google = template_url->url_ref().HasGoogleBaseURLs(
       template_url_service_->search_terms_data());
   if (is_google) {
-    // TODO(treib): After features::kUseDdljsonApi has launched, put the Google
-    // doodle URL into prepopulated_engines.json.
+    // TODO(treib): Put the Google doodle URL into prepopulated_engines.json.
     base_url =
         GURL(template_url_service_->search_terms_data().GoogleBaseURLValue());
     doodle_url = search_provider_logos::GetGoogleDoodleURL(base_url);
@@ -250,21 +249,15 @@ void LogoServiceImpl::GetLogo(LogoCallbacks callbacks) {
     logo_tracker_->SetServerAPI(
         logo_url, base::Bind(&search_provider_logos::ParseFixedLogoResponse),
         base::Bind(&search_provider_logos::UseFixedLogoUrl));
-  } else if (is_google) {
-    // TODO(treib): Get rid of this Google special case after
-    // features::kUseDdljsonApi has launched.
-    logo_tracker_->SetServerAPI(
-        doodle_url,
-        search_provider_logos::GetGoogleParseLogoResponseCallback(base_url),
-        search_provider_logos::GetGoogleAppendQueryparamsCallback(
-            use_gray_background_));
   } else {
+    // We encode the type of doodle (regular or gray) in the URL so that the
+    // logo cache gets cleared when that value changes.
+    GURL prefilled_url = AppendPreliminaryParamsToDoodleURL(
+        want_gray_logo_getter_.Run(), doodle_url);
     logo_tracker_->SetServerAPI(
-        doodle_url,
-        base::Bind(&search_provider_logos::GoogleNewParseLogoResponse,
-                   base_url),
-        base::Bind(&search_provider_logos::GoogleNewAppendQueryparamsToLogoURL,
-                   use_gray_background_));
+        prefilled_url,
+        base::Bind(&search_provider_logos::ParseDoodleLogoResponse, base_url),
+        base::Bind(&search_provider_logos::AppendFingerprintParamToDoodleURL));
   }
 
   logo_tracker_->GetLogo(std::move(callbacks));

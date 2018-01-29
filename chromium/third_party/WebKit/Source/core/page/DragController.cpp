@@ -28,6 +28,7 @@
 
 #include <memory>
 
+#include "base/memory/scoped_refptr.h"
 #include "bindings/core/v8/ExceptionState.h"
 #include "build/build_config.h"
 #include "core/clipboard/DataObject.h"
@@ -85,8 +86,7 @@
 #include "platform/loader/fetch/ResourceRequest.h"
 #include "platform/weborigin/SecurityOrigin.h"
 #include "platform/wtf/Assertions.h"
-#include "platform/wtf/CurrentTime.h"
-#include "platform/wtf/RefPtr.h"
+#include "platform/wtf/Time.h"
 #include "public/platform/WebCommon.h"
 #include "public/platform/WebDragData.h"
 #include "public/platform/WebDragOperation.h"
@@ -245,8 +245,8 @@ void DragController::DragExited(DragData* drag_data, LocalFrame& local_root) {
 void DragController::PerformDrag(DragData* drag_data, LocalFrame& local_root) {
   DCHECK(drag_data);
   document_under_mouse_ =
-      local_root.DocumentAtPoint(drag_data->ClientPosition());
-  std::unique_ptr<UserGestureIndicator> gesture = LocalFrame::CreateUserGesture(
+      local_root.DocumentAtPoint(LayoutPoint(drag_data->ClientPosition()));
+  std::unique_ptr<UserGestureIndicator> gesture = Frame::NotifyUserActivation(
       document_under_mouse_ ? document_under_mouse_->GetFrame() : nullptr,
       UserGestureToken::kNewGesture);
   if ((drag_destination_action_ & kDragDestinationActionDHTML) &&
@@ -265,8 +265,8 @@ void DragController::PerformDrag(DragData* drag_data, LocalFrame& local_root) {
       if (!prevented_default) {
         // When drop target is plugin element and it can process drag, we
         // should prevent default behavior.
-        const IntPoint point =
-            local_root.View()->RootFrameToContents(drag_data->ClientPosition());
+        const LayoutPoint point = local_root.View()->RootFrameToContents(
+            LayoutPoint(drag_data->ClientPosition()));
         const HitTestResult result = event_handler.HitTestResultAtPoint(point);
         prevented_default |=
             IsHTMLPlugInElement(*result.InnerNode()) &&
@@ -321,7 +321,7 @@ DragSession DragController::DragEnteredOrUpdated(DragData* drag_data,
   DCHECK(drag_data);
 
   MouseMovedIntoDocument(
-      local_root.DocumentAtPoint(drag_data->ClientPosition()));
+      local_root.DocumentAtPoint(LayoutPoint(drag_data->ClientPosition())));
 
   // TODO(esprehn): Replace acceptsLoadDrops with a Setting used in core.
   drag_destination_action_ =
@@ -351,7 +351,7 @@ static HTMLInputElement* AsFileInput(Node* node) {
 
 // This can return null if an empty document is loaded.
 static Element* ElementUnderMouse(Document* document_under_mouse,
-                                  const IntPoint& point) {
+                                  const LayoutPoint& point) {
   HitTestRequest request(HitTestRequest::kReadOnly | HitTestRequest::kActive);
   HitTestResult result(request, point);
   document_under_mouse->GetLayoutViewItem().HitTest(result);
@@ -404,8 +404,8 @@ bool DragController::TryDocumentDrag(DragData* drag_data,
 
   if ((action_mask & kDragDestinationActionEdit) &&
       CanProcessDrag(drag_data, local_root)) {
-    IntPoint point =
-        frame_view->RootFrameToContents(drag_data->ClientPosition());
+    LayoutPoint point = frame_view->RootFrameToContents(
+        LayoutPoint(drag_data->ClientPosition()));
     Element* element = ElementUnderMouse(document_under_mouse_.Get(), point);
     if (!element)
       return false;
@@ -466,7 +466,8 @@ bool DragController::TryDocumentDrag(DragData* drag_data,
 DragOperation DragController::OperationForLoad(DragData* drag_data,
                                                LocalFrame& local_root) {
   DCHECK(drag_data);
-  Document* doc = local_root.DocumentAtPoint(drag_data->ClientPosition());
+  Document* doc =
+      local_root.DocumentAtPoint(LayoutPoint(drag_data->ClientPosition()));
 
   if (doc &&
       (did_initiate_drag_ || doc->IsPluginDocument() || HasEditableStyle(*doc)))
@@ -480,7 +481,7 @@ DragOperation DragController::OperationForLoad(DragData* drag_data,
 static bool SetSelectionToDragCaret(LocalFrame* frame,
                                     VisibleSelection& drag_caret,
                                     Range*& range,
-                                    const IntPoint& point) {
+                                    const LayoutPoint& point) {
   frame->Selection().SetSelection(drag_caret.AsSelection());
   if (frame->Selection()
           .ComputeVisibleSelectionInDOMTreeDeprecated()
@@ -539,8 +540,8 @@ bool DragController::ConcludeEditDrag(DragData* drag_data) {
   if (!document_under_mouse_)
     return false;
 
-  IntPoint point = document_under_mouse_->View()->RootFrameToContents(
-      drag_data->ClientPosition());
+  LayoutPoint point = document_under_mouse_->View()->RootFrameToContents(
+      LayoutPoint(drag_data->ClientPosition()));
   Element* element = ElementUnderMouse(document_under_mouse_.Get(), point);
   if (!element)
     return false;
@@ -701,8 +702,8 @@ bool DragController::CanProcessDrag(DragData* drag_data,
   if (local_root.ContentLayoutItem().IsNull())
     return false;
 
-  IntPoint point =
-      local_root.View()->RootFrameToContents(drag_data->ClientPosition());
+  LayoutPoint point = local_root.View()->RootFrameToContents(
+      LayoutPoint(drag_data->ClientPosition()));
 
   HitTestResult result =
       local_root.GetEventHandler().HitTestResultAtPoint(point);
@@ -1041,7 +1042,7 @@ static std::unique_ptr<DragImage> DragImageForImage(
 
   // Substitute an appropriately-sized SVGImageForContainer, to ensure dragged
   // SVG images scale seamlessly.
-  RefPtr<SVGImageForContainer> svg_image;
+  scoped_refptr<SVGImageForContainer> svg_image;
   if (image->IsSVGImage()) {
     KURL url = element->GetDocument().CompleteURL(element->ImageSourceURL());
     svg_image = SVGImageForContainer::Create(
@@ -1053,7 +1054,7 @@ static std::unique_ptr<DragImage> DragImageForImage(
       element->EnsureComputedStyle()->ImageRendering() ==
               EImageRendering::kPixelated
           ? kInterpolationNone
-          : kInterpolationHigh;
+          : kInterpolationDefault;
   RespectImageOrientationEnum should_respect_image_orientation =
       LayoutObject::ShouldRespectImageOrientation(element->GetLayoutObject());
   ImageOrientation orientation;
@@ -1137,13 +1138,12 @@ std::unique_ptr<DragImage> DragController::DragImageForSelection(
   GlobalPaintFlags paint_flags =
       kGlobalPaintSelectionOnly | kGlobalPaintFlattenCompositingLayers;
 
-  PaintRecordBuilder builder(
-      DataTransfer::DeviceSpaceRect(painting_rect, frame));
+  PaintRecordBuilder builder;
   frame.View()->PaintContents(builder.Context(), paint_flags,
                               EnclosingIntRect(painting_rect));
   return DataTransfer::CreateDragImageForFrame(
-      frame, opacity, kDoNotRespectImageOrientation, painting_rect, builder,
-      PropertyTreeState::Root());
+      frame, opacity, kDoNotRespectImageOrientation, painting_rect.Size(),
+      painting_rect.Location(), builder, PropertyTreeState::Root());
 }
 
 bool DragController::StartDrag(LocalFrame* src,
@@ -1339,7 +1339,7 @@ DragState& DragController::GetDragState() {
   return *drag_state_;
 }
 
-DEFINE_TRACE(DragController) {
+void DragController::Trace(blink::Visitor* visitor) {
   visitor->Trace(page_);
   visitor->Trace(document_under_mouse_);
   visitor->Trace(drag_initiator_);
