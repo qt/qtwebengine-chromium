@@ -6,8 +6,10 @@
 
 #include "xfa/fxfa/cxfa_ffrectangle.h"
 
-CXFA_FFRectangle::CXFA_FFRectangle(CXFA_WidgetAcc* pDataAcc)
-    : CXFA_FFDraw(pDataAcc) {}
+#include "xfa/fxfa/parser/cxfa_rectangle.h"
+#include "xfa/fxfa/parser/cxfa_value.h"
+
+CXFA_FFRectangle::CXFA_FFRectangle(CXFA_Node* pNode) : CXFA_FFDraw(pNode) {}
 
 CXFA_FFRectangle::~CXFA_FFRectangle() {}
 
@@ -17,17 +19,17 @@ void CXFA_FFRectangle::RenderWidget(CXFA_Graphics* pGS,
   if (!IsMatchVisibleStatus(dwStatus))
     return;
 
-  CXFA_ValueData valueData = m_pDataAcc->GetFormValueData();
-  if (!valueData.HasValidNode())
+  CXFA_Value* value = m_pNode->GetFormValueIfExists();
+  if (!value)
     return;
 
   CFX_RectF rect = GetRectWithoutRotate();
-  CXFA_MarginData marginData = m_pDataAcc->GetMarginData();
-  if (marginData.HasValidNode())
-    XFA_RectWidthoutMargin(rect, marginData);
+  CXFA_Margin* margin = m_pNode->GetMarginIfExists();
+  if (margin)
+    XFA_RectWithoutMargin(rect, margin);
 
   CFX_Matrix mtRotate = GetRotateMatrix();
   mtRotate.Concat(matrix);
 
-  DrawBorder(pGS, valueData.GetRectangleData(), rect, mtRotate);
+  DrawBorder(pGS, value->GetRectangleIfExists(), rect, mtRotate);
 }

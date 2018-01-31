@@ -6,6 +6,8 @@
 
 #include "core/fpdfdoc/cpdf_dest.h"
 
+#include <algorithm>
+
 #include "core/fpdfapi/parser/cpdf_array.h"
 #include "core/fpdfapi/parser/cpdf_document.h"
 #include "core/fpdfapi/parser/cpdf_name.h"
@@ -13,8 +15,18 @@
 
 namespace {
 
-const char* const g_sZoomModes[] = {"XYZ",  "Fit",   "FitH",  "FitV", "FitR",
-                                    "FitB", "FitBH", "FitBV", nullptr};
+// These arrays are indexed by the PDFDEST_VIEW_* constants.
+
+// Last element is a sentinel.
+const char* const g_sZoomModes[] = {"Unknown", "XYZ",  "Fit",  "FitH",
+                                    "FitV",    "FitR", "FitB", "FitBH",
+                                    "FitBV",   nullptr};
+
+const uint8_t g_sZoomModeMaxParamCount[] = {0, 3, 0, 1, 1, 4, 0, 1, 1, 0};
+
+static_assert(FX_ArraySize(g_sZoomModes) ==
+                  FX_ArraySize(g_sZoomModeMaxParamCount),
+              "Zoom mode count Mismatch");
 
 }  // namespace
 
@@ -26,7 +38,7 @@ CPDF_Dest::CPDF_Dest(CPDF_Object* pObj) : m_pObj(pObj) {}
 
 CPDF_Dest::~CPDF_Dest() {}
 
-int CPDF_Dest::GetPageIndex(CPDF_Document* pDoc) {
+int CPDF_Dest::GetPageIndex(CPDF_Document* pDoc) const {
   CPDF_Array* pArray = ToArray(m_pObj.Get());
   if (!pArray)
     return 0;
@@ -41,7 +53,7 @@ int CPDF_Dest::GetPageIndex(CPDF_Document* pDoc) {
   return pDoc->GetPageIndex(pPage->GetObjNum());
 }
 
-uint32_t CPDF_Dest::GetPageObjNum() {
+uint32_t CPDF_Dest::GetPageObjNum() const {
   CPDF_Array* pArray = ToArray(m_pObj.Get());
   if (!pArray)
     return 0;
@@ -56,7 +68,7 @@ uint32_t CPDF_Dest::GetPageObjNum() {
   return 0;
 }
 
-int CPDF_Dest::GetZoomMode() {
+int CPDF_Dest::GetZoomMode() const {
   CPDF_Array* pArray = ToArray(m_pObj.Get());
   if (!pArray)
     return 0;
@@ -66,9 +78,9 @@ int CPDF_Dest::GetZoomMode() {
     return 0;
 
   ByteString mode = pObj->GetString();
-  for (int i = 0; g_sZoomModes[i]; ++i) {
+  for (int i = 1; g_sZoomModes[i]; ++i) {
     if (mode == g_sZoomModes[i])
-      return i + 1;
+      return i;
   }
 
   return 0;
@@ -121,11 +133,21 @@ bool CPDF_Dest::GetXYZ(bool* pHasX,
   return true;
 }
 
-float CPDF_Dest::GetParam(int index) {
+unsigned long CPDF_Dest::GetNumParams() const {
+  CPDF_Array* pArray = ToArray(m_pObj.Get());
+  if (!pArray || pArray->GetCount() < 2)
+    return 0;
+
+  unsigned long maxParamsForFitType = g_sZoomModeMaxParamCount[GetZoomMode()];
+  unsigned long numParamsInArray = pArray->GetCount() - 2;
+  return std::min(maxParamsForFitType, numParamsInArray);
+}
+
+float CPDF_Dest::GetParam(int index) const {
   CPDF_Array* pArray = ToArray(m_pObj.Get());
   return pArray ? pArray->GetNumberAt(2 + index) : 0;
 }
 
-ByteString CPDF_Dest::GetRemoteName() {
+ByteString CPDF_Dest::GetRemoteName() const {
   return m_pObj ? m_pObj->GetString() : ByteString();
 }

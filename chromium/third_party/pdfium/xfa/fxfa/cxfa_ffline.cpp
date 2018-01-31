@@ -6,6 +6,9 @@
 
 #include "xfa/fxfa/cxfa_ffline.h"
 
+#include "xfa/fxfa/parser/cxfa_edge.h"
+#include "xfa/fxfa/parser/cxfa_line.h"
+#include "xfa/fxfa/parser/cxfa_value.h"
 #include "xfa/fxgraphics/cxfa_gecolor.h"
 #include "xfa/fxgraphics/cxfa_gepath.h"
 #include "xfa/fxgraphics/cxfa_graphics.h"
@@ -26,7 +29,7 @@ CFX_GraphStateData::LineCap LineCapToFXGE(XFA_AttributeEnum iLineCap) {
 
 }  // namespace
 
-CXFA_FFLine::CXFA_FFLine(CXFA_WidgetAcc* pDataAcc) : CXFA_FFDraw(pDataAcc) {}
+CXFA_FFLine::CXFA_FFLine(CXFA_Node* pNode) : CXFA_FFDraw(pNode) {}
 
 CXFA_FFLine::~CXFA_FFLine() {}
 
@@ -84,40 +87,46 @@ void CXFA_FFLine::RenderWidget(CXFA_Graphics* pGS,
   if (!IsMatchVisibleStatus(dwStatus))
     return;
 
-  CXFA_ValueData valueData = m_pDataAcc->GetFormValueData();
-  if (!valueData.HasValidNode())
+  CXFA_Value* value = m_pNode->GetFormValueIfExists();
+  if (!value)
     return;
 
-  CXFA_LineData lineData = valueData.GetLineData();
   FX_ARGB lineColor = 0xFF000000;
   float fLineWidth = 1.0f;
   XFA_AttributeEnum iStrokeType = XFA_AttributeEnum::Unknown;
   XFA_AttributeEnum iCap = XFA_AttributeEnum::Unknown;
-  CXFA_EdgeData edgeData = lineData.GetEdgeData();
-  if (edgeData.HasValidNode()) {
-    if (!edgeData.IsVisible())
+
+  CXFA_Line* line = value->GetLineIfExists();
+  if (line) {
+    CXFA_Edge* edge = line->GetEdgeIfExists();
+    if (edge && !edge->IsVisible())
       return;
 
-    lineColor = edgeData.GetColor();
-    iStrokeType = edgeData.GetStrokeType();
-    fLineWidth = edgeData.GetThickness();
-    iCap = edgeData.GetCapType();
+    if (edge) {
+      lineColor = edge->GetColor();
+      iStrokeType = edge->GetStrokeType();
+      fLineWidth = edge->GetThickness();
+      iCap = edge->GetCapType();
+    }
   }
 
   CFX_Matrix mtRotate = GetRotateMatrix();
   mtRotate.Concat(matrix);
 
   CFX_RectF rtLine = GetRectWithoutRotate();
-  CXFA_MarginData marginData = m_pDataAcc->GetMarginData();
-  if (marginData.HasValidNode())
-    XFA_RectWidthoutMargin(rtLine, marginData);
+  CXFA_Margin* margin = m_pNode->GetMarginIfExists();
+  if (margin)
+    XFA_RectWithoutMargin(rtLine, margin);
 
-  GetRectFromHand(rtLine, lineData.GetHand(), fLineWidth);
+  GetRectFromHand(rtLine, line ? line->GetHand() : XFA_AttributeEnum::Left,
+                  fLineWidth);
   CXFA_GEPath linePath;
-  if (lineData.GetSlope() && rtLine.right() > 0.0f && rtLine.bottom() > 0.0f)
+  if (line && line->GetSlope() && rtLine.right() > 0.0f &&
+      rtLine.bottom() > 0.0f) {
     linePath.AddLine(rtLine.TopRight(), rtLine.BottomLeft());
-  else
+  } else {
     linePath.AddLine(rtLine.TopLeft(), rtLine.BottomRight());
+  }
 
   pGS->SaveGraphState();
   pGS->SetLineWidth(fLineWidth);

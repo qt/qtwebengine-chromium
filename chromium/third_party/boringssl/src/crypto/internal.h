@@ -151,9 +151,16 @@ void OPENSSL_cpuid_setup(void);
 #endif
 
 
-#if !defined(_MSC_VER) && defined(OPENSSL_64_BIT)
+#if (!defined(_MSC_VER) || defined(__clang__)) && defined(OPENSSL_64_BIT)
+#define BORINGSSL_HAS_UINT128
 typedef __int128_t int128_t;
 typedef __uint128_t uint128_t;
+
+// clang-cl supports __uint128_t but modulus and division don't work.
+// https://crbug.com/787617.
+#if !defined(_MSC_VER) || !defined(__clang__)
+#define BORINGSSL_CAN_DIVIDE_UINT128
+#endif
 #endif
 
 #define OPENSSL_ARRAY_SIZE(array) (sizeof(array) / sizeof((array)[0]))
@@ -582,6 +589,41 @@ OPENSSL_EXPORT void CRYPTO_new_ex_data(CRYPTO_EX_DATA *ad);
 // object of the given class.
 OPENSSL_EXPORT void CRYPTO_free_ex_data(CRYPTO_EX_DATA_CLASS *ex_data_class,
                                         void *obj, CRYPTO_EX_DATA *ad);
+
+
+// Endianness conversions.
+
+#if defined(__GNUC__) && __GNUC__ >= 2
+static inline uint32_t CRYPTO_bswap4(uint32_t x) {
+  return __builtin_bswap32(x);
+}
+
+static inline uint64_t CRYPTO_bswap8(uint64_t x) {
+  return __builtin_bswap64(x);
+}
+#elif defined(_MSC_VER)
+OPENSSL_MSVC_PRAGMA(warning(push, 3))
+#include <intrin.h>
+OPENSSL_MSVC_PRAGMA(warning(pop))
+#pragma intrinsic(_byteswap_uint64, _byteswap_ulong)
+static inline uint32_t CRYPTO_bswap4(uint32_t x) {
+  return _byteswap_ulong(x);
+}
+
+static inline uint64_t CRYPTO_bswap8(uint64_t x) {
+  return _byteswap_uint64(x);
+}
+#else
+static inline uint32_t CRYPTO_bswap4(uint32_t x) {
+  x = (x >> 16) | (x << 16);
+  x = ((x & 0xff00ff00) >> 8) | ((x & 0x00ff00ff) << 8);
+  return x;
+}
+
+static inline uint64_t CRYPTO_bswap8(uint64_t x) {
+  return CRYPTO_bswap4(x >> 32) | (((uint64_t)CRYPTO_bswap4(x)) << 32);
+}
+#endif
 
 
 // Language bug workarounds.

@@ -11,16 +11,37 @@
 #ifndef LIBANGLE_UNIFORMLINKER_H_
 #define LIBANGLE_UNIFORMLINKER_H_
 
-#include "libANGLE/Program.h"
-#include "libANGLE/Uniform.h"
+#include "angle_gl.h"
+#include "common/angleutils.h"
 #include "libANGLE/VaryingPacking.h"
 
 #include <functional>
 
+namespace sh
+{
+struct BlockMemberInfo;
+struct InterfaceBlock;
+struct ShaderVariable;
+struct Uniform;
+}
+
 namespace gl
 {
+struct BufferVariable;
+struct Caps;
+class Context;
+class InfoLog;
+struct InterfaceBlock;
+struct LinkedUniform;
+class ProgramState;
+class ProgramBindings;
+class Shader;
+struct VariableLocation;
+struct ShaderVariableBuffer;
 
-class UniformLinker
+using AtomicCounterBuffer = ShaderVariableBuffer;
+
+class UniformLinker final : angle::NonCopyable
 {
   public:
     UniformLinker(const ProgramState &state);
@@ -28,7 +49,7 @@ class UniformLinker
 
     bool link(const Context *context,
               InfoLog &infoLog,
-              const Program::Bindings &uniformLocationBindings);
+              const ProgramBindings &uniformLocationBindings);
 
     void getResults(std::vector<LinkedUniform> *uniforms,
                     std::vector<VariableLocation> *uniformLocations);
@@ -57,9 +78,9 @@ class UniformLinker
         unsigned int atomicCounterCount;
     };
 
-    bool validateVertexAndFragmentUniforms(const Context *context, InfoLog &infoLog) const;
+    bool validateGraphicsUniforms(const Context *context, InfoLog &infoLog) const;
 
-    static bool linkValidateUniforms(InfoLog &infoLog,
+    static bool LinkValidateUniforms(InfoLog &infoLog,
                                      const std::string &uniformName,
                                      const sh::Uniform &vertexUniform,
                                      const sh::Uniform &fragmentUniform);
@@ -140,9 +161,9 @@ class UniformLinker
                                           int offset,
                                           int *location);
 
-    bool indexUniforms(InfoLog &infoLog, const Program::Bindings &uniformLocationBindings);
+    bool indexUniforms(InfoLog &infoLog, const ProgramBindings &uniformLocationBindings);
     bool gatherUniformLocationsAndCheckConflicts(InfoLog &infoLog,
-                                                 const Program::Bindings &uniformLocationBindings,
+                                                 const ProgramBindings &uniformLocationBindings,
                                                  std::set<GLuint> *reservedLocations,
                                                  std::set<GLuint> *ignoredLocations,
                                                  int *maxUniformLocation);
@@ -188,7 +209,8 @@ class InterfaceBlockLinker : angle::NonCopyable
                             const std::string &mappedPrefix,
                             int blockIndex,
                             bool singleEntryForTopLevelArray,
-                            int topLevelArraySize) const;
+                            int topLevelArraySize,
+                            GLenum shaderType) const;
     template <typename VarT>
     void defineBlockMember(const GetBlockMemberInfo &getMemberInfo,
                            const VarT &field,
@@ -196,15 +218,20 @@ class InterfaceBlockLinker : angle::NonCopyable
                            const std::string &fullMappedName,
                            int blockIndex,
                            bool singleEntryForTopLevelArray,
-                           int topLevelArraySize) const;
+                           int topLevelArraySize,
+                           GLenum shaderType) const;
 
     virtual void defineBlockMemberImpl(const sh::ShaderVariable &field,
                                        const std::string &fullName,
                                        const std::string &fullMappedName,
                                        int blockIndex,
                                        const sh::BlockMemberInfo &memberInfo,
-                                       int topLevelArraySize) const             = 0;
+                                       int topLevelArraySize,
+                                       GLenum shaderType) const                 = 0;
     virtual size_t getCurrentBlockMemberIndex() const                           = 0;
+    virtual void updateBlockMemberStaticUsedImpl(const std::string &fullName,
+                                                 GLenum shaderType,
+                                                 bool staticUse) const          = 0;
 
     using ShaderBlocks = std::pair<GLenum, const std::vector<sh::InterfaceBlock> *>;
     std::vector<ShaderBlocks> mShaderBlocks;
@@ -220,7 +247,8 @@ class InterfaceBlockLinker : angle::NonCopyable
                                           const std::string &mappedPrefix,
                                           int blockIndex,
                                           bool singleEntryForTopLevelArray,
-                                          int topLevelArraySize) const;
+                                          int topLevelArraySize,
+                                          GLenum shaderType) const;
 };
 
 class UniformBlockLinker final : public InterfaceBlockLinker
@@ -236,8 +264,12 @@ class UniformBlockLinker final : public InterfaceBlockLinker
                                const std::string &fullMappedName,
                                int blockIndex,
                                const sh::BlockMemberInfo &memberInfo,
-                               int topLevelArraySize) const override;
+                               int topLevelArraySize,
+                               GLenum shaderType) const override;
     size_t getCurrentBlockMemberIndex() const override;
+    void updateBlockMemberStaticUsedImpl(const std::string &fullName,
+                                         GLenum shaderType,
+                                         bool staticUse) const override;
     std::vector<LinkedUniform> *mUniformsOut;
 };
 
@@ -254,9 +286,25 @@ class ShaderStorageBlockLinker final : public InterfaceBlockLinker
                                const std::string &fullMappedName,
                                int blockIndex,
                                const sh::BlockMemberInfo &memberInfo,
-                               int topLevelArraySize) const override;
+                               int topLevelArraySize,
+                               GLenum shaderType) const override;
     size_t getCurrentBlockMemberIndex() const override;
+    void updateBlockMemberStaticUsedImpl(const std::string &fullName,
+                                         GLenum shaderType,
+                                         bool staticUse) const override;
     std::vector<BufferVariable> *mBufferVariablesOut;
+};
+
+class AtomicCounterBufferLinker final : angle::NonCopyable
+{
+  public:
+    AtomicCounterBufferLinker(std::vector<AtomicCounterBuffer> *atomicCounterBuffersOut);
+    ~AtomicCounterBufferLinker();
+
+    void link(const std::map<int, unsigned int> &sizeMap) const;
+
+  private:
+    std::vector<AtomicCounterBuffer> *mAtomicCounterBuffersOut;
 };
 
 // The link operation is responsible for finishing the link of uniform and interface blocks.
@@ -267,6 +315,7 @@ struct ProgramLinkedResources
     VaryingPacking varyingPacking;
     UniformBlockLinker uniformBlockLinker;
     ShaderStorageBlockLinker shaderStorageBlockLinker;
+    AtomicCounterBufferLinker atomicCounterBufferLinker;
 };
 
 }  // namespace gl

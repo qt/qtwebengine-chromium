@@ -15,20 +15,11 @@
 #include "core/fxge/cfx_graphstatedata.h"
 #include "core/fxge/cfx_renderdevice.h"
 #include "core/fxge/fx_dib.h"
-#include "core/fxge/fx_font.h"
 #include "xfa/fxgraphics/cxfa_gecolor.h"
 
 class CXFA_GEPath;
 
 using FX_FillMode = int32_t;
-
-enum FX_DashStyle {
-  FX_DASHSTYLE_Solid = 0,
-  FX_DASHSTYLE_Dash = 1,
-  FX_DASHSTYLE_Dot = 2,
-  FX_DASHSTYLE_DashDot = 3,
-  FX_DASHSTYLE_DashDotDot = 4
-};
 
 enum class FX_HatchStyle {
   Horizontal = 0,
@@ -55,7 +46,7 @@ class CXFA_Graphics {
 
   void SetLineCap(CFX_GraphStateData::LineCap lineCap);
   void SetLineDash(float dashPhase, float* dashArray, int32_t dashCount);
-  void SetLineDash(FX_DashStyle dashStyle);
+  void SetSolidLineDash();
   void SetLineWidth(float lineWidth);
   void EnableActOnDash();
   void SetStrokeColor(const CXFA_GEColor& color);
@@ -65,9 +56,6 @@ class CXFA_Graphics {
   void FillPath(CXFA_GEPath* path,
                 FX_FillMode fillMode,
                 const CFX_Matrix* matrix);
-  void StretchImage(const RetainPtr<CFX_DIBSource>& source,
-                    const CFX_RectF& rect,
-                    const CFX_Matrix& matrix);
   void ConcatMatrix(const CFX_Matrix* matrix);
 
  protected:
@@ -86,15 +74,11 @@ class CXFA_Graphics {
     CXFA_GEColor fillColor;
   } m_info;
 
-  void RenderDeviceSetLineDash(FX_DashStyle dashStyle);
   void RenderDeviceStrokePath(const CXFA_GEPath* path,
                               const CFX_Matrix* matrix);
   void RenderDeviceFillPath(const CXFA_GEPath* path,
                             FX_FillMode fillMode,
                             const CFX_Matrix* matrix);
-  void RenderDeviceStretchImage(const RetainPtr<CFX_DIBSource>& source,
-                                const CFX_RectF& rect,
-                                const CFX_Matrix& matrix);
 
   void FillPathWithPattern(const CXFA_GEPath* path,
                            FX_FillMode fillMode,

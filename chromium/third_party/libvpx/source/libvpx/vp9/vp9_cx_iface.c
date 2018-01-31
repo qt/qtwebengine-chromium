@@ -1213,7 +1213,7 @@ static vpx_codec_err_t encoder_encode(vpx_codec_alg_priv_t *ctx,
            -1 != vp9_get_compressed_data(cpi, &lib_flags, &size, cx_data,
                                          &dst_time_stamp, &dst_end_time_stamp,
                                          !img)) {
-      if (size) {
+      if (size || (cpi->use_svc && cpi->svc.skip_enhancement_layer)) {
         vpx_codec_cx_pkt_t pkt;
 
 #if CONFIG_SPATIAL_SVC
@@ -1260,9 +1260,11 @@ static vpx_codec_err_t encoder_encode(vpx_codec_alg_priv_t *ctx,
         pkt.data.frame.duration = (unsigned long)ticks_to_timebase_units(
             timebase, dst_end_time_stamp - dst_time_stamp);
         pkt.data.frame.flags = get_frame_pkt_flags(cpi, lib_flags);
+        pkt.data.frame.width = cpi->common.width;
+        pkt.data.frame.height = cpi->common.height;
 
         if (ctx->pending_cx_data) {
-          ctx->pending_frame_sizes[ctx->pending_frame_count++] = size;
+          if (size) ctx->pending_frame_sizes[ctx->pending_frame_count++] = size;
           ctx->pending_frame_magnitude |= size;
           ctx->pending_cx_data_sz += size;
           // write the superframe only for the case when
@@ -1288,8 +1290,7 @@ static vpx_codec_err_t encoder_encode(vpx_codec_alg_priv_t *ctx,
 
         cx_data += size;
         cx_data_sz -= size;
-#if VPX_ENCODER_ABI_VERSION > (6 + VPX_CODEC_ABI_VERSION)
-#if CONFIG_SPATIAL_SVC
+#if CONFIG_SPATIAL_SVC && defined(VPX_TEST_SPATIAL_SVC)
         if (cpi->use_svc && !ctx->output_cx_pkt_cb.output_cx_pkt) {
           vpx_codec_cx_pkt_t pkt_sizes, pkt_psnr;
           int sl;
@@ -1309,7 +1310,6 @@ static vpx_codec_err_t encoder_encode(vpx_codec_alg_priv_t *ctx,
 
           vpx_codec_pkt_list_add(&ctx->pkt_list.head, &pkt_psnr);
         }
-#endif
 #endif
         if (is_one_pass_cbr_svc(cpi) &&
             (cpi->svc.spatial_layer_id == cpi->svc.number_spatial_layers - 1)) {

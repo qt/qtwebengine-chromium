@@ -6,8 +6,10 @@
  */
 
 #include "SkAutoMalloc.h"
+#include "SkCanvasPriv.h"
 #include "SkColorFilter.h"
 #include "SkDrawLooper.h"
+#include "SkDrawShadowInfo.h"
 #include "SkImageFilter.h"
 #include "SkMaskFilter.h"
 #include "SkPathEffect.h"
@@ -448,6 +450,13 @@ void SkPipeCanvas::onDrawPath(const SkPath& path, const SkPaint& paint) {
     write_paint(writer, paint, kGeometry_PaintUsage);
 }
 
+void SkPipeCanvas::onDrawShadowRec(const SkPath& path, const SkDrawShadowRec& rec) {
+    SkPipeWriter writer(this);
+    writer.write32(pack_verb(SkPipeVerb::kDrawShadowRec));
+    writer.writePath(path);
+    writer.write(&rec, sizeof(rec));
+}
+
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
 static sk_sp<SkImage> make_from_bitmap(const SkBitmap& bitmap) {
@@ -555,40 +564,10 @@ void SkPipeCanvas::onDrawImageLattice(const SkImage* image, const Lattice& latti
     if (paint) {
         extra |= kHasPaint_DrawImageLatticeMask;
     }
-    if (lattice.fFlags) {
-        extra |= kHasFlags_DrawImageLatticeMask;
-    }
-    if (lattice.fXCount >= kCount_DrawImageLatticeMask) {
-        extra |= kCount_DrawImageLatticeMask << kXCount_DrawImageLatticeShift;
-    } else {
-        extra |= lattice.fXCount << kXCount_DrawImageLatticeShift;
-    }
-    if (lattice.fYCount >= kCount_DrawImageLatticeMask) {
-        extra |= kCount_DrawImageLatticeMask << kYCount_DrawImageLatticeShift;
-    } else {
-        extra |= lattice.fYCount << kYCount_DrawImageLatticeShift;
-    }
-
     SkPipeWriter writer(this);
     writer.write32(pack_verb(SkPipeVerb::kDrawImageLattice, extra));
     writer.writeImage(image);
-    if (lattice.fXCount >= kCount_DrawImageLatticeMask) {
-        writer.write32(lattice.fXCount);
-    }
-    if (lattice.fYCount >= kCount_DrawImageLatticeMask) {
-        writer.write32(lattice.fYCount);
-    }
-    // Often these divs will be small (8 or 16 bits). Consider sniffing that and writing a flag
-    // so we can store them smaller.
-    writer.write(lattice.fXDivs, lattice.fXCount * sizeof(int32_t));
-    writer.write(lattice.fYDivs, lattice.fYCount * sizeof(int32_t));
-    if (lattice.fFlags) {
-        int32_t count = (lattice.fXCount + 1) * (lattice.fYCount + 1);
-        SkASSERT(count > 0);
-        write_pad(&writer, lattice.fFlags, count);
-    }
-    SkASSERT(lattice.fBounds);
-    writer.write(&lattice.fBounds, sizeof(*lattice.fBounds));
+    SkCanvasPriv::WriteLattice(writer, lattice);
     writer.write(&dst, sizeof(dst));
     if (paint) {
         write_paint(writer, *paint, kImage_PaintUsage);
@@ -802,37 +781,13 @@ void SkPipeCanvas::onDrawAnnotation(const SkRect& rect, const char key[], SkData
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
-class A8Serializer : public SkPixelSerializer {
-protected:
-    bool onUseEncodedData(const void* data, size_t len) {
-        return true;
-    }
-
-    SkData* onEncode(const SkPixmap& pmap) {
-        if (kAlpha_8_SkColorType == pmap.colorType()) {
-            SkDynamicMemoryWStream stream;
-            stream.write("skiaimgf", 8);
-            stream.write32(pmap.width());
-            stream.write32(pmap.height());
-            stream.write16(pmap.colorType());
-            stream.write16(pmap.alphaType());
-            stream.write32(0);  // no colorspace for now
-            for (int y = 0; y < pmap.height(); ++y) {
-                stream.write(pmap.addr8(0, y), pmap.width());
-            }
-            return stream.detachAsData().release();
+static sk_sp<SkData> encode(SkImage* img, SkSerialImageProc proc, void* ctx) {
+    if (proc) {
+        if (auto data = proc(img, ctx)) {
+            return data;
         }
-        return nullptr;
     }
-};
-
-static sk_sp<SkData> default_image_serializer(SkImage* image) {
-    A8Serializer serial;
-    sk_sp<SkData> data = image->encodeToData(&serial);
-    if (!data) {
-        data = image->encodeToData();
-    }
-    return data;
+    return img->encodeToData();
 }
 
 static bool show_deduper_traffic = false;
@@ -847,8 +802,7 @@ int SkPipeDeduper::findOrDefineImage(SkImage* image) {
         return index;
     }
 
-    sk_sp<SkData> data = fIMSerializer ? fIMSerializer->serialize(image)
-                                       : default_image_serializer(image);
+    sk_sp<SkData> data = encode(image, fProcs.fImageProc, fProcs.fImageCtx);
     if (data) {
         index = fImages.add(image->uniqueID());
         SkASSERT(index > 0);
@@ -898,7 +852,13 @@ int SkPipeDeduper::findOrDefinePicture(SkPicture* picture) {
     return index;
 }
 
-static sk_sp<SkData> encode(SkTypeface* tf) {
+static sk_sp<SkData> encode(const SkSerialProcs& procs, SkTypeface* tf) {
+    if (procs.fTypefaceProc) {
+        auto data = procs.fTypefaceProc(tf, procs.fTypefaceCtx);
+        if (data) {
+            return data;
+        }
+    }
     SkDynamicMemoryWStream stream;
     tf->serialize(&stream);
     return sk_sp<SkData>(stream.detachAsData());
@@ -918,7 +878,7 @@ int SkPipeDeduper::findOrDefineTypeface(SkTypeface* typeface) {
         return index;
     }
 
-    sk_sp<SkData> data = fTFSerializer ? fTFSerializer->serialize(typeface) : encode(typeface);
+    sk_sp<SkData> data = encode(fProcs, typeface);
     if (data) {
         index = fTypefaces.add(typeface->uniqueID());
         SkASSERT(index > 0);
@@ -983,14 +943,6 @@ SkPipeSerializer::~SkPipeSerializer() {
     if (fImpl->fCanvas) {
         this->endWrite();
     }
-}
-
-void SkPipeSerializer::setTypefaceSerializer(SkTypefaceSerializer* tfs) {
-    fImpl->fDeduper.setTypefaceSerializer(tfs);
-}
-
-void SkPipeSerializer::setImageSerializer(SkImageSerializer* ims) {
-    fImpl->fDeduper.setImageSerializer(ims);
 }
 
 void SkPipeSerializer::resetCache() {

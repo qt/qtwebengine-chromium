@@ -11,7 +11,7 @@
 #include "third_party/base/stl_util.h"
 
 CXFA_ArrayNodeList::CXFA_ArrayNodeList(CXFA_Document* pDocument)
-    : CXFA_NodeList(pDocument) {}
+    : CXFA_TreeList(pDocument) {}
 
 CXFA_ArrayNodeList::~CXFA_ArrayNodeList() {}
 
@@ -21,8 +21,8 @@ void CXFA_ArrayNodeList::SetArrayNodeList(
     m_array = srcArray;
 }
 
-int32_t CXFA_ArrayNodeList::GetLength() {
-  return pdfium::CollectionSize<int32_t>(m_array);
+size_t CXFA_ArrayNodeList::GetLength() {
+  return m_array.size();
 }
 
 bool CXFA_ArrayNodeList::Append(CXFA_Node* pNode) {
@@ -48,7 +48,6 @@ bool CXFA_ArrayNodeList::Remove(CXFA_Node* pNode) {
   return true;
 }
 
-CXFA_Node* CXFA_ArrayNodeList::Item(int32_t iIndex) {
-  int32_t iSize = pdfium::CollectionSize<int32_t>(m_array);
-  return (iIndex >= 0 && iIndex < iSize) ? m_array[iIndex] : nullptr;
+CXFA_Node* CXFA_ArrayNodeList::Item(size_t index) {
+  return index < m_array.size() ? m_array[index] : nullptr;
 }

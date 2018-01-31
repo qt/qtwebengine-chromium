@@ -24,6 +24,7 @@
 #include "Texture.h"
 #include "mathutil.h"
 #include "TransformFeedback.h"
+#include "VertexArray.h"
 #include "common/debug.h"
 
 #include <GLES3/gl3.h>
@@ -560,7 +561,7 @@ GL_APICALL void GL_APIENTRY glReadBuffer(GLenum src)
 			GLuint index = (src - GL_COLOR_ATTACHMENT0);
 			if(index >= MAX_COLOR_ATTACHMENTS)
 			{
-				return error(GL_INVALID_ENUM);
+				return error(GL_INVALID_OPERATION);
 			}
 			if(readFramebufferName == 0)
 			{
@@ -570,7 +571,7 @@ GL_APICALL void GL_APIENTRY glReadBuffer(GLenum src)
 		}
 			break;
 		default:
-			error(GL_INVALID_ENUM);
+			return error(GL_INVALID_ENUM);
 		}
 	}
 }
@@ -677,7 +678,15 @@ GL_APICALL void GL_APIENTRY glTexImage3D(GLenum target, GLint level, GLint inter
 			return error(GL_INVALID_OPERATION);
 		}
 
-		texture->setImage(context, level, width, height, depth, GetSizedInternalFormat(internalformat, type), type, context->getUnpackInfo(), context->getPixels(data));
+		GLenum sizedInternalFormat = GetSizedInternalFormat(internalformat, type);
+
+		GLenum validationError = context->getPixels(&data, type, context->getRequiredBufferSize(width, height, depth, sizedInternalFormat, type));
+		if(validationError != GL_NONE)
+		{
+			return error(validationError);
+		}
+
+		texture->setImage(context, level, width, height, depth, sizedInternalFormat, type, context->getUnpackInfo(), data);
 	}
 }
 
@@ -720,15 +729,19 @@ GL_APICALL void GL_APIENTRY glTexSubImage3D(GLenum target, GLint level, GLint xo
 
 		GLenum sizedInternalFormat = GetSizedInternalFormat(format, type);
 
-		GLenum validationError = ValidateSubImageParams(false, width, height, depth, xoffset, yoffset, zoffset, target, level, sizedInternalFormat, texture);
-		if(validationError == GL_NONE)
-		{
-			texture->subImage(context, level, xoffset, yoffset, zoffset, width, height, depth, sizedInternalFormat, type, context->getUnpackInfo(), context->getPixels(data));
-		}
-		else
+		GLenum validationError = ValidateSubImageParams(false, false, target, level, xoffset, yoffset, zoffset, width, height, depth, format, type, texture, context->getClientVersion());
+		if(validationError != GL_NONE)
 		{
 			return error(validationError);
 		}
+
+		validationError = context->getPixels(&data, type, context->getRequiredBufferSize(width, height, depth, sizedInternalFormat, type));
+		if(validationError != GL_NONE)
+		{
+			return error(validationError);
+		}
+
+		texture->subImage(context, level, xoffset, yoffset, zoffset, width, height, depth, sizedInternalFormat, type, context->getUnpackInfo(), data);
 	}
 }
 
@@ -778,7 +791,7 @@ GL_APICALL void GL_APIENTRY glCopyTexSubImage3D(GLenum target, GLint level, GLin
 		GLenum colorbufferFormat = source->getFormat();
 		es2::Texture3D *texture = (target == GL_TEXTURE_3D) ? context->getTexture3D() : context->getTexture2DArray();
 
-		GLenum validationError = ValidateSubImageParams(false, width, height, 1, xoffset, yoffset, zoffset, target, level, GL_NONE, texture);
+		GLenum validationError = ValidateSubImageParams(false, true, target, level, xoffset, yoffset, zoffset, width, height, 1, GL_NONE, GL_NONE, texture, context->getClientVersion());
 		if(validationError != GL_NONE)
 		{
 			return error(validationError);
@@ -855,6 +868,12 @@ GL_APICALL void GL_APIENTRY glCompressedTexImage3D(GLenum target, GLint level, G
 			return error(GL_INVALID_OPERATION);
 		}
 
+		GLenum validationError = context->getPixels(&data, texture->getType(target, level), imageSize);
+		if(validationError != GL_NONE)
+		{
+			return error(validationError);
+		}
+
 		texture->setCompressedImage(level, internalformat, width, height, depth, imageSize, data);
 	}
 }
@@ -891,9 +910,39 @@ GL_APICALL void GL_APIENTRY glCompressedTexSubImage3D(GLenum target, GLint level
 		return error(validationError);
 	}
 
-	if(width == 0 || height == 0 || depth == 0 || !data)
+	if(imageSize != egl::ComputeCompressedSize(width, height, format) * depth)
 	{
-		return;
+		return error(GL_INVALID_VALUE);
+	}
+
+	bool is_ETC2_EAC = false;
+	switch(format)
+	{
+	case GL_COMPRESSED_R11_EAC:
+	case GL_COMPRESSED_SIGNED_R11_EAC:
+	case GL_COMPRESSED_RG11_EAC:
+	case GL_COMPRESSED_SIGNED_RG11_EAC:
+	case GL_COMPRESSED_RGB8_ETC2:
+	case GL_COMPRESSED_SRGB8_ETC2:
+	case GL_COMPRESSED_RGB8_PUNCHTHROUGH_ALPHA1_ETC2:
+	case GL_COMPRESSED_SRGB8_PUNCHTHROUGH_ALPHA1_ETC2:
+	case GL_COMPRESSED_RGBA8_ETC2_EAC:
+	case GL_COMPRESSED_SRGB8_ALPHA8_ETC2_EAC:
+		if(target != GL_TEXTURE_2D_ARRAY)
+		{
+			return error(GL_INVALID_OPERATION);
+		}
+
+		if(((width % 4) != 0) || ((height % 4) != 0) ||
+		   ((xoffset % 4) != 0) || ((yoffset % 4) != 0))
+		{
+			return error(GL_INVALID_OPERATION);
+		}
+
+		is_ETC2_EAC = true;
+		break;
+	default:
+		break;
 	}
 
 	es2::Context *context = es2::getContext();
@@ -907,7 +956,23 @@ GL_APICALL void GL_APIENTRY glCompressedTexSubImage3D(GLenum target, GLint level
 			return error(GL_INVALID_OPERATION);
 		}
 
-		texture->subImageCompressed(level, xoffset, yoffset, zoffset, width, height, depth, format, imageSize, context->getPixels(data));
+		GLenum validationError = context->getPixels(&data, texture->getType(target, level), imageSize);
+		if(validationError != GL_NONE)
+		{
+			return error(validationError);
+		}
+
+		if(is_ETC2_EAC)
+		{
+			if(((width + xoffset) != texture->getWidth(target, level)) ||
+			   ((height + yoffset) != texture->getHeight(target, level)) ||
+			   ((depth + zoffset) != texture->getDepth(target, level)))
+			{
+				return error(GL_INVALID_OPERATION);
+			}
+		}
+
+		texture->subImageCompressed(level, xoffset, yoffset, zoffset, width, height, depth, format, imageSize, data);
 	}
 }
 
@@ -1096,6 +1161,12 @@ GL_APICALL GLboolean GL_APIENTRY glUnmapBuffer(GLenum target)
 			return error(GL_INVALID_OPERATION, GL_TRUE);
 		}
 
+		if(!buffer->isMapped())
+		{
+			// Already unmapped
+			return error(GL_INVALID_OPERATION, GL_TRUE);
+		}
+
 		return buffer->unmap() ? GL_TRUE : GL_FALSE;
 	}
 
@@ -1233,11 +1304,6 @@ GL_APICALL void GL_APIENTRY glUniformMatrix2x3fv(GLint location, GLsizei count, 
 		return error(GL_INVALID_VALUE);
 	}
 
-	if(location == -1)
-	{
-		return;
-	}
-
 	es2::Context *context = es2::getContext();
 
 	if(context)
@@ -1247,6 +1313,11 @@ GL_APICALL void GL_APIENTRY glUniformMatrix2x3fv(GLint location, GLsizei count, 
 		if(!program)
 		{
 			return error(GL_INVALID_OPERATION);
+		}
+
+		if(location == -1)
+		{
+			return;
 		}
 
 		if(!program->setUniformMatrix2x3fv(location, count, transpose, value))
@@ -1265,11 +1336,6 @@ GL_APICALL void GL_APIENTRY glUniformMatrix3x2fv(GLint location, GLsizei count, 
 		return error(GL_INVALID_VALUE);
 	}
 
-	if(location == -1)
-	{
-		return;
-	}
-
 	es2::Context *context = es2::getContext();
 
 	if(context)
@@ -1279,6 +1345,11 @@ GL_APICALL void GL_APIENTRY glUniformMatrix3x2fv(GLint location, GLsizei count, 
 		if(!program)
 		{
 			return error(GL_INVALID_OPERATION);
+		}
+
+		if(location == -1)
+		{
+			return;
 		}
 
 		if(!program->setUniformMatrix3x2fv(location, count, transpose, value))
@@ -1297,11 +1368,6 @@ GL_APICALL void GL_APIENTRY glUniformMatrix2x4fv(GLint location, GLsizei count, 
 		return error(GL_INVALID_VALUE);
 	}
 
-	if(location == -1)
-	{
-		return;
-	}
-
 	es2::Context *context = es2::getContext();
 
 	if(context)
@@ -1311,6 +1377,11 @@ GL_APICALL void GL_APIENTRY glUniformMatrix2x4fv(GLint location, GLsizei count, 
 		if(!program)
 		{
 			return error(GL_INVALID_OPERATION);
+		}
+
+		if(location == -1)
+		{
+			return;
 		}
 
 		if(!program->setUniformMatrix2x4fv(location, count, transpose, value))
@@ -1329,11 +1400,6 @@ GL_APICALL void GL_APIENTRY glUniformMatrix4x2fv(GLint location, GLsizei count, 
 		return error(GL_INVALID_VALUE);
 	}
 
-	if(location == -1)
-	{
-		return;
-	}
-
 	es2::Context *context = es2::getContext();
 
 	if(context)
@@ -1343,6 +1409,11 @@ GL_APICALL void GL_APIENTRY glUniformMatrix4x2fv(GLint location, GLsizei count, 
 		if(!program)
 		{
 			return error(GL_INVALID_OPERATION);
+		}
+
+		if(location == -1)
+		{
+			return;
 		}
 
 		if(!program->setUniformMatrix4x2fv(location, count, transpose, value))
@@ -1361,11 +1432,6 @@ GL_APICALL void GL_APIENTRY glUniformMatrix3x4fv(GLint location, GLsizei count, 
 		return error(GL_INVALID_VALUE);
 	}
 
-	if(location == -1)
-	{
-		return;
-	}
-
 	es2::Context *context = es2::getContext();
 
 	if(context)
@@ -1375,6 +1441,11 @@ GL_APICALL void GL_APIENTRY glUniformMatrix3x4fv(GLint location, GLsizei count, 
 		if(!program)
 		{
 			return error(GL_INVALID_OPERATION);
+		}
+
+		if(location == -1)
+		{
+			return;
 		}
 
 		if(!program->setUniformMatrix3x4fv(location, count, transpose, value))
@@ -1393,11 +1464,6 @@ GL_APICALL void GL_APIENTRY glUniformMatrix4x3fv(GLint location, GLsizei count, 
 		return error(GL_INVALID_VALUE);
 	}
 
-	if(location == -1)
-	{
-		return;
-	}
-
 	es2::Context *context = es2::getContext();
 
 	if(context)
@@ -1407,6 +1473,11 @@ GL_APICALL void GL_APIENTRY glUniformMatrix4x3fv(GLint location, GLsizei count, 
 		if(!program)
 		{
 			return error(GL_INVALID_OPERATION);
+		}
+
+		if(location == -1)
+		{
+			return;
 		}
 
 		if(!program->setUniformMatrix4x3fv(location, count, transpose, value))
@@ -1426,7 +1497,12 @@ GL_APICALL void GL_APIENTRY glBlitFramebuffer(GLint srcX0, GLint srcY0, GLint sr
 	switch(filter)
 	{
 	case GL_NEAREST:
+		break;
 	case GL_LINEAR:
+		if((mask & GL_DEPTH_BUFFER_BIT) || (mask & GL_STENCIL_BUFFER_BIT))
+		{
+			return error(GL_INVALID_OPERATION);
+		}
 		break;
 	default:
 		return error(GL_INVALID_ENUM);
@@ -1475,7 +1551,7 @@ GL_APICALL void GL_APIENTRY glFramebufferTextureLayer(GLenum target, GLenum atta
 		{
 			if(!textureObject)
 			{
-				return error(GL_INVALID_VALUE);
+				return error(GL_INVALID_OPERATION);
 			}
 
 			textarget = textureObject->getTarget();
@@ -1503,9 +1579,17 @@ GL_APICALL void GL_APIENTRY glFramebufferTextureLayer(GLenum target, GLenum atta
 		{
 		case GL_DRAW_FRAMEBUFFER:
 		case GL_FRAMEBUFFER:
+			if(context->getDrawFramebufferName() == 0)
+			{
+				return error(GL_INVALID_OPERATION);
+			}
 			framebuffer = context->getDrawFramebuffer();
 			break;
 		case GL_READ_FRAMEBUFFER:
+			if(context->getReadFramebufferName() == 0)
+			{
+				return error(GL_INVALID_OPERATION);
+			}
 			framebuffer = context->getReadFramebuffer();
 			break;
 		default:
@@ -1574,6 +1658,27 @@ GL_APICALL void *GL_APIENTRY glMapBufferRange(GLenum target, GLintptr offset, GL
 	TRACE("(GLenum target = 0x%X,  GLintptr offset = %d, GLsizeiptr length = %d, GLbitfield access = %X)",
 	      target, offset, length, access);
 
+	if((offset < 0) || (length < 0))
+	{
+		return error(GL_INVALID_VALUE, nullptr);
+	}
+
+	if(!(access & (GL_MAP_READ_BIT | GL_MAP_WRITE_BIT)))
+	{
+		// Must be able to read or write the buffer
+		return error(GL_INVALID_OPERATION, nullptr);
+	}
+	else if((access & GL_MAP_READ_BIT) && (access & (GL_MAP_INVALIDATE_RANGE_BIT | GL_MAP_INVALIDATE_BUFFER_BIT | GL_MAP_UNSYNCHRONIZED_BIT)))
+	{
+		// GL_MAP_INVALIDATE_RANGE_BIT, GL_MAP_INVALIDATE_BUFFER_BIT and GL_MAP_UNSYNCHRONIZED_BIT can't be used with GL_MAP_READ_BIT
+		return error(GL_INVALID_OPERATION, nullptr);
+	}
+	else if((!(access & GL_MAP_WRITE_BIT)) && (access & GL_MAP_FLUSH_EXPLICIT_BIT))
+	{
+		// GL_MAP_FLUSH_EXPLICIT_BIT can't be used without GL_MAP_WRITE_BIT
+		return error(GL_INVALID_OPERATION, nullptr);
+	}
+
 	es2::Context *context = es2::getContext();
 
 	if(context)
@@ -1590,10 +1695,16 @@ GL_APICALL void *GL_APIENTRY glMapBufferRange(GLenum target, GLintptr offset, GL
 			return error(GL_INVALID_OPERATION, nullptr);
 		}
 
-		GLsizeiptr bufferSize = buffer->size();
-		if((offset < 0) || (length < 0) || ((offset + length) > bufferSize))
+		if(buffer->isMapped())
 		{
-			error(GL_INVALID_VALUE);
+			// It is an invalid operation to map an already mapped buffer
+			return error(GL_INVALID_OPERATION, nullptr);
+		}
+
+		GLsizeiptr bufferSize = buffer->size();
+		if((offset + length) > bufferSize)
+		{
+			return error(GL_INVALID_VALUE, nullptr);
 		}
 
 		if((access & ~(GL_MAP_READ_BIT |
@@ -1603,7 +1714,7 @@ GL_APICALL void *GL_APIENTRY glMapBufferRange(GLenum target, GLintptr offset, GL
 		               GL_MAP_FLUSH_EXPLICIT_BIT |
 		               GL_MAP_UNSYNCHRONIZED_BIT)) != 0)
 		{
-			error(GL_INVALID_VALUE);
+			return error(GL_INVALID_VALUE, nullptr);
 		}
 
 		return buffer->mapRange(offset, length, access);
@@ -1616,6 +1727,11 @@ GL_APICALL void GL_APIENTRY glFlushMappedBufferRange(GLenum target, GLintptr off
 {
 	TRACE("(GLenum target = 0x%X,  GLintptr offset = %d, GLsizeiptr length = %d)",
 	      target, offset, length);
+
+	if((offset < 0) || (length < 0))
+	{
+		return error(GL_INVALID_VALUE);
+	}
 
 	es2::Context *context = es2::getContext();
 
@@ -1633,10 +1749,22 @@ GL_APICALL void GL_APIENTRY glFlushMappedBufferRange(GLenum target, GLintptr off
 			return error(GL_INVALID_OPERATION);
 		}
 
-		GLsizeiptr bufferSize = buffer->size();
-		if((offset < 0) || (length < 0) || ((offset + length) > bufferSize))
+		if(!buffer->isMapped())
 		{
-			error(GL_INVALID_VALUE);
+			// Buffer must be mapped
+			return error(GL_INVALID_OPERATION);
+		}
+
+		GLsizeiptr bufferSize = buffer->length();
+		if((offset + length) > bufferSize)
+		{
+			return error(GL_INVALID_VALUE);
+		}
+
+		if(!(buffer->access() & GL_MAP_FLUSH_EXPLICIT_BIT))
+		{
+			// Flush must be explicitly allowed
+			return error(GL_INVALID_OPERATION);
 		}
 
 		buffer->flushMappedRange(offset, length);
@@ -1646,11 +1774,6 @@ GL_APICALL void GL_APIENTRY glFlushMappedBufferRange(GLenum target, GLintptr off
 GL_APICALL void GL_APIENTRY glBindVertexArray(GLuint array)
 {
 	TRACE("(GLuint array = %d)", array);
-
-	if(array == 0)
-	{
-		return;
-	}
 
 	es2::Context *context = es2::getContext();
 
@@ -1775,7 +1898,7 @@ GL_APICALL void GL_APIENTRY glGetIntegeri_v(GLenum target, GLuint index, GLint *
 				{
 					if(target == GL_DEPTH_RANGE || target == GL_COLOR_CLEAR_VALUE || target == GL_DEPTH_CLEAR_VALUE || target == GL_BLEND_COLOR)
 					{
-						data[i] = convert_float_int(floatParams[i]);
+						data[i] = convert_float_fixed(floatParams[i]);
 					}
 					else
 					{
@@ -2023,7 +2146,15 @@ GL_APICALL void GL_APIENTRY glVertexAttribIPointer(GLuint index, GLint size, GLe
 
 	if(context)
 	{
-		context->setVertexAttribState(index, context->getArrayBuffer(), size, type, false, stride, pointer);
+		es2::VertexArray* vertexArray = context->getCurrentVertexArray();
+		if((context->getArrayBufferName() == 0) && vertexArray && (vertexArray->name != 0) && pointer)
+		{
+			// GL_INVALID_OPERATION is generated if a non-zero vertex array object is bound, zero is bound
+			// to the GL_ARRAY_BUFFER buffer object binding point and the pointer argument is not NULL.
+			return error(GL_INVALID_OPERATION);
+		}
+
+		context->setVertexAttribState(index, context->getArrayBuffer(), size, type, false, true, stride, pointer);
 	}
 }
 
@@ -2073,22 +2204,7 @@ GL_APICALL void GL_APIENTRY glGetVertexAttribIiv(GLuint index, GLenum pname, GLi
 			}
 			break;
 		case GL_VERTEX_ATTRIB_ARRAY_INTEGER:
-			switch(attribState.mType)
-			{
-			case GL_BYTE:
-			case GL_UNSIGNED_BYTE:
-			case GL_SHORT:
-			case GL_UNSIGNED_SHORT:
-			case GL_INT:
-			case GL_INT_2_10_10_10_REV:
-			case GL_UNSIGNED_INT:
-			case GL_FIXED:
-				*params = GL_TRUE;
-				break;
-			default:
-				*params = GL_FALSE;
-				break;
-			}
+			*params = (attribState.mPureInteger ? GL_TRUE : GL_FALSE);
 			break;
 		case GL_VERTEX_ATTRIB_ARRAY_DIVISOR:
 			*params = attribState.mDivisor;
@@ -2144,22 +2260,7 @@ GL_APICALL void GL_APIENTRY glGetVertexAttribIuiv(GLuint index, GLenum pname, GL
 			}
 			break;
 		case GL_VERTEX_ATTRIB_ARRAY_INTEGER:
-			switch(attribState.mType)
-			{
-			case GL_BYTE:
-			case GL_UNSIGNED_BYTE:
-			case GL_SHORT:
-			case GL_UNSIGNED_SHORT:
-			case GL_INT:
-			case GL_INT_2_10_10_10_REV:
-			case GL_UNSIGNED_INT:
-			case GL_FIXED:
-				*params = GL_TRUE;
-				break;
-			default:
-				*params = GL_FALSE;
-				break;
-			}
+			*params = (attribState.mPureInteger ? GL_TRUE : GL_FALSE);
 			break;
 		case GL_VERTEX_ATTRIB_ARRAY_DIVISOR:
 			*params = attribState.mDivisor;
@@ -2250,19 +2351,21 @@ GL_APICALL void GL_APIENTRY glGetUniformuiv(GLuint program, GLint location, GLui
 
 	if(context)
 	{
-		if(program == 0)
-		{
-			return error(GL_INVALID_VALUE);
-		}
-
 		es2::Program *programObject = context->getProgram(program);
 
-		if(!programObject || !programObject->isLinked())
+		if(!programObject)
 		{
-			return error(GL_INVALID_OPERATION);
+			if(context->getShader(program))
+			{
+				return error(GL_INVALID_OPERATION);
+			}
+			else
+			{
+				return error(GL_INVALID_VALUE);
+			}
 		}
 
-		if(!programObject)
+		if(!programObject->isLinked())
 		{
 			return error(GL_INVALID_OPERATION);
 		}
@@ -2343,11 +2446,6 @@ GL_APICALL void GL_APIENTRY glUniform1uiv(GLint location, GLsizei count, const G
 		return error(GL_INVALID_VALUE);
 	}
 
-	if(location == -1)
-	{
-		return;
-	}
-
 	es2::Context *context = es2::getContext();
 
 	if(context)
@@ -2357,6 +2455,11 @@ GL_APICALL void GL_APIENTRY glUniform1uiv(GLint location, GLsizei count, const G
 		if(!program)
 		{
 			return error(GL_INVALID_OPERATION);
+		}
+
+		if(location == -1)
+		{
+			return;
 		}
 
 		if(!program->setUniform1uiv(location, count, value))
@@ -2376,11 +2479,6 @@ GL_APICALL void GL_APIENTRY glUniform2uiv(GLint location, GLsizei count, const G
 		return error(GL_INVALID_VALUE);
 	}
 
-	if(location == -1)
-	{
-		return;
-	}
-
 	es2::Context *context = es2::getContext();
 
 	if(context)
@@ -2390,6 +2488,11 @@ GL_APICALL void GL_APIENTRY glUniform2uiv(GLint location, GLsizei count, const G
 		if(!program)
 		{
 			return error(GL_INVALID_OPERATION);
+		}
+
+		if(location == -1)
+		{
+			return;
 		}
 
 		if(!program->setUniform2uiv(location, count, value))
@@ -2409,11 +2512,6 @@ GL_APICALL void GL_APIENTRY glUniform3uiv(GLint location, GLsizei count, const G
 		return error(GL_INVALID_VALUE);
 	}
 
-	if(location == -1)
-	{
-		return;
-	}
-
 	es2::Context *context = es2::getContext();
 
 	if(context)
@@ -2423,6 +2521,11 @@ GL_APICALL void GL_APIENTRY glUniform3uiv(GLint location, GLsizei count, const G
 		if(!program)
 		{
 			return error(GL_INVALID_OPERATION);
+		}
+
+		if(location == -1)
+		{
+			return;
 		}
 
 		if(!program->setUniform3uiv(location, count, value))
@@ -2442,11 +2545,6 @@ GL_APICALL void GL_APIENTRY glUniform4uiv(GLint location, GLsizei count, const G
 		return error(GL_INVALID_VALUE);
 	}
 
-	if(location == -1)
-	{
-		return;
-	}
-
 	es2::Context *context = es2::getContext();
 
 	if(context)
@@ -2456,6 +2554,11 @@ GL_APICALL void GL_APIENTRY glUniform4uiv(GLint location, GLsizei count, const G
 		if(!program)
 		{
 			return error(GL_INVALID_OPERATION);
+		}
+
+		if(location == -1)
+		{
+			return;
 		}
 
 		if(!program->setUniform4uiv(location, count, value))
@@ -2682,7 +2785,14 @@ GL_APICALL void GL_APIENTRY glGetUniformIndices(GLuint program, GLsizei uniformC
 
 		if(!programObject)
 		{
-			return error(GL_INVALID_OPERATION);
+			if(context->getShader(program))
+			{
+				return error(GL_INVALID_OPERATION);
+			}
+			else
+			{
+				return error(GL_INVALID_VALUE);
+			}
 		}
 
 		if(!programObject->isLinked())
@@ -2735,7 +2845,14 @@ GL_APICALL void GL_APIENTRY glGetActiveUniformsiv(GLuint program, GLsizei unifor
 
 		if(!programObject)
 		{
-			return error(GL_INVALID_OPERATION);
+			if(context->getShader(program))
+			{
+				return error(GL_INVALID_OPERATION);
+			}
+			else
+			{
+				return error(GL_INVALID_VALUE);
+			}
 		}
 
 		for(int uniformId = 0; uniformId < uniformCount; uniformId++)
@@ -2769,7 +2886,14 @@ GL_APICALL GLuint GL_APIENTRY glGetUniformBlockIndex(GLuint program, const GLcha
 
 		if(!programObject)
 		{
-			return error(GL_INVALID_OPERATION, GL_INVALID_INDEX);
+			if(context->getShader(program))
+			{
+				return error(GL_INVALID_OPERATION, GL_INVALID_INDEX);
+			}
+			else
+			{
+				return error(GL_INVALID_VALUE, GL_INVALID_INDEX);
+			}
 		}
 
 		return programObject->getUniformBlockIndex(uniformBlockName);
@@ -2999,10 +3123,20 @@ GL_APICALL void GL_APIENTRY glDeleteSync(GLsync sync)
 {
 	TRACE("(GLsync sync = %p)", sync);
 
+	if(!sync)
+	{
+		return;
+	}
+
 	es2::Context *context = es2::getContext();
 
 	if(context)
 	{
+		if(!context->getFenceSync(sync))
+		{
+			return error(GL_INVALID_VALUE);
+		}
+
 		context->deleteFenceSync(sync);
 	}
 }
@@ -3013,7 +3147,7 @@ GL_APICALL GLenum GL_APIENTRY glClientWaitSync(GLsync sync, GLbitfield flags, GL
 
 	if((flags & ~(GL_SYNC_FLUSH_COMMANDS_BIT)) != 0)
 	{
-		error(GL_INVALID_VALUE);
+		return error(GL_INVALID_VALUE, GL_FALSE);
 	}
 
 	es2::Context *context = es2::getContext();
@@ -3109,7 +3243,7 @@ GL_APICALL void GL_APIENTRY glGetInteger64v(GLenum pname, GLint64 *data)
 				{
 					if(pname == GL_DEPTH_RANGE || pname == GL_COLOR_CLEAR_VALUE || pname == GL_DEPTH_CLEAR_VALUE || pname == GL_BLEND_COLOR)
 					{
-						data[i] = (GLint64)(convert_float_int(floatParams[i]));
+						data[i] = (GLint64)(convert_float_fixed(floatParams[i]));
 					}
 					else
 					{
@@ -3192,7 +3326,7 @@ GL_APICALL void GL_APIENTRY glGetInteger64i_v(GLenum target, GLuint index, GLint
 				{
 					if(target == GL_DEPTH_RANGE || target == GL_COLOR_CLEAR_VALUE || target == GL_DEPTH_CLEAR_VALUE || target == GL_BLEND_COLOR)
 					{
-						data[i] = (GLint64)(convert_float_int(floatParams[i]));
+						data[i] = (GLint64)(convert_float_fixed(floatParams[i]));
 					}
 					else
 					{
@@ -3391,11 +3525,6 @@ GL_APICALL void GL_APIENTRY glSamplerParameterfv(GLuint sampler, GLenum pname, c
 		return error(GL_INVALID_ENUM);
 	}
 
-	if(!ValidateTexParamParameters(pname, static_cast<GLint>(roundf(*param))))
-	{
-		return;
-	}
-
 	es2::Context *context = es2::getContext();
 
 	if(context)
@@ -3405,7 +3534,10 @@ GL_APICALL void GL_APIENTRY glSamplerParameterfv(GLuint sampler, GLenum pname, c
 			return error(GL_INVALID_OPERATION);
 		}
 
-		context->samplerParameterf(sampler, pname, *param);
+		if(ValidateTexParamParameters(pname, static_cast<GLint>(roundf(*param))))
+		{
+			context->samplerParameterf(sampler, pname, *param);
+		}
 	}
 }
 
@@ -3425,7 +3557,7 @@ GL_APICALL void GL_APIENTRY glGetSamplerParameteriv(GLuint sampler, GLenum pname
 	{
 		if(!context->isSampler(sampler))
 		{
-			return error(GL_INVALID_VALUE);
+			return error(GL_INVALID_OPERATION);
 		}
 
 		*params = context->getSamplerParameteri(sampler, pname);
@@ -3448,7 +3580,7 @@ GL_APICALL void GL_APIENTRY glGetSamplerParameterfv(GLuint sampler, GLenum pname
 	{
 		if(!context->isSampler(sampler))
 		{
-			return error(GL_INVALID_VALUE);
+			return error(GL_INVALID_OPERATION);
 		}
 
 		*params = context->getSamplerParameterf(sampler, pname);
@@ -3492,6 +3624,11 @@ GL_APICALL void GL_APIENTRY glBindTransformFeedback(GLenum target, GLuint id)
 			return error(GL_INVALID_OPERATION);
 		}
 
+		if(!context->isTransformFeedback(id))
+		{
+			return error(GL_INVALID_OPERATION);
+		}
+
 		context->bindTransformFeedback(id);
 	}
 }
@@ -3513,6 +3650,13 @@ GL_APICALL void GL_APIENTRY glDeleteTransformFeedbacks(GLsizei n, const GLuint *
 		{
 			if(ids[i] != 0)
 			{
+				es2::TransformFeedback *transformFeedbackObject = context->getTransformFeedback(ids[i]);
+
+				if(transformFeedbackObject && transformFeedbackObject->isActive())
+				{
+					return error(GL_INVALID_OPERATION);
+				}
+
 				context->deleteTransformFeedback(ids[i]);
 			}
 		}
@@ -3615,7 +3759,20 @@ GL_APICALL void GL_APIENTRY glGetProgramBinary(GLuint program, GLsizei bufSize, 
 		return error(GL_INVALID_VALUE);
 	}
 
-	UNIMPLEMENTED();
+	es2::Context *context = es2::getContext();
+
+	if(context)
+	{
+		es2::Program *programObject = context->getProgram(program);
+
+		if(!programObject || !programObject->isLinked())
+		{
+			return error(GL_INVALID_OPERATION);
+		}
+	}
+
+	// SwiftShader doesn't return a program binary and sets the program binay size to 0, so any attempt at getting one is invalid.
+	return error(GL_INVALID_OPERATION);
 }
 
 GL_APICALL void GL_APIENTRY glProgramBinary(GLuint program, GLenum binaryFormat, const void *binary, GLsizei length)
@@ -3628,7 +3785,20 @@ GL_APICALL void GL_APIENTRY glProgramBinary(GLuint program, GLenum binaryFormat,
 		return error(GL_INVALID_VALUE);
 	}
 
-	UNIMPLEMENTED();
+	es2::Context *context = es2::getContext();
+
+	if(context)
+	{
+		es2::Program *programObject = context->getProgram(program);
+
+		if(!programObject)
+		{
+			return error(GL_INVALID_OPERATION);
+		}
+	}
+
+	// Regardless of what the binaryFormat is, it is unrecognized by SwiftShader, since it supports no format.
+	return error(GL_INVALID_ENUM);
 }
 
 GL_APICALL void GL_APIENTRY glProgramParameteri(GLuint program, GLenum pname, GLint value)
@@ -3644,12 +3814,16 @@ GL_APICALL void GL_APIENTRY glProgramParameteri(GLuint program, GLenum pname, GL
 
 		if(!programObject)
 		{
-			return error(GL_INVALID_OPERATION);
+			return error(GL_INVALID_VALUE);
 		}
 
 		switch(pname)
 		{
 		case GL_PROGRAM_BINARY_RETRIEVABLE_HINT:
+			if((value != GL_TRUE) && (value != GL_FALSE))
+			{
+				return error(GL_INVALID_VALUE);
+			}
 			programObject->setBinaryRetrievable(value != GL_FALSE);
 			break;
 		default:
@@ -3894,7 +4068,7 @@ GL_APICALL void GL_APIENTRY glGetInternalformativ(GLenum target, GLenum internal
 		return;
 	}
 
-	if(!IsColorRenderable(internalformat, egl::getClientVersion(), false) &&
+	if(!IsColorRenderable(internalformat, egl::getClientVersion()) &&
 	   !IsDepthRenderable(internalformat, egl::getClientVersion()) &&
 	   !IsStencilRenderable(internalformat, egl::getClientVersion()))
 	{

@@ -195,9 +195,9 @@ ImageImpl *DisplayD3D::createImage(const egl::ImageState &state,
     return new EGLImageD3D(state, target, attribs, mRenderer);
 }
 
-egl::Error DisplayD3D::getDevice(DeviceImpl **device)
+DeviceImpl *DisplayD3D::createDevice()
 {
-    return mRenderer->getEGLDevice(device);
+    return mRenderer->createEGLDevice();
 }
 
 ContextImpl *DisplayD3D::createContext(const gl::ContextState &state)
@@ -206,12 +206,12 @@ ContextImpl *DisplayD3D::createContext(const gl::ContextState &state)
     return mRenderer->createContext(state);
 }
 
-StreamProducerImpl *DisplayD3D::createStreamProducerD3DTextureNV12(
+StreamProducerImpl *DisplayD3D::createStreamProducerD3DTexture(
     egl::Stream::ConsumerType consumerType,
     const egl::AttributeMap &attribs)
 {
     ASSERT(mRenderer != nullptr);
-    return mRenderer->createStreamProducerD3DTextureNV12(consumerType, attribs);
+    return mRenderer->createStreamProducerD3DTexture(consumerType, attribs);
 }
 
 egl::Error DisplayD3D::makeCurrent(egl::Surface *drawSurface, egl::Surface *readSurface, gl::Context *context)

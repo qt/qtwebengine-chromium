@@ -13,6 +13,7 @@
 class BrowserProcessImpl;
 class HistogramSynchronizer;
 class NativeBackendKWallet;
+class KeyStorageLinux;
 
 namespace android_webview {
 class AwFormDatabaseService;
@@ -51,7 +52,7 @@ class TextInputClientMac;
 }  // namespace content
 namespace cronet {
 class CronetPrefsManager;
-class CronetURLRequestContextAdapter;
+class CronetURLRequestContext;
 }  // namespace cronet
 namespace dbus {
 class Bus;
@@ -68,6 +69,9 @@ class LevelDBMojoProxy;
 }
 namespace media {
 class BlockingUrlProtocol;
+}
+namespace midi {
+class TaskService;  // https://crbug.com/796830
 }
 namespace mojo {
 class SyncCallRestrictions;
@@ -199,7 +203,7 @@ class BASE_EXPORT ScopedAllowBlocking {
   // in unit tests to avoid the friend requirement.
   FRIEND_TEST_ALL_PREFIXES(ThreadRestrictionsTest, ScopedAllowBlocking);
   friend class cronet::CronetPrefsManager;
-  friend class cronet::CronetURLRequestContextAdapter;
+  friend class cronet::CronetURLRequestContext;
   friend class resource_coordinator::TabManagerDelegate;  // crbug.com/778703
   friend class ScopedAllowBlockingForTesting;
 
@@ -288,6 +292,8 @@ class BASE_EXPORT ScopedAllowBaseSyncPrimitivesOutsideBlockingScope {
   FRIEND_TEST_ALL_PREFIXES(
       ThreadRestrictionsTest,
       ScopedAllowBaseSyncPrimitivesOutsideBlockingScopeResetsState);
+  friend class ::KeyStorageLinux;
+  friend class midi::TaskService;  // https://crbug.com/796830
 
   ScopedAllowBaseSyncPrimitivesOutsideBlockingScope()
       EMPTY_BODY_IF_DCHECK_IS_OFF;

@@ -13,16 +13,27 @@
 #include "core/fxcrt/xml/cfx_xmlelement.h"
 #include "core/fxcrt/xml/cfx_xmlnode.h"
 #include "fxjs/cfxjse_engine.h"
+#include "fxjs/xfa/cjx_object.h"
 #include "third_party/base/logging.h"
 #include "third_party/base/stl_util.h"
+#include "xfa/fxfa/parser/cxfa_bind.h"
+#include "xfa/fxfa/parser/cxfa_datagroup.h"
 #include "xfa/fxfa/parser/cxfa_document.h"
+#include "xfa/fxfa/parser/cxfa_exdata.h"
+#include "xfa/fxfa/parser/cxfa_form.h"
+#include "xfa/fxfa/parser/cxfa_image.h"
+#include "xfa/fxfa/parser/cxfa_items.h"
 #include "xfa/fxfa/parser/cxfa_layoutprocessor.h"
 #include "xfa/fxfa/parser/cxfa_localemgr.h"
 #include "xfa/fxfa/parser/cxfa_node.h"
 #include "xfa/fxfa/parser/cxfa_nodeiteratortemplate.h"
-#include "xfa/fxfa/parser/cxfa_occurdata.h"
+#include "xfa/fxfa/parser/cxfa_occur.h"
+#include "xfa/fxfa/parser/cxfa_pageset.h"
+#include "xfa/fxfa/parser/cxfa_subform.h"
+#include "xfa/fxfa/parser/cxfa_template.h"
 #include "xfa/fxfa/parser/cxfa_traversestrategy_xfacontainernode.h"
 #include "xfa/fxfa/parser/cxfa_traversestrategy_xfanode.h"
+#include "xfa/fxfa/parser/cxfa_value.h"
 #include "xfa/fxfa/parser/xfa_resolvenode_rs.h"
 #include "xfa/fxfa/parser/xfa_utils.h"
 
@@ -37,7 +48,7 @@ class CXFA_TraverseStrategy_DDGroup {
     return pDDGroupNode->GetNextSameNameSibling(XFA_HASHCODE_Group);
   }
   static CXFA_Node* GetParent(CXFA_Node* pDDGroupNode) {
-    return pDDGroupNode->GetNodeItem(XFA_NODEITEM_Parent);
+    return pDDGroupNode->GetParent();
   }
 };
 
@@ -47,19 +58,21 @@ struct RecurseRecord {
 };
 
 CXFA_Node* FormValueNode_CreateChild(CXFA_Node* pValueNode, XFA_Element iType) {
-  CXFA_Node* pChildNode = pValueNode->GetNodeItem(XFA_NODEITEM_FirstChild);
+  CXFA_Node* pChildNode = pValueNode->GetFirstChild();
   if (!pChildNode) {
     if (iType == XFA_Element::Unknown)
       return nullptr;
-    pChildNode = pValueNode->JSNode()->GetProperty(0, iType, true);
+
+    pChildNode =
+        pValueNode->JSObject()->GetOrCreateProperty<CXFA_Node>(0, iType);
   }
   return pChildNode;
 }
 
 void FormValueNode_MatchNoneCreateChild(CXFA_Node* pFormNode) {
-  CXFA_WidgetData* pWidgetData = pFormNode->GetWidgetData();
-  ASSERT(pWidgetData);
-  pWidgetData->GetUIType();
+  CXFA_WidgetAcc* pWidgetAcc = pFormNode->GetWidgetAcc();
+  ASSERT(pWidgetAcc);
+  pWidgetAcc->GetUIType();
 }
 
 bool FormValueNode_SetChildContent(CXFA_Node* pValueNode,
@@ -75,14 +88,13 @@ bool FormValueNode_SetChildContent(CXFA_Node* pValueNode,
 
   switch (pChildNode->GetObjectType()) {
     case XFA_ObjectType::ContentNode: {
-      CXFA_Node* pContentRawDataNode =
-          pChildNode->GetNodeItem(XFA_NODEITEM_FirstChild);
+      CXFA_Node* pContentRawDataNode = pChildNode->GetFirstChild();
       if (!pContentRawDataNode) {
         XFA_Element element = XFA_Element::Sharptext;
         if (pChildNode->GetElementType() == XFA_Element::ExData) {
-          pdfium::Optional<WideString> contentType =
-              pChildNode->JSNode()->TryAttribute(XFA_Attribute::ContentType,
-                                                 false);
+          Optional<WideString> contentType =
+              pChildNode->JSObject()->TryAttribute(XFA_Attribute::ContentType,
+                                                   false);
           if (contentType) {
             if (*contentType == L"text/html")
               element = XFA_Element::SharpxHTML;
@@ -93,15 +105,15 @@ bool FormValueNode_SetChildContent(CXFA_Node* pValueNode,
         pContentRawDataNode = pChildNode->CreateSamePacketNode(element);
         pChildNode->InsertChild(pContentRawDataNode, nullptr);
       }
-      pContentRawDataNode->JSNode()->SetCData(XFA_Attribute::Value, wsContent,
-                                              false, false);
+      pContentRawDataNode->JSObject()->SetCData(XFA_Attribute::Value, wsContent,
+                                                false, false);
       break;
     }
     case XFA_ObjectType::NodeC:
     case XFA_ObjectType::TextNode:
     case XFA_ObjectType::NodeV: {
-      pChildNode->JSNode()->SetCData(XFA_Attribute::Value, wsContent, false,
-                                     false);
+      pChildNode->JSObject()->SetCData(XFA_Attribute::Value, wsContent, false,
+                                       false);
       break;
     }
     default:
@@ -114,57 +126,57 @@ bool FormValueNode_SetChildContent(CXFA_Node* pValueNode,
 void CreateDataBinding(CXFA_Node* pFormNode,
                        CXFA_Node* pDataNode,
                        bool bDataToForm) {
-  pFormNode->JSNode()->SetBindingNode(pDataNode);
+  pFormNode->SetBindingNode(pDataNode);
   pDataNode->AddBindItem(pFormNode);
   XFA_Element eType = pFormNode->GetElementType();
   if (eType != XFA_Element::Field && eType != XFA_Element::ExclGroup)
     return;
 
-  CXFA_WidgetData* pWidgetData = pFormNode->GetWidgetData();
-  ASSERT(pWidgetData);
-  XFA_Element eUIType = pWidgetData->GetUIType();
-  CXFA_ValueData defValueData(
-      pFormNode->JSNode()->GetProperty(0, XFA_Element::Value, true));
+  CXFA_WidgetAcc* pWidgetAcc = pFormNode->GetWidgetAcc();
+  ASSERT(pWidgetAcc);
+  XFA_Element eUIType = pWidgetAcc->GetUIType();
+  auto* defValue = pFormNode->JSObject()->GetOrCreateProperty<CXFA_Value>(
+      0, XFA_Element::Value);
   if (!bDataToForm) {
     WideString wsValue;
     switch (eUIType) {
       case XFA_Element::ImageEdit: {
-        CXFA_ImageData imageData = defValueData.GetImageData();
+        CXFA_Image* image = defValue ? defValue->GetImageIfExists() : nullptr;
         WideString wsContentType;
         WideString wsHref;
-        if (imageData.HasValidNode()) {
-          wsValue = imageData.GetContent();
-          wsContentType = imageData.GetContentType();
-          wsHref = imageData.GetHref();
+        if (image) {
+          wsValue = image->GetContent();
+          wsContentType = image->GetContentType();
+          wsHref = image->GetHref();
         }
         CFX_XMLElement* pXMLDataElement =
             static_cast<CFX_XMLElement*>(pDataNode->GetXMLMappingNode());
         ASSERT(pXMLDataElement);
 
-        pDataNode->JSNode()->SetAttributeValue(
-            wsValue, pWidgetData->GetFormatDataValue(wsValue), false, false);
-        pDataNode->JSNode()->SetCData(XFA_Attribute::ContentType, wsContentType,
-                                      false, false);
+        pDataNode->JSObject()->SetAttributeValue(
+            wsValue, pWidgetAcc->GetFormatDataValue(wsValue), false, false);
+        pDataNode->JSObject()->SetCData(XFA_Attribute::ContentType,
+                                        wsContentType, false, false);
         if (!wsHref.IsEmpty())
           pXMLDataElement->SetString(L"href", wsHref);
 
         break;
       }
       case XFA_Element::ChoiceList:
-        wsValue = defValueData.GetChildValueContent();
-        if (pWidgetData->IsChoiceListMultiSelect()) {
+        wsValue = defValue ? defValue->GetChildValueContent() : L"";
+        if (pWidgetAcc->IsChoiceListMultiSelect()) {
           std::vector<WideString> wsSelTextArray =
-              pWidgetData->GetSelectedItemsValue();
+              pWidgetAcc->GetSelectedItemsValue();
           if (!wsSelTextArray.empty()) {
             for (const auto& text : wsSelTextArray) {
               CXFA_Node* pValue =
                   pDataNode->CreateSamePacketNode(XFA_Element::DataValue);
-              pValue->JSNode()->SetCData(XFA_Attribute::Name, L"value", false,
-                                         false);
+              pValue->JSObject()->SetCData(XFA_Attribute::Name, L"value", false,
+                                           false);
               pValue->CreateXMLMappingNode();
               pDataNode->InsertChild(pValue, nullptr);
-              pValue->JSNode()->SetCData(XFA_Attribute::Value, text, false,
-                                         false);
+              pValue->JSObject()->SetCData(XFA_Attribute::Value, text, false,
+                                           false);
             }
           } else {
             CFX_XMLNode* pXMLNode = pDataNode->GetXMLMappingNode();
@@ -173,113 +185,117 @@ void CreateDataBinding(CXFA_Node* pFormNode,
                                                               L"dataGroup");
           }
         } else if (!wsValue.IsEmpty()) {
-          pDataNode->JSNode()->SetAttributeValue(
-              wsValue, pWidgetData->GetFormatDataValue(wsValue), false, false);
+          pDataNode->JSObject()->SetAttributeValue(
+              wsValue, pWidgetAcc->GetFormatDataValue(wsValue), false, false);
         }
         break;
       case XFA_Element::CheckButton:
-        wsValue = defValueData.GetChildValueContent();
+        wsValue = defValue ? defValue->GetChildValueContent() : L"";
         if (wsValue.IsEmpty())
           break;
 
-        pDataNode->JSNode()->SetAttributeValue(
-            wsValue, pWidgetData->GetFormatDataValue(wsValue), false, false);
+        pDataNode->JSObject()->SetAttributeValue(
+            wsValue, pWidgetAcc->GetFormatDataValue(wsValue), false, false);
         break;
       case XFA_Element::ExclGroup: {
         CXFA_Node* pChecked = nullptr;
-        CXFA_Node* pChild = pFormNode->GetNodeItem(XFA_NODEITEM_FirstChild);
-        for (; pChild; pChild = pChild->GetNodeItem(XFA_NODEITEM_NextSibling)) {
+        CXFA_Node* pChild = pFormNode->GetFirstChild();
+        for (; pChild; pChild = pChild->GetNextSibling()) {
           if (pChild->GetElementType() != XFA_Element::Field)
             continue;
 
-          CXFA_Node* pValue = pChild->GetChild(0, XFA_Element::Value, false);
+          auto* pValue =
+              pChild->GetChild<CXFA_Value>(0, XFA_Element::Value, false);
           if (!pValue)
             continue;
 
-          wsValue = CXFA_ValueData(pValue).GetChildValueContent();
+          wsValue = pValue->GetChildValueContent();
           if (wsValue.IsEmpty())
             continue;
 
-          CXFA_Node* pItems = pChild->GetChild(0, XFA_Element::Items, false);
+          CXFA_Items* pItems =
+              pChild->GetChild<CXFA_Items>(0, XFA_Element::Items, false);
           if (!pItems)
             continue;
 
-          CXFA_Node* pText = pItems->GetNodeItem(XFA_NODEITEM_FirstChild);
+          CXFA_Node* pText = pItems->GetFirstChild();
           if (!pText)
             continue;
 
-          WideString wsContent = pText->JSNode()->GetContent(false);
+          WideString wsContent = pText->JSObject()->GetContent(false);
           if (wsContent == wsValue) {
             pChecked = pChild;
-            pDataNode->JSNode()->SetAttributeValue(wsValue, wsValue, false,
-                                                   false);
-            pFormNode->JSNode()->SetCData(XFA_Attribute::Value, wsContent,
-                                          false, false);
+            pDataNode->JSObject()->SetAttributeValue(wsValue, wsValue, false,
+                                                     false);
+            pFormNode->JSObject()->SetCData(XFA_Attribute::Value, wsContent,
+                                            false, false);
             break;
           }
         }
         if (!pChecked)
           break;
 
-        pChild = pFormNode->GetNodeItem(XFA_NODEITEM_FirstChild);
-        for (; pChild; pChild = pChild->GetNodeItem(XFA_NODEITEM_NextSibling)) {
+        pChild = pFormNode->GetFirstChild();
+        for (; pChild; pChild = pChild->GetNextSibling()) {
           if (pChild == pChecked)
             continue;
           if (pChild->GetElementType() != XFA_Element::Field)
             continue;
 
-          CXFA_Node* pValue =
-              pChild->JSNode()->GetProperty(0, XFA_Element::Value, true);
-          CXFA_Node* pItems = pChild->GetChild(0, XFA_Element::Items, false);
-          CXFA_Node* pText =
-              pItems ? pItems->GetNodeItem(XFA_NODEITEM_FirstChild) : nullptr;
+          CXFA_Value* pValue =
+              pChild->JSObject()->GetOrCreateProperty<CXFA_Value>(
+                  0, XFA_Element::Value);
+          CXFA_Items* pItems =
+              pChild->GetChild<CXFA_Items>(0, XFA_Element::Items, false);
+          CXFA_Node* pText = pItems ? pItems->GetFirstChild() : nullptr;
           if (pText)
-            pText = pText->GetNodeItem(XFA_NODEITEM_NextSibling);
+            pText = pText->GetNextSibling();
 
           WideString wsContent;
           if (pText)
-            wsContent = pText->JSNode()->GetContent(false);
+            wsContent = pText->JSObject()->GetContent(false);
 
           FormValueNode_SetChildContent(pValue, wsContent, XFA_Element::Text);
         }
         break;
       }
       case XFA_Element::NumericEdit: {
-        wsValue = defValueData.GetChildValueContent();
+        wsValue = defValue ? defValue->GetChildValueContent() : L"";
         if (wsValue.IsEmpty())
           break;
 
-        wsValue = pWidgetData->NormalizeNumStr(wsValue);
-        pDataNode->JSNode()->SetAttributeValue(
-            wsValue, pWidgetData->GetFormatDataValue(wsValue), false, false);
-        CXFA_Node* pValue =
-            pFormNode->JSNode()->GetProperty(0, XFA_Element::Value, true);
+        wsValue = pWidgetAcc->NormalizeNumStr(wsValue);
+        pDataNode->JSObject()->SetAttributeValue(
+            wsValue, pWidgetAcc->GetFormatDataValue(wsValue), false, false);
+        CXFA_Value* pValue =
+            pFormNode->JSObject()->GetOrCreateProperty<CXFA_Value>(
+                0, XFA_Element::Value);
         FormValueNode_SetChildContent(pValue, wsValue, XFA_Element::Float);
         break;
       }
       default:
-        wsValue = defValueData.GetChildValueContent();
+        wsValue = defValue ? defValue->GetChildValueContent() : L"";
         if (wsValue.IsEmpty())
           break;
 
-        pDataNode->JSNode()->SetAttributeValue(
-            wsValue, pWidgetData->GetFormatDataValue(wsValue), false, false);
+        pDataNode->JSObject()->SetAttributeValue(
+            wsValue, pWidgetAcc->GetFormatDataValue(wsValue), false, false);
         break;
     }
     return;
   }
 
-  WideString wsXMLValue = pDataNode->JSNode()->GetContent(false);
-  WideString wsNormalizeValue = pWidgetData->GetNormalizeDataValue(wsXMLValue);
+  WideString wsXMLValue = pDataNode->JSObject()->GetContent(false);
+  WideString wsNormalizeValue = pWidgetAcc->GetNormalizeDataValue(wsXMLValue);
 
-  pDataNode->JSNode()->SetAttributeValue(wsNormalizeValue, wsXMLValue, false,
-                                         false);
+  pDataNode->JSObject()->SetAttributeValue(wsNormalizeValue, wsXMLValue, false,
+                                           false);
   switch (eUIType) {
     case XFA_Element::ImageEdit: {
-      FormValueNode_SetChildContent(defValueData.GetNode(), wsNormalizeValue,
+      FormValueNode_SetChildContent(defValue, wsNormalizeValue,
                                     XFA_Element::Image);
-      CXFA_ImageData imageData = defValueData.GetImageData();
-      if (imageData.HasValidNode()) {
+      CXFA_Image* image = defValue ? defValue->GetImageIfExists() : nullptr;
+      if (image) {
         CFX_XMLElement* pXMLDataElement =
             static_cast<CFX_XMLElement*>(pDataNode->GetXMLMappingNode());
         ASSERT(pXMLDataElement);
@@ -287,19 +303,19 @@ void CreateDataBinding(CXFA_Node* pFormNode,
         WideString wsContentType =
             pXMLDataElement->GetString(L"xfa:contentType");
         if (!wsContentType.IsEmpty()) {
-          pDataNode->JSNode()->SetCData(XFA_Attribute::ContentType,
-                                        wsContentType, false, false);
-          imageData.SetContentType(wsContentType);
+          pDataNode->JSObject()->SetCData(XFA_Attribute::ContentType,
+                                          wsContentType, false, false);
+          image->SetContentType(wsContentType);
         }
 
         WideString wsHref = pXMLDataElement->GetString(L"href");
         if (!wsHref.IsEmpty())
-          imageData.SetHref(wsHref);
+          image->SetHref(wsHref);
       }
       break;
     }
     case XFA_Element::ChoiceList:
-      if (pWidgetData->IsChoiceListMultiSelect()) {
+      if (pWidgetAcc->IsChoiceListMultiSelect()) {
         std::vector<CXFA_Node*> items = pDataNode->GetNodeList(
             XFA_NODEFILTER_Children | XFA_NODEFILTER_Properties,
             XFA_Element::Unknown);
@@ -308,44 +324,45 @@ void CreateDataBinding(CXFA_Node* pFormNode,
           wsNormalizeValue.clear();
 
           for (CXFA_Node* pNode : items) {
-            WideString wsItem = pNode->JSNode()->GetContent(false);
+            WideString wsItem = pNode->JSObject()->GetContent(false);
             if (single)
               wsItem += L"\n";
 
             wsNormalizeValue += wsItem;
           }
-          CXFA_ExDataData exData = defValueData.GetExData();
-          ASSERT(exData.HasValidNode());
+          CXFA_ExData* exData =
+              defValue ? defValue->GetExDataIfExists() : nullptr;
+          ASSERT(exData);
 
-          exData.SetContentType(single ? L"text/plain" : L"text/xml");
+          exData->SetContentType(single ? L"text/plain" : L"text/xml");
         }
-        FormValueNode_SetChildContent(defValueData.GetNode(), wsNormalizeValue,
+        FormValueNode_SetChildContent(defValue, wsNormalizeValue,
                                       XFA_Element::ExData);
       } else {
-        FormValueNode_SetChildContent(defValueData.GetNode(), wsNormalizeValue,
+        FormValueNode_SetChildContent(defValue, wsNormalizeValue,
                                       XFA_Element::Text);
       }
       break;
     case XFA_Element::CheckButton:
-      FormValueNode_SetChildContent(defValueData.GetNode(), wsNormalizeValue,
+      FormValueNode_SetChildContent(defValue, wsNormalizeValue,
                                     XFA_Element::Text);
       break;
     case XFA_Element::ExclGroup: {
-      pWidgetData->SetSelectedMemberByValue(wsNormalizeValue.AsStringView(),
-                                            false, false, false);
+      pWidgetAcc->SetSelectedMemberByValue(wsNormalizeValue.AsStringView(),
+                                           false, false, false);
       break;
     }
     case XFA_Element::DateTimeEdit:
-      FormValueNode_SetChildContent(defValueData.GetNode(), wsNormalizeValue,
+      FormValueNode_SetChildContent(defValue, wsNormalizeValue,
                                     XFA_Element::DateTime);
       break;
     case XFA_Element::NumericEdit: {
       WideString wsPicture =
-          pWidgetData->GetPictureContent(XFA_VALUEPICTURE_DataBind);
+          pWidgetAcc->GetPictureContent(XFA_VALUEPICTURE_DataBind);
       if (wsPicture.IsEmpty())
-        wsNormalizeValue = pWidgetData->NormalizeNumStr(wsNormalizeValue);
+        wsNormalizeValue = pWidgetAcc->NormalizeNumStr(wsNormalizeValue);
 
-      FormValueNode_SetChildContent(defValueData.GetNode(), wsNormalizeValue,
+      FormValueNode_SetChildContent(defValue, wsNormalizeValue,
                                     XFA_Element::Float);
       break;
     }
@@ -355,7 +372,7 @@ void CreateDataBinding(CXFA_Node* pFormNode,
     case XFA_Element::Signature:
     case XFA_Element::TextEdit:
     default:
-      FormValueNode_SetChildContent(defValueData.GetNode(), wsNormalizeValue,
+      FormValueNode_SetChildContent(defValue, wsNormalizeValue,
                                     XFA_Element::Text);
       break;
   }
@@ -380,8 +397,7 @@ CXFA_Node* ScopeMatchGlobalBinding(CXFA_Node* pDataScope,
        pCurDataScope &&
        pCurDataScope->GetPacketType() == XFA_PacketType::Datasets;
        pLastDataScope = pCurDataScope,
-                 pCurDataScope =
-                     pCurDataScope->GetNodeItem(XFA_NODEITEM_Parent)) {
+                 pCurDataScope = pCurDataScope->GetParent()) {
     for (CXFA_Node* pDataChild = pCurDataScope->GetFirstChildByName(dwNameHash);
          pDataChild;
          pDataChild = pDataChild->GetNextSameNameSibling(dwNameHash)) {
@@ -394,10 +410,12 @@ CXFA_Node* ScopeMatchGlobalBinding(CXFA_Node* pDataScope,
       return pDataChild;
     }
 
-    for (CXFA_Node* pDataChild =
-             pCurDataScope->GetFirstChildByClass(XFA_Element::DataGroup);
-         pDataChild; pDataChild = pDataChild->GetNextSameClassSibling(
-                         XFA_Element::DataGroup)) {
+    for (CXFA_DataGroup* pDataChild =
+             pCurDataScope->GetFirstChildByClass<CXFA_DataGroup>(
+                 XFA_Element::DataGroup);
+         pDataChild;
+         pDataChild = pDataChild->GetNextSameClassSibling<CXFA_DataGroup>(
+             XFA_Element::DataGroup)) {
       CXFA_Node* pDataNode = ScopeMatchGlobalBinding(pDataChild, dwNameHash,
                                                      eMatchDataNodeType, false);
       if (pDataNode)
@@ -439,7 +457,7 @@ CXFA_Node* FindOnceDataNode(CXFA_Document* pDocument,
   for (CXFA_Node* pCurDataScope = pDataScope;
        pCurDataScope &&
        pCurDataScope->GetPacketType() == XFA_PacketType::Datasets;
-       pCurDataScope = pCurDataScope->GetNodeItem(XFA_NODEITEM_Parent)) {
+       pCurDataScope = pCurDataScope->GetParent()) {
     for (CXFA_Node* pDataChild = pCurDataScope->GetFirstChildByName(dwNameHash);
          pDataChild;
          pDataChild = pDataChild->GetNextSameNameSibling(dwNameHash)) {
@@ -468,14 +486,14 @@ CXFA_Node* FindDataRefDataNode(CXFA_Document* pDocument,
 
   XFA_RESOLVENODE_RS rs;
   pDocument->GetScriptContext()->ResolveObjects(
-      pDataScope, wsRef.AsStringView(), rs, dFlags, pTemplateNode);
-  if (rs.dwFlags == XFA_RESOLVENODE_RSTYPE_CreateNodeAll ||
-      rs.dwFlags == XFA_RESOLVENODE_RSTYPE_CreateNodeMidAll ||
+      pDataScope, wsRef.AsStringView(), &rs, dFlags, pTemplateNode);
+  if (rs.dwFlags == XFA_ResolveNode_RSType_CreateNodeAll ||
+      rs.dwFlags == XFA_ResolveNode_RSType_CreateNodeMidAll ||
       rs.objects.size() > 1) {
     return pDocument->GetNotBindNode(rs.objects);
   }
 
-  if (rs.dwFlags == XFA_RESOLVENODE_RSTYPE_CreateNodeOne) {
+  if (rs.dwFlags == XFA_ResolveNode_RSType_CreateNodeOne) {
     CXFA_Object* pObject = !rs.objects.empty() ? rs.objects.front() : nullptr;
     CXFA_Node* pNode = ToNode(pObject);
     return (bForceBind || !pNode || !pNode->HasBindItem()) ? pNode : nullptr;
@@ -501,7 +519,7 @@ CXFA_Node* CloneOrMergeInstanceManager(CXFA_Document* pDocument,
                                        CXFA_Node* pTemplateNode,
                                        std::vector<CXFA_Node*>* subforms) {
   WideString wsSubformName =
-      pTemplateNode->JSNode()->GetCData(XFA_Attribute::Name);
+      pTemplateNode->JSObject()->GetCData(XFA_Attribute::Name);
   WideString wsInstMgrNodeName = L"_" + wsSubformName;
   uint32_t dwInstNameHash =
       FX_HashCode_GetW(wsInstMgrNodeName.AsStringView(), false);
@@ -509,22 +527,20 @@ CXFA_Node* CloneOrMergeInstanceManager(CXFA_Document* pDocument,
       pDocument, XFA_Element::InstanceManager, dwInstNameHash, pFormParent);
   if (pExistingNode) {
     uint32_t dwNameHash = pTemplateNode->GetNameHash();
-    for (CXFA_Node* pNode =
-             pExistingNode->GetNodeItem(XFA_NODEITEM_NextSibling);
-         pNode;) {
+    for (CXFA_Node* pNode = pExistingNode->GetNextSibling(); pNode;) {
       XFA_Element eCurType = pNode->GetElementType();
       if (eCurType == XFA_Element::InstanceManager)
         break;
 
       if ((eCurType != XFA_Element::Subform) &&
           (eCurType != XFA_Element::SubformSet)) {
-        pNode = pNode->GetNodeItem(XFA_NODEITEM_NextSibling);
+        pNode = pNode->GetNextSibling();
         continue;
       }
       if (dwNameHash != pNode->GetNameHash())
         break;
 
-      CXFA_Node* pNextNode = pNode->GetNodeItem(XFA_NODEITEM_NextSibling);
+      CXFA_Node* pNextNode = pNode->GetNextSibling();
       pFormParent->RemoveChild(pNode, true);
       subforms->push_back(pNode);
       pNode = pNextNode;
@@ -539,9 +555,9 @@ CXFA_Node* CloneOrMergeInstanceManager(CXFA_Document* pDocument,
   CXFA_Node* pNewNode =
       pDocument->CreateNode(XFA_PacketType::Form, XFA_Element::InstanceManager);
   wsInstMgrNodeName =
-      L"_" + pTemplateNode->JSNode()->GetCData(XFA_Attribute::Name);
-  pNewNode->JSNode()->SetCData(XFA_Attribute::Name, wsInstMgrNodeName, false,
-                               false);
+      L"_" + pTemplateNode->JSObject()->GetCData(XFA_Attribute::Name);
+  pNewNode->JSObject()->SetCData(XFA_Attribute::Name, wsInstMgrNodeName, false,
+                                 false);
   pFormParent->InsertChild(pNewNode, nullptr);
   pNewNode->SetTemplateNode(pTemplateNode);
   return pNewNode;
@@ -580,25 +596,24 @@ CXFA_Node* FindMatchingDataNode(
         continue;
     }
 
-    CXFA_Node* pTemplateNodeOccur =
-        pCurTemplateNode->GetFirstChildByClass(XFA_Element::Occur);
+    CXFA_Occur* pTemplateNodeOccur =
+        pCurTemplateNode->GetFirstChildByClass<CXFA_Occur>(XFA_Element::Occur);
     if (pTemplateNodeOccur) {
       int32_t iMin;
       int32_t iMax;
       int32_t iInit;
-      std::tie(iMin, iMax, iInit) =
-          CXFA_OccurData(pTemplateNodeOccur).GetOccurInfo();
+      std::tie(iMin, iMax, iInit) = pTemplateNodeOccur->GetOccurInfo();
       if (iMax == 0) {
         pCurTemplateNode = pIterator->MoveToNext();
         continue;
       }
     }
 
-    CXFA_Node* pTemplateNodeBind =
-        pCurTemplateNode->GetFirstChildByClass(XFA_Element::Bind);
+    CXFA_Bind* pTemplateNodeBind =
+        pCurTemplateNode->GetFirstChildByClass<CXFA_Bind>(XFA_Element::Bind);
     XFA_AttributeEnum eMatch =
         pTemplateNodeBind
-            ? pTemplateNodeBind->JSNode()->GetEnum(XFA_Attribute::Match)
+            ? pTemplateNodeBind->JSObject()->GetEnum(XFA_Attribute::Match)
             : XFA_AttributeEnum::Once;
     eBindMatch = eMatch;
     switch (eMatch) {
@@ -616,7 +631,7 @@ CXFA_Node* FindMatchingDataNode(
              XFA_FieldIsMultiListBox(pTemplateNodeBind))) {
           CXFA_Node* pGlobalBindNode = FindGlobalDataNode(
               pDocument,
-              pCurTemplateNode->JSNode()->GetCData(XFA_Attribute::Name),
+              pCurTemplateNode->JSObject()->GetCData(XFA_Attribute::Name),
               pDataScope, eMatchNodeType);
           if (!pGlobalBindNode) {
             pCurTemplateNode = pIterator->MoveToNext();
@@ -629,7 +644,7 @@ CXFA_Node* FindMatchingDataNode(
         bAccessedDataDOM = true;
         CXFA_Node* pOnceBindNode = FindOnceDataNode(
             pDocument,
-            pCurTemplateNode->JSNode()->GetCData(XFA_Attribute::Name),
+            pCurTemplateNode->JSObject()->GetCData(XFA_Attribute::Name),
             pDataScope, eMatchNodeType);
         if (!pOnceBindNode) {
           pCurTemplateNode = pIterator->MoveToNext();
@@ -642,7 +657,7 @@ CXFA_Node* FindMatchingDataNode(
         bAccessedDataDOM = true;
         CXFA_Node* pDataRefBindNode = FindDataRefDataNode(
             pDocument,
-            pTemplateNodeBind->JSNode()->GetCData(XFA_Attribute::Ref),
+            pTemplateNodeBind->JSObject()->GetCData(XFA_Attribute::Ref),
             pDataScope, eMatchNodeType, pTemplateNode, bForceBind, bUpLevel);
         if (pDataRefBindNode &&
             pDataRefBindNode->GetElementType() == eMatchNodeType) {
@@ -668,8 +683,8 @@ void SortRecurseRecord(std::vector<RecurseRecord>* rgRecords,
                        CXFA_Node* pDataScope,
                        bool bChoiceMode) {
   std::vector<RecurseRecord> rgResultRecord;
-  for (CXFA_Node* pNode = pDataScope->GetNodeItem(XFA_NODEITEM_FirstChild);
-       pNode; pNode = pNode->GetNodeItem(XFA_NODEITEM_NextSibling)) {
+  for (CXFA_Node* pNode = pDataScope->GetFirstChild(); pNode;
+       pNode = pNode->GetNextSibling()) {
     auto it = std::find_if(rgRecords->begin(), rgRecords->end(),
                            [pNode](const RecurseRecord& record) {
                              return pNode == record.pDataChild;
@@ -711,14 +726,16 @@ CXFA_Node* CopyContainer_SubformSet(CXFA_Document* pDocument,
                                              pDocument, pFormParentNode,
                                              pTemplateNode, &subformArray)
                                        : nullptr;
-    if (CXFA_Node* pOccurTemplateNode =
-            pTemplateNode->GetFirstChildByClass(XFA_Element::Occur)) {
+    if (CXFA_Occur* pOccurTemplateNode =
+            pTemplateNode->GetFirstChildByClass<CXFA_Occur>(
+                XFA_Element::Occur)) {
       pOccurNode = pInstMgrNode ? XFA_NodeMerge_CloneOrMergeContainer(
                                       pDocument, pInstMgrNode,
                                       pOccurTemplateNode, false, nullptr)
                                 : pOccurTemplateNode;
     } else if (pInstMgrNode) {
-      pOccurNode = pInstMgrNode->GetFirstChildByClass(XFA_Element::Occur);
+      pOccurNode =
+          pInstMgrNode->GetFirstChildByClass<CXFA_Occur>(XFA_Element::Occur);
       if (pOccurNode)
         pOccurNode->ClearFlag(XFA_NodeFlag_UnusedNode);
     }
@@ -738,12 +755,14 @@ CXFA_Node* CopyContainer_SubformSet(CXFA_Document* pDocument,
   int32_t iMax = 1;
   int32_t iInit = 1;
   int32_t iMin = 1;
-  if (!bOneInstance && pOccurNode)
-    std::tie(iMin, iMax, iInit) = CXFA_OccurData(pOccurNode).GetOccurInfo();
+  if (!bOneInstance && pOccurNode) {
+    std::tie(iMin, iMax, iInit) =
+        static_cast<CXFA_Occur*>(pOccurNode)->GetOccurInfo();
+  }
 
   XFA_AttributeEnum eRelation =
       eType == XFA_Element::SubformSet
-          ? pTemplateNode->JSNode()->GetEnum(XFA_Attribute::Relation)
+          ? pTemplateNode->JSObject()->GetEnum(XFA_Attribute::Relation)
           : XFA_AttributeEnum::Ordered;
   int32_t iCurRepeatIndex = 0;
   XFA_AttributeEnum eParentBindMatch = XFA_AttributeEnum::None;
@@ -782,10 +801,9 @@ CXFA_Node* CopyContainer_SubformSet(CXFA_Document* pDocument,
         auto it = subformMapArray.find(pSubform);
         if (it != subformMapArray.end())
           pDataNode = it->second;
-        for (CXFA_Node* pTemplateChild =
-                 pTemplateNode->GetNodeItem(XFA_NODEITEM_FirstChild);
-             pTemplateChild; pTemplateChild = pTemplateChild->GetNodeItem(
-                                 XFA_NODEITEM_NextSibling)) {
+        for (CXFA_Node* pTemplateChild = pTemplateNode->GetFirstChild();
+             pTemplateChild;
+             pTemplateChild = pTemplateChild->GetNextSibling()) {
           if (NeedGenerateForm(pTemplateChild, bUseInstanceManager)) {
             XFA_NodeMerge_CloneOrMergeContainer(pDocument, pSubform,
                                                 pTemplateChild, true, nullptr);
@@ -821,10 +839,9 @@ CXFA_Node* CopyContainer_SubformSet(CXFA_Document* pDocument,
 
         std::vector<RecurseRecord> rgItemMatchList;
         std::vector<CXFA_Node*> rgItemUnmatchList;
-        for (CXFA_Node* pTemplateChild =
-                 pTemplateNode->GetNodeItem(XFA_NODEITEM_FirstChild);
-             pTemplateChild; pTemplateChild = pTemplateChild->GetNodeItem(
-                                 XFA_NODEITEM_NextSibling)) {
+        for (CXFA_Node* pTemplateChild = pTemplateNode->GetFirstChild();
+             pTemplateChild;
+             pTemplateChild = pTemplateChild->GetNextSibling()) {
           if (NeedGenerateForm(pTemplateChild, bUseInstanceManager)) {
             XFA_NodeMerge_CloneOrMergeContainer(pDocument, pSubformSetNode,
                                                 pTemplateChild, true, nullptr);
@@ -887,10 +904,9 @@ CXFA_Node* CopyContainer_SubformSet(CXFA_Document* pDocument,
         if (!pFirstInstance)
           pFirstInstance = pSubformSetNode;
 
-        for (CXFA_Node* pTemplateChild =
-                 pTemplateNode->GetNodeItem(XFA_NODEITEM_FirstChild);
-             pTemplateChild; pTemplateChild = pTemplateChild->GetNodeItem(
-                                 XFA_NODEITEM_NextSibling)) {
+        for (CXFA_Node* pTemplateChild = pTemplateNode->GetFirstChild();
+             pTemplateChild;
+             pTemplateChild = pTemplateChild->GetNextSibling()) {
           if (NeedGenerateForm(pTemplateChild, bUseInstanceManager)) {
             XFA_NodeMerge_CloneOrMergeContainer(pDocument, pSubformSetNode,
                                                 pTemplateChild, true, nullptr);
@@ -928,10 +944,9 @@ CXFA_Node* CopyContainer_SubformSet(CXFA_Document* pDocument,
         if (!pFirstInstance)
           pFirstInstance = pSubformNode;
 
-        for (CXFA_Node* pTemplateChild =
-                 pTemplateNode->GetNodeItem(XFA_NODEITEM_FirstChild);
-             pTemplateChild; pTemplateChild = pTemplateChild->GetNodeItem(
-                                 XFA_NODEITEM_NextSibling)) {
+        for (CXFA_Node* pTemplateChild = pTemplateNode->GetFirstChild();
+             pTemplateChild;
+             pTemplateChild = pTemplateChild->GetNextSibling()) {
           if (NeedGenerateForm(pTemplateChild, bUseInstanceManager)) {
             XFA_NodeMerge_CloneOrMergeContainer(pDocument, pSubformNode,
                                                 pTemplateChild, true, nullptr);
@@ -953,10 +968,8 @@ CXFA_Node* CopyContainer_SubformSet(CXFA_Document* pDocument,
       pFirstInstance = pSubformSetNode;
 
     bool bFound = false;
-    for (CXFA_Node* pTemplateChild =
-             pTemplateNode->GetNodeItem(XFA_NODEITEM_FirstChild);
-         pTemplateChild; pTemplateChild = pTemplateChild->GetNodeItem(
-                             XFA_NODEITEM_NextSibling)) {
+    for (CXFA_Node* pTemplateChild = pTemplateNode->GetFirstChild();
+         pTemplateChild; pTemplateChild = pTemplateChild->GetNextSibling()) {
       if (NeedGenerateForm(pTemplateChild, bUseInstanceManager)) {
         XFA_NodeMerge_CloneOrMergeContainer(pDocument, pSubformSetNode,
                                             pTemplateChild, true, nullptr);
@@ -982,10 +995,9 @@ CXFA_Node* CopyContainer_Field(CXFA_Document* pDocument,
   CXFA_Node* pFieldNode = XFA_NodeMerge_CloneOrMergeContainer(
       pDocument, pFormNode, pTemplateNode, false, nullptr);
   ASSERT(pFieldNode);
-  for (CXFA_Node* pTemplateChildNode =
-           pTemplateNode->GetNodeItem(XFA_NODEITEM_FirstChild);
-       pTemplateChildNode; pTemplateChildNode = pTemplateChildNode->GetNodeItem(
-                               XFA_NODEITEM_NextSibling)) {
+  for (CXFA_Node* pTemplateChildNode = pTemplateNode->GetFirstChild();
+       pTemplateChildNode;
+       pTemplateChildNode = pTemplateChildNode->GetNextSibling()) {
     if (NeedGenerateForm(pTemplateChildNode, true)) {
       XFA_NodeMerge_CloneOrMergeContainer(pDocument, pFieldNode,
                                           pTemplateChildNode, true, nullptr);
@@ -1025,7 +1037,7 @@ CXFA_Node* MaybeCreateDataNode(CXFA_Document* pDocument,
   if (!pParentDDNode) {
     CXFA_Node* pDataNode =
         pDocument->CreateNode(XFA_PacketType::Datasets, eNodeType);
-    pDataNode->JSNode()->SetCData(XFA_Attribute::Name, wsName, false, false);
+    pDataNode->JSObject()->SetCData(XFA_Attribute::Name, wsName, false, false);
     pDataNode->CreateXMLMappingNode();
     pDataParent->InsertChild(pDataNode, nullptr);
     pDataNode->SetFlag(XFA_NodeFlag_Initialized, false);
@@ -1040,7 +1052,7 @@ CXFA_Node* MaybeCreateDataNode(CXFA_Document* pDocument,
       if (pDDGroupNode->GetElementType() != XFA_Element::DataGroup)
         continue;
 
-      pdfium::Optional<WideString> ns = pDDGroupNode->JSNode()->TryNamespace();
+      Optional<WideString> ns = pDDGroupNode->JSObject()->TryNamespace();
       if (!ns || *ns != L"http://ns.adobe.com/data-description/")
         continue;
     }
@@ -1054,13 +1066,13 @@ CXFA_Node* MaybeCreateDataNode(CXFA_Document* pDocument,
 
     CXFA_Node* pDataNode =
         pDocument->CreateNode(XFA_PacketType::Datasets, eNodeType);
-    pDataNode->JSNode()->SetCData(XFA_Attribute::Name, wsName, false, false);
+    pDataNode->JSObject()->SetCData(XFA_Attribute::Name, wsName, false, false);
     pDataNode->CreateXMLMappingNode();
     if (eNodeType == XFA_Element::DataValue &&
-        pDDNode->JSNode()->GetEnum(XFA_Attribute::Contains) ==
+        pDDNode->JSObject()->GetEnum(XFA_Attribute::Contains) ==
             XFA_AttributeEnum::MetaData) {
-      pDataNode->JSNode()->SetEnum(XFA_Attribute::Contains,
-                                   XFA_AttributeEnum::MetaData, false);
+      pDataNode->JSObject()->SetEnum(XFA_Attribute::Contains,
+                                     XFA_AttributeEnum::MetaData, false);
     }
     pDataParent->InsertChild(pDataNode, nullptr);
     pDataNode->SetDataDescriptionNode(pDDNode);
@@ -1080,13 +1092,14 @@ void UpdateBindingRelations(CXFA_Document* pDocument,
   CXFA_Node* pDataNode = pFormNode->GetBindData();
   if (eType == XFA_Element::Subform || eType == XFA_Element::ExclGroup ||
       eType == XFA_Element::Field) {
-    CXFA_Node* pTemplateNode = pFormNode->GetTemplateNode();
-    CXFA_Node* pTemplateNodeBind =
-        pTemplateNode ? pTemplateNode->GetFirstChildByClass(XFA_Element::Bind)
-                      : nullptr;
+    CXFA_Node* pTemplateNode = pFormNode->GetTemplateNodeIfExists();
+    CXFA_Bind* pTemplateNodeBind =
+        pTemplateNode
+            ? pTemplateNode->GetFirstChildByClass<CXFA_Bind>(XFA_Element::Bind)
+            : nullptr;
     XFA_AttributeEnum eMatch =
         pTemplateNodeBind
-            ? pTemplateNodeBind->JSNode()->GetEnum(XFA_Attribute::Match)
+            ? pTemplateNodeBind->JSObject()->GetEnum(XFA_Attribute::Match)
             : XFA_AttributeEnum::Once;
     switch (eMatch) {
       case XFA_AttributeEnum::None:
@@ -1097,7 +1110,7 @@ void UpdateBindingRelations(CXFA_Document* pDocument,
         if (!bDataRef || bParentDataRef) {
           if (!pDataNode) {
             if (pFormNode->GetNameHash() != 0 &&
-                pFormNode->JSNode()->GetEnum(XFA_Attribute::Scope) !=
+                pFormNode->JSObject()->GetEnum(XFA_Attribute::Scope) !=
                     XFA_AttributeEnum::None) {
               XFA_Element eDataNodeType = (eType == XFA_Element::Subform ||
                                            XFA_FieldIsMultiListBox(pFormNode))
@@ -1106,7 +1119,7 @@ void UpdateBindingRelations(CXFA_Document* pDocument,
               pDataNode = MaybeCreateDataNode(
                   pDocument, pDataScope, eDataNodeType,
                   WideString(
-                      pFormNode->JSNode()->GetCData(XFA_Attribute::Name)));
+                      pFormNode->JSObject()->GetCData(XFA_Attribute::Name)));
               if (pDataNode)
                 CreateDataBinding(pFormNode, pDataNode, false);
             }
@@ -1114,8 +1127,7 @@ void UpdateBindingRelations(CXFA_Document* pDocument,
               FormValueNode_MatchNoneCreateChild(pFormNode);
 
           } else {
-            CXFA_Node* pDataParent =
-                pDataNode->GetNodeItem(XFA_NODEITEM_Parent);
+            CXFA_Node* pDataParent = pDataNode->GetParent();
             if (pDataParent != pDataScope) {
               ASSERT(pDataParent);
               pDataParent->RemoveChild(pDataNode, true);
@@ -1139,7 +1151,7 @@ void UpdateBindingRelations(CXFA_Document* pDocument,
               pDataNode = MaybeCreateDataNode(
                   pDocument, pRecordNode, eDataNodeType,
                   WideString(
-                      pFormNode->JSNode()->GetCData(XFA_Attribute::Name)));
+                      pFormNode->JSObject()->GetCData(XFA_Attribute::Name)));
               if (pDataNode) {
                 CreateDataBinding(pFormNode, pDataNode, false);
                 RegisterGlobalBinding(pDocument, pFormNode->GetNameHash(),
@@ -1158,18 +1170,20 @@ void UpdateBindingRelations(CXFA_Document* pDocument,
         bParentDataRef = true;
         if (!pDataNode && bDataRef) {
           WideString wsRef =
-              pTemplateNodeBind->JSNode()->GetCData(XFA_Attribute::Ref);
+              pTemplateNodeBind
+                  ? pTemplateNodeBind->JSObject()->GetCData(XFA_Attribute::Ref)
+                  : L"";
           uint32_t dFlags =
               XFA_RESOLVENODE_Children | XFA_RESOLVENODE_CreateNode;
           XFA_RESOLVENODE_RS rs;
           pDocument->GetScriptContext()->ResolveObjects(
-              pDataScope, wsRef.AsStringView(), rs, dFlags, pTemplateNode);
+              pDataScope, wsRef.AsStringView(), &rs, dFlags, pTemplateNode);
           CXFA_Object* pObject =
               !rs.objects.empty() ? rs.objects.front() : nullptr;
           pDataNode = ToNode(pObject);
           if (pDataNode) {
             CreateDataBinding(pFormNode, pDataNode,
-                              rs.dwFlags == XFA_RESOLVENODE_RSTYPE_ExistNodes);
+                              rs.dwFlags == XFA_ResolveNode_RSType_ExistNodes);
           } else {
             FormValueNode_MatchNoneCreateChild(pFormNode);
           }
@@ -1185,10 +1199,8 @@ void UpdateBindingRelations(CXFA_Document* pDocument,
       (eType == XFA_Element::Subform || eType == XFA_Element::SubformSet ||
        eType == XFA_Element::Area || eType == XFA_Element::PageArea ||
        eType == XFA_Element::PageSet)) {
-    for (CXFA_Node* pFormChild =
-             pFormNode->GetNodeItem(XFA_NODEITEM_FirstChild);
-         pFormChild;
-         pFormChild = pFormChild->GetNodeItem(XFA_NODEITEM_NextSibling)) {
+    for (CXFA_Node* pFormChild = pFormNode->GetFirstChild(); pFormChild;
+         pFormChild = pFormChild->GetNextSibling()) {
       if (!pFormChild->IsContainerNode())
         continue;
       if (pFormChild->IsUnusedNode())
@@ -1203,9 +1215,8 @@ void UpdateBindingRelations(CXFA_Document* pDocument,
 
 void UpdateDataRelation(CXFA_Node* pDataNode, CXFA_Node* pDataDescriptionNode) {
   ASSERT(pDataDescriptionNode);
-  for (CXFA_Node* pDataChild = pDataNode->GetNodeItem(XFA_NODEITEM_FirstChild);
-       pDataChild;
-       pDataChild = pDataChild->GetNodeItem(XFA_NODEITEM_NextSibling)) {
+  for (CXFA_Node* pDataChild = pDataNode->GetFirstChild(); pDataChild;
+       pDataChild = pDataChild->GetNextSibling()) {
     uint32_t dwNameHash = pDataChild->GetNameHash();
     if (!dwNameHash)
       continue;
@@ -1218,8 +1229,7 @@ void UpdateDataRelation(CXFA_Node* pDataNode, CXFA_Node* pDataDescriptionNode) {
         if (pDDGroupNode->GetElementType() != XFA_Element::DataGroup)
           continue;
 
-        pdfium::Optional<WideString> ns =
-            pDDGroupNode->JSNode()->TryNamespace();
+        Optional<WideString> ns = pDDGroupNode->JSObject()->TryNamespace();
         if (!ns || *ns != L"http://ns.adobe.com/data-description/")
           continue;
       }
@@ -1243,9 +1253,8 @@ CXFA_Node* XFA_DataMerge_FindFormDOMInstance(CXFA_Document* pDocument,
                                              XFA_Element eType,
                                              uint32_t dwNameHash,
                                              CXFA_Node* pFormParent) {
-  CXFA_Node* pFormChild = pFormParent->GetNodeItem(XFA_NODEITEM_FirstChild);
-  for (; pFormChild;
-       pFormChild = pFormChild->GetNodeItem(XFA_NODEITEM_NextSibling)) {
+  CXFA_Node* pFormChild = pFormParent->GetFirstChild();
+  for (; pFormChild; pFormChild = pFormChild->GetNextSibling()) {
     if (pFormChild->GetElementType() == eType &&
         pFormChild->GetNameHash() == dwNameHash && pFormChild->IsUnusedNode()) {
       return pFormChild;
@@ -1279,10 +1288,8 @@ CXFA_Node* XFA_NodeMerge_CloneOrMergeContainer(
     pExistingNode->ClearFlag(XFA_NodeFlag_UnusedNode);
     pExistingNode->SetTemplateNode(pTemplateNode);
     if (bRecursive && pExistingNode->GetElementType() != XFA_Element::Items) {
-      for (CXFA_Node* pTemplateChild =
-               pTemplateNode->GetNodeItem(XFA_NODEITEM_FirstChild);
-           pTemplateChild; pTemplateChild = pTemplateChild->GetNodeItem(
-                               XFA_NODEITEM_NextSibling)) {
+      for (CXFA_Node* pTemplateChild = pTemplateNode->GetFirstChild();
+           pTemplateChild; pTemplateChild = pTemplateChild->GetNextSibling()) {
         if (NeedGenerateForm(pTemplateChild, true)) {
           XFA_NodeMerge_CloneOrMergeContainer(
               pDocument, pExistingNode, pTemplateChild, bRecursive, nullptr);
@@ -1296,10 +1303,8 @@ CXFA_Node* XFA_NodeMerge_CloneOrMergeContainer(
   CXFA_Node* pNewNode = pTemplateNode->CloneTemplateToForm(false);
   pFormParent->InsertChild(pNewNode, nullptr);
   if (bRecursive) {
-    for (CXFA_Node* pTemplateChild =
-             pTemplateNode->GetNodeItem(XFA_NODEITEM_FirstChild);
-         pTemplateChild; pTemplateChild = pTemplateChild->GetNodeItem(
-                             XFA_NODEITEM_NextSibling)) {
+    for (CXFA_Node* pTemplateChild = pTemplateNode->GetFirstChild();
+         pTemplateChild; pTemplateChild = pTemplateChild->GetNextSibling()) {
       if (NeedGenerateForm(pTemplateChild, true)) {
         CXFA_Node* pNewChild = pTemplateChild->CloneTemplateToForm(true);
         pNewNode->InsertChild(pNewChild, nullptr);
@@ -1312,7 +1317,7 @@ CXFA_Node* XFA_NodeMerge_CloneOrMergeContainer(
 CXFA_Node* XFA_DataMerge_FindDataScope(CXFA_Node* pParentFormNode) {
   for (CXFA_Node* pRootBoundNode = pParentFormNode;
        pRootBoundNode && pRootBoundNode->IsContainerNode();
-       pRootBoundNode = pRootBoundNode->GetNodeItem(XFA_NODEITEM_Parent)) {
+       pRootBoundNode = pRootBoundNode->GetParent()) {
     CXFA_Node* pDataScope = pRootBoundNode->GetBindData();
     if (pDataScope)
       return pDataScope;
@@ -1352,8 +1357,8 @@ CXFA_Node* CXFA_Document::DataMerge_CopyContainer(CXFA_Node* pTemplateNode,
 
 void CXFA_Document::DataMerge_UpdateBindingRelations(
     CXFA_Node* pFormUpdateRoot) {
-  CXFA_Node* pDataScope = XFA_DataMerge_FindDataScope(
-      pFormUpdateRoot->GetNodeItem(XFA_NODEITEM_Parent));
+  CXFA_Node* pDataScope =
+      XFA_DataMerge_FindDataScope(pFormUpdateRoot->GetParent());
   if (!pDataScope)
     return;
 
@@ -1379,32 +1384,30 @@ void CXFA_Document::DoDataMerge() {
                                 L"http://www.xfa.org/schema/xfa-data/1.0/");
     pDatasetsRoot =
         CreateNode(XFA_PacketType::Datasets, XFA_Element::DataModel);
-    pDatasetsRoot->JSNode()->SetCData(XFA_Attribute::Name, L"datasets", false,
-                                      false);
+    pDatasetsRoot->JSObject()->SetCData(XFA_Attribute::Name, L"datasets", false,
+                                        false);
     m_pRootNode->GetXMLMappingNode()->InsertChildNode(pDatasetsXMLNode);
     m_pRootNode->InsertChild(pDatasetsRoot, nullptr);
     pDatasetsRoot->SetXMLMappingNode(pDatasetsXMLNode);
   }
   CXFA_Node *pDataRoot = nullptr, *pDDRoot = nullptr;
   WideString wsDatasetsURI =
-      pDatasetsRoot->JSNode()->TryNamespace().value_or(WideString());
-  for (CXFA_Node* pChildNode =
-           pDatasetsRoot->GetNodeItem(XFA_NODEITEM_FirstChild);
-       pChildNode;
-       pChildNode = pChildNode->GetNodeItem(XFA_NODEITEM_NextSibling)) {
+      pDatasetsRoot->JSObject()->TryNamespace().value_or(WideString());
+  for (CXFA_Node* pChildNode = pDatasetsRoot->GetFirstChild(); pChildNode;
+       pChildNode = pChildNode->GetNextSibling()) {
     if (pChildNode->GetElementType() != XFA_Element::DataGroup)
       continue;
 
     if (!pDDRoot && pChildNode->GetNameHash() == XFA_HASHCODE_DataDescription) {
-      pdfium::Optional<WideString> namespaceURI =
-          pChildNode->JSNode()->TryNamespace();
+      Optional<WideString> namespaceURI =
+          pChildNode->JSObject()->TryNamespace();
       if (!namespaceURI)
         continue;
       if (*namespaceURI == L"http://ns.adobe.com/data-description/")
         pDDRoot = pChildNode;
     } else if (!pDataRoot && pChildNode->GetNameHash() == XFA_HASHCODE_Data) {
-      pdfium::Optional<WideString> namespaceURI =
-          pChildNode->JSNode()->TryNamespace();
+      Optional<WideString> namespaceURI =
+          pChildNode->JSObject()->TryNamespace();
       if (!namespaceURI)
         continue;
       if (*namespaceURI == wsDatasetsURI)
@@ -1417,16 +1420,16 @@ void CXFA_Document::DoDataMerge() {
   if (!pDataRoot) {
     CFX_XMLElement* pDataRootXMLNode = new CFX_XMLElement(L"xfa:data");
     pDataRoot = CreateNode(XFA_PacketType::Datasets, XFA_Element::DataGroup);
-    pDataRoot->JSNode()->SetCData(XFA_Attribute::Name, L"data", false, false);
+    pDataRoot->JSObject()->SetCData(XFA_Attribute::Name, L"data", false, false);
     pDataRoot->SetXMLMappingNode(pDataRootXMLNode);
     pDatasetsRoot->InsertChild(pDataRoot, nullptr);
   }
 
-  CXFA_Node* pDataTopLevel =
-      pDataRoot->GetFirstChildByClass(XFA_Element::DataGroup);
+  CXFA_DataGroup* pDataTopLevel =
+      pDataRoot->GetFirstChildByClass<CXFA_DataGroup>(XFA_Element::DataGroup);
   uint32_t dwNameHash = pDataTopLevel ? pDataTopLevel->GetNameHash() : 0;
-  CXFA_Node* pTemplateRoot =
-      m_pRootNode->GetFirstChildByClass(XFA_Element::Template);
+  CXFA_Template* pTemplateRoot =
+      m_pRootNode->GetFirstChildByClass<CXFA_Template>(XFA_Element::Template);
   if (!pTemplateRoot)
     return;
 
@@ -1435,18 +1438,21 @@ void CXFA_Document::DoDataMerge() {
                       : nullptr;
   if (!pTemplateChosen ||
       pTemplateChosen->GetElementType() != XFA_Element::Subform) {
-    pTemplateChosen = pTemplateRoot->GetFirstChildByClass(XFA_Element::Subform);
+    pTemplateChosen =
+        pTemplateRoot->GetFirstChildByClass<CXFA_Subform>(XFA_Element::Subform);
   }
   if (!pTemplateChosen)
     return;
 
-  CXFA_Node* pFormRoot = m_pRootNode->GetFirstChildByClass(XFA_Element::Form);
+  CXFA_Form* pFormRoot =
+      m_pRootNode->GetFirstChildByClass<CXFA_Form>(XFA_Element::Form);
   bool bEmptyForm = false;
   if (!pFormRoot) {
     bEmptyForm = true;
-    pFormRoot = CreateNode(XFA_PacketType::Form, XFA_Element::Form);
+    pFormRoot = static_cast<CXFA_Form*>(
+        CreateNode(XFA_PacketType::Form, XFA_Element::Form));
     ASSERT(pFormRoot);
-    pFormRoot->JSNode()->SetCData(XFA_Attribute::Name, L"form", false, false);
+    pFormRoot->JSObject()->SetCData(XFA_Attribute::Name, L"form", false, false);
     m_pRootNode->InsertChild(pFormRoot, nullptr);
   } else {
     CXFA_NodeIteratorTemplate<CXFA_Node, CXFA_TraverseStrategy_XFANode>
@@ -1462,26 +1468,24 @@ void CXFA_Document::DoDataMerge() {
   ASSERT(pSubformSetNode);
   if (!pDataTopLevel) {
     WideString wsFormName =
-        pSubformSetNode->JSNode()->GetCData(XFA_Attribute::Name);
+        pSubformSetNode->JSObject()->GetCData(XFA_Attribute::Name);
     WideString wsDataTopLevelName(wsFormName.IsEmpty() ? L"form" : wsFormName);
     CFX_XMLElement* pDataTopLevelXMLNode =
         new CFX_XMLElement(wsDataTopLevelName);
 
-    pDataTopLevel =
-        CreateNode(XFA_PacketType::Datasets, XFA_Element::DataGroup);
-    pDataTopLevel->JSNode()->SetCData(XFA_Attribute::Name, wsDataTopLevelName,
-                                      false, false);
+    pDataTopLevel = static_cast<CXFA_DataGroup*>(
+        CreateNode(XFA_PacketType::Datasets, XFA_Element::DataGroup));
+    pDataTopLevel->JSObject()->SetCData(XFA_Attribute::Name, wsDataTopLevelName,
+                                        false, false);
     pDataTopLevel->SetXMLMappingNode(pDataTopLevelXMLNode);
-    CXFA_Node* pBeforeNode = pDataRoot->GetNodeItem(XFA_NODEITEM_FirstChild);
+    CXFA_Node* pBeforeNode = pDataRoot->GetFirstChild();
     pDataRoot->InsertChild(pDataTopLevel, pBeforeNode);
   }
 
   ASSERT(pDataTopLevel);
   CreateDataBinding(pSubformSetNode, pDataTopLevel, true);
-  for (CXFA_Node* pTemplateChild =
-           pTemplateChosen->GetNodeItem(XFA_NODEITEM_FirstChild);
-       pTemplateChild;
-       pTemplateChild = pTemplateChild->GetNodeItem(XFA_NODEITEM_NextSibling)) {
+  for (CXFA_Node* pTemplateChild = pTemplateChosen->GetFirstChild();
+       pTemplateChild; pTemplateChild = pTemplateChild->GetNextSibling()) {
     if (NeedGenerateForm(pTemplateChild, true)) {
       XFA_NodeMerge_CloneOrMergeContainer(this, pSubformSetNode, pTemplateChild,
                                           true, nullptr);
@@ -1494,12 +1498,13 @@ void CXFA_Document::DoDataMerge() {
     UpdateDataRelation(pDataRoot, pDDRoot);
 
   DataMerge_UpdateBindingRelations(pSubformSetNode);
-  CXFA_Node* pPageSetNode =
-      pSubformSetNode->GetFirstChildByClass(XFA_Element::PageSet);
+  CXFA_PageSet* pPageSetNode =
+      pSubformSetNode->GetFirstChildByClass<CXFA_PageSet>(XFA_Element::PageSet);
   while (pPageSetNode) {
     m_pPendingPageSet.push_back(pPageSetNode);
-    CXFA_Node* pNextPageSetNode =
-        pPageSetNode->GetNextSameClassSibling(XFA_Element::PageSet);
+    CXFA_PageSet* pNextPageSetNode =
+        pPageSetNode->GetNextSameClassSibling<CXFA_PageSet>(
+            XFA_Element::PageSet);
     pSubformSetNode->RemoveChild(pPageSetNode, true);
     pPageSetNode = pNextPageSetNode;
   }
@@ -1515,7 +1520,7 @@ void CXFA_Document::DoDataMerge() {
       if (pNode->IsContainerNode() ||
           pNode->GetElementType() == XFA_Element::InstanceManager) {
         CXFA_Node* pNext = sIterator.SkipChildrenAndMoveToNext();
-        pNode->GetNodeItem(XFA_NODEITEM_Parent)->RemoveChild(pNode, true);
+        pNode->GetParent()->RemoveChild(pNode, true);
         pNode = pNext;
       } else {
         pNode->ClearFlag(XFA_NodeFlag_UnusedNode);
@@ -1532,10 +1537,10 @@ void CXFA_Document::DoDataMerge() {
 void CXFA_Document::DoDataRemerge(bool bDoDataMerge) {
   CXFA_Node* pFormRoot = ToNode(GetXFAObject(XFA_HASHCODE_Form));
   if (pFormRoot) {
-    while (CXFA_Node* pNode = pFormRoot->GetNodeItem(XFA_NODEITEM_FirstChild))
+    while (CXFA_Node* pNode = pFormRoot->GetFirstChild())
       pFormRoot->RemoveChild(pNode, true);
 
-    pFormRoot->JSNode()->SetBindingNode(nullptr);
+    pFormRoot->SetBindingNode(nullptr);
   }
   m_rgGlobalBinding.clear();
 

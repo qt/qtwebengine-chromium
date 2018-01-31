@@ -20,13 +20,11 @@
 namespace webrtc {
 namespace jni {
 
-std::unique_ptr<VideoDecoder> JavaToNativeVideoDecoder(JNIEnv* jni,
-                                                       jobject j_decoder) {
-  jclass wrapped_native_decoder_class =
-      GetClass(jni, "org/webrtc/WrappedNativeVideoDecoder");
-
+std::unique_ptr<VideoDecoder> JavaToNativeVideoDecoder(
+    JNIEnv* jni,
+    const JavaRef<jobject>& j_decoder) {
   VideoDecoder* decoder;
-  if (jni->IsInstanceOf(j_decoder, wrapped_native_decoder_class)) {
+  if (Java_WrappedNativeVideoDecoder_isInstanceOf(jni, j_decoder)) {
     jlong native_decoder =
         Java_WrappedNativeVideoDecoder_createNativeDecoder(jni, j_decoder);
     decoder = reinterpret_cast<VideoDecoder*>(native_decoder);
@@ -37,8 +35,9 @@ std::unique_ptr<VideoDecoder> JavaToNativeVideoDecoder(JNIEnv* jni,
   return std::unique_ptr<VideoDecoder>(decoder);
 }
 
-std::unique_ptr<VideoEncoder> JavaToNativeVideoEncoder(JNIEnv* jni,
-                                                       jobject j_encoder) {
+std::unique_ptr<VideoEncoder> JavaToNativeVideoEncoder(
+    JNIEnv* jni,
+    const JavaRef<jobject>& j_encoder) {
   VideoEncoder* encoder;
   if (Java_WrappedNativeVideoEncoder_isInstanceOf(jni, j_encoder)) {
     jlong native_encoder =
@@ -51,7 +50,7 @@ std::unique_ptr<VideoEncoder> JavaToNativeVideoEncoder(JNIEnv* jni,
   return std::unique_ptr<VideoEncoder>(encoder);
 }
 
-bool IsWrappedSoftwareEncoder(JNIEnv* jni, jobject j_encoder) {
+bool IsWrappedSoftwareEncoder(JNIEnv* jni, const JavaRef<jobject>& j_encoder) {
   return Java_WrappedNativeVideoEncoder_isWrappedSoftwareEncoder(jni,
                                                                  j_encoder);
 }

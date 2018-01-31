@@ -48,6 +48,8 @@
 #include "content/public/browser/native_web_keyboard_event.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/navigation_entry.h"
+#include "content/public/browser/navigation_handle.h"
+#include "content/public/browser/navigation_throttle.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_view_host.h"
@@ -73,7 +75,7 @@ using content::WebContents;
 namespace {
 
 typedef std::vector<DevToolsWindow*> DevToolsWindows;
-base::LazyInstance<DevToolsWindows>::Leaky g_instances =
+base::LazyInstance<DevToolsWindows>::Leaky g_devtools_window_instances =
     LAZY_INSTANCE_INITIALIZER;
 
 base::LazyInstance<std::vector<base::Callback<void(DevToolsWindow*)>>>::Leaky
@@ -338,6 +340,43 @@ DevToolsWindow::ObserverWithAccessor::ObserverWithAccessor(
 DevToolsWindow::ObserverWithAccessor::~ObserverWithAccessor() {
 }
 
+// DevToolsWindow::Throttle ------------------------------------------
+
+class DevToolsWindow::Throttle : public content::NavigationThrottle {
+ public:
+  Throttle(content::NavigationHandle* navigation_handle,
+           DevToolsWindow* devtools_window)
+      : content::NavigationThrottle(navigation_handle),
+        devtools_window_(devtools_window) {
+    devtools_window_->throttle_ = this;
+  }
+
+  ~Throttle() override {
+    if (devtools_window_)
+      devtools_window_->throttle_ = nullptr;
+  }
+
+  // content::NavigationThrottle implementation:
+  NavigationThrottle::ThrottleCheckResult WillStartRequest() override {
+    return DEFER;
+  }
+
+  const char* GetNameForLogging() override { return "DevToolsWindowThrottle"; }
+
+  void ResumeThrottle() {
+    if (devtools_window_) {
+      devtools_window_->throttle_ = nullptr;
+      devtools_window_ = nullptr;
+    }
+    Resume();
+  }
+
+ private:
+  DevToolsWindow* devtools_window_;
+
+  DISALLOW_COPY_AND_ASSIGN(Throttle);
+};
+
 // DevToolsWindow -------------------------------------------------------------
 
 const char DevToolsWindow::kDevToolsApp[] = "DevToolsApp";
@@ -360,6 +399,9 @@ void DevToolsWindow::RemoveCreationCallbackForTest(
 }
 
 DevToolsWindow::~DevToolsWindow() {
+  if (throttle_)
+    throttle_->ResumeThrottle();
+
   life_stage_ = kClosing;
 
   UpdateBrowserWindow();
@@ -368,7 +410,7 @@ DevToolsWindow::~DevToolsWindow() {
   if (toolbox_web_contents_)
     delete toolbox_web_contents_;
 
-  DevToolsWindows* instances = g_instances.Pointer();
+  DevToolsWindows* instances = g_devtools_window_instances.Pointer();
   DevToolsWindows::iterator it(
       std::find(instances->begin(), instances->end(), this));
   DCHECK(it != instances->end());
@@ -429,9 +471,9 @@ content::WebContents* DevToolsWindow::GetInTabWebContents(
 // static
 DevToolsWindow* DevToolsWindow::GetInstanceForInspectedWebContents(
     WebContents* inspected_web_contents) {
-  if (!inspected_web_contents || g_instances == NULL)
+  if (!inspected_web_contents || !g_devtools_window_instances.IsCreated())
     return NULL;
-  DevToolsWindows* instances = g_instances.Pointer();
+  DevToolsWindows* instances = g_devtools_window_instances.Pointer();
   for (DevToolsWindows::iterator it(instances->begin()); it != instances->end();
        ++it) {
     if ((*it)->GetInspectedWebContents() == inspected_web_contents)
@@ -442,9 +484,9 @@ DevToolsWindow* DevToolsWindow::GetInstanceForInspectedWebContents(
 
 // static
 bool DevToolsWindow::IsDevToolsWindow(content::WebContents* web_contents) {
-  if (!web_contents || g_instances == NULL)
+  if (!web_contents || !g_devtools_window_instances.IsCreated())
     return false;
-  DevToolsWindows* instances = g_instances.Pointer();
+  DevToolsWindows* instances = g_devtools_window_instances.Pointer();
   for (DevToolsWindows::iterator it(instances->begin()); it != instances->end();
        ++it) {
     if ((*it)->main_web_contents_ == web_contents ||
@@ -580,7 +622,7 @@ void DevToolsWindow::OpenExternalFrontend(
 
 // static
 void DevToolsWindow::OpenNodeFrontendWindow(Profile* profile) {
-  for (DevToolsWindow* window : g_instances.Get()) {
+  for (DevToolsWindow* window : g_devtools_window_instances.Get()) {
     if (window->frontend_type_ == kFrontendNode) {
       window->ActivateWindow();
       return;
@@ -664,6 +706,31 @@ void DevToolsWindow::InspectElement(
     if (should_measure_time)
       window->inspect_element_start_time_ = start_time;
   }
+}
+
+// static
+std::unique_ptr<content::NavigationThrottle>
+DevToolsWindow::MaybeCreateNavigationThrottle(
+    content::NavigationHandle* handle) {
+  WebContents* web_contents = handle->GetWebContents();
+  if (!web_contents || !web_contents->HasOriginalOpener() ||
+      web_contents->GetController().GetLastCommittedEntry()) {
+    return nullptr;
+  }
+
+  WebContents* opener = WebContents::FromRenderFrameHost(
+      handle->GetWebContents()->GetOriginalOpener());
+  DevToolsWindow* window = GetInstanceForInspectedWebContents(opener);
+  if (!window || !window->open_new_window_for_popups_ ||
+      GetInstanceForInspectedWebContents(web_contents))
+    return nullptr;
+
+  DevToolsWindow::OpenDevToolsWindow(web_contents);
+  window = GetInstanceForInspectedWebContents(web_contents);
+  if (!window)
+    return nullptr;
+
+  return std::make_unique<Throttle>(handle, window);
 }
 
 void DevToolsWindow::ScheduleShow(const DevToolsToggleAction& action) {
@@ -843,7 +910,7 @@ DevToolsWindow::DevToolsWindow(FrontendType frontend_type,
   zoom::ZoomController::FromWebContents(main_web_contents_)
       ->SetShowsNotificationBubble(false);
 
-  g_instances.Get().push_back(this);
+  g_devtools_window_instances.Get().push_back(this);
 
   // There is no inspected_web_contents in case of various workers.
   if (inspected_web_contents)
@@ -958,9 +1025,9 @@ GURL DevToolsWindow::GetDevToolsURL(Profile* profile,
 // static
 DevToolsWindow* DevToolsWindow::FindDevToolsWindow(
     DevToolsAgentHost* agent_host) {
-  if (!agent_host || g_instances == NULL)
+  if (!agent_host || !g_devtools_window_instances.IsCreated())
     return NULL;
-  DevToolsWindows* instances = g_instances.Pointer();
+  DevToolsWindows* instances = g_devtools_window_instances.Pointer();
   for (DevToolsWindows::iterator it(instances->begin()); it != instances->end();
        ++it) {
     if ((*it)->bindings_->IsAttachedTo(agent_host))
@@ -972,9 +1039,9 @@ DevToolsWindow* DevToolsWindow::FindDevToolsWindow(
 // static
 DevToolsWindow* DevToolsWindow::AsDevToolsWindow(
     content::WebContents* web_contents) {
-  if (!web_contents || g_instances == NULL)
+  if (!web_contents || !g_devtools_window_instances.IsCreated())
     return NULL;
-  DevToolsWindows* instances = g_instances.Pointer();
+  DevToolsWindows* instances = g_devtools_window_instances.Pointer();
   for (DevToolsWindows::iterator it(instances->begin()); it != instances->end();
        ++it) {
     if ((*it)->main_web_contents_ == web_contents)
@@ -1128,7 +1195,7 @@ content::JavaScriptDialogManager* DevToolsWindow::GetJavaScriptDialogManager(
 content::ColorChooser* DevToolsWindow::OpenColorChooser(
     WebContents* web_contents,
     SkColor initial_color,
-    const std::vector<content::ColorSuggestion>& suggestions) {
+    const std::vector<blink::mojom::ColorSuggestionPtr>& suggestions) {
   return chrome::ShowColorChooser(web_contents, initial_color);
 }
 
@@ -1361,6 +1428,15 @@ void DevToolsWindow::ReadyForTest() {
     ready_for_test_callback_.Run();
     ready_for_test_callback_ = base::Closure();
   }
+}
+
+void DevToolsWindow::ConnectionReady() {
+  if (throttle_)
+    throttle_->ResumeThrottle();
+}
+
+void DevToolsWindow::SetOpenNewWindowForPopups(bool value) {
+  open_new_window_for_popups_ = value;
 }
 
 void DevToolsWindow::CreateDevToolsBrowser() {

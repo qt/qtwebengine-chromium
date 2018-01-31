@@ -72,6 +72,20 @@ static inline int32_t DecodeFrameConstruction (PWelsDecoderContext pCtx, uint8_t
     }
   }
 
+  const int32_t kiActualWidth = kiWidth - (pCtx->sFrameCrop.iLeftOffset + pCtx->sFrameCrop.iRightOffset) * 2;
+  const int32_t kiActualHeight = kiHeight - (pCtx->sFrameCrop.iTopOffset + pCtx->sFrameCrop.iBottomOffset) * 2;
+
+
+  if (pCtx->pParam->eEcActiveIdc == ERROR_CON_DISABLE) {
+    if ((pCtx->sDecoderStatistics.uiWidth != (unsigned int) kiActualWidth)
+        || (pCtx->sDecoderStatistics.uiHeight != (unsigned int) kiActualHeight)) {
+      pCtx->sDecoderStatistics.uiResolutionChangeTimes++;
+      pCtx->sDecoderStatistics.uiWidth = kiActualWidth;
+      pCtx->sDecoderStatistics.uiHeight = kiActualHeight;
+    }
+    UpdateDecStatNoFreezingInfo (pCtx);
+  }
+
   if (pCtx->pParam->bParseOnly) { //should exit for parse only to prevent access NULL pDstInfo
     PAccessUnit pCurAu = pCtx->pAccessUnitList;
     if (dsErrorFree == pCtx->iErrorCode) { //correct decoding, add to data buffer
@@ -198,8 +212,8 @@ static inline int32_t DecodeFrameConstruction (PWelsDecoderContext pCtx, uint8_t
 
   pDstInfo->UsrData.sSystemBuffer.iFormat = videoFormatI420;
 
-  pDstInfo->UsrData.sSystemBuffer.iWidth = kiWidth - (pCtx->sFrameCrop.iLeftOffset + pCtx->sFrameCrop.iRightOffset) * 2;
-  pDstInfo->UsrData.sSystemBuffer.iHeight = kiHeight - (pCtx->sFrameCrop.iTopOffset + pCtx->sFrameCrop.iBottomOffset) * 2;
+  pDstInfo->UsrData.sSystemBuffer.iWidth = kiActualWidth;
+  pDstInfo->UsrData.sSystemBuffer.iHeight = kiActualHeight;
   pDstInfo->UsrData.sSystemBuffer.iStride[0] = pPic->iLinesize[0];
   pDstInfo->UsrData.sSystemBuffer.iStride[1] = pPic->iLinesize[1];
   ppDst[0] = ppDst[0] + pCtx->sFrameCrop.iTopOffset * 2 * pPic->iLinesize[0] + pCtx->sFrameCrop.iLeftOffset * 2;
@@ -227,14 +241,23 @@ static inline int32_t DecodeFrameConstruction (PWelsDecoderContext pCtx, uint8_t
   if (pCtx->bFreezeOutput) {
     pDstInfo->iBufferStatus = 0;
     if (pPic->bNewSeqBegin) {
-      WelsLog (& (pCtx->sLogCtx), WELS_LOG_INFO, "DecodeFrameConstruction():New sequence detected, but freezed.");
+      WelsLog (& (pCtx->sLogCtx), WELS_LOG_INFO,
+               "DecodeFrameConstruction():New sequence detected, but freezed, correct MBs (%d) out of whole MBs (%d).",
+               kiTotalNumMbInCurLayer - pCtx->iMbEcedNum, kiTotalNumMbInCurLayer);
     }
   }
   pCtx->iMbEcedNum = pPic->iMbEcedNum;
   pCtx->iMbNum = pPic->iMbNum;
   pCtx->iMbEcedPropNum = pPic->iMbEcedPropNum;
-  UpdateDecStat (pCtx, pDstInfo->iBufferStatus != 0);
-
+  if (pCtx->pParam->eEcActiveIdc != ERROR_CON_DISABLE) {
+    if (pDstInfo->iBufferStatus && ((pCtx->sDecoderStatistics.uiWidth != (unsigned int) kiActualWidth)
+                                    || (pCtx->sDecoderStatistics.uiHeight != (unsigned int) kiActualHeight))) {
+      pCtx->sDecoderStatistics.uiResolutionChangeTimes++;
+      pCtx->sDecoderStatistics.uiWidth = kiActualWidth;
+      pCtx->sDecoderStatistics.uiHeight = kiActualHeight;
+    }
+    UpdateDecStat (pCtx, pDstInfo->iBufferStatus != 0);
+  }
   return ERR_NONE;
 }
 
@@ -416,6 +439,7 @@ int32_t ParseDecRefPicMarking (PWelsDecoderContext pCtx, PBitStringAux pBs, PSli
     kpRefMarking->bAdaptiveRefPicMarkingModeFlag = !!uiCode;
     if (kpRefMarking->bAdaptiveRefPicMarkingModeFlag) {
       int32_t iIdx = 0;
+      bool bAllowMmco5 = true, bMmco4Exist = false, bMmco5Exist = false, bMmco6Exist = false;
       do {
         WELS_READ_VERIFY (BsGetUe (pBs, &uiCode)); //memory_management_control_operation
         const uint32_t kuiMmco = uiCode;
@@ -425,20 +449,31 @@ int32_t ParseDecRefPicMarking (PWelsDecoderContext pCtx, PBitStringAux pBs, PSli
           break;
 
         if (kuiMmco == MMCO_SHORT2UNUSED || kuiMmco == MMCO_SHORT2LONG) {
+          bAllowMmco5 = false;
           WELS_READ_VERIFY (BsGetUe (pBs, &uiCode)); //difference_of_pic_nums_minus1
           kpRefMarking->sMmcoRef[iIdx].iDiffOfPicNum = 1 + uiCode;
           kpRefMarking->sMmcoRef[iIdx].iShortFrameNum = (pSh->iFrameNum - kpRefMarking->sMmcoRef[iIdx].iDiffOfPicNum) & ((
                 1 << pSps->uiLog2MaxFrameNum) - 1);
         } else if (kuiMmco == MMCO_LONG2UNUSED) {
+          bAllowMmco5 = false;
           WELS_READ_VERIFY (BsGetUe (pBs, &uiCode)); //long_term_pic_num
           kpRefMarking->sMmcoRef[iIdx].uiLongTermPicNum = uiCode;
         }
         if (kuiMmco == MMCO_SHORT2LONG || kuiMmco == MMCO_LONG) {
+          if (kuiMmco == MMCO_LONG) {
+            WELS_VERIFY_RETURN_IF (-1, bMmco6Exist);
+            bMmco6Exist = true;
+          }
           WELS_READ_VERIFY (BsGetUe (pBs, &uiCode)); //long_term_frame_idx
           kpRefMarking->sMmcoRef[iIdx].iLongTermFrameIdx = uiCode;
         } else if (kuiMmco == MMCO_SET_MAX_LONG) {
+          WELS_VERIFY_RETURN_IF (-1, bMmco4Exist);
+          bMmco4Exist = true;
           WELS_READ_VERIFY (BsGetUe (pBs, &uiCode)); //max_long_term_frame_idx_plus1
           kpRefMarking->sMmcoRef[iIdx].iMaxLongTermFrameIdx = -1 + uiCode;
+        } else if (kuiMmco == MMCO_RESET) {
+          WELS_VERIFY_RETURN_IF (-1, (!bAllowMmco5 || bMmco5Exist));
+          bMmco5Exist = true;
         }
         ++ iIdx;
 
@@ -730,8 +765,8 @@ void DecodeNalHeaderExt (PNalUnit pNal, uint8_t* pSrc) {
 }
 
 
-void UpdateDecoderStatisticsForActiveParaset(SDecoderStatistics* pDecoderStatistics,
-                                             PSps pSps, PPps pPps) {
+void UpdateDecoderStatisticsForActiveParaset (SDecoderStatistics* pDecoderStatistics,
+    PSps pSps, PPps pPps) {
   pDecoderStatistics->iCurrentActiveSpsId = pSps->iSpsId;
 
   pDecoderStatistics->iCurrentActivePpsId = pPps->iPpsId;
@@ -2172,8 +2207,8 @@ void WelsDqLayerDecodeStart (PWelsDecoderContext pCtx, PNalUnit pCurNal, PSps pS
 
   pCtx->iFrameNum    = pSh->iFrameNum;
 
-  UpdateDecoderStatisticsForActiveParaset(&(pCtx->sDecoderStatistics),
-                                          pSps, pPps);
+  UpdateDecoderStatisticsForActiveParaset (& (pCtx->sDecoderStatistics),
+      pSps, pPps);
 }
 
 int32_t InitRefPicList (PWelsDecoderContext pCtx, const uint8_t kuiNRi, int32_t iPoc) {

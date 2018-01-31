@@ -20,7 +20,7 @@ class IFWL_WidgetDelegate;
 
 class CXFA_FFTextEdit : public CXFA_FFField {
  public:
-  explicit CXFA_FFTextEdit(CXFA_WidgetAcc* pDataAcc);
+  explicit CXFA_FFTextEdit(CXFA_Node* pNode);
   ~CXFA_FFTextEdit() override;
 
   // CXFA_FFField
@@ -51,12 +51,13 @@ class CXFA_FFTextEdit : public CXFA_FFField {
   bool CanCut() override;
   bool CanPaste() override;
   bool CanSelectAll() override;
-  bool Copy(WideString& wsCopy) override;
-  bool Cut(WideString& wsCut) override;
+  Optional<WideString> Copy() override;
+  Optional<WideString> Cut() override;
   bool Paste(const WideString& wsPaste) override;
   void SelectAll() override;
   void Delete() override;
   void DeSelect() override;
+  FormFieldType GetFormFieldType() override;
 
  protected:
   uint32_t GetAlignment();

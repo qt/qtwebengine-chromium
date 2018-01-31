@@ -13,6 +13,16 @@ class CXFA_Margin : public CXFA_Node {
  public:
   CXFA_Margin(CXFA_Document* doc, XFA_PacketType packet);
   ~CXFA_Margin() override;
+
+  float GetLeftInset() const;
+  float GetTopInset() const;
+  float GetRightInset() const;
+  float GetBottomInset() const;
+
+  Optional<float> TryLeftInset() const;
+  Optional<float> TryTopInset() const;
+  Optional<float> TryRightInset() const;
+  Optional<float> TryBottomInset() const;
 };
 
 #endif  // XFA_FXFA_PARSER_CXFA_MARGIN_H_

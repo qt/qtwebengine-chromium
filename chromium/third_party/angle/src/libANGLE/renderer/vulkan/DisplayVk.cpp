@@ -115,9 +115,10 @@ std::string DisplayVk::getVendorString() const
     return vendorString;
 }
 
-egl::Error DisplayVk::getDevice(DeviceImpl **device)
+DeviceImpl *DisplayVk::createDevice()
 {
-    return egl::NoError();
+    UNIMPLEMENTED();
+    return nullptr;
 }
 
 egl::Error DisplayVk::waitClient(const gl::Context *context) const
@@ -183,7 +184,7 @@ ContextImpl *DisplayVk::createContext(const gl::ContextState &state)
     return new ContextVk(state, mRenderer.get());
 }
 
-StreamProducerImpl *DisplayVk::createStreamProducerD3DTextureNV12(
+StreamProducerImpl *DisplayVk::createStreamProducerD3DTexture(
     egl::Stream::ConsumerType consumerType,
     const egl::AttributeMap &attribs)
 {

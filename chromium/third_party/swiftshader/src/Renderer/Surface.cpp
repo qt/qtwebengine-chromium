@@ -42,326 +42,352 @@ namespace sw
 	unsigned int *Surface::palette = 0;
 	unsigned int Surface::paletteID = 0;
 
-	void Rect::clip(int minX, int minY, int maxX, int maxY)
-	{
-		x0 = clamp(x0, minX, maxX);
-		y0 = clamp(y0, minY, maxY);
-		x1 = clamp(x1, minX, maxX);
-		y1 = clamp(y1, minY, maxY);
-	}
-
 	void Surface::Buffer::write(int x, int y, int z, const Color<float> &color)
 	{
-		void *element = (unsigned char*)buffer + x * bytes + y * pitchB + z * sliceB;
+		byte *element = (byte*)buffer + (x + border) * bytes + (y + border) * pitchB + z * samples * sliceB;
 
-		write(element, color);
+		for(int i = 0; i < samples; i++)
+		{
+			write(element, color);
+			element += sliceB;
+		}
 	}
 
 	void Surface::Buffer::write(int x, int y, const Color<float> &color)
 	{
-		void *element = (unsigned char*)buffer + x * bytes + y * pitchB;
+		byte *element = (byte*)buffer + (x + border) * bytes + (y + border) * pitchB;
 
-		write(element, color);
+		for(int i = 0; i < samples; i++)
+		{
+			write(element, color);
+			element += sliceB;
+		}
 	}
 
 	inline void Surface::Buffer::write(void *element, const Color<float> &color)
 	{
+		float r = color.r;
+		float g = color.g;
+		float b = color.b;
+		float a = color.a;
+
+		if(isSRGBformat(format))
+		{
+			r = linearToSRGB(r);
+			g = linearToSRGB(g);
+			b = linearToSRGB(b);
+		}
+
 		switch(format)
 		{
 		case FORMAT_A8:
-			*(unsigned char*)element = unorm<8>(color.a);
+			*(unsigned char*)element = unorm<8>(a);
 			break;
-		case FORMAT_R8I_SNORM:
-			*(char*)element = snorm<8>(color.r);
+		case FORMAT_R8_SNORM:
+			*(char*)element = snorm<8>(r);
 			break;
 		case FORMAT_R8:
-			*(unsigned char*)element = unorm<8>(color.r);
+			*(unsigned char*)element = unorm<8>(r);
 			break;
 		case FORMAT_R8I:
-			*(char*)element = scast<8>(color.r);
+			*(char*)element = scast<8>(r);
 			break;
 		case FORMAT_R8UI:
-			*(unsigned char*)element = ucast<8>(color.r);
+			*(unsigned char*)element = ucast<8>(r);
 			break;
 		case FORMAT_R16I:
-			*(short*)element = scast<16>(color.r);
+			*(short*)element = scast<16>(r);
 			break;
 		case FORMAT_R16UI:
-			*(unsigned short*)element = ucast<16>(color.r);
+			*(unsigned short*)element = ucast<16>(r);
 			break;
 		case FORMAT_R32I:
-			*(int*)element = static_cast<int>(color.r);
+			*(int*)element = static_cast<int>(r);
 			break;
 		case FORMAT_R32UI:
-			*(unsigned int*)element = static_cast<unsigned int>(color.r);
+			*(unsigned int*)element = static_cast<unsigned int>(r);
 			break;
 		case FORMAT_R3G3B2:
-			*(unsigned char*)element = (unorm<3>(color.r) << 5) | (unorm<3>(color.g) << 2) | (unorm<2>(color.b) << 0);
+			*(unsigned char*)element = (unorm<3>(r) << 5) | (unorm<3>(g) << 2) | (unorm<2>(b) << 0);
 			break;
 		case FORMAT_A8R3G3B2:
-			*(unsigned short*)element = (unorm<8>(color.a) << 8) | (unorm<3>(color.r) << 5) | (unorm<3>(color.g) << 2) | (unorm<2>(color.b) << 0);
+			*(unsigned short*)element = (unorm<8>(a) << 8) | (unorm<3>(r) << 5) | (unorm<3>(g) << 2) | (unorm<2>(b) << 0);
 			break;
 		case FORMAT_X4R4G4B4:
-			*(unsigned short*)element = 0xF000 | (unorm<4>(color.r) << 8) | (unorm<4>(color.g) << 4) | (unorm<4>(color.b) << 0);
+			*(unsigned short*)element = 0xF000 | (unorm<4>(r) << 8) | (unorm<4>(g) << 4) | (unorm<4>(b) << 0);
 			break;
 		case FORMAT_A4R4G4B4:
-			*(unsigned short*)element = (unorm<4>(color.a) << 12) | (unorm<4>(color.r) << 8) | (unorm<4>(color.g) << 4) | (unorm<4>(color.b) << 0);
+			*(unsigned short*)element = (unorm<4>(a) << 12) | (unorm<4>(r) << 8) | (unorm<4>(g) << 4) | (unorm<4>(b) << 0);
 			break;
 		case FORMAT_R4G4B4A4:
-			*(unsigned short*)element = (unorm<4>(color.r) << 12) | (unorm<4>(color.g) << 8) | (unorm<4>(color.b) << 4) | (unorm<4>(color.a) << 0);
+			*(unsigned short*)element = (unorm<4>(r) << 12) | (unorm<4>(g) << 8) | (unorm<4>(b) << 4) | (unorm<4>(a) << 0);
 			break;
 		case FORMAT_R5G6B5:
-			*(unsigned short*)element = (unorm<5>(color.r) << 11) | (unorm<6>(color.g) << 5) | (unorm<5>(color.b) << 0);
+			*(unsigned short*)element = (unorm<5>(r) << 11) | (unorm<6>(g) << 5) | (unorm<5>(b) << 0);
 			break;
 		case FORMAT_A1R5G5B5:
-			*(unsigned short*)element = (unorm<1>(color.a) << 15) | (unorm<5>(color.r) << 10) | (unorm<5>(color.g) << 5) | (unorm<5>(color.b) << 0);
+			*(unsigned short*)element = (unorm<1>(a) << 15) | (unorm<5>(r) << 10) | (unorm<5>(g) << 5) | (unorm<5>(b) << 0);
 			break;
 		case FORMAT_R5G5B5A1:
-			*(unsigned short*)element = (unorm<5>(color.r) << 11) | (unorm<5>(color.g) << 6) | (unorm<5>(color.b) << 1) | (unorm<5>(color.a) << 0);
+			*(unsigned short*)element = (unorm<5>(r) << 11) | (unorm<5>(g) << 6) | (unorm<5>(b) << 1) | (unorm<5>(a) << 0);
 			break;
 		case FORMAT_X1R5G5B5:
-			*(unsigned short*)element = 0x8000 | (unorm<5>(color.r) << 10) | (unorm<5>(color.g) << 5) | (unorm<5>(color.b) << 0);
+			*(unsigned short*)element = 0x8000 | (unorm<5>(r) << 10) | (unorm<5>(g) << 5) | (unorm<5>(b) << 0);
 			break;
 		case FORMAT_A8R8G8B8:
-			*(unsigned int*)element = (unorm<8>(color.a) << 24) | (unorm<8>(color.r) << 16) | (unorm<8>(color.g) << 8) | (unorm<8>(color.b) << 0);
+			*(unsigned int*)element = (unorm<8>(a) << 24) | (unorm<8>(r) << 16) | (unorm<8>(g) << 8) | (unorm<8>(b) << 0);
 			break;
 		case FORMAT_X8R8G8B8:
-			*(unsigned int*)element = 0xFF000000 | (unorm<8>(color.r) << 16) | (unorm<8>(color.g) << 8) | (unorm<8>(color.b) << 0);
+			*(unsigned int*)element = 0xFF000000 | (unorm<8>(r) << 16) | (unorm<8>(g) << 8) | (unorm<8>(b) << 0);
 			break;
-		case FORMAT_A8B8G8R8I_SNORM:
-			*(unsigned int*)element = (static_cast<unsigned int>(snorm<8>(color.a)) << 24) |
-			                          (static_cast<unsigned int>(snorm<8>(color.b)) << 16) |
-			                          (static_cast<unsigned int>(snorm<8>(color.g)) << 8) |
-			                          (static_cast<unsigned int>(snorm<8>(color.r)) << 0);
+		case FORMAT_A8B8G8R8_SNORM:
+			*(unsigned int*)element = (static_cast<unsigned int>(snorm<8>(a)) << 24) |
+			                          (static_cast<unsigned int>(snorm<8>(b)) << 16) |
+			                          (static_cast<unsigned int>(snorm<8>(g)) << 8) |
+			                          (static_cast<unsigned int>(snorm<8>(r)) << 0);
 			break;
 		case FORMAT_A8B8G8R8:
 		case FORMAT_SRGB8_A8:
-			*(unsigned int*)element = (unorm<8>(color.a) << 24) | (unorm<8>(color.b) << 16) | (unorm<8>(color.g) << 8) | (unorm<8>(color.r) << 0);
+			*(unsigned int*)element = (unorm<8>(a) << 24) | (unorm<8>(b) << 16) | (unorm<8>(g) << 8) | (unorm<8>(r) << 0);
 			break;
 		case FORMAT_A8B8G8R8I:
-			*(unsigned int*)element = (static_cast<unsigned int>(scast<8>(color.a)) << 24) |
-			                          (static_cast<unsigned int>(scast<8>(color.b)) << 16) |
-			                          (static_cast<unsigned int>(scast<8>(color.g)) << 8) |
-			                          (static_cast<unsigned int>(scast<8>(color.r)) << 0);
+			*(unsigned int*)element = (static_cast<unsigned int>(scast<8>(a)) << 24) |
+			                          (static_cast<unsigned int>(scast<8>(b)) << 16) |
+			                          (static_cast<unsigned int>(scast<8>(g)) << 8) |
+			                          (static_cast<unsigned int>(scast<8>(r)) << 0);
 			break;
 		case FORMAT_A8B8G8R8UI:
-			*(unsigned int*)element = (ucast<8>(color.a) << 24) | (ucast<8>(color.b) << 16) | (ucast<8>(color.g) << 8) | (ucast<8>(color.r) << 0);
+			*(unsigned int*)element = (ucast<8>(a) << 24) | (ucast<8>(b) << 16) | (ucast<8>(g) << 8) | (ucast<8>(r) << 0);
 			break;
-		case FORMAT_X8B8G8R8I_SNORM:
+		case FORMAT_X8B8G8R8_SNORM:
 			*(unsigned int*)element = 0x7F000000 |
-			                          (static_cast<unsigned int>(snorm<8>(color.b)) << 16) |
-			                          (static_cast<unsigned int>(snorm<8>(color.g)) << 8) |
-			                          (static_cast<unsigned int>(snorm<8>(color.r)) << 0);
+			                          (static_cast<unsigned int>(snorm<8>(b)) << 16) |
+			                          (static_cast<unsigned int>(snorm<8>(g)) << 8) |
+			                          (static_cast<unsigned int>(snorm<8>(r)) << 0);
 			break;
 		case FORMAT_X8B8G8R8:
 		case FORMAT_SRGB8_X8:
-			*(unsigned int*)element = 0xFF000000 | (unorm<8>(color.b) << 16) | (unorm<8>(color.g) << 8) | (unorm<8>(color.r) << 0);
+			*(unsigned int*)element = 0xFF000000 | (unorm<8>(b) << 16) | (unorm<8>(g) << 8) | (unorm<8>(r) << 0);
 			break;
 		case FORMAT_X8B8G8R8I:
 			*(unsigned int*)element = 0x7F000000 |
-			                          (static_cast<unsigned int>(scast<8>(color.b)) << 16) |
-			                          (static_cast<unsigned int>(scast<8>(color.g)) << 8) |
-			                          (static_cast<unsigned int>(scast<8>(color.r)) << 0);
+			                          (static_cast<unsigned int>(scast<8>(b)) << 16) |
+			                          (static_cast<unsigned int>(scast<8>(g)) << 8) |
+			                          (static_cast<unsigned int>(scast<8>(r)) << 0);
 		case FORMAT_X8B8G8R8UI:
-			*(unsigned int*)element = 0xFF000000 | (ucast<8>(color.b) << 16) | (ucast<8>(color.g) << 8) | (ucast<8>(color.r) << 0);
+			*(unsigned int*)element = 0xFF000000 | (ucast<8>(b) << 16) | (ucast<8>(g) << 8) | (ucast<8>(r) << 0);
 			break;
 		case FORMAT_A2R10G10B10:
-			*(unsigned int*)element = (unorm<2>(color.a) << 30) | (unorm<10>(color.r) << 20) | (unorm<10>(color.g) << 10) | (unorm<10>(color.b) << 0);
+			*(unsigned int*)element = (unorm<2>(a) << 30) | (unorm<10>(r) << 20) | (unorm<10>(g) << 10) | (unorm<10>(b) << 0);
 			break;
 		case FORMAT_A2B10G10R10:
-			*(unsigned int*)element = (unorm<2>(color.a) << 30) | (unorm<10>(color.b) << 20) | (unorm<10>(color.g) << 10) | (unorm<10>(color.r) << 0);
+		case FORMAT_A2B10G10R10UI:
+			*(unsigned int*)element = (unorm<2>(a) << 30) | (unorm<10>(b) << 20) | (unorm<10>(g) << 10) | (unorm<10>(r) << 0);
 			break;
-		case FORMAT_G8R8I_SNORM:
-			*(unsigned short*)element = (static_cast<unsigned short>(snorm<8>(color.g)) << 8) |
-			                            (static_cast<unsigned short>(snorm<8>(color.r)) << 0);
+		case FORMAT_G8R8_SNORM:
+			*(unsigned short*)element = (static_cast<unsigned short>(snorm<8>(g)) << 8) |
+			                            (static_cast<unsigned short>(snorm<8>(r)) << 0);
 			break;
 		case FORMAT_G8R8:
-			*(unsigned short*)element = (unorm<8>(color.g) << 8) | (unorm<8>(color.r) << 0);
+			*(unsigned short*)element = (unorm<8>(g) << 8) | (unorm<8>(r) << 0);
 			break;
 		case FORMAT_G8R8I:
-			*(unsigned short*)element = (static_cast<unsigned short>(scast<8>(color.g)) << 8) |
-			                            (static_cast<unsigned short>(scast<8>(color.r)) << 0);
+			*(unsigned short*)element = (static_cast<unsigned short>(scast<8>(g)) << 8) |
+			                            (static_cast<unsigned short>(scast<8>(r)) << 0);
 			break;
 		case FORMAT_G8R8UI:
-			*(unsigned short*)element = (ucast<8>(color.g) << 8) | (ucast<8>(color.r) << 0);
+			*(unsigned short*)element = (ucast<8>(g) << 8) | (ucast<8>(r) << 0);
 			break;
 		case FORMAT_G16R16:
-			*(unsigned int*)element = (unorm<16>(color.g) << 16) | (unorm<16>(color.r) << 0);
+			*(unsigned int*)element = (unorm<16>(g) << 16) | (unorm<16>(r) << 0);
 			break;
 		case FORMAT_G16R16I:
-			*(unsigned int*)element = (static_cast<unsigned int>(scast<16>(color.g)) << 16) |
-			                          (static_cast<unsigned int>(scast<16>(color.r)) << 0);
+			*(unsigned int*)element = (static_cast<unsigned int>(scast<16>(g)) << 16) |
+			                          (static_cast<unsigned int>(scast<16>(r)) << 0);
 			break;
 		case FORMAT_G16R16UI:
-			*(unsigned int*)element = (ucast<16>(color.g) << 16) | (ucast<16>(color.r) << 0);
+			*(unsigned int*)element = (ucast<16>(g) << 16) | (ucast<16>(r) << 0);
 			break;
 		case FORMAT_G32R32I:
 		case FORMAT_G32R32UI:
-			((unsigned int*)element)[0] = static_cast<unsigned int>(color.r);
-			((unsigned int*)element)[1] = static_cast<unsigned int>(color.g);
+			((unsigned int*)element)[0] = static_cast<unsigned int>(r);
+			((unsigned int*)element)[1] = static_cast<unsigned int>(g);
 			break;
 		case FORMAT_A16B16G16R16:
-			((unsigned short*)element)[0] = unorm<16>(color.r);
-			((unsigned short*)element)[1] = unorm<16>(color.g);
-			((unsigned short*)element)[2] = unorm<16>(color.b);
-			((unsigned short*)element)[3] = unorm<16>(color.a);
+			((unsigned short*)element)[0] = unorm<16>(r);
+			((unsigned short*)element)[1] = unorm<16>(g);
+			((unsigned short*)element)[2] = unorm<16>(b);
+			((unsigned short*)element)[3] = unorm<16>(a);
 			break;
 		case FORMAT_A16B16G16R16I:
-			((unsigned short*)element)[0] = static_cast<unsigned short>(scast<16>(color.r));
-			((unsigned short*)element)[1] = static_cast<unsigned short>(scast<16>(color.g));
-			((unsigned short*)element)[2] = static_cast<unsigned short>(scast<16>(color.b));
-			((unsigned short*)element)[3] = static_cast<unsigned short>(scast<16>(color.a));
+			((unsigned short*)element)[0] = static_cast<unsigned short>(scast<16>(r));
+			((unsigned short*)element)[1] = static_cast<unsigned short>(scast<16>(g));
+			((unsigned short*)element)[2] = static_cast<unsigned short>(scast<16>(b));
+			((unsigned short*)element)[3] = static_cast<unsigned short>(scast<16>(a));
 			break;
 		case FORMAT_A16B16G16R16UI:
-			((unsigned short*)element)[0] = static_cast<unsigned short>(ucast<16>(color.r));
-			((unsigned short*)element)[1] = static_cast<unsigned short>(ucast<16>(color.g));
-			((unsigned short*)element)[2] = static_cast<unsigned short>(ucast<16>(color.b));
-			((unsigned short*)element)[3] = static_cast<unsigned short>(ucast<16>(color.a));
+			((unsigned short*)element)[0] = static_cast<unsigned short>(ucast<16>(r));
+			((unsigned short*)element)[1] = static_cast<unsigned short>(ucast<16>(g));
+			((unsigned short*)element)[2] = static_cast<unsigned short>(ucast<16>(b));
+			((unsigned short*)element)[3] = static_cast<unsigned short>(ucast<16>(a));
 			break;
 		case FORMAT_X16B16G16R16I:
-			((unsigned short*)element)[0] = static_cast<unsigned short>(scast<16>(color.r));
-			((unsigned short*)element)[1] = static_cast<unsigned short>(scast<16>(color.g));
-			((unsigned short*)element)[2] = static_cast<unsigned short>(scast<16>(color.b));
+			((unsigned short*)element)[0] = static_cast<unsigned short>(scast<16>(r));
+			((unsigned short*)element)[1] = static_cast<unsigned short>(scast<16>(g));
+			((unsigned short*)element)[2] = static_cast<unsigned short>(scast<16>(b));
 			break;
 		case FORMAT_X16B16G16R16UI:
-			((unsigned short*)element)[0] = static_cast<unsigned short>(ucast<16>(color.r));
-			((unsigned short*)element)[1] = static_cast<unsigned short>(ucast<16>(color.g));
-			((unsigned short*)element)[2] = static_cast<unsigned short>(ucast<16>(color.b));
+			((unsigned short*)element)[0] = static_cast<unsigned short>(ucast<16>(r));
+			((unsigned short*)element)[1] = static_cast<unsigned short>(ucast<16>(g));
+			((unsigned short*)element)[2] = static_cast<unsigned short>(ucast<16>(b));
 			break;
 		case FORMAT_A32B32G32R32I:
 		case FORMAT_A32B32G32R32UI:
-			((unsigned int*)element)[0] = static_cast<unsigned int>(color.r);
-			((unsigned int*)element)[1] = static_cast<unsigned int>(color.g);
-			((unsigned int*)element)[2] = static_cast<unsigned int>(color.b);
-			((unsigned int*)element)[3] = static_cast<unsigned int>(color.a);
+			((unsigned int*)element)[0] = static_cast<unsigned int>(r);
+			((unsigned int*)element)[1] = static_cast<unsigned int>(g);
+			((unsigned int*)element)[2] = static_cast<unsigned int>(b);
+			((unsigned int*)element)[3] = static_cast<unsigned int>(a);
 			break;
 		case FORMAT_X32B32G32R32I:
 		case FORMAT_X32B32G32R32UI:
-			((unsigned int*)element)[0] = static_cast<unsigned int>(color.r);
-			((unsigned int*)element)[1] = static_cast<unsigned int>(color.g);
-			((unsigned int*)element)[2] = static_cast<unsigned int>(color.b);
+			((unsigned int*)element)[0] = static_cast<unsigned int>(r);
+			((unsigned int*)element)[1] = static_cast<unsigned int>(g);
+			((unsigned int*)element)[2] = static_cast<unsigned int>(b);
 			break;
 		case FORMAT_V8U8:
-			*(unsigned short*)element = (snorm<8>(color.g) << 8) | (snorm<8>(color.r) << 0);
+			*(unsigned short*)element = (snorm<8>(g) << 8) | (snorm<8>(r) << 0);
 			break;
 		case FORMAT_L6V5U5:
-			*(unsigned short*)element = (unorm<6>(color.b) << 10) | (snorm<5>(color.g) << 5) | (snorm<5>(color.r) << 0);
+			*(unsigned short*)element = (unorm<6>(b) << 10) | (snorm<5>(g) << 5) | (snorm<5>(r) << 0);
 			break;
 		case FORMAT_Q8W8V8U8:
-			*(unsigned int*)element = (snorm<8>(color.a) << 24) | (snorm<8>(color.b) << 16) | (snorm<8>(color.g) << 8) | (snorm<8>(color.r) << 0);
+			*(unsigned int*)element = (snorm<8>(a) << 24) | (snorm<8>(b) << 16) | (snorm<8>(g) << 8) | (snorm<8>(r) << 0);
 			break;
 		case FORMAT_X8L8V8U8:
-			*(unsigned int*)element = 0xFF000000 | (unorm<8>(color.b) << 16) | (snorm<8>(color.g) << 8) | (snorm<8>(color.r) << 0);
+			*(unsigned int*)element = 0xFF000000 | (unorm<8>(b) << 16) | (snorm<8>(g) << 8) | (snorm<8>(r) << 0);
 			break;
 		case FORMAT_V16U16:
-			*(unsigned int*)element = (snorm<16>(color.g) << 16) | (snorm<16>(color.r) << 0);
+			*(unsigned int*)element = (snorm<16>(g) << 16) | (snorm<16>(r) << 0);
 			break;
 		case FORMAT_A2W10V10U10:
-			*(unsigned int*)element = (unorm<2>(color.a) << 30) | (snorm<10>(color.b) << 20) | (snorm<10>(color.g) << 10) | (snorm<10>(color.r) << 0);
+			*(unsigned int*)element = (unorm<2>(a) << 30) | (snorm<10>(b) << 20) | (snorm<10>(g) << 10) | (snorm<10>(r) << 0);
 			break;
 		case FORMAT_A16W16V16U16:
-			((unsigned short*)element)[0] = snorm<16>(color.r);
-			((unsigned short*)element)[1] = snorm<16>(color.g);
-			((unsigned short*)element)[2] = snorm<16>(color.b);
-			((unsigned short*)element)[3] = unorm<16>(color.a);
+			((unsigned short*)element)[0] = snorm<16>(r);
+			((unsigned short*)element)[1] = snorm<16>(g);
+			((unsigned short*)element)[2] = snorm<16>(b);
+			((unsigned short*)element)[3] = unorm<16>(a);
 			break;
 		case FORMAT_Q16W16V16U16:
-			((unsigned short*)element)[0] = snorm<16>(color.r);
-			((unsigned short*)element)[1] = snorm<16>(color.g);
-			((unsigned short*)element)[2] = snorm<16>(color.b);
-			((unsigned short*)element)[3] = snorm<16>(color.a);
+			((unsigned short*)element)[0] = snorm<16>(r);
+			((unsigned short*)element)[1] = snorm<16>(g);
+			((unsigned short*)element)[2] = snorm<16>(b);
+			((unsigned short*)element)[3] = snorm<16>(a);
 			break;
 		case FORMAT_R8G8B8:
-			((unsigned char*)element)[0] = unorm<8>(color.b);
-			((unsigned char*)element)[1] = unorm<8>(color.g);
-			((unsigned char*)element)[2] = unorm<8>(color.r);
+			((unsigned char*)element)[0] = unorm<8>(b);
+			((unsigned char*)element)[1] = unorm<8>(g);
+			((unsigned char*)element)[2] = unorm<8>(r);
 			break;
 		case FORMAT_B8G8R8:
-			((unsigned char*)element)[0] = unorm<8>(color.r);
-			((unsigned char*)element)[1] = unorm<8>(color.g);
-			((unsigned char*)element)[2] = unorm<8>(color.b);
+			((unsigned char*)element)[0] = unorm<8>(r);
+			((unsigned char*)element)[1] = unorm<8>(g);
+			((unsigned char*)element)[2] = unorm<8>(b);
 			break;
 		case FORMAT_R16F:
-			*(half*)element = (half)color.r;
+			*(half*)element = (half)r;
 			break;
 		case FORMAT_A16F:
-			*(half*)element = (half)color.a;
+			*(half*)element = (half)a;
 			break;
 		case FORMAT_G16R16F:
-			((half*)element)[0] = (half)color.r;
-			((half*)element)[1] = (half)color.g;
+			((half*)element)[0] = (half)r;
+			((half*)element)[1] = (half)g;
 			break;
+		case FORMAT_X16B16G16R16F_UNSIGNED:
+			r = max(r, 0.0f); g = max(g, 0.0f); b = max(b, 0.0f);
+			// Fall through to FORMAT_X16B16G16R16F.
+		case FORMAT_X16B16G16R16F:
+			((half*)element)[3] = 1.0f;
+			// Fall through to FORMAT_B16G16R16F.
 		case FORMAT_B16G16R16F:
-			((half*)element)[0] = (half)color.r;
-			((half*)element)[1] = (half)color.g;
-			((half*)element)[2] = (half)color.b;
+			((half*)element)[0] = (half)r;
+			((half*)element)[1] = (half)g;
+			((half*)element)[2] = (half)b;
 			break;
 		case FORMAT_A16B16G16R16F:
-			((half*)element)[0] = (half)color.r;
-			((half*)element)[1] = (half)color.g;
-			((half*)element)[2] = (half)color.b;
-			((half*)element)[3] = (half)color.a;
+			((half*)element)[0] = (half)r;
+			((half*)element)[1] = (half)g;
+			((half*)element)[2] = (half)b;
+			((half*)element)[3] = (half)a;
 			break;
 		case FORMAT_A32F:
-			*(float*)element = color.a;
+			*(float*)element = a;
 			break;
 		case FORMAT_R32F:
-			*(float*)element = color.r;
+			*(float*)element = r;
 			break;
 		case FORMAT_G32R32F:
-			((float*)element)[0] = color.r;
-			((float*)element)[1] = color.g;
+			((float*)element)[0] = r;
+			((float*)element)[1] = g;
 			break;
+		case FORMAT_X32B32G32R32F_UNSIGNED:
+			r = max(r, 0.0f); g = max(g, 0.0f); b = max(b, 0.0f);
+			// Fall through to FORMAT_X32B32G32R32F.
 		case FORMAT_X32B32G32R32F:
 			((float*)element)[3] = 1.0f;
+			// Fall through to FORMAT_B32G32R32F.
 		case FORMAT_B32G32R32F:
-			((float*)element)[0] = color.r;
-			((float*)element)[1] = color.g;
-			((float*)element)[2] = color.b;
+			((float*)element)[0] = r;
+			((float*)element)[1] = g;
+			((float*)element)[2] = b;
 			break;
 		case FORMAT_A32B32G32R32F:
-			((float*)element)[0] = color.r;
-			((float*)element)[1] = color.g;
-			((float*)element)[2] = color.b;
-			((float*)element)[3] = color.a;
+			((float*)element)[0] = r;
+			((float*)element)[1] = g;
+			((float*)element)[2] = b;
+			((float*)element)[3] = a;
 			break;
 		case FORMAT_D32F:
+		case FORMAT_D32FS8:
 		case FORMAT_D32F_LOCKABLE:
 		case FORMAT_D32FS8_TEXTURE:
+		case FORMAT_D32F_SHADOW:
 		case FORMAT_D32FS8_SHADOW:
-			*((float*)element) = color.r;
+			*((float*)element) = r;
 			break;
 		case FORMAT_D32F_COMPLEMENTARY:
-			*((float*)element) = 1 - color.r;
+		case FORMAT_D32FS8_COMPLEMENTARY:
+			*((float*)element) = 1 - r;
 			break;
 		case FORMAT_S8:
-			*((unsigned char*)element) = unorm<8>(color.r);
+			*((unsigned char*)element) = unorm<8>(r);
 			break;
 		case FORMAT_L8:
-			*(unsigned char*)element = unorm<8>(color.r);
+			*(unsigned char*)element = unorm<8>(r);
 			break;
 		case FORMAT_A4L4:
-			*(unsigned char*)element = (unorm<4>(color.a) << 4) | (unorm<4>(color.r) << 0);
+			*(unsigned char*)element = (unorm<4>(a) << 4) | (unorm<4>(r) << 0);
 			break;
 		case FORMAT_L16:
-			*(unsigned short*)element = unorm<16>(color.r);
+			*(unsigned short*)element = unorm<16>(r);
 			break;
 		case FORMAT_A8L8:
-			*(unsigned short*)element = (unorm<8>(color.a) << 8) | (unorm<8>(color.r) << 0);
+			*(unsigned short*)element = (unorm<8>(a) << 8) | (unorm<8>(r) << 0);
 			break;
 		case FORMAT_L16F:
-			*(half*)element = (half)color.r;
+			*(half*)element = (half)r;
 			break;
 		case FORMAT_A16L16F:
-			((half*)element)[0] = (half)color.r;
-			((half*)element)[1] = (half)color.a;
+			((half*)element)[0] = (half)r;
+			((half*)element)[1] = (half)a;
 			break;
 		case FORMAT_L32F:
-			*(float*)element = color.r;
+			*(float*)element = r;
 			break;
 		case FORMAT_A32L32F:
-			((float*)element)[0] = color.r;
-			((float*)element)[1] = color.a;
+			((float*)element)[0] = r;
+			((float*)element)[1] = a;
 			break;
 		default:
 			ASSERT(false);
@@ -370,14 +396,14 @@ namespace sw
 
 	Color<float> Surface::Buffer::read(int x, int y, int z) const
 	{
-		void *element = (unsigned char*)buffer + x * bytes + y * pitchB + z * sliceB;
+		void *element = (unsigned char*)buffer + (x + border) * bytes + (y + border) * pitchB + z * samples * sliceB;
 
 		return read(element);
 	}
 
 	Color<float> Surface::Buffer::read(int x, int y) const
 	{
-		void *element = (unsigned char*)buffer + x * bytes + y * pitchB;
+		void *element = (unsigned char*)buffer + (x + border) * bytes + (y + border) * pitchB;
 
 		return read(element);
 	}
@@ -421,7 +447,7 @@ namespace sw
 			b = 0;
 			a = *(unsigned char*)element * (1.0f / 0xFF);
 			break;
-		case FORMAT_R8I_SNORM:
+		case FORMAT_R8_SNORM:
 			r = max((*(signed char*)element) * (1.0f / 0x7F), -1.0f);
 			break;
 		case FORMAT_R8:
@@ -538,7 +564,7 @@ namespace sw
 				b = (xrgb & 0x000000FF) * (1.0f / 0x000000FF);
 			}
 			break;
-		case FORMAT_A8B8G8R8I_SNORM:
+		case FORMAT_A8B8G8R8_SNORM:
 			{
 				signed char* abgr = (signed char*)element;
 
@@ -579,7 +605,7 @@ namespace sw
 				a = abgr[3];
 			}
 			break;
-		case FORMAT_X8B8G8R8I_SNORM:
+		case FORMAT_X8B8G8R8_SNORM:
 			{
 				signed char* bgr = (signed char*)element;
 
@@ -616,7 +642,7 @@ namespace sw
 				b = bgr[2];
 			}
 			break;
-		case FORMAT_G8R8I_SNORM:
+		case FORMAT_G8R8_SNORM:
 			{
 				signed char* gr = (signed char*)element;
 
@@ -696,6 +722,16 @@ namespace sw
 				b = (abgr & 0x3FF00000) * (1.0f / 0x3FF00000);
 				g = (abgr & 0x000FFC00) * (1.0f / 0x000FFC00);
 				r = (abgr & 0x000003FF) * (1.0f / 0x000003FF);
+			}
+			break;
+		case FORMAT_A2B10G10R10UI:
+			{
+				unsigned int abgr = *(unsigned int*)element;
+
+				a = static_cast<float>((abgr & 0xC0000000) >> 30);
+				b = static_cast<float>((abgr & 0x3FF00000) >> 20);
+				g = static_cast<float>((abgr & 0x000FFC00) >> 10);
+				r = static_cast<float>(abgr & 0x000003FF);
 			}
 			break;
 		case FORMAT_A16B16G16R16I:
@@ -936,6 +972,8 @@ namespace sw
 			r = ((half*)element)[0];
 			g = ((half*)element)[1];
 			break;
+		case FORMAT_X16B16G16R16F:
+		case FORMAT_X16B16G16R16F_UNSIGNED:
 		case FORMAT_B16G16R16F:
 			r = ((half*)element)[0];
 			g = ((half*)element)[1];
@@ -958,6 +996,7 @@ namespace sw
 			g = ((float*)element)[1];
 			break;
 		case FORMAT_X32B32G32R32F:
+		case FORMAT_X32B32G32R32F_UNSIGNED:
 		case FORMAT_B32G32R32F:
 			r = ((float*)element)[0];
 			g = ((float*)element)[1];
@@ -970,8 +1009,10 @@ namespace sw
 			a = ((float*)element)[3];
 			break;
 		case FORMAT_D32F:
+		case FORMAT_D32FS8:
 		case FORMAT_D32F_LOCKABLE:
 		case FORMAT_D32FS8_TEXTURE:
+		case FORMAT_D32F_SHADOW:
 		case FORMAT_D32FS8_SHADOW:
 			r = *(float*)element;
 			g = r;
@@ -979,6 +1020,7 @@ namespace sw
 			a = r;
 			break;
 		case FORMAT_D32F_COMPLEMENTARY:
+		case FORMAT_D32FS8_COMPLEMENTARY:
 			r = 1.0f - *(float*)element;
 			g = r;
 			b = r;
@@ -991,12 +1033,12 @@ namespace sw
 			ASSERT(false);
 		}
 
-	//	if(sRGB)
-	//	{
-	//		r = sRGBtoLinear(r);
-	//		g = sRGBtoLinear(g);
-	//		b = sRGBtoLinear(b);
-	//	}
+		if(isSRGBformat(format))
+		{
+			r = sRGBtoLinear(r);
+			g = sRGBtoLinear(g);
+			b = sRGBtoLinear(b);
+		}
 
 		return Color<float>(r, g, b, a);
 	}
@@ -1041,7 +1083,7 @@ namespace sw
 		return c000 + c100 + c010 + c110 + c001 + c101 + c011 + c111;
 	}
 
-	Color<float> Surface::Buffer::sample(float x, float y) const
+	Color<float> Surface::Buffer::sample(float x, float y, int layer) const
 	{
 		x -= 0.5f;
 		y -= 0.5f;
@@ -1052,10 +1094,10 @@ namespace sw
 		int y0 = clamp((int)y, 0, height - 1);
 		int y1 = (y0 + 1 >= height) ? y0 : y0 + 1;
 
-		Color<float> c00 = read(x0, y0);
-		Color<float> c10 = read(x1, y0);
-		Color<float> c01 = read(x0, y1);
-		Color<float> c11 = read(x1, y1);
+		Color<float> c00 = read(x0, y0, layer);
+		Color<float> c10 = read(x1, y0, layer);
+		Color<float> c01 = read(x0, y1, layer);
+		Color<float> c11 = read(x1, y1, layer);
 
 		float fx = x - x0;
 		float fy = y - y0;
@@ -1088,6 +1130,9 @@ namespace sw
 
 		if(buffer)
 		{
+			x += border;
+			y += border;
+
 			switch(format)
 			{
 			#if S3TC_SUPPORT
@@ -1155,11 +1200,11 @@ namespace sw
 			case FORMAT_ATI2:
 				return (unsigned char*)buffer + 16 * (x / 4) + (y / 4) * pitchB + z * sliceB;
 			default:
-				return (unsigned char*)buffer + x * bytes + y * pitchB + z * sliceB;
+				return (unsigned char*)buffer + x * bytes + y * pitchB + z * samples * sliceB;
 			}
 		}
 
-		return 0;
+		return nullptr;
 	}
 
 	void Surface::Buffer::unlockRect()
@@ -1172,8 +1217,8 @@ namespace sw
 	public:
 		SurfaceImplementation(int width, int height, int depth, Format format, void *pixels, int pitch, int slice)
 			: Surface(width, height, depth, format, pixels, pitch, slice) {}
-		SurfaceImplementation(Resource *texture, int width, int height, int depth, Format format, bool lockable, bool renderTarget, int pitchP = 0)
-			: Surface(texture, width, height, depth, format, lockable, renderTarget, pitchP) {}
+		SurfaceImplementation(Resource *texture, int width, int height, int depth, int border, int samples, Format format, bool lockable, bool renderTarget, int pitchP = 0)
+			: Surface(texture, width, height, depth, border, samples, format, lockable, renderTarget, pitchP) {}
 		~SurfaceImplementation() override {};
 
 		void *lockInternal(int x, int y, int z, Lock lock, Accessor client) override
@@ -1192,9 +1237,9 @@ namespace sw
 		return new SurfaceImplementation(width, height, depth, format, pixels, pitch, slice);
 	}
 
-	Surface *Surface::create(Resource *texture, int width, int height, int depth, Format format, bool lockable, bool renderTarget, int pitchPprovided)
+	Surface *Surface::create(Resource *texture, int width, int height, int depth, int border, int samples, Format format, bool lockable, bool renderTarget, int pitchPprovided)
 	{
-		return new SurfaceImplementation(texture, width, height, depth, format, lockable, renderTarget, pitchPprovided);
+		return new SurfaceImplementation(texture, width, height, depth, border, samples, format, lockable, renderTarget, pitchPprovided);
 	}
 
 	Surface::Surface(int width, int height, int depth, Format format, void *pixels, int pitch, int slice) : lockable(true), renderTarget(false)
@@ -1208,92 +1253,105 @@ namespace sw
 		external.width = width;
 		external.height = height;
 		external.depth = depth;
+		external.samples = 1;
 		external.format = format;
 		external.bytes = bytes(external.format);
 		external.pitchB = pitch;
 		external.pitchP = external.bytes ? pitch / external.bytes : 0;
 		external.sliceB = slice;
 		external.sliceP = external.bytes ? slice / external.bytes : 0;
+		external.border = 0;
 		external.lock = LOCK_UNLOCKED;
 		external.dirty = true;
 
-		internal.buffer = 0;
+		internal.buffer = nullptr;
 		internal.width = width;
 		internal.height = height;
 		internal.depth = depth;
+		internal.samples = 1;
 		internal.format = selectInternalFormat(format);
 		internal.bytes = bytes(internal.format);
-		internal.pitchB = pitchB(internal.width, internal.format, false);
-		internal.pitchP = pitchP(internal.width, internal.format, false);
-		internal.sliceB = sliceB(internal.width, internal.height, internal.format, false);
-		internal.sliceP = sliceP(internal.width, internal.height, internal.format, false);
+		internal.pitchB = pitchB(internal.width, 0, internal.format, false);
+		internal.pitchP = pitchP(internal.width, 0, internal.format, false);
+		internal.sliceB = sliceB(internal.width, internal.height, 0, internal.format, false);
+		internal.sliceP = sliceP(internal.width, internal.height, 0, internal.format, false);
+		internal.border = 0;
 		internal.lock = LOCK_UNLOCKED;
 		internal.dirty = false;
 
-		stencil.buffer = 0;
+		stencil.buffer = nullptr;
 		stencil.width = width;
 		stencil.height = height;
 		stencil.depth = depth;
-		stencil.format = FORMAT_S8;
+		stencil.samples = 1;
+		stencil.format = isStencil(format) ? FORMAT_S8 : FORMAT_NULL;
 		stencil.bytes = bytes(stencil.format);
-		stencil.pitchB = pitchB(stencil.width, stencil.format, false);
-		stencil.pitchP = pitchP(stencil.width, stencil.format, false);
-		stencil.sliceB = sliceB(stencil.width, stencil.height, stencil.format, false);
-		stencil.sliceP = sliceP(stencil.width, stencil.height, stencil.format, false);
+		stencil.pitchB = pitchB(stencil.width, 0, stencil.format, false);
+		stencil.pitchP = pitchP(stencil.width, 0, stencil.format, false);
+		stencil.sliceB = sliceB(stencil.width, stencil.height, 0, stencil.format, false);
+		stencil.sliceP = sliceP(stencil.width, stencil.height, 0, stencil.format, false);
+		stencil.border = 0;
 		stencil.lock = LOCK_UNLOCKED;
 		stencil.dirty = false;
 
-		dirtyMipmaps = true;
+		dirtyContents = true;
 		paletteUsed = 0;
 	}
 
-	Surface::Surface(Resource *texture, int width, int height, int depth, Format format, bool lockable, bool renderTarget, int pitchPprovided) : lockable(lockable), renderTarget(renderTarget)
+	Surface::Surface(Resource *texture, int width, int height, int depth, int border, int samples, Format format, bool lockable, bool renderTarget, int pitchPprovided) : lockable(lockable), renderTarget(renderTarget)
 	{
 		resource = texture ? texture : new Resource(0);
-		hasParent = texture != 0;
+		hasParent = texture != nullptr;
 		ownExternal = true;
 		depth = max(1, depth);
+		samples = max(1, samples);
 
-		external.buffer = 0;
+		external.buffer = nullptr;
 		external.width = width;
 		external.height = height;
 		external.depth = depth;
+		external.samples = (short)samples;
 		external.format = format;
 		external.bytes = bytes(external.format);
-		external.pitchB = pitchB(external.width, external.format, renderTarget && !texture);
-		external.pitchP = pitchP(external.width, external.format, renderTarget && !texture);
-		external.sliceB = sliceB(external.width, external.height, external.format, renderTarget && !texture);
-		external.sliceP = sliceP(external.width, external.height, external.format, renderTarget && !texture);
+		external.pitchB = pitchB(external.width, 0, external.format, renderTarget && !texture);
+		external.pitchP = pitchP(external.width, 0, external.format, renderTarget && !texture);
+		external.sliceB = sliceB(external.width, external.height, 0, external.format, renderTarget && !texture);
+		external.sliceP = sliceP(external.width, external.height, 0, external.format, renderTarget && !texture);
+		external.border = 0;
 		external.lock = LOCK_UNLOCKED;
 		external.dirty = false;
 
-		internal.buffer = 0;
+		internal.buffer = nullptr;
 		internal.width = width;
 		internal.height = height;
 		internal.depth = depth;
+		internal.samples = (short)samples;
 		internal.format = selectInternalFormat(format);
 		internal.bytes = bytes(internal.format);
-		internal.pitchB = !pitchPprovided ? pitchB(internal.width, internal.format, renderTarget) : pitchPprovided * internal.bytes;
-		internal.pitchP = !pitchPprovided ? pitchP(internal.width, internal.format, renderTarget) : pitchPprovided;
-		internal.sliceB = sliceB(internal.width, internal.height, internal.format, renderTarget);
-		internal.sliceP = sliceP(internal.width, internal.height, internal.format, renderTarget);
+		internal.pitchB = !pitchPprovided ? pitchB(internal.width, border, internal.format, renderTarget) : pitchPprovided * internal.bytes;
+		internal.pitchP = !pitchPprovided ? pitchP(internal.width, border, internal.format, renderTarget) : pitchPprovided;
+		internal.sliceB = sliceB(internal.width, internal.height, border, internal.format, renderTarget);
+		internal.sliceP = sliceP(internal.width, internal.height, border, internal.format, renderTarget);
+		internal.border = (short)border;
 		internal.lock = LOCK_UNLOCKED;
 		internal.dirty = false;
 
-		stencil.buffer = 0;
+		stencil.buffer = nullptr;
 		stencil.width = width;
 		stencil.height = height;
 		stencil.depth = depth;
-		stencil.format = FORMAT_S8;
+		stencil.samples = (short)samples;
+		stencil.format = isStencil(format) ? FORMAT_S8 : FORMAT_NULL;
 		stencil.bytes = bytes(stencil.format);
-		stencil.pitchB = pitchB(stencil.width, stencil.format, renderTarget);
-		stencil.pitchP = pitchP(stencil.width, stencil.format, renderTarget);
-		stencil.sliceB = sliceB(stencil.width, stencil.height, stencil.format, renderTarget);
-		stencil.sliceP = sliceP(stencil.width, stencil.height, stencil.format, renderTarget);
+		stencil.pitchB = pitchB(stencil.width, 0, stencil.format, renderTarget);
+		stencil.pitchP = pitchP(stencil.width, 0, stencil.format, renderTarget);
+		stencil.sliceB = sliceB(stencil.width, stencil.height, 0, stencil.format, renderTarget);
+		stencil.sliceP = sliceP(stencil.width, stencil.height, 0, stencil.format, renderTarget);
+		stencil.border = 0;
 		stencil.lock = LOCK_UNLOCKED;
 		stencil.dirty = false;
 
-		dirtyMipmaps = true;
+		dirtyContents = true;
 		paletteUsed = 0;
 	}
 
@@ -1337,7 +1395,7 @@ namespace sw
 			}
 			else
 			{
-				external.buffer = allocateBuffer(external.width, external.height, external.depth, external.format);
+				external.buffer = allocateBuffer(external.width, external.height, external.depth, external.border, external.samples, external.format);
 			}
 		}
 
@@ -1358,7 +1416,7 @@ namespace sw
 		case LOCK_WRITEONLY:
 		case LOCK_READWRITE:
 		case LOCK_DISCARD:
-			dirtyMipmaps = true;
+			dirtyContents = true;
 			break;
 		default:
 			ASSERT(false);
@@ -1389,7 +1447,7 @@ namespace sw
 			}
 			else
 			{
-				internal.buffer = allocateBuffer(internal.width, internal.height, internal.depth, internal.format);
+				internal.buffer = allocateBuffer(internal.width, internal.height, internal.depth, internal.border, internal.samples, internal.format);
 			}
 		}
 
@@ -1437,7 +1495,7 @@ namespace sw
 		case LOCK_WRITEONLY:
 		case LOCK_READWRITE:
 		case LOCK_DISCARD:
-			dirtyMipmaps = true;
+			dirtyContents = true;
 			break;
 		default:
 			ASSERT(false);
@@ -1464,7 +1522,7 @@ namespace sw
 
 		if(!stencil.buffer)
 		{
-			stencil.buffer = allocateBuffer(stencil.width, stencil.height, stencil.depth, stencil.format);
+			stencil.buffer = allocateBuffer(stencil.width, stencil.height, stencil.depth, stencil.border, stencil.samples, stencil.format);
 		}
 
 		return stencil.lockRect(x, y, front, LOCK_READWRITE);   // FIXME
@@ -1516,12 +1574,13 @@ namespace sw
 		case FORMAT_X8B8G8R8UI:			return 4;
 		case FORMAT_A8B8G8R8UI:			return 4;
 		case FORMAT_A8B8G8R8:			return 4;
-		case FORMAT_R8I_SNORM:			return 1;
-		case FORMAT_G8R8I_SNORM:		return 2;
-		case FORMAT_X8B8G8R8I_SNORM:	return 4;
-		case FORMAT_A8B8G8R8I_SNORM:	return 4;
+		case FORMAT_R8_SNORM:			return 1;
+		case FORMAT_G8R8_SNORM:		return 2;
+		case FORMAT_X8B8G8R8_SNORM:	return 4;
+		case FORMAT_A8B8G8R8_SNORM:	return 4;
 		case FORMAT_A2R10G10B10:		return 4;
 		case FORMAT_A2B10G10R10:		return 4;
+		case FORMAT_A2B10G10R10UI:		return 4;
 		case FORMAT_G8R8I:				return 2;
 		case FORMAT_G8R8:				return 2;
 		case FORMAT_G16R16I:			return 4;
@@ -1608,13 +1667,16 @@ namespace sw
 		case FORMAT_R16F:				return 2;
 		case FORMAT_G16R16F:			return 4;
 		case FORMAT_B16G16R16F:			return 6;
+		case FORMAT_X16B16G16R16F:		return 8;
 		case FORMAT_A16B16G16R16F:		return 8;
+		case FORMAT_X16B16G16R16F_UNSIGNED: return 8;
 		case FORMAT_A32F:				return 4;
 		case FORMAT_R32F:				return 4;
 		case FORMAT_G32R32F:			return 8;
 		case FORMAT_B32G32R32F:			return 12;
 		case FORMAT_X32B32G32R32F:		return 16;
 		case FORMAT_A32B32G32R32F:		return 16;
+		case FORMAT_X32B32G32R32F_UNSIGNED: return 16;
 		// Depth/stencil formats
 		case FORMAT_D16:				return 2;
 		case FORMAT_D32:				return 4;
@@ -1622,9 +1684,12 @@ namespace sw
 		case FORMAT_D24S8:				return 4;
 		case FORMAT_D24FS8:				return 4;
 		case FORMAT_D32F:				return 4;
+		case FORMAT_D32FS8:				return 4;
 		case FORMAT_D32F_COMPLEMENTARY:	return 4;
+		case FORMAT_D32FS8_COMPLEMENTARY: return 4;
 		case FORMAT_D32F_LOCKABLE:		return 4;
 		case FORMAT_D32FS8_TEXTURE:		return 4;
+		case FORMAT_D32F_SHADOW:		return 4;
 		case FORMAT_D32FS8_SHADOW:		return 4;
 		case FORMAT_DF24S8:				return 4;
 		case FORMAT_DF16S8:				return 2;
@@ -1640,8 +1705,10 @@ namespace sw
 		return 0;
 	}
 
-	int Surface::pitchB(int width, Format format, bool target)
+	int Surface::pitchB(int width, int border, Format format, bool target)
 	{
+		width += 2 * border;
+
 		if(target || isDepth(format) || isStencil(format))
 		{
 			width = align(width, 2);
@@ -1716,15 +1783,17 @@ namespace sw
 		}
 	}
 
-	int Surface::pitchP(int width, Format format, bool target)
+	int Surface::pitchP(int width, int border, Format format, bool target)
 	{
 		int B = bytes(format);
 
-		return B > 0 ? pitchB(width, format, target) / B : 0;
+		return B > 0 ? pitchB(width, border, format, target) / B : 0;
 	}
 
-	int Surface::sliceB(int width, int height, Format format, bool target)
+	int Surface::sliceB(int width, int height, int border, Format format, bool target)
 	{
+		height += 2 * border;
+
 		if(target || isDepth(format) || isStencil(format))
 		{
 			height = ((height + 1) & ~1);
@@ -1752,7 +1821,7 @@ namespace sw
 		case FORMAT_SRGB8_ALPHA8_ASTC_4x4_KHR:
 		case FORMAT_RGBA_ASTC_5x4_KHR:
 		case FORMAT_SRGB8_ALPHA8_ASTC_5x4_KHR:
-			return pitchB(width, format, target) * ((height + 3) / 4);   // Pitch computed per 4 rows
+			return pitchB(width, border, format, target) * ((height + 3) / 4);   // Pitch computed per 4 rows
 		case FORMAT_RGBA_ASTC_5x5_KHR:
 		case FORMAT_SRGB8_ALPHA8_ASTC_5x5_KHR:
 		case FORMAT_RGBA_ASTC_6x5_KHR:
@@ -1761,39 +1830,39 @@ namespace sw
 		case FORMAT_SRGB8_ALPHA8_ASTC_8x5_KHR:
 		case FORMAT_RGBA_ASTC_10x5_KHR:
 		case FORMAT_SRGB8_ALPHA8_ASTC_10x5_KHR:
-			return pitchB(width, format, target) * ((height + 4) / 5);   // Pitch computed per 5 rows
+			return pitchB(width, border, format, target) * ((height + 4) / 5);   // Pitch computed per 5 rows
 		case FORMAT_RGBA_ASTC_6x6_KHR:
 		case FORMAT_SRGB8_ALPHA8_ASTC_6x6_KHR:
 		case FORMAT_RGBA_ASTC_8x6_KHR:
 		case FORMAT_SRGB8_ALPHA8_ASTC_8x6_KHR:
 		case FORMAT_RGBA_ASTC_10x6_KHR:
 		case FORMAT_SRGB8_ALPHA8_ASTC_10x6_KHR:
-			return pitchB(width, format, target) * ((height + 5) / 6);   // Pitch computed per 6 rows
+			return pitchB(width, border, format, target) * ((height + 5) / 6);   // Pitch computed per 6 rows
 		case FORMAT_RGBA_ASTC_8x8_KHR:
 		case FORMAT_SRGB8_ALPHA8_ASTC_8x8_KHR:
 		case FORMAT_RGBA_ASTC_10x8_KHR:
 		case FORMAT_SRGB8_ALPHA8_ASTC_10x8_KHR:
-			return pitchB(width, format, target) * ((height + 7) / 8);   // Pitch computed per 8 rows
+			return pitchB(width, border, format, target) * ((height + 7) / 8);   // Pitch computed per 8 rows
 		case FORMAT_RGBA_ASTC_10x10_KHR:
 		case FORMAT_SRGB8_ALPHA8_ASTC_10x10_KHR:
 		case FORMAT_RGBA_ASTC_12x10_KHR:
 		case FORMAT_SRGB8_ALPHA8_ASTC_12x10_KHR:
-			return pitchB(width, format, target) * ((height + 9) / 10);   // Pitch computed per 10 rows
+			return pitchB(width, border, format, target) * ((height + 9) / 10);   // Pitch computed per 10 rows
 		case FORMAT_RGBA_ASTC_12x12_KHR:
 		case FORMAT_SRGB8_ALPHA8_ASTC_12x12_KHR:
-			return pitchB(width, format, target) * ((height + 11) / 12);   // Pitch computed per 12 rows
+			return pitchB(width, border, format, target) * ((height + 11) / 12);   // Pitch computed per 12 rows
 		case FORMAT_ATI1:
 		case FORMAT_ATI2:
 		default:
-			return pitchB(width, format, target) * height;   // Pitch computed per row
+			return pitchB(width, border, format, target) * height;   // Pitch computed per row
 		}
 	}
 
-	int Surface::sliceP(int width, int height, Format format, bool target)
+	int Surface::sliceP(int width, int height, int border, Format format, bool target)
 	{
 		int B = bytes(format);
 
-		return B > 0 ? sliceB(width, height, format, target) / B : 0;
+		return B > 0 ? sliceB(width, height, border, format, target) / B : 0;
 	}
 
 	void Surface::update(Buffer &destination, Buffer &source)
@@ -1866,8 +1935,8 @@ namespace sw
 
 	void Surface::genericUpdate(Buffer &destination, Buffer &source)
 	{
-		unsigned char *sourceSlice = (unsigned char*)source.buffer;
-		unsigned char *destinationSlice = (unsigned char*)destination.buffer;
+		unsigned char *sourceSlice = (unsigned char*)source.lockRect(0, 0, 0, sw::LOCK_READONLY);
+		unsigned char *destinationSlice = (unsigned char*)destination.lockRect(0, 0, 0, sw::LOCK_WRITEONLY);
 
 		int depth = min(destination.depth, source.depth);
 		int height = min(destination.height, source.height);
@@ -1907,24 +1976,31 @@ namespace sw
 			sourceSlice += source.sliceB;
 			destinationSlice += destination.sliceB;
 		}
+
+		source.unlockRect();
+		destination.unlockRect();
 	}
 
-	void Surface::decodeR8G8B8(Buffer &destination, const Buffer &source)
+	void Surface::decodeR8G8B8(Buffer &destination, Buffer &source)
 	{
-		unsigned char *sourceSlice = (unsigned char*)source.buffer;
-		unsigned char *destinationSlice = (unsigned char*)destination.buffer;
+		unsigned char *sourceSlice = (unsigned char*)source.lockRect(0, 0, 0, sw::LOCK_READONLY);
+		unsigned char *destinationSlice = (unsigned char*)destination.lockRect(0, 0, 0, sw::LOCK_WRITEONLY);
 
-		for(int z = 0; z < destination.depth && z < source.depth; z++)
+		int depth = min(destination.depth, source.depth);
+		int height = min(destination.height, source.height);
+		int width = min(destination.width, source.width);
+
+		for(int z = 0; z < depth; z++)
 		{
 			unsigned char *sourceRow = sourceSlice;
 			unsigned char *destinationRow = destinationSlice;
 
-			for(int y = 0; y < destination.height && y < source.height; y++)
+			for(int y = 0; y < height; y++)
 			{
 				unsigned char *sourceElement = sourceRow;
 				unsigned char *destinationElement = destinationRow;
 
-				for(int x = 0; x < destination.width && x < source.width; x++)
+				for(int x = 0; x < width; x++)
 				{
 					unsigned int b = sourceElement[0];
 					unsigned int g = sourceElement[1];
@@ -1943,24 +2019,31 @@ namespace sw
 			sourceSlice += source.sliceB;
 			destinationSlice += destination.sliceB;
 		}
+
+		source.unlockRect();
+		destination.unlockRect();
 	}
 
-	void Surface::decodeX1R5G5B5(Buffer &destination, const Buffer &source)
+	void Surface::decodeX1R5G5B5(Buffer &destination, Buffer &source)
 	{
-		unsigned char *sourceSlice = (unsigned char*)source.buffer;
-		unsigned char *destinationSlice = (unsigned char*)destination.buffer;
+		unsigned char *sourceSlice = (unsigned char*)source.lockRect(0, 0, 0, sw::LOCK_READONLY);
+		unsigned char *destinationSlice = (unsigned char*)destination.lockRect(0, 0, 0, sw::LOCK_WRITEONLY);
 
-		for(int z = 0; z < destination.depth && z < source.depth; z++)
+		int depth = min(destination.depth, source.depth);
+		int height = min(destination.height, source.height);
+		int width = min(destination.width, source.width);
+
+		for(int z = 0; z < depth; z++)
 		{
 			unsigned char *sourceRow = sourceSlice;
 			unsigned char *destinationRow = destinationSlice;
 
-			for(int y = 0; y < destination.height && y < source.height; y++)
+			for(int y = 0; y < height; y++)
 			{
 				unsigned char *sourceElement = sourceRow;
 				unsigned char *destinationElement = destinationRow;
 
-				for(int x = 0; x < destination.width && x < source.width; x++)
+				for(int x = 0; x < width; x++)
 				{
 					unsigned int xrgb = *(unsigned short*)sourceElement;
 
@@ -1981,24 +2064,31 @@ namespace sw
 			sourceSlice += source.sliceB;
 			destinationSlice += destination.sliceB;
 		}
+
+		source.unlockRect();
+		destination.unlockRect();
 	}
 
-	void Surface::decodeA1R5G5B5(Buffer &destination, const Buffer &source)
+	void Surface::decodeA1R5G5B5(Buffer &destination, Buffer &source)
 	{
-		unsigned char *sourceSlice = (unsigned char*)source.buffer;
-		unsigned char *destinationSlice = (unsigned char*)destination.buffer;
+		unsigned char *sourceSlice = (unsigned char*)source.lockRect(0, 0, 0, sw::LOCK_READONLY);
+		unsigned char *destinationSlice = (unsigned char*)destination.lockRect(0, 0, 0, sw::LOCK_WRITEONLY);
 
-		for(int z = 0; z < destination.depth && z < source.depth; z++)
+		int depth = min(destination.depth, source.depth);
+		int height = min(destination.height, source.height);
+		int width = min(destination.width, source.width);
+
+		for(int z = 0; z < depth; z++)
 		{
 			unsigned char *sourceRow = sourceSlice;
 			unsigned char *destinationRow = destinationSlice;
 
-			for(int y = 0; y < destination.height && y < source.height; y++)
+			for(int y = 0; y < height; y++)
 			{
 				unsigned char *sourceElement = sourceRow;
 				unsigned char *destinationElement = destinationRow;
 
-				for(int x = 0; x < destination.width && x < source.width; x++)
+				for(int x = 0; x < width; x++)
 				{
 					unsigned int argb = *(unsigned short*)sourceElement;
 
@@ -2020,24 +2110,31 @@ namespace sw
 			sourceSlice += source.sliceB;
 			destinationSlice += destination.sliceB;
 		}
+
+		source.unlockRect();
+		destination.unlockRect();
 	}
 
-	void Surface::decodeX4R4G4B4(Buffer &destination, const Buffer &source)
+	void Surface::decodeX4R4G4B4(Buffer &destination, Buffer &source)
 	{
-		unsigned char *sourceSlice = (unsigned char*)source.buffer;
-		unsigned char *destinationSlice = (unsigned char*)destination.buffer;
+		unsigned char *sourceSlice = (unsigned char*)source.lockRect(0, 0, 0, sw::LOCK_READONLY);
+		unsigned char *destinationSlice = (unsigned char*)destination.lockRect(0, 0, 0, sw::LOCK_WRITEONLY);
 
-		for(int z = 0; z < destination.depth && z < source.depth; z++)
+		int depth = min(destination.depth, source.depth);
+		int height = min(destination.height, source.height);
+		int width = min(destination.width, source.width);
+
+		for(int z = 0; z < depth; z++)
 		{
 			unsigned char *sourceRow = sourceSlice;
 			unsigned char *destinationRow = destinationSlice;
 
-			for(int y = 0; y < destination.height && y < source.height; y++)
+			for(int y = 0; y < height; y++)
 			{
 				unsigned char *sourceElement = sourceRow;
 				unsigned char *destinationElement = destinationRow;
 
-				for(int x = 0; x < destination.width && x < source.width; x++)
+				for(int x = 0; x < width; x++)
 				{
 					unsigned int xrgb = *(unsigned short*)sourceElement;
 
@@ -2058,24 +2155,31 @@ namespace sw
 			sourceSlice += source.sliceB;
 			destinationSlice += destination.sliceB;
 		}
+
+		source.unlockRect();
+		destination.unlockRect();
 	}
 
-	void Surface::decodeA4R4G4B4(Buffer &destination, const Buffer &source)
+	void Surface::decodeA4R4G4B4(Buffer &destination, Buffer &source)
 	{
-		unsigned char *sourceSlice = (unsigned char*)source.buffer;
-		unsigned char *destinationSlice = (unsigned char*)destination.buffer;
+		unsigned char *sourceSlice = (unsigned char*)source.lockRect(0, 0, 0, sw::LOCK_READONLY);
+		unsigned char *destinationSlice = (unsigned char*)destination.lockRect(0, 0, 0, sw::LOCK_WRITEONLY);
 
-		for(int z = 0; z < destination.depth && z < source.depth; z++)
+		int depth = min(destination.depth, source.depth);
+		int height = min(destination.height, source.height);
+		int width = min(destination.width, source.width);
+
+		for(int z = 0; z < depth; z++)
 		{
 			unsigned char *sourceRow = sourceSlice;
 			unsigned char *destinationRow = destinationSlice;
 
-			for(int y = 0; y < destination.height && y < source.height; y++)
+			for(int y = 0; y < height; y++)
 			{
 				unsigned char *sourceElement = sourceRow;
 				unsigned char *destinationElement = destinationRow;
 
-				for(int x = 0; x < destination.width && x < source.width; x++)
+				for(int x = 0; x < width; x++)
 				{
 					unsigned int argb = *(unsigned short*)sourceElement;
 
@@ -2097,24 +2201,31 @@ namespace sw
 			sourceSlice += source.sliceB;
 			destinationSlice += destination.sliceB;
 		}
+
+		source.unlockRect();
+		destination.unlockRect();
 	}
 
-	void Surface::decodeP8(Buffer &destination, const Buffer &source)
+	void Surface::decodeP8(Buffer &destination, Buffer &source)
 	{
-		unsigned char *sourceSlice = (unsigned char*)source.buffer;
-		unsigned char *destinationSlice = (unsigned char*)destination.buffer;
+		unsigned char *sourceSlice = (unsigned char*)source.lockRect(0, 0, 0, sw::LOCK_READONLY);
+		unsigned char *destinationSlice = (unsigned char*)destination.lockRect(0, 0, 0, sw::LOCK_WRITEONLY);
 
-		for(int z = 0; z < destination.depth && z < source.depth; z++)
+		int depth = min(destination.depth, source.depth);
+		int height = min(destination.height, source.height);
+		int width = min(destination.width, source.width);
+
+		for(int z = 0; z < depth; z++)
 		{
 			unsigned char *sourceRow = sourceSlice;
 			unsigned char *destinationRow = destinationSlice;
 
-			for(int y = 0; y < destination.height && y < source.height; y++)
+			for(int y = 0; y < height; y++)
 			{
 				unsigned char *sourceElement = sourceRow;
 				unsigned char *destinationElement = destinationRow;
 
-				for(int x = 0; x < destination.width && x < source.width; x++)
+				for(int x = 0; x < width; x++)
 				{
 					unsigned int abgr = palette[*(unsigned char*)sourceElement];
 
@@ -2136,13 +2247,16 @@ namespace sw
 			sourceSlice += source.sliceB;
 			destinationSlice += destination.sliceB;
 		}
+
+		source.unlockRect();
+		destination.unlockRect();
 	}
 
 #if S3TC_SUPPORT
-	void Surface::decodeDXT1(Buffer &internal, const Buffer &external)
+	void Surface::decodeDXT1(Buffer &internal, Buffer &external)
 	{
-		unsigned int *destSlice = (unsigned int*)internal.buffer;
-		const DXT1 *source = (const DXT1*)external.buffer;
+		unsigned int *destSlice = (unsigned int*)internal.lockRect(0, 0, 0, LOCK_WRITEONLY);
+		const DXT1 *source = (const DXT1*)external.lockRect(0, 0, 0, LOCK_READONLY);
 
 		for(int z = 0; z < external.depth; z++)
 		{
@@ -2199,12 +2313,15 @@ namespace sw
 
 			(byte*&)destSlice += internal.sliceB;
 		}
+
+		external.unlockRect();
+		internal.unlockRect();
 	}
 
-	void Surface::decodeDXT3(Buffer &internal, const Buffer &external)
+	void Surface::decodeDXT3(Buffer &internal, Buffer &external)
 	{
-		unsigned int *destSlice = (unsigned int*)internal.buffer;
-		const DXT3 *source = (const DXT3*)external.buffer;
+		unsigned int *destSlice = (unsigned int*)internal.lockRect(0, 0, 0, LOCK_WRITEONLY);
+		const DXT3 *source = (const DXT3*)external.lockRect(0, 0, 0, LOCK_READONLY);
 
 		for(int z = 0; z < external.depth; z++)
 		{
@@ -2246,12 +2363,15 @@ namespace sw
 
 			(byte*&)destSlice += internal.sliceB;
 		}
+
+		external.unlockRect();
+		internal.unlockRect();
 	}
 
-	void Surface::decodeDXT5(Buffer &internal, const Buffer &external)
+	void Surface::decodeDXT5(Buffer &internal, Buffer &external)
 	{
-		unsigned int *destSlice = (unsigned int*)internal.buffer;
-		const DXT5 *source = (const DXT5*)external.buffer;
+		unsigned int *destSlice = (unsigned int*)internal.lockRect(0, 0, 0, LOCK_WRITEONLY);
+		const DXT5 *source = (const DXT5*)external.lockRect(0, 0, 0, LOCK_READONLY);
 
 		for(int z = 0; z < external.depth; z++)
 		{
@@ -2317,13 +2437,16 @@ namespace sw
 
 			(byte*&)destSlice += internal.sliceB;
 		}
+
+		external.unlockRect();
+		internal.unlockRect();
 	}
 #endif
 
-	void Surface::decodeATI1(Buffer &internal, const Buffer &external)
+	void Surface::decodeATI1(Buffer &internal, Buffer &external)
 	{
-		byte *destSlice = (byte*)internal.buffer;
-		const ATI1 *source = (const ATI1*)external.buffer;
+		byte *destSlice = (byte*)internal.lockRect(0, 0, 0, LOCK_WRITEONLY);
+		const ATI1 *source = (const ATI1*)external.lockRect(0, 0, 0, LOCK_READONLY);
 
 		for(int z = 0; z < external.depth; z++)
 		{
@@ -2371,12 +2494,15 @@ namespace sw
 
 			destSlice += internal.sliceB;
 		}
+
+		external.unlockRect();
+		internal.unlockRect();
 	}
 
-	void Surface::decodeATI2(Buffer &internal, const Buffer &external)
+	void Surface::decodeATI2(Buffer &internal, Buffer &external)
 	{
-		word *destSlice = (word*)internal.buffer;
-		const ATI2 *source = (const ATI2*)external.buffer;
+		word *destSlice = (word*)internal.lockRect(0, 0, 0, LOCK_WRITEONLY);
+		const ATI2 *source = (const ATI2*)external.lockRect(0, 0, 0, LOCK_READONLY);
 
 		for(int z = 0; z < external.depth; z++)
 		{
@@ -2451,12 +2577,17 @@ namespace sw
 
 			(byte*&)destSlice += internal.sliceB;
 		}
+
+		external.unlockRect();
+		internal.unlockRect();
 	}
 
-	void Surface::decodeETC2(Buffer &internal, const Buffer &external, int nbAlphaBits, bool isSRGB)
+	void Surface::decodeETC2(Buffer &internal, Buffer &external, int nbAlphaBits, bool isSRGB)
 	{
-		ETC_Decoder::Decode((const byte*)external.buffer, (byte*)internal.buffer, external.width, external.height, internal.width, internal.height, internal.pitchB, internal.bytes,
+		ETC_Decoder::Decode((const byte*)external.lockRect(0, 0, 0, LOCK_READONLY), (byte*)internal.lockRect(0, 0, 0, LOCK_WRITEONLY), external.width, external.height, internal.width, internal.height, internal.pitchB, internal.bytes,
 		                    (nbAlphaBits == 8) ? ETC_Decoder::ETC_RGBA : ((nbAlphaBits == 1) ? ETC_Decoder::ETC_RGB_PUNCHTHROUGH_ALPHA : ETC_Decoder::ETC_RGB));
+		external.unlockRect();
+		internal.unlockRect();
 
 		if(isSRGB)
 		{
@@ -2472,60 +2603,61 @@ namespace sw
 			}
 
 			// Perform sRGB conversion in place after decoding
-			byte* src = (byte*)internal.buffer;
+			byte *src = (byte*)internal.lockRect(0, 0, 0, LOCK_READWRITE);
 			for(int y = 0; y < internal.height; y++)
 			{
-				byte* srcRow = src + y * internal.pitchB;
+				byte *srcRow = src + y * internal.pitchB;
 				for(int x = 0; x <  internal.width; x++)
 				{
-					byte* srcPix = srcRow + x * internal.bytes;
+					byte *srcPix = srcRow + x * internal.bytes;
 					for(int i = 0; i < 3; i++)
 					{
 						srcPix[i] = sRGBtoLinearTable[srcPix[i]];
 					}
 				}
 			}
+			internal.unlockRect();
 		}
 	}
 
-	void Surface::decodeEAC(Buffer &internal, const Buffer &external, int nbChannels, bool isSigned)
+	void Surface::decodeEAC(Buffer &internal, Buffer &external, int nbChannels, bool isSigned)
 	{
 		ASSERT(nbChannels == 1 || nbChannels == 2);
 
-		ETC_Decoder::Decode((const byte*)external.buffer, (byte*)internal.buffer, external.width, external.height, internal.width, internal.height, internal.pitchB, internal.bytes,
+		byte *src = (byte*)internal.lockRect(0, 0, 0, LOCK_READWRITE);
+		ETC_Decoder::Decode((const byte*)external.lockRect(0, 0, 0, LOCK_READONLY), src, external.width, external.height, internal.width, internal.height, internal.pitchB, internal.bytes,
 		                    (nbChannels == 1) ? (isSigned ? ETC_Decoder::ETC_R_SIGNED : ETC_Decoder::ETC_R_UNSIGNED) : (isSigned ? ETC_Decoder::ETC_RG_SIGNED : ETC_Decoder::ETC_RG_UNSIGNED));
+		external.unlockRect();
 
-		// FIXME: We convert signed data to float, until signed integer internal formats are supported
-		//        This code can be removed if signed ETC2 images are decoded to internal 8 bit signed R/RG formats
-		if(isSigned)
+		// FIXME: We convert EAC data to float, until signed short internal formats are supported
+		//        This code can be removed if ETC2 images are decoded to internal 16 bit signed R/RG formats
+		const float normalization = isSigned ? (1.0f / (8.0f * 127.875f)) : (1.0f / (8.0f * 255.875f));
+		for(int y = 0; y < internal.height; y++)
 		{
-			sbyte* src = (sbyte*)internal.buffer;
-
-			for(int y = 0; y < internal.height; y++)
+			byte* srcRow = src + y * internal.pitchB;
+			for(int x = internal.width - 1; x >= 0; x--)
 			{
-				sbyte* srcRow = src + y * internal.pitchB;
-				for(int x = internal.width - 1; x >= 0; x--)
+				int* srcPix = reinterpret_cast<int*>(srcRow + x * internal.bytes);
+				float* dstPix = reinterpret_cast<float*>(srcPix);
+				for(int c = nbChannels - 1; c >= 0; c--)
 				{
-					int dx = x & 0xFFFFFFFC;
-					int mx = x - dx;
-					sbyte* srcPix = srcRow + dx * internal.bytes + mx * nbChannels;
-					float* dstPix = (float*)(srcRow + x * internal.bytes);
-					for(int c = nbChannels - 1; c >= 0; c--)
-					{
-						static const float normalization = 1.0f / 127.875f;
-						dstPix[c] = clamp(static_cast<float>(srcPix[c]) * normalization, -1.0f, 1.0f);
-					}
+					dstPix[c] = clamp(static_cast<float>(srcPix[c]) * normalization, -1.0f, 1.0f);
 				}
 			}
 		}
+
+		internal.unlockRect();
 	}
 
-	void Surface::decodeASTC(Buffer &internal, const Buffer &external, int xBlockSize, int yBlockSize, int zBlockSize, bool isSRGB)
+	void Surface::decodeASTC(Buffer &internal, Buffer &external, int xBlockSize, int yBlockSize, int zBlockSize, bool isSRGB)
 	{
 	}
 
-	unsigned int Surface::size(int width, int height, int depth, Format format)
+	unsigned int Surface::size(int width, int height, int depth, int border, int samples, Format format)
 	{
+		width += 2 * border;
+		height += 2 * border;
+
 		// Dimensions rounded up to multiples of 4, used for compressed formats
 		int width4 = align(width, 4);
 		int height4 = align(height, 4);
@@ -2607,7 +2739,7 @@ namespace sw
 				return YSize + 2 * CSize;
 			}
 		default:
-			return bytes(format) * width * height * depth;
+			return bytes(format) * width * height * depth * samples;
 		}
 	}
 
@@ -2621,6 +2753,7 @@ namespace sw
 		case FORMAT_D32F:
 		case FORMAT_D32F_COMPLEMENTARY:
 		case FORMAT_D32F_LOCKABLE:
+		case FORMAT_D32F_SHADOW:
 			return false;
 		case FORMAT_D24S8:
 		case FORMAT_D24FS8:
@@ -2629,6 +2762,8 @@ namespace sw
 		case FORMAT_DF16S8:
 		case FORMAT_D32FS8_TEXTURE:
 		case FORMAT_D32FS8_SHADOW:
+		case FORMAT_D32FS8:
+		case FORMAT_D32FS8_COMPLEMENTARY:
 		case FORMAT_INTZ:
 			return true;
 		default:
@@ -2646,11 +2781,14 @@ namespace sw
 		case FORMAT_D24S8:
 		case FORMAT_D24FS8:
 		case FORMAT_D32F:
+		case FORMAT_D32FS8:
 		case FORMAT_D32F_COMPLEMENTARY:
+		case FORMAT_D32FS8_COMPLEMENTARY:
 		case FORMAT_D32F_LOCKABLE:
 		case FORMAT_DF24S8:
 		case FORMAT_DF16S8:
 		case FORMAT_D32FS8_TEXTURE:
+		case FORMAT_D32F_SHADOW:
 		case FORMAT_D32FS8_SHADOW:
 		case FORMAT_INTZ:
 			return true;
@@ -2671,7 +2809,9 @@ namespace sw
 		case FORMAT_D24S8:
 		case FORMAT_D24FS8:
 		case FORMAT_D32F:
+		case FORMAT_D32FS8:
 		case FORMAT_D32F_COMPLEMENTARY:
+		case FORMAT_D32FS8_COMPLEMENTARY:
 		case FORMAT_DF24S8:
 		case FORMAT_DF16S8:
 		case FORMAT_INTZ:
@@ -2681,6 +2821,7 @@ namespace sw
 			return true;
 		case FORMAT_D32F_LOCKABLE:
 		case FORMAT_D32FS8_TEXTURE:
+		case FORMAT_D32F_SHADOW:
 		case FORMAT_D32FS8_SHADOW:
 		default:
 			break;
@@ -2723,10 +2864,11 @@ namespace sw
 		case FORMAT_G8R8I:
 		case FORMAT_G8R8:
 		case FORMAT_A2B10G10R10:
-		case FORMAT_R8I_SNORM:
-		case FORMAT_G8R8I_SNORM:
-		case FORMAT_X8B8G8R8I_SNORM:
-		case FORMAT_A8B8G8R8I_SNORM:
+		case FORMAT_A2B10G10R10UI:
+		case FORMAT_R8_SNORM:
+		case FORMAT_G8R8_SNORM:
+		case FORMAT_X8B8G8R8_SNORM:
+		case FORMAT_A8B8G8R8_SNORM:
 		case FORMAT_R16I:
 		case FORMAT_R16UI:
 		case FORMAT_G16R16I:
@@ -2765,16 +2907,22 @@ namespace sw
 		case FORMAT_R16F:
 		case FORMAT_G16R16F:
 		case FORMAT_B16G16R16F:
+		case FORMAT_X16B16G16R16F:
 		case FORMAT_A16B16G16R16F:
+		case FORMAT_X16B16G16R16F_UNSIGNED:
 		case FORMAT_R32F:
 		case FORMAT_G32R32F:
 		case FORMAT_B32G32R32F:
 		case FORMAT_X32B32G32R32F:
 		case FORMAT_A32B32G32R32F:
+		case FORMAT_X32B32G32R32F_UNSIGNED:
 		case FORMAT_D32F:
+		case FORMAT_D32FS8:
 		case FORMAT_D32F_COMPLEMENTARY:
+		case FORMAT_D32FS8_COMPLEMENTARY:
 		case FORMAT_D32F_LOCKABLE:
 		case FORMAT_D32FS8_TEXTURE:
+		case FORMAT_D32F_SHADOW:
 		case FORMAT_D32FS8_SHADOW:
 		case FORMAT_L16F:
 		case FORMAT_A16L16F:
@@ -2804,6 +2952,7 @@ namespace sw
 		case FORMAT_SRGB8_A8:
 		case FORMAT_G8R8:
 		case FORMAT_A2B10G10R10:
+		case FORMAT_A2B10G10R10UI:
 		case FORMAT_R16UI:
 		case FORMAT_G16R16:
 		case FORMAT_G16R16UI:
@@ -2814,14 +2963,18 @@ namespace sw
 		case FORMAT_G32R32UI:
 		case FORMAT_X32B32G32R32UI:
 		case FORMAT_A32B32G32R32UI:
+		case FORMAT_X32B32G32R32F_UNSIGNED:
 		case FORMAT_R8UI:
 		case FORMAT_G8R8UI:
 		case FORMAT_X8B8G8R8UI:
 		case FORMAT_A8B8G8R8UI:
 		case FORMAT_D32F:
+		case FORMAT_D32FS8:
 		case FORMAT_D32F_COMPLEMENTARY:
+		case FORMAT_D32FS8_COMPLEMENTARY:
 		case FORMAT_D32F_LOCKABLE:
 		case FORMAT_D32FS8_TEXTURE:
+		case FORMAT_D32F_SHADOW:
 		case FORMAT_D32FS8_SHADOW:
 		case FORMAT_A8:
 		case FORMAT_R8:
@@ -2835,7 +2988,7 @@ namespace sw
 		case FORMAT_A8B8G8R8I:
 		case FORMAT_A16B16G16R16I:
 		case FORMAT_A32B32G32R32I:
-		case FORMAT_A8B8G8R8I_SNORM:
+		case FORMAT_A8B8G8R8_SNORM:
 		case FORMAT_Q8W8V8U8:
 		case FORMAT_Q16W16V16U16:
 		case FORMAT_A32B32G32R32F:
@@ -2844,7 +2997,7 @@ namespace sw
 		case FORMAT_R8I:
 		case FORMAT_R16I:
 		case FORMAT_R32I:
-		case FORMAT_R8I_SNORM:
+		case FORMAT_R8_SNORM:
 			return component >= 1;
 		case FORMAT_V8U8:
 		case FORMAT_X8L8V8U8:
@@ -2853,7 +3006,7 @@ namespace sw
 		case FORMAT_G8R8I:
 		case FORMAT_G16R16I:
 		case FORMAT_G32R32I:
-		case FORMAT_G8R8I_SNORM:
+		case FORMAT_G8R8_SNORM:
 			return component >= 2;
 		case FORMAT_A16W16V16U16:
 		case FORMAT_B32G32R32F:
@@ -2861,7 +3014,7 @@ namespace sw
 		case FORMAT_X8B8G8R8I:
 		case FORMAT_X16B16G16R16I:
 		case FORMAT_X32B32G32R32I:
-		case FORMAT_X8B8G8R8I_SNORM:
+		case FORMAT_X8B8G8R8_SNORM:
 			return component >= 3;
 		default:
 			ASSERT(false);
@@ -2914,6 +3067,18 @@ namespace sw
 		case FORMAT_SRGB8_X8:
 		case FORMAT_SRGB8_A8:
 		case FORMAT_R5G6B5:
+			return true;
+		default:
+			return false;
+		}
+	}
+
+	bool Surface::isSRGBformat(Format format)
+	{
+		switch(format)
+		{
+		case FORMAT_SRGB8_X8:
+		case FORMAT_SRGB8_A8:
 			return true;
 		default:
 			return false;
@@ -3050,15 +3215,16 @@ namespace sw
 		case FORMAT_A8B8G8R8:       return 4;
 		case FORMAT_G8R8I:          return 2;
 		case FORMAT_G8R8:           return 2;
-		case FORMAT_R8I_SNORM:      return 1;
-		case FORMAT_G8R8I_SNORM:    return 2;
-		case FORMAT_X8B8G8R8I_SNORM:return 3;
-		case FORMAT_A8B8G8R8I_SNORM:return 4;
+		case FORMAT_R8_SNORM:      return 1;
+		case FORMAT_G8R8_SNORM:    return 2;
+		case FORMAT_X8B8G8R8_SNORM:return 3;
+		case FORMAT_A8B8G8R8_SNORM:return 4;
 		case FORMAT_R8UI:           return 1;
 		case FORMAT_G8R8UI:         return 2;
 		case FORMAT_X8B8G8R8UI:     return 3;
 		case FORMAT_A8B8G8R8UI:     return 4;
 		case FORMAT_A2B10G10R10:    return 4;
+		case FORMAT_A2B10G10R10UI:  return 4;
 		case FORMAT_G16R16I:        return 2;
 		case FORMAT_G16R16UI:       return 2;
 		case FORMAT_G16R16:         return 2;
@@ -3083,9 +3249,12 @@ namespace sw
 		case FORMAT_G32R32F:        return 2;
 		case FORMAT_X32B32G32R32F:  return 3;
 		case FORMAT_A32B32G32R32F:  return 4;
+		case FORMAT_X32B32G32R32F_UNSIGNED: return 3;
 		case FORMAT_D32F:           return 1;
+		case FORMAT_D32FS8:         return 1;
 		case FORMAT_D32F_LOCKABLE:  return 1;
 		case FORMAT_D32FS8_TEXTURE: return 1;
+		case FORMAT_D32F_SHADOW:    return 1;
 		case FORMAT_D32FS8_SHADOW:  return 1;
 		case FORMAT_A8:             return 1;
 		case FORMAT_R8I:            return 1;
@@ -3107,7 +3276,7 @@ namespace sw
 		return 1;
 	}
 
-	void *Surface::allocateBuffer(int width, int height, int depth, Format format)
+	void *Surface::allocateBuffer(int width, int height, int depth, int border, int samples, Format format)
 	{
 		// Render targets require 2x2 quads
 		int width2 = (width + 1) & ~1;
@@ -3116,7 +3285,7 @@ namespace sw
 		// FIXME: Unpacking byte4 to short4 in the sampler currently involves reading 8 bytes,
 		// and stencil operations also read 8 bytes per four 8-bit stencil values,
 		// so we have to allocate 4 extra bytes to avoid buffer overruns.
-		return allocate(size(width2, height2, depth, format) + 4);
+		return allocate(size(width2, height2, depth, border, samples, format) + 4);
 	}
 
 	void Surface::memfill4(void *buffer, int pattern, int bytes)
@@ -3222,24 +3391,22 @@ namespace sw
 		const bool entire = x0 == 0 && y0 == 0 && width == internal.width && height == internal.height;
 		const Lock lock = entire ? LOCK_DISCARD : LOCK_WRITEONLY;
 
-		int width2 = (internal.width + 1) & ~1;
-
 		int x1 = x0 + width;
 		int y1 = y0 + height;
 
-		if(internal.format == FORMAT_D32F_LOCKABLE ||
-		   internal.format == FORMAT_D32FS8_TEXTURE ||
-		   internal.format == FORMAT_D32FS8_SHADOW)
+		if(!hasQuadLayout(internal.format))
 		{
-			float *target = (float*)lockInternal(0, 0, 0, lock, PUBLIC) + x0 + width2 * y0;
+			float *target = (float*)lockInternal(x0, y0, 0, lock, PUBLIC);
 
-			for(int z = 0; z < internal.depth; z++)
+			for(int z = 0; z < internal.samples; z++)
 			{
+				float *row = target;
 				for(int y = y0; y < y1; y++)
 				{
-					memfill4(target, (int&)depth, 4 * width);
-					target += width2;
+					memfill4(row, (int&)depth, width * sizeof(float));
+					row += internal.pitchP;
 				}
+				target += internal.sliceP;
 			}
 
 			unlockInternal();
@@ -3258,11 +3425,11 @@ namespace sw
 			int evenX0 = ((x0 + 1) & ~1) * 2;
 			int evenBytes = (oddX1 - evenX0) * sizeof(float);
 
-			for(int z = 0; z < internal.depth; z++)
+			for(int z = 0; z < internal.samples; z++)
 			{
 				for(int y = y0; y < y1; y++)
 				{
-					float *target = buffer + (y & ~1) * width2 + (y & 1) * 2;
+					float *target = buffer + (y & ~1) * internal.pitchP + (y & 1) * 2;
 
 					if((y & 1) == 0 && y + 1 < y1)   // Fill quad line at once
 					{
@@ -3344,8 +3511,6 @@ namespace sw
 		if(y0 < 0) {height += y0; y0 = 0;}
 		if(y0 + height > internal.height) height = internal.height - y0;
 
-		int width2 = (internal.width + 1) & ~1;
-
 		int x1 = x0 + width;
 		int y1 = y0 + height;
 
@@ -3362,11 +3527,11 @@ namespace sw
 		char *buffer = (char*)lockStencil(0, 0, 0, PUBLIC);
 
 		// Stencil buffers are assumed to use quad layout
-		for(int z = 0; z < stencil.depth; z++)
+		for(int z = 0; z < stencil.samples; z++)
 		{
 			for(int y = y0; y < y1; y++)
 			{
-				char *target = buffer + (y & ~1) * width2 + (y & 1) * 2;
+				char *target = buffer + (y & ~1) * stencil.pitchP + (y & 1) * 2;
 
 				if((y & 1) == 0 && y + 1 < y1 && mask == 0xFF)   // Fill quad line at once
 				{
@@ -3388,8 +3553,9 @@ namespace sw
 				}
 				else
 				{
-					for(int x = x0, i = oddX0; x < x1; x++, i = (x & ~1) * 2 + (x & 1))
+					for(int x = x0; x < x1; x++)
 					{
+						int i = (x & ~1) * 2 + (x & 1);
 						target[i] = maskedS | (target[i] & invMask);
 					}
 				}
@@ -3459,7 +3625,7 @@ namespace sw
 		}
 	}
 
-	void Surface::copyInternal(const Surface* source, int x, int y, float srcX, float srcY, bool filter)
+	void Surface::copyInternal(const Surface *source, int x, int y, float srcX, float srcY, bool filter)
 	{
 		ASSERT(internal.lock != LOCK_UNLOCKED && source && source->internal.lock != LOCK_UNLOCKED);
 
@@ -3467,17 +3633,17 @@ namespace sw
 
 		if(!filter)
 		{
-			color = source->internal.read((int)srcX, (int)srcY);
+			color = source->internal.read((int)srcX, (int)srcY, 0);
 		}
 		else   // Bilinear filtering
 		{
-			color = source->internal.sample(srcX, srcY);
+			color = source->internal.sample(srcX, srcY, 0);
 		}
 
 		internal.write(x, y, color);
 	}
 
-	void Surface::copyInternal(const Surface* source, int x, int y, int z, float srcX, float srcY, float srcZ, bool filter)
+	void Surface::copyInternal(const Surface *source, int x, int y, int z, float srcX, float srcY, float srcZ, bool filter)
 	{
 		ASSERT(internal.lock != LOCK_UNLOCKED && source && source->internal.lock != LOCK_UNLOCKED);
 
@@ -3493,6 +3659,81 @@ namespace sw
 		}
 
 		internal.write(x, y, z, color);
+	}
+
+	void Surface::copyCubeEdge(Edge dstEdge, Surface *src, Edge srcEdge)
+	{
+		Surface *dst = this;
+
+		// Figure out if the edges to be copied in reverse order respectively from one another
+		// The copy should be reversed whenever the same edges are contiguous or if we're
+		// copying top <-> right or bottom <-> left. This is explained by the layout, which is:
+		//
+		//      | +y |
+		// | -x | +z | +x | -z |
+		//      | -y |
+
+		bool reverse = (srcEdge == dstEdge) ||
+		               ((srcEdge == TOP) && (dstEdge == RIGHT)) ||
+		               ((srcEdge == RIGHT) && (dstEdge == TOP)) ||
+		               ((srcEdge == BOTTOM) && (dstEdge == LEFT)) ||
+		               ((srcEdge == LEFT) && (dstEdge == BOTTOM));
+
+		int srcBytes = src->bytes(src->Surface::getInternalFormat());
+		int srcPitch = src->getInternalPitchB();
+		int dstBytes = dst->bytes(dst->Surface::getInternalFormat());
+		int dstPitch = dst->getInternalPitchB();
+
+		int srcW = src->getWidth();
+		int srcH = src->getHeight();
+		int dstW = dst->getWidth();
+		int dstH = dst->getHeight();
+
+		ASSERT(srcW == srcH && dstW == dstH && srcW == dstW && srcBytes == dstBytes);
+
+		// Src is expressed in the regular [0, width-1], [0, height-1] space
+		int srcDelta = ((srcEdge == TOP) || (srcEdge == BOTTOM)) ? srcBytes : srcPitch;
+		int srcStart = ((srcEdge == BOTTOM) ? srcPitch * (srcH - 1) : ((srcEdge == RIGHT) ? srcBytes * (srcW - 1) : 0));
+
+		// Dst contains borders, so it is expressed in the [-1, width+1], [-1, height+1] space
+		int dstDelta = (((dstEdge == TOP) || (dstEdge == BOTTOM)) ? dstBytes : dstPitch) * (reverse ? -1 : 1);
+		int dstStart = ((dstEdge == BOTTOM) ? dstPitch * (dstH + 1) : ((dstEdge == RIGHT) ? dstBytes * (dstW + 1) : 0)) + (reverse ? dstW * -dstDelta : dstDelta);
+
+		char *srcBuf = (char*)src->lockInternal(0, 0, 0, sw::LOCK_READONLY, sw::PRIVATE) + srcStart;
+		char *dstBuf = (char*)dst->lockInternal(-1, -1, 0, sw::LOCK_READWRITE, sw::PRIVATE) + dstStart;
+
+		for(int i = 0; i < srcW; ++i, dstBuf += dstDelta, srcBuf += srcDelta)
+		{
+			memcpy(dstBuf, srcBuf, srcBytes);
+		}
+
+		if(dstEdge == LEFT || dstEdge == RIGHT)
+		{
+			// TOP and BOTTOM are already set, let's average out the corners
+			int x0 = (dstEdge == RIGHT) ? dstW : -1;
+			int y0 = -1;
+			int x1 = (dstEdge == RIGHT) ? dstW - 1 : 0;
+			int y1 = 0;
+			dst->computeCubeCorner(x0, y0, x1, y1);
+			y0 = dstH;
+			y1 = dstH - 1;
+			dst->computeCubeCorner(x0, y0, x1, y1);
+		}
+
+		src->unlockInternal();
+		dst->unlockInternal();
+	}
+
+	void Surface::computeCubeCorner(int x0, int y0, int x1, int y1)
+	{
+		ASSERT(internal.lock != LOCK_UNLOCKED);
+
+		sw::Color<float> color = internal.read(x0, y1);
+		color += internal.read(x1, y0);
+		color += internal.read(x1, y1);
+		color *= (1.0f / 3.0f);
+
+		internal.write(x0, y0, color);
 	}
 
 	bool Surface::hasStencil() const
@@ -3515,14 +3756,14 @@ namespace sw
 		return renderTarget;
 	}
 
-	bool Surface::hasDirtyMipmaps() const
+	bool Surface::hasDirtyContents() const
 	{
-		return dirtyMipmaps;
+		return dirtyContents;
 	}
 
-	void Surface::cleanMipmaps()
+	void Surface::markContentsClean()
 	{
-		dirtyMipmaps = false;
+		dirtyContents = false;
 	}
 
 	Resource *Surface::getResource()
@@ -3537,7 +3778,9 @@ namespace sw
 		       external.height == internal.height &&
 		       external.depth  == internal.depth &&
 		       external.pitchB == internal.pitchB &&
-		       external.sliceB == internal.sliceB;
+		       external.sliceB == internal.sliceB &&
+		       external.border == internal.border &&
+		       external.samples == internal.samples;
 	}
 
 	Format Surface::selectInternalFormat(Format format) const
@@ -3558,8 +3801,8 @@ namespace sw
 			return FORMAT_R8I;
 		case FORMAT_R8UI:
 			return FORMAT_R8UI;
-		case FORMAT_R8I_SNORM:
-			return FORMAT_R8I_SNORM;
+		case FORMAT_R8_SNORM:
+			return FORMAT_R8_SNORM;
 		case FORMAT_R8:
 			return FORMAT_R8;
 		case FORMAT_R16I:
@@ -3571,27 +3814,33 @@ namespace sw
 		case FORMAT_R32UI:
 			return FORMAT_R32UI;
 		case FORMAT_X16B16G16R16I:
+			return FORMAT_X16B16G16R16I;
 		case FORMAT_A16B16G16R16I:
 			return FORMAT_A16B16G16R16I;
 		case FORMAT_X16B16G16R16UI:
+			return FORMAT_X16B16G16R16UI;
 		case FORMAT_A16B16G16R16UI:
 			return FORMAT_A16B16G16R16UI;
 		case FORMAT_A2R10G10B10:
 		case FORMAT_A2B10G10R10:
 		case FORMAT_A16B16G16R16:
 			return FORMAT_A16B16G16R16;
+		case FORMAT_A2B10G10R10UI:
+			return FORMAT_A16B16G16R16UI;
 		case FORMAT_X32B32G32R32I:
+			return FORMAT_X32B32G32R32I;
 		case FORMAT_A32B32G32R32I:
 			return FORMAT_A32B32G32R32I;
 		case FORMAT_X32B32G32R32UI:
+			return FORMAT_X32B32G32R32UI;
 		case FORMAT_A32B32G32R32UI:
 			return FORMAT_A32B32G32R32UI;
 		case FORMAT_G8R8I:
 			return FORMAT_G8R8I;
 		case FORMAT_G8R8UI:
 			return FORMAT_G8R8UI;
-		case FORMAT_G8R8I_SNORM:
-			return FORMAT_G8R8I_SNORM;
+		case FORMAT_G8R8_SNORM:
+			return FORMAT_G8R8_SNORM;
 		case FORMAT_G8R8:
 			return FORMAT_G8R8;
 		case FORMAT_G16R16I:
@@ -3617,8 +3866,8 @@ namespace sw
 			return FORMAT_A8B8G8R8I;
 		case FORMAT_A8B8G8R8UI:
 			return FORMAT_A8B8G8R8UI;
-		case FORMAT_A8B8G8R8I_SNORM:
-			return FORMAT_A8B8G8R8I_SNORM;
+		case FORMAT_A8B8G8R8_SNORM:
+			return FORMAT_A8B8G8R8_SNORM;
 		case FORMAT_R5G5B5A1:
 		case FORMAT_R4G4B4A4:
 		case FORMAT_A8B8G8R8:
@@ -3642,8 +3891,8 @@ namespace sw
 			return FORMAT_X8B8G8R8I;
 		case FORMAT_X8B8G8R8UI:
 			return FORMAT_X8B8G8R8UI;
-		case FORMAT_X8B8G8R8I_SNORM:
-			return FORMAT_X8B8G8R8I_SNORM;
+		case FORMAT_X8B8G8R8_SNORM:
+			return FORMAT_X8B8G8R8_SNORM;
 		case FORMAT_B8G8R8:
 		case FORMAT_X8B8G8R8:
 			return FORMAT_X8B8G8R8;
@@ -3693,13 +3942,13 @@ namespace sw
 			// ASTC supports HDR, so a floating point format is required to represent it properly
 			return FORMAT_A32B32G32R32F; // FIXME: 16FP is probably sufficient, but it's currently unsupported
 		case FORMAT_ATI1:
-		case FORMAT_R11_EAC:
 			return FORMAT_R8;
+		case FORMAT_R11_EAC:
 		case FORMAT_SIGNED_R11_EAC:
 			return FORMAT_R32F; // FIXME: Signed 8bit format would be sufficient
 		case FORMAT_ATI2:
-		case FORMAT_RG11_EAC:
 			return FORMAT_G8R8;
+		case FORMAT_RG11_EAC:
 		case FORMAT_SIGNED_RG11_EAC:
 			return FORMAT_G32R32F; // FIXME: Signed 8bit format would be sufficient
 		case FORMAT_ETC1:
@@ -3719,13 +3968,16 @@ namespace sw
 		case FORMAT_R16F:			return FORMAT_R32F;
 		case FORMAT_G16R16F:		return FORMAT_G32R32F;
 		case FORMAT_B16G16R16F:     return FORMAT_X32B32G32R32F;
+		case FORMAT_X16B16G16R16F:	return FORMAT_X32B32G32R32F;
 		case FORMAT_A16B16G16R16F:	return FORMAT_A32B32G32R32F;
+		case FORMAT_X16B16G16R16F_UNSIGNED: return FORMAT_X32B32G32R32F_UNSIGNED;
 		case FORMAT_A32F:			return FORMAT_A32B32G32R32F;
 		case FORMAT_R32F:			return FORMAT_R32F;
 		case FORMAT_G32R32F:		return FORMAT_G32R32F;
 		case FORMAT_B32G32R32F:     return FORMAT_X32B32G32R32F;
 		case FORMAT_X32B32G32R32F:  return FORMAT_X32B32G32R32F;
 		case FORMAT_A32B32G32R32F:	return FORMAT_A32B32G32R32F;
+		case FORMAT_X32B32G32R32F_UNSIGNED: return FORMAT_X32B32G32R32F_UNSIGNED;
 		// Luminance formats
 		case FORMAT_L8:				return FORMAT_L8;
 		case FORMAT_A4L4:			return FORMAT_A8L8;
@@ -3739,11 +3991,9 @@ namespace sw
 		case FORMAT_D16:
 		case FORMAT_D32:
 		case FORMAT_D24X8:
-		case FORMAT_D24S8:
-		case FORMAT_D24FS8:
 			if(hasParent)   // Texture
 			{
-				return FORMAT_D32FS8_SHADOW;
+				return FORMAT_D32F_SHADOW;
 			}
 			else if(complementaryDepthBuffer)
 			{
@@ -3753,12 +4003,29 @@ namespace sw
 			{
 				return FORMAT_D32F;
 			}
+		case FORMAT_D24S8:
+		case FORMAT_D24FS8:
+			if(hasParent)   // Texture
+			{
+				return FORMAT_D32FS8_SHADOW;
+			}
+			else if(complementaryDepthBuffer)
+			{
+				return FORMAT_D32FS8_COMPLEMENTARY;
+			}
+			else
+			{
+				return FORMAT_D32FS8;
+			}
 		case FORMAT_D32F:           return FORMAT_D32F;
+		case FORMAT_D32FS8:         return FORMAT_D32FS8;
 		case FORMAT_D32F_LOCKABLE:  return FORMAT_D32F_LOCKABLE;
 		case FORMAT_D32FS8_TEXTURE: return FORMAT_D32FS8_TEXTURE;
 		case FORMAT_INTZ:           return FORMAT_D32FS8_TEXTURE;
 		case FORMAT_DF24S8:         return FORMAT_D32FS8_SHADOW;
 		case FORMAT_DF16S8:         return FORMAT_D32FS8_SHADOW;
+		case FORMAT_S8:             return FORMAT_S8;
+		// YUV formats
 		case FORMAT_YV12_BT601:     return FORMAT_YV12_BT601;
 		case FORMAT_YV12_BT709:     return FORMAT_YV12_BT709;
 		case FORMAT_YV12_JFIF:      return FORMAT_YV12_JFIF;
@@ -3777,10 +4044,12 @@ namespace sw
 
 	void Surface::resolve()
 	{
-		if(internal.depth <= 1 || !internal.dirty || !renderTarget || internal.format == FORMAT_NULL)
+		if(internal.samples <= 1 || !internal.dirty || !renderTarget || internal.format == FORMAT_NULL)
 		{
 			return;
 		}
+
+		ASSERT(internal.depth == 1);  // Unimplemented
 
 		void *source = internal.lockRect(0, 0, 0, LOCK_READWRITE);
 
@@ -3813,7 +4082,7 @@ namespace sw
 			#if defined(__i386__) || defined(__x86_64__)
 				if(CPUID::supportsSSE2() && (width % 4) == 0)
 				{
-					if(internal.depth == 2)
+					if(internal.samples == 2)
 					{
 						for(int y = 0; y < height; y++)
 						{
@@ -3831,7 +4100,7 @@ namespace sw
 							source1 += pitch;
 						}
 					}
-					else if(internal.depth == 4)
+					else if(internal.samples == 4)
 					{
 						for(int y = 0; y < height; y++)
 						{
@@ -3855,7 +4124,7 @@ namespace sw
 							source3 += pitch;
 						}
 					}
-					else if(internal.depth == 8)
+					else if(internal.samples == 8)
 					{
 						for(int y = 0; y < height; y++)
 						{
@@ -3891,7 +4160,7 @@ namespace sw
 							source7 += pitch;
 						}
 					}
-					else if(internal.depth == 16)
+					else if(internal.samples == 16)
 					{
 						for(int y = 0; y < height; y++)
 						{
@@ -3958,7 +4227,7 @@ namespace sw
 			{
 				#define AVERAGE(x, y) (((x) & (y)) + ((((x) ^ (y)) >> 1) & 0x7F7F7F7F) + (((x) ^ (y)) & 0x01010101))
 
-				if(internal.depth == 2)
+				if(internal.samples == 2)
 				{
 					for(int y = 0; y < height; y++)
 					{
@@ -3976,7 +4245,7 @@ namespace sw
 						source1 += pitch;
 					}
 				}
-				else if(internal.depth == 4)
+				else if(internal.samples == 4)
 				{
 					for(int y = 0; y < height; y++)
 					{
@@ -4000,7 +4269,7 @@ namespace sw
 						source3 += pitch;
 					}
 				}
-				else if(internal.depth == 8)
+				else if(internal.samples == 8)
 				{
 					for(int y = 0; y < height; y++)
 					{
@@ -4036,7 +4305,7 @@ namespace sw
 						source7 += pitch;
 					}
 				}
-				else if(internal.depth == 16)
+				else if(internal.samples == 16)
 				{
 					for(int y = 0; y < height; y++)
 					{
@@ -4107,7 +4376,7 @@ namespace sw
 			#if defined(__i386__) || defined(__x86_64__)
 				if(CPUID::supportsSSE2() && (width % 4) == 0)
 				{
-					if(internal.depth == 2)
+					if(internal.samples == 2)
 					{
 						for(int y = 0; y < height; y++)
 						{
@@ -4125,7 +4394,7 @@ namespace sw
 							source1 += pitch;
 						}
 					}
-					else if(internal.depth == 4)
+					else if(internal.samples == 4)
 					{
 						for(int y = 0; y < height; y++)
 						{
@@ -4149,7 +4418,7 @@ namespace sw
 							source3 += pitch;
 						}
 					}
-					else if(internal.depth == 8)
+					else if(internal.samples == 8)
 					{
 						for(int y = 0; y < height; y++)
 						{
@@ -4185,7 +4454,7 @@ namespace sw
 							source7 += pitch;
 						}
 					}
-					else if(internal.depth == 16)
+					else if(internal.samples == 16)
 					{
 						for(int y = 0; y < height; y++)
 						{
@@ -4252,7 +4521,7 @@ namespace sw
 			{
 				#define AVERAGE(x, y) (((x) & (y)) + ((((x) ^ (y)) >> 1) & 0x7FFF7FFF) + (((x) ^ (y)) & 0x00010001))
 
-				if(internal.depth == 2)
+				if(internal.samples == 2)
 				{
 					for(int y = 0; y < height; y++)
 					{
@@ -4270,7 +4539,7 @@ namespace sw
 						source1 += pitch;
 					}
 				}
-				else if(internal.depth == 4)
+				else if(internal.samples == 4)
 				{
 					for(int y = 0; y < height; y++)
 					{
@@ -4294,7 +4563,7 @@ namespace sw
 						source3 += pitch;
 					}
 				}
-				else if(internal.depth == 8)
+				else if(internal.samples == 8)
 				{
 					for(int y = 0; y < height; y++)
 					{
@@ -4330,7 +4599,7 @@ namespace sw
 						source7 += pitch;
 					}
 				}
-				else if(internal.depth == 16)
+				else if(internal.samples == 16)
 				{
 					for(int y = 0; y < height; y++)
 					{
@@ -4400,7 +4669,7 @@ namespace sw
 			#if defined(__i386__) || defined(__x86_64__)
 				if(CPUID::supportsSSE2() && (width % 2) == 0)
 				{
-					if(internal.depth == 2)
+					if(internal.samples == 2)
 					{
 						for(int y = 0; y < height; y++)
 						{
@@ -4418,7 +4687,7 @@ namespace sw
 							source1 += pitch;
 						}
 					}
-					else if(internal.depth == 4)
+					else if(internal.samples == 4)
 					{
 						for(int y = 0; y < height; y++)
 						{
@@ -4442,7 +4711,7 @@ namespace sw
 							source3 += pitch;
 						}
 					}
-					else if(internal.depth == 8)
+					else if(internal.samples == 8)
 					{
 						for(int y = 0; y < height; y++)
 						{
@@ -4478,7 +4747,7 @@ namespace sw
 							source7 += pitch;
 						}
 					}
-					else if(internal.depth == 16)
+					else if(internal.samples == 16)
 					{
 						for(int y = 0; y < height; y++)
 						{
@@ -4545,7 +4814,7 @@ namespace sw
 			{
 				#define AVERAGE(x, y) (((x) & (y)) + ((((x) ^ (y)) >> 1) & 0x7FFF7FFF) + (((x) ^ (y)) & 0x00010001))
 
-				if(internal.depth == 2)
+				if(internal.samples == 2)
 				{
 					for(int y = 0; y < height; y++)
 					{
@@ -4563,7 +4832,7 @@ namespace sw
 						source1 += pitch;
 					}
 				}
-				else if(internal.depth == 4)
+				else if(internal.samples == 4)
 				{
 					for(int y = 0; y < height; y++)
 					{
@@ -4587,7 +4856,7 @@ namespace sw
 						source3 += pitch;
 					}
 				}
-				else if(internal.depth == 8)
+				else if(internal.samples == 8)
 				{
 					for(int y = 0; y < height; y++)
 					{
@@ -4623,7 +4892,7 @@ namespace sw
 						source7 += pitch;
 					}
 				}
-				else if(internal.depth == 16)
+				else if(internal.samples == 16)
 				{
 					for(int y = 0; y < height; y++)
 					{
@@ -4693,7 +4962,7 @@ namespace sw
 			#if defined(__i386__) || defined(__x86_64__)
 				if(CPUID::supportsSSE() && (width % 4) == 0)
 				{
-					if(internal.depth == 2)
+					if(internal.samples == 2)
 					{
 						for(int y = 0; y < height; y++)
 						{
@@ -4712,7 +4981,7 @@ namespace sw
 							source1 += pitch;
 						}
 					}
-					else if(internal.depth == 4)
+					else if(internal.samples == 4)
 					{
 						for(int y = 0; y < height; y++)
 						{
@@ -4737,7 +5006,7 @@ namespace sw
 							source3 += pitch;
 						}
 					}
-					else if(internal.depth == 8)
+					else if(internal.samples == 8)
 					{
 						for(int y = 0; y < height; y++)
 						{
@@ -4774,7 +5043,7 @@ namespace sw
 							source7 += pitch;
 						}
 					}
-					else if(internal.depth == 16)
+					else if(internal.samples == 16)
 					{
 						for(int y = 0; y < height; y++)
 						{
@@ -4840,7 +5109,7 @@ namespace sw
 				else
 			#endif
 			{
-				if(internal.depth == 2)
+				if(internal.samples == 2)
 				{
 					for(int y = 0; y < height; y++)
 					{
@@ -4859,7 +5128,7 @@ namespace sw
 						source1 += pitch;
 					}
 				}
-				else if(internal.depth == 4)
+				else if(internal.samples == 4)
 				{
 					for(int y = 0; y < height; y++)
 					{
@@ -4884,7 +5153,7 @@ namespace sw
 						source3 += pitch;
 					}
 				}
-				else if(internal.depth == 8)
+				else if(internal.samples == 8)
 				{
 					for(int y = 0; y < height; y++)
 					{
@@ -4921,7 +5190,7 @@ namespace sw
 						source7 += pitch;
 					}
 				}
-				else if(internal.depth == 16)
+				else if(internal.samples == 16)
 				{
 					for(int y = 0; y < height; y++)
 					{
@@ -4990,7 +5259,7 @@ namespace sw
 			#if defined(__i386__) || defined(__x86_64__)
 				if(CPUID::supportsSSE() && (width % 2) == 0)
 				{
-					if(internal.depth == 2)
+					if(internal.samples == 2)
 					{
 						for(int y = 0; y < height; y++)
 						{
@@ -5009,7 +5278,7 @@ namespace sw
 							source1 += pitch;
 						}
 					}
-					else if(internal.depth == 4)
+					else if(internal.samples == 4)
 					{
 						for(int y = 0; y < height; y++)
 						{
@@ -5034,7 +5303,7 @@ namespace sw
 							source3 += pitch;
 						}
 					}
-					else if(internal.depth == 8)
+					else if(internal.samples == 8)
 					{
 						for(int y = 0; y < height; y++)
 						{
@@ -5071,7 +5340,7 @@ namespace sw
 							source7 += pitch;
 						}
 					}
-					else if(internal.depth == 16)
+					else if(internal.samples == 16)
 					{
 						for(int y = 0; y < height; y++)
 						{
@@ -5137,7 +5406,7 @@ namespace sw
 				else
 			#endif
 			{
-				if(internal.depth == 2)
+				if(internal.samples == 2)
 				{
 					for(int y = 0; y < height; y++)
 					{
@@ -5156,7 +5425,7 @@ namespace sw
 						source1 += pitch;
 					}
 				}
-				else if(internal.depth == 4)
+				else if(internal.samples == 4)
 				{
 					for(int y = 0; y < height; y++)
 					{
@@ -5181,7 +5450,7 @@ namespace sw
 						source3 += pitch;
 					}
 				}
-				else if(internal.depth == 8)
+				else if(internal.samples == 8)
 				{
 					for(int y = 0; y < height; y++)
 					{
@@ -5218,7 +5487,7 @@ namespace sw
 						source7 += pitch;
 					}
 				}
-				else if(internal.depth == 16)
+				else if(internal.samples == 16)
 				{
 					for(int y = 0; y < height; y++)
 					{
@@ -5282,12 +5551,14 @@ namespace sw
 				else ASSERT(false);
 			}
 		}
-		else if(internal.format == FORMAT_A32B32G32R32F || internal.format == FORMAT_X32B32G32R32F)
+		else if(internal.format == FORMAT_A32B32G32R32F ||
+		        internal.format == FORMAT_X32B32G32R32F ||
+		        internal.format == FORMAT_X32B32G32R32F_UNSIGNED)
 		{
 			#if defined(__i386__) || defined(__x86_64__)
 				if(CPUID::supportsSSE())
 				{
-					if(internal.depth == 2)
+					if(internal.samples == 2)
 					{
 						for(int y = 0; y < height; y++)
 						{
@@ -5306,7 +5577,7 @@ namespace sw
 							source1 += pitch;
 						}
 					}
-					else if(internal.depth == 4)
+					else if(internal.samples == 4)
 					{
 						for(int y = 0; y < height; y++)
 						{
@@ -5331,7 +5602,7 @@ namespace sw
 							source3 += pitch;
 						}
 					}
-					else if(internal.depth == 8)
+					else if(internal.samples == 8)
 					{
 						for(int y = 0; y < height; y++)
 						{
@@ -5368,7 +5639,7 @@ namespace sw
 							source7 += pitch;
 						}
 					}
-					else if(internal.depth == 16)
+					else if(internal.samples == 16)
 					{
 						for(int y = 0; y < height; y++)
 						{
@@ -5434,7 +5705,7 @@ namespace sw
 				else
 			#endif
 			{
-				if(internal.depth == 2)
+				if(internal.samples == 2)
 				{
 					for(int y = 0; y < height; y++)
 					{
@@ -5453,7 +5724,7 @@ namespace sw
 						source1 += pitch;
 					}
 				}
-				else if(internal.depth == 4)
+				else if(internal.samples == 4)
 				{
 					for(int y = 0; y < height; y++)
 					{
@@ -5478,7 +5749,7 @@ namespace sw
 						source3 += pitch;
 					}
 				}
-				else if(internal.depth == 8)
+				else if(internal.samples == 8)
 				{
 					for(int y = 0; y < height; y++)
 					{
@@ -5515,7 +5786,7 @@ namespace sw
 						source7 += pitch;
 					}
 				}
-				else if(internal.depth == 16)
+				else if(internal.samples == 16)
 				{
 					for(int y = 0; y < height; y++)
 					{
@@ -5584,7 +5855,7 @@ namespace sw
 			#if defined(__i386__) || defined(__x86_64__)
 				if(CPUID::supportsSSE2() && (width % 8) == 0)
 				{
-					if(internal.depth == 2)
+					if(internal.samples == 2)
 					{
 						for(int y = 0; y < height; y++)
 						{
@@ -5613,7 +5884,7 @@ namespace sw
 							source1 += pitch;
 						}
 					}
-					else if(internal.depth == 4)
+					else if(internal.samples == 4)
 					{
 						for(int y = 0; y < height; y++)
 						{
@@ -5654,7 +5925,7 @@ namespace sw
 							source3 += pitch;
 						}
 					}
-					else if(internal.depth == 8)
+					else if(internal.samples == 8)
 					{
 						for(int y = 0; y < height; y++)
 						{
@@ -5719,7 +5990,7 @@ namespace sw
 							source7 += pitch;
 						}
 					}
-					else if(internal.depth == 16)
+					else if(internal.samples == 16)
 					{
 						for(int y = 0; y < height; y++)
 						{
@@ -5839,7 +6110,7 @@ namespace sw
 			{
 				#define AVERAGE(x, y) (((x) & (y)) + ((((x) ^ (y)) >> 1) & 0x7BEF) + (((x) ^ (y)) & 0x0821))
 
-				if(internal.depth == 2)
+				if(internal.samples == 2)
 				{
 					for(int y = 0; y < height; y++)
 					{
@@ -5857,7 +6128,7 @@ namespace sw
 						source1 += pitch;
 					}
 				}
-				else if(internal.depth == 4)
+				else if(internal.samples == 4)
 				{
 					for(int y = 0; y < height; y++)
 					{
@@ -5881,7 +6152,7 @@ namespace sw
 						source3 += pitch;
 					}
 				}
-				else if(internal.depth == 8)
+				else if(internal.samples == 8)
 				{
 					for(int y = 0; y < height; y++)
 					{
@@ -5917,7 +6188,7 @@ namespace sw
 						source7 += pitch;
 					}
 				}
-				else if(internal.depth == 16)
+				else if(internal.samples == 16)
 				{
 					for(int y = 0; y < height; y++)
 					{

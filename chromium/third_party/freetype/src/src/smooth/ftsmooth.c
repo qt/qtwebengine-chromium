@@ -4,7 +4,7 @@
 /*                                                                         */
 /*    Anti-aliasing renderer interface (body).                             */
 /*                                                                         */
-/*  Copyright 2000-2017 by                                                 */
+/*  Copyright 2000-2018 by                                                 */
 /*  David Turner, Robert Wilhelm, and Werner Lemberg.                      */
 /*                                                                         */
 /*  This file is part of the FreeType project, and may only be used,       */
@@ -228,7 +228,7 @@
     if ( hmul )  /* lcd */
     {
       FT_Byte*  line;
-      FT_Byte*  temp;
+      FT_Byte*  temp = NULL;
       FT_UInt   i, j;
 
       unsigned int  height = bitmap->rows;

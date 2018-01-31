@@ -31,7 +31,7 @@
 *                           Final result is black with alpha of Gaussian(B)*G.
 *                           The assumption is that the original color's alpha is 1.
 */
-class SK_API SkGaussianColorFilter : public SkColorFilter {
+class SkGaussianColorFilter : public SkColorFilter {
 public:
     static sk_sp<SkColorFilter> Make() {
         return sk_sp<SkColorFilter>(new SkGaussianColorFilter);
@@ -466,7 +466,7 @@ static SkColor compute_render_color(SkColor color, float alpha, bool useTonalCol
         SkShadowUtils::ComputeTonalColorParams(color4f.fR,
                                                color4f.fG,
                                                color4f.fB,
-                                               alpha,
+                                               color4f.fA*alpha,
                                                &colorScale, &tonalAlpha);
         // After pre-multiplying, we want the alpha to be scaled by tonalAlpha, and
         // the color scaled by colorScale. This scale factor gives that.

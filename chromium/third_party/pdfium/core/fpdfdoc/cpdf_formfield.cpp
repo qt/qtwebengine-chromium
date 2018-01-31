@@ -25,8 +25,6 @@
 
 namespace {
 
-const int kMaxRecursion = 32;
-
 const int kFormListMultiSelect = 0x100;
 
 const int kFormComboEdit = 0x100;
@@ -47,12 +45,19 @@ bool IsUnison(CPDF_FormField* pField) {
 
 }  // namespace
 
+Optional<FormFieldType> IntToFormFieldType(int value) {
+  if (value >= static_cast<int>(FormFieldType::kUnknown) &&
+      value < static_cast<int>(kFormFieldTypeCount)) {
+    return {static_cast<FormFieldType>(value)};
+  }
+  return {};
+}
+
 CPDF_Object* FPDF_GetFieldAttr(const CPDF_Dictionary* pFieldDict,
                                const char* name,
                                int nLevel) {
-  if (nLevel > kMaxRecursion)
-    return nullptr;
-  if (!pFieldDict)
+  static constexpr int kGetFieldMaxRecursion = 32;
+  if (!pFieldDict || nLevel > kGetFieldMaxRecursion)
     return nullptr;
 
   CPDF_Object* pAttr = pFieldDict->GetDirectObjectFor(name);
@@ -60,9 +65,7 @@ CPDF_Object* FPDF_GetFieldAttr(const CPDF_Dictionary* pFieldDict,
     return pAttr;
 
   CPDF_Dictionary* pParent = pFieldDict->GetDictFor("Parent");
-  if (!pParent)
-    return nullptr;
-  return FPDF_GetFieldAttr(pParent, name, nLevel + 1);
+  return pParent ? FPDF_GetFieldAttr(pParent, name, nLevel + 1) : nullptr;
 }
 
 WideString FPDF_GetFullName(CPDF_Dictionary* pFieldDict) {
@@ -243,28 +246,27 @@ int CPDF_FormField::GetControlIndex(const CPDF_FormControl* pControl) const {
   return it != m_ControlList.end() ? it - m_ControlList.begin() : -1;
 }
 
-int CPDF_FormField::GetFieldType() const {
+FormFieldType CPDF_FormField::GetFieldType() const {
   switch (m_Type) {
     case PushButton:
-      return FIELDTYPE_PUSHBUTTON;
+      return FormFieldType::kPushButton;
     case CheckBox:
-      return FIELDTYPE_CHECKBOX;
+      return FormFieldType::kCheckBox;
     case RadioButton:
-      return FIELDTYPE_RADIOBUTTON;
+      return FormFieldType::kRadioButton;
     case ComboBox:
-      return FIELDTYPE_COMBOBOX;
+      return FormFieldType::kComboBox;
     case ListBox:
-      return FIELDTYPE_LISTBOX;
+      return FormFieldType::kListBox;
     case Text:
     case RichText:
     case File:
-      return FIELDTYPE_TEXTFIELD;
+      return FormFieldType::kTextField;
     case Sign:
-      return FIELDTYPE_SIGNATURE;
+      return FormFieldType::kSignature;
     default:
-      break;
+      return FormFieldType::kUnknown;
   }
-  return FIELDTYPE_UNKNOWN;
 }
 
 CPDF_AAction CPDF_FormField::GetAdditionalAction() const {

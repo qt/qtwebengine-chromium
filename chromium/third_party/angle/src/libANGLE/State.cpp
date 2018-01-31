@@ -142,6 +142,12 @@ void State::initialize(const Context *context,
 
     mVertexAttribCurrentValues.resize(caps.maxVertexAttributes);
 
+    // Set all indexes in state attributes type mask to float (default)
+    for (int i = 0; i < MAX_VERTEX_ATTRIBS; i++)
+    {
+        mCurrentValuesTypeMask.setIndex(GL_FLOAT, i);
+    }
+
     mUniformBuffers.resize(caps.maxUniformBufferBindings);
 
     mSamplerTextures[GL_TEXTURE_2D].resize(caps.maxCombinedTextureImageUnits);
@@ -1157,6 +1163,7 @@ void State::setTransformFeedbackBinding(const Context *context,
                                         TransformFeedback *transformFeedback)
 {
     mTransformFeedback.set(context, transformFeedback);
+    mDirtyBits.set(DIRTY_BIT_TRANSFORM_FEEDBACK_BINDING);
 }
 
 TransformFeedback *State::getCurrentTransformFeedback() const
@@ -1255,6 +1262,10 @@ void State::setBufferBinding(const Context *context, BufferBinding target, Buffe
             mBoundBuffers[target].set(context, buffer);
             mDirtyBits.set(DIRTY_BIT_DRAW_INDIRECT_BUFFER_BINDING);
             break;
+        case BufferBinding::DispatchIndirect:
+            mBoundBuffers[target].set(context, buffer);
+            mDirtyBits.set(DIRTY_BIT_DISPATCH_INDIRECT_BUFFER_BINDING);
+            break;
         case BufferBinding::TransformFeedback:
             if (mTransformFeedback.get() != nullptr)
             {
@@ -1264,6 +1275,10 @@ void State::setBufferBinding(const Context *context, BufferBinding target, Buffe
         case BufferBinding::ElementArray:
             getVertexArray()->setElementArrayBuffer(context, buffer);
             mDirtyObjects.set(DIRTY_OBJECT_VERTEX_ARRAY);
+            break;
+        case BufferBinding::ShaderStorage:
+            mBoundBuffers[target].set(context, buffer);
+            mDirtyBits.set(DIRTY_BIT_SHADER_STORAGE_BUFFER_BINDING);
             break;
         default:
             mBoundBuffers[target].set(context, buffer);
@@ -1286,6 +1301,7 @@ void State::setIndexedBufferBinding(const Context *context,
             break;
         case BufferBinding::Uniform:
             mUniformBuffers[index].set(context, buffer, offset, size);
+            mDirtyBits.set(DIRTY_BIT_UNIFORM_BUFFER_BINDINGS);
             break;
         case BufferBinding::AtomicCounter:
             mAtomicCounterBuffers[index].set(context, buffer, offset, size);
@@ -1361,6 +1377,7 @@ void State::setVertexAttribf(GLuint index, const GLfloat values[4])
     mVertexAttribCurrentValues[index].setFloatValues(values);
     mDirtyBits.set(DIRTY_BIT_CURRENT_VALUES);
     mDirtyCurrentValues.set(index);
+    mCurrentValuesTypeMask.setIndex(GL_FLOAT, index);
 }
 
 void State::setVertexAttribu(GLuint index, const GLuint values[4])
@@ -1369,6 +1386,7 @@ void State::setVertexAttribu(GLuint index, const GLuint values[4])
     mVertexAttribCurrentValues[index].setUnsignedIntValues(values);
     mDirtyBits.set(DIRTY_BIT_CURRENT_VALUES);
     mDirtyCurrentValues.set(index);
+    mCurrentValuesTypeMask.setIndex(GL_UNSIGNED_INT, index);
 }
 
 void State::setVertexAttribi(GLuint index, const GLint values[4])
@@ -1377,6 +1395,7 @@ void State::setVertexAttribi(GLuint index, const GLint values[4])
     mVertexAttribCurrentValues[index].setIntValues(values);
     mDirtyBits.set(DIRTY_BIT_CURRENT_VALUES);
     mDirtyCurrentValues.set(index);
+    mCurrentValuesTypeMask.setIndex(GL_INT, index);
 }
 
 void State::setVertexAttribPointer(const Context *context,
@@ -2041,6 +2060,9 @@ void State::getIntegerv(const Context *context, GLenum pname, GLint *params)
       case GL_SHADER_STORAGE_BUFFER_BINDING:
           *params = mBoundBuffers[BufferBinding::ShaderStorage].id();
           break;
+      case GL_DISPATCH_INDIRECT_BUFFER_BINDING:
+          *params = mBoundBuffers[BufferBinding::DispatchIndirect].id();
+          break;
       default:
         UNREACHABLE();
         break;
@@ -2103,6 +2125,26 @@ void State::getIntegeri_v(GLenum target, GLuint index, GLint *data)
           ASSERT(static_cast<size_t>(index) < mSampleMaskValues.size());
           *data = mSampleMaskValues[index];
           break;
+      case GL_IMAGE_BINDING_NAME:
+          ASSERT(static_cast<size_t>(index) < mImageUnits.size());
+          *data = mImageUnits[index].texture.id();
+          break;
+      case GL_IMAGE_BINDING_LEVEL:
+          ASSERT(static_cast<size_t>(index) < mImageUnits.size());
+          *data = mImageUnits[index].level;
+          break;
+      case GL_IMAGE_BINDING_LAYER:
+          ASSERT(static_cast<size_t>(index) < mImageUnits.size());
+          *data = mImageUnits[index].layer;
+          break;
+      case GL_IMAGE_BINDING_ACCESS:
+          ASSERT(static_cast<size_t>(index) < mImageUnits.size());
+          *data = mImageUnits[index].access;
+          break;
+      case GL_IMAGE_BINDING_FORMAT:
+          ASSERT(static_cast<size_t>(index) < mImageUnits.size());
+          *data = mImageUnits[index].format;
+          break;
       default:
           UNREACHABLE();
           break;
@@ -2153,7 +2195,16 @@ void State::getInteger64i_v(GLenum target, GLuint index, GLint64 *data)
 
 void State::getBooleani_v(GLenum target, GLuint index, GLboolean *data)
 {
-    UNREACHABLE();
+    switch (target)
+    {
+        case GL_IMAGE_BINDING_LAYERED:
+            ASSERT(static_cast<size_t>(index) < mImageUnits.size());
+            *data = mImageUnits[index].layered;
+            break;
+        default:
+            UNREACHABLE();
+            break;
+    }
 }
 
 bool State::hasMappedBuffer(BufferBinding target) const
@@ -2163,8 +2214,7 @@ bool State::hasMappedBuffer(BufferBinding target) const
         const VertexArray *vao     = getVertexArray();
         const auto &vertexAttribs = vao->getVertexAttributes();
         const auto &vertexBindings = vao->getVertexBindings();
-        size_t maxEnabledAttrib = vao->getMaxEnabledAttribute();
-        for (size_t attribIndex = 0; attribIndex < maxEnabledAttrib; attribIndex++)
+        for (size_t attribIndex : vao->getEnabledAttributesMask())
         {
             const VertexAttribute &vertexAttrib = vertexAttribs[attribIndex];
             auto *boundBuffer = vertexBindings[vertexAttrib.bindingIndex].getBuffer().get();

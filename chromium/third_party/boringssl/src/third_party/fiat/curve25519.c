@@ -41,9 +41,6 @@
 #include "../../crypto/internal.h"
 
 
-static const int64_t kBottom25Bits = INT64_C(0x1ffffff);
-static const int64_t kBottom26Bits = INT64_C(0x3ffffff);
-
 static uint64_t load_3(const uint8_t *in) {
   uint64_t result;
   result = (uint64_t)in[0];
@@ -70,6 +67,12 @@ static uint64_t load_4(const uint8_t *in) {
 #define assert_fe_loose(f) do { \
   for (unsigned _assert_fe_i = 0; _assert_fe_i< 10; _assert_fe_i++) { \
     assert(f[_assert_fe_i] < 3.375*(1<<(26-(_assert_fe_i&1)))); \
+  } \
+} while (0)
+
+#define assert_fe_frozen(f) do { \
+  for (unsigned _assert_fe_i = 0; _assert_fe_i< 10; _assert_fe_i++) { \
+    assert(f[_assert_fe_i] < (1u<<(26-(_assert_fe_i&1)))); \
   } \
 } while (0)
 
@@ -100,115 +103,140 @@ static void fe_frombytes(fe *h, const uint8_t *s) {
   fe_frombytes_impl(h->v, s);
 }
 
-// Preconditions:
-//  |h| bounded by 1.1*2^26,1.1*2^25,1.1*2^26,1.1*2^25,etc.
-//
-// Write p=2^255-19; q=floor(h/p).
-// Basic claim: q = floor(2^(-255)(h + 19 2^(-25)h9 + 2^(-1))).
-//
-// Proof:
-//   Have |h|<=p so |q|<=1 so |19^2 2^(-255) q|<1/4.
-//   Also have |h-2^230 h9|<2^231 so |19 2^(-255)(h-2^230 h9)|<1/4.
-//
-//   Write y=2^(-1)-19^2 2^(-255)q-19 2^(-255)(h-2^230 h9).
-//   Then 0<y<1.
-//
-//   Write r=h-pq.
-//   Have 0<=r<=p-1=2^255-20.
-//   Thus 0<=r+19(2^-255)r<r+19(2^-255)2^255<=2^255-1.
-//
-//   Write x=r+19(2^-255)r+y.
-//   Then 0<x<2^255 so floor(2^(-255)x) = 0 so floor(q+2^(-255)x) = q.
-//
-//   Have q+2^(-255)x = 2^(-255)(h + 19 2^(-25) h9 + 2^(-1))
-//   so floor(2^(-255)(h + 19 2^(-25) h9 + 2^(-1))) = q.
-static void fe_tobytes_impl(uint8_t *s, const uint32_t h[10]) {
-  assert_fe_loose(h);
-  int32_t h0 = h[0];
-  int32_t h1 = h[1];
-  int32_t h2 = h[2];
-  int32_t h3 = h[3];
-  int32_t h4 = h[4];
-  int32_t h5 = h[5];
-  int32_t h6 = h[6];
-  int32_t h7 = h[7];
-  int32_t h8 = h[8];
-  int32_t h9 = h[9];
-  int32_t q;
-
-  q = (19 * h9 + (((int32_t) 1) << 24)) >> 25;
-  q = (h0 + q) >> 26;
-  q = (h1 + q) >> 25;
-  q = (h2 + q) >> 26;
-  q = (h3 + q) >> 25;
-  q = (h4 + q) >> 26;
-  q = (h5 + q) >> 25;
-  q = (h6 + q) >> 26;
-  q = (h7 + q) >> 25;
-  q = (h8 + q) >> 26;
-  q = (h9 + q) >> 25;
-
-  // Goal: Output h-(2^255-19)q, which is between 0 and 2^255-20.
-  h0 += 19 * q;
-  // Goal: Output h-2^255 q, which is between 0 and 2^255-20.
-
-  h1 += h0 >> 26; h0 &= kBottom26Bits;
-  h2 += h1 >> 25; h1 &= kBottom25Bits;
-  h3 += h2 >> 26; h2 &= kBottom26Bits;
-  h4 += h3 >> 25; h3 &= kBottom25Bits;
-  h5 += h4 >> 26; h4 &= kBottom26Bits;
-  h6 += h5 >> 25; h5 &= kBottom25Bits;
-  h7 += h6 >> 26; h6 &= kBottom26Bits;
-  h8 += h7 >> 25; h7 &= kBottom25Bits;
-  h9 += h8 >> 26; h8 &= kBottom26Bits;
-                  h9 &= kBottom25Bits;
-                  // h10 = carry9
-
-  // Goal: Output h0+...+2^255 h10-2^255 q, which is between 0 and 2^255-20.
-  // Have h0+...+2^230 h9 between 0 and 2^255-1;
-  // evidently 2^255 h10-2^255 q = 0.
-  // Goal: Output h0+...+2^230 h9.
-
-  s[0] = h0 >> 0;
-  s[1] = h0 >> 8;
-  s[2] = h0 >> 16;
-  s[3] = (h0 >> 24) | ((uint32_t)(h1) << 2);
-  s[4] = h1 >> 6;
-  s[5] = h1 >> 14;
-  s[6] = (h1 >> 22) | ((uint32_t)(h2) << 3);
-  s[7] = h2 >> 5;
-  s[8] = h2 >> 13;
-  s[9] = (h2 >> 21) | ((uint32_t)(h3) << 5);
-  s[10] = h3 >> 3;
-  s[11] = h3 >> 11;
-  s[12] = (h3 >> 19) | ((uint32_t)(h4) << 6);
-  s[13] = h4 >> 2;
-  s[14] = h4 >> 10;
-  s[15] = h4 >> 18;
-  s[16] = h5 >> 0;
-  s[17] = h5 >> 8;
-  s[18] = h5 >> 16;
-  s[19] = (h5 >> 24) | ((uint32_t)(h6) << 1);
-  s[20] = h6 >> 7;
-  s[21] = h6 >> 15;
-  s[22] = (h6 >> 23) | ((uint32_t)(h7) << 3);
-  s[23] = h7 >> 5;
-  s[24] = h7 >> 13;
-  s[25] = (h7 >> 21) | ((uint32_t)(h8) << 4);
-  s[26] = h8 >> 4;
-  s[27] = h8 >> 12;
-  s[28] = (h8 >> 20) | ((uint32_t)(h9) << 6);
-  s[29] = h9 >> 2;
-  s[30] = h9 >> 10;
-  s[31] = h9 >> 18;
+static uint8_t /*bool*/ addcarryx_u25(uint8_t /*bool*/ c, uint32_t a,
+                                      uint32_t b, uint32_t *low) {
+  // This function extracts 25 bits of result and 1 bit of carry (26 total), so
+  // a 32-bit intermediate is sufficient.
+  uint32_t x = a + b + c;
+  *low = x & ((1 << 25) - 1);
+  return (x >> 25) & 1;
 }
 
-static void fe_tobytes(uint8_t *s, const fe *h) {
-  fe_tobytes_impl(s, h->v);
+static uint8_t /*bool*/ addcarryx_u26(uint8_t /*bool*/ c, uint32_t a,
+                                      uint32_t b, uint32_t *low) {
+  // This function extracts 26 bits of result and 1 bit of carry (27 total), so
+  // a 32-bit intermediate is sufficient.
+  uint32_t x = a + b + c;
+  *low = x & ((1 << 26) - 1);
+  return (x >> 26) & 1;
 }
 
-static void fe_loose_tobytes(uint8_t *s, const fe_loose *h) {
-  fe_tobytes_impl(s, h->v);
+static uint8_t /*bool*/ subborrow_u25(uint8_t /*bool*/ c, uint32_t a,
+                                      uint32_t b, uint32_t *low) {
+  // This function extracts 25 bits of result and 1 bit of borrow (26 total), so
+  // a 32-bit intermediate is sufficient.
+  uint32_t x = a - b - c;
+  *low = x & ((1 << 25) - 1);
+  return x >> 31;
+}
+
+static uint8_t /*bool*/ subborrow_u26(uint8_t /*bool*/ c, uint32_t a,
+                                      uint32_t b, uint32_t *low) {
+  // This function extracts 26 bits of result and 1 bit of borrow (27 total), so
+  // a 32-bit intermediate is sufficient.
+  uint32_t x = a - b - c;
+  *low = x & ((1 << 26) - 1);
+  return x >> 31;
+}
+
+static uint32_t cmovznz32(uint32_t t, uint32_t z, uint32_t nz) {
+  t = -!!t; // all set if nonzero, 0 if 0
+  return (t&nz) | ((~t)&z);
+}
+
+static void fe_freeze(uint32_t out[10], const uint32_t in1[10]) {
+  { const uint32_t x17 = in1[9];
+  { const uint32_t x18 = in1[8];
+  { const uint32_t x16 = in1[7];
+  { const uint32_t x14 = in1[6];
+  { const uint32_t x12 = in1[5];
+  { const uint32_t x10 = in1[4];
+  { const uint32_t x8 = in1[3];
+  { const uint32_t x6 = in1[2];
+  { const uint32_t x4 = in1[1];
+  { const uint32_t x2 = in1[0];
+  { uint32_t x20; uint8_t/*bool*/ x21 = subborrow_u26(0x0, x2, 0x3ffffed, &x20);
+  { uint32_t x23; uint8_t/*bool*/ x24 = subborrow_u25(x21, x4, 0x1ffffff, &x23);
+  { uint32_t x26; uint8_t/*bool*/ x27 = subborrow_u26(x24, x6, 0x3ffffff, &x26);
+  { uint32_t x29; uint8_t/*bool*/ x30 = subborrow_u25(x27, x8, 0x1ffffff, &x29);
+  { uint32_t x32; uint8_t/*bool*/ x33 = subborrow_u26(x30, x10, 0x3ffffff, &x32);
+  { uint32_t x35; uint8_t/*bool*/ x36 = subborrow_u25(x33, x12, 0x1ffffff, &x35);
+  { uint32_t x38; uint8_t/*bool*/ x39 = subborrow_u26(x36, x14, 0x3ffffff, &x38);
+  { uint32_t x41; uint8_t/*bool*/ x42 = subborrow_u25(x39, x16, 0x1ffffff, &x41);
+  { uint32_t x44; uint8_t/*bool*/ x45 = subborrow_u26(x42, x18, 0x3ffffff, &x44);
+  { uint32_t x47; uint8_t/*bool*/ x48 = subborrow_u25(x45, x17, 0x1ffffff, &x47);
+  { uint32_t x49 = cmovznz32(x48, 0x0, 0xffffffff);
+  { uint32_t x50 = (x49 & 0x3ffffed);
+  { uint32_t x52; uint8_t/*bool*/ x53 = addcarryx_u26(0x0, x20, x50, &x52);
+  { uint32_t x54 = (x49 & 0x1ffffff);
+  { uint32_t x56; uint8_t/*bool*/ x57 = addcarryx_u25(x53, x23, x54, &x56);
+  { uint32_t x58 = (x49 & 0x3ffffff);
+  { uint32_t x60; uint8_t/*bool*/ x61 = addcarryx_u26(x57, x26, x58, &x60);
+  { uint32_t x62 = (x49 & 0x1ffffff);
+  { uint32_t x64; uint8_t/*bool*/ x65 = addcarryx_u25(x61, x29, x62, &x64);
+  { uint32_t x66 = (x49 & 0x3ffffff);
+  { uint32_t x68; uint8_t/*bool*/ x69 = addcarryx_u26(x65, x32, x66, &x68);
+  { uint32_t x70 = (x49 & 0x1ffffff);
+  { uint32_t x72; uint8_t/*bool*/ x73 = addcarryx_u25(x69, x35, x70, &x72);
+  { uint32_t x74 = (x49 & 0x3ffffff);
+  { uint32_t x76; uint8_t/*bool*/ x77 = addcarryx_u26(x73, x38, x74, &x76);
+  { uint32_t x78 = (x49 & 0x1ffffff);
+  { uint32_t x80; uint8_t/*bool*/ x81 = addcarryx_u25(x77, x41, x78, &x80);
+  { uint32_t x82 = (x49 & 0x3ffffff);
+  { uint32_t x84; uint8_t/*bool*/ x85 = addcarryx_u26(x81, x44, x82, &x84);
+  { uint32_t x86 = (x49 & 0x1ffffff);
+  { uint32_t x88; addcarryx_u25(x85, x47, x86, &x88);
+  out[0] = x52;
+  out[1] = x56;
+  out[2] = x60;
+  out[3] = x64;
+  out[4] = x68;
+  out[5] = x72;
+  out[6] = x76;
+  out[7] = x80;
+  out[8] = x84;
+  out[9] = x88;
+  }}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}
+}
+
+static void fe_tobytes(uint8_t s[32], const fe *f) {
+  assert_fe(f->v);
+  uint32_t h[10];
+  fe_freeze(h, f->v);
+  assert_fe_frozen(h);
+
+  s[0] = h[0] >> 0;
+  s[1] = h[0] >> 8;
+  s[2] = h[0] >> 16;
+  s[3] = (h[0] >> 24) | (h[1] << 2);
+  s[4] = h[1] >> 6;
+  s[5] = h[1] >> 14;
+  s[6] = (h[1] >> 22) | (h[2] << 3);
+  s[7] = h[2] >> 5;
+  s[8] = h[2] >> 13;
+  s[9] = (h[2] >> 21) | (h[3] << 5);
+  s[10] = h[3] >> 3;
+  s[11] = h[3] >> 11;
+  s[12] = (h[3] >> 19) | (h[4] << 6);
+  s[13] = h[4] >> 2;
+  s[14] = h[4] >> 10;
+  s[15] = h[4] >> 18;
+  s[16] = h[5] >> 0;
+  s[17] = h[5] >> 8;
+  s[18] = h[5] >> 16;
+  s[19] = (h[5] >> 24) | (h[6] << 1);
+  s[20] = h[6] >> 7;
+  s[21] = h[6] >> 15;
+  s[22] = (h[6] >> 23) | (h[7] << 3);
+  s[23] = h[7] >> 5;
+  s[24] = h[7] >> 13;
+  s[25] = (h[7] >> 21) | (h[8] << 4);
+  s[26] = h[8] >> 4;
+  s[27] = h[8] >> 12;
+  s[28] = (h[8] >> 20) | (h[9] << 6);
+  s[29] = h[9] >> 2;
+  s[30] = h[9] >> 10;
+  s[31] = h[9] >> 18;
 }
 
 // h = f
@@ -281,13 +309,6 @@ static void fe_add_impl(uint32_t out[10], const uint32_t in1[10], const uint32_t
 
 // h = f + g
 // Can overlap h with f or g.
-//
-// Preconditions:
-//    |f| bounded by 1.1*2^25,1.1*2^24,1.1*2^25,1.1*2^24,etc.
-//    |g| bounded by 1.1*2^25,1.1*2^24,1.1*2^25,1.1*2^24,etc.
-//
-// Postconditions:
-//    |h| bounded by 1.1*2^26,1.1*2^25,1.1*2^26,1.1*2^25,etc.
 static void fe_add(fe_loose *h, const fe *f, const fe *g) {
   assert_fe(f->v);
   assert_fe(g->v);
@@ -331,13 +352,6 @@ static void fe_sub_impl(uint32_t out[10], const uint32_t in1[10], const uint32_t
 
 // h = f - g
 // Can overlap h with f or g.
-//
-// Preconditions:
-//    |f| bounded by 1.1*2^25,1.1*2^24,1.1*2^25,1.1*2^24,etc.
-//    |g| bounded by 1.1*2^25,1.1*2^24,1.1*2^25,1.1*2^24,etc.
-//
-// Postconditions:
-//    |h| bounded by 1.1*2^26,1.1*2^25,1.1*2^26,1.1*2^25,etc.
 static void fe_sub(fe_loose *h, const fe *f, const fe *g) {
   assert_fe(f->v);
   assert_fe(g->v);
@@ -766,12 +780,6 @@ static void fe_neg_impl(uint32_t out[10], const uint32_t in2[10]) {
 }
 
 // h = -f
-//
-// Preconditions:
-//    |f| bounded by 1.1*2^25,1.1*2^24,1.1*2^25,1.1*2^24,etc.
-//
-// Postconditions:
-//    |h| bounded by 1.1*2^25,1.1*2^24,1.1*2^25,1.1*2^24,etc.
 static void fe_neg(fe_loose *h, const fe *f) {
   assert_fe(f->v);
   fe_neg_impl(h->v, f->v);
@@ -794,12 +802,11 @@ static void fe_cmov(fe_loose *f, const fe_loose *g, unsigned b) {
 
 // return 0 if f == 0
 // return 1 if f != 0
-//
-// Preconditions:
-//    |f| bounded by 1.1*2^26,1.1*2^25,1.1*2^26,1.1*2^25,etc.
 static int fe_isnonzero(const fe_loose *f) {
+  fe tight;
+  fe_carry(&tight, f);
   uint8_t s[32];
-  fe_loose_tobytes(s, f);
+  fe_tobytes(s, &tight);
 
   static const uint8_t zero[32] = {0};
   return CRYPTO_memcmp(s, zero, sizeof(zero)) != 0;
@@ -807,9 +814,6 @@ static int fe_isnonzero(const fe_loose *f) {
 
 // return 1 if f is in {1,3,5,...,q-2}
 // return 0 if f is in {0,2,4,...,q-1}
-//
-// Preconditions:
-//    |f| bounded by 1.1*2^26,1.1*2^25,1.1*2^26,1.1*2^25,etc.
 static int fe_isnegative(const fe *f) {
   uint8_t s[32];
   fe_tobytes(s, f);
@@ -995,7 +999,7 @@ static void fe_pow22523(fe *out, const fe *z) {
   fe_mul_ttt(out, &t0, z);
 }
 
-void x25519_ge_tobytes(uint8_t *s, const ge_p2 *h) {
+void x25519_ge_tobytes(uint8_t s[32], const ge_p2 *h) {
   fe recip;
   fe x;
   fe y;
@@ -1007,7 +1011,7 @@ void x25519_ge_tobytes(uint8_t *s, const ge_p2 *h) {
   s[31] ^= fe_isnegative(&x) << 7;
 }
 
-static void ge_p3_tobytes(uint8_t *s, const ge_p3 *h) {
+static void ge_p3_tobytes(uint8_t s[32], const ge_p3 *h) {
   fe recip;
   fe x;
   fe y;
@@ -3848,7 +3852,7 @@ static void ge_double_scalarmult_vartime(ge_p2 *r, const uint8_t *a,
 //   s[0]+256*s[1]+...+256^31*s[31] = s mod l
 //   where l = 2^252 + 27742317777372353535851937790883648493.
 //   Overwrites s in place.
-void x25519_sc_reduce(uint8_t *s) {
+void x25519_sc_reduce(uint8_t s[64]) {
   int64_t s0 = 2097151 & load_3(s);
   int64_t s1 = 2097151 & (load_4(s + 2) >> 5);
   int64_t s2 = 2097151 & (load_3(s + 5) >> 2);
@@ -4676,8 +4680,8 @@ void ED25519_keypair(uint8_t out_public_key[32], uint8_t out_private_key[64]) {
   ED25519_keypair_from_seed(out_public_key, out_private_key, seed);
 }
 
-int ED25519_sign(uint8_t *out_sig, const uint8_t *message, size_t message_len,
-                 const uint8_t private_key[64]) {
+int ED25519_sign(uint8_t out_sig[64], const uint8_t *message,
+                 size_t message_len, const uint8_t private_key[64]) {
   uint8_t az[SHA512_DIGEST_LENGTH];
   SHA512(private_key, 32, az);
 
@@ -4928,6 +4932,24 @@ static void x25519_scalar_mult_generic(uint8_t out[32],
   e[0] &= 248;
   e[31] &= 127;
   e[31] |= 64;
+
+  // The following implementation was transcribed to Coq and proven to
+  // correspond to unary scalar multiplication in affine coordinates given that
+  // x1 != 0 is the x coordinate of some point on the curve. It was also checked
+  // in Coq that doing a ladderstep with x1 = x3 = 0 gives z2' = z3' = 0, and z2
+  // = z3 = 0 gives z2' = z3' = 0. The statement was quantified over the
+  // underlying field, so it applies to Curve25519 itself and the quadratic
+  // twist of Curve25519. It was not proven in Coq that prime-field arithmetic
+  // correctly simulates extension-field arithmetic on prime-field values.
+  // The decoding of the byte array representation of e was not considered.
+  // Specification of Montgomery curves in affine coordinates:
+  // <https://github.com/mit-plv/fiat-crypto/blob/2456d821825521f7e03e65882cc3521795b0320f/src/Spec/MontgomeryCurve.v#L27>
+  // Proof that these form a group that is isomorphic to a Weierstrass curve:
+  // <https://github.com/mit-plv/fiat-crypto/blob/2456d821825521f7e03e65882cc3521795b0320f/src/Curves/Montgomery/AffineProofs.v#L35>
+  // Coq transcription and correctness proof of the loop (where scalarbits=255):
+  // <https://github.com/mit-plv/fiat-crypto/blob/2456d821825521f7e03e65882cc3521795b0320f/src/Curves/Montgomery/XZ.v#L118>
+  // <https://github.com/mit-plv/fiat-crypto/blob/2456d821825521f7e03e65882cc3521795b0320f/src/Curves/Montgomery/XZProofs.v#L278>
+  // preconditions: 0 <= e < 2^255 (not necessarily e < order), fe_invert(0) = 0
   fe_frombytes(&x1, point);
   fe_1(&x2);
   fe_0(&z2);
@@ -4937,11 +4959,22 @@ static void x25519_scalar_mult_generic(uint8_t out[32],
   unsigned swap = 0;
   int pos;
   for (pos = 254; pos >= 0; --pos) {
+    // loop invariant as of right before the test, for the case where x1 != 0:
+    //   pos >= -1; if z2 = 0 then x2 is nonzero; if z3 = 0 then x3 is nonzero
+    //   let r := e >> (pos+1) in the following equalities of projective points:
+    //   to_xz (r*P)     === if swap then (x3, z3) else (x2, z2)
+    //   to_xz ((r+1)*P) === if swap then (x2, z2) else (x3, z3)
+    //   x1 is the nonzero x coordinate of the nonzero point (r*P-(r+1)*P)
     unsigned b = 1 & (e[pos / 8] >> (pos & 7));
     swap ^= b;
     fe_cswap(&x2, &x3, swap);
     fe_cswap(&z2, &z3, swap);
     swap = b;
+    // Coq transcription of ladderstep formula (called from transcribed loop):
+    // <https://github.com/mit-plv/fiat-crypto/blob/2456d821825521f7e03e65882cc3521795b0320f/src/Curves/Montgomery/XZ.v#L89>
+    // <https://github.com/mit-plv/fiat-crypto/blob/2456d821825521f7e03e65882cc3521795b0320f/src/Curves/Montgomery/XZProofs.v#L131>
+    // x1 != 0 <https://github.com/mit-plv/fiat-crypto/blob/2456d821825521f7e03e65882cc3521795b0320f/src/Curves/Montgomery/XZProofs.v#L217>
+    // x1  = 0 <https://github.com/mit-plv/fiat-crypto/blob/2456d821825521f7e03e65882cc3521795b0320f/src/Curves/Montgomery/XZProofs.v#L147>
     fe_sub(&tmp0l, &x3, &z3);
     fe_sub(&tmp1l, &x2, &z2);
     fe_add(&x2l, &x2, &z2);
@@ -4961,6 +4994,7 @@ static void x25519_scalar_mult_generic(uint8_t out[32],
     fe_mul_ttt(&z3, &x1, &z2);
     fe_mul_tll(&z2, &tmp1l, &tmp0l);
   }
+  // here pos=-1, so r=e, so to_xz (e*P) === if swap then (x3, z3) else (x2, z2)
   fe_cswap(&x2, &x3, swap);
   fe_cswap(&z2, &z3, swap);
 

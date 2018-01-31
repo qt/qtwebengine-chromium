@@ -15,9 +15,11 @@
 #include "xfa/fxfa/cxfa_eventparam.h"
 #include "xfa/fxfa/cxfa_ffdoc.h"
 
+class CXFA_BindItems;
 class CXFA_FFWidgetHandler;
 class CXFA_FFDoc;
 class CXFA_FFWidget;
+class CXFA_Subform;
 class CXFA_WidgetAccIterator;
 
 extern const XFA_AttributeEnum gs_EventActivity[];
@@ -52,7 +54,7 @@ class CXFA_FFDocView {
   int32_t CountPageViews() const;
   CXFA_FFPageView* GetPageView(int32_t nIndex) const;
 
-  void ResetWidgetData(CXFA_WidgetAcc* pWidgetAcc);
+  void ResetWidgetAcc(CXFA_WidgetAcc* pWidgetAcc);
   int32_t ProcessWidgetEvent(CXFA_EventParam* pParam,
                              CXFA_WidgetAcc* pWidgetAcc);
   CXFA_FFWidgetHandler* GetWidgetHandler();
@@ -60,6 +62,7 @@ class CXFA_FFDocView {
   CXFA_FFWidget* GetFocusWidget() const { return m_pFocusWidget.Get(); }
   void KillFocus();
   bool SetFocus(CXFA_FFWidget* hWidget);
+  CXFA_FFWidget* GetWidgetForNode(CXFA_Node* node);
   CXFA_FFWidget* GetWidgetByName(const WideString& wsName,
                                  CXFA_FFWidget* pRefWidget);
   CXFA_WidgetAcc* GetWidgetAccByName(const WideString& wsName,
@@ -76,6 +79,8 @@ class CXFA_FFDocView {
   void RunInvalidate();
   void RunDocClose();
   void DestroyDocView();
+
+  void ProcessValueChanged(CXFA_WidgetAcc* widgetAcc);
 
   bool InitValidate(CXFA_Node* pNode);
   bool RunValidate();
@@ -101,14 +106,15 @@ class CXFA_FFDocView {
                                        bool bIsFormReady,
                                        bool bRecursive,
                                        CXFA_Node* pExclude);
+
+  void AddBindItem(CXFA_BindItems* item) { m_BindItems.push_back(item); }
+
   bool m_bLayoutEvent;
   std::vector<WideString> m_arrNullTestMsg;
   CXFA_FFWidget* m_pListFocusWidget;
   bool m_bInLayoutStatus;
 
  private:
-  friend class CXFA_FFNotify;
-
   bool RunEventLayoutReady();
   void RunBindItems();
   void InitCalculate(CXFA_Node* pNode);
@@ -116,7 +122,7 @@ class CXFA_FFDocView {
   size_t RunCalculateRecursive(size_t index);
   void ShowNullTestMsg();
   bool ResetSingleWidgetAccData(CXFA_WidgetAcc* pWidgetAcc);
-  CXFA_Node* GetRootSubform();
+  CXFA_Subform* GetRootSubform();
 
   UnownedPtr<CXFA_FFDoc> const m_pDoc;
   std::unique_ptr<CXFA_FFWidgetHandler> m_pWidgetHandler;
@@ -127,7 +133,7 @@ class CXFA_FFDocView {
   std::map<CXFA_FFPageView*, std::unique_ptr<CFX_RectF>> m_mapPageInvalidate;
   std::vector<CXFA_WidgetAcc*> m_ValidateAccs;
   std::vector<CXFA_WidgetAcc*> m_CalculateAccs;
-  std::vector<CXFA_Node*> m_BindItems;
+  std::vector<CXFA_BindItems*> m_BindItems;
   std::vector<CXFA_Node*> m_NewAddedNodes;
   std::vector<CXFA_Node*> m_IndexChangedSubforms;
   XFA_DOCVIEW_LAYOUTSTATUS m_iStatus;

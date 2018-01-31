@@ -56,7 +56,7 @@ public:
 			mDefaultBlockStorage(EbsShared),
 			mDiagnostics(is),
 			mDirectiveHandler(ext, mDiagnostics, mShaderVersion),
-			mPreprocessor(&mDiagnostics, &mDirectiveHandler),
+			mPreprocessor(&mDiagnostics, &mDirectiveHandler, pp::PreprocessorSettings()),
 			mScanner(nullptr),
 			mUsesFragData(false),
 			mUsesFragColor(false) {  }
@@ -112,7 +112,6 @@ public:
 	const TVariable *getNamedVariable(const TSourceLoc &location, const TString *name, const TSymbol *symbol);
 
 	bool parseVectorFields(const TString&, int vecSize, TVectorFields&, const TSourceLoc &line);
-	bool parseMatrixFields(const TString&, int matCols, int matRows, TMatrixFields&, const TSourceLoc &line);
 
 	bool reservedErrorCheck(const TSourceLoc &line, const TString& identifier);
 	void assignError(const TSourceLoc &line, const char* op, TString left, TString right);
@@ -149,7 +148,7 @@ public:
 	void handleExtensionDirective(const TSourceLoc &line, const char* extName, const char* behavior);
 
 	const TPragma& pragma() const { return mDirectiveHandler.pragma(); }
-	void handlePragmaDirective(const TSourceLoc &line, const char* name, const char* value);
+	void handlePragmaDirective(const TSourceLoc &line, const char* name, const char* value, bool stdgl);
 
 	bool containsSampler(TType& type);
 	const TFunction* findFunction(const TSourceLoc &line, TFunction* pfnCall, bool *builtIn = 0);

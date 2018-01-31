@@ -733,9 +733,9 @@ void InsertBuiltInFunctions(sh::GLenum type,
                                                       voidType, "groupMemoryBarrier");
     }
 
-    if (type == GL_GEOMETRY_SHADER_OES)
+    if (type == GL_GEOMETRY_SHADER_EXT)
     {
-        TExtension extension = TExtension::OES_geometry_shader;
+        TExtension extension = TExtension::EXT_geometry_shader;
         symbolTable.insertBuiltInFunctionNoParametersExt(ESSL3_1_BUILTINS, extension, EOpEmitVertex,
                                                          voidType, "EmitVertex");
         symbolTable.insertBuiltInFunctionNoParametersExt(ESSL3_1_BUILTINS, extension,
@@ -745,7 +745,7 @@ void InsertBuiltInFunctions(sh::GLenum type,
     //
     // Depth range in window coordinates
     //
-    TFieldList *fields       = NewPoolTFieldList();
+    TFieldList *fields       = new TFieldList();
     TSourceLoc zeroSourceLoc = {0, 0, 0, 0};
     auto highpFloat1         = new TType(EbtFloat, EbpHigh, EvqGlobal, 1);
     TField *near             = new TField(highpFloat1, NewPoolTString("near"), zeroSourceLoc);
@@ -754,8 +754,8 @@ void InsertBuiltInFunctions(sh::GLenum type,
     fields->push_back(near);
     fields->push_back(far);
     fields->push_back(diff);
-    TStructure *depthRangeStruct =
-        new TStructure(&symbolTable, NewPoolTString("gl_DepthRangeParameters"), fields);
+    TStructure *depthRangeStruct = new TStructure(
+        &symbolTable, NewPoolTString("gl_DepthRangeParameters"), fields, SymbolType::BuiltIn);
     symbolTable.insertStructType(COMMON_BUILTINS, depthRangeStruct);
     TType depthRangeType(depthRangeStruct);
     depthRangeType.setQualifier(EvqUniform);
@@ -844,9 +844,9 @@ void InsertBuiltInFunctions(sh::GLenum type,
     symbolTable.insertConstInt(ESSL3_1_BUILTINS, "gl_MaxAtomicCounterBufferSize",
                                resources.MaxAtomicCounterBufferSize, EbpMedium);
 
-    if (resources.OES_geometry_shader)
+    if (resources.EXT_geometry_shader)
     {
-        TExtension ext = TExtension::OES_geometry_shader;
+        TExtension ext = TExtension::EXT_geometry_shader;
         symbolTable.insertConstIntExt(ESSL3_1_BUILTINS, ext, "gl_MaxGeometryInputComponents",
                                       resources.MaxGeometryInputComponents, EbpMedium);
         symbolTable.insertConstIntExt(ESSL3_1_BUILTINS, ext, "gl_MaxGeometryOutputComponents",
@@ -963,9 +963,9 @@ void IdentifyBuiltIns(sh::GLenum type,
                     TType(EbtFloat, EbpMedium, EvqLastFragColor, 4));
             }
 
-            if (resources.OES_geometry_shader)
+            if (resources.EXT_geometry_shader)
             {
-                TExtension extension = TExtension::OES_geometry_shader;
+                TExtension extension = TExtension::EXT_geometry_shader;
                 symbolTable.insertVariableExt(ESSL3_1_BUILTINS, extension, "gl_PrimitiveID",
                                               TType(EbtInt, EbpHigh, EvqPrimitiveID, 1));
                 symbolTable.insertVariableExt(ESSL3_1_BUILTINS, extension, "gl_Layer",
@@ -1009,35 +1009,38 @@ void IdentifyBuiltIns(sh::GLenum type,
             break;
         }
 
-        case GL_GEOMETRY_SHADER_OES:
+        case GL_GEOMETRY_SHADER_EXT:
         {
-            TExtension extension = TExtension::OES_geometry_shader;
+            TExtension extension = TExtension::EXT_geometry_shader;
 
             // Add built-in interface block gl_PerVertex and the built-in array gl_in.
-            // TODO(jiawei.shao@intel.com): implement GL_OES_geometry_point_size.
-            const TString *glPerVertexString = NewPoolTString("gl_PerVertex");
-            symbolTable.insertInterfaceBlockNameExt(ESSL3_1_BUILTINS, extension, glPerVertexString);
-
-            TFieldList *fieldList    = NewPoolTFieldList();
+            // TODO(jiawei.shao@intel.com): implement GL_EXT_geometry_point_size.
+            TFieldList *glPerVertexFieldList = new TFieldList();
             TSourceLoc zeroSourceLoc = {0, 0, 0, 0};
             TField *glPositionField  = new TField(new TType(EbtFloat, EbpHigh, EvqPosition, 4),
                                                  NewPoolTString("gl_Position"), zeroSourceLoc);
-            fieldList->push_back(glPositionField);
+            glPerVertexFieldList->push_back(glPositionField);
 
-            TInterfaceBlock *glInBlock = new TInterfaceBlock(
-                glPerVertexString, fieldList, NewPoolTString("gl_in"), TLayoutQualifier::Create());
+            const TString *glPerVertexString = NewPoolTString("gl_PerVertex");
+            TInterfaceBlock *glPerVertexInBlock =
+                new TInterfaceBlock(&symbolTable, glPerVertexString, glPerVertexFieldList,
+                                    TLayoutQualifier::Create(), SymbolType::BuiltIn, extension);
+            symbolTable.insertInterfaceBlock(ESSL3_1_BUILTINS, glPerVertexInBlock);
 
             // The array size of gl_in is undefined until we get a valid input primitive
             // declaration.
-            TType glInType(glInBlock, EvqPerVertexIn, TLayoutQualifier::Create());
+            TType glInType(glPerVertexInBlock, EvqPerVertexIn, TLayoutQualifier::Create());
             glInType.makeArray(0u);
             symbolTable.insertVariableExt(ESSL3_1_BUILTINS, extension, "gl_in", glInType);
 
+            TInterfaceBlock *glPerVertexOutBlock =
+                new TInterfaceBlock(&symbolTable, glPerVertexString, glPerVertexFieldList,
+                                    TLayoutQualifier::Create(), SymbolType::BuiltIn);
             TType glPositionType(EbtFloat, EbpHigh, EvqPosition, 4);
-            glPositionType.setInterfaceBlock(new TInterfaceBlock(
-                glPerVertexString, fieldList, nullptr, TLayoutQualifier::Create()));
+            glPositionType.setInterfaceBlock(glPerVertexOutBlock);
             symbolTable.insertVariableExt(ESSL3_1_BUILTINS, extension, "gl_Position",
                                           glPositionType);
+
             symbolTable.insertVariableExt(ESSL3_1_BUILTINS, extension, "gl_PrimitiveIDIn",
                                           TType(EbtInt, EbpHigh, EvqPrimitiveIDIn, 1));
             symbolTable.insertVariableExt(ESSL3_1_BUILTINS, extension, "gl_InvocationID",
@@ -1114,9 +1117,8 @@ void InitExtensionBehavior(const ShBuiltInResources &resources, TExtensionBehavi
     {
         extBehavior[TExtension::EXT_YUV_target] = EBhUndefined;
     }
-    if (resources.OES_geometry_shader)
+    if (resources.EXT_geometry_shader)
     {
-        extBehavior[TExtension::OES_geometry_shader] = EBhUndefined;
         extBehavior[TExtension::EXT_geometry_shader] = EBhUndefined;
     }
 }

@@ -16,7 +16,6 @@
 #include "content/browser/web_contents/web_contents_impl.h"
 #include "content/browser/web_contents/web_contents_view.h"
 #include "content/common/frame_messages.h"
-#include "content/common/site_isolation_policy.h"
 #include "content/public/browser/javascript_dialog_manager.h"
 #include "content/public/browser/load_notification_details.h"
 #include "content/public/browser/navigation_controller.h"
@@ -515,55 +514,6 @@ IN_PROC_BROWSER_TEST_F(WebContentsImplBrowserTest,
   EXPECT_TRUE(new_web_contents_observer.RenderViewCreatedCalled());
 }
 
-namespace {
-
-class DidGetResourceResponseStartObserver : public WebContentsObserver {
- public:
-  explicit DidGetResourceResponseStartObserver(Shell* shell)
-      : WebContentsObserver(shell->web_contents()), shell_(shell) {
-    shell->web_contents()->SetDelegate(&delegate_);
-    EXPECT_FALSE(shell->web_contents()->IsWaitingForResponse());
-    EXPECT_FALSE(shell->web_contents()->IsLoading());
-  }
-
-  ~DidGetResourceResponseStartObserver() override {}
-
-  void DidGetResourceResponseStart(
-      const ResourceRequestDetails& details) override {
-    EXPECT_FALSE(shell_->web_contents()->IsWaitingForResponse());
-    EXPECT_TRUE(shell_->web_contents()->IsLoading());
-    EXPECT_GT(delegate_.loadingStateChangedCount(), 0);
-    ++resource_response_start_count_;
-  }
-
-  int resource_response_start_count() const {
-    return resource_response_start_count_;
-  }
-
- private:
-  Shell* shell_;
-  LoadingStateChangedDelegate delegate_;
-  int resource_response_start_count_ = 0;
-
-  DISALLOW_COPY_AND_ASSIGN(DidGetResourceResponseStartObserver);
-};
-
-}  // namespace
-
-// Makes sure that the WebContents is no longer marked as waiting for a response
-// after DidGetResourceResponseStart() is called.
-IN_PROC_BROWSER_TEST_F(WebContentsImplBrowserTest,
-                       DidGetResourceResponseStartUpdatesWaitingState) {
-  DidGetResourceResponseStartObserver observer(shell());
-
-  ASSERT_TRUE(embedded_test_server()->Start());
-  LoadStopNotificationObserver load_observer(
-      &shell()->web_contents()->GetController());
-  NavigateToURL(shell(), embedded_test_server()->GetURL("/title1.html"));
-  load_observer.Wait();
-  EXPECT_GT(observer.resource_response_start_count(), 0);
-}
-
 struct LoadProgressDelegateAndObserver : public WebContentsDelegate,
                                          public WebContentsObserver {
   explicit LoadProgressDelegateAndObserver(Shell* shell)
@@ -1004,7 +954,7 @@ IN_PROC_BROWSER_TEST_F(WebContentsImplBrowserTest,
   // schedule it for afterwards. Since the BeforeUnload event is synchronous,
   // clicking on the link right away would cause the ExecuteScript to never
   // return.
-  SetShouldProceedOnBeforeUnload(shell(), false);
+  SetShouldProceedOnBeforeUnload(shell(), false, false);
   EXPECT_TRUE(ExecuteScript(shell(), "clickLinkSoon()"));
   WaitForAppModalDialog(shell());
 

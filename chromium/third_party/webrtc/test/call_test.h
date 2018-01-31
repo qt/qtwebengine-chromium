@@ -26,9 +26,6 @@
 #include "test/single_threaded_task_queue.h"
 
 namespace webrtc {
-
-class VoEBase;
-
 namespace test {
 
 class BaseTest;
@@ -38,7 +35,8 @@ class CallTest : public ::testing::Test {
   CallTest();
   virtual ~CallTest();
 
-  static const size_t kNumSsrcs = 3;
+  static constexpr size_t kNumSsrcs = 6;
+  static const int kNumSimulcastStreams = 3;
   static const int kDefaultWidth = 320;
   static const int kDefaultHeight = 180;
   static const int kDefaultFramerate = 30;
@@ -66,9 +64,8 @@ class CallTest : public ::testing::Test {
   static const std::map<uint8_t, MediaType> payload_type_map_;
 
  protected:
-  // RunBaseTest overwrites the audio_state and the voice_engine of the send and
-  // receive Call configs to simplify test code and avoid having old VoiceEngine
-  // APIs in the tests.
+  // RunBaseTest overwrites the audio_state of the send and receive Call configs
+  // to simplify test code.
   void RunBaseTest(BaseTest* test);
 
   void CreateCalls(const Call::Config& sender_config,
@@ -77,11 +74,22 @@ class CallTest : public ::testing::Test {
   void CreateReceiverCall(const Call::Config& config);
   void DestroyCalls();
 
+  void CreateVideoSendConfig(VideoSendStream::Config* video_config,
+                             size_t num_video_streams,
+                             size_t num_used_ssrcs,
+                             Transport* send_transport);
+  void CreateAudioAndFecSendConfigs(size_t num_audio_streams,
+                                    size_t num_flexfec_streams,
+                                    Transport* send_transport);
   void CreateSendConfig(size_t num_video_streams,
                         size_t num_audio_streams,
                         size_t num_flexfec_streams,
                         Transport* send_transport);
 
+  std::vector<VideoReceiveStream::Config> CreateMatchingVideoReceiveConfigs(
+      const VideoSendStream::Config& video_send_config,
+      Transport* rtcp_send_transport);
+  void CreateMatchingAudioAndFecConfigs(Transport* rtcp_send_transport);
   void CreateMatchingReceiveConfigs(Transport* rtcp_send_transport);
 
   void CreateFrameGeneratorCapturerWithDrift(Clock* drift_clock,
@@ -140,31 +148,10 @@ class CallTest : public ::testing::Test {
   SingleThreadedTaskQueueForTesting task_queue_;
 
  private:
-  // TODO(holmer): Remove once VoiceEngine is fully refactored to the new API.
-  // These methods are used to set up legacy voice engines and channels which is
-  // necessary while voice engine is being refactored to the new stream API.
-  struct VoiceEngineState {
-    VoiceEngineState()
-        : voice_engine(nullptr),
-          base(nullptr),
-          channel_id(-1) {}
-
-    VoiceEngine* voice_engine;
-    VoEBase* base;
-    int channel_id;
-  };
-
-  void CreateVoiceEngines();
-  void DestroyVoiceEngines();
-
-  VoiceEngineState voe_send_;
-  VoiceEngineState voe_recv_;
   rtc::scoped_refptr<AudioProcessing> apm_send_;
   rtc::scoped_refptr<AudioProcessing> apm_recv_;
-
-  // The audio devices must outlive the voice engines.
-  std::unique_ptr<test::FakeAudioDevice> fake_send_audio_device_;
-  std::unique_ptr<test::FakeAudioDevice> fake_recv_audio_device_;
+  rtc::scoped_refptr<test::FakeAudioDevice> fake_send_audio_device_;
+  rtc::scoped_refptr<test::FakeAudioDevice> fake_recv_audio_device_;
 };
 
 class BaseTest : public RtpRtcpObserver {

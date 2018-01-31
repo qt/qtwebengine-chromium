@@ -19,9 +19,12 @@
 #include "xfa/fxfa/cxfa_fffield.h"
 #include "xfa/fxfa/cxfa_ffpageview.h"
 #include "xfa/fxfa/cxfa_ffwidget.h"
+#include "xfa/fxfa/parser/cxfa_border.h"
+#include "xfa/fxfa/parser/cxfa_caption.h"
+#include "xfa/fxfa/parser/cxfa_para.h"
 
-CXFA_FFCheckButton::CXFA_FFCheckButton(CXFA_WidgetAcc* pDataAcc)
-    : CXFA_FFField(pDataAcc), m_pOldDelegate(nullptr) {}
+CXFA_FFCheckButton::CXFA_FFCheckButton(CXFA_Node* pNode)
+    : CXFA_FFField(pNode), m_pOldDelegate(nullptr) {}
 
 CXFA_FFCheckButton::~CXFA_FFCheckButton() {}
 
@@ -37,12 +40,12 @@ bool CXFA_FFCheckButton::LoadWidget() {
                                    m_pNormalWidget.get());
   m_pOldDelegate = m_pNormalWidget->GetDelegate();
   m_pNormalWidget->SetDelegate(this);
-  if (m_pDataAcc->IsRadioButton())
+  if (m_pNode->GetWidgetAcc()->IsRadioButton())
     pCheckBox->ModifyStylesEx(FWL_STYLEEXT_CKB_RadioButton, 0xFFFFFFFF);
 
   m_pNormalWidget->LockUpdate();
   UpdateWidgetProperty();
-  SetFWLCheckState(m_pDataAcc->GetCheckState());
+  SetFWLCheckState(m_pNode->GetWidgetAcc()->GetCheckState());
   m_pNormalWidget->UnlockUpdate();
   return CXFA_FFField::LoadWidget();
 }
@@ -52,9 +55,9 @@ void CXFA_FFCheckButton::UpdateWidgetProperty() {
   if (!pCheckBox)
     return;
 
-  pCheckBox->SetBoxSize(m_pDataAcc->GetCheckButtonSize());
+  pCheckBox->SetBoxSize(m_pNode->GetWidgetAcc()->GetCheckButtonSize());
   uint32_t dwStyleEx = FWL_STYLEEXT_CKB_SignShapeCross;
-  switch (m_pDataAcc->GetCheckButtonMark()) {
+  switch (m_pNode->GetWidgetAcc()->GetCheckButtonMark()) {
     case XFA_AttributeEnum::Check:
       dwStyleEx = FWL_STYLEEXT_CKB_SignShapeCheck;
       break;
@@ -73,11 +76,11 @@ void CXFA_FFCheckButton::UpdateWidgetProperty() {
       dwStyleEx = FWL_STYLEEXT_CKB_SignShapeStar;
       break;
     default: {
-      if (m_pDataAcc->IsCheckButtonRound())
+      if (m_pNode->GetWidgetAcc()->IsCheckButtonRound())
         dwStyleEx = FWL_STYLEEXT_CKB_SignShapeCircle;
     } break;
   }
-  if (m_pDataAcc->IsAllowNeutral())
+  if (m_pNode->GetWidgetAcc()->IsAllowNeutral())
     dwStyleEx |= FWL_STYLEEXT_CKB_3State;
 
   pCheckBox->ModifyStylesEx(
@@ -87,19 +90,19 @@ void CXFA_FFCheckButton::UpdateWidgetProperty() {
 bool CXFA_FFCheckButton::PerformLayout() {
   CXFA_FFWidget::PerformLayout();
 
-  float fCheckSize = m_pDataAcc->GetCheckButtonSize();
-  CXFA_MarginData marginData = m_pDataAcc->GetMarginData();
+  float fCheckSize = m_pNode->GetWidgetAcc()->GetCheckButtonSize();
+  CXFA_Margin* margin = m_pNode->GetMarginIfExists();
   CFX_RectF rtWidget = GetRectWithoutRotate();
-  if (marginData.HasValidNode())
-    XFA_RectWidthoutMargin(rtWidget, marginData);
+  if (margin)
+    XFA_RectWithoutMargin(rtWidget, margin);
 
   XFA_AttributeEnum iCapPlacement = XFA_AttributeEnum::Unknown;
   float fCapReserve = 0;
-  CXFA_CaptionData captionData = m_pDataAcc->GetCaptionData();
-  if (captionData.HasValidNode() && captionData.IsVisible()) {
+  CXFA_Caption* caption = m_pNode->GetCaptionIfExists();
+  if (caption && caption->IsVisible()) {
     m_rtCaption = rtWidget;
-    iCapPlacement = captionData.GetPlacementType();
-    fCapReserve = captionData.GetReserve();
+    iCapPlacement = caption->GetPlacementType();
+    fCapReserve = caption->GetReserve();
     if (fCapReserve <= 0) {
       if (iCapPlacement == XFA_AttributeEnum::Top ||
           iCapPlacement == XFA_AttributeEnum::Bottom) {
@@ -112,25 +115,25 @@ bool CXFA_FFCheckButton::PerformLayout() {
 
   XFA_AttributeEnum iHorzAlign = XFA_AttributeEnum::Left;
   XFA_AttributeEnum iVertAlign = XFA_AttributeEnum::Top;
-  CXFA_ParaData paraData = m_pDataAcc->GetParaData();
-  if (paraData.HasValidNode()) {
-    iHorzAlign = paraData.GetHorizontalAlign();
-    iVertAlign = paraData.GetVerticalAlign();
+  CXFA_Para* para = m_pNode->GetParaIfExists();
+  if (para) {
+    iHorzAlign = para->GetHorizontalAlign();
+    iVertAlign = para->GetVerticalAlign();
   }
 
   m_rtUI = rtWidget;
-  CXFA_MarginData captionMarginData = captionData.GetMarginData();
+  CXFA_Margin* captionMargin = caption ? caption->GetMarginIfExists() : nullptr;
   switch (iCapPlacement) {
     case XFA_AttributeEnum::Left: {
       m_rtCaption.width = fCapReserve;
-      CapLeftRightPlacement(captionMarginData);
+      CapLeftRightPlacement(captionMargin);
       m_rtUI.width -= fCapReserve;
       m_rtUI.left += fCapReserve;
       break;
     }
     case XFA_AttributeEnum::Top: {
       m_rtCaption.height = fCapReserve;
-      XFA_RectWidthoutMargin(m_rtCaption, captionMarginData);
+      XFA_RectWithoutMargin(m_rtCaption, captionMargin);
       m_rtUI.height -= fCapReserve;
       m_rtUI.top += fCapReserve;
       break;
@@ -138,14 +141,14 @@ bool CXFA_FFCheckButton::PerformLayout() {
     case XFA_AttributeEnum::Right: {
       m_rtCaption.left = m_rtCaption.right() - fCapReserve;
       m_rtCaption.width = fCapReserve;
-      CapLeftRightPlacement(captionMarginData);
+      CapLeftRightPlacement(captionMargin);
       m_rtUI.width -= fCapReserve;
       break;
     }
     case XFA_AttributeEnum::Bottom: {
       m_rtCaption.top = m_rtCaption.bottom() - fCapReserve;
       m_rtCaption.height = fCapReserve;
-      XFA_RectWidthoutMargin(m_rtCaption, captionMarginData);
+      XFA_RectWithoutMargin(m_rtCaption, captionMargin);
       m_rtUI.height -= fCapReserve;
       break;
     }
@@ -170,11 +173,11 @@ bool CXFA_FFCheckButton::PerformLayout() {
   m_rtUI.height = fCheckSize;
   AddUIMargin(iCapPlacement);
   m_rtCheckBox = m_rtUI;
-  CXFA_BorderData borderUIData = m_pDataAcc->GetUIBorderData();
-  if (borderUIData.HasValidNode()) {
-    CXFA_MarginData borderMarginData = borderUIData.GetMarginData();
-    if (borderMarginData.HasValidNode())
-      XFA_RectWidthoutMargin(m_rtUI, borderMarginData);
+  CXFA_Border* borderUI = m_pNode->GetWidgetAcc()->GetUIBorder();
+  if (borderUI) {
+    CXFA_Margin* borderMargin = borderUI->GetMarginIfExists();
+    if (borderMargin)
+      XFA_RectWithoutMargin(m_rtUI, borderMargin);
   }
 
   m_rtUI.Normalize();
@@ -187,8 +190,8 @@ bool CXFA_FFCheckButton::PerformLayout() {
 }
 
 void CXFA_FFCheckButton::CapLeftRightPlacement(
-    const CXFA_MarginData& captionMarginData) {
-  XFA_RectWidthoutMargin(m_rtCaption, captionMarginData);
+    const CXFA_Margin* captionMargin) {
+  XFA_RectWithoutMargin(m_rtCaption, captionMargin);
   if (m_rtCaption.height < 0)
     m_rtCaption.top += m_rtCaption.height;
   if (m_rtCaption.width < 0) {
@@ -198,7 +201,7 @@ void CXFA_FFCheckButton::CapLeftRightPlacement(
 }
 
 void CXFA_FFCheckButton::AddUIMargin(XFA_AttributeEnum iCapPlacement) {
-  CFX_RectF rtUIMargin = m_pDataAcc->GetUIMargin();
+  CFX_RectF rtUIMargin = m_pNode->GetWidgetAcc()->GetUIMargin();
   m_rtUI.top -= rtUIMargin.top / 2 - rtUIMargin.height / 2;
 
   float fLeftAddRight = rtUIMargin.left + rtUIMargin.width;
@@ -231,11 +234,11 @@ void CXFA_FFCheckButton::RenderWidget(CXFA_Graphics* pGS,
   mtRotate.Concat(matrix);
 
   CXFA_FFWidget::RenderWidget(pGS, mtRotate, dwStatus);
-  DrawBorderWithFlags(
-      pGS, m_pDataAcc->GetUIBorderData(), m_rtUI, mtRotate,
-      m_pDataAcc->IsCheckButtonRound() ? XFA_DRAWBOX_ForceRound : 0);
+  DrawBorderWithFlag(pGS, m_pNode->GetWidgetAcc()->GetUIBorder(), m_rtUI,
+                     mtRotate, m_pNode->GetWidgetAcc()->IsCheckButtonRound());
   RenderCaption(pGS, &mtRotate);
-  DrawHighlight(pGS, &mtRotate, dwStatus, m_pDataAcc->IsCheckButtonRound());
+  DrawHighlight(pGS, &mtRotate, dwStatus,
+                m_pNode->GetWidgetAcc()->IsCheckButtonRound());
   CFX_Matrix mt(1, 0, 0, 1, m_rtCheckBox.left, m_rtCheckBox.top);
   mt.Concat(mtRotate);
   GetApp()->GetFWLWidgetMgr()->OnDrawWidget(m_pNormalWidget.get(), pGS, mt);
@@ -266,13 +269,13 @@ XFA_CHECKSTATE CXFA_FFCheckButton::FWLState2XFAState() {
 
 bool CXFA_FFCheckButton::CommitData() {
   XFA_CHECKSTATE eCheckState = FWLState2XFAState();
-  m_pDataAcc->SetCheckState(eCheckState, true);
+  m_pNode->GetWidgetAcc()->SetCheckState(eCheckState, true);
   return true;
 }
 
 bool CXFA_FFCheckButton::IsDataChanged() {
   XFA_CHECKSTATE eCheckState = FWLState2XFAState();
-  return m_pDataAcc->GetCheckState() != eCheckState;
+  return m_pNode->GetWidgetAcc()->GetCheckState() != eCheckState;
 }
 
 void CXFA_FFCheckButton::SetFWLCheckState(XFA_CHECKSTATE eCheckState) {
@@ -288,7 +291,7 @@ bool CXFA_FFCheckButton::UpdateFWLData() {
   if (!m_pNormalWidget)
     return false;
 
-  XFA_CHECKSTATE eState = m_pDataAcc->GetCheckState();
+  XFA_CHECKSTATE eState = m_pNode->GetWidgetAcc()->GetCheckState();
   SetFWLCheckState(eState);
   m_pNormalWidget->Update();
   return true;
@@ -304,27 +307,29 @@ void CXFA_FFCheckButton::OnProcessEvent(CFWL_Event* pEvent) {
     case CFWL_Event::Type::CheckStateChanged: {
       CXFA_EventParam eParam;
       eParam.m_eType = XFA_EVENT_Change;
-      eParam.m_wsNewText = m_pDataAcc->GetValue(XFA_VALUEPICTURE_Raw);
+      eParam.m_wsNewText =
+          m_pNode->GetWidgetAcc()->GetValue(XFA_VALUEPICTURE_Raw);
 
-      CXFA_WidgetAcc* pFFExclGroup = m_pDataAcc->GetExclGroup();
+      CXFA_Node* exclNode = m_pNode->GetExclGroupIfExists();
       if (ProcessCommittedData()) {
-        eParam.m_pTarget = pFFExclGroup;
-        if (pFFExclGroup) {
-          m_pDocView->AddValidateWidget(pFFExclGroup);
-          m_pDocView->AddCalculateWidgetAcc(pFFExclGroup);
-          pFFExclGroup->ProcessEvent(XFA_AttributeEnum::Change, &eParam);
+        eParam.m_pTarget = exclNode ? exclNode->GetWidgetAcc() : nullptr;
+        if (exclNode) {
+          m_pDocView->AddValidateWidget(exclNode->GetWidgetAcc());
+          m_pDocView->AddCalculateWidgetAcc(exclNode->GetWidgetAcc());
+          exclNode->ProcessEvent(GetDocView(), XFA_AttributeEnum::Change,
+                                 &eParam);
         }
-        eParam.m_pTarget = m_pDataAcc.Get();
-        m_pDataAcc->ProcessEvent(XFA_AttributeEnum::Change, &eParam);
+        eParam.m_pTarget = m_pNode->GetWidgetAcc();
+        m_pNode->ProcessEvent(GetDocView(), XFA_AttributeEnum::Change, &eParam);
       } else {
-        SetFWLCheckState(m_pDataAcc->GetCheckState());
+        SetFWLCheckState(m_pNode->GetWidgetAcc()->GetCheckState());
       }
-      if (pFFExclGroup) {
-        eParam.m_pTarget = pFFExclGroup;
-        pFFExclGroup->ProcessEvent(XFA_AttributeEnum::Click, &eParam);
+      if (exclNode) {
+        eParam.m_pTarget = exclNode->GetWidgetAcc();
+        exclNode->ProcessEvent(GetDocView(), XFA_AttributeEnum::Click, &eParam);
       }
-      eParam.m_pTarget = m_pDataAcc.Get();
-      m_pDataAcc->ProcessEvent(XFA_AttributeEnum::Click, &eParam);
+      eParam.m_pTarget = m_pNode->GetWidgetAcc();
+      m_pNode->ProcessEvent(GetDocView(), XFA_AttributeEnum::Click, &eParam);
       break;
     }
     default:
@@ -336,4 +341,8 @@ void CXFA_FFCheckButton::OnProcessEvent(CFWL_Event* pEvent) {
 void CXFA_FFCheckButton::OnDrawWidget(CXFA_Graphics* pGraphics,
                                       const CFX_Matrix& matrix) {
   m_pOldDelegate->OnDrawWidget(pGraphics, matrix);
+}
+
+FormFieldType CXFA_FFCheckButton::GetFormFieldType() {
+  return FormFieldType::kXFA_CheckBox;
 }

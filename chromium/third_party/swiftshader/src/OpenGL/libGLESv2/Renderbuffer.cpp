@@ -41,32 +41,32 @@ void RenderbufferInterface::releaseProxy(const Renderbuffer *proxy)
 
 GLuint RenderbufferInterface::getRedSize() const
 {
-	return sw2es::GetRedSize(getInternalFormat());
+	return GetRedSize(getFormat());
 }
 
 GLuint RenderbufferInterface::getGreenSize() const
 {
-	return sw2es::GetGreenSize(getInternalFormat());
+	return GetGreenSize(getFormat());
 }
 
 GLuint RenderbufferInterface::getBlueSize() const
 {
-	return sw2es::GetBlueSize(getInternalFormat());
+	return GetBlueSize(getFormat());
 }
 
 GLuint RenderbufferInterface::getAlphaSize() const
 {
-	return sw2es::GetAlphaSize(getInternalFormat());
+	return GetAlphaSize(getFormat());
 }
 
 GLuint RenderbufferInterface::getDepthSize() const
 {
-	return sw2es::GetDepthSize(getInternalFormat());
+	return GetDepthSize(getFormat());
 }
 
 GLuint RenderbufferInterface::getStencilSize() const
 {
-	return sw2es::GetStencilSize(getInternalFormat());
+	return GetStencilSize(getFormat());
 }
 
 ///// RenderbufferTexture2D Implementation ////////
@@ -122,30 +122,21 @@ GLsizei RenderbufferTexture2D::getHeight() const
 	return mTexture2D->getHeight(GL_TEXTURE_2D, mLevel);
 }
 
-GLenum RenderbufferTexture2D::getFormat() const
+GLint RenderbufferTexture2D::getFormat() const
 {
 	return mTexture2D->getFormat(GL_TEXTURE_2D, mLevel);
 }
 
-sw::Format RenderbufferTexture2D::getInternalFormat() const
-{
-	return mTexture2D->getInternalFormat(GL_TEXTURE_2D, mLevel);
-}
-
 GLsizei RenderbufferTexture2D::getSamples() const
 {
-	return 0;
+	return 0;   // Core OpenGL ES 3.0 does not support multisample textures.
 }
 
 ///// RenderbufferTexture3D Implementation ////////
 
-RenderbufferTexture3D::RenderbufferTexture3D(Texture3D *texture, GLint level, GLint layer) : mLevel(level), mLayer(layer)
+RenderbufferTexture3D::RenderbufferTexture3D(Texture3D *texture, GLint level) : mLevel(level)
 {
 	mTexture3D = texture;
-	if(mLayer != 0)
-	{
-		UNIMPLEMENTED();
-	}
 }
 
 RenderbufferTexture3D::~RenderbufferTexture3D()
@@ -199,19 +190,14 @@ GLsizei RenderbufferTexture3D::getDepth() const
 	return mTexture3D->getDepth(mTexture3D->getTarget(), mLevel);
 }
 
-GLenum RenderbufferTexture3D::getFormat() const
+GLint RenderbufferTexture3D::getFormat() const
 {
 	return mTexture3D->getFormat(mTexture3D->getTarget(), mLevel);
 }
 
-sw::Format RenderbufferTexture3D::getInternalFormat() const
-{
-	return mTexture3D->getInternalFormat(mTexture3D->getTarget(), mLevel);
-}
-
 GLsizei RenderbufferTexture3D::getSamples() const
 {
-	return 0;
+	return 0;   // Core OpenGL ES 3.0 does not support multisample textures.
 }
 
 ///// RenderbufferTextureCubeMap Implementation ////////
@@ -267,19 +253,14 @@ GLsizei RenderbufferTextureCubeMap::getHeight() const
 	return mTextureCubeMap->getHeight(mTarget, mLevel);
 }
 
-GLenum RenderbufferTextureCubeMap::getFormat() const
+GLint RenderbufferTextureCubeMap::getFormat() const
 {
 	return mTextureCubeMap->getFormat(mTarget, mLevel);
 }
 
-sw::Format RenderbufferTextureCubeMap::getInternalFormat() const
-{
-	return mTextureCubeMap->getInternalFormat(mTarget, mLevel);
-}
-
 GLsizei RenderbufferTextureCubeMap::getSamples() const
 {
-	return 0;
+	return 0;   // Core OpenGL ES 3.0 does not support multisample textures.
 }
 
 ////// Renderbuffer Implementation //////
@@ -345,24 +326,14 @@ GLsizei Renderbuffer::getDepth() const
 	return mInstance->getDepth();
 }
 
-GLint Renderbuffer::getLayer() const
-{
-	return mInstance->getLayer();
-}
-
 GLint Renderbuffer::getLevel() const
 {
 	return mInstance->getLevel();
 }
 
-GLenum Renderbuffer::getFormat() const
+GLint Renderbuffer::getFormat() const
 {
 	return mInstance->getFormat();
-}
-
-sw::Format Renderbuffer::getInternalFormat() const
-{
-	return mInstance->getInternalFormat();
 }
 
 GLuint Renderbuffer::getRedSize() const
@@ -400,11 +371,6 @@ GLsizei Renderbuffer::getSamples() const
 	return mInstance->getSamples();
 }
 
-void Renderbuffer::setLayer(GLint layer)
-{
-	return mInstance->setLayer(layer);
-}
-
 void Renderbuffer::setLevel(GLint level)
 {
 	return mInstance->setLevel(level);
@@ -422,8 +388,7 @@ RenderbufferStorage::RenderbufferStorage()
 {
 	mWidth = 0;
 	mHeight = 0;
-	format = GL_RGBA4;
-	internalFormat = sw::FORMAT_NULL;
+	format = GL_NONE;
 	mSamples = 0;
 }
 
@@ -441,14 +406,9 @@ GLsizei RenderbufferStorage::getHeight() const
 	return mHeight;
 }
 
-GLenum RenderbufferStorage::getFormat() const
+GLint RenderbufferStorage::getFormat() const
 {
 	return format;
-}
-
-sw::Format RenderbufferStorage::getInternalFormat() const
-{
-	return internalFormat;
 }
 
 GLsizei RenderbufferStorage::getSamples() const
@@ -462,24 +422,25 @@ Colorbuffer::Colorbuffer(egl::Image *renderTarget) : mRenderTarget(renderTarget)
 	{
 		renderTarget->addRef();
 
+		sw::Format implementationFormat = renderTarget->getInternalFormat();
+		format = sw2es::ConvertBackBufferFormat(implementationFormat);
+
 		mWidth = renderTarget->getWidth();
 		mHeight = renderTarget->getHeight();
-		internalFormat = renderTarget->getInternalFormat();
-		format = sw2es::ConvertBackBufferFormat(internalFormat);
 		mSamples = renderTarget->getDepth() & ~1;
 	}
 }
 
-Colorbuffer::Colorbuffer(int width, int height, GLenum format, GLsizei samples) : mRenderTarget(nullptr)
+Colorbuffer::Colorbuffer(int width, int height, GLenum internalformat, GLsizei samples) : mRenderTarget(nullptr)
 {
 	Device *device = getDevice();
 
-	sw::Format requestedFormat = es2sw::ConvertRenderbufferFormat(format);
+	sw::Format implementationFormat = es2sw::ConvertRenderbufferFormat(internalformat);
 	int supportedSamples = Context::getSupportedMultisampleCount(samples);
 
 	if(width > 0 && height > 0)
 	{
-		mRenderTarget = device->createRenderTarget(width, height, requestedFormat, supportedSamples, false);
+		mRenderTarget = device->createRenderTarget(width, height, implementationFormat, supportedSamples, false);
 
 		if(!mRenderTarget)
 		{
@@ -490,8 +451,7 @@ Colorbuffer::Colorbuffer(int width, int height, GLenum format, GLsizei samples) 
 
 	mWidth = width;
 	mHeight = height;
-	this->format = format;
-	internalFormat = requestedFormat;
+	format = internalformat;
 	mSamples = supportedSamples;
 }
 
@@ -539,40 +499,32 @@ DepthStencilbuffer::DepthStencilbuffer(egl::Image *depthStencil) : mDepthStencil
 	{
 		depthStencil->addRef();
 
+		sw::Format implementationFormat = depthStencil->getInternalFormat();
+		format = sw2es::ConvertDepthStencilFormat(implementationFormat);
+
 		mWidth = depthStencil->getWidth();
 		mHeight = depthStencil->getHeight();
-		internalFormat = depthStencil->getInternalFormat();
-		format = sw2es::ConvertDepthStencilFormat(internalFormat);
 		mSamples = depthStencil->getDepth() & ~1;
 	}
 }
 
-DepthStencilbuffer::DepthStencilbuffer(int width, int height, GLenum requestedFormat, GLsizei samples) : mDepthStencil(nullptr)
+DepthStencilbuffer::DepthStencilbuffer(int width, int height, GLenum internalformat, GLsizei samples) : mDepthStencil(nullptr)
 {
-	format = requestedFormat;
-	switch(requestedFormat)
+	format = internalformat;
+	sw::Format implementationFormat = sw::FORMAT_D24S8;
+	switch(internalformat)
 	{
-	case GL_STENCIL_INDEX8:
-	case GL_DEPTH_COMPONENT24:
-	case GL_DEPTH24_STENCIL8_OES:
-		internalFormat = sw::FORMAT_D24S8;
-		break;
-	case GL_DEPTH32F_STENCIL8:
-		internalFormat = sw::FORMAT_D32FS8_TEXTURE;
-		break;
-	case GL_DEPTH_COMPONENT16:
-		internalFormat = sw::FORMAT_D16;
-		break;
-	case GL_DEPTH_COMPONENT32_OES:
-		internalFormat = sw::FORMAT_D32;
-		break;
-	case GL_DEPTH_COMPONENT32F:
-		internalFormat = sw::FORMAT_D32F;
-		break;
+	case GL_STENCIL_INDEX8:        implementationFormat = sw::FORMAT_S8;     break;
+	case GL_DEPTH_COMPONENT24:     implementationFormat = sw::FORMAT_D24X8;  break;
+	case GL_DEPTH24_STENCIL8_OES:  implementationFormat = sw::FORMAT_D24S8;  break;
+	case GL_DEPTH32F_STENCIL8:     implementationFormat = sw::FORMAT_D32FS8; break;
+	case GL_DEPTH_COMPONENT16:     implementationFormat = sw::FORMAT_D16;    break;
+	case GL_DEPTH_COMPONENT32_OES: implementationFormat = sw::FORMAT_D32;    break;
+	case GL_DEPTH_COMPONENT32F:    implementationFormat = sw::FORMAT_D32F;   break;
 	default:
-		UNREACHABLE(requestedFormat);
+		UNREACHABLE(internalformat);
 		format = GL_DEPTH24_STENCIL8_OES;
-		internalFormat = sw::FORMAT_D24S8;
+		implementationFormat = sw::FORMAT_D24S8;
 	}
 
 	Device *device = getDevice();
@@ -581,7 +533,7 @@ DepthStencilbuffer::DepthStencilbuffer(int width, int height, GLenum requestedFo
 
 	if(width > 0 && height > 0)
 	{
-		mDepthStencil = device->createDepthStencilSurface(width, height, internalFormat, supportedSamples, false);
+		mDepthStencil = device->createDepthStencilSurface(width, height, implementationFormat, supportedSamples, false);
 
 		if(!mDepthStencil)
 		{
@@ -637,7 +589,7 @@ Depthbuffer::Depthbuffer(egl::Image *depthStencil) : DepthStencilbuffer(depthSte
 {
 }
 
-Depthbuffer::Depthbuffer(int width, int height, GLenum format, GLsizei samples) : DepthStencilbuffer(width, height, format, samples)
+Depthbuffer::Depthbuffer(int width, int height, GLenum internalformat, GLsizei samples) : DepthStencilbuffer(width, height, internalformat, samples)
 {
 }
 

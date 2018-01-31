@@ -111,6 +111,11 @@ public:
     bool initDescForDstCopy(const GrRenderTargetProxy* src, GrSurfaceDesc* desc,
                             bool* rectsMustMatch, bool* disallowSubrect) const override;
 
+    bool validateBackendTexture(const GrBackendTexture&, SkColorType,
+                                GrPixelConfig*) const override;
+    bool validateBackendRenderTarget(const GrBackendRenderTarget&, SkColorType,
+                                     GrPixelConfig*) const override;
+
 private:
     enum VkVendor {
         kAMD_VkVendor = 4098,

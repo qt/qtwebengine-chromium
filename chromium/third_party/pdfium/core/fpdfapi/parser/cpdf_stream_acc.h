@@ -23,14 +23,12 @@ class CPDF_StreamAcc : public Retainable {
   CPDF_StreamAcc(const CPDF_StreamAcc&) = delete;
   CPDF_StreamAcc& operator=(const CPDF_StreamAcc&) = delete;
 
-  void LoadAllData(bool bRawAccess = false,
-                   uint32_t estimated_size = 0,
-                   bool bImageAcc = false);
+  void LoadAllData(bool bRawAccess, uint32_t estimated_size, bool bImageAcc);
+  void LoadAllDataFiltered();
+  void LoadAllDataRaw();
 
   const CPDF_Stream* GetStream() const { return m_pStream.Get(); }
-  CPDF_Dictionary* GetDict() const {
-    return m_pStream ? m_pStream->GetDict() : nullptr;
-  }
+  CPDF_Dictionary* GetDict() const;
 
   const uint8_t* GetData() const;
   uint8_t* GetData();
@@ -46,13 +44,13 @@ class CPDF_StreamAcc : public Retainable {
  private:
   uint8_t* GetDataHelper() const;
 
-  uint8_t* m_pData;
-  uint32_t m_dwSize;
-  bool m_bNewBuf;
+  uint8_t* m_pData = nullptr;
+  uint32_t m_dwSize = 0;
+  bool m_bNewBuf = false;
   ByteString m_ImageDecoder;
-  CPDF_Dictionary* m_pImageParam;
+  CPDF_Dictionary* m_pImageParam = nullptr;
   UnownedPtr<const CPDF_Stream> const m_pStream;
-  uint8_t* m_pSrcData;
+  uint8_t* m_pSrcData = nullptr;
 };
 
 #endif  // CORE_FPDFAPI_PARSER_CPDF_STREAM_ACC_H_

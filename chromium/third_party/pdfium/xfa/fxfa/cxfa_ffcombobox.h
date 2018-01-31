@@ -11,7 +11,7 @@
 
 class CXFA_FFComboBox : public CXFA_FFField {
  public:
-  explicit CXFA_FFComboBox(CXFA_WidgetAcc* pDataAcc);
+  explicit CXFA_FFComboBox(CXFA_Node* pNode);
   ~CXFA_FFComboBox() override;
 
   // CXFA_FFField
@@ -29,12 +29,13 @@ class CXFA_FFComboBox : public CXFA_FFField {
   bool CanCut() override;
   bool CanPaste() override;
   bool CanSelectAll() override;
-  bool Copy(WideString& wsCopy) override;
-  bool Cut(WideString& wsCut) override;
+  Optional<WideString> Copy() override;
+  Optional<WideString> Cut() override;
   bool Paste(const WideString& wsPaste) override;
   void SelectAll() override;
   void Delete() override;
   void DeSelect() override;
+  FormFieldType GetFormFieldType() override;
 
   // IFWL_WidgetDelegate
   void OnProcessMessage(CFWL_Message* pMessage) override;

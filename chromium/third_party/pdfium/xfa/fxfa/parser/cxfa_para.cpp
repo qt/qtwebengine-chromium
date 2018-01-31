@@ -6,6 +6,10 @@
 
 #include "xfa/fxfa/parser/cxfa_para.h"
 
+#include "fxjs/xfa/cjx_para.h"
+#include "third_party/base/ptr_util.h"
+#include "xfa/fxfa/parser/cxfa_measurement.h"
+
 namespace {
 
 const CXFA_Node::PropertyData kPropertyData[] = {
@@ -45,6 +49,45 @@ CXFA_Para::CXFA_Para(CXFA_Document* doc, XFA_PacketType packet)
                 XFA_Element::Para,
                 kPropertyData,
                 kAttributeData,
-                kName) {}
+                kName,
+                pdfium::MakeUnique<CJX_Para>(this)) {}
 
 CXFA_Para::~CXFA_Para() {}
+
+XFA_AttributeEnum CXFA_Para::GetHorizontalAlign() {
+  return JSObject()
+      ->TryEnum(XFA_Attribute::HAlign, true)
+      .value_or(XFA_AttributeEnum::Left);
+}
+
+XFA_AttributeEnum CXFA_Para::GetVerticalAlign() {
+  return JSObject()
+      ->TryEnum(XFA_Attribute::VAlign, true)
+      .value_or(XFA_AttributeEnum::Top);
+}
+
+float CXFA_Para::GetLineHeight() {
+  return JSObject()->GetMeasure(XFA_Attribute::LineHeight).ToUnit(XFA_Unit::Pt);
+}
+
+float CXFA_Para::GetMarginLeft() {
+  return JSObject()->GetMeasure(XFA_Attribute::MarginLeft).ToUnit(XFA_Unit::Pt);
+}
+
+float CXFA_Para::GetMarginRight() {
+  return JSObject()
+      ->GetMeasure(XFA_Attribute::MarginRight)
+      .ToUnit(XFA_Unit::Pt);
+}
+
+float CXFA_Para::GetSpaceAbove() {
+  return JSObject()->GetMeasure(XFA_Attribute::SpaceAbove).ToUnit(XFA_Unit::Pt);
+}
+
+float CXFA_Para::GetSpaceBelow() {
+  return JSObject()->GetMeasure(XFA_Attribute::SpaceBelow).ToUnit(XFA_Unit::Pt);
+}
+
+float CXFA_Para::GetTextIndent() {
+  return JSObject()->GetMeasure(XFA_Attribute::TextIndent).ToUnit(XFA_Unit::Pt);
+}

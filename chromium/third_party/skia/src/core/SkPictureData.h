@@ -16,8 +16,8 @@
 
 class SkData;
 class SkPictureRecord;
-class SkPixelSerializer;
 class SkReader32;
+struct SkSerialProcs;
 class SkStream;
 class SkWStream;
 class SkBBoxHierarchy;
@@ -28,12 +28,6 @@ class SkReadBuffer;
 class SkTextBlob;
 
 struct SkPictInfo {
-    enum Flags {
-        kCrossProcess_Flag      = 1 << 0,
-        kScalarIsFloat_Flag     = 1 << 1,
-        kPtrIs64Bit_Flag        = 1 << 2,
-    };
-
     SkPictInfo() : fVersion(~0U) {}
 
     uint32_t getVersion() const {
@@ -52,7 +46,6 @@ private:
     uint32_t    fVersion;
 public:
     SkRect      fCullRect;
-    uint32_t    fFlags;
 };
 
 #define SK_PICT_READER_TAG     SkSetFourByteTag('r', 'e', 'a', 'd')
@@ -79,16 +72,14 @@ public:
     // Does not affect ownership of SkStream.
     static SkPictureData* CreateFromStream(SkStream*,
                                            const SkPictInfo&,
-                                           SkImageDeserializer*,
+                                           const SkDeserialProcs&,
                                            SkTypefacePlayback*);
     static SkPictureData* CreateFromBuffer(SkReadBuffer&, const SkPictInfo&);
 
     virtual ~SkPictureData();
 
-    void serialize(SkWStream*, SkPixelSerializer*, SkRefCntSet*) const;
+    void serialize(SkWStream*, const SkSerialProcs&, SkRefCntSet*) const;
     void flatten(SkWriteBuffer&) const;
-
-    bool containsBitmaps() const;
 
     bool hasText() const { return fContentInfo.hasText(); }
 
@@ -100,7 +91,7 @@ protected:
     explicit SkPictureData(const SkPictInfo& info);
 
     // Does not affect ownership of SkStream.
-    bool parseStream(SkStream*, SkImageDeserializer*, SkTypefacePlayback*);
+    bool parseStream(SkStream*, const SkDeserialProcs&, SkTypefacePlayback*);
     bool parseBuffer(SkReadBuffer& buffer);
 
 public:
@@ -172,7 +163,7 @@ private:
     // these help us with reading/writing
     // Does not affect ownership of SkStream.
     bool parseStreamTag(SkStream*, uint32_t tag, uint32_t size,
-                        SkImageDeserializer*, SkTypefacePlayback*);
+                        const SkDeserialProcs&, SkTypefacePlayback*);
     bool parseBufferTag(SkReadBuffer&, uint32_t tag, uint32_t size);
     void flattenToBuffer(SkWriteBuffer&) const;
 

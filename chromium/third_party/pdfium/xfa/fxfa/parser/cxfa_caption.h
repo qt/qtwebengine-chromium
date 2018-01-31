@@ -9,10 +9,25 @@
 
 #include "xfa/fxfa/parser/cxfa_node.h"
 
+class CXFA_Font;
+class CXFA_Margin;
+class CXFA_Value;
+
 class CXFA_Caption : public CXFA_Node {
  public:
+  static constexpr XFA_AttributeEnum kDefaultPlacementType =
+      XFA_AttributeEnum::Left;
+
   CXFA_Caption(CXFA_Document* doc, XFA_PacketType packet);
   ~CXFA_Caption() override;
+
+  bool IsVisible();
+  bool IsHidden();
+  XFA_AttributeEnum GetPlacementType();
+  float GetReserve() const;
+  CXFA_Margin* GetMarginIfExists();
+  CXFA_Font* GetFontIfExists();
+  CXFA_Value* GetValueIfExists();
 };
 
 #endif  // XFA_FXFA_PARSER_CXFA_CAPTION_H_

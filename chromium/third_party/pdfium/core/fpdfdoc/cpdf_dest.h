@@ -22,11 +22,15 @@ class CPDF_Dest {
   ~CPDF_Dest();
 
   CPDF_Object* GetObject() const { return m_pObj.Get(); }
-  ByteString GetRemoteName();
-  int GetPageIndex(CPDF_Document* pDoc);
-  uint32_t GetPageObjNum();
-  int GetZoomMode();
-  float GetParam(int index);
+  ByteString GetRemoteName() const;
+  int GetPageIndex(CPDF_Document* pDoc) const;
+  uint32_t GetPageObjNum() const;
+
+  // Returns the zoom mode, as one of the PDFDEST_VIEW_* values in fpdf_doc.h.
+  int GetZoomMode() const;
+
+  unsigned long GetNumParams() const;
+  float GetParam(int index) const;
 
   bool GetXYZ(bool* pHasX,
               bool* pHasY,

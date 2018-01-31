@@ -9,16 +9,20 @@
 
 #include <vector>
 
+#include "core/fpdfdoc/cpdf_formfield.h"
 #include "core/fxcodec/fx_codec_def.h"
 #include "core/fxge/cfx_graphstatedata.h"
 #include "xfa/fwl/cfwl_app.h"
 #include "xfa/fxfa/fxfa.h"
 #include "xfa/fxfa/parser/cxfa_contentlayoutitem.h"
 
+class CXFA_Box;
 class CXFA_FFPageView;
 class CXFA_FFDocView;
 class CXFA_FFDoc;
 class CXFA_FFApp;
+class CXFA_Graphics;
+class CXFA_Image;
 enum class FWL_WidgetHit;
 
 inline float XFA_UnitPx2Pt(float fPx, float fDpi) {
@@ -27,16 +31,6 @@ inline float XFA_UnitPx2Pt(float fPx, float fDpi) {
 
 #define XFA_FLOAT_PERCISION 0.001f
 
-enum XFA_WIDGETITEM {
-  XFA_WIDGETITEM_Parent,
-  XFA_WIDGETITEM_FirstChild,
-  XFA_WIDGETITEM_NextSibling,
-  XFA_WIDGETITEM_PrevSibling,
-};
-
-int32_t XFA_StrokeTypeSetLineDash(CXFA_Graphics* pGraphics,
-                                  XFA_AttributeEnum iStrokeType,
-                                  XFA_AttributeEnum iCapType);
 void XFA_DrawImage(CXFA_Graphics* pGS,
                    const CFX_RectF& rtImage,
                    const CFX_Matrix& matrix,
@@ -47,41 +41,29 @@ void XFA_DrawImage(CXFA_Graphics* pGS,
                    XFA_AttributeEnum iHorzAlign = XFA_AttributeEnum::Left,
                    XFA_AttributeEnum iVertAlign = XFA_AttributeEnum::Top);
 
-RetainPtr<CFX_DIBitmap> XFA_LoadImageData(CXFA_FFDoc* pDoc,
-                                          CXFA_ImageData* pImageData,
-                                          bool& bNameImage,
-                                          int32_t& iImageXDpi,
-                                          int32_t& iImageYDpi);
-
 RetainPtr<CFX_DIBitmap> XFA_LoadImageFromBuffer(
     const RetainPtr<IFX_SeekableReadStream>& pImageFileRead,
     FXCODEC_IMAGE_TYPE type,
     int32_t& iImageXDpi,
     int32_t& iImageYDpi);
 
-FXCODEC_IMAGE_TYPE XFA_GetImageType(const WideString& wsType);
-char* XFA_Base64Encode(const uint8_t* buf, int32_t buf_len);
-void XFA_RectWidthoutMargin(CFX_RectF& rt,
-                            const CXFA_MarginData& marginData,
-                            bool bUI = false);
+void XFA_RectWithoutMargin(CFX_RectF& rt,
+                           const CXFA_Margin* margin,
+                           bool bUI = false);
 CXFA_FFWidget* XFA_GetWidgetFromLayoutItem(CXFA_LayoutItem* pLayoutItem);
-bool XFA_IsCreateWidget(XFA_Element iType);
-
-#define XFA_DRAWBOX_ForceRound 1
-#define XFA_DRAWBOX_Lowered3D 2
 
 class CXFA_CalcData {
  public:
   CXFA_CalcData();
   ~CXFA_CalcData();
 
-  std::vector<CXFA_WidgetAcc*> m_Globals;
+  std::vector<CXFA_Node*> m_Globals;
   int32_t m_iRefCount;
 };
 
 class CXFA_FFWidget : public CXFA_ContentLayoutItem {
  public:
-  explicit CXFA_FFWidget(CXFA_WidgetAcc* pDataAcc);
+  explicit CXFA_FFWidget(CXFA_Node* pNode);
   ~CXFA_FFWidget() override;
 
   virtual CFX_RectF GetBBox(uint32_t dwStatus, bool bDrawFocus = false);
@@ -124,12 +106,14 @@ class CXFA_FFWidget : public CXFA_ContentLayoutItem {
   virtual bool CanSelectAll();
   virtual bool CanDelete();
   virtual bool CanDeSelect();
-  virtual bool Copy(WideString& wsCopy);
-  virtual bool Cut(WideString& wsCut);
+  virtual Optional<WideString> Copy();
+  virtual Optional<WideString> Cut();
   virtual bool Paste(const WideString& wsPaste);
   virtual void SelectAll();
   virtual void Delete();
   virtual void DeSelect();
+
+  virtual FormFieldType GetFormFieldType();
 
   // TODO(tsepez): Implement or remove.
   void GetSuggestWords(CFX_PointF pointf, std::vector<ByteString>* pWords);
@@ -143,7 +127,7 @@ class CXFA_FFWidget : public CXFA_ContentLayoutItem {
   uint32_t GetStatus();
   void ModifyStatus(uint32_t dwAdded, uint32_t dwRemoved);
 
-  CXFA_WidgetAcc* GetDataAcc();
+  CXFA_Node* GetNode() { return m_pNode.Get(); }
 
   CXFA_FFDocView* GetDocView();
   void SetDocView(CXFA_FFDocView* pDocView);
@@ -163,14 +147,14 @@ class CXFA_FFWidget : public CXFA_ContentLayoutItem {
   virtual bool PtInActiveRect(const CFX_PointF& point);
 
   void DrawBorder(CXFA_Graphics* pGS,
-                  const CXFA_BoxData& boxData,
+                  CXFA_Box* box,
                   const CFX_RectF& rtBorder,
                   const CFX_Matrix& matrix);
-  void DrawBorderWithFlags(CXFA_Graphics* pGS,
-                           const CXFA_BoxData& boxData,
-                           const CFX_RectF& rtBorder,
-                           const CFX_Matrix& matrix,
-                           uint32_t dwFlags);
+  void DrawBorderWithFlag(CXFA_Graphics* pGS,
+                          CXFA_Box* box,
+                          const CFX_RectF& rtBorder,
+                          const CFX_Matrix& matrix,
+                          bool forceRound);
 
   CFX_RectF GetRectWithoutRotate();
   bool IsMatchVisibleStatus(uint32_t dwStatus);
@@ -178,9 +162,9 @@ class CXFA_FFWidget : public CXFA_ContentLayoutItem {
   bool IsButtonDown();
   void SetButtonDown(bool bSet);
 
-  CXFA_FFDocView* m_pDocView;
-  CXFA_FFPageView* m_pPageView;
-  UnownedPtr<CXFA_WidgetAcc> const m_pDataAcc;
+  CXFA_FFDocView* m_pDocView = nullptr;
+  CXFA_FFPageView* m_pPageView = nullptr;
+  UnownedPtr<CXFA_Node> const m_pNode;
   mutable CFX_RectF m_rtWidget;
 };
 

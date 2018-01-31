@@ -97,7 +97,7 @@ class Renderer9 : public RendererD3D
                                  IUnknown *d3dTexture,
                                  EGLint *width,
                                  EGLint *height,
-                                 GLenum *fboFormat) const override;
+                                 const angle::Format **angleFormat) const override;
     egl::Error validateShareHandle(const egl::Config *config,
                                    HANDLE shareHandle,
                                    const egl::AttributeMap &attribs) const override;
@@ -120,12 +120,12 @@ class Renderer9 : public RendererD3D
                               D3DFORMAT Format,
                               IDirect3DIndexBuffer9 **ppIndexBuffer);
     gl::Error setSamplerState(const gl::Context *context,
-                              gl::SamplerType type,
+                              gl::ShaderType type,
                               int index,
                               gl::Texture *texture,
                               const gl::SamplerState &sampler);
     gl::Error setTexture(const gl::Context *context,
-                         gl::SamplerType type,
+                         gl::ShaderType type,
                          int index,
                          gl::Texture *texture);
 
@@ -318,9 +318,8 @@ class Renderer9 : public RendererD3D
     IndexBuffer *createIndexBuffer() override;
 
     // Stream Creation
-    StreamProducerImpl *createStreamProducerD3DTextureNV12(
-        egl::Stream::ConsumerType consumerType,
-        const egl::AttributeMap &attribs) override;
+    StreamProducerImpl *createStreamProducerD3DTexture(egl::Stream::ConsumerType consumerType,
+                                                       const egl::AttributeMap &attribs) override;
 
     // Buffer-to-texture and Texture-to-buffer copies
     bool supportsFastCopyBufferToTexture(GLenum internalFormat) const override;
@@ -357,7 +356,7 @@ class Renderer9 : public RendererD3D
 
     D3DDEVTYPE getD3D9DeviceType() const { return mDeviceType; }
 
-    egl::Error getEGLDevice(DeviceImpl **device) override;
+    DeviceImpl *createEGLDevice() override;
 
     StateManager9 *getStateManager() { return &mStateManager; }
 
@@ -404,7 +403,7 @@ class Renderer9 : public RendererD3D
     gl::Error applyShaders(const gl::Context *context, GLenum drawMode);
 
     gl::Error applyTextures(const gl::Context *context);
-    gl::Error applyTextures(const gl::Context *context, gl::SamplerType shaderType);
+    gl::Error applyTextures(const gl::Context *context, gl::ShaderType shaderType);
 
     void generateCaps(gl::Caps *outCaps,
                       gl::TextureCapsMap *outTextureCaps,
@@ -532,7 +531,6 @@ class Renderer9 : public RendererD3D
     } mNullColorbufferCache[NUM_NULL_COLORBUFFER_CACHE_ENTRIES];
     UINT mMaxNullColorbufferLRU;
 
-    DeviceD3D *mEGLDevice;
     std::vector<TranslatedAttribute> mTranslatedAttribCache;
 
     DebugAnnotator9 mAnnotator;

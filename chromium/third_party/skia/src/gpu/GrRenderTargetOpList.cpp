@@ -13,12 +13,10 @@
 #include "GrRect.h"
 #include "GrRenderTargetContext.h"
 #include "GrResourceAllocator.h"
-#include "instanced/InstancedRendering.h"
 #include "ops/GrClearOp.h"
 #include "ops/GrCopySurfaceOp.h"
 #include "SkTraceEvent.h"
 
-using gr_instanced::InstancedRendering;
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -28,12 +26,9 @@ static const int kMaxOpLookahead = 10;
 
 GrRenderTargetOpList::GrRenderTargetOpList(GrRenderTargetProxy* proxy, GrGpu* gpu,
                                            GrAuditTrail* auditTrail)
-        : INHERITED(gpu->getContext()->resourceProvider(), proxy, auditTrail)
+        : INHERITED(gpu->getContext()->contextPriv().resourceProvider(), proxy, auditTrail)
         , fLastClipStackGenID(SK_InvalidUniqueID)
         SkDEBUGCODE(, fNumClips(0)) {
-    if (GrCaps::InstancedSupport::kNone != gpu->caps()->instancedSupport()) {
-        fInstancedRendering.reset(gpu->createInstancedRendering());
-    }
 }
 
 GrRenderTargetOpList::~GrRenderTargetOpList() {
@@ -58,6 +53,12 @@ void GrRenderTargetOpList::dump() const {
             SkDebugf("ClippedBounds: [L: %.2f, T: %.2f, R: %.2f, B: %.2f]\n", bounds.fLeft,
                      bounds.fTop, bounds.fRight, bounds.fBottom);
         }
+    }
+}
+
+void GrRenderTargetOpList::visitProxies_debugOnly(const GrOp::VisitProxyFunc& func) const {
+    for (const RecordedOp& recordedOp : fRecordedOps) {
+        recordedOp.visitProxies(func);
     }
 }
 #endif
@@ -86,10 +87,6 @@ void GrRenderTargetOpList::onPrepare(GrOpFlushState* flushState) {
             fRecordedOps[i].fOp->prepare(flushState);
             flushState->setOpArgs(nullptr);
         }
-    }
-
-    if (fInstancedRendering) {
-        fInstancedRendering->beginFlush(flushState->resourceProvider());
     }
 }
 
@@ -186,24 +183,7 @@ void GrRenderTargetOpList::endFlush() {
     fLastClipStackGenID = SK_InvalidUniqueID;
     fRecordedOps.reset();
     fClipAllocator.reset();
-    if (fInstancedRendering) {
-        fInstancedRendering->endFlush();
-        fInstancedRendering = nullptr;
-    }
-
     INHERITED::endFlush();
-}
-
-void GrRenderTargetOpList::abandonGpuResources() {
-    if (fInstancedRendering) {
-        fInstancedRendering->resetGpuResources(InstancedRendering::ResetType::kAbandon);
-    }
-}
-
-void GrRenderTargetOpList::freeGpuResources() {
-    if (fInstancedRendering) {
-        fInstancedRendering->resetGpuResources(InstancedRendering::ResetType::kDestroy);
-    }
 }
 
 void GrRenderTargetOpList::discard() {
@@ -260,6 +240,16 @@ bool GrRenderTargetOpList::copySurface(const GrCaps& caps,
 void GrRenderTargetOpList::gatherProxyIntervals(GrResourceAllocator* alloc) const {
     unsigned int cur = alloc->numOps();
 
+    for (int i = 0; i < fDeferredProxies.count(); ++i) {
+        SkASSERT(!fDeferredProxies[i]->priv().isInstantiated());
+        // We give all the deferred proxies a write usage at the very start of flushing. This
+        // locks them out of being reused for the entire flush until they are read - and then
+        // they can be recycled. This is a bit unfortunate because a flush can proceed in waves
+        // with sub-flushes. The deferred proxies only need to be pinned from the start of
+        // the sub-flush in which they appear.
+        alloc->addInterval(fDeferredProxies[i], 0, 0);
+    }
+
     // Add the interval for all the writes to this opList's target
     if (fRecordedOps.count()) {
         alloc->addInterval(fTarget.get(), cur, cur+fRecordedOps.count()-1);
@@ -271,14 +261,11 @@ void GrRenderTargetOpList::gatherProxyIntervals(GrResourceAllocator* alloc) cons
         alloc->incOps();
     }
 
-    auto gather = [ alloc ] (GrSurfaceProxy* p) {
-        alloc->addInterval(p);
+    auto gather = [ alloc SkDEBUGCODE(, this) ] (GrSurfaceProxy* p) {
+        alloc->addInterval(p SkDEBUGCODE(, fTarget.get() == p));
     };
-    for (int i = 0; i < fRecordedOps.count(); ++i) {
-        const GrOp* op = fRecordedOps[i].fOp.get(); // only diff from the GrTextureOpList version
-        if (op) {
-            op->visitProxies(gather);
-        }
+    for (const RecordedOp& recordedOp : fRecordedOps) {
+        recordedOp.visitProxies(gather); // only diff from the GrTextureOpList version
 
         // Even though the op may have been moved we still need to increment the op count to
         // keep all the math consistent.

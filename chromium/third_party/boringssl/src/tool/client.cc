@@ -122,7 +122,8 @@ static const struct argument kArguments[] = {
     },
     {
         "-early-data", kOptionalArgument, "Enable early data. The argument to "
-        "this flag is the early data to send.",
+        "this flag is the early data to send or if it starts with '@', the "
+        "file to read from for early data.",
     },
     {
         "-tls13-variant", kOptionalArgument,
@@ -299,8 +300,19 @@ static bool DoConnection(SSL_CTX *ctx,
   }
 
   if (args_map.count("-early-data") != 0 && SSL_in_early_data(ssl.get())) {
-    int ed_size = args_map["-early-data"].size();
-    int ssl_ret = SSL_write(ssl.get(), args_map["-early-data"].data(), ed_size);
+    std::string early_data = args_map["-early-data"];
+    if (early_data.size() > 0 && early_data[0] == '@') {
+      const char *filename = early_data.c_str() + 1;
+      std::vector<uint8_t> data;
+      ScopedFILE f(fopen(filename, "rb"));
+      if (f == nullptr || !ReadAll(&data, f.get())) {
+        fprintf(stderr, "Error reading %s.\n", filename);
+        return false;
+      }
+      early_data = std::string(data.begin(), data.end());
+    }
+    int ed_size = early_data.size();
+    int ssl_ret = SSL_write(ssl.get(), early_data.data(), ed_size);
     if (ssl_ret <= 0) {
       int ssl_err = SSL_get_error(ssl.get(), ssl_ret);
       fprintf(stderr, "Error while writing: %d\n", ssl_err);
@@ -320,28 +332,12 @@ static bool DoConnection(SSL_CTX *ctx,
 }
 
 static bool GetTLS13Variant(tls13_variant_t *out, const std::string &in) {
-  if (in == "draft") {
-    *out = tls13_default;
-    return true;
-  }
-  if (in == "draft21") {
-    *out = tls13_draft21;
-    return true;
-  }
-  if (in == "experiment") {
-    *out = tls13_experiment;
+  if (in == "draft22") {
+    *out = tls13_draft22;
     return true;
   }
   if (in == "experiment2") {
     *out = tls13_experiment2;
-    return true;
-  }
-  if (in == "experiment3") {
-    *out = tls13_experiment3;
-    return true;
-  }
-  if (in == "draft22") {
-    *out = tls13_draft22;
     return true;
   }
   return false;

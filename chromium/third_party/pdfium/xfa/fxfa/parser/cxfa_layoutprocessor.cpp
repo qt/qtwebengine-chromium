@@ -6,6 +6,7 @@
 
 #include "xfa/fxfa/parser/cxfa_layoutprocessor.h"
 
+#include "fxjs/xfa/cjx_object.h"
 #include "third_party/base/ptr_util.h"
 #include "third_party/base/stl_util.h"
 #include "xfa/fxfa/parser/cxfa_contentlayoutitem.h"
@@ -15,6 +16,7 @@
 #include "xfa/fxfa/parser/cxfa_localemgr.h"
 #include "xfa/fxfa/parser/cxfa_measurement.h"
 #include "xfa/fxfa/parser/cxfa_node.h"
+#include "xfa/fxfa/parser/cxfa_subform.h"
 #include "xfa/fxfa/parser/xfa_document_datamerger_imp.h"
 #include "xfa/fxfa/parser/xfa_utils.h"
 
@@ -38,8 +40,8 @@ int32_t CXFA_LayoutProcessor::StartLayout(bool bForceRestart) {
   if (!pFormPacketNode)
     return -1;
 
-  CXFA_Node* pFormRoot =
-      pFormPacketNode->GetFirstChildByClass(XFA_Element::Subform);
+  CXFA_Subform* pFormRoot =
+      pFormPacketNode->GetFirstChildByClass<CXFA_Subform>(XFA_Element::Subform);
   if (!pFormRoot)
     return -1;
 
@@ -64,9 +66,9 @@ int32_t CXFA_LayoutProcessor::DoLayout() {
   XFA_ItemLayoutProcessorResult eStatus;
   CXFA_Node* pFormNode = m_pRootItemLayoutProcessor->GetFormNode();
   float fPosX =
-      pFormNode->JSNode()->GetMeasure(XFA_Attribute::X).ToUnit(XFA_Unit::Pt);
+      pFormNode->JSObject()->GetMeasure(XFA_Attribute::X).ToUnit(XFA_Unit::Pt);
   float fPosY =
-      pFormNode->JSNode()->GetMeasure(XFA_Attribute::Y).ToUnit(XFA_Unit::Pt);
+      pFormNode->JSObject()->GetMeasure(XFA_Attribute::Y).ToUnit(XFA_Unit::Pt);
   do {
     float fAvailHeight = m_pLayoutPageMgr->GetAvailHeight();
     eStatus = m_pRootItemLayoutProcessor->DoLayout(true, fAvailHeight,
@@ -100,8 +102,7 @@ bool CXFA_LayoutProcessor::IncrementLayout() {
     return DoLayout() == 100;
   }
   for (CXFA_Node* pNode : m_rgChangedContainers) {
-    CXFA_Node* pParentNode =
-        pNode->GetNodeItem(XFA_NODEITEM_Parent, XFA_ObjectType::ContainerNode);
+    CXFA_Node* pParentNode = pNode->GetContainerParent();
     if (!pParentNode)
       return false;
     if (!CXFA_ItemLayoutProcessor::IncrementRelayoutNode(this, pNode,
@@ -122,7 +123,7 @@ CXFA_ContainerLayoutItem* CXFA_LayoutProcessor::GetPage(int32_t index) const {
 }
 
 CXFA_LayoutItem* CXFA_LayoutProcessor::GetLayoutItem(CXFA_Node* pFormItem) {
-  return pFormItem->JSNode()->GetLayoutItem();
+  return pFormItem->JSObject()->GetLayoutItem();
 }
 
 void CXFA_LayoutProcessor::AddChangedContainer(CXFA_Node* pContainer) {

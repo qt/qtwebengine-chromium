@@ -8,6 +8,8 @@
 
 #include "mkvmuxer/mkvmuxer.h"
 
+#include <stdint.h>
+
 #include <cfloat>
 #include <climits>
 #include <cstdio>
@@ -23,6 +25,11 @@
 #include "mkvmuxer/mkvmuxerutil.h"
 #include "mkvmuxer/mkvwriter.h"
 #include "mkvparser/mkvparser.h"
+
+// disable deprecation warnings for auto_ptr
+#if defined(__GNUC__) && __GNUC__ >= 5
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+#endif
 
 namespace mkvmuxer {
 
@@ -2661,7 +2668,7 @@ bool Cluster::QueueOrWriteFrame(const Frame* const frame) {
   // and write it if it is okay to do so (i.e.) no other track has an held back
   // frame with timestamp <= the timestamp of the frame in question.
   std::vector<std::list<Frame*>::iterator> frames_to_erase;
-  for (std::list<Frame *>::iterator
+  for (std::list<Frame*>::iterator
            current_track_iterator = stored_frames_[track_number].begin(),
            end = --stored_frames_[track_number].end();
        current_track_iterator != end; ++current_track_iterator) {
@@ -3053,7 +3060,7 @@ Segment::Segment()
       output_cues_(true),
       accurate_cluster_duration_(false),
       fixed_size_cluster_timecode_(false),
-      estimate_file_duration_(true),
+      estimate_file_duration_(false),
       payload_pos_(0),
       size_position_(0),
       doc_type_version_(kDefaultDocTypeVersion),
@@ -3361,7 +3368,10 @@ uint64_t Segment::AddVideoTrack(int32_t width, int32_t height, int32_t number) {
   track->set_width(width);
   track->set_height(height);
 
-  tracks_.AddTrack(track, number);
+  if (!tracks_.AddTrack(track, number)) {
+    delete track;
+    return 0;
+  }
   has_video_ = true;
 
   return track->number();
@@ -3383,8 +3393,10 @@ bool Segment::AddCuePoint(uint64_t timestamp, uint64_t track) {
   cue->set_block_number(cluster->blocks_added());
   cue->set_cluster_pos(cluster->position_for_cues());
   cue->set_track(track);
-  if (!cues_.AddCue(cue))
+  if (!cues_.AddCue(cue)) {
+    delete cue;
     return false;
+  }
 
   new_cuepoint_ = false;
   return true;
@@ -3401,7 +3413,10 @@ uint64_t Segment::AddAudioTrack(int32_t sample_rate, int32_t channels,
   track->set_sample_rate(sample_rate);
   track->set_channels(channels);
 
-  tracks_.AddTrack(track, number);
+  if (!tracks_.AddTrack(track, number)) {
+    delete track;
+    return 0;
+  }
 
   return track->number();
 }
@@ -3509,10 +3524,14 @@ bool Segment::AddGenericFrame(const Frame* frame) {
   if (has_video_ && tracks_.TrackIsAudio(frame->track_number()) &&
       !force_new_cluster_) {
     Frame* const new_frame = new (std::nothrow) Frame();
-    if (!new_frame || !new_frame->CopyFrom(*frame))
+    if (!new_frame || !new_frame->CopyFrom(*frame)) {
+      delete new_frame;
       return false;
-    if (!QueueFrame(new_frame))
+    }
+    if (!QueueFrame(new_frame)) {
+      delete new_frame;
       return false;
+    }
     track_frames_written_[frame->track_number() - 1]++;
     return true;
   }
@@ -3535,8 +3554,10 @@ bool Segment::AddGenericFrame(const Frame* frame) {
   if (!frame->CanBeSimpleBlock() && !frame->is_key() &&
       !frame->reference_block_timestamp_set()) {
     Frame* const new_frame = new (std::nothrow) Frame();
-    if (!new_frame->CopyFrom(*frame))
+    if (!new_frame || !new_frame->CopyFrom(*frame)) {
+      delete new_frame;
       return false;
+    }
     new_frame->set_reference_block_timestamp(
         last_track_timestamp_[frame->track_number() - 1]);
     frame = new_frame;

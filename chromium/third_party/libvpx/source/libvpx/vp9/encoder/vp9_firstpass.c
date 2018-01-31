@@ -44,7 +44,6 @@
 #define COMPLEXITY_STATS_OUTPUT 0
 
 #define FIRST_PASS_Q 10.0
-#define GF_MAX_BOOST 96.0
 #define INTRA_MODE_PENALTY 1024
 #define MIN_ARF_GF_BOOST 240
 #define MIN_DECAY_FACTOR 0.01
@@ -1949,6 +1948,7 @@ static void accumulate_frame_motion_stats(const FIRSTPASS_STATS *stats,
 }
 
 #define BASELINE_ERR_PER_MB 12500.0
+#define GF_MAX_BOOST 96.0
 static double calc_frame_boost(VP9_COMP *cpi, const FIRSTPASS_STATS *this_frame,
                                double this_frame_mv_in_out) {
   double frame_boost;
@@ -2383,6 +2383,8 @@ static void adjust_group_arnr_filter(VP9_COMP *cpi, double section_noise,
 
 // Analyse and define a gf/arf group.
 #define ARF_DECAY_BREAKOUT 0.10
+#define ARF_ABS_ZOOM_THRESH 4.0
+
 static void define_gf_group(VP9_COMP *cpi, FIRSTPASS_STATS *this_frame) {
   VP9_COMMON *const cm = &cpi->common;
   RATE_CONTROL *const rc = &cpi->rc;
@@ -2411,7 +2413,6 @@ static void define_gf_group(VP9_COMP *cpi, FIRSTPASS_STATS *this_frame) {
   double mv_in_out_accumulator = 0.0;
   double abs_mv_in_out_accumulator = 0.0;
   double mv_ratio_accumulator_thresh;
-  double mv_in_out_thresh;
   double abs_mv_in_out_thresh;
   double sr_accumulator = 0.0;
   const double av_err = get_distribution_av_err(cpi, twopass);
@@ -2457,8 +2458,7 @@ static void define_gf_group(VP9_COMP *cpi, FIRSTPASS_STATS *this_frame) {
   // Motion breakout threshold for loop below depends on image size.
   mv_ratio_accumulator_thresh =
       (cpi->initial_height + cpi->initial_width) / 4.0;
-  mv_in_out_thresh = (cpi->initial_height + cpi->initial_width) / 300.0;
-  abs_mv_in_out_thresh = (cpi->initial_height + cpi->initial_width) / 200.0;
+  abs_mv_in_out_thresh = ARF_ABS_ZOOM_THRESH;
 
   // Set a maximum and minimum interval for the GF group.
   // If the image appears almost completely static we can extend beyond this.
@@ -2543,8 +2543,11 @@ static void define_gf_group(VP9_COMP *cpi, FIRSTPASS_STATS *this_frame) {
       // Update the accumulator for second ref error difference.
       // This is intended to give an indication of how much the coded error is
       // increasing over time.
-      sr_accumulator += (next_frame.sr_coded_error - next_frame.coded_error);
-      sr_accumulator = VPXMAX(0.0, sr_accumulator);
+      if (i == 1) {
+        sr_accumulator += next_frame.coded_error;
+      } else {
+        sr_accumulator += (next_frame.sr_coded_error - next_frame.coded_error);
+      }
     }
 
     // Break out conditions.
@@ -2559,7 +2562,6 @@ static void define_gf_group(VP9_COMP *cpi, FIRSTPASS_STATS *this_frame) {
             (!flash_detected) &&
             ((mv_ratio_accumulator > mv_ratio_accumulator_thresh) ||
              (abs_mv_in_out_accumulator > abs_mv_in_out_thresh) ||
-             (mv_in_out_accumulator < -mv_in_out_thresh) ||
              (sr_accumulator > next_frame.intra_error)))) {
       break;
     }
@@ -2698,6 +2700,15 @@ static void define_gf_group(VP9_COMP *cpi, FIRSTPASS_STATS *this_frame) {
 #endif
 }
 
+// Slide show transition detection.
+// Tests for case where there is very low error either side of the current frame
+// but much higher just for this frame. This can help detect key frames in
+// slide shows even where the slides are pictures of different sizes.
+// It will not help if the transition is a fade or other multi-frame effect.
+static int slide_transition(double this_err, double last_err, double next_err) {
+  return (this_err > (last_err * 5.0)) && (this_err > (next_err * 5.0));
+}
+
 // Threshold for use of the lagging second reference frame. High second ref
 // usage may point to a transient event like a flash or occlusion rather than
 // a real scene cut.
@@ -2742,6 +2753,8 @@ static int test_candidate_kf(TWO_PASS *twopass,
   if ((this_frame->pcnt_second_ref < SECOND_REF_USEAGE_THRESH) &&
       (next_frame->pcnt_second_ref < SECOND_REF_USEAGE_THRESH) &&
       ((this_frame->pcnt_inter < VERY_LOW_INTER_THRESH) ||
+       (slide_transition(this_frame->coded_error, last_frame->coded_error,
+                         next_frame->coded_error)) ||
        ((pcnt_intra > MIN_INTRA_LEVEL) &&
         (pcnt_intra > (INTRA_VS_INTER_THRESH * modified_pcnt_inter)) &&
         ((this_frame->intra_error /
@@ -2813,6 +2826,7 @@ static int test_candidate_kf(TWO_PASS *twopass,
 #define FRAMES_TO_CHECK_DECAY 8
 #define MIN_KF_TOT_BOOST 300
 #define KF_BOOST_SCAN_MAX_FRAMES 32
+#define KF_ABS_ZOOM_THRESH 6.0
 
 #ifdef AGGRESSIVE_VBR
 #define KF_MAX_FRAME_BOOST 80.0
@@ -2840,6 +2854,7 @@ static void find_next_key_frame(VP9_COMP *cpi, FIRSTPASS_STATS *this_frame) {
   double kf_group_err = 0.0;
   double recent_loop_decay[FRAMES_TO_CHECK_DECAY];
   double sr_accumulator = 0.0;
+  double abs_mv_in_out_accumulator = 0.0;
   const double av_err = get_distribution_av_err(cpi, twopass);
   vp9_zero(next_frame);
 
@@ -3019,7 +3034,14 @@ static void find_next_key_frame(VP9_COMP *cpi, FIRSTPASS_STATS *this_frame) {
                                         KF_MAX_FRAME_BOOST * zm_factor);
 
       boost_score += frame_boost;
-      if (frame_boost < 25.00) break;
+
+      // Measure of zoom. Large zoom tends to indicate reduced boost.
+      abs_mv_in_out_accumulator +=
+          fabs(next_frame.mv_in_out_count * next_frame.pcnt_motion);
+
+      if ((frame_boost < 25.00) ||
+          (abs_mv_in_out_accumulator > KF_ABS_ZOOM_THRESH))
+        break;
     } else {
       break;
     }

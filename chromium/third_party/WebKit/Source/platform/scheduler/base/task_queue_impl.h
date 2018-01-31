@@ -21,6 +21,7 @@
 #include "platform/scheduler/base/enqueue_order.h"
 #include "platform/scheduler/base/graceful_queue_shutdown_helper.h"
 #include "platform/scheduler/base/intrusive_heap.h"
+#include "platform/scheduler/base/sequence.h"
 #include "platform/scheduler/base/task_queue.h"
 #include "platform/wtf/Deque.h"
 
@@ -132,9 +133,12 @@ class PLATFORM_EXPORT TaskQueueImpl {
 
   using OnNextWakeUpChangedCallback = base::Callback<void(base::TimeTicks)>;
   using OnTaskStartedHandler =
-      base::Callback<void(const TaskQueue::Task&, base::TimeTicks)>;
-  using OnTaskCompletedHandler = base::Callback<
-      void(const TaskQueue::Task&, base::TimeTicks, base::TimeTicks)>;
+      base::RepeatingCallback<void(const TaskQueue::Task&, base::TimeTicks)>;
+  using OnTaskCompletedHandler =
+      base::RepeatingCallback<void(const TaskQueue::Task&,
+                                   base::TimeTicks,
+                                   base::TimeTicks,
+                                   base::Optional<base::TimeDelta>)>;
 
   // TaskQueue implementation.
   const char* GetName() const;
@@ -229,6 +233,11 @@ class PLATFORM_EXPORT TaskQueueImpl {
     main_thread_only().heap_handle = heap_handle;
   }
 
+  // Pushes |task| onto the front of the specified work queue. Caution must be
+  // taken with this API because you could easily starve out other work.
+  void RequeueDeferredNonNestableTask(TaskQueueImpl::Task&& task,
+                                      Sequence::WorkType work_type);
+
   void PushImmediateIncomingTaskForTest(TaskQueueImpl::Task&& task);
   EnqueueOrder GetFenceForTest() const;
 
@@ -261,7 +270,8 @@ class PLATFORM_EXPORT TaskQueueImpl {
   void SetOnTaskCompletedHandler(OnTaskCompletedHandler handler);
   void OnTaskCompleted(const TaskQueue::Task& task,
                        base::TimeTicks start,
-                       base::TimeTicks end);
+                       base::TimeTicks end,
+                       base::Optional<base::TimeDelta> thread_time);
   bool RequiresTaskTiming() const;
 
   base::WeakPtr<TaskQueueManager> GetTaskQueueManagerWeakPtr();
@@ -374,9 +384,6 @@ class PLATFORM_EXPORT TaskQueueImpl {
 
   // Activate a delayed fence if a time has come.
   void ActivateDelayedFenceIfNeeded(base::TimeTicks now);
-
-  // Returns true if new work has been unblocked.
-  bool InsertFenceImpl(EnqueueOrder enqueue_order);
 
   const char* name_;
 

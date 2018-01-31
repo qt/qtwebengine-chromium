@@ -325,7 +325,7 @@ bool Setup::DoSetup(const std::string& build_dir, bool force_create) {
   if (default_args_) {
     Scope::KeyValueMap overrides;
     default_args_->GetCurrentScopeValues(&overrides);
-    build_settings_.build_args().AddArgOverrides(overrides);
+    build_settings_.build_args().AddDefaultArgOverrides(overrides);
   }
 
   if (fill_arguments_) {
@@ -488,6 +488,8 @@ bool Setup::FillArgsFromArgsInputFile() {
   Scope::KeyValueMap overrides;
   arg_scope.GetCurrentScopeValues(&overrides);
   build_settings_.build_args().AddArgOverrides(overrides);
+  build_settings_.build_args().set_build_args_dependency_files(
+      arg_scope.build_dependency_files());
   return true;
 }
 
@@ -690,6 +692,7 @@ bool Setup::RunConfigFile() {
     return false;
   }
 
+  dotfile_scope_.AddBuildDependencyFile(SourceFile("//.gn"));
   dotfile_root_->Execute(&dotfile_scope_, &err);
   if (err.has_error()) {
     err.PrintToStdout();

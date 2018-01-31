@@ -1,4 +1,6 @@
 /*-
+ * SPDX-License-Identifier: BSD-3-Clause
+ *
  * Copyright (c) 2001-2008, by Cisco Systems, Inc. All rights reserved.
  * Copyright (c) 2008-2012, by Randall Stewart. All rights reserved.
  * Copyright (c) 2008-2012, by Michael Tuexen. All rights reserved.
@@ -32,7 +34,7 @@
 
 #ifdef __FreeBSD__
 #include <sys/cdefs.h>
-__FBSDID("$FreeBSD: head/sys/netinet/sctp_constants.h 320263 2017-06-23 09:27:31Z tuexen $");
+__FBSDID("$FreeBSD: head/sys/netinet/sctp_constants.h 324615 2017-10-14 10:02:59Z tuexen $");
 #endif
 
 #ifndef _NETINET_SCTP_CONSTANTS_H_
@@ -101,10 +103,6 @@ extern void getwintimeofday(struct timeval *tv);
  * make the initial array of VRF's to.
  */
 #define SCTP_DEFAULT_VRF_SIZE 4
-
-/* constants for rto calc */
-#define sctp_align_safe_nocopy 0
-#define sctp_align_unsafe_makecopy 1
 
 /* JRS - Values defined for the HTCP algorithm */
 #define ALPHA_BASE	(1<<7)  /* 1.0 with shift << 7 */
@@ -563,11 +561,9 @@ extern void getwintimeofday(struct timeval *tv);
 #define SCTP_TIMER_TYPE_INPKILL         15
 #define SCTP_TIMER_TYPE_ASOCKILL        16
 #define SCTP_TIMER_TYPE_ADDR_WQ         17
-#define SCTP_TIMER_TYPE_ZERO_COPY       18
-#define SCTP_TIMER_TYPE_ZCOPY_SENDQ     19
-#define SCTP_TIMER_TYPE_PRIM_DELETED    20
+#define SCTP_TIMER_TYPE_PRIM_DELETED    18
 /* add new timers here - and increment LAST */
-#define SCTP_TIMER_TYPE_LAST            21
+#define SCTP_TIMER_TYPE_LAST            19
 
 #define SCTP_IS_TIMER_TYPE_VALID(t)	(((t) > SCTP_TIMER_TYPE_NONE) && \
 					 ((t) < SCTP_TIMER_TYPE_LAST))
@@ -995,9 +991,6 @@ extern void getwintimeofday(struct timeval *tv);
 #define SCTP_SO_LOCKED		1
 #define SCTP_SO_NOT_LOCKED	0
 
-
-#define SCTP_HOLDS_LOCK 1
-#define SCTP_NOT_LOCKED 0
 
 /*-
  * For address locks, do we hold the lock?

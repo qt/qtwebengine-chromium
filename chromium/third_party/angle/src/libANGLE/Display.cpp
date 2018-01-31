@@ -25,11 +25,12 @@
 #include "common/utilities.h"
 #include "libANGLE/Context.h"
 #include "libANGLE/Device.h"
-#include "libANGLE/histogram_macros.h"
 #include "libANGLE/Image.h"
-#include "libANGLE/Surface.h"
-#include "libANGLE/Stream.h"
 #include "libANGLE/ResourceManager.h"
+#include "libANGLE/Stream.h"
+#include "libANGLE/Surface.h"
+#include "libANGLE/histogram_macros.h"
+#include "libANGLE/renderer/DeviceImpl.h"
 #include "libANGLE/renderer/DisplayImpl.h"
 #include "libANGLE/renderer/ImageImpl.h"
 #include "third_party/trace_event/trace_event.h"
@@ -475,6 +476,15 @@ Error Display::initialize()
         return EglNotInitialized();
     }
 
+    // OpenGL ES1 is implemented in the frontend, explicitly add ES1 support to all configs
+    for (auto &config : mConfigSet)
+    {
+        // TODO(geofflang): Enable the conformant bit once we pass enough tests
+        // config.second.conformant |= EGL_OPENGL_ES_BIT;
+
+        config.second.renderableType |= EGL_OPENGL_ES_BIT;
+    }
+
     initDisplayExtensions();
     initVendorString();
 
@@ -483,9 +493,10 @@ Error Display::initialize()
     {
         if (mDisplayExtensions.deviceQuery)
         {
-            rx::DeviceImpl *impl = nullptr;
-            ANGLE_TRY(mImplementation->getDevice(&impl));
-            ANGLE_TRY(Device::CreateDevice(this, impl, &mDevice));
+            std::unique_ptr<rx::DeviceImpl> impl(mImplementation->createDevice());
+            ASSERT(impl != nullptr);
+            ANGLE_TRY(impl->initialize());
+            mDevice = new Device(this, impl.release());
         }
         else
         {

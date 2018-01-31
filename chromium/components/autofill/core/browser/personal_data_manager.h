@@ -37,7 +37,6 @@ class SigninManagerBase;
 
 namespace autofill {
 class AutofillInteractiveTest;
-class AutofillTest;
 class PersonalDataManagerObserver;
 class PersonalDataManagerFactory;
 }  // namespace autofill
@@ -101,8 +100,7 @@ class PersonalDataManager : public KeyedService,
   void MarkObserversInsufficientFormDataForImport();
 
   // Called to indicate |data_model| was used (to fill in a form). Updates
-  // the database accordingly. Can invalidate |data_model|, particularly if
-  // it's a Mac address book entry.
+  // the database accordingly. Can invalidate |data_model|.
   virtual void RecordUseOf(const AutofillDataModel& data_model);
 
   // Saves |imported_profile| to the WebDB if it exists. Returns the guid of
@@ -293,6 +291,11 @@ class PersonalDataManager : public KeyedService,
  protected:
   // Only PersonalDataManagerFactory and certain tests can create instances of
   // PersonalDataManager.
+  FRIEND_TEST_ALL_PREFIXES(PersonalDataManagerTest, AddProfile_CrazyCharacters);
+  FRIEND_TEST_ALL_PREFIXES(PersonalDataManagerTest, AddProfile_Invalid);
+  FRIEND_TEST_ALL_PREFIXES(PersonalDataManagerTest,
+                           AddCreditCard_CrazyCharacters);
+  FRIEND_TEST_ALL_PREFIXES(PersonalDataManagerTest, AddCreditCard_Invalid);
   FRIEND_TEST_ALL_PREFIXES(AutofillMetricsTest, FirstMiddleLast);
   FRIEND_TEST_ALL_PREFIXES(AutofillMetricsTest, AutofillIsEnabledAtStartup);
   FRIEND_TEST_ALL_PREFIXES(PersonalDataManagerTest,
@@ -352,8 +355,8 @@ class PersonalDataManager : public KeyedService,
                            GetCreditCardSuggestions_NoCardsLoadedIfDisabled);
 
   friend class autofill::AutofillInteractiveTest;
-  friend class autofill::AutofillTest;
   friend class autofill::PersonalDataManagerFactory;
+  friend class AutofillMetricsTest;
   friend class FormDataImporterTest;
   friend class PersonalDataManagerTest;
   friend class PersonalDataManagerTestBase;

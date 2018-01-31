@@ -13,6 +13,7 @@
 #include "glsl/GrGLSLFragmentProcessor.h"
 #include "glsl/GrGLSLFragmentShaderBuilder.h"
 #include "glsl/GrGLSLProgramBuilder.h"
+#include "GrTexture.h"
 #include "SkSLCPP.h"
 #include "SkSLUtil.h"
 class GrGLSLSimpleTextureEffect : public GrGLSLFragmentProcessor {
@@ -36,7 +37,6 @@ public:
 private:
     void onSetData(const GrGLSLProgramDataManager& pdman,
                    const GrFragmentProcessor& _proc) override {}
-    UniformHandle fImageVar;
 };
 GrGLSLFragmentProcessor* GrSimpleTextureEffect::onCreateGLSLInstance() const {
     return new GrGLSLSimpleTextureEffect();

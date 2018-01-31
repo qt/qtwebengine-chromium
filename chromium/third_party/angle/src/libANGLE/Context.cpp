@@ -411,6 +411,14 @@ Context::Context(rx::EGLImplFactory *implFactory,
     mBlitDirtyObjects.set(State::DIRTY_OBJECT_READ_FRAMEBUFFER);
     mBlitDirtyObjects.set(State::DIRTY_OBJECT_DRAW_FRAMEBUFFER);
 
+    // TODO(xinghua.cao@intel.com): add other dirty bits and dirty objects.
+    mComputeDirtyBits.set(State::DIRTY_BIT_SHADER_STORAGE_BUFFER_BINDING);
+    mComputeDirtyBits.set(State::DIRTY_BIT_PROGRAM_BINDING);
+    mComputeDirtyBits.set(State::DIRTY_BIT_PROGRAM_EXECUTABLE);
+    mComputeDirtyBits.set(State::DIRTY_BIT_TEXTURE_BINDINGS);
+    mComputeDirtyBits.set(State::DIRTY_BIT_SAMPLER_BINDINGS);
+    mComputeDirtyBits.set(State::DIRTY_BIT_DISPATCH_INDIRECT_BUFFER_BINDING);
+
     handleError(mImplementation->initialize());
 }
 
@@ -622,11 +630,14 @@ GLuint Context::createFramebuffer()
     return mState.mFramebuffers->createFramebuffer();
 }
 
-GLuint Context::createFenceNV()
+void Context::genFencesNV(GLsizei n, GLuint *fences)
 {
-    GLuint handle = mFenceNVHandleAllocator.allocate();
-    mFenceNVMap.assign(handle, new FenceNV(mImplementation->createFenceNV()));
-    return handle;
+    for (int i = 0; i < n; i++)
+    {
+        GLuint handle = mFenceNVHandleAllocator.allocate();
+        mFenceNVMap.assign(handle, new FenceNV(mImplementation->createFenceNV()));
+        fences[i] = handle;
+    }
 }
 
 GLuint Context::createProgramPipeline()
@@ -730,9 +741,9 @@ void Context::setPathCommands(GLuint path,
     handleError(pathObject->setCommands(numCommands, commands, numCoords, coordType, coords));
 }
 
-void Context::setPathParameterf(GLuint path, GLenum pname, GLfloat value)
+void Context::pathParameterf(GLuint path, GLenum pname, GLfloat value)
 {
-    auto *pathObj = mState.mPaths->getPath(path);
+    Path *pathObj = mState.mPaths->getPath(path);
 
     switch (pname)
     {
@@ -757,9 +768,15 @@ void Context::setPathParameterf(GLuint path, GLenum pname, GLfloat value)
     }
 }
 
-void Context::getPathParameterfv(GLuint path, GLenum pname, GLfloat *value) const
+void Context::pathParameteri(GLuint path, GLenum pname, GLint value)
 {
-    const auto *pathObj = mState.mPaths->getPath(path);
+    // TODO(jmadill): Should use proper clamping/casting.
+    pathParameterf(path, pname, static_cast<GLfloat>(value));
+}
+
+void Context::getPathParameterfv(GLuint path, GLenum pname, GLfloat *value)
+{
+    const Path *pathObj = mState.mPaths->getPath(path);
 
     switch (pname)
     {
@@ -784,6 +801,14 @@ void Context::getPathParameterfv(GLuint path, GLenum pname, GLfloat *value) cons
     }
 }
 
+void Context::getPathParameteriv(GLuint path, GLenum pname, GLint *value)
+{
+    GLfloat val = 0.0f;
+    getPathParameterfv(path, pname, value != nullptr ? &val : nullptr);
+    if (value)
+        *value = static_cast<GLint>(val);
+}
+
 void Context::setPathStencilFunc(GLenum func, GLint ref, GLuint mask)
 {
     mGLState.setPathStencilFunc(func, ref, mask);
@@ -799,13 +824,18 @@ void Context::deleteFramebuffer(GLuint framebuffer)
     mState.mFramebuffers->deleteObject(this, framebuffer);
 }
 
-void Context::deleteFenceNV(GLuint fence)
+void Context::deleteFencesNV(GLsizei n, const GLuint *fences)
 {
-    FenceNV *fenceObject = nullptr;
-    if (mFenceNVMap.erase(fence, &fenceObject))
+    for (int i = 0; i < n; i++)
     {
-        mFenceNVHandleAllocator.release(fence);
-        delete fenceObject;
+        GLuint fence = fences[i];
+
+        FenceNV *fenceObject = nullptr;
+        if (mFenceNVMap.erase(fence, &fenceObject))
+        {
+            mFenceNVHandleAllocator.release(fence);
+            delete fenceObject;
+        }
     }
 }
 
@@ -1508,6 +1538,53 @@ void Context::getIntegervImpl(GLenum pname, GLint *params)
         case GL_SHADER_STORAGE_BUFFER_OFFSET_ALIGNMENT:
             *params = mCaps.shaderStorageBufferOffsetAlignment;
             break;
+
+        // GL_EXT_geometry_shader
+        case GL_MAX_FRAMEBUFFER_LAYERS_EXT:
+            *params = mCaps.maxFramebufferLayers;
+            break;
+        case GL_LAYER_PROVOKING_VERTEX_EXT:
+            *params = mCaps.layerProvokingVertex;
+            break;
+        case GL_MAX_GEOMETRY_UNIFORM_COMPONENTS_EXT:
+            *params = mCaps.maxGeometryUniformComponents;
+            break;
+        case GL_MAX_GEOMETRY_UNIFORM_BLOCKS_EXT:
+            *params = mCaps.maxGeometryUniformBlocks;
+            break;
+        case GL_MAX_COMBINED_GEOMETRY_UNIFORM_COMPONENTS_EXT:
+            *params = mCaps.maxCombinedGeometryUniformComponents;
+            break;
+        case GL_MAX_GEOMETRY_INPUT_COMPONENTS_EXT:
+            *params = mCaps.maxGeometryInputComponents;
+            break;
+        case GL_MAX_GEOMETRY_OUTPUT_COMPONENTS_EXT:
+            *params = mCaps.maxGeometryOutputComponents;
+            break;
+        case GL_MAX_GEOMETRY_OUTPUT_VERTICES_EXT:
+            *params = mCaps.maxGeometryOutputVertices;
+            break;
+        case GL_MAX_GEOMETRY_TOTAL_OUTPUT_COMPONENTS_EXT:
+            *params = mCaps.maxGeometryTotalOutputComponents;
+            break;
+        case GL_MAX_GEOMETRY_SHADER_INVOCATIONS_EXT:
+            *params = mCaps.maxGeometryShaderInvocations;
+            break;
+        case GL_MAX_GEOMETRY_TEXTURE_IMAGE_UNITS_EXT:
+            *params = mCaps.maxGeometryTextureImageUnits;
+            break;
+        case GL_MAX_GEOMETRY_ATOMIC_COUNTER_BUFFERS_EXT:
+            *params = mCaps.maxGeometryAtomicCounterBuffers;
+            break;
+        case GL_MAX_GEOMETRY_ATOMIC_COUNTERS_EXT:
+            *params = mCaps.maxGeometryAtomicCounters;
+            break;
+        case GL_MAX_GEOMETRY_IMAGE_UNIFORMS_EXT:
+            *params = mCaps.maxGeometryImageUniforms;
+            break;
+        case GL_MAX_GEOMETRY_SHADER_STORAGE_BLOCKS_EXT:
+            *params = mCaps.maxGeometryShaderStorageBlocks;
+            break;
         default:
             mGLState.getIntegerv(this, pname, params);
             break;
@@ -1639,7 +1716,7 @@ void Context::getFramebufferAttachmentParameteriv(GLenum target,
                                                   GLint *params)
 {
     const Framebuffer *framebuffer = mGLState.getTargetFramebuffer(target);
-    QueryFramebufferAttachmentParameteriv(framebuffer, attachment, pname, params);
+    QueryFramebufferAttachmentParameteriv(this, framebuffer, attachment, pname, params);
 }
 
 void Context::getRenderbufferParameteriv(GLenum target, GLenum pname, GLint *params)
@@ -1777,7 +1854,17 @@ void Context::insertEventMarker(GLsizei length, const char *marker)
 void Context::pushGroupMarker(GLsizei length, const char *marker)
 {
     ASSERT(mImplementation);
-    mImplementation->pushGroupMarker(length, marker);
+
+    if (marker == nullptr)
+    {
+        // From the EXT_debug_marker spec,
+        // "If <marker> is null then an empty string is pushed on the stack."
+        mImplementation->pushGroupMarker(length, "");
+    }
+    else
+    {
+        mImplementation->pushGroupMarker(length, marker);
+    }
 }
 
 void Context::popGroupMarker()
@@ -2109,7 +2196,7 @@ bool Context::isContextLost()
     return mContextLost;
 }
 
-GLenum Context::getResetStatus()
+GLenum Context::getGraphicsResetStatus()
 {
     // Even if the application doesn't want to know about resets, we want to know
     // as it will allow us to skip all the calls.
@@ -2173,7 +2260,7 @@ EGLenum Context::getRenderBuffer() const
         return EGL_NONE;
     }
 
-    const FramebufferAttachment *backAttachment = framebuffer->getAttachment(GL_BACK);
+    const FramebufferAttachment *backAttachment = framebuffer->getAttachment(this, GL_BACK);
     ASSERT(backAttachment != nullptr);
     return backAttachment->getSurface()->getRenderBuffer();
 }
@@ -2732,6 +2819,33 @@ void Context::updateCaps()
     if (!mImplementation->getNativeExtensions().getProgramBinary)
     {
         mMemoryProgramCache = nullptr;
+    }
+
+    // Compute which buffer types are allowed
+    mValidBufferBindings.reset();
+    mValidBufferBindings.set(BufferBinding::ElementArray);
+    mValidBufferBindings.set(BufferBinding::Array);
+
+    if (mExtensions.pixelBufferObject || getClientVersion() >= ES_3_0)
+    {
+        mValidBufferBindings.set(BufferBinding::PixelPack);
+        mValidBufferBindings.set(BufferBinding::PixelUnpack);
+    }
+
+    if (getClientVersion() >= ES_3_0)
+    {
+        mValidBufferBindings.set(BufferBinding::CopyRead);
+        mValidBufferBindings.set(BufferBinding::CopyWrite);
+        mValidBufferBindings.set(BufferBinding::TransformFeedback);
+        mValidBufferBindings.set(BufferBinding::Uniform);
+    }
+
+    if (getClientVersion() >= ES_3_1)
+    {
+        mValidBufferBindings.set(BufferBinding::AtomicCounter);
+        mValidBufferBindings.set(BufferBinding::ShaderStorage);
+        mValidBufferBindings.set(BufferBinding::DrawIndirect);
+        mValidBufferBindings.set(BufferBinding::DispatchIndirect);
     }
 }
 
@@ -3334,16 +3448,16 @@ void Context::generateMipmap(GLenum target)
     handleError(texture->generateMipmap(this));
 }
 
-void Context::copyTextureCHROMIUM(GLuint sourceId,
-                                  GLint sourceLevel,
-                                  GLenum destTarget,
-                                  GLuint destId,
-                                  GLint destLevel,
-                                  GLint internalFormat,
-                                  GLenum destType,
-                                  GLboolean unpackFlipY,
-                                  GLboolean unpackPremultiplyAlpha,
-                                  GLboolean unpackUnmultiplyAlpha)
+void Context::copyTexture(GLuint sourceId,
+                          GLint sourceLevel,
+                          GLenum destTarget,
+                          GLuint destId,
+                          GLint destLevel,
+                          GLint internalFormat,
+                          GLenum destType,
+                          GLboolean unpackFlipY,
+                          GLboolean unpackPremultiplyAlpha,
+                          GLboolean unpackUnmultiplyAlpha)
 {
     syncStateForTexImage();
 
@@ -3355,20 +3469,20 @@ void Context::copyTextureCHROMIUM(GLuint sourceId,
                                          ConvertToBool(unpackUnmultiplyAlpha), sourceTexture));
 }
 
-void Context::copySubTextureCHROMIUM(GLuint sourceId,
-                                     GLint sourceLevel,
-                                     GLenum destTarget,
-                                     GLuint destId,
-                                     GLint destLevel,
-                                     GLint xoffset,
-                                     GLint yoffset,
-                                     GLint x,
-                                     GLint y,
-                                     GLsizei width,
-                                     GLsizei height,
-                                     GLboolean unpackFlipY,
-                                     GLboolean unpackPremultiplyAlpha,
-                                     GLboolean unpackUnmultiplyAlpha)
+void Context::copySubTexture(GLuint sourceId,
+                             GLint sourceLevel,
+                             GLenum destTarget,
+                             GLuint destId,
+                             GLint destLevel,
+                             GLint xoffset,
+                             GLint yoffset,
+                             GLint x,
+                             GLint y,
+                             GLsizei width,
+                             GLsizei height,
+                             GLboolean unpackFlipY,
+                             GLboolean unpackPremultiplyAlpha,
+                             GLboolean unpackUnmultiplyAlpha)
 {
     // Zero sized copies are valid but no-ops
     if (width == 0 || height == 0)
@@ -3388,7 +3502,7 @@ void Context::copySubTextureCHROMIUM(GLuint sourceId,
                                             ConvertToBool(unpackUnmultiplyAlpha), sourceTexture));
 }
 
-void Context::compressedCopyTextureCHROMIUM(GLuint sourceId, GLuint destId)
+void Context::compressedCopyTexture(GLuint sourceId, GLuint destId)
 {
     syncStateForTexImage();
 
@@ -4143,6 +4257,18 @@ Error Context::getZeroFilledBuffer(size_t requstedSizeBytes,
     return NoError();
 }
 
+Error Context::prepareForDispatch()
+{
+    syncRendererState(mComputeDirtyBits, mComputeDirtyObjects);
+
+    if (isRobustResourceInitEnabled())
+    {
+        ANGLE_TRY(mGLState.clearUnclearedActiveTextures(this));
+    }
+
+    return NoError();
+}
+
 void Context::dispatchCompute(GLuint numGroupsX, GLuint numGroupsY, GLuint numGroupsZ)
 {
     if (numGroupsX == 0u || numGroupsY == 0u || numGroupsZ == 0u)
@@ -4150,18 +4276,14 @@ void Context::dispatchCompute(GLuint numGroupsX, GLuint numGroupsY, GLuint numGr
         return;
     }
 
-    // TODO(jmadill): Dirty bits for compute.
-    if (isRobustResourceInitEnabled())
-    {
-        ANGLE_CONTEXT_TRY(mGLState.clearUnclearedActiveTextures(this));
-    }
-
+    ANGLE_CONTEXT_TRY(prepareForDispatch());
     handleError(mImplementation->dispatchCompute(this, numGroupsX, numGroupsY, numGroupsZ));
 }
 
 void Context::dispatchComputeIndirect(GLintptr indirect)
 {
-    UNIMPLEMENTED();
+    ANGLE_CONTEXT_TRY(prepareForDispatch());
+    handleError(mImplementation->dispatchComputeIndirect(this, indirect));
 }
 
 void Context::texStorage2D(GLenum target,
@@ -4189,12 +4311,12 @@ void Context::texStorage3D(GLenum target,
 
 void Context::memoryBarrier(GLbitfield barriers)
 {
-    UNIMPLEMENTED();
+    handleError(mImplementation->memoryBarrier(this, barriers));
 }
 
 void Context::memoryBarrierByRegion(GLbitfield barriers)
 {
-    UNIMPLEMENTED();
+    handleError(mImplementation->memoryBarrierByRegion(this, barriers));
 }
 
 GLenum Context::checkFramebufferStatus(GLenum target)
@@ -5553,6 +5675,653 @@ GLboolean Context::isProgramPipeline(GLuint pipeline)
     }
 
     return (getProgramPipeline(pipeline) ? GL_TRUE : GL_FALSE);
+}
+
+void Context::finishFenceNV(GLuint fence)
+{
+    FenceNV *fenceObject = getFenceNV(fence);
+
+    ASSERT(fenceObject && fenceObject->isSet());
+    handleError(fenceObject->finish());
+}
+
+void Context::getFenceivNV(GLuint fence, GLenum pname, GLint *params)
+{
+    FenceNV *fenceObject = getFenceNV(fence);
+
+    ASSERT(fenceObject && fenceObject->isSet());
+
+    switch (pname)
+    {
+        case GL_FENCE_STATUS_NV:
+        {
+            // GL_NV_fence spec:
+            // Once the status of a fence has been finished (via FinishFenceNV) or tested and
+            // the returned status is TRUE (via either TestFenceNV or GetFenceivNV querying the
+            // FENCE_STATUS_NV), the status remains TRUE until the next SetFenceNV of the fence.
+            GLboolean status = GL_TRUE;
+            if (fenceObject->getStatus() != GL_TRUE)
+            {
+                ANGLE_CONTEXT_TRY(fenceObject->test(&status));
+            }
+            *params = status;
+            break;
+        }
+
+        case GL_FENCE_CONDITION_NV:
+        {
+            *params = static_cast<GLint>(fenceObject->getCondition());
+            break;
+        }
+
+        default:
+            UNREACHABLE();
+    }
+}
+
+void Context::getTranslatedShaderSource(GLuint shader,
+                                        GLsizei bufsize,
+                                        GLsizei *length,
+                                        GLchar *source)
+{
+    Shader *shaderObject = getShader(shader);
+    ASSERT(shaderObject);
+    shaderObject->getTranslatedSourceWithDebugInfo(this, bufsize, length, source);
+}
+
+void Context::getnUniformfv(GLuint program, GLint location, GLsizei bufSize, GLfloat *params)
+{
+    Program *programObject = getProgram(program);
+    ASSERT(programObject);
+
+    programObject->getUniformfv(this, location, params);
+}
+
+void Context::getnUniformiv(GLuint program, GLint location, GLsizei bufSize, GLint *params)
+{
+    Program *programObject = getProgram(program);
+    ASSERT(programObject);
+
+    programObject->getUniformiv(this, location, params);
+}
+
+GLboolean Context::isFenceNV(GLuint fence)
+{
+    FenceNV *fenceObject = getFenceNV(fence);
+
+    if (fenceObject == nullptr)
+    {
+        return GL_FALSE;
+    }
+
+    // GL_NV_fence spec:
+    // A name returned by GenFencesNV, but not yet set via SetFenceNV, is not the name of an
+    // existing fence.
+    return fenceObject->isSet();
+}
+
+void Context::readnPixels(GLint x,
+                          GLint y,
+                          GLsizei width,
+                          GLsizei height,
+                          GLenum format,
+                          GLenum type,
+                          GLsizei bufSize,
+                          void *data)
+{
+    return readPixels(x, y, width, height, format, type, data);
+}
+
+void Context::setFenceNV(GLuint fence, GLenum condition)
+{
+    ASSERT(condition == GL_ALL_COMPLETED_NV);
+
+    FenceNV *fenceObject = getFenceNV(fence);
+    ASSERT(fenceObject != nullptr);
+    handleError(fenceObject->set(condition));
+}
+
+GLboolean Context::testFenceNV(GLuint fence)
+{
+    FenceNV *fenceObject = getFenceNV(fence);
+
+    ASSERT(fenceObject != nullptr);
+    ASSERT(fenceObject->isSet() == GL_TRUE);
+
+    GLboolean result = GL_TRUE;
+    Error error      = fenceObject->test(&result);
+    if (error.isError())
+    {
+        handleError(error);
+        return GL_TRUE;
+    }
+
+    return result;
+}
+
+void Context::eGLImageTargetTexture2D(GLenum target, GLeglImageOES image)
+{
+    Texture *texture        = getTargetTexture(target);
+    egl::Image *imageObject = reinterpret_cast<egl::Image *>(image);
+    handleError(texture->setEGLImageTarget(this, target, imageObject));
+}
+
+void Context::eGLImageTargetRenderbufferStorage(GLenum target, GLeglImageOES image)
+{
+    Renderbuffer *renderbuffer = mGLState.getCurrentRenderbuffer();
+    egl::Image *imageObject    = reinterpret_cast<egl::Image *>(image);
+    handleError(renderbuffer->setStorageEGLImageTarget(this, imageObject));
+}
+
+void Context::texStorage1D(GLenum target, GLsizei levels, GLenum internalformat, GLsizei width)
+{
+    UNIMPLEMENTED();
+}
+
+void Context::alphaFunc(GLenum func, GLfloat ref)
+{
+    UNIMPLEMENTED();
+}
+
+void Context::alphaFuncx(GLenum func, GLfixed ref)
+{
+    UNIMPLEMENTED();
+}
+
+void Context::clearColorx(GLfixed red, GLfixed green, GLfixed blue, GLfixed alpha)
+{
+    UNIMPLEMENTED();
+}
+
+void Context::clearDepthx(GLfixed depth)
+{
+    UNIMPLEMENTED();
+}
+
+void Context::clientActiveTexture(GLenum texture)
+{
+    UNIMPLEMENTED();
+}
+
+void Context::clipPlanef(GLenum p, const GLfloat *eqn)
+{
+    UNIMPLEMENTED();
+}
+
+void Context::clipPlanex(GLenum plane, const GLfixed *equation)
+{
+    UNIMPLEMENTED();
+}
+
+void Context::color4f(GLfloat red, GLfloat green, GLfloat blue, GLfloat alpha)
+{
+    UNIMPLEMENTED();
+}
+
+void Context::color4ub(GLubyte red, GLubyte green, GLubyte blue, GLubyte alpha)
+{
+    UNIMPLEMENTED();
+}
+
+void Context::color4x(GLfixed red, GLfixed green, GLfixed blue, GLfixed alpha)
+{
+    UNIMPLEMENTED();
+}
+
+void Context::colorPointer(GLint size, GLenum type, GLsizei stride, const void *pointer)
+{
+    UNIMPLEMENTED();
+}
+
+void Context::cullFace(GLenum mode)
+{
+    UNIMPLEMENTED();
+}
+
+void Context::depthRangex(GLfixed n, GLfixed f)
+{
+    UNIMPLEMENTED();
+}
+
+void Context::disableClientState(GLenum array)
+{
+    UNIMPLEMENTED();
+}
+
+void Context::enableClientState(GLenum array)
+{
+    UNIMPLEMENTED();
+}
+
+void Context::fogf(GLenum pname, GLfloat param)
+{
+    UNIMPLEMENTED();
+}
+
+void Context::fogfv(GLenum pname, const GLfloat *params)
+{
+    UNIMPLEMENTED();
+}
+
+void Context::fogx(GLenum pname, GLfixed param)
+{
+    UNIMPLEMENTED();
+}
+
+void Context::fogxv(GLenum pname, const GLfixed *param)
+{
+    UNIMPLEMENTED();
+}
+
+void Context::frustumf(GLfloat l, GLfloat r, GLfloat b, GLfloat t, GLfloat n, GLfloat f)
+{
+    UNIMPLEMENTED();
+}
+
+void Context::frustumx(GLfixed l, GLfixed r, GLfixed b, GLfixed t, GLfixed n, GLfixed f)
+{
+    UNIMPLEMENTED();
+}
+
+void Context::getBufferParameteriv(GLenum target, GLenum pname, GLint *params)
+{
+    UNIMPLEMENTED();
+}
+
+void Context::getClipPlanef(GLenum plane, GLfloat *equation)
+{
+    UNIMPLEMENTED();
+}
+
+void Context::getClipPlanex(GLenum plane, GLfixed *equation)
+{
+    UNIMPLEMENTED();
+}
+
+void Context::getFixedv(GLenum pname, GLfixed *params)
+{
+    UNIMPLEMENTED();
+}
+
+void Context::getLightfv(GLenum light, GLenum pname, GLfloat *params)
+{
+    UNIMPLEMENTED();
+}
+
+void Context::getLightxv(GLenum light, GLenum pname, GLfixed *params)
+{
+    UNIMPLEMENTED();
+}
+
+void Context::getMaterialfv(GLenum face, GLenum pname, GLfloat *params)
+{
+    UNIMPLEMENTED();
+}
+
+void Context::getMaterialxv(GLenum face, GLenum pname, GLfixed *params)
+{
+    UNIMPLEMENTED();
+}
+
+void Context::getTexEnvfv(GLenum target, GLenum pname, GLfloat *params)
+{
+    UNIMPLEMENTED();
+}
+
+void Context::getTexEnviv(GLenum target, GLenum pname, GLint *params)
+{
+    UNIMPLEMENTED();
+}
+
+void Context::getTexEnvxv(GLenum target, GLenum pname, GLfixed *params)
+{
+    UNIMPLEMENTED();
+}
+
+void Context::getTexParameterxv(GLenum target, GLenum pname, GLfixed *params)
+{
+    UNIMPLEMENTED();
+}
+
+void Context::lightModelf(GLenum pname, GLfloat param)
+{
+    UNIMPLEMENTED();
+}
+
+void Context::lightModelfv(GLenum pname, const GLfloat *params)
+{
+    UNIMPLEMENTED();
+}
+
+void Context::lightModelx(GLenum pname, GLfixed param)
+{
+    UNIMPLEMENTED();
+}
+
+void Context::lightModelxv(GLenum pname, const GLfixed *param)
+{
+    UNIMPLEMENTED();
+}
+
+void Context::lightf(GLenum light, GLenum pname, GLfloat param)
+{
+    UNIMPLEMENTED();
+}
+
+void Context::lightfv(GLenum light, GLenum pname, const GLfloat *params)
+{
+    UNIMPLEMENTED();
+}
+
+void Context::lightx(GLenum light, GLenum pname, GLfixed param)
+{
+    UNIMPLEMENTED();
+}
+
+void Context::lightxv(GLenum light, GLenum pname, const GLfixed *params)
+{
+    UNIMPLEMENTED();
+}
+
+void Context::lineWidthx(GLfixed width)
+{
+    UNIMPLEMENTED();
+}
+
+void Context::loadIdentity()
+{
+    UNIMPLEMENTED();
+}
+
+void Context::loadMatrixf(const GLfloat *m)
+{
+    UNIMPLEMENTED();
+}
+
+void Context::loadMatrixx(const GLfixed *m)
+{
+    UNIMPLEMENTED();
+}
+
+void Context::logicOp(GLenum opcode)
+{
+    UNIMPLEMENTED();
+}
+
+void Context::materialf(GLenum face, GLenum pname, GLfloat param)
+{
+    UNIMPLEMENTED();
+}
+
+void Context::materialfv(GLenum face, GLenum pname, const GLfloat *params)
+{
+    UNIMPLEMENTED();
+}
+
+void Context::materialx(GLenum face, GLenum pname, GLfixed param)
+{
+    UNIMPLEMENTED();
+}
+
+void Context::materialxv(GLenum face, GLenum pname, const GLfixed *param)
+{
+    UNIMPLEMENTED();
+}
+
+void Context::matrixMode(GLenum mode)
+{
+    UNIMPLEMENTED();
+}
+
+void Context::multMatrixf(const GLfloat *m)
+{
+    UNIMPLEMENTED();
+}
+
+void Context::multMatrixx(const GLfixed *m)
+{
+    UNIMPLEMENTED();
+}
+
+void Context::multiTexCoord4f(GLenum target, GLfloat s, GLfloat t, GLfloat r, GLfloat q)
+{
+    UNIMPLEMENTED();
+}
+
+void Context::multiTexCoord4x(GLenum texture, GLfixed s, GLfixed t, GLfixed r, GLfixed q)
+{
+    UNIMPLEMENTED();
+}
+
+void Context::normal3f(GLfloat nx, GLfloat ny, GLfloat nz)
+{
+    UNIMPLEMENTED();
+}
+
+void Context::normal3x(GLfixed nx, GLfixed ny, GLfixed nz)
+{
+    UNIMPLEMENTED();
+}
+
+void Context::normalPointer(GLenum type, GLsizei stride, const void *pointer)
+{
+    UNIMPLEMENTED();
+}
+
+void Context::orthof(GLfloat l, GLfloat r, GLfloat b, GLfloat t, GLfloat n, GLfloat f)
+{
+    UNIMPLEMENTED();
+}
+
+void Context::orthox(GLfixed l, GLfixed r, GLfixed b, GLfixed t, GLfixed n, GLfixed f)
+{
+    UNIMPLEMENTED();
+}
+
+void Context::pointParameterf(GLenum pname, GLfloat param)
+{
+    UNIMPLEMENTED();
+}
+
+void Context::pointParameterfv(GLenum pname, const GLfloat *params)
+{
+    UNIMPLEMENTED();
+}
+
+void Context::pointParameterx(GLenum pname, GLfixed param)
+{
+    UNIMPLEMENTED();
+}
+
+void Context::pointParameterxv(GLenum pname, const GLfixed *params)
+{
+    UNIMPLEMENTED();
+}
+
+void Context::pointSize(GLfloat size)
+{
+    UNIMPLEMENTED();
+}
+
+void Context::pointSizex(GLfixed size)
+{
+    UNIMPLEMENTED();
+}
+
+void Context::polygonOffsetx(GLfixed factor, GLfixed units)
+{
+    UNIMPLEMENTED();
+}
+
+void Context::popMatrix()
+{
+    UNIMPLEMENTED();
+}
+
+void Context::pushMatrix()
+{
+    UNIMPLEMENTED();
+}
+
+void Context::rotatef(GLfloat angle, GLfloat x, GLfloat y, GLfloat z)
+{
+    UNIMPLEMENTED();
+}
+
+void Context::rotatex(GLfixed angle, GLfixed x, GLfixed y, GLfixed z)
+{
+    UNIMPLEMENTED();
+}
+
+void Context::sampleCoveragex(GLclampx value, GLboolean invert)
+{
+    UNIMPLEMENTED();
+}
+
+void Context::scalef(GLfloat x, GLfloat y, GLfloat z)
+{
+    UNIMPLEMENTED();
+}
+
+void Context::scalex(GLfixed x, GLfixed y, GLfixed z)
+{
+    UNIMPLEMENTED();
+}
+
+void Context::shadeModel(GLenum mode)
+{
+    UNIMPLEMENTED();
+}
+
+void Context::texCoordPointer(GLint size, GLenum type, GLsizei stride, const void *pointer)
+{
+    UNIMPLEMENTED();
+}
+
+void Context::texEnvf(GLenum target, GLenum pname, GLfloat param)
+{
+    UNIMPLEMENTED();
+}
+
+void Context::texEnvfv(GLenum target, GLenum pname, const GLfloat *params)
+{
+    UNIMPLEMENTED();
+}
+
+void Context::texEnvi(GLenum target, GLenum pname, GLint param)
+{
+    UNIMPLEMENTED();
+}
+
+void Context::texEnviv(GLenum target, GLenum pname, const GLint *params)
+{
+    UNIMPLEMENTED();
+}
+
+void Context::texEnvx(GLenum target, GLenum pname, GLfixed param)
+{
+    UNIMPLEMENTED();
+}
+
+void Context::texEnvxv(GLenum target, GLenum pname, const GLfixed *params)
+{
+    UNIMPLEMENTED();
+}
+
+void Context::texParameterx(GLenum target, GLenum pname, GLfixed param)
+{
+    UNIMPLEMENTED();
+}
+
+void Context::texParameterxv(GLenum target, GLenum pname, const GLfixed *params)
+{
+    UNIMPLEMENTED();
+}
+
+void Context::translatef(GLfloat x, GLfloat y, GLfloat z)
+{
+    UNIMPLEMENTED();
+}
+
+void Context::translatex(GLfixed x, GLfixed y, GLfixed z)
+{
+    UNIMPLEMENTED();
+}
+
+void Context::vertexPointer(GLint size, GLenum type, GLsizei stride, const void *pointer)
+{
+    UNIMPLEMENTED();
+}
+
+void Context::drawTexf(GLfloat x, GLfloat y, GLfloat z, GLfloat width, GLfloat height)
+{
+    UNIMPLEMENTED();
+}
+
+void Context::drawTexfv(const GLfloat *coords)
+{
+    UNIMPLEMENTED();
+}
+
+void Context::drawTexi(GLint x, GLint y, GLint z, GLint width, GLint height)
+{
+    UNIMPLEMENTED();
+}
+
+void Context::drawTexiv(const GLint *coords)
+{
+    UNIMPLEMENTED();
+}
+
+void Context::drawTexs(GLshort x, GLshort y, GLshort z, GLshort width, GLshort height)
+{
+    UNIMPLEMENTED();
+}
+
+void Context::drawTexsv(const GLshort *coords)
+{
+    UNIMPLEMENTED();
+}
+
+void Context::drawTexx(GLfixed x, GLfixed y, GLfixed z, GLfixed width, GLfixed height)
+{
+    UNIMPLEMENTED();
+}
+
+void Context::drawTexxv(const GLfixed *coords)
+{
+    UNIMPLEMENTED();
+}
+
+void Context::currentPaletteMatrix(GLuint matrixpaletteindex)
+{
+    UNIMPLEMENTED();
+}
+
+void Context::loadPaletteFromModelViewMatrix()
+{
+    UNIMPLEMENTED();
+}
+
+void Context::matrixIndexPointer(GLint size, GLenum type, GLsizei stride, const void *pointer)
+{
+    UNIMPLEMENTED();
+}
+
+void Context::weightPointer(GLint size, GLenum type, GLsizei stride, const void *pointer)
+{
+    UNIMPLEMENTED();
+}
+
+void Context::pointSizePointer(GLenum type, GLsizei stride, const void *pointer)
+{
+    UNIMPLEMENTED();
+}
+
+GLbitfield Context::queryMatrixx(GLfixed *mantissa, GLint *exponent)
+{
+    UNIMPLEMENTED();
+    return 0;
 }
 
 }  // namespace gl

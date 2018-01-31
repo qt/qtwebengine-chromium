@@ -14,7 +14,6 @@
 #include "GrRenderTargetOpList.h"
 #include "GrResourceCache.h"
 #include "SkTArray.h"
-#include "instanced/InstancedRendering.h"
 #include "text/GrAtlasTextContext.h"
 
 class GrContext;
@@ -38,8 +37,6 @@ public:
 
     bool wasAbandoned() const { return fAbandoned; }
     void freeGpuResources();
-
-    gr_instanced::OpAllocator* instancingAllocator();
 
     sk_sp<GrRenderTargetContext> makeRenderTargetContext(sk_sp<GrSurfaceProxy>,
                                                          sk_sp<SkColorSpace>,
@@ -68,7 +65,7 @@ public:
     GrCoverageCountingPathRenderer* getCoverageCountingPathRenderer();
 
     void flushIfNecessary() {
-        if (fContext->getResourceCache()->requestsFlush()) {
+        if (fContext->contextPriv().getResourceCache()->requestsFlush()) {
             this->internalFlush(nullptr, GrResourceCache::kCacheRequested, 0, nullptr);
         }
     }
@@ -95,7 +92,7 @@ private:
             , fAtlasTextContext(nullptr)
             , fPathRendererChain(nullptr)
             , fSoftwarePathRenderer(nullptr)
-            , fFlushState(context->getGpu(), context->resourceProvider())
+            , fFlushState(context->getGpu(), context->contextPriv().resourceProvider())
             , fFlushing(false) {}
 
     void abandon();
@@ -145,9 +142,6 @@ private:
     bool                              fFlushing;
 
     SkTArray<GrOnFlushCallbackObject*> fOnFlushCBObjects;
-
-    // Lazily allocated
-    std::unique_ptr<gr_instanced::OpAllocator> fInstancingAllocator;
 };
 
 #endif

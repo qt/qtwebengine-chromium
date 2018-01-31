@@ -21,6 +21,7 @@ secondary_source = "//build/secondary/"
 # their includes checked for proper dependencies when you run either
 # "gn check" or "gn gen --check".
 check_targets = [
+  ":webrtc_common",
   "//api/*",
   "//audio/*",
   "//backup/*",
@@ -42,6 +43,7 @@ check_targets = [
   "//test/*",
   "//video/*",
   "//voice_engine/*",
+  "//third_party/libyuv/*",
 ]
 
 # These are the list of GN files that run exec_script. This whitelist exists
@@ -61,6 +63,9 @@ default_args = {
   is_component_build = false
 
   mac_sdk_min = "10.12"
+
+  # http://bugs.webrtc.org/8570
+  ios_deployment_target = "9.0"
 
   # WebRTC does not want to switch to C++14 yet.
   use_cxx11 = true

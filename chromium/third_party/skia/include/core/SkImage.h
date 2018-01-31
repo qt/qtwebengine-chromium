@@ -24,7 +24,6 @@ class SkCanvas;
 class SkImageGenerator;
 class SkPaint;
 class SkPicture;
-class SkPixelSerializer;
 class SkString;
 class SkSurface;
 class GrBackendTexture;
@@ -97,6 +96,9 @@ public:
      *  managing the lifetime of the underlying platform texture.
      *
      *  Will return NULL if the specified backend texture is unsupported.
+     *
+     *  DEPRECATED: This factory is deprecated and clients should use the factory below which takes
+     *  an SkColorType.
      */
     static sk_sp<SkImage> MakeFromTexture(GrContext* context,
                                           const GrBackendTexture& backendTexture,
@@ -113,10 +115,53 @@ public:
      *  no longer is holding a reference to it.
      *
      *  Will return NULL if the specified backend texture is unsupported.
+     *
+     *  DEPRECATED: This factory is deprecated and clients should use the factory below which takes
+     *  an SkColorType.
      */
     static sk_sp<SkImage> MakeFromTexture(GrContext* context,
                                           const GrBackendTexture& backendTexture,
                                           GrSurfaceOrigin origin,
+                                          SkAlphaType alphaType,
+                                          sk_sp<SkColorSpace> colorSpace,
+                                          TextureReleaseProc textureReleaseProc,
+                                          ReleaseContext releaseContext);
+
+    /**
+     *  Create a new image from the specified descriptor. Note - the caller is responsible for
+     *  managing the lifetime of the underlying platform texture.
+     *
+     *  The GrBackendTexture must have a valid backend format supplied (GrGLTextureInfo::fFormat,
+     *  GrVkImageInfo::fFormat, etc.) in it. The passed in SkColorType informs skia how it should
+     *  interpret the backend format supplied by the GrBackendTexture. If the format in the
+     *  GrBackendTexture is not compitable with the SkColorType, SkAlphaType, and SkColorSpace we
+     *  will return nullptr.
+     */
+    static sk_sp<SkImage> MakeFromTexture(GrContext* context,
+                                          const GrBackendTexture& backendTexture,
+                                          GrSurfaceOrigin origin,
+                                          SkColorType colorType,
+                                          SkAlphaType alphaType,
+                                          sk_sp<SkColorSpace> colorSpace) {
+        return MakeFromTexture(context, backendTexture, origin, colorType, alphaType, colorSpace,
+                               nullptr, nullptr);
+    }
+
+    /**
+     *  Create a new image from the GrBackendTexture. The underlying platform texture must stay
+     *  valid and unaltered until the specified release-proc is invoked, indicating that Skia
+     *  no longer is holding a reference to it.
+     *
+     *  The GrBackendTexture must have a valid backend format supplied (GrGLTextureInfo::fFormat,
+     *  GrVkImageInfo::fFormat, etc.) in it. The passed in SkColorType informs skia how it should
+     *  interpret the backend format supplied by the GrBackendTexture. If the format in the
+     *  GrBackendTexture is not compitable with the SkColorType, SkAlphaType, and SkColorSpace we
+     *  will return nullptr.
+     */
+    static sk_sp<SkImage> MakeFromTexture(GrContext* context,
+                                          const GrBackendTexture& backendTexture,
+                                          GrSurfaceOrigin origin,
+                                          SkColorType colorType,
                                           SkAlphaType alphaType,
                                           sk_sp<SkColorSpace> colorSpace,
                                           TextureReleaseProc textureReleaseProc,
@@ -159,10 +204,30 @@ public:
      *  texture when the image is released.
      *
      *  Will return NULL if the specified backend texture is unsupported.
+     *
+     *  DEPRECATED: This factory is deprecated and clients should use the factory below which takes
+     *  an SkColorType.
      */
     static sk_sp<SkImage> MakeFromAdoptedTexture(GrContext* context,
                                                  const GrBackendTexture& backendTexture,
                                                  GrSurfaceOrigin surfaceOrigin,
+                                                 SkAlphaType alphaType = kPremul_SkAlphaType,
+                                                 sk_sp<SkColorSpace> colorSpace = nullptr);
+
+    /**
+     *  Create a new image from the specified descriptor. Note - Skia will delete or recycle the
+     *  texture when the image is released.
+     *
+     *  The GrBackendTexture must have a valid backend format supplied (GrGLTextureInfo::fFormat,
+     *  GrVkImageInfo::fFormat, etc.) in it. The passed in SkColorType informs skia how it should
+     *  interpret the backend format supplied by the GrBackendTexture. If the format in the
+     *  GrBackendTexture is not compitable with the SkColorType, SkAlphaType, and SkColorSpace we
+     *  will return nullptr.
+     */
+    static sk_sp<SkImage> MakeFromAdoptedTexture(GrContext* context,
+                                                 const GrBackendTexture& backendTexture,
+                                                 GrSurfaceOrigin surfaceOrigin,
+                                                 SkColorType colorType,
                                                  SkAlphaType alphaType = kPremul_SkAlphaType,
                                                  sk_sp<SkColorSpace> colorSpace = nullptr);
 
@@ -185,6 +250,29 @@ public:
     static sk_sp<SkImage> MakeFromNV12TexturesCopy(GrContext* context,
                                                    SkYUVColorSpace yuvColorSpace,
                                                    const GrBackendObject nv12TextureHandles[2],
+                                                   const SkISize nv12Sizes[2],
+                                                   GrSurfaceOrigin surfaceOrigin,
+                                                   sk_sp<SkColorSpace> colorSpace = nullptr);
+
+    /**
+     *  Create a new image by copying the pixels from the specified y, u, v textures. The data
+     *  from the textures is immediately ingested into the image and the textures can be modified or
+     *  deleted after the function returns. The image will have the dimensions of the y texture.
+     */
+    static sk_sp<SkImage> MakeFromYUVTexturesCopy(GrContext* context, SkYUVColorSpace yuvColorSpace,
+                                                  const GrBackendTexture yuvTextureHandles[3],
+                                                  const SkISize yuvSizes[3],
+                                                  GrSurfaceOrigin surfaceOrigin,
+                                                  sk_sp<SkColorSpace> colorSpace = nullptr);
+
+    /**
+     *  Create a new image by copying the pixels from the specified y and uv textures. The data
+     *  from the textures is immediately ingested into the image and the textures can be modified or
+     *  deleted after the function returns. The image will have the dimensions of the y texture.
+     */
+    static sk_sp<SkImage> MakeFromNV12TexturesCopy(GrContext* context,
+                                                   SkYUVColorSpace yuvColorSpace,
+                                                   const GrBackendTexture nv12TextureHandles[2],
                                                    const SkISize nv12Sizes[2],
                                                    GrSurfaceOrigin surfaceOrigin,
                                                    sk_sp<SkColorSpace> colorSpace = nullptr);
@@ -329,28 +417,21 @@ public:
                      CachingHint cachingHint = kAllow_CachingHint) const;
 
     /**
-     *  Encode the image's pixels and return the result as SkData.
+     *  Encode the image's pixels and return the result as SkData. This will ignore any possible
+     *  existing encoded data (see refEncodedData()), and will always attempt to encode the
+     *  image using the specified encoded image format.
      *
      *  If the image type cannot be encoded, or the requested encoder format is
-     *  not supported, this will return NULL.
+     *  not supported, this will return nullptr.
      */
     sk_sp<SkData> encodeToData(SkEncodedImageFormat encodedImageFormat, int quality) const;
 
     /**
      *  Encode the image and return the result as SkData.  This will attempt to reuse existing
-     *  encoded data (as returned by refEncodedData).
-     *
-     *  We defer to the SkPixelSerializer both for vetting existing encoded data
-     *  (useEncodedData) and for encoding the image (encode) when no such data is
-     *  present or is rejected by the serializer.
-     *
-     *  If not specified, we use a default serializer which 1) always accepts existing data
-     *  (in any format) and 2) encodes to PNG.
-     *
-     *  If no compatible encoded data exists and encoding fails, this method will also
-     *  fail (return NULL).
+     *  encoded data (as returned by refEncodedData). If there is no eisting data, the image
+     *  will be encoded using PNG. On an error, this returns nullptr.
      */
-    sk_sp<SkData> encodeToData(SkPixelSerializer* pixelSerializer = nullptr) const;
+    sk_sp<SkData> encodeToData() const;
 
     /**
      *  If the image already has its contents in encoded form (e.g. PNG or JPEG), return that
@@ -384,6 +465,14 @@ public:
      * the pixels fails). Otherwise, it returns the original image.
      */
     sk_sp<SkImage> makeNonTextureImage() const;
+
+    /**
+     *  If this image is already backed by raster (i.e. peekPixels would succeed), then this just
+     *  returns itself. If not, this attempts to create a raster version of this image and returns
+     *  that, or nullptr if that fails.
+     */
+    sk_sp<SkImage> makeRasterImage() const;
+
     /**
      *  Apply a given image filter to this image, and return the filtered result.
      *

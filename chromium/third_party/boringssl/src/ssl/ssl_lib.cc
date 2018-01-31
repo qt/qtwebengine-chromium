@@ -1187,7 +1187,7 @@ int SSL_in_early_data(const SSL *ssl) {
 }
 
 int SSL_early_data_accepted(const SSL *ssl) {
-  return ssl->early_data_accepted;
+  return ssl->s3->early_data_accepted;
 }
 
 void SSL_reset_early_data_reject(SSL *ssl) {
@@ -2385,6 +2385,15 @@ void SSL_CTX_set_psk_server_callback(
   ctx->psk_server_callback = cb;
 }
 
+int SSL_set_dummy_pq_padding_size(SSL *ssl, size_t num_bytes) {
+  if (num_bytes > 0xffff) {
+    return 0;
+  }
+
+  ssl->dummy_pq_padding_len = num_bytes;
+  return 1;
+}
+
 void SSL_CTX_set_msg_callback(SSL_CTX *ctx,
                               void (*cb)(int write_p, int version,
                                          int content_type, const void *buf,
@@ -2566,6 +2575,12 @@ void SSL_CTX_set_grease_enabled(SSL_CTX *ctx, int enabled) {
 int32_t SSL_get_ticket_age_skew(const SSL *ssl) {
   return ssl->s3->ticket_age_skew;
 }
+
+void SSL_CTX_set_false_start_allowed_without_alpn(SSL_CTX *ctx, int allowed) {
+  ctx->false_start_allowed_without_alpn = !!allowed;
+}
+
+int SSL_is_draft_downgrade(const SSL *ssl) { return ssl->s3->draft_downgrade; }
 
 int SSL_clear(SSL *ssl) {
   // In OpenSSL, reusing a client |SSL| with |SSL_clear| causes the previously

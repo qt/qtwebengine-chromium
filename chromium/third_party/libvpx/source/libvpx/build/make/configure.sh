@@ -1336,7 +1336,6 @@ EOF
         esac
         log_echo "  using $AS"
       fi
-      [ "${AS##*/}" = nasm ] && add_asflags -Ox
       AS_SFX=.asm
       case  ${tgt_os} in
         win32)
@@ -1345,7 +1344,7 @@ EOF
           EXE_SFX=.exe
           ;;
         win64)
-          add_asflags -f x64
+          add_asflags -f win64
           enabled debug && add_asflags -g cv8
           EXE_SFX=.exe
           ;;

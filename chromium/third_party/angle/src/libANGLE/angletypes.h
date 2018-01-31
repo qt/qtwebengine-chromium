@@ -40,13 +40,6 @@ enum PrimitiveType
 
 PrimitiveType GetPrimitiveType(GLenum drawMode);
 
-enum SamplerType
-{
-    SAMPLER_PIXEL,
-    SAMPLER_VERTEX,
-    SAMPLER_COMPUTE
-};
-
 enum ShaderType
 {
     SHADER_VERTEX,
@@ -295,8 +288,29 @@ using AttributesMask = angle::BitSet<MAX_VERTEX_ATTRIBS>;
 // Used in Program
 using UniformBlockBindingMask = angle::BitSet<IMPLEMENTATION_MAX_COMBINED_SHADER_UNIFORM_BUFFERS>;
 
-// Used in Framebuffer
+// Used in Framebuffer / Program
 using DrawBufferMask = angle::BitSet<IMPLEMENTATION_MAX_DRAW_BUFFERS>;
+
+constexpr size_t MAX_COMPONENT_TYPE_MASK_INDEX = 16;
+struct ComponentTypeMask final
+{
+    ComponentTypeMask();
+    ComponentTypeMask(const ComponentTypeMask &other);
+    ~ComponentTypeMask();
+    void reset();
+    bool none();
+    void setIndex(GLenum type, size_t index);
+    unsigned long to_ulong() const;
+    void from_ulong(unsigned long mask);
+    static bool Validate(unsigned long outputTypes,
+                         unsigned long inputTypes,
+                         unsigned long outputMask,
+                         unsigned long inputMask);
+
+  private:
+    // Each index type is represented by 2 bits
+    angle::BitSet<MAX_COMPONENT_TYPE_MASK_INDEX * 2> mTypeMask;
+};
 
 using ContextID = uintptr_t;
 
@@ -309,6 +323,9 @@ using AttachmentArray = std::array<T, IMPLEMENTATION_MAX_FRAMEBUFFER_ATTACHMENTS
 
 template <typename T>
 using DrawBuffersArray = std::array<T, IMPLEMENTATION_MAX_DRAW_BUFFERS>;
+
+template <typename T>
+using AttribArray = std::array<T, MAX_VERTEX_ATTRIBS>;
 
 }  // namespace gl
 

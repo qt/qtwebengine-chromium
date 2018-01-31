@@ -272,10 +272,8 @@ bool ValidateProgramResourceIndex(const Program *programObject,
         case GL_ATOMIC_COUNTER_BUFFER:
             return (index < programObject->getActiveAtomicCounterBufferCount());
 
-        // TODO(jie.a.chen@intel.com): more interfaces.
         case GL_TRANSFORM_FEEDBACK_VARYING:
-            UNIMPLEMENTED();
-            return false;
+            return (index < static_cast<GLuint>(programObject->getTransformFeedbackVaryingCount()));
 
         default:
             UNREACHABLE();
@@ -1384,18 +1382,9 @@ bool ValidateDispatchCompute(Context *context,
     const State &state = context->getGLState();
     Program *program   = state.getProgram();
 
-    if (program == nullptr)
+    if (program == nullptr || !program->hasLinkedComputeShader())
     {
-        context->handleError(InvalidOperation()
-                             << "No active program object for the compute shader stage.");
-        return false;
-    }
-
-    if (!program->isLinked() || !program->hasLinkedComputeShader())
-    {
-        context->handleError(
-            InvalidOperation()
-            << "Program has not been successfully linked, or program contains no compute shaders.");
+        ANGLE_VALIDATION_ERR(context, InvalidOperation(), NoActiveProgramWithComputeShader);
         return false;
     }
 
@@ -1427,8 +1416,50 @@ bool ValidateDispatchCompute(Context *context,
 
 bool ValidateDispatchComputeIndirect(Context *context, GLintptr indirect)
 {
-    UNIMPLEMENTED();
-    return false;
+    if (context->getClientVersion() < ES_3_1)
+    {
+        ANGLE_VALIDATION_ERR(context, InvalidOperation(), ES31Required);
+        return false;
+    }
+
+    const State &state = context->getGLState();
+    Program *program   = state.getProgram();
+
+    if (program == nullptr || !program->hasLinkedComputeShader())
+    {
+        ANGLE_VALIDATION_ERR(context, InvalidOperation(), NoActiveProgramWithComputeShader);
+        return false;
+    }
+
+    gl::Buffer *dispatchIndirectBuffer = state.getTargetBuffer(BufferBinding::DispatchIndirect);
+    if (!dispatchIndirectBuffer)
+    {
+        ANGLE_VALIDATION_ERR(context, InvalidOperation(), DispatchIndirectBufferNotBound);
+        return false;
+    }
+
+    if (indirect < 0)
+    {
+        ANGLE_VALIDATION_ERR(context, InvalidValue(), NegativeOffset);
+        return false;
+    }
+
+    if ((indirect & (sizeof(GLuint) - 1)) != 0)
+    {
+        ANGLE_VALIDATION_ERR(context, InvalidOperation(), OffsetMustBeMultipleOfUint);
+        return false;
+    }
+
+    CheckedNumeric<GLuint64> checkedOffset(static_cast<GLuint64>(indirect));
+    auto checkedSum = checkedOffset + static_cast<GLuint64>(3 * sizeof(GLuint));
+    if (!checkedSum.IsValid() ||
+        checkedSum.ValueOrDie() > static_cast<GLuint64>(dispatchIndirectBuffer->getSize()))
+    {
+        ANGLE_VALIDATION_ERR(context, InvalidOperation(), InsufficientBufferSize);
+        return false;
+    }
+
+    return true;
 }
 
 bool ValidateBindImageTexture(Context *context,
@@ -1756,14 +1787,56 @@ bool ValidateGetProgramPipelineInfoLog(Context *context,
 
 bool ValidateMemoryBarrier(Context *context, GLbitfield barriers)
 {
-    UNIMPLEMENTED();
-    return false;
+    if (context->getClientVersion() < ES_3_1)
+    {
+        ANGLE_VALIDATION_ERR(context, InvalidOperation(), ES31Required);
+        return false;
+    }
+
+    if (barriers == GL_ALL_BARRIER_BITS)
+    {
+        return true;
+    }
+
+    GLbitfield supported_barrier_bits =
+        GL_VERTEX_ATTRIB_ARRAY_BARRIER_BIT | GL_ELEMENT_ARRAY_BARRIER_BIT | GL_UNIFORM_BARRIER_BIT |
+        GL_TEXTURE_FETCH_BARRIER_BIT | GL_SHADER_IMAGE_ACCESS_BARRIER_BIT | GL_COMMAND_BARRIER_BIT |
+        GL_PIXEL_BUFFER_BARRIER_BIT | GL_TEXTURE_UPDATE_BARRIER_BIT | GL_BUFFER_UPDATE_BARRIER_BIT |
+        GL_FRAMEBUFFER_BARRIER_BIT | GL_TRANSFORM_FEEDBACK_BARRIER_BIT |
+        GL_ATOMIC_COUNTER_BARRIER_BIT | GL_SHADER_STORAGE_BARRIER_BIT;
+    if ((barriers & ~supported_barrier_bits) != 0)
+    {
+        ANGLE_VALIDATION_ERR(context, InvalidValue(), InvalidMemoryBarrierBit);
+        return false;
+    }
+
+    return true;
 }
 
 bool ValidateMemoryBarrierByRegion(Context *context, GLbitfield barriers)
 {
-    UNIMPLEMENTED();
-    return false;
+    if (context->getClientVersion() < ES_3_1)
+    {
+        ANGLE_VALIDATION_ERR(context, InvalidOperation(), ES31Required);
+        return false;
+    }
+
+    if (barriers == GL_ALL_BARRIER_BITS)
+    {
+        return true;
+    }
+
+    GLbitfield supported_barrier_bits = GL_ATOMIC_COUNTER_BARRIER_BIT | GL_FRAMEBUFFER_BARRIER_BIT |
+                                        GL_SHADER_IMAGE_ACCESS_BARRIER_BIT |
+                                        GL_SHADER_STORAGE_BARRIER_BIT |
+                                        GL_TEXTURE_FETCH_BARRIER_BIT | GL_UNIFORM_BARRIER_BIT;
+    if ((barriers & ~supported_barrier_bits) != 0)
+    {
+        ANGLE_VALIDATION_ERR(context, InvalidValue(), InvalidMemoryBarrierBit);
+        return false;
+    }
+
+    return true;
 }
 
 bool ValidateSampleMaski(Context *context, GLuint maskNumber, GLbitfield mask)

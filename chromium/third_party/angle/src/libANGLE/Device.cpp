@@ -43,29 +43,29 @@ static DeviceSet *GetDeviceSet()
 }
 
 // Static factory methods
-egl::Error Device::CreateDevice(void *devicePointer, EGLint deviceType, Device **outDevice)
+egl::Error Device::CreateDevice(EGLint deviceType, void *nativeDevice, Device **outDevice)
 {
     *outDevice = nullptr;
+
+    std::unique_ptr<rx::DeviceImpl> newDeviceImpl;
 
 #if defined(ANGLE_ENABLE_D3D11)
     if (deviceType == EGL_D3D11_DEVICE_ANGLE)
     {
-        std::unique_ptr<rx::DeviceD3D> deviceD3D(new rx::DeviceD3D());
-        ANGLE_TRY(deviceD3D->initialize(devicePointer, deviceType, EGL_TRUE));
-        *outDevice = new Device(nullptr, deviceD3D.release());
-        GetDeviceSet()->insert(*outDevice);
-        return NoError();
+        newDeviceImpl.reset(new rx::DeviceD3D(deviceType, nativeDevice));
     }
 #endif
 
     // Note that creating an EGL device from inputted D3D9 parameters isn't currently supported
-    return EglBadAttribute();
-}
 
-egl::Error Device::CreateDevice(Display *owningDisplay, rx::DeviceImpl *impl, Device **outDevice)
-{
-    *outDevice = new Device(owningDisplay, impl);
-    GetDeviceSet()->insert(*outDevice);
+    if (newDeviceImpl == nullptr)
+    {
+        return EglBadAttribute();
+    }
+
+    ANGLE_TRY(newDeviceImpl->initialize());
+    *outDevice = new Device(nullptr, newDeviceImpl.release());
+
     return NoError();
 }
 
@@ -78,6 +78,8 @@ bool Device::IsValidDevice(Device *device)
 Device::Device(Display *owningDisplay, rx::DeviceImpl *impl)
     : mOwningDisplay(owningDisplay), mImplementation(impl)
 {
+    ASSERT(GetDeviceSet()->find(this) == GetDeviceSet()->end());
+    GetDeviceSet()->insert(this);
     initDeviceExtensions();
 }
 
@@ -85,12 +87,6 @@ Device::~Device()
 {
     ASSERT(GetDeviceSet()->find(this) != GetDeviceSet()->end());
     GetDeviceSet()->erase(this);
-
-    if (mImplementation->deviceExternallySourced())
-    {
-        // If the device isn't externally sourced then it is up to the renderer to delete the impl
-        SafeDelete(mImplementation);
-    }
 }
 
 Error Device::getDevice(EGLAttrib *value)

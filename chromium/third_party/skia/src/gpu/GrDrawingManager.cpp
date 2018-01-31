@@ -9,6 +9,7 @@
 
 #include "GrBackendSemaphore.h"
 #include "GrContext.h"
+#include "GrContextPriv.h"
 #include "GrGpu.h"
 #include "GrOnFlushResourceProvider.h"
 #include "GrOpList.h"
@@ -21,6 +22,8 @@
 #include "GrSurfaceProxyPriv.h"
 #include "GrTextureContext.h"
 #include "GrTextureOpList.h"
+#include "GrTextureProxy.h"
+#include "GrTextureProxyPriv.h"
 #include "SkSurface_Gpu.h"
 #include "SkTTopoSort.h"
 
@@ -58,9 +61,6 @@ GrDrawingManager::~GrDrawingManager() {
 
 void GrDrawingManager::abandon() {
     fAbandoned = true;
-    for (int i = 0; i < fOpLists.count(); ++i) {
-        fOpLists[i]->abandonGpuResources();
-    }
     this->cleanup();
 }
 
@@ -76,19 +76,6 @@ void GrDrawingManager::freeGpuResources() {
     delete fPathRendererChain;
     fPathRendererChain = nullptr;
     SkSafeSetNull(fSoftwarePathRenderer);
-    for (int i = 0; i < fOpLists.count(); ++i) {
-        fOpLists[i]->freeGpuResources();
-    }
-
-}
-
-gr_instanced::OpAllocator* GrDrawingManager::instancingAllocator() {
-    if (fInstancingAllocator) {
-        return fInstancingAllocator.get();
-    }
-
-    fInstancingAllocator = fContext->getGpu()->createInstancedRenderingAllocator();
-    return fInstancingAllocator.get();
 }
 
 // MDB TODO: make use of the 'proxy' parameter.
@@ -150,10 +137,18 @@ GrSemaphoresSubmitted GrDrawingManager::internalFlush(GrSurfaceProxy*,
                                       fFlushingOpListIDs.begin(), fFlushingOpListIDs.count(),
                                       &renderTargetContexts);
             for (const sk_sp<GrRenderTargetContext>& rtc : renderTargetContexts) {
-                sk_sp<GrOpList> onFlushOpList = sk_ref_sp(rtc->getOpList());
+                sk_sp<GrRenderTargetOpList> onFlushOpList = sk_ref_sp(rtc->getRTOpList());
                 if (!onFlushOpList) {
                     continue;   // Odd - but not a big deal
                 }
+#ifdef SK_DEBUG
+                // OnFlush callbacks are already invoked during flush, and are therefore expected to
+                // handle resource allocation & usage on their own. (No deferred or lazy proxies!)
+                onFlushOpList->visitProxies_debugOnly([](GrSurfaceProxy* p) {
+                    SkASSERT(!p->asTextureProxy() || !p->asTextureProxy()->texPriv().isDeferred());
+                    SkASSERT(GrSurfaceProxy::LazyState::kNot == p->lazyInstantiationState());
+                });
+#endif
                 onFlushOpList->makeClosed(*fContext->caps());
                 onFlushOpList->prepare(&fFlushState);
                 fOnFlushCBOpLists.push_back(std::move(onFlushOpList));
@@ -173,7 +168,7 @@ GrSemaphoresSubmitted GrDrawingManager::internalFlush(GrSurfaceProxy*,
     bool flushed = false;
 
     {
-        GrResourceAllocator alloc(fContext->resourceProvider());
+        GrResourceAllocator alloc(fContext->contextPriv().resourceProvider());
         for (int i = 0; i < fOpLists.count(); ++i) {
             fOpLists[i]->gatherProxyIntervals(&alloc);
             alloc.markEndOfOpList(i);
@@ -199,7 +194,7 @@ GrSemaphoresSubmitted GrDrawingManager::internalFlush(GrSurfaceProxy*,
 
     // We always have to notify the cache when it requested a flush so it can reset its state.
     if (flushed || type == GrResourceCache::FlushType::kCacheRequested) {
-        fContext->getResourceCache()->notifyFlushOccurred(type);
+        fContext->contextPriv().getResourceCache()->notifyFlushOccurred(type);
     }
     for (GrOnFlushCallbackObject* onFlushCBObject : fOnFlushCBObjects) {
         onFlushCBObject->postFlush(fFlushState.nextTokenToFlush(), fFlushingOpListIDs.begin(),
@@ -222,7 +217,7 @@ bool GrDrawingManager::executeOpLists(int startIndex, int stopIndex, GrOpFlushSt
         }
 
 #ifdef SK_DISABLE_EXPLICIT_GPU_RESOURCE_ALLOCATION
-        if (!fOpLists[i]->instantiate(fContext->resourceProvider())) {
+        if (!fOpLists[i]->instantiate(fContext->contextPriv().resourceProvider())) {
             SkDebugf("OpList failed to instantiate.\n");
             fOpLists[i] = nullptr;
             continue;
@@ -233,7 +228,7 @@ bool GrDrawingManager::executeOpLists(int startIndex, int stopIndex, GrOpFlushSt
 
         // TODO: handle this instantiation via lazy surface proxies?
         // Instantiate all deferred proxies (being built on worker threads) so we can upload them
-        fOpLists[i]->instantiateDeferredProxies(fContext->resourceProvider());
+        fOpLists[i]->instantiateDeferredProxies(fContext->contextPriv().resourceProvider());
         fOpLists[i]->prepare(flushState);
     }
 
@@ -291,12 +286,12 @@ GrSemaphoresSubmitted GrDrawingManager::prepareSurfaceForExternalIO(
     }
     SkASSERT(proxy);
 
-    GrSemaphoresSubmitted result;
+    GrSemaphoresSubmitted result = GrSemaphoresSubmitted::kNo;
     if (proxy->priv().hasPendingIO() || numSemaphores) {
         result = this->flush(proxy, numSemaphores, backendSemaphores);
     }
 
-    if (!proxy->instantiate(fContext->resourceProvider())) {
+    if (!proxy->instantiate(fContext->contextPriv().resourceProvider())) {
         return result;
     }
 
@@ -345,7 +340,7 @@ sk_sp<GrTextureOpList> GrDrawingManager::newTextureOpList(GrTextureProxy* textur
         fOpLists.back()->makeClosed(*fContext->caps());
     }
 
-    sk_sp<GrTextureOpList> opList(new GrTextureOpList(fContext->resourceProvider(),
+    sk_sp<GrTextureOpList> opList(new GrTextureOpList(fContext->contextPriv().resourceProvider(),
                                                       textureProxy,
                                                       fContext->getAuditTrail()));
 
@@ -383,7 +378,7 @@ GrPathRenderer* GrDrawingManager::getPathRenderer(const GrPathRenderer::CanDrawP
     if (!pr && allowSW) {
         if (!fSoftwarePathRenderer) {
             fSoftwarePathRenderer =
-                    new GrSoftwarePathRenderer(fContext->resourceProvider(),
+                    new GrSoftwarePathRenderer(fContext->contextPriv().proxyProvider(),
                                                fOptionsForPathRendererChain.fAllowPathMaskCaching);
         }
         if (GrPathRenderer::CanDrawPath::kNo != fSoftwarePathRenderer->canDrawPath(args)) {

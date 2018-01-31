@@ -12,10 +12,10 @@
 
 #include "core/fxge/fx_font.h"
 
-class IFX_SystemFontInfo;
 class CFX_FontMapper;
 class CFX_SubstFont;
 class CTTFontDesc;
+class IFX_SystemFontInfo;
 
 class CFX_FontMgr {
  public:
@@ -60,6 +60,9 @@ class CFX_FontMgr {
   bool FTLibrarySupportsHinting() const { return m_FTLibrarySupportsHinting; }
 
  private:
+  bool FreeTypeVersionSupportsHinting() const;
+  bool SetLcdFilterMode() const;
+
   std::unique_ptr<CFX_FontMapper> m_pBuiltinMapper;
   std::map<ByteString, std::unique_ptr<CTTFontDesc>> m_FaceMap;
   FXFT_Library m_FTLibrary;

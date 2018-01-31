@@ -305,6 +305,36 @@ TEST(ECTest, ArbitraryCurve) {
   EXPECT_NE(0, EC_GROUP_cmp(group.get(), group3.get(), NULL));
 }
 
+TEST(ECTest, SetKeyWithoutGroup) {
+  bssl::UniquePtr<EC_KEY> key(EC_KEY_new());
+  ASSERT_TRUE(key);
+
+  // Private keys may not be configured without a group.
+  EXPECT_FALSE(EC_KEY_set_private_key(key.get(), BN_value_one()));
+
+  // Public keys may not be configured without a group.
+  bssl::UniquePtr<EC_GROUP> group(
+      EC_GROUP_new_by_curve_name(NID_X9_62_prime256v1));
+  ASSERT_TRUE(group);
+  EXPECT_FALSE(
+      EC_KEY_set_public_key(key.get(), EC_GROUP_get0_generator(group.get())));
+}
+
+TEST(ECTest, GroupMismatch) {
+  bssl::UniquePtr<EC_KEY> key(EC_KEY_new_by_curve_name(NID_secp384r1));
+  ASSERT_TRUE(key);
+  bssl::UniquePtr<EC_GROUP> p256(
+      EC_GROUP_new_by_curve_name(NID_X9_62_prime256v1));
+  ASSERT_TRUE(p256);
+
+  // Changing a key's group is invalid.
+  EXPECT_FALSE(EC_KEY_set_group(key.get(), p256.get()));
+
+  // Configuring a public key with the wrong group is invalid.
+  EXPECT_FALSE(
+      EC_KEY_set_public_key(key.get(), EC_GROUP_get0_generator(p256.get())));
+}
+
 class ECCurveTest : public testing::TestWithParam<EC_builtin_curve> {};
 
 TEST_P(ECCurveTest, SetAffine) {
@@ -322,8 +352,12 @@ TEST_P(ECCurveTest, SetAffine) {
   ASSERT_TRUE(x);
   bssl::UniquePtr<BIGNUM> y(BN_new());
   ASSERT_TRUE(y);
+  bssl::UniquePtr<BIGNUM> p(BN_new());
+  ASSERT_TRUE(p);
   EXPECT_TRUE(EC_POINT_get_affine_coordinates_GFp(
       group, EC_KEY_get0_public_key(key.get()), x.get(), y.get(), nullptr));
+  EXPECT_TRUE(
+      EC_GROUP_get_curve_GFp(group, p.get(), nullptr, nullptr, nullptr));
 
   // Points on the curve should be accepted.
   auto point = bssl::UniquePtr<EC_POINT>(EC_POINT_new(group));
@@ -339,6 +373,15 @@ TEST_P(ECCurveTest, SetAffine) {
   ASSERT_TRUE(invalid_point);
   EXPECT_FALSE(EC_POINT_set_affine_coordinates_GFp(group, invalid_point.get(),
                                                    x.get(), y.get(), nullptr));
+
+  // Coordinates out of range should be rejected.
+  EXPECT_TRUE(BN_add(y.get(), y.get(), BN_value_one()));
+  EXPECT_TRUE(BN_add(y.get(), y.get(), p.get()));
+
+  EXPECT_FALSE(EC_POINT_set_affine_coordinates_GFp(group, invalid_point.get(),
+                                                   x.get(), y.get(), nullptr));
+  EXPECT_FALSE(
+      EC_KEY_set_public_key_affine_coordinates(key.get(), x.get(), y.get()));
 }
 
 TEST_P(ECCurveTest, GenerateFIPS) {
@@ -439,6 +482,52 @@ TEST_P(ECCurveTest, MulOrder) {
       << "p * order did not return point at infinity.";
 }
 
+// Test that |EC_POINT_mul| works with out-of-range scalars. Even beyond the
+// usual |bn_correct_top| disclaimer, we completely disclaim all hope here as a
+// reduction is needed, but we'll compute the right answer.
+TEST_P(ECCurveTest, MulOutOfRange) {
+  bssl::UniquePtr<EC_GROUP> group(EC_GROUP_new_by_curve_name(GetParam().nid));
+  ASSERT_TRUE(group);
+
+  bssl::UniquePtr<BIGNUM> n_minus_one(BN_dup(EC_GROUP_get0_order(group.get())));
+  ASSERT_TRUE(n_minus_one);
+  ASSERT_TRUE(BN_sub_word(n_minus_one.get(), 1));
+
+  bssl::UniquePtr<BIGNUM> minus_one(BN_new());
+  ASSERT_TRUE(minus_one);
+  ASSERT_TRUE(BN_one(minus_one.get()));
+  BN_set_negative(minus_one.get(), 1);
+
+  bssl::UniquePtr<BIGNUM> seven(BN_new());
+  ASSERT_TRUE(seven);
+  ASSERT_TRUE(BN_set_word(seven.get(), 7));
+
+  bssl::UniquePtr<BIGNUM> ten_n_plus_seven(
+      BN_dup(EC_GROUP_get0_order(group.get())));
+  ASSERT_TRUE(ten_n_plus_seven);
+  ASSERT_TRUE(BN_mul_word(ten_n_plus_seven.get(), 10));
+  ASSERT_TRUE(BN_add_word(ten_n_plus_seven.get(), 7));
+
+  bssl::UniquePtr<EC_POINT> point1(EC_POINT_new(group.get())),
+      point2(EC_POINT_new(group.get()));
+  ASSERT_TRUE(point1);
+  ASSERT_TRUE(point2);
+
+  ASSERT_TRUE(EC_POINT_mul(group.get(), point1.get(), n_minus_one.get(),
+                           nullptr, nullptr, nullptr));
+  ASSERT_TRUE(EC_POINT_mul(group.get(), point2.get(), minus_one.get(), nullptr,
+                           nullptr, nullptr));
+  EXPECT_EQ(0, EC_POINT_cmp(group.get(), point1.get(), point2.get(), nullptr))
+      << "-1 * G and (n-1) * G did not give the same result";
+
+  ASSERT_TRUE(EC_POINT_mul(group.get(), point1.get(), seven.get(), nullptr,
+                           nullptr, nullptr));
+  ASSERT_TRUE(EC_POINT_mul(group.get(), point2.get(), ten_n_plus_seven.get(),
+                           nullptr, nullptr, nullptr));
+  EXPECT_EQ(0, EC_POINT_cmp(group.get(), point1.get(), point2.get(), nullptr))
+      << "7 * G and (10n + 7) * G did not give the same result";
+}
+
 // Test that 10×∞ + G = G.
 TEST_P(ECCurveTest, Mul) {
   bssl::UniquePtr<EC_GROUP> group(EC_GROUP_new_by_curve_name(GetParam().nid));
@@ -462,6 +551,25 @@ TEST_P(ECCurveTest, Mul) {
   ASSERT_TRUE(EC_POINT_mul(group.get(), result.get(), BN_value_one(), p.get(),
                            n.get(), nullptr));
   EXPECT_EQ(0, EC_POINT_cmp(group.get(), result.get(), generator, nullptr));
+}
+
+// Test that EC_KEY_set_private_key rejects invalid values.
+TEST_P(ECCurveTest, SetInvalidPrivateKey) {
+  bssl::UniquePtr<EC_KEY> key(EC_KEY_new_by_curve_name(GetParam().nid));
+  ASSERT_TRUE(key);
+
+  bssl::UniquePtr<BIGNUM> bn(BN_new());
+  ASSERT_TRUE(BN_one(bn.get()));
+  BN_set_negative(bn.get(), 1);
+  EXPECT_FALSE(EC_KEY_set_private_key(key.get(), bn.get()))
+      << "Unexpectedly set a key of -1";
+  ERR_clear_error();
+
+  ASSERT_TRUE(
+      BN_copy(bn.get(), EC_GROUP_get0_order(EC_KEY_get0_group(key.get()))));
+  EXPECT_FALSE(EC_KEY_set_private_key(key.get(), bn.get()))
+      << "Unexpectedly set a key of the group order.";
+  ERR_clear_error();
 }
 
 static std::vector<EC_builtin_curve> AllCurves() {

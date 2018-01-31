@@ -18,7 +18,6 @@
 #include "core/fxcrt/fx_coordinates.h"
 #include "core/fxcrt/fx_string.h"
 #include "core/fxcrt/fx_system.h"
-#include "core/fxge/fx_font.h"
 
 class CPVT_Word;
 class CSection;
@@ -29,7 +28,6 @@ struct CPVT_WordInfo;
 
 class CPDF_VariableText {
  public:
-  enum class ScriptType { Normal, Super, Sub };
 
   class Iterator {
    public:
@@ -43,7 +41,7 @@ class CPDF_VariableText {
     bool GetLine(CPVT_Line& line) const;
     void SetAt(int32_t nWordIndex);
     void SetAt(const CPVT_WordPlace& place);
-    const CPVT_WordPlace& GetAt() const { return m_CurPos; }
+    const CPVT_WordPlace& GetWordPlace() const { return m_CurPos; }
 
    private:
     CPVT_WordPlace m_CurPos;
@@ -94,13 +92,11 @@ class CPDF_VariableText {
 
   void RearrangeAll();
   void RearrangePart(const CPVT_WordRange& PlaceRange);
-  void ResetAll();
   void SetText(const WideString& text);
   CPVT_WordPlace InsertWord(const CPVT_WordPlace& place,
                             uint16_t word,
                             int32_t charset);
   CPVT_WordPlace InsertSection(const CPVT_WordPlace& place);
-  CPVT_WordPlace InsertText(const CPVT_WordPlace& place, const wchar_t* text);
   CPVT_WordPlace DeleteWords(const CPVT_WordRange& PlaceRange);
   CPVT_WordPlace DeleteWord(const CPVT_WordPlace& place);
   CPVT_WordPlace BackSpaceWord(const CPVT_WordPlace& place);
@@ -139,7 +135,6 @@ class CPDF_VariableText {
 
   float GetPlateWidth() const { return m_rcPlate.right - m_rcPlate.left; }
   float GetPlateHeight() const { return m_rcPlate.top - m_rcPlate.bottom; }
-  CFX_SizeF GetPlateSize() const;
   CFX_PointF GetBTPoint() const;
   CFX_PointF GetETPoint() const;
 

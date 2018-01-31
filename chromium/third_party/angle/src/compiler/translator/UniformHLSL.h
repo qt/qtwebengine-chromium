@@ -24,23 +24,23 @@ class UniformHLSL : angle::NonCopyable
     UniformHLSL(sh::GLenum shaderType,
                 StructureHLSL *structureHLSL,
                 ShShaderOutput outputType,
-                const std::vector<Uniform> &uniforms);
+                const std::vector<Uniform> &uniforms,
+                unsigned int firstUniformRegister);
 
     void reserveUniformRegisters(unsigned int registerCount);
     void reserveUniformBlockRegisters(unsigned int registerCount);
     void uniformsHeader(TInfoSinkBase &out,
                         ShShaderOutput outputType,
-                        const ReferencedSymbols &referencedUniforms,
+                        const ReferencedVariables &referencedUniforms,
                         TSymbolTable *symbolTable);
 
     // Must be called after uniformsHeader
     void samplerMetadataUniforms(TInfoSinkBase &out, const char *reg);
 
-    TString uniformBlocksHeader(const ReferencedSymbols &referencedInterfaceBlocks);
+    TString uniformBlocksHeader(const ReferencedInterfaceBlocks &referencedInterfaceBlocks);
 
     // Used for direct index references
-    static TString uniformBlockInstanceString(const TInterfaceBlock &interfaceBlock,
-                                              unsigned int arrayIndex);
+    static TString UniformBlockInstanceString(const TString &instanceName, unsigned int arrayIndex);
 
     const std::map<std::string, unsigned int> &getUniformBlockRegisterMap() const
     {
@@ -53,6 +53,7 @@ class UniformHLSL : angle::NonCopyable
 
   private:
     TString uniformBlockString(const TInterfaceBlock &interfaceBlock,
+                               const TVariable *instanceVariable,
                                unsigned int registerIndex,
                                unsigned int arrayIndex);
     TString uniformBlockMembersString(const TInterfaceBlock &interfaceBlock,
@@ -62,19 +63,19 @@ class UniformHLSL : angle::NonCopyable
 
     void outputHLSL4_0_FL9_3Sampler(TInfoSinkBase &out,
                                     const TType &type,
-                                    const TName &name,
+                                    const TVariable &variable,
                                     const unsigned int registerIndex);
     void outputHLSL4_1_FL11Texture(TInfoSinkBase &out,
                                    const TType &type,
-                                   const TName &name,
+                                   const TVariable &variable,
                                    const unsigned int registerIndex);
     void outputHLSL4_1_FL11RWTexture(TInfoSinkBase &out,
                                      const TType &type,
-                                     const TName &name,
+                                     const TVariable &variable,
                                      const unsigned int registerIndex);
     void outputUniform(TInfoSinkBase &out,
                        const TType &type,
-                       const TName &name,
+                       const TVariable &variable,
                        const unsigned int registerIndex);
 
     // Returns the uniform's register index
@@ -88,8 +89,8 @@ class UniformHLSL : angle::NonCopyable
     void outputHLSLSamplerUniformGroup(
         TInfoSinkBase &out,
         const HLSLTextureGroup textureGroup,
-        const TVector<const TIntermSymbol *> &group,
-        const TMap<const TIntermSymbol *, TString> &samplerInStructSymbolsToAPINames,
+        const TVector<const TVariable *> &group,
+        const TMap<const TVariable *, TString> &samplerInStructSymbolsToAPINames,
         unsigned int *groupTextureRegisterIndex);
 
     unsigned int mUniformRegister;

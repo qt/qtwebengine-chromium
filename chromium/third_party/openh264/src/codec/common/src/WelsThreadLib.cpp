@@ -46,9 +46,11 @@
 #include <sched.h>
 #elif !defined(_WIN32) && !defined(__CYGWIN__)
 #include <sys/types.h>
-#include <sys/sysctl.h>
 #include <sys/param.h>
 #include <unistd.h>
+#ifndef __Fuchsia__
+#include <sys/sysctl.h>
+#endif
 #ifdef __APPLE__
 #define HW_NCPU_NAME "hw.logicalcpu"
 #else
@@ -140,14 +142,17 @@ WELS_THREAD_ERROR_CODE    WelsEventOpen (WELS_EVENT* event, const char* event_na
   return WELS_THREAD_ERROR_OK;
 }
 
-WELS_THREAD_ERROR_CODE    WelsEventSignal (WELS_EVENT* event) {
-  if (SetEvent (*event)) {
-    return WELS_THREAD_ERROR_OK;
+WELS_THREAD_ERROR_CODE    WelsEventSignal (WELS_EVENT* event, WELS_MUTEX *pMutex, int* iCondition) {
+  (*iCondition) --;
+  if ((*iCondition) <= 0) {
+    if (SetEvent (*event)) {
+      return WELS_THREAD_ERROR_OK;
+    }
   }
   return WELS_THREAD_ERROR_GENERAL;
 }
 
-WELS_THREAD_ERROR_CODE    WelsEventWait (WELS_EVENT* event, WELS_MUTEX* pMutex) {
+WELS_THREAD_ERROR_CODE    WelsEventWait (WELS_EVENT* event, WELS_MUTEX* pMutex, int& iCondition) {
   return WaitForSingleObject (*event, INFINITE);
 }
 
@@ -327,25 +332,44 @@ void WelsSleep (uint32_t dwMilliSecond) {
   usleep (dwMilliSecond * 1000);
 }
 
-WELS_THREAD_ERROR_CODE   WelsEventSignal (WELS_EVENT* event) {
+WELS_THREAD_ERROR_CODE   WelsEventSignal (WELS_EVENT* event, WELS_MUTEX *pMutex, int* iCondition) {
   WELS_THREAD_ERROR_CODE err = 0;
+  //fprintf( stderr, "before signal it, event=%x iCondition= %d..\n", event, *iCondition );
 #ifdef __APPLE__
+  WelsMutexLock (pMutex);
+  (*iCondition) --;
+  WelsMutexUnlock (pMutex);
+  if ((*iCondition) <= 0) {
   err = pthread_cond_signal (event);
+  //fprintf( stderr, "signal it, event=%x iCondition= %d..\n",event, *iCondition );
+
+  }
 #else
+    (*iCondition) --;
+    if ((*iCondition) <= 0) {
 //  int32_t val = 0;
 //  sem_getvalue(event, &val);
 //  fprintf( stderr, "before signal it, val= %d..\n",val );
   if (event != NULL)
     err = sem_post (*event);
 //  sem_getvalue(event, &val);
-//  fprintf( stderr, "after signal it, val= %d..\n",val );
+    //fprintf( stderr, "signal it, event=%x iCondition= %d..\n",event, *iCondition );
+    }
 #endif
+  //fprintf( stderr, "after signal it, event=%x  iCondition= %d..\n",event, *iCondition );
   return err;
 }
 
-WELS_THREAD_ERROR_CODE WelsEventWait (WELS_EVENT* event, WELS_MUTEX* pMutex) {
+WELS_THREAD_ERROR_CODE WelsEventWait (WELS_EVENT* event, WELS_MUTEX* pMutex, int& iCondition) {
 #ifdef __APPLE__
-  return pthread_cond_wait (event, pMutex);
+  int err = 0;
+  WelsMutexLock(pMutex);
+  //fprintf( stderr, "WelsEventWait event %x %d..\n", event, iCondition );
+  while (iCondition>0) {
+    err = pthread_cond_wait (event, pMutex);
+  }
+  WelsMutexUnlock(pMutex);
+  return err;
 #else
   return sem_wait (*event); // blocking until signaled
 #endif
@@ -514,6 +538,10 @@ WELS_THREAD_ERROR_CODE    WelsQueryLogicalProcessInfo (WelsLogicalProcessInfo* p
   pInfo->ProcessorCount = 1;
   return WELS_THREAD_ERROR_OK;
 
+#elif defined(__Fuchsia__)
+
+  pInfo->ProcessorCount = sysconf(_SC_NPROCESSORS_ONLN);
+  return WELS_THREAD_ERROR_OK;
 #else
 
   size_t len = sizeof (pInfo->ProcessorCount);

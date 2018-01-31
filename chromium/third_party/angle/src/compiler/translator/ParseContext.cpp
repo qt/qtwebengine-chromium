@@ -11,6 +11,7 @@
 
 #include "common/mathutil.h"
 #include "compiler/preprocessor/SourceLocation.h"
+#include "compiler/translator/Declarator.h"
 #include "compiler/translator/IntermNode_util.h"
 #include "compiler/translator/StaticType.h"
 #include "compiler/translator/ValidateGlobalInitializer.h"
@@ -87,7 +88,7 @@ const char *GetImageArgumentToken(TIntermTyped *imageNode)
     TIntermSymbol *imageSymbol = imageNode->getAsSymbolNode();
     if (imageSymbol)
     {
-        return imageSymbol->getSymbol().c_str();
+        return imageSymbol->getName().c_str();
     }
     return "image";
 }
@@ -234,7 +235,7 @@ TParseContext::TParseContext(TSymbolTable &symt,
       mGeometryShaderMaxVertices(-1),
       mMaxGeometryShaderInvocations(resources.MaxGeometryShaderInvocations),
       mMaxGeometryShaderMaxVertices(resources.MaxGeometryOutputVertices),
-      mGeometryShaderInputArraySize(0u)
+      mGlInVariableWithArraySize(nullptr)
 {
 }
 
@@ -605,7 +606,10 @@ bool TParseContext::checkCanBeLValue(const TSourceLoc &line, const char *op, TIn
     //
     if (symNode)
     {
-        const char *symbol = symNode->getSymbol().c_str();
+        // Symbol inside an expression can't be nameless.
+        ASSERT(symNode->variable().symbolType() != SymbolType::Empty);
+
+        const char *symbol = symNode->getName().c_str();
         std::stringstream reasonStream;
         reasonStream << "l-value required (" << message << " \"" << symbol << "\")";
         std::string reason = reasonStream.str();
@@ -1053,8 +1057,13 @@ bool TParseContext::checkIsValidTypeAndQualifierForArray(const TSourceLoc &index
     // In ESSL1.00 shaders, structs cannot be varying (section 4.3.5). This is checked elsewhere.
     // In ESSL3.00 shaders, struct inputs/outputs are allowed but not arrays of structs (section
     // 4.3.4).
+    // Geometry shader requires each user-defined input be declared as arrays or inside input
+    // blocks declared as arrays (GL_EXT_geometry_shader section 11.1gs.4.3). For the purposes of
+    // interface matching, such variables and blocks are treated as though they were not declared
+    // as arrays (GL_EXT_geometry_shader section 7.4.1).
     if (mShaderVersion >= 300 && elementType.getBasicType() == EbtStruct &&
-        sh::IsVarying(elementType.qualifier))
+        sh::IsVarying(elementType.qualifier) &&
+        !IsGeometryShaderInput(mShaderType, elementType.qualifier))
     {
         error(indexLocation, "cannot declare arrays of structs of this qualifier",
               TType(elementType).getCompleteString().c_str());
@@ -1105,6 +1114,8 @@ bool TParseContext::declareVariable(const TSourceLoc &line,
 {
     ASSERT((*variable) == nullptr);
 
+    (*variable) = new TVariable(&symbolTable, &identifier, type, SymbolType::UserDefined);
+
     checkBindingIsValid(line, type);
 
     bool needsReservedCheck = true;
@@ -1139,8 +1150,7 @@ bool TParseContext::declareVariable(const TSourceLoc &line,
     if (needsReservedCheck && !checkIsNotReserved(line, identifier))
         return false;
 
-    (*variable) = symbolTable.declareVariable(&identifier, type);
-    if (!(*variable))
+    if (!symbolTable.declareVariable(*variable))
     {
         error(line, "redefinition", identifier.c_str());
         return false;
@@ -1262,14 +1272,6 @@ template bool TParseContext::checkCanUseOneOfExtensions(
 bool TParseContext::checkCanUseExtension(const TSourceLoc &line, TExtension extension)
 {
     ASSERT(extension != TExtension::UNDEFINED);
-    ASSERT(extension != TExtension::EXT_geometry_shader);
-    if (extension == TExtension::OES_geometry_shader)
-    {
-        // OES_geometry_shader and EXT_geometry_shader are always interchangeable.
-        constexpr std::array<TExtension, 2u> extensions{
-            {TExtension::EXT_geometry_shader, TExtension::OES_geometry_shader}};
-        return checkCanUseOneOfExtensions(line, extensions);
-    }
     return checkCanUseOneOfExtensions(line, std::array<TExtension, 1u>{{extension}});
 }
 
@@ -1688,7 +1690,7 @@ void TParseContext::functionCallRValueLValueErrorCheck(const TFunction *fnCandid
             {
                 error(argument->getLine(),
                       "Writeonly value cannot be passed for 'in' or 'inout' parameters.",
-                      fnCall->getFunctionSymbolInfo()->getName().c_str());
+                      fnCall->functionName());
                 return;
             }
         }
@@ -1698,7 +1700,7 @@ void TParseContext::functionCallRValueLValueErrorCheck(const TFunction *fnCandid
             {
                 error(argument->getLine(),
                       "Constant value cannot be passed for 'out' or 'inout' parameters.",
-                      fnCall->getFunctionSymbolInfo()->getName().c_str());
+                      fnCall->functionName());
                 return;
             }
         }
@@ -1868,7 +1870,7 @@ TIntermTyped *TParseContext::parseVariableIdentifier(const TSourceLoc &location,
     const TType &variableType = variable->getType();
     TIntermTyped *node = nullptr;
 
-    if (variable->getConstPointer())
+    if (variable->getConstPointer() && variableType.canReplaceWithConstantUnion())
     {
         const TConstantUnion *constArray = variable->getConstPointer();
         node                             = new TIntermConstantUnion(constArray, variableType);
@@ -1894,14 +1896,12 @@ TIntermTyped *TParseContext::parseVariableIdentifier(const TSourceLoc &location,
     else if ((mGeometryShaderInputPrimitiveType != EptUndefined) &&
              (variableType.getQualifier() == EvqPerVertexIn))
     {
-        ASSERT(mGeometryShaderInputArraySize > 0u);
-
-        node = new TIntermSymbol(variable->uniqueId(), variable->name(), variableType);
-        node->getTypePointer()->sizeOutermostUnsizedArray(mGeometryShaderInputArraySize);
+        ASSERT(mGlInVariableWithArraySize != nullptr);
+        node = new TIntermSymbol(mGlInVariableWithArraySize);
     }
     else
     {
-        node = new TIntermSymbol(variable->uniqueId(), variable->name(), variableType);
+        node = new TIntermSymbol(variable);
     }
     ASSERT(node != nullptr);
     node->setLine(location);
@@ -1921,7 +1921,6 @@ bool TParseContext::executeInitializer(const TSourceLoc &line,
     ASSERT(initNode != nullptr);
     ASSERT(*initNode == nullptr);
 
-    TVariable *variable = nullptr;
     if (type.isUnsizedArray())
     {
         // In case initializer is not an array or type has more dimensions than initializer, this
@@ -1931,6 +1930,8 @@ bool TParseContext::executeInitializer(const TSourceLoc &line,
         auto *arraySizes = initializer->getType().getArraySizes();
         type.sizeUnsizedArrays(arraySizes);
     }
+
+    TVariable *variable = nullptr;
     if (!declareVariable(line, identifier, type, &variable))
     {
         return false;
@@ -1938,7 +1939,7 @@ bool TParseContext::executeInitializer(const TSourceLoc &line,
 
     bool globalInitWarning = false;
     if (symbolTable.atGlobalLevel() &&
-        !ValidateGlobalInitializer(initializer, this, &globalInitWarning))
+        !ValidateGlobalInitializer(initializer, mShaderVersion, &globalInitWarning))
     {
         // Error message does not completely match behavior with ESSL 1.00, but
         // we want to steer developers towards only using constant expressions.
@@ -1988,35 +1989,20 @@ bool TParseContext::executeInitializer(const TSourceLoc &line,
             return false;
         }
 
-        // Save the constant folded value to the variable if possible. For example array
-        // initializers are not folded, since that way copying the array literal to multiple places
-        // in the shader is avoided.
-        // TODO(oetuaho@nvidia.com): Consider constant folding array initialization in cases where
-        // it would be beneficial.
-        if (initializer->getAsConstantUnion())
+        // Save the constant folded value to the variable if possible.
+        const TConstantUnion *constArray = initializer->getConstantValue();
+        if (constArray)
         {
-            variable->shareConstPointer(initializer->getAsConstantUnion()->getUnionArrayPointer());
-            ASSERT(*initNode == nullptr);
-            return true;
-        }
-        else if (initializer->getAsSymbolNode())
-        {
-            const TSymbol *symbol =
-                symbolTable.find(initializer->getAsSymbolNode()->getSymbol(), 0);
-            const TVariable *tVar = static_cast<const TVariable *>(symbol);
-
-            const TConstantUnion *constArray = tVar->getConstPointer();
-            if (constArray)
+            variable->shareConstPointer(constArray);
+            if (initializer->getType().canReplaceWithConstantUnion())
             {
-                variable->shareConstPointer(constArray);
                 ASSERT(*initNode == nullptr);
                 return true;
             }
         }
     }
 
-    TIntermSymbol *intermSymbol =
-        new TIntermSymbol(variable->uniqueId(), variable->name(), variable->getType());
+    TIntermSymbol *intermSymbol = new TIntermSymbol(variable);
     intermSymbol->setLine(line);
     *initNode = createAssign(EOpInitialize, intermSymbol, initializer, line);
     if (*initNode == nullptr)
@@ -2376,8 +2362,9 @@ void TParseContext::checkGeometryShaderInputAndSetArraySize(const TSourceLoc &lo
             // input primitive declaration.
             if (mGeometryShaderInputPrimitiveType != EptUndefined)
             {
-                ASSERT(mGeometryShaderInputArraySize > 0u);
-                type->sizeOutermostUnsizedArray(mGeometryShaderInputArraySize);
+                ASSERT(mGlInVariableWithArraySize != nullptr);
+                type->sizeOutermostUnsizedArray(
+                    mGlInVariableWithArraySize->getType().getOutermostArraySize());
             }
             else
             {
@@ -2450,7 +2437,9 @@ TIntermDeclaration *TParseContext::parseSingleDeclaration(
         // But if the empty declaration is declaring a struct type, the symbol node will store that.
         if (type.getBasicType() == EbtStruct)
         {
-            symbol = new TIntermSymbol(symbolTable.getEmptySymbolId(), "", type);
+            TVariable *emptyVariable =
+                new TVariable(&symbolTable, nullptr, type, SymbolType::Empty);
+            symbol = new TIntermSymbol(emptyVariable);
         }
         else if (IsAtomicCounter(publicType.getBasicType()))
         {
@@ -2466,11 +2455,9 @@ TIntermDeclaration *TParseContext::parseSingleDeclaration(
         checkAtomicCounterOffsetDoesNotOverlap(false, identifierOrTypeLocation, &type);
 
         TVariable *variable = nullptr;
-        declareVariable(identifierOrTypeLocation, identifier, type, &variable);
-
-        if (variable)
+        if (declareVariable(identifierOrTypeLocation, identifier, type, &variable))
         {
-            symbol = new TIntermSymbol(variable->uniqueId(), identifier, type);
+            symbol = new TIntermSymbol(variable);
         }
     }
 
@@ -2509,15 +2496,13 @@ TIntermDeclaration *TParseContext::parseSingleArrayDeclaration(
 
     checkAtomicCounterOffsetDoesNotOverlap(false, identifierLocation, &arrayType);
 
-    TVariable *variable = nullptr;
-    declareVariable(identifierLocation, identifier, arrayType, &variable);
-
     TIntermDeclaration *declaration = new TIntermDeclaration();
     declaration->setLine(identifierLocation);
 
-    if (variable)
+    TVariable *variable = nullptr;
+    if (declareVariable(identifierLocation, identifier, arrayType, &variable))
     {
-        TIntermSymbol *symbol = new TIntermSymbol(variable->uniqueId(), identifier, arrayType);
+        TIntermSymbol *symbol = new TIntermSymbol(variable);
         symbol->setLine(identifierLocation);
         declaration->appendDeclarator(symbol);
     }
@@ -2640,7 +2625,7 @@ TIntermInvariantDeclaration *TParseContext::parseInvariantDeclaration(
 
     symbolTable.addInvariantVarying(std::string(identifier->c_str()));
 
-    TIntermSymbol *intermSymbol = new TIntermSymbol(variable->uniqueId(), *identifier, type);
+    TIntermSymbol *intermSymbol = new TIntermSymbol(variable);
     intermSymbol->setLine(identifierLoc);
 
     return new TIntermInvariantDeclaration(intermSymbol, identifierLoc);
@@ -2661,7 +2646,6 @@ void TParseContext::parseDeclarator(TPublicType &publicType,
 
     checkDeclaratorLocationIsNotSpecified(identifierLocation, publicType);
 
-    TVariable *variable = nullptr;
     TType type(publicType);
 
     checkGeometryShaderInputAndSetArraySize(identifierLocation, identifier.c_str(), &type);
@@ -2670,11 +2654,10 @@ void TParseContext::parseDeclarator(TPublicType &publicType,
 
     checkAtomicCounterOffsetDoesNotOverlap(true, identifierLocation, &type);
 
-    declareVariable(identifierLocation, identifier, type, &variable);
-
-    if (variable)
+    TVariable *variable = nullptr;
+    if (declareVariable(identifierLocation, identifier, type, &variable))
     {
-        TIntermSymbol *symbol = new TIntermSymbol(variable->uniqueId(), identifier, type);
+        TIntermSymbol *symbol = new TIntermSymbol(variable);
         symbol->setLine(identifierLocation);
         declarationOut->appendDeclarator(symbol);
     }
@@ -2709,11 +2692,9 @@ void TParseContext::parseArrayDeclarator(TPublicType &elementType,
         checkAtomicCounterOffsetDoesNotOverlap(true, identifierLocation, &arrayType);
 
         TVariable *variable = nullptr;
-        declareVariable(identifierLocation, identifier, arrayType, &variable);
-
-        if (variable)
+        if (declareVariable(identifierLocation, identifier, arrayType, &variable))
         {
-            TIntermSymbol *symbol = new TIntermSymbol(variable->uniqueId(), identifier, arrayType);
+            TIntermSymbol *symbol = new TIntermSymbol(variable);
             symbol->setLine(identifierLocation);
             declarationOut->appendDeclarator(symbol);
         }
@@ -2853,11 +2834,17 @@ bool TParseContext::checkPrimitiveTypeMatchesTypeQualifier(const TTypeQualifier 
 void TParseContext::setGeometryShaderInputArraySize(unsigned int inputArraySize,
                                                     const TSourceLoc &line)
 {
-    if (mGeometryShaderInputArraySize == 0u)
+    if (mGlInVariableWithArraySize == nullptr)
     {
-        mGeometryShaderInputArraySize = inputArraySize;
+        TSymbol *glPerVertex              = symbolTable.findBuiltIn("gl_PerVertex", 310);
+        TInterfaceBlock *glPerVertexBlock = static_cast<TInterfaceBlock *>(glPerVertex);
+        TType glInType(glPerVertexBlock, EvqPerVertexIn, TLayoutQualifier::Create());
+        glInType.makeArray(inputArraySize);
+        mGlInVariableWithArraySize =
+            new TVariable(&symbolTable, NewPoolTString("gl_in"), glInType, SymbolType::BuiltIn,
+                          TExtension::EXT_geometry_shader);
     }
-    else if (mGeometryShaderInputArraySize != inputArraySize)
+    else if (mGlInVariableWithArraySize->getType().getOutermostArraySize() != inputArraySize)
     {
         error(line,
               "Array size or input primitive declaration doesn't match the size of earlier sized "
@@ -3167,11 +3154,7 @@ TIntermFunctionPrototype *TParseContext::createPrototypeNodeFromFunction(
 {
     checkIsNotReserved(location, function.name());
 
-    TIntermFunctionPrototype *prototype =
-        new TIntermFunctionPrototype(function.getReturnType(), TSymbolUniqueId(function));
-    // TODO(oetuaho@nvidia.com): Instead of converting the function information here, the node could
-    // point to the data that already exists in the symbol table.
-    prototype->getFunctionSymbolInfo()->setFromFunction(function);
+    TIntermFunctionPrototype *prototype = new TIntermFunctionPrototype(&function);
     prototype->setLine(location);
 
     for (size_t i = 0; i < function.getParamCount(); i++)
@@ -3184,16 +3167,13 @@ TIntermFunctionPrototype *TParseContext::createPrototypeNodeFromFunction(
         // be used for unused args).
         if (param.name != nullptr)
         {
+            TVariable *variable =
+                new TVariable(&symbolTable, param.name, *param.type, SymbolType::UserDefined);
+            symbol = new TIntermSymbol(variable);
             // Insert the parameter in the symbol table.
             if (insertParametersToSymbolTable)
             {
-                TVariable *variable = symbolTable.declareVariable(param.name, *param.type);
-                if (variable)
-                {
-                    symbol = new TIntermSymbol(variable->uniqueId(), variable->name(),
-                                               variable->getType());
-                }
-                else
+                if (!symbolTable.declareVariable(variable))
                 {
                     error(location, "redefinition", param.name->c_str());
                 }
@@ -3214,7 +3194,9 @@ TIntermFunctionPrototype *TParseContext::createPrototypeNodeFromFunction(
         {
             // The parameter had no name or declaring the symbol failed - either way, add a nameless
             // symbol.
-            symbol = new TIntermSymbol(symbolTable.getEmptySymbolId(), "", *param.type);
+            TVariable *emptyVariable =
+                new TVariable(&symbolTable, nullptr, *param.type, SymbolType::Empty);
+            symbol = new TIntermSymbol(emptyVariable);
         }
         symbol->setLine(location);
         prototype->appendParameter(symbol);
@@ -3262,7 +3244,7 @@ TIntermFunctionDefinition *TParseContext::addFunctionDefinition(
     if (mCurrentFunctionType->getBasicType() != EbtVoid && !mFunctionReturnsValue)
     {
         error(location, "function does not return a value:",
-              functionPrototype->getFunctionSymbolInfo()->getName().c_str());
+              functionPrototype->getFunction()->name().c_str());
     }
 
     if (functionBody == nullptr)
@@ -3451,13 +3433,19 @@ TFunction *TParseContext::parseFunctionHeader(const TPublicType &type,
     }
 
     // Add the function as a prototype after parsing it (we do not support recursion)
-    return new TFunction(&symbolTable, name, new TType(type));
+    return new TFunction(&symbolTable, name, new TType(type), SymbolType::UserDefined, false);
 }
 
 TFunction *TParseContext::addNonConstructorFunc(const TString *name, const TSourceLoc &loc)
 {
     const TType *returnType = StaticType::GetQualified<EbtVoid, EvqTemporary>();
-    return new TFunction(&symbolTable, name, returnType);
+    // TODO(oetuaho): Some more appropriate data structure than TFunction could be used here. We're
+    // really only interested in the mangled name of the function to look up the actual function
+    // from the symbol table. If we just had the name string and the types of the parameters that
+    // would be enough, but TFunction carries a lot of extra information in addition to that.
+    // Besides function calls we do have to store constructor calls in the same data structure, for
+    // them we need to store a TType.
+    return new TFunction(&symbolTable, name, returnType, SymbolType::NotResolved, false);
 }
 
 TFunction *TParseContext::addConstructorFunc(const TPublicType &publicType)
@@ -3481,7 +3469,7 @@ TFunction *TParseContext::addConstructorFunc(const TPublicType &publicType)
         type->setBasicType(EbtFloat);
     }
 
-    return new TFunction(&symbolTable, nullptr, type, EOpConstruct);
+    return new TFunction(&symbolTable, nullptr, type, SymbolType::NotResolved, true, EOpConstruct);
 }
 
 void TParseContext::checkIsNotUnsizedArray(const TSourceLoc &line,
@@ -3611,17 +3599,12 @@ TIntermTyped *TParseContext::addConstructor(TIntermSequence *arguments,
     TIntermAggregate *constructorNode = TIntermAggregate::CreateConstructor(type, arguments);
     constructorNode->setLine(line);
 
-    // TODO(oetuaho@nvidia.com): Add support for folding array constructors.
-    if (!constructorNode->isArray())
-    {
-        return constructorNode->fold(mDiagnostics);
-    }
-    return constructorNode;
+    return constructorNode->fold(mDiagnostics);
 }
 
 //
 // Interface/uniform blocks
-// TODO(jiawei.shao@intel.com): implement GL_OES_shader_io_blocks.
+// TODO(jiawei.shao@intel.com): implement GL_EXT_shader_io_blocks.
 //
 TIntermDeclaration *TParseContext::addInterfaceBlock(
     const TTypeQualifierBuilder &typeQualifierBuilder,
@@ -3711,11 +3694,6 @@ TIntermDeclaration *TParseContext::addInterfaceBlock(
     checkWorkGroupSizeIsNotSpecified(nameLine, blockLayoutQualifier);
 
     checkInternalFormatIsNotSpecified(nameLine, blockLayoutQualifier.imageInternalFormat);
-
-    if (!symbolTable.declareInterfaceBlockName(&blockName))
-    {
-        error(nameLine, "redefinition of an interface block name", blockName.c_str());
-    }
 
     // check for sampler types and apply layout qualifiers
     for (size_t memberIndex = 0; memberIndex < fieldList->size(); ++memberIndex)
@@ -3812,18 +3790,27 @@ TIntermDeclaration *TParseContext::addInterfaceBlock(
         }
     }
 
-    TInterfaceBlock *interfaceBlock =
-        new TInterfaceBlock(&blockName, fieldList, instanceName, blockLayoutQualifier);
+    TInterfaceBlock *interfaceBlock = new TInterfaceBlock(
+        &symbolTable, &blockName, fieldList, blockLayoutQualifier, SymbolType::UserDefined);
+    if (!symbolTable.declareInterfaceBlock(interfaceBlock))
+    {
+        error(nameLine, "redefinition of an interface block name", blockName.c_str());
+    }
+
     TType interfaceBlockType(interfaceBlock, typeQualifier.qualifier, blockLayoutQualifier);
     if (arrayIndex != nullptr)
     {
         interfaceBlockType.makeArray(arraySize);
     }
 
-    TString symbolName = "";
-    const TSymbolUniqueId *symbolId = nullptr;
+    // The instance variable gets created to refer to the interface block type from the AST
+    // regardless of if there's an instance name. It's created as an empty symbol if there is no
+    // instance name.
+    TVariable *instanceVariable =
+        new TVariable(&symbolTable, instanceName, interfaceBlockType,
+                      instanceName ? SymbolType::UserDefined : SymbolType::Empty);
 
-    if (!instanceName)
+    if (instanceVariable->symbolType() == SymbolType::Empty)
     {
         // define symbols for the members of the interface block
         for (size_t memberIndex = 0; memberIndex < fieldList->size(); ++memberIndex)
@@ -3834,9 +3821,9 @@ TIntermDeclaration *TParseContext::addInterfaceBlock(
             // set parent pointer of the field variable
             fieldType->setInterfaceBlock(interfaceBlock);
 
-            TVariable *fieldVariable = symbolTable.declareVariable(&field->name(), *fieldType);
-
-            if (fieldVariable)
+            TVariable *fieldVariable =
+                new TVariable(&symbolTable, &field->name(), *fieldType, SymbolType::UserDefined);
+            if (symbolTable.declareVariable(fieldVariable))
             {
                 fieldVariable->setQualifier(typeQualifier.qualifier);
             }
@@ -3846,37 +3833,24 @@ TIntermDeclaration *TParseContext::addInterfaceBlock(
                       field->name().c_str());
             }
         }
-        symbolId = &symbolTable.getEmptySymbolId();
     }
     else
     {
         checkIsNotReserved(instanceLine, *instanceName);
 
         // add a symbol for this interface block
-        TVariable *instanceTypeDef = symbolTable.declareVariable(instanceName, interfaceBlockType);
-        if (instanceTypeDef)
-        {
-            instanceTypeDef->setQualifier(typeQualifier.qualifier);
-            symbolId = &instanceTypeDef->uniqueId();
-        }
-        else
+        if (!symbolTable.declareVariable(instanceVariable))
         {
             error(instanceLine, "redefinition of an interface block instance name",
                   instanceName->c_str());
         }
-        symbolName = *instanceName;
     }
 
-    TIntermDeclaration *declaration = nullptr;
-
-    if (symbolId)
-    {
-        TIntermSymbol *blockSymbol = new TIntermSymbol(*symbolId, symbolName, interfaceBlockType);
-        blockSymbol->setLine(typeQualifier.line);
-        declaration = new TIntermDeclaration();
-        declaration->appendDeclarator(blockSymbol);
-        declaration->setLine(nameLine);
-    }
+    TIntermSymbol *blockSymbol = new TIntermSymbol(instanceVariable);
+    blockSymbol->setLine(typeQualifier.line);
+    TIntermDeclaration *declaration = new TIntermDeclaration();
+    declaration->appendDeclarator(blockSymbol);
+    declaration->setLine(nameLine);
 
     exitStructDeclaration();
     return declaration;
@@ -3916,8 +3890,18 @@ void TParseContext::checkIsBelowStructNestingLimit(const TSourceLoc &line, const
     if (1 + field.type()->getDeepestStructNesting() > kWebGLMaxStructNesting)
     {
         std::stringstream reasonStream;
-        reasonStream << "Reference of struct type " << field.type()->getStruct()->name().c_str()
-                     << " exceeds maximum allowed nesting level of " << kWebGLMaxStructNesting;
+        if (field.type()->getStruct()->symbolType() == SymbolType::Empty)
+        {
+            // This may happen in case there are nested struct definitions. While they are also
+            // invalid GLSL, they don't cause a syntax error.
+            reasonStream << "Struct nesting";
+        }
+        else
+        {
+            reasonStream << "Reference of struct type "
+                         << field.type()->getStruct()->name().c_str();
+        }
+        reasonStream << " exceeds maximum allowed nesting level of " << kWebGLMaxStructNesting;
         std::string reason = reasonStream.str();
         error(line, reason.c_str(), field.name().c_str());
         return;
@@ -3936,7 +3920,7 @@ TIntermTyped *TParseContext::addIndexExpression(TIntermTyped *baseExpression,
         if (baseExpression->getAsSymbolNode())
         {
             error(location, " left of '[' is not of type array, matrix, or vector ",
-                  baseExpression->getAsSymbolNode()->getSymbol().c_str());
+                  baseExpression->getAsSymbolNode()->getName().c_str());
         }
         else
         {
@@ -3948,7 +3932,7 @@ TIntermTyped *TParseContext::addIndexExpression(TIntermTyped *baseExpression,
 
     if (baseExpression->getQualifier() == EvqPerVertexIn)
     {
-        ASSERT(mShaderType == GL_GEOMETRY_SHADER_OES);
+        ASSERT(mShaderType == GL_GEOMETRY_SHADER_EXT);
         if (mGeometryShaderInputPrimitiveType == EptUndefined)
         {
             error(location, "missing input primitive declaration before indexing gl_in.", "[");
@@ -3966,7 +3950,7 @@ TIntermTyped *TParseContext::addIndexExpression(TIntermTyped *baseExpression,
     {
         if (baseExpression->isInterfaceBlock())
         {
-            // TODO(jiawei.shao@intel.com): implement GL_OES_shader_io_blocks.
+            // TODO(jiawei.shao@intel.com): implement GL_EXT_shader_io_blocks.
             switch (baseExpression->getQualifier())
             {
                 case EvqPerVertexIn:
@@ -4076,7 +4060,7 @@ TIntermTyped *TParseContext::addIndexExpression(TIntermTyped *baseExpression,
             TIntermBinary *node =
                 new TIntermBinary(EOpIndexDirect, baseExpression, indexExpression);
             node->setLine(location);
-            return node->fold(mDiagnostics);
+            return expressionOrFoldedResult(node);
         }
     }
 
@@ -4130,7 +4114,7 @@ TIntermTyped *TParseContext::addFieldSelectionExpression(TIntermTyped *baseExpre
         TIntermSwizzle *node = new TIntermSwizzle(baseExpression, fieldOffsets);
         node->setLine(dotLocation);
 
-        return node->fold();
+        return node->fold(mDiagnostics);
     }
     else if (baseExpression->getBasicType() == EbtStruct)
     {
@@ -4159,7 +4143,7 @@ TIntermTyped *TParseContext::addFieldSelectionExpression(TIntermTyped *baseExpre
                 TIntermBinary *node =
                     new TIntermBinary(EOpIndexDirectStruct, baseExpression, index);
                 node->setLine(dotLocation);
-                return node->fold(mDiagnostics);
+                return expressionOrFoldedResult(node);
             }
             else
             {
@@ -4338,44 +4322,44 @@ TLayoutQualifier TParseContext::parseLayoutQualifier(const TString &qualifierTyp
         checkLayoutQualifierSupported(qualifierTypeLine, qualifierType, 310);
         qualifier.imageInternalFormat = EiifR32UI;
     }
-    else if (qualifierType == "points" && mShaderType == GL_GEOMETRY_SHADER_OES &&
-             checkCanUseExtension(qualifierTypeLine, TExtension::OES_geometry_shader))
+    else if (qualifierType == "points" && mShaderType == GL_GEOMETRY_SHADER_EXT &&
+             checkCanUseExtension(qualifierTypeLine, TExtension::EXT_geometry_shader))
     {
         checkLayoutQualifierSupported(qualifierTypeLine, qualifierType, 310);
         qualifier.primitiveType = EptPoints;
     }
-    else if (qualifierType == "lines" && mShaderType == GL_GEOMETRY_SHADER_OES &&
-             checkCanUseExtension(qualifierTypeLine, TExtension::OES_geometry_shader))
+    else if (qualifierType == "lines" && mShaderType == GL_GEOMETRY_SHADER_EXT &&
+             checkCanUseExtension(qualifierTypeLine, TExtension::EXT_geometry_shader))
     {
         checkLayoutQualifierSupported(qualifierTypeLine, qualifierType, 310);
         qualifier.primitiveType = EptLines;
     }
-    else if (qualifierType == "lines_adjacency" && mShaderType == GL_GEOMETRY_SHADER_OES &&
-             checkCanUseExtension(qualifierTypeLine, TExtension::OES_geometry_shader))
+    else if (qualifierType == "lines_adjacency" && mShaderType == GL_GEOMETRY_SHADER_EXT &&
+             checkCanUseExtension(qualifierTypeLine, TExtension::EXT_geometry_shader))
     {
         checkLayoutQualifierSupported(qualifierTypeLine, qualifierType, 310);
         qualifier.primitiveType = EptLinesAdjacency;
     }
-    else if (qualifierType == "triangles" && mShaderType == GL_GEOMETRY_SHADER_OES &&
-             checkCanUseExtension(qualifierTypeLine, TExtension::OES_geometry_shader))
+    else if (qualifierType == "triangles" && mShaderType == GL_GEOMETRY_SHADER_EXT &&
+             checkCanUseExtension(qualifierTypeLine, TExtension::EXT_geometry_shader))
     {
         checkLayoutQualifierSupported(qualifierTypeLine, qualifierType, 310);
         qualifier.primitiveType = EptTriangles;
     }
-    else if (qualifierType == "triangles_adjacency" && mShaderType == GL_GEOMETRY_SHADER_OES &&
-             checkCanUseExtension(qualifierTypeLine, TExtension::OES_geometry_shader))
+    else if (qualifierType == "triangles_adjacency" && mShaderType == GL_GEOMETRY_SHADER_EXT &&
+             checkCanUseExtension(qualifierTypeLine, TExtension::EXT_geometry_shader))
     {
         checkLayoutQualifierSupported(qualifierTypeLine, qualifierType, 310);
         qualifier.primitiveType = EptTrianglesAdjacency;
     }
-    else if (qualifierType == "line_strip" && mShaderType == GL_GEOMETRY_SHADER_OES &&
-             checkCanUseExtension(qualifierTypeLine, TExtension::OES_geometry_shader))
+    else if (qualifierType == "line_strip" && mShaderType == GL_GEOMETRY_SHADER_EXT &&
+             checkCanUseExtension(qualifierTypeLine, TExtension::EXT_geometry_shader))
     {
         checkLayoutQualifierSupported(qualifierTypeLine, qualifierType, 310);
         qualifier.primitiveType = EptLineStrip;
     }
-    else if (qualifierType == "triangle_strip" && mShaderType == GL_GEOMETRY_SHADER_OES &&
-             checkCanUseExtension(qualifierTypeLine, TExtension::OES_geometry_shader))
+    else if (qualifierType == "triangle_strip" && mShaderType == GL_GEOMETRY_SHADER_EXT &&
+             checkCanUseExtension(qualifierTypeLine, TExtension::EXT_geometry_shader))
     {
         checkLayoutQualifierSupported(qualifierTypeLine, qualifierType, 310);
         qualifier.primitiveType = EptTriangleStrip;
@@ -4533,13 +4517,13 @@ TLayoutQualifier TParseContext::parseLayoutQualifier(const TString &qualifierTyp
             parseNumViews(intValue, intValueLine, intValueString, &qualifier.numViews);
         }
     }
-    else if (qualifierType == "invocations" && mShaderType == GL_GEOMETRY_SHADER_OES &&
-             checkCanUseExtension(qualifierTypeLine, TExtension::OES_geometry_shader))
+    else if (qualifierType == "invocations" && mShaderType == GL_GEOMETRY_SHADER_EXT &&
+             checkCanUseExtension(qualifierTypeLine, TExtension::EXT_geometry_shader))
     {
         parseInvocations(intValue, intValueLine, intValueString, &qualifier.invocations);
     }
-    else if (qualifierType == "max_vertices" && mShaderType == GL_GEOMETRY_SHADER_OES &&
-             checkCanUseExtension(qualifierTypeLine, TExtension::OES_geometry_shader))
+    else if (qualifierType == "max_vertices" && mShaderType == GL_GEOMETRY_SHADER_EXT &&
+             checkCanUseExtension(qualifierTypeLine, TExtension::EXT_geometry_shader))
     {
         parseMaxVertices(intValue, intValueLine, intValueString, &qualifier.maxVertices);
     }
@@ -4604,7 +4588,7 @@ TStorageQualifierWrapper *TParseContext::parseInQualifier(const TSourceLoc &loc)
         {
             return new TStorageQualifierWrapper(EvqComputeIn, loc);
         }
-        case GL_GEOMETRY_SHADER_OES:
+        case GL_GEOMETRY_SHADER_EXT:
         {
             return new TStorageQualifierWrapper(EvqGeometryIn, loc);
         }
@@ -4645,7 +4629,7 @@ TStorageQualifierWrapper *TParseContext::parseOutQualifier(const TSourceLoc &loc
             error(loc, "storage qualifier isn't supported in compute shaders", "out");
             return new TStorageQualifierWrapper(EvqLast, loc);
         }
-        case GL_GEOMETRY_SHADER_OES:
+        case GL_GEOMETRY_SHADER_EXT:
         {
             return new TStorageQualifierWrapper(EvqGeometryOut, loc);
         }
@@ -4674,24 +4658,18 @@ TLayoutQualifier TParseContext::joinLayoutQualifiers(TLayoutQualifier leftQualif
                                     mDiagnostics);
 }
 
-TField *TParseContext::parseStructDeclarator(TString *identifier, const TSourceLoc &loc)
+TDeclarator *TParseContext::parseStructDeclarator(const TString *identifier, const TSourceLoc &loc)
 {
     checkIsNotReserved(loc, *identifier);
-    TType *type = new TType(EbtVoid, EbpUndefined);
-    return new TField(type, identifier, loc);
+    return new TDeclarator(identifier, loc);
 }
 
-TField *TParseContext::parseStructArrayDeclarator(TString *identifier,
-                                                  const TSourceLoc &loc,
-                                                  const TVector<unsigned int> &arraySizes,
-                                                  const TSourceLoc &arraySizeLoc)
+TDeclarator *TParseContext::parseStructArrayDeclarator(const TString *identifier,
+                                                       const TSourceLoc &loc,
+                                                       const TVector<unsigned int> *arraySizes)
 {
     checkIsNotReserved(loc, *identifier);
-
-    TType *type       = new TType(EbtVoid, EbpUndefined);
-    type->makeArrays(arraySizes);
-
-    return new TField(type, identifier, loc);
+    return new TDeclarator(identifier, arraySizes, loc);
 }
 
 void TParseContext::checkDoesNotHaveDuplicateFieldName(const TFieldList::const_iterator begin,
@@ -4735,7 +4713,7 @@ TFieldList *TParseContext::combineStructFieldLists(TFieldList *processedFields,
 TFieldList *TParseContext::addStructDeclaratorListWithQualifiers(
     const TTypeQualifierBuilder &typeQualifierBuilder,
     TPublicType *typeSpecifier,
-    TFieldList *fieldList)
+    const TDeclaratorList *declaratorList)
 {
     TTypeQualifier typeQualifier = typeQualifierBuilder.getVariableTypeQualifier(mDiagnostics);
 
@@ -4747,44 +4725,38 @@ TFieldList *TParseContext::addStructDeclaratorListWithQualifiers(
     {
         typeSpecifier->precision = typeQualifier.precision;
     }
-    return addStructDeclaratorList(*typeSpecifier, fieldList);
+    return addStructDeclaratorList(*typeSpecifier, declaratorList);
 }
 
 TFieldList *TParseContext::addStructDeclaratorList(const TPublicType &typeSpecifier,
-                                                   TFieldList *declaratorList)
+                                                   const TDeclaratorList *declaratorList)
 {
     checkPrecisionSpecified(typeSpecifier.getLine(), typeSpecifier.precision,
                             typeSpecifier.getBasicType());
 
-    checkIsNonVoid(typeSpecifier.getLine(), (*declaratorList)[0]->name(),
+    checkIsNonVoid(typeSpecifier.getLine(), *(*declaratorList)[0]->name(),
                    typeSpecifier.getBasicType());
 
     checkWorkGroupSizeIsNotSpecified(typeSpecifier.getLine(), typeSpecifier.layoutQualifier);
 
-    for (TField *declarator : *declaratorList)
+    TFieldList *fieldList = new TFieldList();
+
+    for (const TDeclarator *declarator : *declaratorList)
     {
-        // Don't allow arrays of arrays in ESSL < 3.10.
-        if (declarator->type()->isArray())
+        TType *type = new TType(typeSpecifier);
+        if (declarator->isArray())
         {
+            // Don't allow arrays of arrays in ESSL < 3.10.
             checkArrayElementIsNotArray(typeSpecifier.getLine(), typeSpecifier);
+            type->makeArrays(*declarator->arraySizes());
         }
 
-        auto *declaratorArraySizes = declarator->type()->getArraySizes();
-
-        TType *type = declarator->type();
-        *type       = TType(typeSpecifier);
-        if (declaratorArraySizes != nullptr)
-        {
-            for (unsigned int arraySize : *declaratorArraySizes)
-            {
-                type->makeArray(arraySize);
-            }
-        }
-
-        checkIsBelowStructNestingLimit(typeSpecifier.getLine(), *declarator);
+        TField *field = new TField(type, declarator->name(), declarator->line());
+        checkIsBelowStructNestingLimit(typeSpecifier.getLine(), *field);
+        fieldList->push_back(field);
     }
 
-    return declaratorList;
+    return fieldList;
 }
 
 TTypeSpecifierNonArray TParseContext::addStructure(const TSourceLoc &structLine,
@@ -4792,13 +4764,18 @@ TTypeSpecifierNonArray TParseContext::addStructure(const TSourceLoc &structLine,
                                                    const TString *structName,
                                                    TFieldList *fieldList)
 {
-    TStructure *structure = new TStructure(&symbolTable, structName, fieldList);
+    SymbolType structSymbolType = SymbolType::UserDefined;
+    if (structName == nullptr)
+    {
+        structSymbolType = SymbolType::Empty;
+    }
+    TStructure *structure = new TStructure(&symbolTable, structName, fieldList, structSymbolType);
 
     // Store a bool in the struct if we're at global scope, to allow us to
     // skip the local struct scoping workaround in HLSL.
     structure->setAtGlobalScope(symbolTable.atGlobalLevel());
 
-    if (!structName->empty())
+    if (structSymbolType != SymbolType::Empty)
     {
         checkIsNotReserved(nameLine, *structName);
         if (!symbolTable.declareStructType(structure))
@@ -4987,6 +4964,30 @@ TIntermTyped *TParseContext::addUnaryMathLValue(TOperator op,
 {
     checkCanBeLValue(loc, GetOperatorString(op), child);
     return addUnaryMath(op, child, loc);
+}
+
+TIntermTyped *TParseContext::expressionOrFoldedResult(TIntermTyped *expression)
+{
+    // If we can, we should return the folded version of the expression for subsequent parsing. This
+    // enables folding the containing expression during parsing as well, instead of the separate
+    // FoldExpressions() step where folding nested expressions requires multiple full AST
+    // traversals.
+
+    // Even if folding fails the fold() functions return some node representing the expression,
+    // typically the original node. So "folded" can be assumed to be non-null.
+    TIntermTyped *folded = expression->fold(mDiagnostics);
+    ASSERT(folded != nullptr);
+    if (folded->getQualifier() == expression->getQualifier())
+    {
+        // We need this expression to have the correct qualifier when validating the consuming
+        // expression. So we can only return the folded node from here in case it has the same
+        // qualifier as the original expression. In this kind of a cases the qualifier of the folded
+        // node is EvqConst, whereas the qualifier of the expression is EvqTemporary:
+        //  1. (true ? 1.0 : non_constant)
+        //  2. (non_constant, 1.0)
+        return folded;
+    }
+    return expression;
 }
 
 bool TParseContext::binaryOpCommonCheck(TOperator op,
@@ -5345,9 +5346,7 @@ TIntermTyped *TParseContext::addBinaryMathInternal(TOperator op,
 
     TIntermBinary *node = new TIntermBinary(op, left, right);
     node->setLine(loc);
-
-    // See if we can fold constants.
-    return node->fold(mDiagnostics);
+    return expressionOrFoldedResult(node);
 }
 
 TIntermTyped *TParseContext::addBinaryMath(TOperator op,
@@ -5438,7 +5437,8 @@ TIntermTyped *TParseContext::addComma(TIntermTyped *left,
     TIntermBinary *commaNode   = new TIntermBinary(EOpComma, left, right);
     TQualifier resultQualifier = TIntermBinary::GetCommaQualifier(mShaderVersion, left, right);
     commaNode->getTypePointer()->setQualifier(resultQualifier);
-    return commaNode->fold(mDiagnostics);
+
+    return expressionOrFoldedResult(commaNode);
 }
 
 TIntermBranch *TParseContext::addBranch(TOperator op, const TSourceLoc &loc)
@@ -5501,7 +5501,7 @@ TIntermBranch *TParseContext::addBranch(TOperator op,
 void TParseContext::checkTextureGather(TIntermAggregate *functionCall)
 {
     ASSERT(functionCall->getOp() == EOpCallBuiltInFunction);
-    const TString &name        = functionCall->getFunctionSymbolInfo()->getName();
+    const TString &name        = functionCall->getFunction()->name();
     bool isTextureGather       = (name == "textureGather");
     bool isTextureGatherOffset = (name == "textureGatherOffset");
     if (isTextureGather || isTextureGatherOffset)
@@ -5567,7 +5567,7 @@ void TParseContext::checkTextureGather(TIntermAggregate *functionCall)
 void TParseContext::checkTextureOffsetConst(TIntermAggregate *functionCall)
 {
     ASSERT(functionCall->getOp() == EOpCallBuiltInFunction);
-    const TString &name        = functionCall->getFunctionSymbolInfo()->getName();
+    const TString &name                    = functionCall->getFunction()->name();
     TIntermNode *offset        = nullptr;
     TIntermSequence *arguments = functionCall->getSequence();
     bool useTextureGatherOffsetConstraints = false;
@@ -5620,7 +5620,7 @@ void TParseContext::checkTextureOffsetConst(TIntermAggregate *functionCall)
         {
             ASSERT(offsetConstantUnion->getBasicType() == EbtInt);
             size_t size                  = offsetConstantUnion->getType().getObjectSize();
-            const TConstantUnion *values = offsetConstantUnion->getUnionArrayPointer();
+            const TConstantUnion *values = offsetConstantUnion->getConstantValue();
             int minOffsetValue = useTextureGatherOffsetConstraints ? mMinProgramTextureGatherOffset
                                                                    : mMinProgramTexelOffset;
             int maxOffsetValue = useTextureGatherOffsetConstraints ? mMaxProgramTextureGatherOffset
@@ -5643,8 +5643,9 @@ void TParseContext::checkTextureOffsetConst(TIntermAggregate *functionCall)
 
 void TParseContext::checkAtomicMemoryBuiltinFunctions(TIntermAggregate *functionCall)
 {
-    const TString &name = functionCall->getFunctionSymbolInfo()->getName();
-    if (IsAtomicBuiltin(name))
+    ASSERT(functionCall->getOp() == EOpCallBuiltInFunction);
+    const TString &functionName = functionCall->getFunction()->name();
+    if (IsAtomicBuiltin(functionName))
     {
         TIntermSequence *arguments = functionCall->getSequence();
         TIntermTyped *memNode      = (*arguments)[0]->getAsTyped();
@@ -5666,7 +5667,7 @@ void TParseContext::checkAtomicMemoryBuiltinFunctions(TIntermAggregate *function
         error(memNode->getLine(),
               "The value passed to the mem argument of an atomic memory function does not "
               "correspond to a buffer or shared variable.",
-              functionCall->getFunctionSymbolInfo()->getName().c_str());
+              functionName.c_str());
     }
 }
 
@@ -5674,7 +5675,7 @@ void TParseContext::checkAtomicMemoryBuiltinFunctions(TIntermAggregate *function
 void TParseContext::checkImageMemoryAccessForBuiltinFunctions(TIntermAggregate *functionCall)
 {
     ASSERT(functionCall->getOp() == EOpCallBuiltInFunction);
-    const TString &name = functionCall->getFunctionSymbolInfo()->getName();
+    const TString &name = functionCall->getFunction()->name();
 
     if (name.compare(0, 5, "image") == 0)
     {
@@ -5775,7 +5776,7 @@ TIntermTyped *TParseContext::addFunctionCallOrMethod(TFunction *fnCall,
 {
     if (thisNode != nullptr)
     {
-        return addMethod(fnCall, arguments, thisNode, loc);
+        return addMethod(fnCall->name(), arguments, thisNode, loc);
     }
 
     TOperator op = fnCall->getBuiltInOp();
@@ -5786,11 +5787,11 @@ TIntermTyped *TParseContext::addFunctionCallOrMethod(TFunction *fnCall,
     else
     {
         ASSERT(op == EOpNull);
-        return addNonConstructorFunctionCall(fnCall, arguments, loc);
+        return addNonConstructorFunctionCall(fnCall->name(), arguments, loc);
     }
 }
 
-TIntermTyped *TParseContext::addMethod(TFunction *fnCall,
+TIntermTyped *TParseContext::addMethod(const TString &name,
                                        TIntermSequence *arguments,
                                        TIntermNode *thisNode,
                                        const TSourceLoc &loc)
@@ -5799,10 +5800,10 @@ TIntermTyped *TParseContext::addMethod(TFunction *fnCall,
     // It's possible for the name pointer in the TFunction to be null in case it gets parsed as
     // a constructor. But such a TFunction can't reach here, since the lexer goes into FIELDS
     // mode after a dot, which makes type identifiers to be parsed as FIELD_SELECTION instead.
-    // So accessing fnCall->getName() below is safe.
-    if (fnCall->name() != "length")
+    // So accessing fnCall->name() below is safe.
+    if (name != "length")
     {
-        error(loc, "invalid method", fnCall->name().c_str());
+        error(loc, "invalid method", name.c_str());
     }
     else if (!arguments->empty())
     {
@@ -5815,7 +5816,7 @@ TIntermTyped *TParseContext::addMethod(TFunction *fnCall,
     else if (typedThis->getQualifier() == EvqPerVertexIn &&
              mGeometryShaderInputPrimitiveType == EptUndefined)
     {
-        ASSERT(mShaderType == GL_GEOMETRY_SHADER_OES);
+        ASSERT(mShaderType == GL_GEOMETRY_SHADER_EXT);
         error(loc, "missing input primitive declaration before calling length on gl_in", "length");
     }
     else
@@ -5827,7 +5828,7 @@ TIntermTyped *TParseContext::addMethod(TFunction *fnCall,
     return CreateZeroNode(TType(EbtInt, EbpUndefined, EvqConst));
 }
 
-TIntermTyped *TParseContext::addNonConstructorFunctionCall(TFunction *fnCall,
+TIntermTyped *TParseContext::addNonConstructorFunctionCall(const TString &name,
                                                            TIntermSequence *arguments,
                                                            const TSourceLoc &loc)
 {
@@ -5835,18 +5836,18 @@ TIntermTyped *TParseContext::addNonConstructorFunctionCall(TFunction *fnCall,
     // hidden by a variable name or struct typename.
     // If a function is found, check for one with a matching argument list.
     bool builtIn;
-    const TSymbol *symbol = symbolTable.find(fnCall->name(), mShaderVersion, &builtIn);
+    const TSymbol *symbol = symbolTable.find(name, mShaderVersion, &builtIn);
     if (symbol != nullptr && !symbol->isFunction())
     {
-        error(loc, "function name expected", fnCall->name().c_str());
+        error(loc, "function name expected", name.c_str());
     }
     else
     {
-        symbol = symbolTable.find(TFunction::GetMangledNameFromCall(fnCall->name(), *arguments),
+        symbol = symbolTable.find(TFunction::GetMangledNameFromCall(name, *arguments),
                                   mShaderVersion, &builtIn);
         if (symbol == nullptr)
         {
-            error(loc, "no matching overloaded function found", fnCall->name().c_str());
+            error(loc, "no matching overloaded function found", name.c_str());
         }
         else
         {
@@ -5879,16 +5880,9 @@ TIntermTyped *TParseContext::addNonConstructorFunctionCall(TFunction *fnCall,
                     // Some built-in functions have out parameters too.
                     functionCallRValueLValueErrorCheck(fnCandidate, callNode);
 
-                    if (TIntermAggregate::CanFoldAggregateBuiltInOp(callNode->getOp()))
-                    {
-                        // See if we can constant fold a built-in. Note that this may be possible
-                        // even if it is not const-qualified.
-                        return callNode->fold(mDiagnostics);
-                    }
-                    else
-                    {
-                        return callNode;
-                    }
+                    // See if we can constant fold a built-in. Note that this may be possible
+                    // even if it is not const-qualified.
+                    return callNode->fold(mDiagnostics);
                 }
             }
             else
@@ -5990,12 +5984,9 @@ TIntermTyped *TParseContext::addTernarySelection(TIntermTyped *cond,
         return falseExpression;
     }
 
-    // Note that the node resulting from here can be a constant union without being qualified as
-    // constant.
     TIntermTernary *node = new TIntermTernary(cond, trueExpression, falseExpression);
     node->setLine(loc);
-
-    return node->fold();
+    return expressionOrFoldedResult(node);
 }
 
 //

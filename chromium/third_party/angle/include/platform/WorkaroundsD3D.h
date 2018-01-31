@@ -123,6 +123,11 @@ struct WorkaroundsD3D
     // then rendering samples also pass neglecting discard statements in pixel shader.
     // So we add a dummy texture as render target in such case. See http://anglebug.com/2152
     bool addDummyTextureNoRenderTarget = false;
+
+    // Don't use D3D constant register zero when allocating space for uniforms. This is targeted to
+    // work around a bug in NVIDIA D3D driver version 388.59 where in very specific cases the driver
+    // would not handle constant register zero correctly.
+    bool skipConstantRegisterZero = false;
 };
 
 }  // namespace angle

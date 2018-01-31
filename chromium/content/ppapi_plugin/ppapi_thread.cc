@@ -16,8 +16,8 @@
 #include "base/logging.h"
 #include "base/memory/discardable_memory_allocator.h"
 #include "base/memory/ptr_util.h"
+#include "base/metrics/histogram_functions.h"
 #include "base/metrics/histogram_macros.h"
-#include "base/metrics/sparse_histogram.h"
 #include "base/rand_util.h"
 #include "base/single_thread_task_runner.h"
 #include "base/strings/stringprintf.h"
@@ -235,7 +235,7 @@ void PpapiThread::PreCacheFontForFlash(const void* logfontw) {
 }
 
 void PpapiThread::SetActiveURL(const std::string& url) {
-  GetContentClient()->SetActiveURL(GURL(url));
+  GetContentClient()->SetActiveURL(GURL(url), std::string());
 }
 
 PP_Resource PpapiThread::CreateBrowserFont(
@@ -275,7 +275,9 @@ void PpapiThread::OnLoadPlugin(const base::FilePath& path,
                                const ppapi::PpapiPermissions& permissions) {
   // In case of crashes, the crash dump doesn't indicate which plugin
   // it came from.
-  base::debug::SetCrashKeyValue("ppapi_path", path.MaybeAsASCII());
+  static auto* ppapi_path_key = base::debug::AllocateCrashKeyString(
+      "ppapi_path", base::debug::CrashKeySize::Size64);
+  base::debug::SetCrashKeyString(ppapi_path_key, path.MaybeAsASCII());
 
   SavePluginName(path);
 
@@ -454,10 +456,14 @@ void PpapiThread::OnLoadPlugin(const base::FilePath& path,
     }
   } else {
 #if defined(OS_MACOSX)
-    // We need to do this after getting |PPP_GetInterface()| (or presumably
-    // doing something nontrivial with the library), else the sandbox
-    // intercedes.
-    CHECK(InitializeSandbox());
+    // TODO(kerrnel): Delete this once the V2 sandbox is default.
+    const base::CommandLine* cmdline = base::CommandLine::ForCurrentProcess();
+    if (!cmdline->HasSwitch(switches::kEnableV2Sandbox)) {
+      // We need to do this after getting |PPP_GetInterface()| (or presumably
+      // doing something nontrivial with the library), else the sandbox
+      // intercedes.
+      CHECK(InitializeSandbox());
+    }
 #endif
 
 #if BUILDFLAG(ENABLE_CDM_HOST_VERIFICATION)
@@ -614,10 +620,8 @@ void PpapiThread::ReportLoadErrorCode(
 // Only report load error code on Windows because that's the only platform that
 // has a numerical error value.
 #if defined(OS_WIN)
-  // For sparse histograms, we can use the macro, as it does not incorporate a
-  // static.
-  UMA_HISTOGRAM_SPARSE_SLOWLY(
-      GetHistogramName(is_broker_, "LoadErrorCode", path), error.code);
+  base::UmaHistogramSparse(GetHistogramName(is_broker_, "LoadErrorCode", path),
+                           error.code);
 #endif
 }
 

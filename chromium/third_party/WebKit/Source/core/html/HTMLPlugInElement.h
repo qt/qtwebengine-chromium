@@ -34,8 +34,8 @@ namespace blink {
 
 class HTMLImageLoader;
 class LayoutEmbeddedContent;
-class LayoutEmbeddedItem;
-class PluginView;
+class LayoutEmbeddedObject;
+class WebPluginContainerImpl;
 
 enum PreferPlugInsForImagesOption {
   kShouldPreferPlugInsForImages,
@@ -66,8 +66,8 @@ class CORE_EXPORT HTMLPlugInElement
   // PluginEmbeddedContentView will synchronously create the plugin if required
   // by calling LayoutEmbeddedContentForJSBindings. Possibly the
   // PluginEmbeddedContentView code can be inlined into PluginWrapper.
-  PluginView* PluginEmbeddedContentView() const;
-  PluginView* OwnedPlugin() const;
+  WebPluginContainerImpl* PluginEmbeddedContentView() const;
+  WebPluginContainerImpl* OwnedPlugin() const;
   bool CanProcessDrag() const;
   const String& Url() const { return url_; }
 
@@ -112,7 +112,7 @@ class CORE_EXPORT HTMLPlugInElement
   virtual LayoutEmbeddedContent* LayoutEmbeddedContentForJSBindings() const;
 
   bool IsImageType();
-  LayoutEmbeddedItem GetLayoutEmbeddedItem() const;
+  LayoutEmbeddedObject* GetLayoutEmbeddedObject() const;
   bool AllowedToLoadFrameURL(const String& url);
   bool RequestObject(const Vector<String>& param_names,
                      const Vector<String>& param_values);
@@ -152,6 +152,7 @@ class CORE_EXPORT HTMLPlugInElement
 
   // HTMLFrameOwnerElement overrides:
   void DisconnectContentFrame() override;
+  void IntrinsicDimensionsChanged() final;
 
   // Return any existing LayoutEmbeddedContent without triggering relayout, or 0
   // if it doesn't yet exist.
@@ -178,7 +179,7 @@ class CORE_EXPORT HTMLPlugInElement
   };
   ObjectContentType GetObjectContentType();
 
-  void SetPersistedPlugin(PluginView*);
+  void SetPersistedPlugin(WebPluginContainerImpl*);
 
   bool RequestObjectInternal(const Vector<String>& param_names,
                              const Vector<String>& param_values);
@@ -197,7 +198,7 @@ class CORE_EXPORT HTMLPlugInElement
   // that OwnedEmbeddedContentView() != null means the frame is active, we save
   // off embedded_content_view_ here while the plugin is persisting but not
   // being displayed.
-  Member<PluginView> persisted_plugin_;
+  Member<WebPluginContainerImpl> persisted_plugin_;
 };
 
 inline bool IsHTMLPlugInElement(const HTMLElement& element) {

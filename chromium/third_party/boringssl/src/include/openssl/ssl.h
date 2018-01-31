@@ -591,12 +591,9 @@ OPENSSL_EXPORT int DTLSv1_handle_timeout(SSL *ssl);
 #define DTLS1_VERSION 0xfeff
 #define DTLS1_2_VERSION 0xfefd
 
-#define TLS1_3_DRAFT_VERSION 0x7f12
-#define TLS1_3_DRAFT21_VERSION 0x7f15
-#define TLS1_3_DRAFT22_VERSION 0x7e04
-#define TLS1_3_EXPERIMENT_VERSION 0x7e01
+#define TLS1_3_DRAFT22_VERSION 0x7f16
+#define TLS1_3_DRAFT23_VERSION 0x7f17
 #define TLS1_3_EXPERIMENT2_VERSION 0x7e02
-#define TLS1_3_EXPERIMENT3_VERSION 0x7e03
 
 // SSL_CTX_set_min_proto_version sets the minimum protocol version for |ctx| to
 // |version|. If |version| is zero, the default minimum version is used. It
@@ -2384,6 +2381,11 @@ OPENSSL_EXPORT int SSL_CTX_load_verify_locations(SSL_CTX *ctx,
 // either |X509_V_OK| or a |X509_V_ERR_*| value.
 OPENSSL_EXPORT long SSL_get_verify_result(const SSL *ssl);
 
+// SSL_alert_from_verify_result returns the SSL alert code, such as
+// |SSL_AD_CERTIFICATE_EXPIRED|, that corresponds to an |X509_V_ERR_*| value.
+// The return value is always an alert, even when |result| is |X509_V_OK|.
+OPENSSL_EXPORT int SSL_alert_from_verify_result(long result);
+
 // SSL_get_ex_data_X509_STORE_CTX_idx returns the ex_data index used to look up
 // the |SSL| associated with an |X509_STORE_CTX| in the verify callback.
 OPENSSL_EXPORT int SSL_get_ex_data_X509_STORE_CTX_idx(void);
@@ -2907,6 +2909,21 @@ OPENSSL_EXPORT const char *SSL_get_psk_identity_hint(const SSL *ssl);
 OPENSSL_EXPORT const char *SSL_get_psk_identity(const SSL *ssl);
 
 
+// Dummy post-quantum padding.
+//
+// Dummy post-quantum padding invovles the client (and later server) sending
+// useless, random-looking bytes in an extension in their ClientHello or
+// ServerHello. These extensions are sized to simulate a post-quantum
+// key-exchange and so enable measurement of the latency impact of the
+// additional bandwidth.
+
+// SSL_set_dummy_pq_padding_size enables the sending of a dummy PQ padding
+// extension and configures its size. This is only effective for a client: a
+// server will echo an extension with one of equal length when we get to that
+// phase of the experiment. It returns one for success and zero otherwise.
+OPENSSL_EXPORT int SSL_set_dummy_pq_padding_size(SSL *ssl, size_t num_bytes);
+
+
 // Early data.
 //
 // WARNING: 0-RTT support in BoringSSL is currently experimental and not fully
@@ -2987,6 +3004,13 @@ OPENSSL_EXPORT int SSL_early_data_accepted(const SSL *ssl);
 // It is an error to call this function on an |SSL| object that is not signaling
 // |SSL_ERROR_EARLY_DATA_REJECTED|.
 OPENSSL_EXPORT void SSL_reset_early_data_reject(SSL *ssl);
+
+// SSL_export_early_keying_material behaves like |SSL_export_keying_material|,
+// but it uses the early exporter. The operation will fail if |ssl| did not
+// negotiate TLS 1.3 or 0-RTT.
+OPENSSL_EXPORT int SSL_export_early_keying_material(
+    SSL *ssl, uint8_t *out, size_t out_len, const char *label, size_t label_len,
+    const uint8_t *context, size_t context_len);
 
 
 // Alerts.
@@ -3219,11 +3243,8 @@ OPENSSL_EXPORT int SSL_total_renegotiations(const SSL *ssl);
 
 enum tls13_variant_t {
   tls13_default = 0,
-  tls13_experiment = 1,
-  tls13_experiment2 = 2,
-  tls13_experiment3 = 3,
-  tls13_draft21 = 4,
-  tls13_draft22 = 5,
+  tls13_experiment2 = 1,
+  tls13_draft22 = 2,
 };
 
 // SSL_CTX_set_tls13_variant sets which variant of TLS 1.3 we negotiate. On the
@@ -3476,6 +3497,16 @@ OPENSSL_EXPORT size_t SSL_max_seal_overhead(const SSL *ssl);
 // client-sent ticket age and the server-computed value in TLS 1.3 server
 // connections which resumed a session.
 OPENSSL_EXPORT int32_t SSL_get_ticket_age_skew(const SSL *ssl);
+
+// SSL_CTX_set_false_start_allowed_without_alpn configures whether connections
+// on |ctx| may use False Start (if |SSL_MODE_ENABLE_FALSE_START| is enabled)
+// without negotiating ALPN.
+OPENSSL_EXPORT void SSL_CTX_set_false_start_allowed_without_alpn(SSL_CTX *ctx,
+                                                                 int allowed);
+
+// SSL_is_draft_downgrade returns one if the TLS 1.3 anti-downgrade mechanism
+// would have aborted |ssl|'s handshake and zero otherwise.
+OPENSSL_EXPORT int SSL_is_draft_downgrade(const SSL *ssl);
 
 
 // Deprecated functions.
@@ -4555,6 +4586,8 @@ OPENSSL_EXPORT bool SealRecord(SSL *ssl, Span<uint8_t> out_prefix,
 #define SSL_R_NO_SUPPORTED_VERSIONS_ENABLED 280
 #define SSL_R_APPLICATION_DATA_INSTEAD_OF_HANDSHAKE 281
 #define SSL_R_EMPTY_HELLO_RETRY_REQUEST 282
+#define SSL_R_EARLY_DATA_NOT_IN_USE 283
+#define SSL_R_HANDSHAKE_NOT_COMPLETE 284
 #define SSL_R_SSLV3_ALERT_CLOSE_NOTIFY 1000
 #define SSL_R_SSLV3_ALERT_UNEXPECTED_MESSAGE 1010
 #define SSL_R_SSLV3_ALERT_BAD_RECORD_MAC 1020

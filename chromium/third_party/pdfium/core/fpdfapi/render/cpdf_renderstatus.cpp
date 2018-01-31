@@ -963,6 +963,26 @@ bool IsAvailableMatrix(const CFX_Matrix& matrix) {
   return true;
 }
 
+bool MissingFillColor(const CPDF_ColorState* pColorState) {
+  return !pColorState->HasRef() || pColorState->GetFillColor()->IsNull();
+}
+
+bool MissingStrokeColor(const CPDF_ColorState* pColorState) {
+  return !pColorState->HasRef() || pColorState->GetStrokeColor()->IsNull();
+}
+
+bool Type3CharMissingFillColor(const CPDF_Type3Char* pChar,
+                               const CPDF_ColorState* pColorState) {
+  return pChar && (!pChar->colored() ||
+                   (pChar->colored() && MissingFillColor(pColorState)));
+}
+
+bool Type3CharMissingStrokeColor(const CPDF_Type3Char* pChar,
+                                 const CPDF_ColorState* pColorState) {
+  return pChar && (!pChar->colored() ||
+                   (pChar->colored() && MissingStrokeColor(pColorState)));
+}
+
 }  // namespace
 
 // static
@@ -1330,13 +1350,10 @@ RetainPtr<CPDF_TransferFunc> CPDF_RenderStatus::GetTransferFunc(
 FX_ARGB CPDF_RenderStatus::GetFillArgb(CPDF_PageObject* pObj,
                                        bool bType3) const {
   const CPDF_ColorState* pColorState = &pObj->m_ColorState;
-  if (m_pType3Char && !bType3 &&
-      (!m_pType3Char->m_bColored ||
-       (m_pType3Char->m_bColored &&
-        (!pColorState->HasRef() || pColorState->GetFillColor()->IsNull())))) {
+  if (!bType3 && Type3CharMissingFillColor(m_pType3Char.Get(), pColorState))
     return m_T3FillColor;
-  }
-  if (!pColorState->HasRef() || pColorState->GetFillColor()->IsNull())
+
+  if (MissingFillColor(pColorState))
     pColorState = &m_InitialStates.m_ColorState;
 
   FX_COLORREF rgb = pColorState->GetFillRGB();
@@ -1358,13 +1375,10 @@ FX_ARGB CPDF_RenderStatus::GetFillArgb(CPDF_PageObject* pObj,
 
 FX_ARGB CPDF_RenderStatus::GetStrokeArgb(CPDF_PageObject* pObj) const {
   const CPDF_ColorState* pColorState = &pObj->m_ColorState;
-  if (m_pType3Char &&
-      (!m_pType3Char->m_bColored ||
-       (m_pType3Char->m_bColored &&
-        (!pColorState->HasRef() || pColorState->GetStrokeColor()->IsNull())))) {
+  if (Type3CharMissingStrokeColor(m_pType3Char.Get(), pColorState))
     return m_T3FillColor;
-  }
-  if (!pColorState->HasRef() || pColorState->GetStrokeColor()->IsNull())
+
+  if (MissingStrokeColor(pColorState))
     pColorState = &m_InitialStates.m_ColorState;
 
   FX_COLORREF rgb = pColorState->GetStrokeRGB();
@@ -1887,24 +1901,24 @@ bool CPDF_RenderStatus::ProcessType3Text(CPDF_TextObject* textobj,
       options.SetFlags(option_flags);
 
       CPDF_Dictionary* pFormResource = nullptr;
-      if (pType3Char->m_pForm && pType3Char->m_pForm->m_pFormDict) {
+      if (pType3Char->form() && pType3Char->form()->m_pFormDict) {
         pFormResource =
-            pType3Char->m_pForm->m_pFormDict->GetDictFor("Resources");
+            pType3Char->form()->m_pFormDict->GetDictFor("Resources");
       }
       if (fill_alpha == 255) {
         CPDF_RenderStatus status;
         status.Initialize(m_pContext.Get(), m_pDevice, nullptr, nullptr, this,
                           pStates.get(), &options,
-                          pType3Char->m_pForm->m_iTransparency, m_bDropObjects,
+                          pType3Char->form()->m_iTransparency, m_bDropObjects,
                           pFormResource, false, pType3Char, fill_argb);
         status.m_Type3FontCache = m_Type3FontCache;
         status.m_Type3FontCache.push_back(pType3Font);
 
         CFX_RenderDevice::StateRestorer restorer(m_pDevice);
-        status.RenderObjectList(pType3Char->m_pForm.get(), &matrix);
+        status.RenderObjectList(pType3Char->form(), &matrix);
       } else {
         FX_RECT rect =
-            matrix.TransformRect(pType3Char->m_pForm->CalcBoundingBox())
+            matrix.TransformRect(pType3Char->form()->CalcBoundingBox())
                 .GetOuterRect();
         CFX_DefaultRenderDevice bitmap_device;
         if (!bitmap_device.Create((int)(rect.Width() * sa),
@@ -1916,16 +1930,16 @@ bool CPDF_RenderStatus::ProcessType3Text(CPDF_TextObject* textobj,
         CPDF_RenderStatus status;
         status.Initialize(m_pContext.Get(), &bitmap_device, nullptr, nullptr,
                           this, pStates.get(), &options,
-                          pType3Char->m_pForm->m_iTransparency, m_bDropObjects,
+                          pType3Char->form()->m_iTransparency, m_bDropObjects,
                           pFormResource, false, pType3Char, fill_argb);
         status.m_Type3FontCache = m_Type3FontCache;
         status.m_Type3FontCache.push_back(pType3Font);
         matrix.Translate(-rect.left, -rect.top);
         matrix.Scale(sa, sd);
-        status.RenderObjectList(pType3Char->m_pForm.get(), &matrix);
+        status.RenderObjectList(pType3Char->form(), &matrix);
         m_pDevice->SetDIBits(bitmap_device.GetBitmap(), rect.left, rect.top);
       }
-    } else if (pType3Char->m_pBitmap) {
+    } else if (pType3Char->GetBitmap()) {
       if (device_class == FXDC_DISPLAY) {
         RetainPtr<CPDF_Type3Cache> pCache = GetCachedType3(pType3Font);
         refTypeCache.m_dwCount++;
@@ -1942,10 +1956,10 @@ bool CPDF_RenderStatus::ProcessType3Text(CPDF_TextObject* textobj,
           glyphs[iChar].m_Origin = origin;
         }
       } else {
-        CFX_Matrix image_matrix = pType3Char->m_ImageMatrix;
+        CFX_Matrix image_matrix = pType3Char->matrix();
         image_matrix.Concat(matrix);
         CPDF_ImageRenderer renderer;
-        if (renderer.Start(this, pType3Char->m_pBitmap, fill_argb, 255,
+        if (renderer.Start(this, pType3Char->GetBitmap(), fill_argb, 255,
                            &image_matrix, 0, false, FXDIB_BLEND_NORMAL)) {
           renderer.Continue(nullptr);
         }
@@ -2051,7 +2065,7 @@ void CPDF_RenderStatus::DrawTextPathWithPattern(const CPDF_TextObject* textobj,
   }
 }
 
-void CPDF_RenderStatus::DrawShading(CPDF_ShadingPattern* pPattern,
+void CPDF_RenderStatus::DrawShading(const CPDF_ShadingPattern* pPattern,
                                     CFX_Matrix* pMatrix,
                                     FX_RECT& clip_rect,
                                     int alpha,
@@ -2183,9 +2197,9 @@ void CPDF_RenderStatus::ProcessShading(const CPDF_ShadingObject* pShadingObj,
   if (rect.IsEmpty())
     return;
 
-  CFX_Matrix matrix = pShadingObj->m_Matrix;
+  CFX_Matrix matrix = pShadingObj->matrix();
   matrix.Concat(*pObj2Device);
-  DrawShading(pShadingObj->m_pShading.Get(), &matrix, rect,
+  DrawShading(pShadingObj->pattern(), &matrix, rect,
               FXSYS_round(255 * pShadingObj->m_GeneralState.GetFillAlpha()),
               m_Options.ColorModeIs(CPDF_RenderOptions::kAlpha));
 }

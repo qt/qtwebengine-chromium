@@ -20,6 +20,11 @@
 class SK_API SkAndroidCodec : SkNoncopyable {
 public:
     /**
+     *  Pass ownership of an SkCodec to a newly-created SkAndroidCodec.
+     */
+    static std::unique_ptr<SkAndroidCodec> MakeFromCodec(std::unique_ptr<SkCodec>);
+
+    /**
      *  If this stream represents an encoded image that we know how to decode,
      *  return an SkAndroidCodec that can decode it. Otherwise return NULL.
      *
@@ -42,8 +47,6 @@ public:
     static std::unique_ptr<SkAndroidCodec> MakeFromData(sk_sp<SkData>, SkPngChunkReader* = nullptr);
 
     virtual ~SkAndroidCodec();
-
-    const SkEncodedInfo& getEncodedInfo() const;
 
     const SkImageInfo& getInfo() const { return fInfo; }
 
@@ -86,6 +89,17 @@ public:
      */
     sk_sp<SkColorSpace> computeOutputColorSpace(SkColorType outputColorType,
                                                 sk_sp<SkColorSpace> prefColorSpace = nullptr);
+
+    /**
+     *  Compute the appropriate sample size to get to |size|.
+     *
+     *  @param size As an input parameter, the desired output size of
+     *      the decode. As an output parameter, the smallest sampled size
+     *      larger than the input.
+     *  @return the sample size to set AndroidOptions::fSampleSize to decode
+     *      to the output |size|.
+     */
+    int computeSampleSize(SkISize* size) const;
 
     /**
      *  Returns the dimensions of the scaled output image, for an input
@@ -228,11 +242,11 @@ public:
         return this->getAndroidPixels(info, pixels, rowBytes);
     }
 
+    SkCodec* codec() const { return fCodec.get(); }
+
 protected:
 
     SkAndroidCodec(SkCodec*);
-
-    SkCodec* codec() const { return fCodec.get(); }
 
     virtual SkISize onGetSampledDimensions(int sampleSize) const = 0;
 

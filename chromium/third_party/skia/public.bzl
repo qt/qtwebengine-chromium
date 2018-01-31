@@ -233,9 +233,7 @@ BASE_SRCS_ALL = struct(
         # Exclude multiple definitions.
         # TODO(mtklein): Move to opts?
         "src/pdf/SkDocument_PDF_None.cpp",  # We use src/pdf/SkPDFDocument.cpp.
-        "src/gpu/gl/GrGLCreateNativeInterface_none.cpp",
-        "src/gpu/gl/GrGLDefaultInterface_native.cpp",
-        "src/gpu/gl/GrGLDefaultInterface_none.cpp",
+        "src/gpu/gl/GrGLMakeNativeInterface_none.cpp",
 
         # Exclude files that don't compile with the current DEFINES.
         "src/svg/**/*",  # Depends on XML.
@@ -276,7 +274,7 @@ def codec_srcs(limited):
 # Platform-dependent SRCS for google3-default platform.
 BASE_SRCS_UNIX = struct(
     include = [
-        "src/gpu/gl/GrGLDefaultInterface_none.cpp",
+        "src/gpu/gl/GrGLMakeNativeInterface_none.cpp",
         "src/ports/**/*.cpp",
         "src/ports/**/*.h",
     ],
@@ -304,7 +302,7 @@ BASE_SRCS_UNIX = struct(
 # Platform-dependent SRCS for google3-default Android.
 BASE_SRCS_ANDROID = struct(
     include = [
-        "src/gpu/gl/GrGLDefaultInterface_none.cpp",
+        "src/gpu/gl/GrGLMakeNativeInterface_none.cpp",
         # TODO(benjaminwagner): Figure out how to compile with EGL.
         "src/ports/**/*.cpp",
         "src/ports/**/*.h",
@@ -333,8 +331,7 @@ BASE_SRCS_ANDROID = struct(
 # Platform-dependent SRCS for google3-default iOS.
 BASE_SRCS_IOS = struct(
     include = [
-        "src/gpu/gl/GrGLDefaultInterface_native.cpp",
-        "src/gpu/gl/iOS/GrGLCreateNativeInterface_iOS.cpp",
+        "src/gpu/gl/iOS/GrGLMakeNativeInterface_iOS.cpp",
         "src/ports/**/*.cpp",
         "src/ports/**/*.h",
         "src/utils/mac/*.cpp",
@@ -543,18 +540,6 @@ def DM_ARGS(asan):
       "~^PaintBreakText$$",
       "~^RecordDraw_TextBounds$$",
   ]
-  if asan:
-    # The ASAN we use with Bazel has some strict checks, so omit tests that
-    # trigger them.
-    # All of the following are due to
-    # https://bugs.chromium.org/p/skia/issues/detail?id=7052
-    match += [
-        "~^clippedcubic2$$",
-        "~^PathOpsCubicIntersection$$",
-        "~^PathOpsCubicLineIntersection$$",
-        "~^PathOpsOpCubicsThreaded$$",
-        "~^PathOpsOpLoopsThreaded$$",
-    ]
   return ["--src"] + source + ["--config"] + config + ["--match"] + match
 
 ################################################################################
@@ -591,7 +576,7 @@ def base_defines(os_conditions):
       # Chrome DEFINES.
       "SK_USE_FREETYPE_EMBOLDEN",
       # Turn on a few Google3-specific build fixes.
-      "GOOGLE3",
+      "SK_BUILD_FOR_GOOGLE3",
       # Required for building dm.
       "GR_TEST_UTILS",
       # Staging flags for API changes

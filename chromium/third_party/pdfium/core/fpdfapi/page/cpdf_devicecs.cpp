@@ -36,19 +36,6 @@ uint32_t ComponentsForFamily(int family) {
   return 4;
 }
 
-void sRGB_to_AdobeCMYK(float R,
-                       float G,
-                       float B,
-                       float& c,
-                       float& m,
-                       float& y,
-                       float& k) {
-  c = 1.0f - R;
-  m = 1.0f - G;
-  y = 1.0f - B;
-  k = std::min(c, std::min(m, y));
-}
-
 void ReverseRGB(uint8_t* pDestBuf, const uint8_t* pSrcBuf, int pixels) {
   if (pDestBuf == pSrcBuf) {
     for (int i = 0; i < pixels; i++) {
@@ -67,13 +54,22 @@ void ReverseRGB(uint8_t* pDestBuf, const uint8_t* pSrcBuf, int pixels) {
   }
 }
 
-CPDF_DeviceCS::CPDF_DeviceCS(int family)
-    : CPDF_ColorSpace(nullptr, family, ComponentsForFamily(family)) {
+CPDF_DeviceCS::CPDF_DeviceCS(int family) : CPDF_ColorSpace(nullptr, family) {
   ASSERT(family == PDFCS_DEVICEGRAY || family == PDFCS_DEVICERGB ||
          family == PDFCS_DEVICECMYK);
+  SetComponentsForStockCS(ComponentsForFamily(GetFamily()));
 }
 
 CPDF_DeviceCS::~CPDF_DeviceCS() {}
+
+uint32_t CPDF_DeviceCS::v_Load(CPDF_Document* pDoc,
+                               CPDF_Array* pArray,
+                               std::set<CPDF_Object*>* pVisited) {
+  // Unlike other classes that inherit from CPDF_ColorSpace, CPDF_DeviceCS is
+  // never loaded by CPDF_ColorSpace.
+  NOTREACHED();
+  return 0;
+}
 
 bool CPDF_DeviceCS::GetRGB(float* pBuf, float* R, float* G, float* B) const {
   switch (m_Family) {

@@ -7,6 +7,8 @@
 
 #include "GrBackendSurface.h"
 
+#include "gl/GrGLUtil.h"
+
 #ifdef SK_VULKAN
 #include "vk/GrVkTypes.h"
 #include "vk/GrVkUtil.h"
@@ -38,6 +40,17 @@ GrBackendTexture::GrBackendTexture(int width,
         : fWidth(width)
         , fHeight(height)
         , fConfig(config)
+        , fMipMapped(mipMapped)
+        , fBackend(kOpenGL_GrBackend)
+        , fGLInfo(glInfo) {}
+
+GrBackendTexture::GrBackendTexture(int width,
+                                   int height,
+                                   GrMipMapped mipMapped,
+                                   const GrGLTextureInfo& glInfo)
+        : fWidth(width)
+        , fHeight(height)
+        , fConfig(GrGLSizedFormatToPixelConfig(glInfo.fFormat))
         , fMipMapped(mipMapped)
         , fBackend(kOpenGL_GrBackend)
         , fGLInfo(glInfo) {}
@@ -111,6 +124,19 @@ GrBackendRenderTarget::GrBackendRenderTarget(int width,
         , fSampleCnt(sampleCnt)
         , fStencilBits(stencilBits)
         , fConfig(config)
+        , fBackend(kOpenGL_GrBackend)
+        , fGLInfo(glInfo) {}
+
+GrBackendRenderTarget::GrBackendRenderTarget(int width,
+                                             int height,
+                                             int sampleCnt,
+                                             int stencilBits,
+                                             const GrGLFramebufferInfo& glInfo)
+        : fWidth(width)
+        , fHeight(height)
+        , fSampleCnt(sampleCnt)
+        , fStencilBits(stencilBits)
+        , fConfig(GrGLSizedFormatToPixelConfig(glInfo.fFormat))
         , fBackend(kOpenGL_GrBackend)
         , fGLInfo(glInfo) {}
 

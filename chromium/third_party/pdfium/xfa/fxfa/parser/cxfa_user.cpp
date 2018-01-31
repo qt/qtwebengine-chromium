@@ -6,6 +6,9 @@
 
 #include "xfa/fxfa/parser/cxfa_user.h"
 
+#include "fxjs/xfa/cjx_user.h"
+#include "third_party/base/ptr_util.h"
+
 namespace {
 
 const CXFA_Node::AttributeData kAttributeData[] = {
@@ -27,6 +30,7 @@ CXFA_User::CXFA_User(CXFA_Document* doc, XFA_PacketType packet)
                 XFA_Element::User,
                 nullptr,
                 kAttributeData,
-                kName) {}
+                kName,
+                pdfium::MakeUnique<CJX_User>(this)) {}
 
 CXFA_User::~CXFA_User() {}

@@ -20,7 +20,7 @@
 #include "gpu/command_buffer/common/sync_token.h"
 #include "gpu/command_buffer/service/feature_info.h"
 #include "gpu/command_buffer/service/gpu_tracer.h"
-#include "gpu/command_buffer/service/mailbox_manager.h"
+#include "gpu/command_buffer/service/mailbox_manager_factory.h"
 #include "gpu/command_buffer/service/memory_program_cache.h"
 #include "gpu/command_buffer/service/passthrough_program_cache.h"
 #include "gpu/command_buffer/service/scheduler.h"
@@ -66,7 +66,7 @@ GpuChannelManager::GpuChannelManager(
       delegate_(delegate),
       watchdog_(watchdog),
       share_group_(new gl::GLShareGroup()),
-      mailbox_manager_(gles2::MailboxManager::Create(gpu_preferences)),
+      mailbox_manager_(gles2::CreateMailboxManager(gpu_preferences)),
       gpu_memory_manager_(this),
       scheduler_(scheduler),
       sync_point_manager_(sync_point_manager),
@@ -249,16 +249,16 @@ void GpuChannelManager::ScheduleWakeUpGpu() {
 }
 
 void GpuChannelManager::DoWakeUpGpu() {
-  const GpuCommandBufferStub* stub = nullptr;
+  const CommandBufferStub* stub = nullptr;
   for (const auto& kv : gpu_channels_) {
     const GpuChannel* channel = kv.second.get();
     stub = channel->GetOneStub();
     if (stub) {
-      DCHECK(stub->decoder());
+      DCHECK(stub->decoder_context());
       break;
     }
   }
-  if (!stub || !stub->decoder()->MakeCurrent())
+  if (!stub || !stub->decoder_context()->MakeCurrent())
     return;
   glFinish();
   DidAccessGpu();
@@ -266,10 +266,6 @@ void GpuChannelManager::DoWakeUpGpu() {
 
 void GpuChannelManager::OnApplicationStateChange(
     base::android::ApplicationState state) {
-  // TODO(ericrk): Temporarily disable the context release logic due to
-  // https://crbug.com/792120. Re-enable when the fix lands.
-  return;
-
   if (state != base::android::APPLICATION_STATE_HAS_STOPPED_ACTIVITIES ||
       !is_running_on_low_end_mode_) {
     return;

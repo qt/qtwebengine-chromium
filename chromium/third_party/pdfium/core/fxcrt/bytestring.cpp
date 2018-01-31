@@ -69,7 +69,9 @@ bool IsValidCodePage(uint16_t codepage) {
 #endif
 
 ByteString GetByteString(uint16_t codepage, const WideStringView& wstr) {
+#ifndef NDEBUG
   ASSERT(IsValidCodePage(codepage));
+#endif
 
   int src_len = wstr.GetLength();
   int dest_len =
@@ -317,16 +319,7 @@ bool ByteString::operator<(const char* ptr) const {
 }
 
 bool ByteString::operator<(const ByteStringView& str) const {
-  if (!m_pData && !str.unterminated_c_str())
-    return false;
-  if (c_str() == str.unterminated_c_str())
-    return false;
-
-  size_t len = GetLength();
-  size_t other_len = str.GetLength();
-  int result =
-      memcmp(c_str(), str.unterminated_c_str(), std::min(len, other_len));
-  return result < 0 || (result == 0 && len < other_len);
+  return Compare(str) < 0;
 }
 
 bool ByteString::operator<(const ByteString& other) const {
@@ -558,46 +551,44 @@ size_t ByteString::Insert(size_t location, char ch) {
   return new_length;
 }
 
-pdfium::Optional<size_t> ByteString::Find(char ch, size_t start) const {
+Optional<size_t> ByteString::Find(char ch, size_t start) const {
   if (!m_pData)
-    return pdfium::Optional<size_t>();
+    return Optional<size_t>();
 
   if (!IsValidIndex(start))
-    return pdfium::Optional<size_t>();
+    return Optional<size_t>();
 
   const char* pStr = static_cast<const char*>(
       memchr(m_pData->m_String + start, ch, m_pData->m_nDataLength - start));
-  return pStr ? pdfium::Optional<size_t>(
-                    static_cast<size_t>(pStr - m_pData->m_String))
-              : pdfium::Optional<size_t>();
+  return pStr ? Optional<size_t>(static_cast<size_t>(pStr - m_pData->m_String))
+              : Optional<size_t>();
 }
 
-pdfium::Optional<size_t> ByteString::Find(const ByteStringView& subStr,
-                                          size_t start) const {
+Optional<size_t> ByteString::Find(const ByteStringView& subStr,
+                                  size_t start) const {
   if (!m_pData)
-    return pdfium::Optional<size_t>();
+    return Optional<size_t>();
 
   if (!IsValidIndex(start))
-    return pdfium::Optional<size_t>();
+    return Optional<size_t>();
 
   const char* pStr =
       FX_strstr(m_pData->m_String + start, m_pData->m_nDataLength - start,
                 subStr.unterminated_c_str(), subStr.GetLength());
-  return pStr ? pdfium::Optional<size_t>(
-                    static_cast<size_t>(pStr - m_pData->m_String))
-              : pdfium::Optional<size_t>();
+  return pStr ? Optional<size_t>(static_cast<size_t>(pStr - m_pData->m_String))
+              : Optional<size_t>();
 }
 
-pdfium::Optional<size_t> ByteString::ReverseFind(char ch) const {
+Optional<size_t> ByteString::ReverseFind(char ch) const {
   if (!m_pData)
-    return pdfium::Optional<size_t>();
+    return Optional<size_t>();
 
   size_t nLength = m_pData->m_nDataLength;
   while (nLength--) {
     if (m_pData->m_String[nLength] == ch)
-      return pdfium::Optional<size_t>(nLength);
+      return Optional<size_t>(nLength);
   }
-  return pdfium::Optional<size_t>();
+  return Optional<size_t>();
 }
 
 void ByteString::MakeLower() {
@@ -717,17 +708,12 @@ int ByteString::Compare(const ByteStringView& str) const {
   size_t this_len = m_pData->m_nDataLength;
   size_t that_len = str.GetLength();
   size_t min_len = std::min(this_len, that_len);
-  for (size_t i = 0; i < min_len; i++) {
-    if (static_cast<uint8_t>(m_pData->m_String[i]) < str[i])
-      return -1;
-    if (static_cast<uint8_t>(m_pData->m_String[i]) > str[i])
-      return 1;
-  }
-  if (this_len < that_len)
-    return -1;
-  if (this_len > that_len)
-    return 1;
-  return 0;
+  int result = memcmp(m_pData->m_String, str.unterminated_c_str(), min_len);
+  if (result != 0)
+    return result;
+  if (this_len == that_len)
+    return 0;
+  return this_len < that_len ? -1 : 1;
 }
 
 void ByteString::Trim() {

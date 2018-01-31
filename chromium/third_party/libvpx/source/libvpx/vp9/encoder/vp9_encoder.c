@@ -437,34 +437,37 @@ static int is_psnr_calc_enabled(VP9_COMP *cpi) {
 
 /* clang-format off */
 const Vp9LevelSpec vp9_level_defs[VP9_LEVELS] = {
-  { LEVEL_1,   829440,      36864,    200,    400,    2, 1,  4,  8 },
-  { LEVEL_1_1, 2764800,     73728,    800,    1000,   2, 1,  4,  8 },
-  { LEVEL_2,   4608000,     122880,   1800,   1500,   2, 1,  4,  8 },
-  { LEVEL_2_1, 9216000,     245760,   3600,   2800,   2, 2,  4,  8 },
-  { LEVEL_3,   20736000,    552960,   7200,   6000,   2, 4,  4,  8 },
-  { LEVEL_3_1, 36864000,    983040,   12000,  10000,  2, 4,  4,  8 },
-  { LEVEL_4,   83558400,    2228224,  18000,  16000,  4, 4,  4,  8 },
-  { LEVEL_4_1, 160432128,   2228224,  30000,  18000,  4, 4,  5,  6 },
-  { LEVEL_5,   311951360,   8912896,  60000,  36000,  6, 8,  6,  4 },
-  { LEVEL_5_1, 588251136,   8912896,  120000, 46000,  8, 8,  10, 4 },
+  //         sample rate    size   breadth  bitrate  cpb
+  { LEVEL_1,   829440,      36864,    512,   200,    400,    2, 1,  4,  8 },
+  { LEVEL_1_1, 2764800,     73728,    768,   800,    1000,   2, 1,  4,  8 },
+  { LEVEL_2,   4608000,     122880,   960,   1800,   1500,   2, 1,  4,  8 },
+  { LEVEL_2_1, 9216000,     245760,   1344,  3600,   2800,   2, 2,  4,  8 },
+  { LEVEL_3,   20736000,    552960,   2048,  7200,   6000,   2, 4,  4,  8 },
+  { LEVEL_3_1, 36864000,    983040,   2752,  12000,  10000,  2, 4,  4,  8 },
+  { LEVEL_4,   83558400,    2228224,  4160,  18000,  16000,  4, 4,  4,  8 },
+  { LEVEL_4_1, 160432128,   2228224,  4160,  30000,  18000,  4, 4,  5,  6 },
+  { LEVEL_5,   311951360,   8912896,  8384,  60000,  36000,  6, 8,  6,  4 },
+  { LEVEL_5_1, 588251136,   8912896,  8384,  120000, 46000,  8, 8,  10, 4 },
   // TODO(huisu): update max_cpb_size for level 5_2 ~ 6_2 when
   // they are finalized (currently tentative).
-  { LEVEL_5_2, 1176502272,  8912896,  180000, 90000,  8, 8,  10, 4 },
-  { LEVEL_6,   1176502272,  35651584, 180000, 90000,  8, 16, 10, 4 },
-  { LEVEL_6_1, 2353004544u, 35651584, 240000, 180000, 8, 16, 10, 4 },
-  { LEVEL_6_2, 4706009088u, 35651584, 480000, 360000, 8, 16, 10, 4 },
+  { LEVEL_5_2, 1176502272,  8912896,  8384,  180000, 90000,  8, 8,  10, 4 },
+  { LEVEL_6,   1176502272,  35651584, 16832, 180000, 90000,  8, 16, 10, 4 },
+  { LEVEL_6_1, 2353004544u, 35651584, 16832, 240000, 180000, 8, 16, 10, 4 },
+  { LEVEL_6_2, 4706009088u, 35651584, 16832, 480000, 360000, 8, 16, 10, 4 },
 };
 /* clang-format on */
 
-static const char *level_fail_messages[TARGET_LEVEL_FAIL_IDS] =
-    { "The average bit-rate is too high.",
-      "The picture size is too large.",
-      "The luma sample rate is too large.",
-      "The CPB size is too large.",
-      "The compression ratio is too small",
-      "Too many column tiles are used.",
-      "The alt-ref distance is too small.",
-      "Too many reference buffers are used." };
+static const char *level_fail_messages[TARGET_LEVEL_FAIL_IDS] = {
+  "The average bit-rate is too high.",
+  "The picture size is too large.",
+  "The picture width/height is too large.",
+  "The luma sample rate is too large.",
+  "The CPB size is too large.",
+  "The compression ratio is too small",
+  "Too many column tiles are used.",
+  "The alt-ref distance is too small.",
+  "Too many reference buffers are used."
+};
 
 static INLINE void Scale2Ratio(VPX_SCALING mode, int *hr, int *hs) {
   switch (mode) {
@@ -566,6 +569,8 @@ VP9_LEVEL vp9_get_level(const Vp9LevelSpec *const level_spec) {
             (double)this_level->max_luma_sample_rate *
                 (1 + SAMPLE_RATE_GRACE_P) ||
         level_spec->max_luma_picture_size > this_level->max_luma_picture_size ||
+        level_spec->max_luma_picture_breadth >
+            this_level->max_luma_picture_breadth ||
         level_spec->average_bitrate > this_level->average_bitrate ||
         level_spec->max_cpb_size > this_level->max_cpb_size ||
         level_spec->compression_ratio < this_level->compression_ratio ||
@@ -1219,8 +1224,8 @@ static void set_tile_limits(VP9_COMP *cpi) {
   }
 
   if (cpi->oxcf.target_level == LEVEL_AUTO) {
-    const uint32_t pic_size = cpi->common.width * cpi->common.height;
-    const int level_tile_cols = log_tile_cols_from_picsize_level(pic_size);
+    const int level_tile_cols =
+        log_tile_cols_from_picsize_level(cpi->common.width, cpi->common.height);
     if (cm->log2_tile_cols > level_tile_cols) {
       cm->log2_tile_cols = VPXMAX(level_tile_cols, min_log2_tile_cols);
     }
@@ -1848,6 +1853,8 @@ void vp9_change_config(struct VP9_COMP *cpi, const VP9EncoderConfig *oxcf) {
            cm->mi_rows * cm->mi_cols * sizeof(*cpi->consec_zero_mv));
     if (cpi->oxcf.aq_mode == CYCLIC_REFRESH_AQ)
       vp9_cyclic_refresh_reset_resize(cpi);
+    rc->rc_1_frame = 0;
+    rc->rc_2_frame = 0;
   }
 
   if ((cpi->svc.number_temporal_layers > 1 && cpi->oxcf.rc_mode == VPX_CBR) ||
@@ -1856,6 +1863,24 @@ void vp9_change_config(struct VP9_COMP *cpi, const VP9EncoderConfig *oxcf) {
        cpi->oxcf.pass != 1)) {
     vp9_update_layer_context_change_config(cpi,
                                            (int)cpi->oxcf.target_bandwidth);
+  }
+
+  // Check for resetting the rc flags (rc_1_frame, rc_2_frame) if the
+  // configuration change has a large change in avg_frame_bandwidth.
+  // For SVC check for resetting based on spatial layer average bandwidth.
+  // Also reset buffer level to optimal level.
+  if (cm->current_video_frame > 0) {
+    if (cpi->use_svc) {
+      vp9_svc_check_reset_layer_rc_flag(cpi);
+    } else {
+      if (rc->avg_frame_bandwidth > (3 * rc->last_avg_frame_bandwidth >> 1) ||
+          rc->avg_frame_bandwidth < (rc->last_avg_frame_bandwidth >> 1)) {
+        rc->rc_1_frame = 0;
+        rc->rc_2_frame = 0;
+        rc->bits_off_target = rc->optimal_buffer_level;
+        rc->buffer_level = rc->optimal_buffer_level;
+      }
+    }
   }
 
   cpi->alt_ref_source = NULL;
@@ -2320,16 +2345,20 @@ void vp9_remove_compressor(VP9_COMP *cpi) {
         snprintf(headings, sizeof(headings),
                  "Bitrate\tAVGPsnr\tGLBPsnr\tAVPsnrP\tGLPsnrP\t"
                  "VPXSSIM\tVPSSIMP\tFASTSIM\tPSNRHVS\t"
-                 "WstPsnr\tWstSsim\tWstFast\tWstHVS");
+                 "WstPsnr\tWstSsim\tWstFast\tWstHVS\t"
+                 "AVPsnrY\tAPsnrCb\tAPsnrCr");
         snprintf(results, sizeof(results),
                  "%7.2f\t%7.3f\t%7.3f\t%7.3f\t%7.3f\t"
                  "%7.3f\t%7.3f\t%7.3f\t%7.3f\t"
-                 "%7.3f\t%7.3f\t%7.3f\t%7.3f",
+                 "%7.3f\t%7.3f\t%7.3f\t%7.3f\t"
+                 "%7.3f\t%7.3f\t%7.3f",
                  dr, cpi->psnr.stat[ALL] / cpi->count, total_psnr,
                  cpi->psnrp.stat[ALL] / cpi->count, totalp_psnr, total_ssim,
                  totalp_ssim, cpi->fastssim.stat[ALL] / cpi->count,
                  cpi->psnrhvs.stat[ALL] / cpi->count, cpi->psnr.worst,
-                 cpi->worst_ssim, cpi->fastssim.worst, cpi->psnrhvs.worst);
+                 cpi->worst_ssim, cpi->fastssim.worst, cpi->psnrhvs.worst,
+                 cpi->psnr.stat[Y] / cpi->count, cpi->psnr.stat[U] / cpi->count,
+                 cpi->psnr.stat[V] / cpi->count);
 
         if (cpi->b_calculate_blockiness) {
           SNPRINT(headings, "\t  Block\tWstBlck");
@@ -2852,18 +2881,26 @@ void vp9_update_reference_frames(VP9_COMP *cpi) {
   if (cpi->oxcf.noise_sensitivity > 0 && denoise_svc(cpi) &&
       cpi->denoiser.denoising_level > kDenLowLow) {
     int svc_base_is_key = 0;
+    int denoise_svc_second_layer = 0;
     if (cpi->use_svc) {
       int realloc_fail = 0;
+      const int svc_buf_shift =
+          cpi->svc.number_spatial_layers - cpi->svc.spatial_layer_id == 2
+              ? cpi->denoiser.num_ref_frames
+              : 0;
       int layer = LAYER_IDS_TO_IDX(cpi->svc.spatial_layer_id,
                                    cpi->svc.temporal_layer_id,
                                    cpi->svc.number_temporal_layers);
       LAYER_CONTEXT *lc = &cpi->svc.layer_context[layer];
       svc_base_is_key = lc->is_key_frame;
-
-      // Check if we need to allocate extra buffers in the denoiser for
+      denoise_svc_second_layer =
+          cpi->svc.number_spatial_layers - cpi->svc.spatial_layer_id == 2 ? 1
+                                                                          : 0;
+      // Check if we need to allocate extra buffers in the denoiser
+      // for
       // refreshed frames.
       realloc_fail = vp9_denoiser_realloc_svc(
-          cm, &cpi->denoiser, cpi->refresh_alt_ref_frame,
+          cm, &cpi->denoiser, svc_buf_shift, cpi->refresh_alt_ref_frame,
           cpi->refresh_golden_frame, cpi->refresh_last_frame, cpi->alt_fb_idx,
           cpi->gld_fb_idx, cpi->lst_fb_idx);
       if (realloc_fail)
@@ -2874,7 +2911,8 @@ void vp9_update_reference_frames(VP9_COMP *cpi) {
         &cpi->denoiser, *cpi->Source, cpi->common.frame_type,
         cpi->refresh_alt_ref_frame, cpi->refresh_golden_frame,
         cpi->refresh_last_frame, cpi->alt_fb_idx, cpi->gld_fb_idx,
-        cpi->lst_fb_idx, cpi->resize_pending, svc_base_is_key);
+        cpi->lst_fb_idx, cpi->resize_pending, svc_base_is_key,
+        denoise_svc_second_layer);
   }
 #endif
   if (is_one_pass_cbr_svc(cpi)) {
@@ -3309,8 +3347,9 @@ static void setup_denoiser_buffer(VP9_COMP *cpi) {
   VP9_COMMON *const cm = &cpi->common;
   if (cpi->oxcf.noise_sensitivity > 0 &&
       !cpi->denoiser.frame_buffer_initialized) {
-    if (vp9_denoiser_alloc(cm, cpi->use_svc, &cpi->denoiser, cm->width,
-                           cm->height, cm->subsampling_x, cm->subsampling_y,
+    if (vp9_denoiser_alloc(cm, &cpi->svc, &cpi->denoiser, cpi->use_svc,
+                           cpi->oxcf.noise_sensitivity, cm->width, cm->height,
+                           cm->subsampling_x, cm->subsampling_y,
 #if CONFIG_VP9_HIGHBITDEPTH
                            cm->use_highbitdepth,
 #endif
@@ -4321,6 +4360,15 @@ static void encode_frame_to_data_rate(VP9_COMP *cpi, size_t *size,
   struct segmentation *const seg = &cm->seg;
   TX_SIZE t;
 
+  // SVC: skip encoding of enhancement layer if the layer target bandwidth = 0.
+  if (cpi->use_svc && cpi->svc.spatial_layer_id > 0 &&
+      !cpi->svc.rc_drop_superframe && cpi->oxcf.target_bandwidth == 0) {
+    cpi->svc.skip_enhancement_layer = 1;
+    vp9_rc_postencode_update_drop_frame(cpi);
+    cpi->ext_refresh_frame_flags_pending = 0;
+    return;
+  }
+
   set_ext_overrides(cpi);
   vpx_clear_system_state();
 
@@ -4412,7 +4460,6 @@ static void encode_frame_to_data_rate(VP9_COMP *cpi, size_t *size,
     if (vp9_rc_drop_frame(cpi) ||
         (is_one_pass_cbr_svc(cpi) && cpi->svc.rc_drop_superframe == 1)) {
       vp9_rc_postencode_update_drop_frame(cpi);
-      ++cm->current_video_frame;
       cpi->ext_refresh_frame_flags_pending = 0;
       cpi->svc.rc_drop_superframe = 1;
       cpi->last_frame_dropped = 1;
@@ -4825,6 +4872,7 @@ static void update_level_info(VP9_COMP *cpi, size_t *size, int arf_src_index) {
   int i, idx;
   uint64_t luma_samples, dur_end;
   const uint32_t luma_pic_size = cm->width * cm->height;
+  const uint32_t luma_pic_breadth = VPXMAX(cm->width, cm->height);
   LevelConstraint *const level_constraint = &cpi->level_constraint;
   const int8_t level_index = level_constraint->level_index;
   double cpb_data_size;
@@ -4928,6 +4976,11 @@ static void update_level_info(VP9_COMP *cpi, size_t *size, int arf_src_index) {
     level_spec->max_luma_picture_size = luma_pic_size;
   }
 
+  // update max_luma_picture_breadth
+  if (luma_pic_breadth > level_spec->max_luma_picture_breadth) {
+    level_spec->max_luma_picture_breadth = luma_pic_breadth;
+  }
+
   // update compression_ratio
   level_spec->compression_ratio = (double)level_stats->total_uncompressed_size *
                                   cm->bit_depth /
@@ -4946,6 +4999,15 @@ static void update_level_info(VP9_COMP *cpi, size_t *size, int arf_src_index) {
                          "Failed to encode to the target level %d. %s",
                          vp9_level_defs[level_index].level,
                          level_fail_messages[LUMA_PIC_SIZE_TOO_LARGE]);
+    }
+
+    if (level_spec->max_luma_picture_breadth >
+        vp9_level_defs[level_index].max_luma_picture_breadth) {
+      level_constraint->fail_flag |= (1 << LUMA_PIC_BREADTH_TOO_LARGE);
+      vpx_internal_error(&cm->error, VPX_CODEC_ERROR,
+                         "Failed to encode to the target level %d. %s",
+                         vp9_level_defs[level_index].level,
+                         level_fail_messages[LUMA_PIC_BREADTH_TOO_LARGE]);
     }
 
     if ((double)level_spec->max_luma_sample_rate >
@@ -5148,8 +5210,6 @@ int vp9_get_compressed_data(VP9_COMP *cpi, unsigned int *frame_flags,
       cm->intra_only = 0;
       // if the flags indicate intra frame, but if the current picture is for
       // non-zero spatial layer, it should not be an intra picture.
-      // TODO(Won Kap): this needs to change if per-layer intra frame is
-      // allowed.
       if ((source->flags & VPX_EFLAG_FORCE_KF) &&
           cpi->svc.spatial_layer_id > cpi->svc.first_spatial_layer_to_encode) {
         source->flags &= ~(unsigned int)(VPX_EFLAG_FORCE_KF);

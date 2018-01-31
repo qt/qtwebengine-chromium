@@ -10,6 +10,7 @@
 #include "GrBlurUtils.h"
 #include "GrColorSpaceXform.h"
 #include "GrContext.h"
+#include "GrContextPriv.h"
 #include "GrGpu.h"
 #include "GrImageTextureMaker.h"
 #include "GrRenderTargetContextPriv.h"
@@ -232,7 +233,7 @@ void SkGpuDevice::clearAll() {
     GR_CREATE_TRACE_MARKER_CONTEXT("SkGpuDevice", "clearAll", fContext.get());
 
     SkIRect rect = SkIRect::MakeWH(this->width(), this->height());
-    fRenderTargetContext->clear(&rect, 0x0, true);
+    fRenderTargetContext->clear(&rect, 0x0, GrRenderTargetContext::CanClearFullscreen::kYes);
 }
 
 void SkGpuDevice::replaceRenderTargetContext(bool shouldRetainContent) {
@@ -280,12 +281,18 @@ void SkGpuDevice::drawPaint(const SkPaint& paint) {
     fRenderTargetContext->drawPaint(this->clip(), std::move(grPaint), this->ctm());
 }
 
-// must be in SkCanvas::PointMode order
-static const GrPrimitiveType gPointMode2PrimitiveType[] = {
-    GrPrimitiveType::kPoints,
-    GrPrimitiveType::kLines,
-    GrPrimitiveType::kLineStrip
-};
+static inline GrPrimitiveType point_mode_to_primitive_type(SkCanvas::PointMode mode) {
+    switch (mode) {
+        case SkCanvas::kPoints_PointMode:
+            return GrPrimitiveType::kPoints;
+        case SkCanvas::kLines_PointMode:
+            return GrPrimitiveType::kLines;
+        case SkCanvas::kPolygon_PointMode:
+            return GrPrimitiveType::kLineStrip;
+    }
+    SK_ABORT("Unexpected mode");
+    return GrPrimitiveType::kPoints;
+}
 
 void SkGpuDevice::drawPoints(SkCanvas::PointMode mode,
                              size_t count, const SkPoint pts[], const SkPaint& paint) {
@@ -328,7 +335,7 @@ void SkGpuDevice::drawPoints(SkCanvas::PointMode mode,
         return;
     }
 
-    GrPrimitiveType primitiveType = gPointMode2PrimitiveType[mode];
+    GrPrimitiveType primitiveType = point_mode_to_primitive_type(mode);
 
     const SkMatrix* viewMatrix = &this->ctm();
 #ifdef SK_BUILD_FOR_ANDROID_FRAMEWORK
@@ -616,25 +623,19 @@ void SkGpuDevice::drawPath(const SkPath& origSrcPath,
                 return;
             }
         }
-        bool isClosed;
-        SkRect rect;
-        if (origSrcPath.isRect(&rect, &isClosed) && isClosed) {
-            this->drawRect(rect, paint);
-            return;
-        }
-        if (origSrcPath.isOval(&rect)) {
-            this->drawOval(rect, paint);
-            return;
-        }
-        SkRRect rrect;
-        if (origSrcPath.isRRect(&rrect)) {
-            this->drawRRect(rrect, paint);
-            return;
-        }
     }
 
     GR_CREATE_TRACE_MARKER_CONTEXT("SkGpuDevice", "drawPath", fContext.get());
-
+    if (!prePathMatrix && !paint.getMaskFilter()) {
+        GrPaint grPaint;
+        if (!SkPaintToGrPaint(this->context(), fRenderTargetContext->colorSpaceInfo(), paint,
+                              this->ctm(), &grPaint)) {
+            return;
+        }
+        fRenderTargetContext->drawPath(this->clip(), std::move(grPaint), GrAA(paint.isAntiAlias()),
+                                       this->ctm(), origSrcPath, GrStyle(paint));
+        return;
+    }
     GrBlurUtils::drawPathWithMaskFilter(fContext.get(), fRenderTargetContext.get(), this->clip(),
                                         origSrcPath, paint, this->ctm(), prePathMatrix,
                                         this->devClipBounds(), pathIsMutable);
@@ -1190,7 +1191,8 @@ void SkGpuDevice::drawBitmapRect(const SkBitmap& bitmap,
 sk_sp<SkSpecialImage> SkGpuDevice::makeSpecial(const SkBitmap& bitmap) {
     // TODO: this makes a tight copy of 'bitmap' but it doesn't have to be (given SkSpecialImage's
     // semantics). Since this is cached we would have to bake the fit into the cache key though.
-    sk_sp<GrTextureProxy> proxy = GrMakeCachedBitmapProxy(fContext->resourceProvider(), bitmap);
+    sk_sp<GrTextureProxy> proxy = GrMakeCachedBitmapProxy(fContext->contextPriv().proxyProvider(),
+                                                          bitmap);
     if (!proxy) {
         return nullptr;
     }

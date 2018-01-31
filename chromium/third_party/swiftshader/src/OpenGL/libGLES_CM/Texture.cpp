@@ -444,17 +444,17 @@ sw::Format Texture2D::getInternalFormat(GLenum target, GLint level) const
 	return image[level] ? image[level]->getInternalFormat() : sw::FORMAT_NULL;
 }
 
-int Texture2D::getLevelCount() const
+int Texture2D::getTopLevel() const
 {
 	ASSERT(isSamplerComplete());
-	int levels = 0;
+	int level = 0;
 
-	while(levels < IMPLEMENTATION_MAX_TEXTURE_LEVELS && image[levels])
+	while(level < IMPLEMENTATION_MAX_TEXTURE_LEVELS && image[level])
 	{
-		levels++;
+		level++;
 	}
 
-	return levels;
+	return level - 1;
 }
 
 void Texture2D::setImage(egl::Context *context, GLint level, GLsizei width, GLsizei height, GLenum format, GLenum type, GLint unpackAlignment, const void *pixels)
@@ -720,10 +720,10 @@ void Texture2D::generateMipmaps()
 
 void Texture2D::autoGenerateMipmaps()
 {
-	if(generateMipmap && image[0]->hasDirtyMipmaps())
+	if(generateMipmap && image[0]->hasDirtyContents())
 	{
 		generateMipmaps();
-		image[0]->cleanMipmaps();
+		image[0]->markContentsClean();
 	}
 }
 

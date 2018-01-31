@@ -6,6 +6,10 @@
 
 #include "xfa/fxfa/parser/cxfa_stipple.h"
 
+#include "fxjs/xfa/cjx_stipple.h"
+#include "third_party/base/ptr_util.h"
+#include "xfa/fxfa/parser/cxfa_color.h"
+
 namespace {
 
 const CXFA_Node::PropertyData kPropertyData[] = {{XFA_Element::Color, 1, 0},
@@ -30,6 +34,39 @@ CXFA_Stipple::CXFA_Stipple(CXFA_Document* doc, XFA_PacketType packet)
                 XFA_Element::Stipple,
                 kPropertyData,
                 kAttributeData,
-                kName) {}
+                kName,
+                pdfium::MakeUnique<CJX_Stipple>(this)) {}
 
 CXFA_Stipple::~CXFA_Stipple() {}
+
+CXFA_Color* CXFA_Stipple::GetColorIfExists() {
+  return GetChild<CXFA_Color>(0, XFA_Element::Color, false);
+}
+
+int32_t CXFA_Stipple::GetRate() {
+  return JSObject()
+      ->TryInteger(XFA_Attribute::Rate, true)
+      .value_or(GetDefaultRate());
+}
+
+void CXFA_Stipple::Draw(CXFA_Graphics* pGS,
+                        CXFA_GEPath* fillPath,
+                        const CFX_RectF& rtFill,
+                        const CFX_Matrix& matrix) {
+  int32_t iRate = GetRate();
+  if (iRate == 0)
+    iRate = 100;
+
+  CXFA_Color* pColor = GetColorIfExists();
+  FX_ARGB crColor = pColor ? pColor->GetValue() : CXFA_Color::kBlackColor;
+
+  int32_t a;
+  FX_COLORREF rgb;
+  std::tie(a, rgb) = ArgbToColorRef(crColor);
+  FX_ARGB cr = ArgbEncode(iRate * a / 100, rgb);
+
+  pGS->SaveGraphState();
+  pGS->SetFillColor(CXFA_GEColor(cr));
+  pGS->FillPath(fillPath, FXFILL_WINDING, &matrix);
+  pGS->RestoreGraphState();
+}

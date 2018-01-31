@@ -118,12 +118,16 @@ class Resource::CachedMetadataHandlerImpl : public CachedMetadataHandler {
   static Resource::CachedMetadataHandlerImpl* Create(Resource* resource) {
     return new CachedMetadataHandlerImpl(resource);
   }
-  ~CachedMetadataHandlerImpl() override {}
+  ~CachedMetadataHandlerImpl() override = default;
   void Trace(blink::Visitor*) override;
   void SetCachedMetadata(uint32_t, const char*, size_t, CacheType) override;
   void ClearCachedMetadata(CacheType) override;
   scoped_refptr<CachedMetadata> GetCachedMetadata(uint32_t) const override;
   String Encoding() const override;
+  bool IsServedFromCacheStorage() const override {
+    return !GetResponse().CacheStorageCacheName().IsNull();
+  }
+
   // Sets the serialized metadata retrieved from the platform's cache.
   void SetSerializedCachedMetadata(const char*, size_t);
 
@@ -209,11 +213,11 @@ class Resource::ServiceWorkerResponseCachedMetadataHandler
  public:
   static Resource::CachedMetadataHandlerImpl* Create(
       Resource* resource,
-      SecurityOrigin* security_origin) {
+      const SecurityOrigin* security_origin) {
     return new ServiceWorkerResponseCachedMetadataHandler(resource,
                                                           security_origin);
   }
-  ~ServiceWorkerResponseCachedMetadataHandler() override {}
+  ~ServiceWorkerResponseCachedMetadataHandler() override = default;
   void Trace(blink::Visitor*) override;
 
  protected:
@@ -221,14 +225,14 @@ class Resource::ServiceWorkerResponseCachedMetadataHandler
 
  private:
   explicit ServiceWorkerResponseCachedMetadataHandler(Resource*,
-                                                      SecurityOrigin*);
-  String cache_storage_cache_name_;
-  scoped_refptr<SecurityOrigin> security_origin_;
+                                                      const SecurityOrigin*);
+  scoped_refptr<const SecurityOrigin> security_origin_;
 };
 
 Resource::ServiceWorkerResponseCachedMetadataHandler::
-    ServiceWorkerResponseCachedMetadataHandler(Resource* resource,
-                                               SecurityOrigin* security_origin)
+    ServiceWorkerResponseCachedMetadataHandler(
+        Resource* resource,
+        const SecurityOrigin* security_origin)
     : CachedMetadataHandlerImpl(resource), security_origin_(security_origin) {}
 
 void Resource::ServiceWorkerResponseCachedMetadataHandler::Trace(
@@ -282,9 +286,6 @@ Resource::Resource(const ResourceRequest& request,
       resource_request_(request) {
   InstanceCounters::IncrementCounter(InstanceCounters::kResourceCounter);
 
-  // Currently we support the metadata caching only for HTTP family.
-  if (GetResourceRequest().Url().ProtocolIsInHTTPFamily())
-    cache_handler_ = CachedMetadataHandlerImpl::Create(this);
   if (IsMainThread())
     MemoryCoordinator::Instance().RegisterClient(this);
 }
@@ -406,9 +407,8 @@ void Resource::TriggerNotificationForFinishObservers(
       std::move(finish_observers_));
   finish_observers_.clear();
 
-  task_runner->PostTask(
-      BLINK_FROM_HERE,
-      WTF::Bind(&NotifyFinishObservers, WrapPersistent(new_collections)));
+  task_runner->PostTask(FROM_HERE, WTF::Bind(&NotifyFinishObservers,
+                                             WrapPersistent(new_collections)));
 
   DidRemoveClientOrObserver();
 }
@@ -458,7 +458,7 @@ bool Resource::MustRefetchDueToIntegrityMetadata(
   if (params.IntegrityMetadata().IsEmpty())
     return false;
 
-  return !IntegrityMetadata::SetsEqual(integrity_metadata_,
+  return !IntegrityMetadata::SetsEqual(IntegrityMetadata(),
                                        params.IntegrityMetadata());
 }
 
@@ -562,14 +562,19 @@ bool Resource::WillFollowRedirect(const ResourceRequest& new_request,
 
 void Resource::SetResponse(const ResourceResponse& response) {
   response_ = response;
+
   // Currently we support the metadata caching only for HTTP family.
-  if (!GetResponse().Url().ProtocolIsInHTTPFamily()) {
+  if (!GetResourceRequest().Url().ProtocolIsInHTTPFamily() ||
+      !GetResponse().Url().ProtocolIsInHTTPFamily()) {
     cache_handler_.Clear();
     return;
   }
+
   if (GetResponse().WasFetchedViaServiceWorker()) {
     cache_handler_ = ServiceWorkerResponseCachedMetadataHandler::Create(
         this, fetcher_security_origin_.get());
+  } else {
+    cache_handler_ = CachedMetadataHandlerImpl::Create(this);
   }
 }
 
@@ -578,7 +583,7 @@ void Resource::ResponseReceived(const ResourceResponse& response,
   response_timestamp_ = CurrentTime();
   if (preload_discovery_time_) {
     int time_since_discovery = static_cast<int>(
-        1000 * (MonotonicallyIncreasingTime() - preload_discovery_time_));
+        1000 * (CurrentTimeTicksInSeconds() - preload_discovery_time_));
     DEFINE_STATIC_LOCAL(CustomCountHistogram,
                         preload_discovery_to_first_byte_histogram,
                         ("PreloadScanner.TTFB", 0, 10000, 50));
@@ -680,7 +685,7 @@ void Resource::WillAddClientOrObserver() {
   }
 }
 
-void Resource::AddClient(ResourceClient* client) {
+void Resource::AddClient(ResourceClient* client, WebTaskRunner* task_runner) {
   CHECK(!is_add_remove_client_prohibited_);
 
   WillAddClientOrObserver();
@@ -696,14 +701,9 @@ void Resource::AddClient(ResourceClient* client) {
       !TypeNeedsSynchronousCacheHit(GetType())) {
     clients_awaiting_callback_.insert(client);
     if (!async_finish_pending_clients_task_.IsActive()) {
-      async_finish_pending_clients_task_ =
-          Platform::Current()
-              ->CurrentThread()
-              ->Scheduler()
-              ->LoadingTaskRunner()
-              ->PostCancellableTask(BLINK_FROM_HERE,
-                                    WTF::Bind(&Resource::FinishPendingClients,
-                                              WrapWeakPersistent(this)));
+      async_finish_pending_clients_task_ = PostCancellableTask(
+          *task_runner, FROM_HERE,
+          WTF::Bind(&Resource::FinishPendingClients, WrapWeakPersistent(this)));
     }
     return;
   }
@@ -1083,7 +1083,7 @@ bool Resource::MatchPreload(const FetchParameters& params, WebTaskRunner*) {
 
   if (preload_discovery_time_) {
     int time_since_discovery = static_cast<int>(
-        1000 * (MonotonicallyIncreasingTime() - preload_discovery_time_));
+        1000 * (CurrentTimeTicksInSeconds() - preload_discovery_time_));
     DEFINE_STATIC_LOCAL(CustomCountHistogram, preload_discovery_histogram,
                         ("PreloadScanner.ReferenceTime", 0, 10000, 50));
     preload_discovery_histogram.Count(time_since_discovery);
@@ -1219,8 +1219,10 @@ const char* Resource::ResourceTypeToString(
       return "Text track";
     case Resource::kImportResource:
       return "Imported resource";
-    case Resource::kMedia:
-      return "Media";
+    case Resource::kAudio:
+      return "Audio";
+    case Resource::kVideo:
+      return "Video";
     case Resource::kManifest:
       return "Manifest";
     case Resource::kMock:
@@ -1248,7 +1250,8 @@ bool Resource::IsLoadEventBlockingResourceType() const {
     case Resource::kRaw:
     case Resource::kLinkPrefetch:
     case Resource::kTextTrack:
-    case Resource::kMedia:
+    case Resource::kAudio:
+    case Resource::kVideo:
     case Resource::kManifest:
     case Resource::kMock:
       return false;

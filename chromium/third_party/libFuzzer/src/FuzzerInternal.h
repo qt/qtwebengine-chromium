@@ -67,7 +67,7 @@ public:
 
   void ExecuteCallback(const uint8_t *Data, size_t Size);
   bool RunOne(const uint8_t *Data, size_t Size, bool MayDeleteFile = false,
-              InputInfo *II = nullptr);
+              InputInfo *II = nullptr, bool *FoundUniqFeatures = nullptr);
 
   // Merge Corpora[1:] into Corpora[0].
   void Merge(const Vector<std::string> &Corpora);
@@ -124,8 +124,6 @@ private:
   size_t NumberOfNewUnitsAdded = 0;
 
   size_t LastCorpusUpdateRun = 0;
-  system_clock::time_point LastCorpusUpdateTime = system_clock::now();
-
 
   bool HasMoreMallocsThanFrees = false;
   size_t NumberOfLeakDetectionAttempts = 0;

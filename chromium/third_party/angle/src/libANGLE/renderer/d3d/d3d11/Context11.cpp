@@ -321,6 +321,12 @@ gl::Error Context11::dispatchCompute(const gl::Context *context,
     return mRenderer->dispatchCompute(context, numGroupsX, numGroupsY, numGroupsZ);
 }
 
+gl::Error Context11::dispatchComputeIndirect(const gl::Context *context, GLintptr indirect)
+{
+    UNIMPLEMENTED();
+    return gl::InternalError();
+}
+
 gl::Error Context11::triggerDrawCallProgramRecompilation(const gl::Context *context,
                                                          GLenum drawMode)
 {
@@ -399,6 +405,18 @@ gl::Error Context11::triggerDrawCallProgramRecompilation(const gl::Context *cont
 gl::Error Context11::prepareForDrawCall(const gl::Context *context, GLenum drawMode)
 {
     ANGLE_TRY(mRenderer->getStateManager()->updateState(context, drawMode));
+    return gl::NoError();
+}
+
+gl::Error Context11::memoryBarrier(const gl::Context *context, GLbitfield barriers)
+{
+    UNIMPLEMENTED();
+    return gl::NoError();
+}
+
+gl::Error Context11::memoryBarrierByRegion(const gl::Context *context, GLbitfield barriers)
+{
+    UNIMPLEMENTED();
     return gl::NoError();
 }
 

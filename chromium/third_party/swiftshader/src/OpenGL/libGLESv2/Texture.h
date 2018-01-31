@@ -97,14 +97,13 @@ public:
 	virtual GLsizei getDepth(GLenum target, GLint level) const;
 	virtual GLenum getFormat(GLenum target, GLint level) const = 0;
 	virtual GLenum getType(GLenum target, GLint level) const = 0;
-	virtual sw::Format getInternalFormat(GLenum target, GLint level) const = 0;
-	virtual int getLevelCount() const = 0;
+	virtual int getTopLevel() const = 0;
 
 	virtual bool isSamplerComplete() const = 0;
 	virtual bool isCompressed(GLenum target, GLint level) const = 0;
 	virtual bool isDepth(GLenum target, GLint level) const = 0;
 
-	virtual Renderbuffer *getRenderbuffer(GLenum target, GLint level, GLint layer) = 0;
+	virtual Renderbuffer *getRenderbuffer(GLenum target, GLint level) = 0;
 	virtual egl::Image *getRenderTarget(GLenum target, unsigned int level) = 0;
 	egl::Image *createSharedImage(GLenum target, unsigned int level);
 	virtual bool isShared(GLenum target, unsigned int level) const = 0;
@@ -120,7 +119,7 @@ protected:
 	void setCompressedImage(GLsizei imageSize, const void *pixels, egl::Image *image);
 	void subImageCompressed(GLint xoffset, GLint yoffset, GLint zoffset, GLsizei width, GLsizei height, GLsizei depth, GLenum format, GLsizei imageSize, const void *pixels, egl::Image *image);
 
-	bool copy(egl::Image *source, const sw::SliceRect &sourceRect, GLenum destFormat, GLint xoffset, GLint yoffset, GLint zoffset, egl::Image *dest);
+	bool copy(egl::Image *source, const sw::SliceRect &sourceRect, GLint xoffset, GLint yoffset, GLint zoffset, egl::Image *dest);
 
 	bool isMipmapFiltered() const;
 
@@ -161,8 +160,7 @@ public:
 	GLsizei getHeight(GLenum target, GLint level) const override;
 	GLenum getFormat(GLenum target, GLint level) const override;
 	GLenum getType(GLenum target, GLint level) const override;
-	sw::Format getInternalFormat(GLenum target, GLint level) const override;
-	int getLevelCount() const override;
+	int getTopLevel() const override;
 
 	void setImage(egl::Context *context, GLint level, GLsizei width, GLsizei height, GLenum format, GLenum type, const egl::Image::UnpackInfo& unpackInfo, const void *pixels);
 	void setCompressedImage(GLint level, GLenum format, GLsizei width, GLsizei height, GLsizei imageSize, const void *pixels);
@@ -181,7 +179,7 @@ public:
 
 	void generateMipmaps() override;
 
-	Renderbuffer *getRenderbuffer(GLenum target, GLint level, GLint layer) override;
+	Renderbuffer *getRenderbuffer(GLenum target, GLint level) override;
 	egl::Image *getRenderTarget(GLenum target, unsigned int level) override;
 	bool isShared(GLenum target, unsigned int level) const override;
 
@@ -220,8 +218,7 @@ public:
 	GLsizei getHeight(GLenum target, GLint level) const override;
 	GLenum getFormat(GLenum target, GLint level) const override;
 	GLenum getType(GLenum target, GLint level) const override;
-	sw::Format getInternalFormat(GLenum target, GLint level) const override;
-	int getLevelCount() const override;
+	int getTopLevel() const override;
 
 	void setImage(egl::Context *context, GLenum target, GLint level, GLsizei width, GLsizei height, GLenum format, GLenum type, const egl::Image::UnpackInfo& unpackInfo, const void *pixels);
 	void setCompressedImage(GLenum target, GLint level, GLenum format, GLsizei width, GLsizei height, GLsizei imageSize, const void *pixels);
@@ -237,18 +234,20 @@ public:
 	void releaseTexImage() override;
 
 	void generateMipmaps() override;
+	void updateBorders(int level);
 
-	Renderbuffer *getRenderbuffer(GLenum target, GLint level, GLint layer) override;
+	Renderbuffer *getRenderbuffer(GLenum target, GLint level) override;
 	egl::Image *getRenderTarget(GLenum target, unsigned int level) override;
 	bool isShared(GLenum target, unsigned int level) const override;
 
 	egl::Image *getImage(int face, unsigned int level);
 
+	bool isCubeComplete() const;
+
 protected:
 	~TextureCubeMap() override;
 
 private:
-	bool isCubeComplete() const;
 	bool isMipmapCubeComplete() const;
 
 	// face is one of the GL_TEXTURE_CUBE_MAP_* enumerants. Returns nullptr on failure.
@@ -281,8 +280,7 @@ public:
 	GLsizei getDepth(GLenum target, GLint level) const override;
 	GLenum getFormat(GLenum target, GLint level) const override;
 	GLenum getType(GLenum target, GLint level) const override;
-	sw::Format getInternalFormat(GLenum target, GLint level) const override;
-	int getLevelCount() const override;
+	int getTopLevel() const override;
 
 	void setImage(egl::Context *context, GLint level, GLsizei width, GLsizei height, GLsizei depth, GLenum format, GLenum type, const egl::Image::UnpackInfo& unpackInfo, const void *pixels);
 	void setCompressedImage(GLint level, GLenum format, GLsizei width, GLsizei height, GLsizei depth, GLsizei imageSize, const void *pixels);
@@ -300,7 +298,7 @@ public:
 
 	void generateMipmaps() override;
 
-	Renderbuffer *getRenderbuffer(GLenum target, GLint level, GLint layer) override;
+	Renderbuffer *getRenderbuffer(GLenum target, GLint level) override;
 	egl::Image *getRenderTarget(GLenum target, unsigned int level) override;
 	bool isShared(GLenum target, unsigned int level) const override;
 

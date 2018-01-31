@@ -99,7 +99,7 @@ Renderer9::Renderer9(egl::Display *display) : RendererD3D(display), mStateManage
             mDeviceType = D3DDEVTYPE_HAL;
             break;
 
-        case EGL_PLATFORM_ANGLE_DEVICE_TYPE_REFERENCE_ANGLE:
+        case EGL_PLATFORM_ANGLE_DEVICE_TYPE_D3D_REFERENCE_ANGLE:
             mDeviceType = D3DDEVTYPE_REF;
             break;
 
@@ -132,8 +132,6 @@ Renderer9::Renderer9(egl::Display *display) : RendererD3D(display), mStateManage
     mAppliedProgramSerial = 0;
 
     gl::InitializeDebugAnnotations(&mAnnotator);
-
-    mEGLDevice = nullptr;
 }
 
 Renderer9::~Renderer9()
@@ -160,7 +158,6 @@ void Renderer9::release()
 
     releaseDeviceResources();
 
-    SafeDelete(mEGLDevice);
     SafeRelease(mDevice);
     SafeRelease(mDeviceEx);
     SafeRelease(mD3d9);
@@ -728,7 +725,7 @@ egl::Error Renderer9::getD3DTextureInfo(const egl::Config *config,
                                         IUnknown *d3dTexture,
                                         EGLint *width,
                                         EGLint *height,
-                                        GLenum *fboFormat) const
+                                        const angle::Format **angleFormat) const
 {
     IDirect3DTexture9 *texture = nullptr;
     if (FAILED(d3dTexture->QueryInterface(&texture)))
@@ -772,11 +769,11 @@ egl::Error Renderer9::getD3DTextureInfo(const egl::Config *config,
                    << "Unknown client buffer texture format: " << desc.Format;
     }
 
-    if (fboFormat)
+    if (angleFormat)
     {
         const auto &d3dFormatInfo = d3d9::GetD3DFormatInfo(desc.Format);
         ASSERT(d3dFormatInfo.info().id != angle::Format::ID::NONE);
-        *fboFormat = d3dFormatInfo.info().fboImplementationInternalFormat;
+        *angleFormat = &d3dFormatInfo.info();
     }
 
     return egl::NoError();
@@ -906,7 +903,7 @@ IndexBuffer *Renderer9::createIndexBuffer()
     return new IndexBuffer9(this);
 }
 
-StreamProducerImpl *Renderer9::createStreamProducerD3DTextureNV12(
+StreamProducerImpl *Renderer9::createStreamProducerD3DTexture(
     egl::Stream::ConsumerType consumerType,
     const egl::AttributeMap &attribs)
 {
@@ -935,13 +932,14 @@ gl::Error Renderer9::fastCopyBufferToTexture(const gl::Context *context,
 }
 
 gl::Error Renderer9::setSamplerState(const gl::Context *context,
-                                     gl::SamplerType type,
+                                     gl::ShaderType type,
                                      int index,
                                      gl::Texture *texture,
                                      const gl::SamplerState &samplerState)
 {
-    CurSamplerState &appliedSampler = (type == gl::SAMPLER_PIXEL) ? mCurPixelSamplerStates[index]
-                                                                  : mCurVertexSamplerStates[index];
+    CurSamplerState &appliedSampler = (type == gl::SHADER_FRAGMENT)
+                                          ? mCurPixelSamplerStates[index]
+                                          : mCurVertexSamplerStates[index];
 
     // Make sure to add the level offset for our tiny compressed texture workaround
     TextureD3D *textureD3D = GetImplAs<TextureD3D>(texture);
@@ -957,7 +955,7 @@ gl::Error Renderer9::setSamplerState(const gl::Context *context,
     if (appliedSampler.forceSet || appliedSampler.baseLevel != baseLevel ||
         memcmp(&samplerState, &appliedSampler, sizeof(gl::SamplerState)) != 0)
     {
-        int d3dSamplerOffset = (type == gl::SAMPLER_PIXEL) ? 0 : D3DVERTEXTEXTURESAMPLER0;
+        int d3dSamplerOffset = (type == gl::SHADER_FRAGMENT) ? 0 : D3DVERTEXTEXTURESAMPLER0;
         int d3dSampler       = index + d3dSamplerOffset;
 
         mDevice->SetSamplerState(d3dSampler, D3DSAMP_ADDRESSU,
@@ -993,17 +991,17 @@ gl::Error Renderer9::setSamplerState(const gl::Context *context,
 }
 
 gl::Error Renderer9::setTexture(const gl::Context *context,
-                                gl::SamplerType type,
+                                gl::ShaderType type,
                                 int index,
                                 gl::Texture *texture)
 {
-    int d3dSamplerOffset              = (type == gl::SAMPLER_PIXEL) ? 0 : D3DVERTEXTEXTURESAMPLER0;
+    int d3dSamplerOffset = (type == gl::SHADER_FRAGMENT) ? 0 : D3DVERTEXTEXTURESAMPLER0;
     int d3dSampler                    = index + d3dSamplerOffset;
     IDirect3DBaseTexture9 *d3dTexture = nullptr;
     bool forceSetTexture              = false;
 
     std::vector<uintptr_t> &appliedTextures =
-        (type == gl::SAMPLER_PIXEL) ? mCurPixelTextures : mCurVertexTextures;
+        (type == gl::SHADER_FRAGMENT) ? mCurPixelTextures : mCurVertexTextures;
 
     if (texture)
     {
@@ -3083,24 +3081,9 @@ angle::WorkaroundsD3D Renderer9::generateWorkarounds() const
     return d3d9::GenerateWorkarounds();
 }
 
-egl::Error Renderer9::getEGLDevice(DeviceImpl **device)
+DeviceImpl *Renderer9::createEGLDevice()
 {
-    if (mEGLDevice == nullptr)
-    {
-        ASSERT(mDevice != nullptr);
-        mEGLDevice       = new DeviceD3D();
-        egl::Error error = mEGLDevice->initialize(reinterpret_cast<void *>(mDevice),
-                                                  EGL_D3D9_DEVICE_ANGLE, EGL_FALSE);
-
-        if (error.isError())
-        {
-            SafeDelete(mEGLDevice);
-            return error;
-        }
-    }
-
-    *device = static_cast<DeviceImpl *>(mEGLDevice);
-    return egl::NoError();
+    return new DeviceD3D(EGL_D3D9_DEVICE_ANGLE, mDevice);
 }
 
 Renderer9::CurSamplerState::CurSamplerState()
@@ -3244,7 +3227,7 @@ bool Renderer9::canSelectViewInVertexShader() const
 // looks up the corresponding OpenGL texture image unit and texture type,
 // and sets the texture and its addressing/filtering state (or NULL when inactive).
 // Sampler mapping needs to be up-to-date on the program object before this is called.
-gl::Error Renderer9::applyTextures(const gl::Context *context, gl::SamplerType shaderType)
+gl::Error Renderer9::applyTextures(const gl::Context *context, gl::ShaderType shaderType)
 {
     const auto &glState    = context->getGLState();
     const auto &caps       = context->getCaps();
@@ -3288,8 +3271,8 @@ gl::Error Renderer9::applyTextures(const gl::Context *context, gl::SamplerType s
     }
 
     // Set all the remaining textures to NULL
-    size_t samplerCount = (shaderType == gl::SAMPLER_PIXEL) ? caps.maxTextureImageUnits
-                                                            : caps.maxVertexTextureImageUnits;
+    size_t samplerCount = (shaderType == gl::SHADER_FRAGMENT) ? caps.maxTextureImageUnits
+                                                              : caps.maxVertexTextureImageUnits;
 
     // TODO(jmadill): faster way?
     for (size_t samplerIndex = samplerRange; samplerIndex < samplerCount; samplerIndex++)
@@ -3302,8 +3285,8 @@ gl::Error Renderer9::applyTextures(const gl::Context *context, gl::SamplerType s
 
 gl::Error Renderer9::applyTextures(const gl::Context *context)
 {
-    ANGLE_TRY(applyTextures(context, gl::SAMPLER_VERTEX));
-    ANGLE_TRY(applyTextures(context, gl::SAMPLER_PIXEL));
+    ANGLE_TRY(applyTextures(context, gl::SHADER_VERTEX));
+    ANGLE_TRY(applyTextures(context, gl::SHADER_FRAGMENT));
     return gl::NoError();
 }
 

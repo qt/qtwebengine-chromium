@@ -223,9 +223,9 @@ int ParseConfig (CReadConfig& cRdCfg, SSourcePicture* pSrcPic, SEncParamExt& pSv
 
       if (strTag[0].compare ("UsageType") == 0) {
         pSvcParam.iUsageType = (EUsageType)atoi (strTag[1].c_str());
-      }else if (strTag[0].compare ("SimulcastAVC") == 0) {
+      } else if (strTag[0].compare ("SimulcastAVC") == 0) {
         pSvcParam.bSimulcastAVC = atoi (strTag[1].c_str()) ? true : false;
-      }else if (strTag[0].compare ("SourceWidth") == 0) {
+      } else if (strTag[0].compare ("SourceWidth") == 0) {
         pSrcPic->iPicWidth = atoi (strTag[1].c_str());
       } else if (strTag[0].compare ("SourceHeight") == 0) {
         pSrcPic->iPicHeight = atoi (strTag[1].c_str());
@@ -272,6 +272,8 @@ int ParseConfig (CReadConfig& cRdCfg, SSourcePicture* pSrcPic, SEncParamExt& pSv
         pSvcParam.bEnableFrameCroppingFlag = (atoi (strTag[1].c_str()) != 0);
       } else if (strTag[0].compare ("EntropyCodingModeFlag") == 0) {
         pSvcParam.iEntropyCodingModeFlag = (atoi (strTag[1].c_str()) != 0);
+      } else if (strTag[0].compare ("ComplexityMode") == 0) {
+        pSvcParam.iComplexityMode = (ECOMPLEXITY_MODE) (atoi (strTag[1].c_str()));
       } else if (strTag[0].compare ("LoopFilterDisableIDC") == 0) {
         pSvcParam.iLoopFilterDisableIdc = (int8_t)atoi (strTag[1].c_str());
         if (pSvcParam.iLoopFilterDisableIdc > 6 || pSvcParam.iLoopFilterDisableIdc < 0) {
@@ -315,9 +317,9 @@ int ParseConfig (CReadConfig& cRdCfg, SSourcePicture* pSrcPic, SEncParamExt& pSv
           return 1;
         }
       } else if (strTag[0].compare ("MaxQp") == 0) {
-          pSvcParam.iMaxQp = atoi (strTag[1].c_str());
+        pSvcParam.iMaxQp = atoi (strTag[1].c_str());
       } else if (strTag[0].compare ("MinQp") == 0) {
-          pSvcParam.iMinQp = atoi (strTag[1].c_str());
+        pSvcParam.iMinQp = atoi (strTag[1].c_str());
       } else if (strTag[0].compare ("EnableDenoise") == 0) {
         pSvcParam.bEnableDenoise = atoi (strTag[1].c_str()) ? true : false;
       } else if (strTag[0].compare ("EnableSceneChangeDetection") == 0) {
@@ -396,28 +398,31 @@ void PrintHelp() {
   printf ("  -numtl       Temporal layer number (default: 1)\n");
   printf ("  -iper        Intra period (default: -1) : must be a power of 2 of GOP size (or -1)\n");
   printf ("  -nalsize     the Maximum NAL size. which should be larger than the each layer slicesize when slice mode equals to SM_SIZELIMITED_SLICE\n");
-  printf ("  -spsid       Enable id adding in SPS/PPS per IDR \n");
+  printf ("  -spsid       SPS/PPS id strategy: 0:const, 1: increase, 2: sps list, 3: sps list and pps increase, 4: sps/pps list\n");
   printf ("  -cabac       Entropy coding mode(0:cavlc 1:cabac \n");
+  printf ("  -complexity  Complexity mode (default: 0),0: low complexity, 1: medium complexity, 2: high complexity\n");
   printf ("  -denois      Control denoising  (default: 0)\n");
   printf ("  -scene       Control scene change detection (default: 0)\n");
   printf ("  -bgd         Control background detection (default: 0)\n");
   printf ("  -aq          Control adaptive quantization (default: 0)\n");
   printf ("  -ltr         Control long term reference (default: 0)\n");
   printf ("  -ltrnum      Control the number of long term reference((1-4):screen LTR,(1-2):video LTR \n");
+  printf ("  -ltrper      Control the long term reference marking period \n");
   printf ("  -threadIdc   0: auto(dynamic imp. internal encoder); 1: multiple threads imp. disabled; > 1: count number of threads \n");
   printf ("  -loadbalancing   0: turn off loadbalancing between slices when multi-threading available; 1: (default value) turn on loadbalancing between slices when multi-threading available\n");
   printf ("  -deblockIdc  Loop filter idc (0: on, 1: off, \n");
   printf ("  -alphaOffset AlphaOffset(-6..+6): valid range \n");
   printf ("  -betaOffset  BetaOffset (-6..+6): valid range\n");
-  printf ("  -rc          rate control mode: 0-quality mode; 1-bitrate mode; 2-bitrate limited mode; -1-rc off \n");
+  printf ("  -rc          rate control mode: -1-rc off; 0-quality mode; 1-bitrate mode; 2: buffer based mode,can't control bitrate; 3: bitrate mode based on timestamp input;\n");
   printf ("  -tarb        Overall target bitrate\n");
   printf ("  -maxbrTotal  Overall max bitrate\n");
-  printf ("  -maxqp       Maximum Qp\n");
-  printf ("  -minqp       Minimum Qp\n");
+  printf ("  -maxqp       Maximum Qp (default: %d, or for screen content usage: %d)\n", QP_MAX_VALUE, MAX_SCREEN_QP);
+  printf ("  -minqp       Minimum Qp (default: %d, or for screen content usage: %d)\n", QP_MIN_VALUE, MIN_SCREEN_QP);
   printf ("  -numl        Number Of Layers: Must exist with layer_cfg file and the number of input layer_cfg file must equal to the value set by this command\n");
   printf ("  The options below are layer-based: (need to be set with layer id)\n");
   printf ("  -lconfig     (Layer) (spatial layer configure file)\n");
   printf ("  -drec        (Layer) (reconstruction file);example: -drec 0 rec.yuv.  Setting the reconstruction file, this will only functioning when dumping reconstruction is enabled\n");
+  printf ("  -dprofile    (Layer) (layer profile);example: -dprofile 0 66.  Setting the layer profile, this should be the same for all layers\n");
   printf ("  -dw          (Layer) (output width)\n");
   printf ("  -dh          (Layer) (output height)\n");
   printf ("  -frout       (Layer) (output frame rate)\n");
@@ -444,7 +449,7 @@ int ParseCommandLine (int argc, char** argv, SSourcePicture* pSrcPic, SEncParamE
       pSvcParam.iUsageType = (EUsageType)atoi (argv[n++]);
 
     else if (!strcmp (pCommand, "-savc") && (n < argc))
-        pSvcParam.bSimulcastAVC =  atoi (argv[n++]) ? true : false;
+      pSvcParam.bSimulcastAVC =  atoi (argv[n++]) ? true : false;
 
     else if (!strcmp (pCommand, "-org") && (n < argc))
       sFileSet.strSeqFile.assign (argv[n++]);
@@ -494,6 +499,9 @@ int ParseCommandLine (int argc, char** argv, SSourcePicture* pSrcPic, SEncParamE
       }
     } else if (!strcmp (pCommand, "-cabac") && (n < argc))
       pSvcParam.iEntropyCodingModeFlag = atoi (argv[n++]);
+
+    else if (!strcmp (pCommand, "-complexity") && (n < argc))
+      pSvcParam.iComplexityMode = (ECOMPLEXITY_MODE)atoi (argv[n++]);
 
     else if (!strcmp (pCommand, "-denois") && (n < argc))
       pSvcParam.bEnableDenoise = atoi (argv[n++]) ? true : false;
@@ -545,10 +553,10 @@ int ParseCommandLine (int argc, char** argv, SSourcePicture* pSrcPic, SEncParamE
       pSvcParam.iMaxBitrate = 1000 * atoi (argv[n++]);
 
     else if (!strcmp (pCommand, "-maxqp") && (n < argc))
-        pSvcParam.iMaxQp = atoi (argv[n++]);
+      pSvcParam.iMaxQp = atoi (argv[n++]);
 
     else if (!strcmp (pCommand, "-minqp") && (n < argc))
-        pSvcParam.iMinQp = atoi (argv[n++]);
+      pSvcParam.iMinQp = atoi (argv[n++]);
 
     else if (!strcmp (pCommand, "-numl") && (n < argc)) {
       pSvcParam.iSpatialLayerNum = atoi (argv[n++]);
@@ -559,6 +567,10 @@ int ParseCommandLine (int argc, char** argv, SSourcePicture* pSrcPic, SEncParamE
       if (-1 == ParseLayerConfig (cRdLayerCfg, iLayer, pSvcParam, sFileSet)) {
         return 1;
       }
+    } else if (!strcmp (pCommand, "-dprofile") && (n + 1 < argc)) {
+      unsigned int iLayer = atoi (argv[n++]);
+      SSpatialLayerConfig* pDLayer = &pSvcParam.sSpatialLayers[iLayer];
+      pDLayer->uiProfileIdc = (EProfileIdc) atoi (argv[n++]);
     } else if (!strcmp (pCommand, "-drec") && (n + 1 < argc)) {
       unsigned int iLayer = atoi (argv[n++]);
       const unsigned int iLen = (int) strlen (argv[n]);
@@ -844,6 +856,10 @@ int ProcessEncoding (ISVCEncoder* pPtrEnc, int argc, char** argv, bool bConfigFi
       iRet = 1;
       goto INSIDE_MEM_FREE;
     }
+  } else {
+    fprintf (stderr, "Don't set the proper bitstream filename!\n");
+    iRet = 1;
+    goto INSIDE_MEM_FREE;
   }
 
 #if defined(COMPARE_DATA)

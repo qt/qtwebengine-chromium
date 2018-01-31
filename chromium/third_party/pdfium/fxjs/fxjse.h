@@ -13,6 +13,7 @@
 
 class CFXJSE_Arguments;
 class CFXJSE_Value;
+class CJS_Return;
 
 // C++ object which is retrieved from v8 object's slot.
 class CFXJSE_HostObject {
@@ -30,6 +31,9 @@ class CFXJSE_HostObject {
   Type type_;
 };
 
+typedef CJS_Return (*FXJSE_MethodCallback)(
+    const v8::FunctionCallbackInfo<v8::Value>& info,
+    const WideString& functionName);
 typedef void (*FXJSE_FuncCallback)(CFXJSE_Value* pThis,
                                    const ByteStringView& szFuncName,
                                    CFXJSE_Arguments& args);
@@ -39,8 +43,6 @@ typedef void (*FXJSE_PropAccessor)(CFXJSE_Value* pObject,
 typedef int32_t (*FXJSE_PropTypeGetter)(CFXJSE_Value* pObject,
                                         const ByteStringView& szPropName,
                                         bool bQueryIn);
-typedef bool (*FXJSE_PropDeleter)(CFXJSE_Value* pObject,
-                                  const ByteStringView& szPropName);
 
 enum FXJSE_ClassPropTypes {
   FXJSE_ClassPropType_None,
@@ -53,31 +55,15 @@ struct FXJSE_FUNCTION_DESCRIPTOR {
   FXJSE_FuncCallback callbackProc;
 };
 
-struct FXJSE_PROPERTY_DESCRIPTOR {
-  const char* name;
-  FXJSE_PropAccessor getProc;
-  FXJSE_PropAccessor setProc;
-};
-
 struct FXJSE_CLASS_DESCRIPTOR {
   const char* name;
-  FXJSE_FuncCallback constructor;
-  const FXJSE_PROPERTY_DESCRIPTOR* properties;
   const FXJSE_FUNCTION_DESCRIPTOR* methods;
-  int32_t propNum;
   int32_t methNum;
   FXJSE_PropTypeGetter dynPropTypeGetter;
   FXJSE_PropAccessor dynPropGetter;
   FXJSE_PropAccessor dynPropSetter;
-  FXJSE_PropDeleter dynPropDeleter;
-  FXJSE_FuncCallback dynMethodCall;
+  FXJSE_MethodCallback dynMethodCall;
 };
-
-void FXJSE_Initialize();
-void FXJSE_Finalize();
-
-v8::Isolate* FXJSE_Runtime_Create_Own();
-void FXJSE_Runtime_Release(v8::Isolate* pIsolate);
 
 void FXJSE_ThrowMessage(const ByteStringView& utf8Message);
 

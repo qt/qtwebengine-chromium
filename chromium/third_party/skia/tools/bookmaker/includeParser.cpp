@@ -301,11 +301,13 @@ bool IncludeParser::crossCheck(BmhParser& bmhParser) {
                                         def->fVisited = true;
                                     } else {
                                         SkDebugf("missing toString bmh: %s\n", fullName.c_str());
+                                        fFailed = true;
                                     }
                                 }
                                 break;
                             } else {
                                 SkDebugf("method macro differs from bmh: %s\n", fullName.c_str());
+                                fFailed = true;
                             }
                         }
                     }
@@ -337,6 +339,7 @@ bool IncludeParser::crossCheck(BmhParser& bmhParser) {
                     }
                     if (!def) {
                         SkDebugf("method missing from bmh: %s\n", fullName.c_str());
+                        fFailed = true;
                         break;
                     }
                     if (def->crossCheck2(token)) {
@@ -346,6 +349,7 @@ bool IncludeParser::crossCheck(BmhParser& bmhParser) {
                         }
                     } else {
                        SkDebugf("method differs from bmh: %s\n", fullName.c_str());
+                       fFailed = true;
                     }
                 } break;
                 case MarkType::kComment:
@@ -382,6 +386,7 @@ bool IncludeParser::crossCheck(BmhParser& bmhParser) {
                         }
                         if (!def) {
                             SkDebugf("enum missing from bmh: %s\n", fullName.c_str());
+                            fFailed = true;
                             break;
                         }
                     }
@@ -394,12 +399,14 @@ bool IncludeParser::crossCheck(BmhParser& bmhParser) {
                     }
                     if (MarkType::kCode != def->fMarkType) {
                         SkDebugf("enum code missing from bmh: %s\n", fullName.c_str());
+                        fFailed = true;
                         break;
                     }
                     if (def->crossCheck(token)) {
                         def->fVisited = true;
                     } else {
-                       SkDebugf("enum differs from bmh: %s\n", def->fName.c_str());
+                        SkDebugf("enum differs from bmh: %s\n", def->fName.c_str());
+                        fFailed = true;
                     }
                     for (auto& child : token.fChildren) {
                         string constName = MarkType::kEnumClass == token.fMarkType ?
@@ -413,6 +420,7 @@ bool IncludeParser::crossCheck(BmhParser& bmhParser) {
                         if (!def) {
                             if (string::npos == child->fName.find("Legacy_")) {
                                 SkDebugf("const missing from bmh: %s\n", constName.c_str());
+                                fFailed = true;
                             }
                         } else {
                             def->fVisited = true;
@@ -424,6 +432,15 @@ bool IncludeParser::crossCheck(BmhParser& bmhParser) {
                         def->fVisited = true;
                     } else {
                         SkDebugf("member missing from bmh: %s\n", fullName.c_str());
+                        fFailed = true;
+                    }
+                    break;
+                case MarkType::kTypedef:
+                    if (def) {
+                        def->fVisited = true;
+                    } else {
+                        SkDebugf("typedef missing from bmh: %s\n", fullName.c_str());
+                        fFailed = true;
                     }
                     break;
                 default:
@@ -432,6 +449,8 @@ bool IncludeParser::crossCheck(BmhParser& bmhParser) {
             }
         }
     }
+    int crossChecks = 0;
+    string firstCheck;
     for (auto& classMapper : fIClassMap) {
         string className = classMapper.first;
         auto finder = bmhParser.fClassMap.find(className);
@@ -439,13 +458,25 @@ bool IncludeParser::crossCheck(BmhParser& bmhParser) {
             continue;
         }
         RootDefinition* root = &finder->second;
-        if (!root->dumpUnVisited(bmhParser.fSkip)) {
-            SkDebugf("some struct elements not found; struct finding in includeParser is missing\n");
+        if (!root->dumpUnVisited()) {
+            fFailed = true;
         }
-        SkDebugf("cross-checked %s\n", className.c_str());
+        if (crossChecks) {
+            SkDebugf(".");
+        } else {
+            SkDebugf("cross-check");
+            firstCheck = className;
+        }
+        ++crossChecks;
+    }
+    if (crossChecks) {
+        if (1 == crossChecks) {
+            SkDebugf("%s", firstCheck.c_str());
+        }
+        SkDebugf("\n");
     }
     bmhParser.fWroteOut = true;
-    return true;
+    return !fFailed;
 }
 
 IClassDefinition* IncludeParser::defineClass(const Definition& includeDef,
@@ -1320,22 +1351,21 @@ bool IncludeParser::parseEnum(Definition* child, Definition* markupDef) {
         }
         markupChild->fChildren.push_back(member);
     } while (true);
-    for (auto count : child->fChildren) {
-        if (Definition::Type::kBracket == count->fType) {
+    for (auto outsideMember : child->fChildren) {
+        if (Definition::Type::kBracket == outsideMember->fType) {
             continue;
         }
-        SkASSERT(Definition::Type::kKeyWord == count->fType);
-        if (KeyWord::kClass == count->fKeyWord) {
+        SkASSERT(Definition::Type::kKeyWord == outsideMember->fType);
+        if (KeyWord::kClass == outsideMember->fKeyWord) {
             continue;
         }
-        SkASSERT(KeyWord::kStatic == count->fKeyWord);
-        markupChild->fTokens.emplace_back(MarkType::kMember, count->fContentStart,
-                count->fContentEnd, count->fLineCount, markupChild);
+        SkASSERT(KeyWord::kStatic == outsideMember->fKeyWord);
+        markupChild->fTokens.emplace_back(MarkType::kMember, outsideMember->fContentStart,
+                outsideMember->fContentEnd, outsideMember->fLineCount, markupChild);
         Definition* member = &markupChild->fTokens.back();
-        member->fName = count->fName;
+        member->fName = outsideMember->fName;
         // FIXME: ? add comment as well ?
         markupChild->fChildren.push_back(member);
-        break;
     }
     IClassDefinition& classDef = fIClassMap[markupDef->fName];
     SkASSERT(classDef.fStart);
@@ -1474,9 +1504,6 @@ bool IncludeParser::parseMethod(Definition* child, Definition* markupDef) {
         break;
     }
     tokenIter->fName = nameStr;
-    if ("operator" == nameStr) {
-        SkDebugf("");
-    }
     tokenIter->fMarkType = MarkType::kMethod;
     tokenIter->fPrivate = string::npos != nameStr.find("::");
     auto testIter = child->fParent->fTokens.begin();
@@ -1538,9 +1565,6 @@ bool IncludeParser::parseMethod(Definition* child, Definition* markupDef) {
         auto globalFunction = &fIFunctionMap[name];
         globalFunction->fContentStart = start;
         globalFunction->fName = name;
-        if ("operator+" == name) {
-            SkDebugf("");
-        }
         globalFunction->fFiddle = name;
         globalFunction->fContentEnd = end;
         globalFunction->fMarkType = MarkType::kMethod;
@@ -1555,9 +1579,6 @@ bool IncludeParser::parseMethod(Definition* child, Definition* markupDef) {
     SkASSERT(classDef.fStart);
     string uniqueName = this->uniqueName(classDef.fMethods, nameStr);
     markupChild->fName = uniqueName;
-        if ("operator+" == uniqueName) {
-            SkDebugf("");
-        }
     if (!this->findComments(*child, markupChild)) {
         return false;
     }
@@ -1603,7 +1624,7 @@ bool IncludeParser::parseObject(Definition* child, Definition* markupDef) {
                     }
                     break;
                 case KeyWord::kTypedef:
-                    if (!this->parseTypedef()) {
+                    if (!this->parseTypedef(child, markupDef)) {
                         return child->reportError<bool>("failed to parse typedef");
                     }
                     break;
@@ -1633,9 +1654,17 @@ bool IncludeParser::parseObject(Definition* child, Definition* markupDef) {
                         auto tokenIter = child->fParent->fTokens.begin();
                         std::advance(tokenIter, child->fParentIndex);
                         tokenIter = std::prev(tokenIter);
-                        TextParser checkDeprecated(&*tokenIter);
-                        if (checkDeprecated.startsWith("SK_ATTR_DEPRECATED")) {
+                        TextParser previousToken(&*tokenIter);
+                        if (previousToken.startsWith("SK_ATTR_DEPRECATED")) {
                             break;
+                        }
+                        if (Bracket::kPound == child->fParent->fBracket &&
+                                KeyWord::kIf == child->fParent->fKeyWord) {
+                            // TODO: this will skip methods named defined() -- for the
+                            // moment there aren't any
+                            if (previousToken.startsWith("defined")) {
+                                break;
+                            }
                         }
                     }
                     if (!this->parseMethod(child, markupDef)) {
@@ -1720,8 +1749,31 @@ bool IncludeParser::parseTemplate() {
     return true;
 }
 
-bool IncludeParser::parseTypedef() {
-
+bool IncludeParser::parseTypedef(Definition* child, Definition* markupDef) {
+    TextParser typedefParser(child);
+    typedefParser.skipExact("typedef");
+    typedefParser.skipWhiteSpace();
+    string nameStr = typedefParser.typedefName();
+    if (!markupDef) {
+        Definition& typedefDef = fITypedefMap[nameStr];
+        SkASSERT(!typedefDef.fStart);
+        typedefDef.fStart = child->fContentStart;
+        typedefDef.fContentStart = child->fContentStart;
+        typedefDef.fName = nameStr;
+        typedefDef.fFiddle = nameStr;
+        typedefDef.fContentEnd = child->fContentEnd;
+        typedefDef.fTerminator = child->fContentEnd;
+        typedefDef.fMarkType = MarkType::kTypedef;
+        typedefDef.fLineCount = child->fLineCount;
+        return true;
+    }
+    markupDef->fTokens.emplace_back(MarkType::kTypedef, child->fContentStart, child->fContentEnd,
+        child->fLineCount, markupDef);
+    Definition* markupChild = &markupDef->fTokens.back();
+    markupChild->fName = nameStr;
+    markupChild->fTerminator = markupChild->fContentEnd;
+    IClassDefinition& classDef = fIClassMap[markupDef->fName];
+    classDef.fTypedefs[nameStr] = markupChild;
     return true;
 }
 
@@ -1993,6 +2045,7 @@ bool IncludeParser::parseChar() {
                     fInEnum = false;
                 }
                 this->popObject();
+                fPriorEnum = nullptr;
             } else if (Definition::Type::kBracket == fParent->fType
                     && fParent->fParent && Definition::Type::kKeyWord == fParent->fParent->fType
                     && KeyWord::kStruct == fParent->fParent->fKeyWord) {
@@ -2026,27 +2079,31 @@ bool IncludeParser::parseChar() {
                     for (auto nameType = baseIter; nameType != namedIter; ++nameType) {
                         member->fChildren.push_back(&*nameType);
                     }
-
                 }
+                fPriorEnum = nullptr;
             } else if (fParent->fChildren.size() > 0) {
                 auto lastIter = fParent->fChildren.end();
-                Definition* priorEnum;
-                while (fParent->fChildren.begin() != lastIter) {
-                    std::advance(lastIter, -1);
-                    priorEnum = *lastIter;
-                    if (Definition::Type::kBracket != priorEnum->fType ||
-                            (Bracket::kSlashSlash != priorEnum->fBracket
-                            && Bracket::kSlashStar != priorEnum->fBracket)) {
-                        break;
+                Definition* priorEnum = fPriorEnum;
+                fPriorEnum = nullptr;
+                if (!priorEnum) {
+                    while (fParent->fChildren.begin() != lastIter) {
+                        std::advance(lastIter, -1);
+                        priorEnum = *lastIter;
+                        if (Definition::Type::kBracket != priorEnum->fType ||
+                                (Bracket::kSlashSlash != priorEnum->fBracket
+                                && Bracket::kSlashStar != priorEnum->fBracket)) {
+                            break;
+                        }
                     }
+                    fPriorIndex = priorEnum->fParentIndex;
                 }
                 if (Definition::Type::kKeyWord == priorEnum->fType
                         && KeyWord::kEnum == priorEnum->fKeyWord) {
                     auto tokenWalker = fParent->fTokens.begin();
-                    std::advance(tokenWalker, priorEnum->fParentIndex);
-                    SkASSERT(KeyWord::kEnum == tokenWalker->fKeyWord);
+                    std::advance(tokenWalker, fPriorIndex);
                     while (tokenWalker != fParent->fTokens.end()) {
                         std::advance(tokenWalker, 1);
+                        ++fPriorIndex;
                         if (Punctuation::kSemicolon == tokenWalker->fPunctuation) {
                             break;
                         }
@@ -2060,6 +2117,7 @@ bool IncludeParser::parseChar() {
                             break;
                         }
                     }
+                    auto saveTokenWalker = tokenWalker;
                     Definition* start = &*tokenWalker;
                     bool foundExpected = true;
                     for (KeyWord expected : {KeyWord::kStatic, KeyWord::kConstExpr, KeyWord::kInt}){
@@ -2073,6 +2131,36 @@ bool IncludeParser::parseChar() {
                         }
                         std::advance(tokenWalker, 1);
                     }
+                    if (!foundExpected) {
+                        foundExpected = true;
+                        tokenWalker = saveTokenWalker;
+                        for (KeyWord expected : {KeyWord::kStatic, KeyWord::kConst, KeyWord::kNone}){
+                            const Definition* test = &*tokenWalker;
+                            if (expected != test->fKeyWord) {
+                                foundExpected = false;
+                                break;
+                            }
+                            if (tokenWalker == fParent->fTokens.end()) {
+                                break;
+                            }
+                            if (KeyWord::kNone != expected) {
+                                std::advance(tokenWalker, 1);
+                            }
+                        }
+                        if (foundExpected) {
+                            auto nameToken = priorEnum->fTokens.begin();
+                            string enumName = string(nameToken->fContentStart,
+                                    nameToken->fContentEnd - nameToken->fContentStart);
+                            const Definition* test = &*tokenWalker;
+                            string constType = string(test->fContentStart,
+                                    test->fContentEnd - test->fContentStart);
+                            if (enumName != constType) {
+                                foundExpected = false;
+                            } else {
+                                std::advance(tokenWalker, 1);
+                            }
+                        }
+                    }
                     if (foundExpected && tokenWalker != fParent->fTokens.end()) {
                         const char* nameStart = tokenWalker->fStart;
                         std::advance(tokenWalker, 1);
@@ -2082,7 +2170,8 @@ bool IncludeParser::parseChar() {
                             start->fName = string(nameStart, tp.fChar - nameStart);
                             start->fContentEnd = fChar;
                             priorEnum->fChildren.emplace_back(start);
-                       }
+                            fPriorEnum = priorEnum;
+                        }
                     }
                 }
             }

@@ -10,10 +10,12 @@
 
 #include "SkRefCnt.h"
 
+class SkData;
 class SkReadBuffer;
 class SkWriteBuffer;
 
-class SkPrivateEffectInitializer;
+struct SkSerialProcs;
+struct SkDeserialProcs;
 
 /*
  *  Flattening is straight-forward:
@@ -57,8 +59,17 @@ class SkPrivateEffectInitializer;
     This macro should only be used in base class objects in core
   */
 #define SK_DEFINE_FLATTENABLE_TYPE(flattenable) \
-    static Type GetFlattenableType() { \
-        return k##flattenable##_Type; \
+    static Type GetFlattenableType() {          \
+        return k##flattenable##_Type;           \
+    }                                           \
+    Type getFlattenableType() const override {  \
+        return k##flattenable##_Type;           \
+    }                                           \
+    static sk_sp<flattenable> Deserialize(const void* data, size_t size,                \
+                                          const SkDeserialProcs* procs = nullptr) {     \
+        return sk_sp<flattenable>(static_cast<flattenable*>(                            \
+                                  SkFlattenable::Deserialize(                           \
+                                  k##flattenable##_Type, data, size, procs).release()));\
     }
 
 /** \class SkFlattenable
@@ -113,8 +124,19 @@ public:
     /**
      *  Override this if your subclass needs to record data that it will need to recreate itself
      *  from its CreateProc (returned by getFactory()).
+     *
+     *  DEPRECATED public : will move to protected ... use serialize() instead
      */
     virtual void flatten(SkWriteBuffer&) const {}
+
+    virtual Type getFlattenableType() const = 0;
+
+    //
+    // public ways to serialize / deserialize
+    //
+    sk_sp<SkData> serialize(const SkSerialProcs* = nullptr) const;
+    static sk_sp<SkFlattenable> Deserialize(Type, const void* data, size_t length,
+                                            const SkDeserialProcs* procs = nullptr);
 
 protected:
     class PrivateInitializer {

@@ -4,7 +4,7 @@
 /*                                                                         */
 /*    OpenType Glyph Loader (body).                                        */
 /*                                                                         */
-/*  Copyright 1996-2017 by                                                 */
+/*  Copyright 1996-2018 by                                                 */
 /*  David Turner, Robert Wilhelm, and Werner Lemberg.                      */
 /*                                                                         */
 /*  This file is part of the FreeType project, and may only be used,       */
@@ -23,7 +23,7 @@
 #include FT_INTERNAL_CALC_H
 #include FT_INTERNAL_POSTSCRIPT_AUX_H
 #include FT_OUTLINE_H
-#include FT_CFF_DRIVER_H
+#include FT_DRIVER_H
 
 #include "cffload.h"
 #include "cffgload.h"
@@ -428,7 +428,7 @@
 
 #ifdef CFF_CONFIG_OPTION_OLD_ENGINE
       /* choose which CFF renderer to use */
-      if ( driver->hinting_engine == FT_CFF_HINTING_FREETYPE )
+      if ( driver->hinting_engine == FT_HINTING_FREETYPE )
         error = decoder_funcs->parse_charstrings_old( &decoder,
                                                       charstring,
                                                       charstring_len,

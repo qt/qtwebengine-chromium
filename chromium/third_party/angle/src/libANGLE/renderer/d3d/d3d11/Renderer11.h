@@ -143,7 +143,7 @@ class Renderer11 : public RendererD3D
                                  IUnknown *d3dTexture,
                                  EGLint *width,
                                  EGLint *height,
-                                 GLenum *fboFormat) const override;
+                                 const angle::Format **angleFormat) const override;
     egl::Error validateShareHandle(const egl::Config *config,
                                    HANDLE shareHandle,
                                    const egl::AttributeMap &attribs) const override;
@@ -163,8 +163,6 @@ class Renderer11 : public RendererD3D
     unsigned int getReservedFragmentUniformBuffers() const;
 
     bool getShareHandleSupport() const;
-
-    bool getNV12TextureSupport() const;
 
     int getMajorShaderModel() const override;
     int getMinorShaderModel() const override;
@@ -299,9 +297,8 @@ class Renderer11 : public RendererD3D
     IndexBuffer *createIndexBuffer() override;
 
     // Stream Creation
-    StreamProducerImpl *createStreamProducerD3DTextureNV12(
-        egl::Stream::ConsumerType consumerType,
-        const egl::AttributeMap &attribs) override;
+    StreamProducerImpl *createStreamProducerD3DTexture(egl::Stream::ConsumerType consumerType,
+                                                       const egl::AttributeMap &attribs) override;
 
     // D3D11-renderer specific methods
     ID3D11Device *getDevice() { return mDevice; }
@@ -380,7 +377,7 @@ class Renderer11 : public RendererD3D
     void onBufferCreate(const Buffer11 *created);
     void onBufferDelete(const Buffer11 *deleted);
 
-    egl::Error getEGLDevice(DeviceImpl **device) override;
+    DeviceImpl *createEGLDevice() override;
 
     gl::Error drawArrays(const gl::Context *context,
                          GLenum mode,
@@ -462,6 +459,14 @@ class Renderer11 : public RendererD3D
 
     bool canSelectViewInVertexShader() const override;
 
+    void onDirtyUniformBlockBinding(GLuint uniformBlockIndex) override;
+
+    gl::Error mapResource(ID3D11Resource *resource,
+                          UINT subResource,
+                          D3D11_MAP mapType,
+                          UINT mapFlags,
+                          D3D11_MAPPED_SUBRESOURCE *mappedResource);
+
   private:
     void generateCaps(gl::Caps *outCaps,
                       gl::TextureCapsMap *outTextureCaps,
@@ -520,7 +525,6 @@ class Renderer11 : public RendererD3D
     D3D_DRIVER_TYPE mRequestedDriverType;
     bool mCreateDebugDevice;
     bool mCreatedWithDeviceEXT;
-    DeviceD3D *mEGLDevice;
 
     HLSLCompiler mCompiler;
 

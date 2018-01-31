@@ -67,6 +67,10 @@
 #ifndef API_PEERCONNECTIONINTERFACE_H_
 #define API_PEERCONNECTIONINTERFACE_H_
 
+// TODO(sakal): Remove this define after migration to virtual PeerConnection
+// observer is complete.
+#define VIRTUAL_PEERCONNECTION_OBSERVER_DESTRUCTOR
+
 #include <memory>
 #include <string>
 #include <utility>
@@ -590,10 +594,24 @@ class PeerConnectionInterface : public rtc::RefCountInterface {
   virtual void RemoveStream(MediaStreamInterface* stream) = 0;
 
   // Add a new MediaStreamTrack to be sent on this PeerConnection, and return
-  // the newly created RtpSender.
+  // the newly created RtpSender. The RtpSender will be associated with the
+  // streams specified in the |stream_labels| list.
   //
+  // Errors:
+  // - INVALID_PARAMETER: |track| is null, has a kind other than audio or video,
+  //       or a sender already exists for the track.
+  // - INVALID_STATE: The PeerConnection is closed.
+  // TODO(steveanton): Remove default implementation once downstream
+  // implementations have been updated.
+  virtual RTCErrorOr<rtc::scoped_refptr<RtpSenderInterface>> AddTrack(
+      rtc::scoped_refptr<MediaStreamTrackInterface> track,
+      const std::vector<std::string>& stream_labels) {
+    return RTCError(RTCErrorType::UNSUPPORTED_OPERATION, "Not implemented");
+  }
   // |streams| indicates which stream labels the track should be associated
   // with.
+  // TODO(steveanton): Remove this overload once callers have moved to the
+  // signature with stream labels.
   virtual rtc::scoped_refptr<RtpSenderInterface> AddTrack(
       MediaStreamTrackInterface* track,
       std::vector<MediaStreamInterface*> streams) = 0;
@@ -720,6 +738,10 @@ class PeerConnectionInterface : public rtc::RefCountInterface {
   // break third party projects. As soon as they have been updated this should
   // be changed to "= 0;".
   virtual void GetStats(RTCStatsCollectorCallback* callback) {}
+  // Clear cached stats in the rtcstatscollector.
+  // Exposed for testing while waiting for automatic cache clear to work.
+  // https://bugs.webrtc.org/8693
+  virtual void ClearStatsCache() {}
 
   // Create a data channel with the provided config, or default config if none
   // is provided. Note that an offer/answer negotiation is still necessary
@@ -959,6 +981,8 @@ class PeerConnectionObserver {
     kIceState,
   };
 
+  virtual ~PeerConnectionObserver() = default;
+
   // Triggered when the SignalingState changed.
   virtual void OnSignalingChange(
       PeerConnectionInterface::SignalingState new_state) = 0;
@@ -1031,10 +1055,6 @@ class PeerConnectionObserver {
   // TODO(hbos,deadbeef): Make pure virtual when all subclasses implement it.
   virtual void OnRemoveTrack(
       rtc::scoped_refptr<RtpReceiverInterface> receiver) {}
-
- protected:
-  // Dtor protected as objects shouldn't be deleted via this interface.
-  ~PeerConnectionObserver() {}
 };
 
 // PeerConnectionFactoryInterface is the factory interface used for creating

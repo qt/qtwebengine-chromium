@@ -73,40 +73,38 @@ VKAPI_ATTR VkBool32 VKAPI_CALL DebugReportCallback(
 }
 #endif
 
-GrGpu* GrVkGpu::Create(GrBackendContext backendContext, const GrContextOptions& options,
-                       GrContext* context) {
-    return Create(reinterpret_cast<const GrVkBackendContext*>(backendContext), options, context);
+sk_sp<GrGpu> GrVkGpu::Make(GrBackendContext backendContext, const GrContextOptions& options,
+                           GrContext* context) {
+    const auto* backend = reinterpret_cast<const GrVkBackendContext*>(backendContext);
+    return Make(sk_ref_sp(backend), options, context);
 }
 
-GrGpu* GrVkGpu::Create(const GrVkBackendContext* backendContext, const GrContextOptions& options,
-                       GrContext* context) {
+sk_sp<GrGpu> GrVkGpu::Make(sk_sp<const GrVkBackendContext> backendContext,
+                           const GrContextOptions& options, GrContext* context) {
     if (!backendContext) {
         return nullptr;
-    } else {
-        backendContext->ref();
     }
 
     if (!backendContext->fInterface->validate(backendContext->fExtensions)) {
         return nullptr;
     }
 
-    return new GrVkGpu(context, options, backendContext);
+    return sk_sp<GrGpu>(new GrVkGpu(context, options, std::move(backendContext)));
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 
 GrVkGpu::GrVkGpu(GrContext* context, const GrContextOptions& options,
-                 const GrVkBackendContext* backendCtx)
-    : INHERITED(context)
-    , fDevice(backendCtx->fDevice)
-    , fQueue(backendCtx->fQueue)
-    , fResourceProvider(this)
-    , fDisconnected(false) {
-    fBackendContext.reset(backendCtx);
-
+                 sk_sp<const GrVkBackendContext> backendCtx)
+        : INHERITED(context)
+        , fBackendContext(std::move(backendCtx))
+        , fDevice(fBackendContext->fDevice)
+        , fQueue(fBackendContext->fQueue)
+        , fResourceProvider(this)
+        , fDisconnected(false) {
 #ifdef SK_ENABLE_VK_LAYERS
     fCallback = VK_NULL_HANDLE;
-    if (backendCtx->fExtensions & kEXT_debug_report_GrVkExtensionFlag) {
+    if (fBackendContext->fExtensions & kEXT_debug_report_GrVkExtensionFlag) {
         // Setup callback creation information
         VkDebugReportCallbackCreateInfoEXT callbackCreateInfo;
         callbackCreateInfo.sType = VK_STRUCTURE_TYPE_DEBUG_REPORT_CREATE_INFO_EXT;
@@ -120,25 +118,26 @@ GrVkGpu::GrVkGpu(GrContext* context, const GrContextOptions& options,
         callbackCreateInfo.pUserData = nullptr;
 
         // Register the callback
-        GR_VK_CALL_ERRCHECK(this->vkInterface(), CreateDebugReportCallbackEXT(
-                            backendCtx->fInstance, &callbackCreateInfo, nullptr, &fCallback));
+        GR_VK_CALL_ERRCHECK(this->vkInterface(),
+                            CreateDebugReportCallbackEXT(fBackendContext->fInstance,
+                                                         &callbackCreateInfo, nullptr, &fCallback));
     }
 #endif
 
     fCompiler = new SkSL::Compiler();
 
-    fVkCaps.reset(new GrVkCaps(options, this->vkInterface(), backendCtx->fPhysicalDevice,
-                               backendCtx->fFeatures, backendCtx->fExtensions));
+    fVkCaps.reset(new GrVkCaps(options, this->vkInterface(), fBackendContext->fPhysicalDevice,
+                               fBackendContext->fFeatures, fBackendContext->fExtensions));
     fCaps.reset(SkRef(fVkCaps.get()));
 
-    VK_CALL(GetPhysicalDeviceMemoryProperties(backendCtx->fPhysicalDevice, &fPhysDevMemProps));
+    VK_CALL(GetPhysicalDeviceMemoryProperties(fBackendContext->fPhysicalDevice, &fPhysDevMemProps));
 
     const VkCommandPoolCreateInfo cmdPoolInfo = {
         VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,      // sType
         nullptr,                                         // pNext
         VK_COMMAND_POOL_CREATE_TRANSIENT_BIT |
         VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT, // CmdPoolCreateFlags
-        backendCtx->fGraphicsQueueIndex,                 // queueFamilyIndex
+        fBackendContext->fGraphicsQueueIndex,            // queueFamilyIndex
     };
     GR_VK_CALL_ERRCHECK(this->vkInterface(), CreateCommandPool(fDevice, &cmdPoolInfo, nullptr,
                                                                &fCmdPool));
@@ -899,7 +898,7 @@ static bool check_backend_texture(const GrBackendTexture& backendTex,
         return false;
     }
 
-    SkASSERT(config == GrVkFormatToPixelConfig(info->fFormat));
+    SkASSERT(GrVkFormatPixelConfigPairIsValid(info->fFormat, config));
     return true;
 }
 
@@ -1073,7 +1072,7 @@ void GrVkGpu::generateMipmap(GrVkTexture* tex, GrSurfaceOrigin texOrigin) {
     }
 
     // setup memory barrier
-    SkASSERT(kUnknown_GrPixelConfig != GrVkFormatToPixelConfig(tex->imageFormat()));
+    SkASSERT(GrVkFormatIsSupported(tex->imageFormat()));
     VkImageAspectFlags aspectFlags = VK_IMAGE_ASPECT_COLOR_BIT;
     VkImageMemoryBarrier imageMemoryBarrier = {
         VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,          // sType
@@ -1174,28 +1173,28 @@ bool copy_testing_data(GrVkGpu* gpu, void* srcData, const GrVkAlloc& alloc, size
     return true;
 }
 
-GrBackendObject GrVkGpu::createTestingOnlyBackendTexture(void* srcData, int w, int h,
-                                                         GrPixelConfig config,
-                                                         bool isRenderTarget,
-                                                         GrMipMapped mipMapped) {
+GrBackendTexture GrVkGpu::createTestingOnlyBackendTexture(void* srcData, int w, int h,
+                                                          GrPixelConfig config,
+                                                          bool isRenderTarget,
+                                                          GrMipMapped mipMapped) {
 
     VkFormat pixelFormat;
     if (!GrPixelConfigToVkFormat(config, &pixelFormat)) {
-        return 0;
+        return GrBackendTexture(); // invalid
     }
 
     bool linearTiling = false;
     if (!fVkCaps->isConfigTexturable(config)) {
-        return 0;
+        return GrBackendTexture(); // invalid
     }
 
     if (isRenderTarget && !fVkCaps->isConfigRenderable(config, false)) {
-        return 0;
+        return GrBackendTexture(); // invalid
     }
 
     // Currently we don't support uploading pixel data when mipped.
     if (srcData && GrMipMapped::kYes == mipMapped) {
-        return 0;
+        return GrBackendTexture(); // invalid
     }
 
     if (fVkCaps->isConfigTexturableLinearly(config) &&
@@ -1222,7 +1221,7 @@ GrBackendObject GrVkGpu::createTestingOnlyBackendTexture(void* srcData, int w, i
     // Create Image
     VkSampleCountFlagBits vkSamples;
     if (!GrSampleCountToVkSampleCount(1, &vkSamples)) {
-        return 0;
+        return GrBackendTexture(); // invalid
     }
 
     // Figure out the number of mip levels.
@@ -1253,7 +1252,7 @@ GrBackendObject GrVkGpu::createTestingOnlyBackendTexture(void* srcData, int w, i
 
     if (!GrVkMemory::AllocAndBindImageMemory(this, image, linearTiling, &alloc)) {
         VK_CALL(DestroyImage(this->device(), image, nullptr));
-        return 0;
+        return GrBackendTexture(); // invalid
     }
 
     // We need to declare these early so that we can delete them at the end outside of the if block.
@@ -1274,7 +1273,7 @@ GrBackendObject GrVkGpu::createTestingOnlyBackendTexture(void* srcData, int w, i
     if (err) {
         GrVkMemory::FreeImageMemory(this, false, alloc);
         VK_CALL(DestroyImage(fDevice, image, nullptr));
-        return 0;
+        return GrBackendTexture(); // invalid
     }
 
     VkCommandBufferBeginInfo cmdBufferBeginInfo;
@@ -1305,7 +1304,7 @@ GrBackendObject GrVkGpu::createTestingOnlyBackendTexture(void* srcData, int w, i
             VK_CALL(DestroyImage(fDevice, image, nullptr));
             VK_CALL(EndCommandBuffer(cmdBuffer));
             VK_CALL(FreeCommandBuffers(fDevice, fCmdPool, 1, &cmdBuffer));
-            return 0;
+            return GrBackendTexture(); // invalid
         }
     } else {
         SkASSERT(w && h);
@@ -1349,7 +1348,7 @@ GrBackendObject GrVkGpu::createTestingOnlyBackendTexture(void* srcData, int w, i
             VK_CALL(DestroyImage(fDevice, image, nullptr));
             VK_CALL(EndCommandBuffer(cmdBuffer));
             VK_CALL(FreeCommandBuffers(fDevice, fCmdPool, 1, &cmdBuffer));
-            return 0;
+            return GrBackendTexture(); // invalid
         }
 
         if (!GrVkMemory::AllocAndBindBufferMemory(this, buffer, GrVkBuffer::kCopyRead_Type,
@@ -1359,7 +1358,7 @@ GrBackendObject GrVkGpu::createTestingOnlyBackendTexture(void* srcData, int w, i
             VK_CALL(DestroyBuffer(fDevice, buffer, nullptr));
             VK_CALL(EndCommandBuffer(cmdBuffer));
             VK_CALL(FreeCommandBuffers(fDevice, fCmdPool, 1, &cmdBuffer));
-            return 0;
+            return GrBackendTexture(); // invalid
         }
 
         currentWidth = w;
@@ -1376,7 +1375,7 @@ GrBackendObject GrVkGpu::createTestingOnlyBackendTexture(void* srcData, int w, i
                 VK_CALL(DestroyBuffer(fDevice, buffer, nullptr));
                 VK_CALL(EndCommandBuffer(cmdBuffer));
                 VK_CALL(FreeCommandBuffers(fDevice, fCmdPool, 1, &cmdBuffer));
-                return 0;
+                return GrBackendTexture(); // invalid
             }
             currentWidth = SkTMax(1, currentWidth/2);
             currentHeight = SkTMax(1, currentHeight/2);
@@ -1498,19 +1497,21 @@ GrBackendObject GrVkGpu::createTestingOnlyBackendTexture(void* srcData, int w, i
     VK_CALL(DestroyFence(fDevice, fence, nullptr));
 
 
-    GrVkImageInfo* info = new GrVkImageInfo;
-    info->fImage = image;
-    info->fAlloc = alloc;
-    info->fImageTiling = imageTiling;
-    info->fImageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-    info->fFormat = pixelFormat;
-    info->fLevelCount = mipLevels;
+    GrVkImageInfo info;
+    info.fImage = image;
+    info.fAlloc = alloc;
+    info.fImageTiling = imageTiling;
+    info.fImageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    info.fFormat = pixelFormat;
+    info.fLevelCount = mipLevels;
 
-    return (GrBackendObject)info;
+    return GrBackendTexture(w, h, info);
 }
 
-bool GrVkGpu::isTestingOnlyBackendTexture(GrBackendObject id) const {
-    const GrVkImageInfo* backend = reinterpret_cast<const GrVkImageInfo*>(id);
+bool GrVkGpu::isTestingOnlyBackendTexture(const GrBackendTexture& tex) const {
+    SkASSERT(kVulkan_GrBackend == tex.fBackend);
+
+    const GrVkImageInfo* backend = tex.getVkImageInfo();
 
     if (backend && backend->fImage && backend->fAlloc.fMemory) {
         VkMemoryRequirements req;
@@ -1526,15 +1527,15 @@ bool GrVkGpu::isTestingOnlyBackendTexture(GrBackendObject id) const {
     return false;
 }
 
-void GrVkGpu::deleteTestingOnlyBackendTexture(GrBackendObject id, bool abandon) {
-    GrVkImageInfo* backend = reinterpret_cast<GrVkImageInfo*>(id);
-    if (backend) {
-        if (!abandon) {
-            // something in the command buffer may still be using this, so force submit
-            this->submitCommandBuffer(kForce_SyncQueue);
-            GrVkImage::DestroyImageInfo(this, backend);
-        }
-        delete backend;
+void GrVkGpu::deleteTestingOnlyBackendTexture(GrBackendTexture* tex, bool abandon) {
+    SkASSERT(kVulkan_GrBackend == tex->fBackend);
+
+    const GrVkImageInfo* info = tex->getVkImageInfo();
+
+    if (info && !abandon) {
+        // something in the command buffer may still be using this, so force submit
+        this->submitCommandBuffer(kForce_SyncQueue);
+        GrVkImage::DestroyImageInfo(this, const_cast<GrVkImageInfo*>(info));
     }
 }
 
@@ -2161,25 +2162,28 @@ sk_sp<GrSemaphore> SK_WARN_UNUSED_RESULT GrVkGpu::makeSemaphore(bool isOwned) {
     return GrVkSemaphore::Make(this, isOwned);
 }
 
-sk_sp<GrSemaphore> GrVkGpu::wrapBackendSemaphore(const GrBackendSemaphore& semaphore,
-                                                 GrWrapOwnership ownership) {
+sk_sp<GrSemaphore> GrVkGpu::onWrapBackendSemaphore(const GrBackendSemaphore& semaphore,
+                                                   GrWrapOwnership ownership) {
     return GrVkSemaphore::MakeWrapped(this, semaphore.vkSemaphore(), ownership);
 }
 
-void GrVkGpu::insertSemaphore(sk_sp<GrSemaphore> semaphore, bool flush) {
+void GrVkGpu::onInsertSemaphore(sk_sp<GrSemaphore> semaphore, bool flush) {
     GrVkSemaphore* vkSem = static_cast<GrVkSemaphore*>(semaphore.get());
 
-    const GrVkSemaphore::Resource* resource = vkSem->getResource();
-    resource->ref();
-    fSemaphoresToSignal.push_back(resource);
+    if (vkSem) {
+        const GrVkSemaphore::Resource* resource = vkSem->getResource();
+        resource->ref();
+        fSemaphoresToSignal.push_back(resource);
+    }
 
     if (flush) {
         this->submitCommandBuffer(kSkip_SyncQueue);
     }
 }
 
-void GrVkGpu::waitSemaphore(sk_sp<GrSemaphore> semaphore) {
+void GrVkGpu::onWaitSemaphore(sk_sp<GrSemaphore> semaphore) {
     GrVkSemaphore* vkSem = static_cast<GrVkSemaphore*>(semaphore.get());
+    SkASSERT(vkSem);
 
     const GrVkSemaphore::Resource* resource = vkSem->getResource();
     resource->ref();
@@ -2199,3 +2203,4 @@ sk_sp<GrSemaphore> GrVkGpu::prepareTextureForCrossContextUsage(GrTexture* textur
     // The image layout change serves as a barrier, so no semaphore is needed
     return nullptr;
 }
+

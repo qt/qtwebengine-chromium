@@ -111,7 +111,7 @@ void CPWL_EditImpl_Iterator::SetAt(const CPVT_WordPlace& place) {
 }
 
 const CPVT_WordPlace& CPWL_EditImpl_Iterator::GetAt() const {
-  return m_pVTIterator->GetAt();
+  return m_pVTIterator->GetWordPlace();
 }
 
 CPWL_EditImpl_Provider::CPWL_EditImpl_Provider(IPVT_FontMap* pFontMap)
@@ -175,35 +175,38 @@ CPWL_EditImpl_Refresh::CPWL_EditImpl_Refresh() {}
 CPWL_EditImpl_Refresh::~CPWL_EditImpl_Refresh() {}
 
 void CPWL_EditImpl_Refresh::BeginRefresh() {
-  m_RefreshRects.Clear();
+  m_RefreshRects.clear();
   m_OldLineRects = std::move(m_NewLineRects);
 }
 
 void CPWL_EditImpl_Refresh::Push(const CPVT_WordRange& linerange,
                                  const CFX_FloatRect& rect) {
-  m_NewLineRects.Add(linerange, rect);
+  m_NewLineRects.emplace_back(CPWL_EditImpl_LineRect(linerange, rect));
 }
 
 void CPWL_EditImpl_Refresh::NoAnalyse() {
-  {
-    for (int32_t i = 0, sz = m_OldLineRects.GetSize(); i < sz; i++)
-      if (CPWL_EditImpl_LineRect* pOldRect = m_OldLineRects.GetAt(i))
-        m_RefreshRects.Add(pOldRect->m_rcLine);
-  }
+  for (const auto& lineRect : m_OldLineRects)
+    Add(lineRect.m_rcLine);
 
-  {
-    for (int32_t i = 0, sz = m_NewLineRects.GetSize(); i < sz; i++)
-      if (CPWL_EditImpl_LineRect* pNewRect = m_NewLineRects.GetAt(i))
-        m_RefreshRects.Add(pNewRect->m_rcLine);
-  }
+  for (const auto& lineRect : m_NewLineRects)
+    Add(lineRect.m_rcLine);
 }
 
-const CPWL_EditImpl_RectArray* CPWL_EditImpl_Refresh::GetRefreshRects() const {
+std::vector<CFX_FloatRect>* CPWL_EditImpl_Refresh::GetRefreshRects() {
   return &m_RefreshRects;
 }
 
 void CPWL_EditImpl_Refresh::EndRefresh() {
-  m_RefreshRects.Clear();
+  m_RefreshRects.clear();
+}
+
+void CPWL_EditImpl_Refresh::Add(const CFX_FloatRect& new_rect) {
+  // Check for overlapped area.
+  for (const auto& rect : m_RefreshRects) {
+    if (rect.Contains(new_rect))
+      return;
+  }
+  m_RefreshRects.emplace_back(CFX_FloatRect(new_rect));
 }
 
 CPWL_EditImpl_Undo::CPWL_EditImpl_Undo()
@@ -723,9 +726,9 @@ WideString CPWL_EditImpl::GetText() const {
   pIterator->SetAt(0);
 
   CPVT_Word wordinfo;
-  CPVT_WordPlace oldplace = pIterator->GetAt();
+  CPVT_WordPlace oldplace = pIterator->GetWordPlace();
   while (pIterator->NextWord()) {
-    CPVT_WordPlace place = pIterator->GetAt();
+    CPVT_WordPlace place = pIterator->GetWordPlace();
     if (pIterator->GetWord(wordinfo))
       swRet += wordinfo.Word;
     if (oldplace.nSecIndex != place.nSecIndex)
@@ -749,7 +752,7 @@ WideString CPWL_EditImpl::GetRangeText(const CPVT_WordRange& range) const {
   CPVT_Word wordinfo;
   CPVT_WordPlace oldplace = wrTemp.BeginPos;
   while (pIterator->NextWord()) {
-    CPVT_WordPlace place = pIterator->GetAt();
+    CPVT_WordPlace place = pIterator->GetWordPlace();
     if (place > wrTemp.EndPos)
       break;
     if (pIterator->GetWord(wordinfo))
@@ -1137,10 +1140,9 @@ void CPWL_EditImpl::Refresh() {
       if (!m_bNotifyFlag) {
         AutoRestorer<bool> restorer(&m_bNotifyFlag);
         m_bNotifyFlag = true;
-        if (const CPWL_EditImpl_RectArray* pRects =
-                m_Refresh.GetRefreshRects()) {
-          for (int32_t i = 0, sz = pRects->GetSize(); i < sz; i++)
-            m_pNotify->InvalidateRect(pRects->GetAt(i));
+        if (std::vector<CFX_FloatRect>* pRects = m_Refresh.GetRefreshRects()) {
+          for (auto& rect : *pRects)
+            m_pNotify->InvalidateRect(&rect);
         }
       }
     }
@@ -1190,7 +1192,7 @@ void CPWL_EditImpl::RefreshWordRange(const CPVT_WordRange& wr) {
   CPVT_WordPlace place;
 
   while (pIterator->NextWord()) {
-    place = pIterator->GetAt();
+    place = pIterator->GetWordPlace();
     if (place > wrTemp.EndPos)
       break;
 
@@ -1867,33 +1869,6 @@ ByteString CPWL_EditImpl::GetPDFWordString(int32_t nFontIndex,
   return sWord;
 }
 
-CPWL_EditImpl_LineRectArray::CPWL_EditImpl_LineRectArray() {}
-
-CPWL_EditImpl_LineRectArray::~CPWL_EditImpl_LineRectArray() {}
-
-void CPWL_EditImpl_LineRectArray::operator=(
-    CPWL_EditImpl_LineRectArray&& that) {
-  m_LineRects = std::move(that.m_LineRects);
-}
-
-void CPWL_EditImpl_LineRectArray::Add(const CPVT_WordRange& wrLine,
-                                      const CFX_FloatRect& rcLine) {
-  m_LineRects.push_back(
-      pdfium::MakeUnique<CPWL_EditImpl_LineRect>(wrLine, rcLine));
-}
-
-int32_t CPWL_EditImpl_LineRectArray::GetSize() const {
-  return pdfium::CollectionSize<int32_t>(m_LineRects);
-}
-
-CPWL_EditImpl_LineRect* CPWL_EditImpl_LineRectArray::GetAt(
-    int32_t nIndex) const {
-  if (nIndex < 0 || nIndex >= GetSize())
-    return nullptr;
-
-  return m_LineRects[nIndex].get();
-}
-
 CPWL_EditImpl_Select::CPWL_EditImpl_Select() {}
 
 CPWL_EditImpl_Select::CPWL_EditImpl_Select(const CPVT_WordRange& range) {
@@ -1921,32 +1896,4 @@ void CPWL_EditImpl_Select::SetEndPos(const CPVT_WordPlace& end) {
 
 bool CPWL_EditImpl_Select::IsEmpty() const {
   return BeginPos == EndPos;
-}
-
-CPWL_EditImpl_RectArray::CPWL_EditImpl_RectArray() {}
-
-CPWL_EditImpl_RectArray::~CPWL_EditImpl_RectArray() {}
-
-void CPWL_EditImpl_RectArray::Clear() {
-  m_Rects.clear();
-}
-
-void CPWL_EditImpl_RectArray::Add(const CFX_FloatRect& rect) {
-  // check for overlapped area
-  for (const auto& pRect : m_Rects) {
-    if (pRect && pRect->Contains(rect))
-      return;
-  }
-  m_Rects.push_back(pdfium::MakeUnique<CFX_FloatRect>(rect));
-}
-
-int32_t CPWL_EditImpl_RectArray::GetSize() const {
-  return pdfium::CollectionSize<int32_t>(m_Rects);
-}
-
-CFX_FloatRect* CPWL_EditImpl_RectArray::GetAt(int32_t nIndex) const {
-  if (nIndex < 0 || nIndex >= GetSize())
-    return nullptr;
-
-  return m_Rects[nIndex].get();
 }

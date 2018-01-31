@@ -19,6 +19,7 @@
 #include "libANGLE/Renderbuffer.h"
 #include "libANGLE/Surface.h"
 #include "libANGLE/Texture.h"
+#include "libANGLE/angletypes.h"
 #include "libANGLE/formatutils.h"
 #include "libANGLE/renderer/ContextImpl.h"
 #include "libANGLE/renderer/FramebufferImpl.h"
@@ -260,6 +261,7 @@ FramebufferState::FramebufferState()
       mColorAttachments(1),
       mDrawBufferStates(1, GL_BACK),
       mReadBufferState(GL_BACK),
+      mDrawBufferTypeMask(),
       mDefaultWidth(0),
       mDefaultHeight(0),
       mDefaultSamples(0),
@@ -275,6 +277,7 @@ FramebufferState::FramebufferState(const Caps &caps)
       mColorAttachments(caps.maxColorAttachments),
       mDrawBufferStates(caps.maxDrawBuffers, GL_NONE),
       mReadBufferState(GL_COLOR_ATTACHMENT0_EXT),
+      mDrawBufferTypeMask(),
       mDefaultWidth(0),
       mDefaultHeight(0),
       mDefaultSamples(0),
@@ -294,13 +297,17 @@ const std::string &FramebufferState::getLabel()
     return mLabel;
 }
 
-const FramebufferAttachment *FramebufferState::getAttachment(GLenum attachment) const
+const FramebufferAttachment *FramebufferState::getAttachment(const Context *context,
+                                                             GLenum attachment) const
 {
     if (attachment >= GL_COLOR_ATTACHMENT0 && attachment <= GL_COLOR_ATTACHMENT15)
     {
         return getColorAttachment(attachment - GL_COLOR_ATTACHMENT0);
     }
 
+    // WebGL1 allows a developer to query for attachment parameters even when "inconsistant" (i.e.
+    // multiple conflicting attachment points) and requires us to return the framebuffer attachment
+    // associated with WebGL.
     switch (attachment)
     {
         case GL_COLOR:
@@ -308,13 +315,34 @@ const FramebufferAttachment *FramebufferState::getAttachment(GLenum attachment) 
             return getColorAttachment(0);
         case GL_DEPTH:
         case GL_DEPTH_ATTACHMENT:
-            return getDepthAttachment();
+            if (context->isWebGL1())
+            {
+                return getWebGLDepthAttachment();
+            }
+            else
+            {
+                return getDepthAttachment();
+            }
         case GL_STENCIL:
         case GL_STENCIL_ATTACHMENT:
-            return getStencilAttachment();
+            if (context->isWebGL1())
+            {
+                return getWebGLStencilAttachment();
+            }
+            else
+            {
+                return getStencilAttachment();
+            }
         case GL_DEPTH_STENCIL:
         case GL_DEPTH_STENCIL_ATTACHMENT:
-            return getDepthStencilAttachment();
+            if (context->isWebGL1())
+            {
+                return getWebGLDepthStencilAttachment();
+            }
+            else
+            {
+                return getDepthStencilAttachment();
+            }
         default:
             UNREACHABLE();
             return nullptr;
@@ -399,9 +427,24 @@ const FramebufferAttachment *FramebufferState::getDepthAttachment() const
     return mDepthAttachment.isAttached() ? &mDepthAttachment : nullptr;
 }
 
+const FramebufferAttachment *FramebufferState::getWebGLDepthAttachment() const
+{
+    return mWebGLDepthAttachment.isAttached() ? &mWebGLDepthAttachment : nullptr;
+}
+
+const FramebufferAttachment *FramebufferState::getWebGLDepthStencilAttachment() const
+{
+    return mWebGLDepthStencilAttachment.isAttached() ? &mWebGLDepthStencilAttachment : nullptr;
+}
+
 const FramebufferAttachment *FramebufferState::getStencilAttachment() const
 {
     return mStencilAttachment.isAttached() ? &mStencilAttachment : nullptr;
+}
+
+const FramebufferAttachment *FramebufferState::getWebGLStencilAttachment() const
+{
+    return mWebGLStencilAttachment.isAttached() ? &mWebGLStencilAttachment : nullptr;
 }
 
 const FramebufferAttachment *FramebufferState::getDepthStencilAttachment() const
@@ -463,7 +506,15 @@ const gl::FramebufferAttachment *FramebufferState::getDrawBuffer(size_t drawBuff
         // must be COLOR_ATTACHMENTi or NONE"
         ASSERT(mDrawBufferStates[drawBufferIdx] == GL_COLOR_ATTACHMENT0 + drawBufferIdx ||
                (drawBufferIdx == 0 && mDrawBufferStates[drawBufferIdx] == GL_BACK));
-        return getAttachment(mDrawBufferStates[drawBufferIdx]);
+
+        if (mDrawBufferStates[drawBufferIdx] == GL_BACK)
+        {
+            return getColorAttachment(0);
+        }
+        else
+        {
+            return getColorAttachment(mDrawBufferStates[drawBufferIdx] - GL_COLOR_ATTACHMENT0);
+        }
     }
     else
     {
@@ -621,6 +672,7 @@ Framebuffer::Framebuffer(const egl::Display *display, egl::Surface *surface)
                           FramebufferAttachment::kDefaultMultiviewLayout,
                           FramebufferAttachment::kDefaultViewportOffsets);
     }
+    mState.mDrawBufferTypeMask.setIndex(getDrawbufferWriteType(0), 0);
 }
 
 Framebuffer::Framebuffer(rx::GLImplFactory *factory)
@@ -632,6 +684,7 @@ Framebuffer::Framebuffer(rx::GLImplFactory *factory)
       mDirtyStencilAttachmentBinding(this, DIRTY_BIT_STENCIL_ATTACHMENT)
 {
     mDirtyColorAttachmentBindings.emplace_back(this, DIRTY_BIT_COLOR_ATTACHMENT_0);
+    mState.mDrawBufferTypeMask.setIndex(getDrawbufferWriteType(0), 0);
 }
 
 Framebuffer::~Framebuffer()
@@ -792,9 +845,10 @@ const FramebufferAttachment *Framebuffer::getFirstNonNullAttachment() const
     return mState.getFirstNonNullAttachment();
 }
 
-const FramebufferAttachment *Framebuffer::getAttachment(GLenum attachment) const
+const FramebufferAttachment *Framebuffer::getAttachment(const Context *context,
+                                                        GLenum attachment) const
 {
-    return mState.getAttachment(attachment);
+    return mState.getAttachment(context, attachment);
 }
 
 size_t Framebuffer::getDrawbufferStateCount() const
@@ -823,8 +877,12 @@ void Framebuffer::setDrawBuffers(size_t count, const GLenum *buffers)
     mDirtyBits.set(DIRTY_BIT_DRAW_BUFFERS);
 
     mState.mEnabledDrawBuffers.reset();
+    mState.mDrawBufferTypeMask.reset();
+
     for (size_t index = 0; index < count; ++index)
     {
+        mState.mDrawBufferTypeMask.setIndex(getDrawbufferWriteType(index), index);
+
         if (drawStates[index] != GL_NONE && mState.mColorAttachments[index].isAttached())
         {
             mState.mEnabledDrawBuffers.set(index);
@@ -855,6 +913,16 @@ GLenum Framebuffer::getDrawbufferWriteType(size_t drawBuffer) const
         default:
             return GL_FLOAT;
     }
+}
+
+ComponentTypeMask Framebuffer::getDrawBufferTypeMask() const
+{
+    return mState.mDrawBufferTypeMask;
+}
+
+DrawBufferMask Framebuffer::getDrawBufferMask() const
+{
+    return mState.mEnabledDrawBuffers;
 }
 
 bool Framebuffer::hasEnabledDrawBuffer() const
@@ -1689,6 +1757,7 @@ void Framebuffer::setAttachmentImpl(const Context *context,
             // formsRenderingFeedbackLoopWith
             bool enabled = (type != GL_NONE && getDrawBufferState(colorIndex) != GL_NONE);
             mState.mEnabledDrawBuffers.set(colorIndex, enabled);
+            mState.mDrawBufferTypeMask.setIndex(getDrawbufferWriteType(colorIndex), colorIndex);
         }
         break;
     }

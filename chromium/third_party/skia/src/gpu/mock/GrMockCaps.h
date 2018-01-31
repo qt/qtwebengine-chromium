@@ -28,6 +28,7 @@ public:
         fShaderCaps->fIntegerSupport = options.fIntegerSupport;
         fShaderCaps->fFlatInterpolationSupport = options.fFlatInterpolationSupport;
         fShaderCaps->fMaxVertexSamplers = options.fMaxVertexSamplers;
+        fShaderCaps->fMaxFragmentSamplers = options.fMaxFragmentSamplers;
         fShaderCaps->fShaderDerivativeSupport = options.fShaderDerivativeSupport;
 
         this->applyOptionsOverrides(contextOptions);
@@ -47,6 +48,16 @@ public:
 
     bool initDescForDstCopy(const GrRenderTargetProxy* src, GrSurfaceDesc* desc,
                             bool* rectsMustMatch, bool* disallowSubrect) const override {
+        return false;
+    }
+
+    bool validateBackendTexture(const GrBackendTexture& tex, SkColorType,
+                                GrPixelConfig*) const override {
+        return SkToBool(tex.getMockTextureInfo());
+    }
+
+    bool validateBackendRenderTarget(const GrBackendRenderTarget& rt, SkColorType,
+                                     GrPixelConfig*) const override {
         return false;
     }
 

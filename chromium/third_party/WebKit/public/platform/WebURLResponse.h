@@ -61,7 +61,7 @@ class WebURLResponse {
   };
 
   struct SignedCertificateTimestamp {
-    SignedCertificateTimestamp() {}
+    SignedCertificateTimestamp() = default;
     SignedCertificateTimestamp(WebString status,
                                WebString origin,
                                WebString log_description,
@@ -139,7 +139,7 @@ class WebURLResponse {
 
   class ExtraData {
    public:
-    virtual ~ExtraData() {}
+    virtual ~ExtraData() = default;
   };
 
   BLINK_PLATFORM_EXPORT ~WebURLResponse();
@@ -202,6 +202,7 @@ class WebURLResponse {
   BLINK_PLATFORM_EXPORT void SetSecurityStyle(WebSecurityStyle);
 
   BLINK_PLATFORM_EXPORT void SetSecurityDetails(const WebSecurityDetails&);
+  BLINK_PLATFORM_EXPORT WebSecurityDetails SecurityDetailsForTesting();
 
 #if INSIDE_BLINK
   BLINK_PLATFORM_EXPORT const ResourceResponse& ToResourceResponse() const;

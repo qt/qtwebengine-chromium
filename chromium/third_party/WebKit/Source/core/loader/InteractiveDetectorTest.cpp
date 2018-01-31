@@ -5,7 +5,7 @@
 #include "core/loader/InteractiveDetector.h"
 
 #include "core/dom/Document.h"
-#include "core/testing/DummyPageHolder.h"
+#include "core/testing/PageTestBase.h"
 #include "platform/CrossThreadFunctional.h"
 #include "platform/scheduler/renderer/renderer_scheduler_impl.h"
 #include "platform/testing/TestingPlatformSupportWithMockScheduler.h"
@@ -90,7 +90,7 @@ class InteractiveDetectorTest : public ::testing::Test {
   }
 
   void RunTillTimestamp(double target_time) {
-    double current_time = MonotonicallyIncreasingTime();
+    double current_time = CurrentTimeTicksInSeconds();
     platform_->RunForPeriodSeconds(std::max(0.0, target_time - current_time));
   }
 
@@ -139,7 +139,7 @@ class InteractiveDetectorTest : public ::testing::Test {
 // The name shows the ordering of these events in the test.
 
 TEST_F(InteractiveDetectorTest, FMP_DCL_FmpDetect) {
-  double t0 = MonotonicallyIncreasingTime();
+  double t0 = CurrentTimeTicksInSeconds();
   SimulateNavigationStart(t0);
   // Network is forever quiet for this test.
   SetActiveConnections(1);
@@ -152,7 +152,7 @@ TEST_F(InteractiveDetectorTest, FMP_DCL_FmpDetect) {
 }
 
 TEST_F(InteractiveDetectorTest, DCL_FMP_FmpDetect) {
-  double t0 = MonotonicallyIncreasingTime();
+  double t0 = CurrentTimeTicksInSeconds();
   SimulateNavigationStart(t0);
   // Network is forever quiet for this test.
   SetActiveConnections(1);
@@ -165,7 +165,7 @@ TEST_F(InteractiveDetectorTest, DCL_FMP_FmpDetect) {
 }
 
 TEST_F(InteractiveDetectorTest, InstantDetectionAtFmpDetectIfPossible) {
-  double t0 = MonotonicallyIncreasingTime();
+  double t0 = CurrentTimeTicksInSeconds();
   SimulateNavigationStart(t0);
   // Network is forever quiet for this test.
   SetActiveConnections(1);
@@ -178,7 +178,7 @@ TEST_F(InteractiveDetectorTest, InstantDetectionAtFmpDetectIfPossible) {
 }
 
 TEST_F(InteractiveDetectorTest, FmpDetectFiresAfterLateLongTask) {
-  double t0 = MonotonicallyIncreasingTime();
+  double t0 = CurrentTimeTicksInSeconds();
   SimulateNavigationStart(t0);
   // Network is forever quiet for this test.
   SetActiveConnections(1);
@@ -191,7 +191,7 @@ TEST_F(InteractiveDetectorTest, FmpDetectFiresAfterLateLongTask) {
 }
 
 TEST_F(InteractiveDetectorTest, FMP_FmpDetect_DCL) {
-  double t0 = MonotonicallyIncreasingTime();
+  double t0 = CurrentTimeTicksInSeconds();
   SimulateNavigationStart(t0);
   // Network is forever quiet for this test.
   SetActiveConnections(1);
@@ -202,7 +202,7 @@ TEST_F(InteractiveDetectorTest, FMP_FmpDetect_DCL) {
 }
 
 TEST_F(InteractiveDetectorTest, LongTaskBeforeFMPDoesNotAffectTTI) {
-  double t0 = MonotonicallyIncreasingTime();
+  double t0 = CurrentTimeTicksInSeconds();
   SimulateNavigationStart(t0);
   // Network is forever quiet for this test.
   SetActiveConnections(1);
@@ -216,7 +216,7 @@ TEST_F(InteractiveDetectorTest, LongTaskBeforeFMPDoesNotAffectTTI) {
 }
 
 TEST_F(InteractiveDetectorTest, DCLDoesNotResetTimer) {
-  double t0 = MonotonicallyIncreasingTime();
+  double t0 = CurrentTimeTicksInSeconds();
   SimulateNavigationStart(t0);
   // Network is forever quiet for this test.
   SetActiveConnections(1);
@@ -230,7 +230,7 @@ TEST_F(InteractiveDetectorTest, DCLDoesNotResetTimer) {
 }
 
 TEST_F(InteractiveDetectorTest, DCL_FMP_FmpDetect_LT) {
-  double t0 = MonotonicallyIncreasingTime();
+  double t0 = CurrentTimeTicksInSeconds();
   SimulateNavigationStart(t0);
   // Network is forever quiet for this test.
   SetActiveConnections(1);
@@ -244,7 +244,7 @@ TEST_F(InteractiveDetectorTest, DCL_FMP_FmpDetect_LT) {
 }
 
 TEST_F(InteractiveDetectorTest, DCL_FMP_LT_FmpDetect) {
-  double t0 = MonotonicallyIncreasingTime();
+  double t0 = CurrentTimeTicksInSeconds();
   SimulateNavigationStart(t0);
   // Network is forever quiet for this test.
   SetActiveConnections(1);
@@ -258,7 +258,7 @@ TEST_F(InteractiveDetectorTest, DCL_FMP_LT_FmpDetect) {
 }
 
 TEST_F(InteractiveDetectorTest, FMP_FmpDetect_LT_DCL) {
-  double t0 = MonotonicallyIncreasingTime();
+  double t0 = CurrentTimeTicksInSeconds();
   SimulateNavigationStart(t0);
   // Network is forever quiet for this test.
   SetActiveConnections(1);
@@ -272,7 +272,7 @@ TEST_F(InteractiveDetectorTest, FMP_FmpDetect_LT_DCL) {
 }
 
 TEST_F(InteractiveDetectorTest, DclIsMoreThan5sAfterFMP) {
-  double t0 = MonotonicallyIncreasingTime();
+  double t0 = CurrentTimeTicksInSeconds();
   SimulateNavigationStart(t0);
   // Network is forever quiet for this test.
   SetActiveConnections(1);
@@ -289,7 +289,7 @@ TEST_F(InteractiveDetectorTest, DclIsMoreThan5sAfterFMP) {
 }
 
 TEST_F(InteractiveDetectorTest, NetworkBusyBlocksTTIEvenWhenMainThreadQuiet) {
-  double t0 = MonotonicallyIncreasingTime();
+  double t0 = CurrentTimeTicksInSeconds();
   SimulateNavigationStart(t0);
   SetActiveConnections(1);
   SimulateDOMContentLoadedEnd(t0 + 2.0);
@@ -307,7 +307,7 @@ TEST_F(InteractiveDetectorTest, NetworkBusyBlocksTTIEvenWhenMainThreadQuiet) {
 }
 
 TEST_F(InteractiveDetectorTest, LongEnoughQuietWindowBetweenFMPAndFmpDetect) {
-  double t0 = MonotonicallyIncreasingTime();
+  double t0 = CurrentTimeTicksInSeconds();
   SimulateNavigationStart(t0);
   SetActiveConnections(1);
   SimulateDOMContentLoadedEnd(t0 + 2.0);
@@ -323,7 +323,7 @@ TEST_F(InteractiveDetectorTest, LongEnoughQuietWindowBetweenFMPAndFmpDetect) {
 }
 
 TEST_F(InteractiveDetectorTest, NetworkBusyEndIsNotTTI) {
-  double t0 = MonotonicallyIncreasingTime();
+  double t0 = CurrentTimeTicksInSeconds();
   SimulateNavigationStart(t0);
   SetActiveConnections(1);
   SimulateDOMContentLoadedEnd(t0 + 2.0);
@@ -340,7 +340,7 @@ TEST_F(InteractiveDetectorTest, NetworkBusyEndIsNotTTI) {
 }
 
 TEST_F(InteractiveDetectorTest, LateLongTaskWithLateFMPDetection) {
-  double t0 = MonotonicallyIncreasingTime();
+  double t0 = CurrentTimeTicksInSeconds();
   SimulateNavigationStart(t0);
   SetActiveConnections(1);
   SimulateDOMContentLoadedEnd(t0 + 2.0);
@@ -355,7 +355,7 @@ TEST_F(InteractiveDetectorTest, LateLongTaskWithLateFMPDetection) {
 }
 
 TEST_F(InteractiveDetectorTest, IntermittentNetworkBusyBlocksTTI) {
-  double t0 = MonotonicallyIncreasingTime();
+  double t0 = CurrentTimeTicksInSeconds();
   SimulateNavigationStart(t0);
   SetActiveConnections(1);
   SimulateDOMContentLoadedEnd(t0 + 2.0);
@@ -378,7 +378,7 @@ TEST_F(InteractiveDetectorTest, IntermittentNetworkBusyBlocksTTI) {
 }
 
 TEST_F(InteractiveDetectorTest, InvalidatingUserInput) {
-  double t0 = MonotonicallyIncreasingTime();
+  double t0 = CurrentTimeTicksInSeconds();
   SimulateNavigationStart(t0);
   // Network is forever quiet for this test.
   SetActiveConnections(1);
@@ -395,33 +395,31 @@ TEST_F(InteractiveDetectorTest, InvalidatingUserInput) {
   EXPECT_EQ(GetDetector()->GetFirstInvalidatingInputTime(), t0 + 5.0);
 }
 
-class InteractiveDetectorTestWithDummyPage : public ::testing::Test {
+class InteractiveDetectorTestWithDummyPage : public PageTestBase {
  public:
   // Public because it's executed on a task queue.
   void DummyTaskWithDuration(double duration_seconds) {
     platform_->AdvanceClockSeconds(duration_seconds);
-    dummy_task_end_time_ = MonotonicallyIncreasingTime();
+    dummy_task_end_time_ = CurrentTimeTicksInSeconds();
   }
 
  protected:
   void SetUp() override {
     platform_->AdvanceClockSeconds(1);
-    dummy_page_holder_ = DummyPageHolder::Create(IntSize(800, 600));
+    PageTestBase::SetUp();
   }
 
   double GetDummyTaskEndTime() { return dummy_task_end_time_; }
 
-  Document& GetDocument() { return dummy_page_holder_->GetDocument(); }
   ScopedTestingPlatformSupport<TestingPlatformSupportWithMockScheduler>
       platform_;
 
  private:
-  std::unique_ptr<DummyPageHolder> dummy_page_holder_;
   double dummy_task_end_time_ = 0.0;
 };
 
 TEST_F(InteractiveDetectorTestWithDummyPage, TaskLongerThan5sBlocksTTI) {
-  double t0 = MonotonicallyIncreasingTime();
+  double t0 = CurrentTimeTicksInSeconds();
   InteractiveDetector* detector = InteractiveDetector::From(GetDocument());
   detector->SetNavigationStartTime(t0);
   platform_->RunForPeriodSeconds(4.0);
@@ -432,8 +430,8 @@ TEST_F(InteractiveDetectorTestWithDummyPage, TaskLongerThan5sBlocksTTI) {
   detector->OnFirstMeaningfulPaintDetected(t0 + 3.0);
 
   // Post a task with 6 seconds duration.
-  platform_->CurrentThread()->GetWebTaskRunner()->PostTask(
-      BLINK_FROM_HERE,
+  PostCrossThreadTask(
+      *platform_->CurrentThread()->GetWebTaskRunner(), FROM_HERE,
       CrossThreadBind(
           &InteractiveDetectorTestWithDummyPage::DummyTaskWithDuration,
           CrossThreadUnretained(this), 6.0));
@@ -445,7 +443,7 @@ TEST_F(InteractiveDetectorTestWithDummyPage, TaskLongerThan5sBlocksTTI) {
 }
 
 TEST_F(InteractiveDetectorTestWithDummyPage, LongTaskAfterTTIDoesNothing) {
-  double t0 = MonotonicallyIncreasingTime();
+  double t0 = CurrentTimeTicksInSeconds();
   InteractiveDetector* detector = InteractiveDetector::From(GetDocument());
   detector->SetNavigationStartTime(t0);
   platform_->RunForPeriodSeconds(4.0);
@@ -456,8 +454,8 @@ TEST_F(InteractiveDetectorTestWithDummyPage, LongTaskAfterTTIDoesNothing) {
   detector->OnFirstMeaningfulPaintDetected(t0 + 3.0);
 
   // Long task 1.
-  platform_->CurrentThread()->GetWebTaskRunner()->PostTask(
-      BLINK_FROM_HERE,
+  PostCrossThreadTask(
+      *platform_->CurrentThread()->GetWebTaskRunner(), FROM_HERE,
       CrossThreadBind(
           &InteractiveDetectorTestWithDummyPage::DummyTaskWithDuration,
           CrossThreadUnretained(this), 0.1));
@@ -469,8 +467,8 @@ TEST_F(InteractiveDetectorTestWithDummyPage, LongTaskAfterTTIDoesNothing) {
   EXPECT_EQ(detector->GetInteractiveTime(), long_task_1_end_time);
 
   // Long task 2.
-  platform_->CurrentThread()->GetWebTaskRunner()->PostTask(
-      BLINK_FROM_HERE,
+  PostCrossThreadTask(
+      *platform_->CurrentThread()->GetWebTaskRunner(), FROM_HERE,
       CrossThreadBind(
           &InteractiveDetectorTestWithDummyPage::DummyTaskWithDuration,
           CrossThreadUnretained(this), 0.1));

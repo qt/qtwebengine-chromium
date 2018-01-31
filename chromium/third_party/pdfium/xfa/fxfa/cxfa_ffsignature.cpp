@@ -10,9 +10,9 @@
 #include "xfa/fxfa/cxfa_fffield.h"
 #include "xfa/fxfa/cxfa_ffpageview.h"
 #include "xfa/fxfa/cxfa_ffwidget.h"
+#include "xfa/fxfa/parser/cxfa_border.h"
 
-CXFA_FFSignature::CXFA_FFSignature(CXFA_WidgetAcc* pDataAcc)
-    : CXFA_FFField(pDataAcc) {}
+CXFA_FFSignature::CXFA_FFSignature(CXFA_Node* pNode) : CXFA_FFField(pNode) {}
 
 CXFA_FFSignature::~CXFA_FFSignature() {}
 
@@ -31,7 +31,7 @@ void CXFA_FFSignature::RenderWidget(CXFA_Graphics* pGS,
 
   CXFA_FFWidget::RenderWidget(pGS, mtRotate, dwStatus);
 
-  DrawBorder(pGS, m_pDataAcc->GetUIBorderData(), m_rtUI, mtRotate);
+  DrawBorder(pGS, m_pNode->GetWidgetAcc()->GetUIBorder(), m_rtUI, mtRotate);
   RenderCaption(pGS, &mtRotate);
   DrawHighlight(pGS, &mtRotate, dwStatus, false);
 }
@@ -109,4 +109,8 @@ FWL_WidgetHit CXFA_FFSignature::OnHitTest(const CFX_PointF& point) {
 
 bool CXFA_FFSignature::OnSetCursor(const CFX_PointF& point) {
   return false;
+}
+
+FormFieldType CXFA_FFSignature::GetFormFieldType() {
+  return FormFieldType::kXFA_Signature;
 }

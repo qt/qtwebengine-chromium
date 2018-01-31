@@ -92,6 +92,18 @@ static inline void transform_scanline_565(char* SK_RESTRICT dst, const char* SK_
 }
 
 /**
+ * Transform from kAlpha_8_Config to 2-bytes-per-pixel GrayAlpha.
+ */
+static inline void transform_scanline_A8_to_GrayAlpha(char* SK_RESTRICT dst,
+                                                      const char* SK_RESTRICT src,
+                                                      int width, int, const SkPMColor*) {
+    for (int i = 0; i < width; i++) {
+        *dst++ = 0;         // gray (ignored)
+        *dst++ = *src++;    // alpha
+    }
+}
+
+/**
  * Transform from kRGBA_8888_SkColorType to 3-bytes-per-pixel RGB.
  * Alpha channel data is abandoned.
  */
@@ -163,7 +175,7 @@ static inline void transform_scanline_unpremultiply_sRGB(void* dst, const void* 
         p.append(SkRasterPipeline::load_bgra, &src_ctx);
     }
 
-    p.append_from_srgb(kPremul_SkAlphaType);
+    p.append(SkRasterPipeline::from_srgb);
     p.append(SkRasterPipeline::unpremul);
     p.append(SkRasterPipeline::to_srgb);
     p.append(SkRasterPipeline::store_8888, &dst_ctx);
@@ -189,7 +201,7 @@ static inline void transform_scanline_to_premul_linear(char* SK_RESTRICT dst,
                        dst_ctx = { (void*)dst, 0 };
     SkRasterPipeline_<256> p;
     p.append(SkRasterPipeline::load_8888, &src_ctx);
-    p.append_from_srgb(kUnpremul_SkAlphaType);
+    p.append(SkRasterPipeline::from_srgb);
     p.append(SkRasterPipeline::premul);
     p.append(SkRasterPipeline::to_srgb);
     p.append(SkRasterPipeline::store_8888, &dst_ctx);
@@ -349,7 +361,7 @@ static inline sk_sp<SkData> icc_from_color_space(const SkImageInfo& info) {
 
     sk_sp<SkColorSpace> owned;
     if (kRGBA_F16_SkColorType == info.colorType()) {
-        owned = as_CSB(cs)->makeSRGBGamma();
+        owned = cs->makeSRGBGamma();
         cs = owned.get();
     }
 

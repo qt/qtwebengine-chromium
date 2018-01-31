@@ -26,6 +26,7 @@
 #include "core/fpdfapi/render/cpdf_pagerendercache.h"
 #include "core/fxcodec/codec/ccodec_jpegmodule.h"
 #include "core/fxcrt/fx_stream.h"
+#include "core/fxge/dib/cfx_dibitmap.h"
 #include "core/fxge/fx_dib.h"
 #include "third_party/base/numerics/safe_conversions.h"
 #include "third_party/base/ptr_util.h"
@@ -69,6 +70,10 @@ void CPDF_Image::ConvertStreamToIndirectObject() {
 
   ASSERT(m_pStream.IsOwned());
   m_pDocument->AddIndirectObject(m_pStream.Release());
+}
+
+CPDF_Dictionary* CPDF_Image::GetDict() const {
+  return m_pStream ? m_pStream->GetDict() : nullptr;
 }
 
 std::unique_ptr<CPDF_Dictionary> CPDF_Image::InitJPEG(uint8_t* pData,

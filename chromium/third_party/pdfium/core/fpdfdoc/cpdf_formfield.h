@@ -18,14 +18,56 @@
 #include "core/fxcrt/unowned_ptr.h"
 #include "third_party/base/stl_util.h"
 
-#define FIELDTYPE_UNKNOWN 0
-#define FIELDTYPE_PUSHBUTTON 1
-#define FIELDTYPE_CHECKBOX 2
-#define FIELDTYPE_RADIOBUTTON 3
-#define FIELDTYPE_COMBOBOX 4
-#define FIELDTYPE_LISTBOX 5
-#define FIELDTYPE_TEXTFIELD 6
-#define FIELDTYPE_SIGNATURE 7
+enum class FormFieldType : uint8_t {
+  kUnknown = 0,
+  kPushButton = 1,
+  kCheckBox = 2,
+  kRadioButton = 3,
+  kComboBox = 4,
+  kListBox = 5,
+  kTextField = 6,
+  kSignature = 7,
+#ifdef PDF_ENABLE_XFA
+  kXFA = 8,  // Generic XFA field, should use value below if possible.
+  kXFA_CheckBox = 9,
+  kXFA_ComboBox = 10,
+  kXFA_ImageField = 11,
+  kXFA_ListBox = 12,
+  kXFA_PushButton = 13,
+  kXFA_Signature = 14,
+  kXFA_TextField = 15
+#endif  // PDF_ENABLE_XFA
+};
+
+Optional<FormFieldType> IntToFormFieldType(int value);
+
+// If values are added to FormFieldType, these will need to be updated.
+#ifdef PDF_ENABLE_XFA
+constexpr size_t kFormFieldTypeCount = 16;
+#else
+constexpr size_t kFormFieldTypeCount = 8;
+#endif  // PDF_ENABLE_XFA
+
+constexpr FormFieldType kFormFieldTypes[kFormFieldTypeCount] = {
+    FormFieldType::kUnknown,
+    FormFieldType::kPushButton,
+    FormFieldType::kCheckBox,
+    FormFieldType::kRadioButton,
+    FormFieldType::kComboBox,
+    FormFieldType::kListBox,
+    FormFieldType::kTextField,
+    FormFieldType::kSignature,
+#ifdef PDF_ENABLE_XFA
+    FormFieldType::kXFA,
+    FormFieldType::kXFA_CheckBox,
+    FormFieldType::kXFA_ComboBox,
+    FormFieldType::kXFA_ImageField,
+    FormFieldType::kXFA_ListBox,
+    FormFieldType::kXFA_PushButton,
+    FormFieldType::kXFA_Signature,
+    FormFieldType::kXFA_TextField
+#endif  // PDF_ENABLE_XFA
+};
 
 #define FORMFLAG_READONLY 0x01
 #define FORMFLAG_REQUIRED 0x02
@@ -79,7 +121,7 @@ class CPDF_FormField {
   }
 
   int GetControlIndex(const CPDF_FormControl* pControl) const;
-  int GetFieldType() const;
+  FormFieldType GetFieldType() const;
 
   CPDF_AAction GetAdditionalAction() const;
   WideString GetAlternateName() const;

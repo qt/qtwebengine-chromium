@@ -26,6 +26,9 @@ ERRMSG(CubemapIncomplete,
 ERRMSG(DefaultFramebufferInvalidAttachment,
        "Invalid attachment when the default framebuffer is bound.");
 ERRMSG(DefaultFramebufferTarget, "It is invalid to change default FBO's attachments");
+ERRMSG(DispatchIndirectBufferNotBound, "Dispatch indirect buffer must be bound.");
+ERRMSG(DrawBufferTypeMismatch,
+       "Fragment shader output type does not match the bound framebuffer attachment type.");
 ERRMSG(EnumNotSupported, "Enum is not currently supported.");
 ERRMSG(EnumRequiresGLES31, "Enum requires GLES 3.1");
 ERRMSG(ES31Required, "OpenGL ES 3.1 Required");
@@ -64,14 +67,19 @@ ERRMSG(InvalidDepthRange, "Near value cannot be greater than far.");
 ERRMSG(InvalidDrawMode, "Invalid draw mode.");
 ERRMSG(InvalidDrawModeTransformFeedback,
        "Draw mode must match current transform feedback object's draw mode.");
+ERRMSG(InvalidFence, "Invalid fence object.");
+ERRMSG(InvalidFenceState, "Fence must be set.");
 ERRMSG(InvalidFillMode, "Invalid fill mode.");
 ERRMSG(InvalidFilterTexture, "Texture only supports NEAREST and LINEAR filtering.");
 ERRMSG(InvalidFormat, "Invalid format.");
 ERRMSG(InvalidFramebufferTarget, "Invalid framebuffer target.");
 ERRMSG(InvalidFramebufferTextureLevel, "Mipmap level must be 0 when attaching a texture.");
 ERRMSG(InvalidFramebufferAttachmentParameter, "Invalid parameter name for framebuffer attachment.");
+ERRMSG(InvalidImageUnit,
+       "Image unit cannot be greater than or equal to the value of MAX_IMAGE_UNITS.");
 ERRMSG(InvalidInternalFormat, "Invalid internal format.");
 ERRMSG(InvalidMatrixMode, "Invalid matrix mode.");
+ERRMSG(InvalidMemoryBarrierBit, "Invalid memory barrier bit.");
 ERRMSG(InvalidMipLevel, "Level of detail outside of range.");
 ERRMSG(InvalidName, "Invalid name.");
 ERRMSG(InvalidNameCharacters, "Name contains invalid characters.");
@@ -124,12 +132,16 @@ ERRMSG(NegativePrimcount, "Primcount must be greater than or equal to zero.");
 ERRMSG(NegativeSize, "Cannot have negative height or width.");
 ERRMSG(NegativeStart, "Cannot have negative start.");
 ERRMSG(NegativeStride, "Cannot have negative stride.");
+ERRMSG(NoActiveProgramWithComputeShader, "No active program for the compute shader stage.");
 ERRMSG(NoSuchPath, "No such path object.");
 ERRMSG(NoTransformFeedbackOutputVariables,
     "The active program has specified no output variables to record.");
 ERRMSG(NoZeroDivisor, "At least one enabled attribute must have a divisor of zero.");
+ERRMSG(NVFenceNotSupported, "GL_NV_fence is not supported");
 ERRMSG(ObjectNotGenerated, "Object cannot be used because it has not been generated.");
 ERRMSG(OffsetMustBeMultipleOfType, "Offset must be a multiple of the passed in datatype.");
+ERRMSG(OffsetMustBeMultipleOfUint,
+       "Offset must be a multiple of the size, in basic machine units, of uint");
 ERRMSG(OutsideOfBounds, "Parameter outside of bounds.");
 ERRMSG(ParamOverflow, "The provided parameters overflow with the provided buffer.");
 ERRMSG(PixelDataNotNull, "Pixel data must be null.");
@@ -162,6 +174,8 @@ ERRMSG(UniformSizeMismatch, "Uniform size does not match uniform method.");
 ERRMSG(UnknownParameter, "Unknown parameter value.");
 ERRMSG(VertexArrayNoBuffer, "An enabled vertex array has no buffer.");
 ERRMSG(VertexArrayNoBufferPointer, "An enabled vertex array has no buffer and no pointer.");
+ERRMSG(VertexShaderTypeMismatch,
+       "Vertex shader input type does not match the type of the bound vertex attribute.")
 ERRMSG(ViewportNegativeSize, "Viewport size cannot be negative.");
 ERRMSG(Webgl2NameLengthLimitExceeded, "Location lengths must not be greater than 1024 characters.");
 ERRMSG(WebglBindAttribLocationReservedPrefix,

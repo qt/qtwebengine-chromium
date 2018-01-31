@@ -4,11 +4,11 @@
 
 #include "media/capture/video/chromeos/camera_device_delegate.h"
 
+#include <memory>
 #include <string>
 #include <utility>
 #include <vector>
 
-#include "base/memory/ptr_util.h"
 #include "media/base/bind_to_current_loop.h"
 #include "media/capture/video/chromeos/camera_buffer_factory.h"
 #include "media/capture/video/chromeos/camera_device_context.h"
@@ -136,7 +136,7 @@ void CameraDeviceDelegate::SetPhotoOptions(
 void CameraDeviceDelegate::SetRotation(int rotation) {
   DCHECK(ipc_task_runner_->BelongsToCurrentThread());
   DCHECK(rotation >= 0 && rotation < 360 && rotation % 90 == 0);
-  device_context_->SetRotation(rotation);
+  device_context_->SetScreenRotation(rotation);
 }
 
 base::WeakPtr<CameraDeviceDelegate> CameraDeviceDelegate::GetWeakPtr() {
@@ -203,6 +203,20 @@ void CameraDeviceDelegate::OnGotCameraInfo(
     return;
   }
   static_metadata_ = std::move(camera_info->static_camera_characteristics);
+
+  const arc::mojom::CameraMetadataEntryPtr* sensor_orientation =
+      GetMetadataEntry(
+          static_metadata_,
+          arc::mojom::CameraMetadataTag::ANDROID_SENSOR_ORIENTATION);
+  if (sensor_orientation) {
+    device_context_->SetSensorOrientation(
+        *reinterpret_cast<int32_t*>((*sensor_orientation)->data.data()));
+  } else {
+    device_context_->SetErrorState(
+        FROM_HERE, "Camera is missing required sensor orientation info");
+    return;
+  }
+
   // |device_ops_| is bound after the MakeRequest call.
   arc::mojom::Camera3DeviceOpsRequest device_ops_request =
       mojo::MakeRequest(&device_ops_);
@@ -243,10 +257,10 @@ void CameraDeviceDelegate::Initialize() {
   arc::mojom::Camera3CallbackOpsPtr callback_ops_ptr;
   arc::mojom::Camera3CallbackOpsRequest callback_ops_request =
       mojo::MakeRequest(&callback_ops_ptr);
-  stream_buffer_manager_ = base::MakeUnique<StreamBufferManager>(
+  stream_buffer_manager_ = std::make_unique<StreamBufferManager>(
       std::move(callback_ops_request),
-      base::MakeUnique<StreamCaptureInterfaceImpl>(GetWeakPtr()),
-      device_context_, base::MakeUnique<CameraBufferFactory>(),
+      std::make_unique<StreamCaptureInterfaceImpl>(GetWeakPtr()),
+      device_context_, std::make_unique<CameraBufferFactory>(),
       ipc_task_runner_);
   device_ops_->Initialize(
       std::move(callback_ops_ptr),

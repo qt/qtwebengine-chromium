@@ -59,8 +59,11 @@ int CheckPDFiumCApi() {
     CHK(FPDFAnnot_SetRect);
     CHK(FPDFAnnot_GetRect);
     CHK(FPDFAnnot_HasKey);
+    CHK(FPDFAnnot_GetValueType);
     CHK(FPDFAnnot_SetStringValue);
     CHK(FPDFAnnot_GetStringValue);
+    CHK(FPDFAnnot_SetAP);
+    CHK(FPDFAnnot_GetAP);
     CHK(FPDFAnnot_GetLinkedAnnot);
     CHK(FPDFAnnot_GetFlags);
     CHK(FPDFAnnot_SetFlags);
@@ -71,6 +74,7 @@ int CheckPDFiumCApi() {
     CHK(FPDFDoc_GetAttachmentCount);
     CHK(FPDFDoc_AddAttachment);
     CHK(FPDFDoc_GetAttachment);
+    CHK(FPDFDoc_DeleteAttachment);
     CHK(FPDFAttachment_GetName);
     CHK(FPDFAttachment_HasKey);
     CHK(FPDFAttachment_GetValueType);
@@ -105,6 +109,7 @@ int CheckPDFiumCApi() {
     CHK(FPDFAction_GetURIPath);
     CHK(FPDFDest_GetPageIndex);
     CHK(FPDFDest_GetLocationInPage);
+    CHK(FPDFDest_GetView);
     CHK(FPDFLink_GetLinkAtPoint);
     CHK(FPDFLink_GetLinkZOrderAtPoint);
     CHK(FPDFLink_GetDest);
@@ -210,6 +215,9 @@ int CheckPDFiumCApi() {
     CHK(FPDF_SetFormFieldHighlightAlpha);
     CHK(FPDF_RemoveFormFieldHighlight);
     CHK(FPDF_FFLDraw);
+#ifdef _SKIA_SUPPORT_
+    CHK(FPDF_FFLRecord);
+#endif
     CHK(FPDF_GetFormType);
 #ifdef PDF_ENABLE_XFA
     CHK(FPDF_LoadXFA);
@@ -250,7 +258,9 @@ int CheckPDFiumCApi() {
     CHK(FPDF_StructTree_CountChildren);
     CHK(FPDF_StructTree_GetChildAtIndex);
     CHK(FPDF_StructElement_GetAltText);
+    CHK(FPDF_StructElement_GetMarkedContentID);
     CHK(FPDF_StructElement_GetType);
+    CHK(FPDF_StructElement_GetTitle);
     CHK(FPDF_StructElement_CountChildren);
     CHK(FPDF_StructElement_GetChildAtIndex);
 
@@ -303,6 +313,14 @@ int CheckPDFiumCApi() {
     CHK(FPDF_InitLibraryWithConfig);
     CHK(FPDF_DestroyLibrary);
     CHK(FPDF_SetSandBoxPolicy);
+#if defined(_WIN32)
+#if defined(PDFIUM_PRINT_TEXT_WITH_GDI)
+    CHK(FPDF_SetTypefaceAccessibleFunc);
+    CHK(FPDF_SetPrintTextWithGDI);
+#endif
+    CHK(FPDF_SetPrintPostscriptLevel);
+    CHK(FPDF_SetPrintMode);
+#endif
     CHK(FPDF_LoadDocument);
     CHK(FPDF_LoadMemDocument);
     CHK(FPDF_LoadCustomDocument);
@@ -314,9 +332,16 @@ int CheckPDFiumCApi() {
     CHK(FPDF_LoadPage);
     CHK(FPDF_GetPageWidth);
     CHK(FPDF_GetPageHeight);
+    CHK(FPDF_GetPageBoundingBox);
     CHK(FPDF_GetPageSizeByIndex);
+#ifdef _WIN32
+    CHK(FPDF_RenderPage);
+#endif
     CHK(FPDF_RenderPageBitmap);
     CHK(FPDF_RenderPageBitmapWithMatrix);
+#ifdef _SKIA_SUPPORT_
+    CHK(FPDF_RenderPageSkp);
+#endif
     CHK(FPDF_ClosePage);
     CHK(FPDF_CloseDocument);
     CHK(FPDF_DeviceToPage);

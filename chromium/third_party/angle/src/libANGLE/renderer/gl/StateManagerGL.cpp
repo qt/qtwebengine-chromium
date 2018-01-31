@@ -85,8 +85,8 @@ StateManagerGL::StateManagerGL(const FunctionsGL *functions,
       mSamplers(rendererCaps.maxCombinedTextureImageUnits, 0),
       mImages(rendererCaps.maxImageUnits, ImageUnitBinding()),
       mTransformFeedback(0),
+      mCurrentTransformFeedback(nullptr),
       mQueries(),
-      mPrevDrawTransformFeedback(nullptr),
       mCurrentQueries(),
       mPrevDrawContext(0),
       mUnpackAlignment(4),
@@ -167,7 +167,8 @@ StateManagerGL::StateManagerGL(const FunctionsGL *functions,
       mIsMultiviewEnabled(extensions.multiview),
       mLocalDirtyBits(),
       mMultiviewDirtyBits(),
-      mProgramTexturesAndSamplersDirty(true)
+      mProgramTexturesAndSamplersDirty(true),
+      mProgramStorageBuffersDirty(true)
 {
     ASSERT(mFunctions);
     ASSERT(extensions.maxViews >= 1u);
@@ -353,10 +354,10 @@ void StateManagerGL::deleteTransformFeedback(GLuint transformFeedback)
             bindTransformFeedback(GL_TRANSFORM_FEEDBACK, 0);
         }
 
-        if (mPrevDrawTransformFeedback != nullptr &&
-            mPrevDrawTransformFeedback->getTransformFeedbackID() == transformFeedback)
+        if (mCurrentTransformFeedback != nullptr &&
+            mCurrentTransformFeedback->getTransformFeedbackID() == transformFeedback)
         {
-            mPrevDrawTransformFeedback = nullptr;
+            mCurrentTransformFeedback = nullptr;
         }
 
         mFunctions->deleteTransformFeedbacks(1, &transformFeedback);
@@ -645,16 +646,22 @@ void StateManagerGL::bindTransformFeedback(GLenum type, GLuint transformFeedback
         // Pause the current transform feedback if one is active.
         // To handle virtualized contexts, StateManagerGL needs to be able to bind a new transform
         // feedback at any time, even if there is one active.
-        if (mPrevDrawTransformFeedback != nullptr &&
-            mPrevDrawTransformFeedback->getTransformFeedbackID() != transformFeedback)
+        if (mCurrentTransformFeedback != nullptr &&
+            mCurrentTransformFeedback->getTransformFeedbackID() != transformFeedback)
         {
-            mPrevDrawTransformFeedback->syncPausedState(true);
-            mPrevDrawTransformFeedback = nullptr;
+            mCurrentTransformFeedback->syncPausedState(true);
+            mCurrentTransformFeedback = nullptr;
         }
 
         mTransformFeedback = transformFeedback;
         mFunctions->bindTransformFeedback(type, mTransformFeedback);
+        onTransformFeedbackStateChange();
     }
+}
+
+void StateManagerGL::onTransformFeedbackStateChange()
+{
+    mLocalDirtyBits.set(gl::State::DIRTY_BIT_TRANSFORM_FEEDBACK_BINDING);
 }
 
 void StateManagerGL::beginQuery(GLenum type, GLuint query)
@@ -700,8 +707,6 @@ gl::Error StateManagerGL::setDrawArraysState(const gl::Context *context,
     ANGLE_TRY(vaoGL->syncDrawArraysState(context, program->getActiveAttribLocationsMask(), first,
                                          count, instanceCount));
 
-    bindVertexArray(vaoGL->getVertexArrayID(), vaoGL->getAppliedElementArrayBufferID());
-
     return setGenericDrawState(context);
 }
 
@@ -719,38 +724,38 @@ gl::Error StateManagerGL::setDrawElementsState(const gl::Context *context,
     const gl::VertexArray *vao = glState.getVertexArray();
     const VertexArrayGL *vaoGL = GetImplAs<VertexArrayGL>(vao);
 
-    gl::Error error = vaoGL->syncDrawElementsState(context, program->getActiveAttribLocationsMask(),
-                                                   count, type, indices, instanceCount,
-                                                   glState.isPrimitiveRestartEnabled(), outIndices);
-    if (error.isError())
-    {
-        return error;
-    }
-
-    bindVertexArray(vaoGL->getVertexArrayID(), vaoGL->getAppliedElementArrayBufferID());
+    ANGLE_TRY(vaoGL->syncDrawElementsState(context, program->getActiveAttribLocationsMask(), count,
+                                           type, indices, instanceCount,
+                                           glState.isPrimitiveRestartEnabled(), outIndices));
 
     return setGenericDrawState(context);
 }
 
-gl::Error StateManagerGL::setDrawIndirectState(const gl::Context *context, GLenum type)
+gl::Error StateManagerGL::setDrawIndirectState(const gl::Context *context)
 {
-    const gl::State &glState = context->getGLState();
-
-    const gl::VertexArray *vao = glState.getVertexArray();
-    const VertexArrayGL *vaoGL = GetImplAs<VertexArrayGL>(vao);
-
-    if (type != GL_NONE)
-    {
-        ANGLE_TRY(vaoGL->syncElementArrayState(context));
-    }
-    bindVertexArray(vaoGL->getVertexArrayID(), vaoGL->getAppliedElementArrayBufferID());
-
-    gl::Buffer *drawIndirectBuffer = glState.getTargetBuffer(gl::BufferBinding::DrawIndirect);
-    ASSERT(drawIndirectBuffer);
-    const BufferGL *bufferGL = GetImplAs<BufferGL>(drawIndirectBuffer);
-    bindBuffer(gl::BufferBinding::DrawIndirect, bufferGL->getBufferID());
-
     return setGenericDrawState(context);
+}
+
+void StateManagerGL::updateDrawIndirectBufferBinding(const gl::Context *context)
+{
+    gl::Buffer *drawIndirectBuffer =
+        context->getGLState().getTargetBuffer(gl::BufferBinding::DrawIndirect);
+    if (drawIndirectBuffer != nullptr)
+    {
+        const BufferGL *bufferGL = GetImplAs<BufferGL>(drawIndirectBuffer);
+        bindBuffer(gl::BufferBinding::DrawIndirect, bufferGL->getBufferID());
+    }
+}
+
+void StateManagerGL::updateDispatchIndirectBufferBinding(const gl::Context *context)
+{
+    gl::Buffer *dispatchIndirectBuffer =
+        context->getGLState().getTargetBuffer(gl::BufferBinding::DispatchIndirect);
+    if (dispatchIndirectBuffer != nullptr)
+    {
+        const BufferGL *bufferGL = GetImplAs<BufferGL>(dispatchIndirectBuffer);
+        bindBuffer(gl::BufferBinding::DispatchIndirect, bufferGL->getBufferID());
+    }
 }
 
 gl::Error StateManagerGL::setDispatchComputeState(const gl::Context *context)
@@ -761,9 +766,10 @@ gl::Error StateManagerGL::setDispatchComputeState(const gl::Context *context)
 
 void StateManagerGL::pauseTransformFeedback()
 {
-    if (mPrevDrawTransformFeedback != nullptr)
+    if (mCurrentTransformFeedback != nullptr)
     {
-        mPrevDrawTransformFeedback->syncPausedState(true);
+        mCurrentTransformFeedback->syncPausedState(true);
+        onTransformFeedbackStateChange();
     }
 }
 
@@ -820,7 +826,7 @@ gl::Error StateManagerGL::onMakeCurrent(const gl::Context *context)
         ANGLE_TRY(pauseAllQueries());
     }
     mCurrentQueries.clear();
-    mPrevDrawTransformFeedback = nullptr;
+    onTransformFeedbackStateChange();
     mPrevDrawContext           = contextID;
 
     // Set the current query state
@@ -849,9 +855,6 @@ void StateManagerGL::setGenericShaderState(const gl::Context *context)
 
     // Sync the current program state
     const gl::Program *program = glState.getProgram();
-    const ProgramGL *programGL = GetImplAs<ProgramGL>(program);
-    useProgram(programGL->getProgramID());
-
     for (size_t uniformBlockIndex = 0; uniformBlockIndex < program->getActiveUniformBlockCount();
          uniformBlockIndex++)
     {
@@ -878,6 +881,12 @@ void StateManagerGL::setGenericShaderState(const gl::Context *context)
     {
         updateProgramTextureAndSamplerBindings(context);
         mProgramTexturesAndSamplersDirty = false;
+    }
+
+    if (mProgramStorageBuffersDirty)
+    {
+        updateProgramStorageBufferBindings(context);
+        mProgramStorageBuffersDirty = false;
     }
 
     // TODO(xinghua.cao@intel.com): Track image units state with dirty bits to
@@ -975,6 +984,12 @@ void StateManagerGL::updateProgramTextureAndSamplerBindings(const gl::Context *c
             }
         }
     }
+}
+
+void StateManagerGL::updateProgramStorageBufferBindings(const gl::Context *context)
+{
+    const gl::State &glState   = context->getGLState();
+    const gl::Program *program = glState.getProgram();
 
     for (size_t blockIndex = 0; blockIndex < program->getActiveShaderStorageBlockCount();
          blockIndex++)
@@ -1001,31 +1016,15 @@ void StateManagerGL::updateProgramTextureAndSamplerBindings(const gl::Context *c
 
 gl::Error StateManagerGL::setGenericDrawState(const gl::Context *context)
 {
-    setGenericShaderState(context);
-
     const gl::State &glState = context->getGLState();
+    const VertexArrayGL *vaoGL = GetImplAs<VertexArrayGL>(glState.getVertexArray());
+    bindVertexArray(vaoGL->getVertexArrayID(), vaoGL->getAppliedElementArrayBufferID());
+
+    setGenericShaderState(context);
 
     gl::Framebuffer *framebuffer = glState.getDrawFramebuffer();
     FramebufferGL *framebufferGL = GetImplAs<FramebufferGL>(framebuffer);
     bindFramebuffer(GL_DRAW_FRAMEBUFFER, framebufferGL->getFramebufferID());
-
-    // Set the current transform feedback state
-    gl::TransformFeedback *transformFeedback = glState.getCurrentTransformFeedback();
-    if (transformFeedback)
-    {
-        TransformFeedbackGL *transformFeedbackGL =
-            GetImplAs<TransformFeedbackGL>(transformFeedback);
-        bindTransformFeedback(GL_TRANSFORM_FEEDBACK, transformFeedbackGL->getTransformFeedbackID());
-        transformFeedbackGL->syncActiveState(transformFeedback->isActive(),
-                                             transformFeedback->getPrimitiveMode());
-        transformFeedbackGL->syncPausedState(transformFeedback->isPaused());
-        mPrevDrawTransformFeedback = transformFeedbackGL;
-    }
-    else
-    {
-        bindTransformFeedback(GL_TRANSFORM_FEEDBACK, 0);
-        mPrevDrawTransformFeedback = nullptr;
-    }
 
     if (context->getExtensions().webglCompatibility)
     {
@@ -1930,24 +1929,45 @@ void StateManagerGL::syncState(const gl::Context *context, const gl::State::Dirt
                                        GetImplAs<VertexArrayGL>(state.getVertexArray()));
                 break;
             case gl::State::DIRTY_BIT_DRAW_INDIRECT_BUFFER_BINDING:
-                // TODO: implement this
+                updateDrawIndirectBufferBinding(context);
+                break;
+            case gl::State::DIRTY_BIT_DISPATCH_INDIRECT_BUFFER_BINDING:
+                updateDispatchIndirectBufferBinding(context);
                 break;
             case gl::State::DIRTY_BIT_PROGRAM_BINDING:
+            {
                 mProgramTexturesAndSamplersDirty = true;
+                mProgramStorageBuffersDirty      = true;
+                gl::Program *program = state.getProgram();
+                if (program != nullptr)
+                {
+                    useProgram(GetImplAs<ProgramGL>(program)->getProgramID());
+                }
                 break;
+            }
             case gl::State::DIRTY_BIT_TEXTURE_BINDINGS:
                 mProgramTexturesAndSamplersDirty = true;
                 break;
             case gl::State::DIRTY_BIT_SAMPLER_BINDINGS:
                 mProgramTexturesAndSamplersDirty = true;
                 break;
+            case gl::State::DIRTY_BIT_TRANSFORM_FEEDBACK_BINDING:
+                syncTransformFeedbackState(context);
+                break;
             case gl::State::DIRTY_BIT_PROGRAM_EXECUTABLE:
                 mProgramTexturesAndSamplersDirty = true;
+                mProgramStorageBuffersDirty      = true;
                 propagateNumViewsToVAO(state.getProgram(),
                                        GetImplAs<VertexArrayGL>(state.getVertexArray()));
                 updateMultiviewBaseViewLayerIndexUniform(
                     state.getProgram(),
                     state.getDrawFramebuffer()->getImplementation()->getState());
+                break;
+            case gl::State::DIRTY_BIT_SHADER_STORAGE_BUFFER_BINDING:
+                mProgramStorageBuffersDirty = true;
+                break;
+            case gl::State::DIRTY_BIT_UNIFORM_BUFFER_BINDINGS:
+                // TODO(jmadll): State update.
                 break;
             case gl::State::DIRTY_BIT_MULTISAMPLING:
                 setMultisamplingStateEnabled(state.isMultisamplingEnabled());
@@ -2228,6 +2248,27 @@ void StateManagerGL::updateMultiviewBaseViewLayerIndexUniform(
             default:
                 break;
         }
+    }
+}
+
+void StateManagerGL::syncTransformFeedbackState(const gl::Context *context)
+{
+    // Set the current transform feedback state
+    gl::TransformFeedback *transformFeedback = context->getGLState().getCurrentTransformFeedback();
+    if (transformFeedback)
+    {
+        TransformFeedbackGL *transformFeedbackGL =
+            GetImplAs<TransformFeedbackGL>(transformFeedback);
+        bindTransformFeedback(GL_TRANSFORM_FEEDBACK, transformFeedbackGL->getTransformFeedbackID());
+        transformFeedbackGL->syncActiveState(transformFeedback->isActive(),
+                                             transformFeedback->getPrimitiveMode());
+        transformFeedbackGL->syncPausedState(transformFeedback->isPaused());
+        mCurrentTransformFeedback = transformFeedbackGL;
+    }
+    else
+    {
+        bindTransformFeedback(GL_TRANSFORM_FEEDBACK, 0);
+        mCurrentTransformFeedback = nullptr;
     }
 }
 }

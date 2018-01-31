@@ -27,7 +27,7 @@ class CXML_Parser {
   bool HaveAvailData();
   void SkipWhiteSpaces();
   void GetName(ByteString* space, ByteString* name);
-  void GetAttrValue(WideString& value);
+  WideString GetAttrValue();
   uint32_t GetCharRef();
   void GetTagName(bool bStartTag,
                   bool* bEndTag,
@@ -53,9 +53,5 @@ class CXML_Parser {
   FX_FILESIZE m_nBufferOffset;
   size_t m_dwIndex;
 };
-
-void FX_XML_SplitQualifiedName(const ByteStringView& bsFullName,
-                               ByteStringView& bsSpace,
-                               ByteStringView& bsName);
 
 #endif  // CORE_FXCRT_XML_CXML_PARSER_H_

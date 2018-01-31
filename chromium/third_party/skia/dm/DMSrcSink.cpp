@@ -17,6 +17,7 @@
 #include "SkColorSpaceXformCanvas.h"
 #include "SkColorSpace_XYZ.h"
 #include "SkCommonFlags.h"
+#include "SkCommonFlagsGpu.h"
 #include "SkData.h"
 #include "SkDebugCanvas.h"
 #include "SkDeferredDisplayListRecorder.h"
@@ -34,6 +35,7 @@
 #include "SkOSFile.h"
 #include "SkOSPath.h"
 #include "SkOpts.h"
+#include "SkPictureCommon.h"
 #include "SkPictureData.h"
 #include "SkPictureRecorder.h"
 #include "SkPipe.h"
@@ -58,6 +60,10 @@
     #include <XpsObjectModel.h>
 #endif
 
+#if !defined(SK_BUILD_FOR_GOOGLE3)
+    #include "Skottie.h"
+#endif
+
 #if defined(SK_XML)
     #include "SkSVGDOM.h"
     #include "SkXMLWriter.h"
@@ -66,7 +72,6 @@
 DEFINE_bool(multiPage, false, "For document-type backends, render the source"
             " into multiple pages");
 DEFINE_bool(RAW_threading, true, "Allow RAW decodes to run on multiple threads?");
-DECLARE_int32(gpuThreads);
 
 using sk_gpu_test::GrContextFactory;
 
@@ -385,8 +390,7 @@ static bool get_decode_info(SkImageInfo* decodeInfo, SkColorType canvasColorType
             }
 
             if (kRGBA_F16_SkColorType == canvasColorType) {
-                sk_sp<SkColorSpace> linearSpace =
-                        as_CSB(decodeInfo->colorSpace())->makeLinearGamma();
+                sk_sp<SkColorSpace> linearSpace = decodeInfo->colorSpace()->makeLinearGamma();
                 *decodeInfo = decodeInfo->makeColorSpace(std::move(linearSpace));
             }
 
@@ -1066,8 +1070,7 @@ Error ColorCodecSrc::draw(SkCanvas* canvas) const {
     }
 
     // Load the dst ICC profile.  This particular dst is fairly similar to Adobe RGB.
-    sk_sp<SkData> dstData = SkData::MakeFromFileName(
-            GetResourcePath("icc_profiles/HP_ZR30w.icc").c_str());
+    sk_sp<SkData> dstData = GetResourceAsData("icc_profiles/HP_ZR30w.icc");
     if (!dstData) {
         return "Cannot read monitor profile.  Is the resource path set correctly?";
     }
@@ -1084,9 +1087,7 @@ Error ColorCodecSrc::draw(SkCanvas* canvas) const {
         decodeInfo = decodeInfo.makeAlphaType(kPremul_SkAlphaType);
     }
     if (kRGBA_F16_SkColorType == fColorType) {
-        SkASSERT(SkColorSpace_Base::Type::kXYZ == as_CSB(decodeInfo.colorSpace())->type());
-        SkColorSpace_XYZ* csXYZ = static_cast<SkColorSpace_XYZ*>(decodeInfo.colorSpace());
-        decodeInfo = decodeInfo.makeColorSpace(csXYZ->makeLinearGamma());
+        decodeInfo = decodeInfo.makeColorSpace(decodeInfo.colorSpace()->makeLinearGamma());
     }
 
     SkImageInfo bitmapInfo = decodeInfo;
@@ -1179,7 +1180,7 @@ static SkRect get_cull_rect_for_skp(const char* path) {
         return SkRect::MakeEmpty();
     }
     SkPictInfo info;
-    if (!SkPicture::InternalOnly_StreamIsSKP(stream.get(), &info)) {
+    if (!SkPicture_StreamIsSKP(stream.get(), &info)) {
         return SkRect::MakeEmpty();
     }
 
@@ -1313,7 +1314,94 @@ SkISize DDLSKPSrc::size() const {
 
 Name DDLSKPSrc::name() const { return SkOSPath::Basename(fPath.c_str()); }
 
-/*~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~*/
+/*~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~*/
+
+#if !defined(SK_BUILD_FOR_GOOGLE3)
+SkottieSrc::SkottieSrc(Path path)
+    : fName(SkOSPath::Basename(path.c_str())) {
+
+    fAnimation  = skottie::Animation::MakeFromFile(path.c_str());
+    if (!fAnimation) {
+        return;
+    }
+
+    // Fit kTileCount x kTileCount frames to a 1000x1000 film strip.
+    static constexpr SkScalar kTargetSize = 1000;
+    const auto scale = kTargetSize / (kTileCount * std::max(fAnimation->size().width(),
+                                                            fAnimation->size().height()));
+    fTileSize = SkSize::Make(scale * fAnimation->size().width(),
+                             scale * fAnimation->size().height()).toCeil();
+
+}
+
+Error SkottieSrc::draw(SkCanvas* canvas) const {
+    if (!fAnimation) {
+        return SkStringPrintf("Unable to parse file: %s", fName.c_str());
+    }
+
+    canvas->drawColor(SK_ColorWHITE);
+
+    SkPaint paint, clockPaint;
+    paint.setColor(0xffa0a0a0);
+    paint.setStyle(SkPaint::kStroke_Style);
+    paint.setStrokeWidth(0);
+
+    clockPaint.setTextSize(12);
+
+    const auto ip = fAnimation->inPoint() * 1000 / fAnimation->frameRate(),
+               op = fAnimation->outPoint() * 1000 / fAnimation->frameRate(),
+               fr = (op - ip) / (kTileCount * kTileCount - 1);
+
+    const auto canvas_size = this->size();
+    for (int i = 0; i < kTileCount; ++i) {
+        const SkScalar y = i * (fTileSize.height() + 1);
+        canvas->drawLine(0, .5f + y, canvas_size.width(), .5f + y, paint);
+
+        for (int j = 0; j < kTileCount; ++j) {
+            const SkScalar x = j * (fTileSize.width() + 1);
+            canvas->drawLine(x + .5f, 0, x + .5f, canvas_size.height(), paint);
+            SkRect dest = SkRect::MakeXYWH(x, y, fTileSize.width(), fTileSize.height());
+
+            const auto t = fr * (i * kTileCount + j);
+            {
+                SkAutoCanvasRestore acr(canvas, true);
+                canvas->clipRect(dest);
+                canvas->concat(SkMatrix::MakeRectToRect(SkRect::MakeSize(fAnimation->size()),
+                                                        dest,
+                                                        SkMatrix::kFill_ScaleToFit));
+
+                fAnimation->animationTick(t);
+                fAnimation->render(canvas);
+            }
+
+            const auto label = SkStringPrintf("%.3f", t);
+            canvas->drawText(label.c_str(), label.size(), dest.x(),
+                             dest.bottom(), clockPaint);
+        }
+    }
+
+    return "";
+}
+
+SkISize SkottieSrc::size() const {
+    // Padding for grid.
+    return SkISize::Make(kTileCount * (fTileSize.width()  + 1),
+                         kTileCount * (fTileSize.height() + 1));
+}
+
+Name SkottieSrc::name() const { return fName; }
+
+bool SkottieSrc::veto(SinkFlags flags) const {
+    // No need to test to non-(raster||gpu||vector) or indirect backends.
+    bool type_ok = flags.type == SinkFlags::kRaster
+                || flags.type == SinkFlags::kGPU
+                || flags.type == SinkFlags::kVector;
+
+    return !type_ok || flags.approach != SinkFlags::kDirect;
+}
+#endif
+
+/*~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~*/
 #if defined(SK_XML)
 // Used when the image doesn't have an intrinsic size.
 static const SkSize kDefaultSVGSize = {1000, 1000};
@@ -1588,7 +1676,11 @@ GPUThreadTestingSink::GPUThreadTestingSink(GrContextFactory::ContextType ct,
                                            const GrContextOptions& grCtxOptions)
         : INHERITED(ct, overrides, samples, diText, colorType, alphaType, std::move(colorSpace),
                     threaded, grCtxOptions)
+#if SK_SUPPORT_GPU
         , fExecutor(SkExecutor::MakeFIFOThreadPool(FLAGS_gpuThreads)) {
+#else
+        , fExecutor(nullptr) {
+#endif
     SkASSERT(fExecutor);
 }
 
@@ -1649,7 +1741,9 @@ Error PDFSink::draw(const Src& src, SkBitmap*, SkWStream* dst, SkString*) const 
     metadata.fTitle = src.name();
     metadata.fSubject = "rendering correctness test";
     metadata.fCreator = "Skia/DM";
-    sk_sp<SkDocument> doc = SkDocument::MakePDF(dst, fRasterDpi, metadata, nullptr, fPDFA);
+    metadata.fRasterDPI = fRasterDpi;
+    metadata.fPDFA = fPDFA;
+    sk_sp<SkDocument> doc = SkDocument::MakePDF(dst, metadata);
     if (!doc) {
         return "SkDocument::MakePDF() returned nullptr";
     }

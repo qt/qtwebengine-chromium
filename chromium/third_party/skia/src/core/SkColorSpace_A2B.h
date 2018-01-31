@@ -27,7 +27,7 @@
 // here by the nature of the design.
 class SkColorSpace_A2B : public SkColorSpace_Base {
 public:
-    const SkMatrix44* toXYZD50() const override {
+    const SkMatrix44* onToXYZD50() const override {
         // the matrix specified in A2B0 profiles is not necessarily
         // a to-XYZ matrix, as to-Lab is supported as well so returning
         // that could be misleading. Additionally, B-curves are applied
@@ -36,23 +36,26 @@ public:
         return nullptr;
     }
 
-    uint32_t toXYZD50Hash() const override {
-        // See toXYZD50()'s comment.
+    uint32_t onToXYZD50Hash() const override {
+        // See onToXYZD50()'s comment.
         return 0;
     }
 
-    const SkMatrix44* fromXYZD50() const override {
-        // See toXYZD50()'s comment. Also, A2B0 profiles are not supported
+    const SkMatrix44* onFromXYZD50() const override {
+        // See onToXYZD50()'s comment. Also, A2B0 profiles are not supported
         // as destination color spaces, so an inverse matrix is never wanted.
         return nullptr;
     }
 
     // There is no single gamma curve in an A2B0 profile
+    SkGammaNamed onGammaNamed() const override { return kNonStandard_SkGammaNamed; }
     bool onGammaCloseToSRGB() const override { return false; }
     bool onGammaIsLinear() const override { return false; }
     bool onIsNumericalTransferFn(SkColorSpaceTransferFn* coeffs) const override { return false; }
 
     bool onIsCMYK() const override { return SkColorSpace::kCMYK_Type == fICCType; }
+
+    const SkData* onProfileData() const override { return fProfileData.get(); }
 
     sk_sp<SkColorSpace> makeLinearGamma() const override {
         // TODO: Analyze the extrema of our projection into XYZ and use suitable primaries?
@@ -167,6 +170,8 @@ public:
                      sk_sp<SkData> profileData);
 
 private:
+    sk_sp<SkData>        fProfileData;
+
     SkColorSpace::Type   fICCType;
     std::vector<Element> fElements;
     PCS                  fPCS;

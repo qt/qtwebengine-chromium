@@ -77,7 +77,7 @@ void RenderNoisePower(
 }  // namespace
 
 ResidualEchoEstimator::ResidualEchoEstimator(const EchoCanceller3Config& config)
-    : config_(config) {
+    : config_(config), S2_old_(config_.filter.main.length_blocks) {
   Reset();
 }
 
@@ -95,11 +95,9 @@ void ResidualEchoEstimator::Estimate(
   RenderNoisePower(render_buffer, &X2_noise_floor_, &X2_noise_floor_counter_);
 
   // Estimate the residual echo power.
-  if (aec_state.LinearEchoEstimate()) {
-    RTC_DCHECK(aec_state.FilterDelay());
-    const int filter_delay = *aec_state.FilterDelay();
-    LinearEstimate(S2_linear, aec_state.Erle(), filter_delay, R2);
-    AddEchoReverb(S2_linear, aec_state.SaturatedEcho(), filter_delay,
+  if (aec_state.UsableLinearEstimate()) {
+    LinearEstimate(S2_linear, aec_state.Erle(), aec_state.FilterDelay(), R2);
+    AddEchoReverb(S2_linear, aec_state.SaturatedEcho(), aec_state.FilterDelay(),
                   aec_state.ReverbDecay(), R2);
 
     // If the echo is saturated, estimate the echo power as the maximum echo
@@ -108,33 +106,16 @@ void ResidualEchoEstimator::Estimate(
       R2->fill((*std::max_element(R2->begin(), R2->end())) * 100.f);
     }
   } else {
-    const rtc::Optional<size_t> delay =
-        aec_state.ExternalDelay()
-            ? (aec_state.FilterDelay() ? aec_state.FilterDelay()
-                                       : aec_state.ExternalDelay())
-            : rtc::Optional<size_t>();
-
     // Estimate the echo generating signal power.
     std::array<float, kFftLengthBy2Plus1> X2;
-    if (aec_state.ExternalDelay() && aec_state.FilterDelay()) {
-      RTC_DCHECK(delay);
-      const int delay_use = static_cast<int>(*delay);
 
-      // Computes the spectral power over the blocks surrounding the delay.
-      constexpr int kKnownDelayRenderWindowSize = 5;
-      // TODO(peah): Add lookahead since that was what was there initially.
-      static_assert(
-          kUnknownDelayRenderWindowSize >= kKnownDelayRenderWindowSize,
-          "Requirement to ensure that the render buffer is overrun");
-      EchoGeneratingPower(
-          render_buffer, std::max(0, delay_use - 1),
-          std::min(kKnownDelayRenderWindowSize - 1, delay_use + 1), &X2);
-    } else {
-      // Computes the spectral power over the latest blocks.
-      // TODO(peah): Add lookahead since that was what was there initially.
-      EchoGeneratingPower(render_buffer, 0, kUnknownDelayRenderWindowSize - 1,
-                          &X2);
-    }
+    // Computes the spectral power over the blocks surrounding the delay.
+    constexpr int kKnownDelayRenderWindowSize = 5;
+    // TODO(peah): Add lookahead since that was what was there initially.
+    EchoGeneratingPower(
+        render_buffer, std::max(0, aec_state.FilterDelay() - 1),
+        std::min(kKnownDelayRenderWindowSize - 1, aec_state.FilterDelay() + 4),
+        &X2);
 
     // Subtract the stationary noise power to avoid stationary noise causing
     // excessive echo suppression.
@@ -142,17 +123,16 @@ void ResidualEchoEstimator::Estimate(
         X2.begin(), X2.end(), X2_noise_floor_.begin(), X2.begin(),
         [](float a, float b) { return std::max(0.f, a - 10.f * b); });
 
-    NonLinearEstimate(
-        aec_state.SufficientFilterUpdates(), aec_state.SaturatedEcho(),
-        config_.ep_strength.bounded_erl, aec_state.TransparentMode(),
-        aec_state.InitialState(), X2, Y2, R2);
+    NonLinearEstimate(aec_state.FilterHasHadTimeToConverge(),
+                      aec_state.SaturatedEcho(),
+                      config_.ep_strength.bounded_erl,
+                      aec_state.TransparentMode(), X2, Y2, R2);
 
-    if (aec_state.ExternalDelay() && aec_state.FilterDelay() &&
-        aec_state.SaturatedEcho()) {
+    if (aec_state.SaturatedEcho()) {
+      // TODO(peah): Modify to make sense theoretically.
       AddEchoReverb(*R2, aec_state.SaturatedEcho(),
-                    std::min(static_cast<size_t>(kAdaptiveFilterLength),
-                             delay.value_or(kAdaptiveFilterLength)),
-                    aec_state.ReverbDecay(), R2);
+                    config_.filter.main.length_blocks, aec_state.ReverbDecay(),
+                    R2);
     }
   }
 
@@ -195,7 +175,6 @@ void ResidualEchoEstimator::NonLinearEstimate(
     bool saturated_echo,
     bool bounded_erl,
     bool transparent_mode,
-    bool initial_state,
     const std::array<float, kFftLengthBy2Plus1>& X2,
     const std::array<float, kFftLengthBy2Plus1>& Y2,
     std::array<float, kFftLengthBy2Plus1>* R2) {
@@ -215,9 +194,6 @@ void ResidualEchoEstimator::NonLinearEstimate(
     // If the filter should have been able to converge, and and it is known that
     // the ERL is bounded, use a very low gain.
     echo_path_gain_lf = echo_path_gain_mf = echo_path_gain_hf = 0.001f;
-  } else if (!initial_state) {
-    // If the AEC is no longer in an initial state, assume a weak echo path.
-    echo_path_gain_lf = echo_path_gain_mf = echo_path_gain_hf = 0.01f;
   } else {
     // In the initial state, use conservative gains.
     echo_path_gain_lf = config_.ep_strength.lf;

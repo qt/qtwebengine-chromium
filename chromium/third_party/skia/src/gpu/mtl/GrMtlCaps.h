@@ -56,6 +56,15 @@ public:
         return false;
     }
 
+    bool validateBackendTexture(const GrBackendTexture&, SkColorType,
+                                GrPixelConfig*) const override {
+        return false;
+    }
+    bool validateBackendRenderTarget(const GrBackendRenderTarget&, SkColorType,
+                                     GrPixelConfig*) const override {
+        return false;
+    }
+
 private:
     void initFeatureSet(MTLFeatureSet featureSet);
 

@@ -22,6 +22,11 @@
 
 #include "common/webmids.h"
 
+// disable deprecation warnings for auto_ptr
+#if defined(__GNUC__) && __GNUC__ >= 5
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+#endif
+
 namespace mkvparser {
 const float MasteringMetadata::kValueNotPresent = FLT_MAX;
 const long long Colour::kValueNotPresent = LLONG_MAX;
@@ -2430,7 +2435,9 @@ bool CuePoint::TrackPosition::Parse(IMkvReader* pReader, long long start_,
 }
 
 const CuePoint::TrackPosition* CuePoint::Find(const Track* pTrack) const {
-  assert(pTrack);
+  if (pTrack == NULL) {
+    return NULL;
+  }
 
   const long long n = pTrack->GetNumber();
 
@@ -4030,7 +4037,7 @@ long SegmentInfo::Parse() {
   }
 
   const double rollover_check = m_duration * m_timecodeScale;
-  if (rollover_check > LLONG_MAX)
+  if (rollover_check > static_cast<double>(LLONG_MAX))
     return E_FILE_FORMAT_INVALID;
 
   if (pos != stop)
@@ -4979,29 +4986,27 @@ bool PrimaryChromaticity::Parse(IMkvReader* reader, long long read_pos,
   if (!reader)
     return false;
 
-  std::auto_ptr<PrimaryChromaticity> chromaticity_ptr;
+  if (!*chromaticity)
+    *chromaticity = new PrimaryChromaticity();
 
-  if (!*chromaticity) {
-    chromaticity_ptr.reset(new PrimaryChromaticity());
-  } else {
-    chromaticity_ptr.reset(*chromaticity);
-  }
-
-  if (!chromaticity_ptr.get())
+  if (!*chromaticity)
     return false;
 
-  float* value = is_x ? &chromaticity_ptr->x : &chromaticity_ptr->y;
+  PrimaryChromaticity* pc = *chromaticity;
+  float* value = is_x ? &pc->x : &pc->y;
 
   double parser_value = 0;
-  const long long value_parse_status =
+  const long long parse_status =
       UnserializeFloat(reader, read_pos, value_size, parser_value);
+
+  // Valid range is [0, 1]. Make sure the double is representable as a float
+  // before casting.
+  if (parse_status < 0 || parser_value < 0.0 || parser_value > 1.0 ||
+      (parser_value > 0.0 && parser_value < FLT_MIN))
+    return false;
 
   *value = static_cast<float>(parser_value);
 
-  if (value_parse_status < 0 || *value < 0.0 || *value > 1.0)
-    return false;
-
-  *chromaticity = chromaticity_ptr.release();
   return true;
 }
 
@@ -5030,6 +5035,10 @@ bool MasteringMetadata::Parse(IMkvReader* reader, long long mm_start,
       double value = 0;
       const long long value_parse_status =
           UnserializeFloat(reader, read_pos, child_size, value);
+      if (value < -FLT_MAX || value > FLT_MAX ||
+          (value > 0.0 && value < FLT_MIN)) {
+        return false;
+      }
       mm_ptr->luminance_max = static_cast<float>(value);
       if (value_parse_status < 0 || mm_ptr->luminance_max < 0.0 ||
           mm_ptr->luminance_max > 9999.99) {
@@ -5039,6 +5048,10 @@ bool MasteringMetadata::Parse(IMkvReader* reader, long long mm_start,
       double value = 0;
       const long long value_parse_status =
           UnserializeFloat(reader, read_pos, child_size, value);
+      if (value < -FLT_MAX || value > FLT_MAX ||
+          (value > 0.0 && value < FLT_MIN)) {
+        return false;
+      }
       mm_ptr->luminance_min = static_cast<float>(value);
       if (value_parse_status < 0 || mm_ptr->luminance_min < 0.0 ||
           mm_ptr->luminance_min > 999.9999) {
@@ -5232,7 +5245,9 @@ bool Projection::Parse(IMkvReader* reader, long long start, long long size,
       double value = 0;
       const long long value_parse_status =
           UnserializeFloat(reader, read_pos, child_size, value);
-      if (value_parse_status < 0) {
+      // Make sure value is representable as a float before casting.
+      if (value_parse_status < 0 || value < -FLT_MAX || value > FLT_MAX ||
+          (value > 0.0 && value < FLT_MIN)) {
         return false;
       }
 
@@ -7896,6 +7911,10 @@ long Block::Parse(const Cluster* pCluster) {
         return E_FILE_FORMAT_INVALID;
 
       curr.len = static_cast<long>(frame_size);
+      // Check if size + curr.len could overflow.
+      if (size > LLONG_MAX - curr.len) {
+        return E_FILE_FORMAT_INVALID;
+      }
       size += curr.len;  // contribution of this frame
 
       --frame_count;
@@ -7936,7 +7955,6 @@ long Block::Parse(const Cluster* pCluster) {
     pf = m_frames;
     while (pf != pf_end) {
       Frame& f = *pf++;
-      assert((pos + f.len) <= stop);
       if ((pos + f.len) > stop)
         return E_FILE_FORMAT_INVALID;
 
@@ -7958,6 +7976,11 @@ long long Block::GetTimeCode(const Cluster* pCluster) const {
   const long long tc0 = pCluster->GetTimeCode();
   assert(tc0 >= 0);
 
+  // Check if tc0 + m_timecode would overflow.
+  if (tc0 < 0 || LLONG_MAX - tc0 < m_timecode) {
+    return -1;
+  }
+
   const long long tc = tc0 + m_timecode;
 
   return tc;  // unscaled timecode units
@@ -7975,6 +7998,10 @@ long long Block::GetTime(const Cluster* pCluster) const {
   const long long scale = pInfo->GetTimeCodeScale();
   assert(scale >= 1);
 
+  // Check if tc * scale could overflow.
+  if (tc != 0 && scale > LLONG_MAX / tc) {
+    return -1;
+  }
   const long long ns = tc * scale;
 
   return ns;

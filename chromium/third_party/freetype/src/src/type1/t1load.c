@@ -4,7 +4,7 @@
 /*                                                                         */
 /*    Type 1 font loader (body).                                           */
 /*                                                                         */
-/*  Copyright 1996-2017 by                                                 */
+/*  Copyright 1996-2018 by                                                 */
 /*  David Turner, Robert Wilhelm, and Werner Lemberg.                      */
 /*                                                                         */
 /*  This file is part of the FreeType project, and may only be used,       */
@@ -374,6 +374,8 @@
     PS_Blend  blend = face->blend;
     FT_UInt   n, m;
 
+    FT_Bool  have_diff = 0;
+
 
     if ( !blend )
       return FT_THROW( Invalid_Argument );
@@ -405,10 +407,16 @@
 
         result = FT_MulFix( result, factor );
       }
-      blend->weight_vector[n] = result;
+
+      if ( blend->weight_vector[n] != result )
+      {
+        blend->weight_vector[n] = result;
+        have_diff               = 1;
+      }
     }
 
-    return FT_Err_Ok;
+    /* return value -1 indicates `no change' */
+    return have_diff ? FT_Err_Ok : -1;
   }
 
 
@@ -1309,7 +1317,7 @@
     if ( ft_isdigit( *cur ) || *cur == '[' )
     {
       T1_Encoding  encode          = &face->type1.encoding;
-      FT_Int       count, n;
+      FT_Int       count, array_size, n;
       PS_Table     char_table      = &loader->encoding_table;
       FT_Memory    memory          = parser->root.memory;
       FT_Error     error;
@@ -1326,13 +1334,12 @@
       else
         count = (FT_Int)T1_ToInt( parser );
 
-      /* only composite fonts (which we don't support) */
-      /* can have larger values                        */
+      array_size = count;
       if ( count > 256 )
       {
-        FT_ERROR(( "parse_encoding: invalid encoding array size\n" ));
-        parser->root.error = FT_THROW( Invalid_File_Format );
-        return;
+        FT_TRACE2(( "parse_encoding:"
+                    " only using first 256 encoding array entries\n" ));
+        array_size = 256;
       }
 
       T1_Skip_Spaces( parser );
@@ -1348,18 +1355,18 @@
       }
 
       /* we use a T1_Table to store our charnames */
-      loader->num_chars = encode->num_chars = count;
-      if ( FT_NEW_ARRAY( encode->char_index, count )     ||
-           FT_NEW_ARRAY( encode->char_name,  count )     ||
+      loader->num_chars = encode->num_chars = array_size;
+      if ( FT_NEW_ARRAY( encode->char_index, array_size )     ||
+           FT_NEW_ARRAY( encode->char_name,  array_size )     ||
            FT_SET_ERROR( psaux->ps_table_funcs->init(
-                           char_table, count, memory ) ) )
+                           char_table, array_size, memory ) ) )
       {
         parser->root.error = error;
         return;
       }
 
       /* We need to `zero' out encoding_table.elements */
-      for ( n = 0; n < count; n++ )
+      for ( n = 0; n < array_size; n++ )
       {
         char*  notdef = (char *)".notdef";
 
@@ -1452,11 +1459,14 @@
 
             len = (FT_UInt)( parser->root.cursor - cur );
 
-            parser->root.error = T1_Add_Table( char_table, charcode,
-                                               cur, len + 1 );
-            if ( parser->root.error )
-              return;
-            char_table->elements[charcode][len] = '\0';
+            if ( n < array_size )
+            {
+              parser->root.error = T1_Add_Table( char_table, charcode,
+                                                 cur, len + 1 );
+              if ( parser->root.error )
+                return;
+              char_table->elements[charcode][len] = '\0';
+            }
 
             n++;
           }

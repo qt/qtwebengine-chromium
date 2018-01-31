@@ -392,31 +392,17 @@ bool ssl_negotiate_version(SSL_HANDSHAKE *hs, uint8_t *out_alert,
 // call this function before the version is determined.
 uint16_t ssl_protocol_version(const SSL *ssl);
 
-// ssl_is_draft21 returns whether the version corresponds to a draft21 TLS 1.3
-// variant.
-bool ssl_is_draft21(uint16_t version);
-
 // ssl_is_draft22 returns whether the version corresponds to a draft22 TLS 1.3
 // variant.
 bool ssl_is_draft22(uint16_t version);
 
-// ssl_is_resumption_experiment returns whether the version corresponds to a
-// TLS 1.3 resumption experiment.
-bool ssl_is_resumption_experiment(uint16_t version);
+// ssl_is_draft23 returns whether the version corresponds to a draft23 TLS 1.3
+// variant.
+bool ssl_is_draft23(uint16_t version);
 
-// ssl_is_resumption_variant returns whether the version corresponds to a
-// TLS 1.3 resumption experiment.
-bool ssl_is_resumption_variant(enum tls13_variant_t variant);
-
-// ssl_is_resumption_client_ccs_experiment returns whether the version
-// corresponds to a TLS 1.3 resumption experiment that sends a client CCS.
-bool ssl_is_resumption_client_ccs_experiment(uint16_t version);
-
-// ssl_is_resumption_record_version_experiment returns whether the version
-// corresponds to a TLS 1.3 resumption experiment that modifies the record
-// version.
-bool ssl_is_resumption_record_version_experiment(uint16_t version);
-
+// ssl_is_draft23_variant returns whether the variant corresponds to a
+// draft23 TLS 1.3 variant.
+ bool ssl_is_draft23_variant(enum tls13_variant_t variant);
 
 // Cipher suites.
 
@@ -1009,6 +995,7 @@ struct SSLMessage {
 #define SSL_MAX_HANDSHAKE_FLIGHT 7
 
 extern const uint8_t kHelloRetryRequest[SSL3_RANDOM_SIZE];
+extern const uint8_t kDraftDowngradeRandom[8];
 
 // ssl_max_handshake_message_len returns the maximum number of bytes permitted
 // in a handshake message for |ssl|.
@@ -1244,10 +1231,10 @@ int tls13_derive_resumption_secret(SSL_HANDSHAKE *hs);
 
 // tls13_export_keying_material provides an exporter interface to use the
 // |exporter_secret|.
-int tls13_export_keying_material(SSL *ssl, uint8_t *out, size_t out_len,
-                                 const char *label, size_t label_len,
-                                 const uint8_t *context, size_t context_len,
-                                 int use_context);
+int tls13_export_keying_material(SSL *ssl, Span<uint8_t> out,
+                                 Span<const uint8_t> secret,
+                                 Span<const char> label,
+                                 Span<const uint8_t> context);
 
 // tls13_finished_mac calculates the MAC of the handshake transcript to verify
 // the integrity of the Finished message, and stores the result in |out| and
@@ -1321,11 +1308,6 @@ struct SSL_HANDSHAKE {
   // max_version is the maximum accepted protocol version, taking account both
   // |SSL_OP_NO_*| and |SSL_CTX_set_max_proto_version| APIs.
   uint16_t max_version = 0;
-
-  // session_id is the session ID in the ClientHello, used for the experimental
-  // TLS 1.3 variant.
-  uint8_t session_id[SSL_MAX_SSL_SESSION_ID_LENGTH] = {0};
-  uint8_t session_id_len = 0;
 
   size_t hash_len = 0;
   uint8_t secret[EVP_MAX_MD_SIZE] = {0};
@@ -1515,6 +1497,11 @@ struct SSL_HANDSHAKE {
   // early_data_written is the amount of early data that has been written by the
   // record layer.
   uint16_t early_data_written = 0;
+
+  // session_id is the session ID in the ClientHello, used for the experimental
+  // TLS 1.3 variant.
+  uint8_t session_id[SSL_MAX_SSL_SESSION_ID_LENGTH] = {0};
+  uint8_t session_id_len = 0;
 };
 
 UniquePtr<SSL_HANDSHAKE> ssl_handshake_new(SSL *ssl);
@@ -2165,21 +2152,24 @@ struct SSLContext {
   // If true, a client will request certificate timestamps.
   bool signed_cert_timestamps_enabled:1;
 
-  // tlsext_channel_id_enabled is one if Channel ID is enabled and zero
-  // otherwise. For a server, means that we'll accept Channel IDs from clients.
-  // For a client, means that we'll advertise support.
+  // tlsext_channel_id_enabled is whether Channel ID is enabled. For a server,
+  // means that we'll accept Channel IDs from clients.  For a client, means that
+  // we'll advertise support.
   bool tlsext_channel_id_enabled:1;
 
-  // grease_enabled is one if draft-davidben-tls-grease-01 is enabled and zero
-  // otherwise.
+  // grease_enabled is whether draft-davidben-tls-grease-01 is enabled.
   bool grease_enabled:1;
 
-  // allow_unknown_alpn_protos is one if the client allows unsolicited ALPN
+  // allow_unknown_alpn_protos is whether the client allows unsolicited ALPN
   // protocols from the peer.
   bool allow_unknown_alpn_protos:1;
 
-  // ed25519_enabled is one if Ed25519 is advertised in the handshake.
+  // ed25519_enabled is whether Ed25519 is advertised in the handshake.
   bool ed25519_enabled:1;
+
+  // false_start_allowed_without_alpn is whether False Start (if
+  // |SSL_MODE_ENABLE_FALSE_START| is enabled) is allowed without ALPN.
+  bool false_start_allowed_without_alpn:1;
 };
 
 // An ssl_shutdown_t describes the shutdown state of one end of the connection,
@@ -2293,7 +2283,12 @@ struct SSL3_STATE {
   // wpend_pending is true if we have a pending write outstanding.
   bool wpend_pending:1;
 
-  uint8_t send_alert[2] = {0};
+  // early_data_accepted is true if early data was accepted by the server.
+  bool early_data_accepted:1;
+
+  // draft_downgrade is whether the TLS 1.3 anti-downgrade logic would have
+  // fired, were it not a draft.
+  bool draft_downgrade:1;
 
   // hs_buf is the buffer of handshake data to process.
   UniquePtr<BUF_MEM> hs_buf;
@@ -2306,6 +2301,11 @@ struct SSL3_STATE {
   // pending_flight_offset is the number of bytes of |pending_flight| which have
   // been successfully written.
   uint32_t pending_flight_offset = 0;
+
+  // ticket_age_skew is the difference, in seconds, between the client-sent
+  // ticket age and the server-computed value in TLS 1.3 server connections
+  // which resumed a session.
+  int32_t ticket_age_skew = 0;
 
   // aead_read_ctx is the current read cipher state.
   UniquePtr<SSLAEADContext> aead_read_ctx;
@@ -2331,6 +2331,8 @@ struct SSL3_STATE {
   uint8_t previous_client_finished_len = 0;
   uint8_t previous_server_finished_len = 0;
   uint8_t previous_server_finished[12] = {0};
+
+  uint8_t send_alert[2] = {0};
 
   // established_session is the session established by the connection. This
   // session is only filled upon the completion of the handshake and is
@@ -2361,11 +2363,6 @@ struct SSL3_STATE {
   //     verified Channel ID from the client: a P256 point, (x,y), where
   //     each are big-endian values.
   uint8_t tlsext_channel_id[64] = {0};
-
-  // ticket_age_skew is the difference, in seconds, between the client-sent
-  // ticket age and the server-computed value in TLS 1.3 server connections
-  // which resumed a session.
-  int32_t ticket_age_skew = 0;
 };
 
 // lengths of messages
@@ -2506,10 +2503,6 @@ struct SSLConnection {
   // further constrainted by |SSL_OP_NO_*|.
   uint16_t conf_min_version;
 
-  // tls13_variant is the variant of TLS 1.3 we are using for this
-  // configuration.
-  enum tls13_variant_t tls13_variant;
-
   uint16_t max_send_fragment;
 
   // There are 2 BIO's even though they are normally both the same. This is so
@@ -2545,6 +2538,10 @@ struct SSLConnection {
   // initial_timeout_duration_ms is the default DTLS timeout duration in
   // milliseconds. It's used to initialize the timer any time it's restarted.
   unsigned initial_timeout_duration_ms;
+
+  // tls13_variant is the variant of TLS 1.3 we are using for this
+  // configuration.
+  enum tls13_variant_t tls13_variant;
 
   // session is the configured session to be offered by the client. This session
   // is immutable.
@@ -2584,6 +2581,7 @@ struct SSLConnection {
   uint32_t options;  // protocol behaviour
   uint32_t mode;     // API behaviour
   uint32_t max_cert_list;
+  uint16_t dummy_pq_padding_len;
   char *tlsext_hostname;
   size_t supported_group_list_len;
   uint16_t *supported_group_list;  // our list
@@ -2639,9 +2637,6 @@ struct SSLConnection {
   // hash of the peer's certificate and then discard it to save memory and
   // session space. Only effective on the server side.
   bool retain_only_sha256_of_client_certs:1;
-
-  // early_data_accepted is true if early data was accepted by the server.
-  bool early_data_accepted:1;
 };
 
 // From draft-ietf-tls-tls13-18, used in determining PSK modes.

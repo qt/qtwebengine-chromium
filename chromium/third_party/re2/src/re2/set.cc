@@ -80,10 +80,8 @@ bool RE2::Set::Compile() {
   compiled_ = true;
   size_ = static_cast<int>(elem_.size());
 
-  // Sort the elements by their patterns. This is "good enough" because
-  // we are only hoping to improve the factoring of common prefixes and
-  // that can be achieved without chasing pointers around Regexp graphs
-  // right now. (The factoring logic will do exactly that soon enough.)
+  // Sort the elements by their patterns. This is good enough for now
+  // until we have a Regexp comparison function. (Maybe someday...)
   std::sort(elem_.begin(), elem_.end(),
             [](const Elem& a, const Elem& b) -> bool {
               return a.first < b.first;
@@ -93,6 +91,7 @@ bool RE2::Set::Compile() {
   for (size_t i = 0; i < elem_.size(); i++)
     sub[i] = elem_[i].second;
   elem_.clear();
+  elem_.shrink_to_fit();
 
   Regexp::ParseFlags pf = static_cast<Regexp::ParseFlags>(
     options_.ParseFlags());
@@ -105,8 +104,15 @@ bool RE2::Set::Compile() {
 }
 
 bool RE2::Set::Match(const StringPiece& text, std::vector<int>* v) const {
+  return Match(text, v, NULL);
+}
+
+bool RE2::Set::Match(const StringPiece& text, std::vector<int>* v,
+                     ErrorInfo* error_info) const {
   if (!compiled_) {
     LOG(DFATAL) << "RE2::Set::Match() called before compiling";
+    if (error_info != NULL)
+      error_info->kind = kNotCompiled;
     return false;
   }
   bool dfa_failed = false;
@@ -122,17 +128,26 @@ bool RE2::Set::Match(const StringPiece& text, std::vector<int>* v) const {
       LOG(ERROR) << "DFA out of memory: size " << prog_->size() << ", "
                  << "bytemap range " << prog_->bytemap_range() << ", "
                  << "list count " << prog_->list_count();
+    if (error_info != NULL)
+      error_info->kind = kOutOfMemory;
     return false;
   }
-  if (ret == false)
+  if (ret == false) {
+    if (error_info != NULL)
+      error_info->kind = kNoError;
     return false;
+  }
   if (v != NULL) {
     if (matches->empty()) {
-      LOG(DFATAL) << "RE2::Set::Match() matched, but matches unknown";
+      LOG(DFATAL) << "RE2::Set::Match() matched, but no matches returned?!";
+      if (error_info != NULL)
+        error_info->kind = kInconsistent;
       return false;
     }
     v->assign(matches->begin(), matches->end());
   }
+  if (error_info != NULL)
+    error_info->kind = kNoError;
   return true;
 }
 

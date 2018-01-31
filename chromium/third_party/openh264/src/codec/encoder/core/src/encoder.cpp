@@ -142,10 +142,10 @@ int32_t InitPic (const void* kpSrc, const int32_t kiColorspace, const int32_t ki
 void WelsInitBGDFunc (SWelsFuncPtrList* pFuncList, const bool kbEnableBackgroundDetection) {
   if (kbEnableBackgroundDetection) {
     pFuncList->pfInterMdBackgroundDecision = WelsMdInterJudgeBGDPskip;
-    pFuncList->pfInterMdBackgroundInfoUpdate = WelsMdInterUpdateBGDInfo;
+    pFuncList->pfMdBackgroundInfoUpdate = WelsMdUpdateBGDInfo;
   } else {
     pFuncList->pfInterMdBackgroundDecision = WelsMdInterJudgeBGDPskipFalse;
-    pFuncList->pfInterMdBackgroundInfoUpdate = WelsMdInterUpdateBGDInfoNULL;
+    pFuncList->pfMdBackgroundInfoUpdate = WelsMdUpdateBGDInfoNULL;
   }
 }
 
@@ -344,7 +344,7 @@ EVideoFrameType DecideFrameType (sWelsEncCtx* pEncCtx, const int8_t kiSpatialNum
       bSceneChangeFlag = pEncCtx->pVaa->bSceneChangeFlag;
     }
     if (pEncCtx->pVaa->bIdrPeriodFlag || pParamInternal->bEncCurFrmAsIdrFlag || (!pSvcParam->bEnableLongTermReference
-        && bSceneChangeFlag)) {
+        && bSceneChangeFlag && !bSkipFrameFlag)) {
       iFrameType = videoFrameTypeIDR;
     } else if (pSvcParam->bEnableLongTermReference && (bSceneChangeFlag
                || pEncCtx->pVaa->eSceneChangeIdc == LARGE_CHANGED_SCENE)) {

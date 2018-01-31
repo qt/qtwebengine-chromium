@@ -10,6 +10,7 @@
 #include "core/fxcrt/fx_codepage.h"
 #include "core/fxge/apple/apple_int.h"
 #include "core/fxge/cfx_folderfontinfo.h"
+#include "core/fxge/cfx_fontmgr.h"
 #include "core/fxge/cfx_gemodule.h"
 #include "core/fxge/ifx_systemfontinfo.h"
 #include "third_party/base/ptr_util.h"
@@ -65,9 +66,9 @@ void* CFX_MacFontInfo::MapFont(int weight,
                                int pitch_family,
                                const char* cstr_face) {
   ByteString face = cstr_face;
-  for (size_t i = 0; i < FX_ArraySize(g_Base14Substs); ++i) {
-    if (face == ByteStringView(g_Base14Substs[i].m_pName)) {
-      face = g_Base14Substs[i].m_pSubstName;
+  for (const auto& sub : g_Base14Substs) {
+    if (face == ByteStringView(sub.m_pName)) {
+      face = sub.m_pSubstName;
       return GetFont(face.c_str());
     }
   }

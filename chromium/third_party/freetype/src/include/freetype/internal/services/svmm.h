@@ -4,7 +4,7 @@
 /*                                                                         */
 /*    The FreeType Multiple Masters and GX var services (specification).   */
 /*                                                                         */
-/*  Copyright 2003-2017 by                                                 */
+/*  Copyright 2003-2018 by                                                 */
 /*  David Turner, Robert Wilhelm, and Werner Lemberg.                      */
 /*                                                                         */
 /*  This file is part of the FreeType project, and may only be used,       */
@@ -48,11 +48,15 @@ FT_BEGIN_HEADER
                             FT_UInt   num_coords,
                             FT_Long*  coords );
 
+  /* use return value -1 to indicate that the new coordinates  */
+  /* are equal to the current ones; no changes are thus needed */
   typedef FT_Error
   (*FT_Set_Var_Design_Func)( FT_Face    face,
                              FT_UInt    num_coords,
                              FT_Fixed*  coords );
 
+  /* use return value -1 to indicate that the new coordinates  */
+  /* are equal to the current ones; no changes are thus needed */
   typedef FT_Error
   (*FT_Set_MM_Blend_Func)( FT_Face   face,
                            FT_UInt   num_coords,

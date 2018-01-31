@@ -7,6 +7,7 @@
 // utilities.cpp: Conversion functions and other utility routines.
 
 #include "common/utilities.h"
+#include <GLSLANG/ShaderVars.h>
 #include "common/mathutil.h"
 #include "common/platform.h"
 
@@ -770,6 +771,38 @@ std::string ParseResourceName(const std::string &name, std::vector<unsigned int>
     return name.substr(0, baseNameLength);
 }
 
+const sh::ShaderVariable *FindShaderVarField(const sh::ShaderVariable &var,
+                                             const std::string &fullName)
+{
+    if (var.fields.empty())
+    {
+        return nullptr;
+    }
+    size_t pos = fullName.find_first_of(".");
+    if (pos == std::string::npos)
+    {
+        return nullptr;
+    }
+    std::string topName = fullName.substr(0, pos);
+    if (topName != var.name)
+    {
+        return nullptr;
+    }
+    std::string fieldName = fullName.substr(pos + 1);
+    if (fieldName.empty())
+    {
+        return nullptr;
+    }
+    for (const auto &field : var.fields)
+    {
+        if (field.name == fieldName)
+        {
+            return &field;
+        }
+    }
+    return nullptr;
+}
+
 unsigned int ArraySizeProduct(const std::vector<unsigned int> &arraySizes)
 {
     unsigned int arraySizeProduct = 1u;
@@ -986,6 +1019,22 @@ GLenum EGLImageTargetToGLTextureTarget(EGLenum eglTarget)
 
         case EGL_GL_TEXTURE_3D_KHR:
             return GL_TEXTURE_3D;
+
+        default:
+            UNREACHABLE();
+            return GL_NONE;
+    }
+}
+
+GLenum EGLTextureTargetToGLTextureTarget(EGLenum eglTarget)
+{
+    switch (eglTarget)
+    {
+        case EGL_TEXTURE_2D:
+            return GL_TEXTURE_2D;
+
+        case EGL_TEXTURE_RECTANGLE_ANGLE:
+            return GL_TEXTURE_RECTANGLE_ANGLE;
 
         default:
             UNREACHABLE();

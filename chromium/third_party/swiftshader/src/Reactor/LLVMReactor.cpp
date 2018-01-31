@@ -4786,7 +4786,10 @@ namespace sw
 
 	RValue<Int4> CmpLT(RValue<Int4> x, RValue<Int4> y)
 	{
-		return RValue<Int4>(Nucleus::createSExt(Nucleus::createICmpSLT(x.value, y.value), Int4::getType()));
+		// FIXME: An LLVM bug causes SExt(ICmpCC()) to produce 0 or 1 instead of 0 or ~0
+		//        Restore the following line when LLVM is updated to a version where this issue is fixed.
+		// return RValue<Int4>(Nucleus::createSExt(Nucleus::createICmpSLT(x.value, y.value), Int4::getType()));
+		return RValue<Int4>(Nucleus::createSExt(Nucleus::createICmpSGE(x.value, y.value), Int4::getType())) ^ Int4(0xFFFFFFFF);
 	}
 
 	RValue<Int4> CmpLE(RValue<Int4> x, RValue<Int4> y)
@@ -4799,7 +4802,10 @@ namespace sw
 
 	RValue<Int4> CmpNEQ(RValue<Int4> x, RValue<Int4> y)
 	{
-		return RValue<Int4>(Nucleus::createSExt(Nucleus::createICmpNE(x.value, y.value), Int4::getType()));
+		// FIXME: An LLVM bug causes SExt(ICmpCC()) to produce 0 or 1 instead of 0 or ~0
+		//        Restore the following line when LLVM is updated to a version where this issue is fixed.
+		// return RValue<Int4>(Nucleus::createSExt(Nucleus::createICmpNE(x.value, y.value), Int4::getType()));
+		return RValue<Int4>(Nucleus::createSExt(Nucleus::createICmpEQ(x.value, y.value), Int4::getType())) ^ Int4(0xFFFFFFFF);
 	}
 
 	RValue<Int4> CmpNLT(RValue<Int4> x, RValue<Int4> y)
@@ -4812,7 +4818,10 @@ namespace sw
 
 	RValue<Int4> CmpNLE(RValue<Int4> x, RValue<Int4> y)
 	{
-		return RValue<Int4>(Nucleus::createSExt(Nucleus::createICmpSGT(x.value, y.value), Int4::getType()));
+		// FIXME: An LLVM bug causes SExt(ICmpCC()) to produce 0 or 1 instead of 0 or ~0
+		//        Restore the following line when LLVM is updated to a version where this issue is fixed.
+		// return RValue<Int4>(Nucleus::createSExt(Nucleus::createICmpSGT(x.value, y.value), Int4::getType()));
+		return RValue<Int4>(Nucleus::createSExt(Nucleus::createICmpSLE(x.value, y.value), Int4::getType())) ^ Int4(0xFFFFFFFF);
 	}
 
 	RValue<Int4> Max(RValue<Int4> x, RValue<Int4> y)
@@ -5789,6 +5798,16 @@ namespace sw
 	{
 	//	return As<Int4>(x86::cmpnleps(x, y));
 		return RValue<Int4>(Nucleus::createSExt(Nucleus::createFCmpOGT(x.value, y.value), Int4::getType()));
+	}
+
+	RValue<Int4> IsInf(RValue<Float4> x)
+	{
+		return CmpEQ(As<Int4>(x) & Int4(0x7FFFFFFF), Int4(0x7F800000));
+	}
+
+	RValue<Int4> IsNan(RValue<Float4> x)
+	{
+		return ~CmpEQ(x, x);
 	}
 
 	RValue<Float4> Round(RValue<Float4> x)

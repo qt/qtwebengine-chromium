@@ -25,7 +25,9 @@
 #include "xfa/fxfa/cxfa_textparsecontext.h"
 #include "xfa/fxfa/cxfa_textprovider.h"
 #include "xfa/fxfa/cxfa_texttabstopscontext.h"
+#include "xfa/fxfa/parser/cxfa_font.h"
 #include "xfa/fxfa/parser/cxfa_measurement.h"
+#include "xfa/fxfa/parser/cxfa_para.h"
 
 namespace {
 
@@ -58,9 +60,8 @@ void CXFA_TextParser::InitCSSData(CXFA_TextProvider* pTextProvider) {
   if (!m_pSelector) {
     m_pSelector = pdfium::MakeUnique<CFX_CSSStyleSelector>();
 
-    CXFA_FontData fontData = pTextProvider->GetFontData();
-    m_pSelector->SetDefFontSize(fontData.HasValidNode() ? fontData.GetFontSize()
-                                                        : 10.0f);
+    CXFA_Font* font = pTextProvider->GetFontIfExists();
+    m_pSelector->SetDefFontSize(font ? font->GetFontSize() : 10.0f);
   }
 
   if (m_cssInitialized)
@@ -91,18 +92,18 @@ std::unique_ptr<CFX_CSSStyleSheet> CXFA_TextParser::LoadDefaultSheetStyle() {
 
 RetainPtr<CFX_CSSComputedStyle> CXFA_TextParser::CreateRootStyle(
     CXFA_TextProvider* pTextProvider) {
-  CXFA_ParaData paraData = pTextProvider->GetParaData();
+  CXFA_Para* para = pTextProvider->GetParaIfExists();
   auto pStyle = m_pSelector->CreateComputedStyle(nullptr);
   float fLineHeight = 0;
   float fFontSize = 10;
 
-  if (paraData.HasValidNode()) {
-    fLineHeight = paraData.GetLineHeight();
+  if (para) {
+    fLineHeight = para->GetLineHeight();
     CFX_CSSLength indent;
-    indent.Set(CFX_CSSLengthUnit::Point, paraData.GetTextIndent());
+    indent.Set(CFX_CSSLengthUnit::Point, para->GetTextIndent());
     pStyle->SetTextIndent(indent);
     CFX_CSSTextAlign hAlign = CFX_CSSTextAlign::Left;
-    switch (paraData.GetHorizontalAlign()) {
+    switch (para->GetHorizontalAlign()) {
       case XFA_AttributeEnum::Center:
         hAlign = CFX_CSSTextAlign::Center;
         break;
@@ -124,33 +125,30 @@ RetainPtr<CFX_CSSComputedStyle> CXFA_TextParser::CreateRootStyle(
     }
     pStyle->SetTextAlign(hAlign);
     CFX_CSSRect rtMarginWidth;
-    rtMarginWidth.left.Set(CFX_CSSLengthUnit::Point, paraData.GetMarginLeft());
-    rtMarginWidth.top.Set(CFX_CSSLengthUnit::Point, paraData.GetSpaceAbove());
-    rtMarginWidth.right.Set(CFX_CSSLengthUnit::Point,
-                            paraData.GetMarginRight());
-    rtMarginWidth.bottom.Set(CFX_CSSLengthUnit::Point,
-                             paraData.GetSpaceBelow());
+    rtMarginWidth.left.Set(CFX_CSSLengthUnit::Point, para->GetMarginLeft());
+    rtMarginWidth.top.Set(CFX_CSSLengthUnit::Point, para->GetSpaceAbove());
+    rtMarginWidth.right.Set(CFX_CSSLengthUnit::Point, para->GetMarginRight());
+    rtMarginWidth.bottom.Set(CFX_CSSLengthUnit::Point, para->GetSpaceBelow());
     pStyle->SetMarginWidth(rtMarginWidth);
   }
 
-  CXFA_FontData fontData = pTextProvider->GetFontData();
-  if (fontData.HasValidNode()) {
-    pStyle->SetColor(fontData.GetColor());
-    pStyle->SetFontStyle(fontData.IsItalic() ? CFX_CSSFontStyle::Italic
-                                             : CFX_CSSFontStyle::Normal);
-    pStyle->SetFontWeight(fontData.IsBold() ? FXFONT_FW_BOLD
-                                            : FXFONT_FW_NORMAL);
-    pStyle->SetNumberVerticalAlign(-fontData.GetBaselineShift());
-    fFontSize = fontData.GetFontSize();
+  CXFA_Font* font = pTextProvider->GetFontIfExists();
+  if (font) {
+    pStyle->SetColor(font->GetColor());
+    pStyle->SetFontStyle(font->IsItalic() ? CFX_CSSFontStyle::Italic
+                                          : CFX_CSSFontStyle::Normal);
+    pStyle->SetFontWeight(font->IsBold() ? FXFONT_FW_BOLD : FXFONT_FW_NORMAL);
+    pStyle->SetNumberVerticalAlign(-font->GetBaselineShift());
+    fFontSize = font->GetFontSize();
     CFX_CSSLength letterSpacing;
-    letterSpacing.Set(CFX_CSSLengthUnit::Point, fontData.GetLetterSpacing());
+    letterSpacing.Set(CFX_CSSLengthUnit::Point, font->GetLetterSpacing());
     pStyle->SetLetterSpacing(letterSpacing);
     uint32_t dwDecoration = 0;
-    if (fontData.GetLineThrough() > 0)
+    if (font->GetLineThrough() > 0)
       dwDecoration |= CFX_CSSTEXTDECORATION_LineThrough;
-    if (fontData.GetUnderline() > 1)
+    if (font->GetUnderline() > 1)
       dwDecoration |= CFX_CSSTEXTDECORATION_Double;
-    else if (fontData.GetUnderline() > 0)
+    else if (font->GetUnderline() > 0)
       dwDecoration |= CFX_CSSTEXTDECORATION_Underline;
 
     pStyle->SetTextDecoration(dwDecoration);
@@ -299,9 +297,8 @@ std::unique_ptr<CXFA_TextParser::TagProvider> CXFA_TextParser::ParseTagInfo(
 
 XFA_AttributeEnum CXFA_TextParser::GetVAlign(
     CXFA_TextProvider* pTextProvider) const {
-  CXFA_ParaData paraData = pTextProvider->GetParaData();
-  return paraData.HasValidNode() ? paraData.GetVerticalAlign()
-                                 : XFA_AttributeEnum::Top;
+  CXFA_Para* para = pTextProvider->GetParaIfExists();
+  return para ? para->GetVerticalAlign() : XFA_AttributeEnum::Top;
 }
 
 float CXFA_TextParser::GetTabInterval(CFX_CSSComputedStyle* pStyle) const {
@@ -328,16 +325,17 @@ bool CXFA_TextParser::IsSpaceRun(CFX_CSSComputedStyle* pStyle) const {
 }
 
 RetainPtr<CFGAS_GEFont> CXFA_TextParser::GetFont(
+    CXFA_FFDoc* doc,
     CXFA_TextProvider* pTextProvider,
     CFX_CSSComputedStyle* pStyle) const {
   WideString wsFamily = L"Courier";
   uint32_t dwStyle = 0;
-  CXFA_FontData fontData = pTextProvider->GetFontData();
-  if (fontData.HasValidNode()) {
-    wsFamily = fontData.GetTypeface();
-    if (fontData.IsBold())
+  CXFA_Font* font = pTextProvider->GetFontIfExists();
+  if (font) {
+    wsFamily = font->GetTypeface();
+    if (font->IsBold())
       dwStyle |= FXFONT_BOLD;
-    if (fontData.IsItalic())
+    if (font->IsItalic())
       dwStyle |= FXFONT_BOLD;
   }
 
@@ -353,9 +351,8 @@ RetainPtr<CFGAS_GEFont> CXFA_TextParser::GetFont(
       dwStyle |= FXFONT_ITALIC;
   }
 
-  CXFA_FFDoc* pDoc = pTextProvider->GetDocNode();
-  CXFA_FontMgr* pFontMgr = pDoc->GetApp()->GetXFAFontMgr();
-  return pFontMgr->GetFont(pDoc, wsFamily.AsStringView(), dwStyle);
+  CXFA_FontMgr* pFontMgr = doc->GetApp()->GetXFAFontMgr();
+  return pFontMgr->GetFont(doc, wsFamily.AsStringView(), dwStyle);
 }
 
 float CXFA_TextParser::GetFontSize(CXFA_TextProvider* pTextProvider,
@@ -363,8 +360,8 @@ float CXFA_TextParser::GetFontSize(CXFA_TextProvider* pTextProvider,
   if (pStyle)
     return pStyle->GetFontSize();
 
-  CXFA_FontData fontData = pTextProvider->GetFontData();
-  return fontData.HasValidNode() ? fontData.GetFontSize() : 10;
+  CXFA_Font* font = pTextProvider->GetFontIfExists();
+  return font ? font->GetFontSize() : 10;
 }
 
 int32_t CXFA_TextParser::GetHorScale(CXFA_TextProvider* pTextProvider,
@@ -389,10 +386,8 @@ int32_t CXFA_TextParser::GetHorScale(CXFA_TextProvider* pTextProvider,
     }
   }
 
-  CXFA_FontData fontData = pTextProvider->GetFontData();
-  return fontData.HasValidNode()
-             ? static_cast<int32_t>(fontData.GetHorizontalScale())
-             : 100;
+  CXFA_Font* font = pTextProvider->GetFontIfExists();
+  return font ? static_cast<int32_t>(font->GetHorizontalScale()) : 100;
 }
 
 int32_t CXFA_TextParser::GetVerScale(CXFA_TextProvider* pTextProvider,
@@ -403,10 +398,8 @@ int32_t CXFA_TextParser::GetVerScale(CXFA_TextProvider* pTextProvider,
       return wsValue.GetInteger();
   }
 
-  CXFA_FontData fontData = pTextProvider->GetFontData();
-  return fontData.HasValidNode()
-             ? static_cast<int32_t>(fontData.GetVerticalScale())
-             : 100;
+  CXFA_Font* font = pTextProvider->GetFontIfExists();
+  return font ? static_cast<int32_t>(font->GetVerticalScale()) : 100;
 }
 
 void CXFA_TextParser::GetUnderline(CXFA_TextProvider* pTextProvider,
@@ -415,11 +408,11 @@ void CXFA_TextParser::GetUnderline(CXFA_TextProvider* pTextProvider,
                                    XFA_AttributeEnum& iPeriod) const {
   iUnderline = 0;
   iPeriod = XFA_AttributeEnum::All;
-  CXFA_FontData fontData = pTextProvider->GetFontData();
+  CXFA_Font* font = pTextProvider->GetFontIfExists();
   if (!pStyle) {
-    if (fontData.HasValidNode()) {
-      iUnderline = fontData.GetUnderline();
-      iPeriod = fontData.GetUnderlinePeriod();
+    if (font) {
+      iUnderline = font->GetUnderline();
+      iPeriod = font->GetUnderlinePeriod();
     }
     return;
   }
@@ -434,8 +427,8 @@ void CXFA_TextParser::GetUnderline(CXFA_TextProvider* pTextProvider,
   if (pStyle->GetCustomStyle(L"underlinePeriod", wsValue)) {
     if (wsValue == L"word")
       iPeriod = XFA_AttributeEnum::Word;
-  } else if (fontData.HasValidNode()) {
-    iPeriod = fontData.GetUnderlinePeriod();
+  } else if (font) {
+    iPeriod = font->GetUnderlinePeriod();
   }
 }
 
@@ -448,9 +441,9 @@ void CXFA_TextParser::GetLinethrough(CXFA_TextProvider* pTextProvider,
     return;
   }
 
-  CXFA_FontData fontData = pTextProvider->GetFontData();
-  if (fontData.HasValidNode())
-    iLinethrough = fontData.GetLineThrough();
+  CXFA_Font* font = pTextProvider->GetFontIfExists();
+  if (font)
+    iLinethrough = font->GetLineThrough();
 }
 
 FX_ARGB CXFA_TextParser::GetColor(CXFA_TextProvider* pTextProvider,
@@ -458,8 +451,8 @@ FX_ARGB CXFA_TextParser::GetColor(CXFA_TextProvider* pTextProvider,
   if (pStyle)
     return pStyle->GetColor();
 
-  CXFA_FontData fontData = pTextProvider->GetFontData();
-  return fontData.HasValidNode() ? fontData.GetColor() : 0xFF000000;
+  CXFA_Font* font = pTextProvider->GetFontIfExists();
+  return font ? font->GetColor() : 0xFF000000;
 }
 
 float CXFA_TextParser::GetBaseline(CXFA_TextProvider* pTextProvider,
@@ -468,9 +461,9 @@ float CXFA_TextParser::GetBaseline(CXFA_TextProvider* pTextProvider,
     if (pStyle->GetVerticalAlign() == CFX_CSSVerticalAlign::Number)
       return pStyle->GetNumberVerticalAlign();
   } else {
-    CXFA_FontData fontData = pTextProvider->GetFontData();
-    if (fontData.HasValidNode())
-      return fontData.GetBaselineShift();
+    CXFA_Font* font = pTextProvider->GetFontIfExists();
+    if (font)
+      return font->GetBaselineShift();
   }
   return 0;
 }
@@ -483,9 +476,9 @@ float CXFA_TextParser::GetLineHeight(CXFA_TextProvider* pTextProvider,
   if (pStyle) {
     fLineHeight = pStyle->GetLineHeight();
   } else {
-    CXFA_ParaData paraData = pTextProvider->GetParaData();
-    if (paraData.HasValidNode())
-      fLineHeight = paraData.GetLineHeight();
+    CXFA_Para* para = pTextProvider->GetParaIfExists();
+    if (para)
+      fLineHeight = para->GetLineHeight();
   }
 
   if (bFirst) {

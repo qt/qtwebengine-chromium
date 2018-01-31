@@ -10,7 +10,9 @@
 
 #include <map>
 
+#include "compiler/translator/IntermNode_util.h"
 #include "compiler/translator/IntermTraverse.h"
+#include "compiler/translator/StaticType.h"
 #include "compiler/translator/SymbolTable.h"
 
 namespace sh
@@ -28,31 +30,6 @@ void CopyAggregateChildren(TIntermAggregateBase *from, TIntermAggregateBase *to)
     }
 }
 
-TIntermSymbol *CreateReturnValueSymbol(const TSymbolUniqueId &id, const TType &type)
-{
-    TIntermSymbol *node = new TIntermSymbol(id, "angle_return", type);
-    node->setInternal(true);
-    node->getTypePointer()->setQualifier(EvqOut);
-    return node;
-}
-
-TIntermAggregate *CreateReplacementCall(TIntermAggregate *originalCall,
-                                        TIntermTyped *returnValueTarget)
-{
-    TIntermSequence *replacementArguments = new TIntermSequence();
-    TIntermSequence *originalArguments    = originalCall->getSequence();
-    for (auto &arg : *originalArguments)
-    {
-        replacementArguments->push_back(arg);
-    }
-    replacementArguments->push_back(returnValueTarget);
-    TIntermAggregate *replacementCall = TIntermAggregate::CreateFunctionCall(
-        TType(EbtVoid), originalCall->getFunctionSymbolInfo()->getId(),
-        originalCall->getFunctionSymbolInfo()->getNameObj(), replacementArguments);
-    replacementCall->setLine(originalCall->getLine());
-    return replacementCall;
-}
-
 class ArrayReturnValueToOutParameterTraverser : private TIntermTraverser
 {
   public:
@@ -67,12 +44,42 @@ class ArrayReturnValueToOutParameterTraverser : private TIntermTraverser
     bool visitBranch(Visit visit, TIntermBranch *node) override;
     bool visitBinary(Visit visit, TIntermBinary *node) override;
 
+    TIntermAggregate *createReplacementCall(TIntermAggregate *originalCall,
+                                            TIntermTyped *returnValueTarget);
+
     // Set when traversal is inside a function with array return value.
     TIntermFunctionDefinition *mFunctionWithArrayReturnValue;
 
-    // Map from function symbol ids to array return value ids.
-    std::map<int, TSymbolUniqueId *> mReturnValueIds;
+    struct ChangedFunction
+    {
+        const TVariable *returnValueVariable;
+        const TFunction *func;
+    };
+
+    // Map from function symbol ids to the changed function.
+    std::map<int, ChangedFunction> mChangedFunctions;
+
+    const TString *const mReturnValueVariableName;
 };
+
+TIntermAggregate *ArrayReturnValueToOutParameterTraverser::createReplacementCall(
+    TIntermAggregate *originalCall,
+    TIntermTyped *returnValueTarget)
+{
+    TIntermSequence *replacementArguments = new TIntermSequence();
+    TIntermSequence *originalArguments    = originalCall->getSequence();
+    for (auto &arg : *originalArguments)
+    {
+        replacementArguments->push_back(arg);
+    }
+    replacementArguments->push_back(returnValueTarget);
+    ASSERT(originalCall->getFunction());
+    const TSymbolUniqueId &originalId = originalCall->getFunction()->uniqueId();
+    TIntermAggregate *replacementCall = TIntermAggregate::CreateFunctionCall(
+        *mChangedFunctions[originalId.get()].func, replacementArguments);
+    replacementCall->setLine(originalCall->getLine());
+    return replacementCall;
+}
 
 void ArrayReturnValueToOutParameterTraverser::apply(TIntermNode *root, TSymbolTable *symbolTable)
 {
@@ -83,7 +90,9 @@ void ArrayReturnValueToOutParameterTraverser::apply(TIntermNode *root, TSymbolTa
 
 ArrayReturnValueToOutParameterTraverser::ArrayReturnValueToOutParameterTraverser(
     TSymbolTable *symbolTable)
-    : TIntermTraverser(true, false, true, symbolTable), mFunctionWithArrayReturnValue(nullptr)
+    : TIntermTraverser(true, false, true, symbolTable),
+      mFunctionWithArrayReturnValue(nullptr),
+      mReturnValueVariableName(NewPoolTString("angle_return"))
 {
 }
 
@@ -110,17 +119,25 @@ bool ArrayReturnValueToOutParameterTraverser::visitFunctionPrototype(Visit visit
     {
         // Replace the whole prototype node with another node that has the out parameter
         // added. Also set the function to return void.
-        TIntermFunctionPrototype *replacement =
-            new TIntermFunctionPrototype(TType(EbtVoid), node->getFunctionSymbolInfo()->getId());
-        CopyAggregateChildren(node, replacement);
-        const TSymbolUniqueId &functionId = node->getFunctionSymbolInfo()->getId();
-        if (mReturnValueIds.find(functionId.get()) == mReturnValueIds.end())
+        const TSymbolUniqueId &functionId = node->getFunction()->uniqueId();
+        if (mChangedFunctions.find(functionId.get()) == mChangedFunctions.end())
         {
-            mReturnValueIds[functionId.get()] = new TSymbolUniqueId(mSymbolTable);
+            TType returnValueVariableType(node->getType());
+            returnValueVariableType.setQualifier(EvqOut);
+            ChangedFunction changedFunction;
+            changedFunction.returnValueVariable =
+                new TVariable(mSymbolTable, mReturnValueVariableName, returnValueVariableType,
+                              SymbolType::AngleInternal);
+            changedFunction.func = new TFunction(mSymbolTable, &node->getFunction()->name(),
+                                                 StaticType::GetBasic<EbtVoid>(),
+                                                 node->getFunction()->symbolType(), false);
+            mChangedFunctions[functionId.get()] = changedFunction;
         }
+        TIntermFunctionPrototype *replacement =
+            new TIntermFunctionPrototype(mChangedFunctions[functionId.get()].func);
+        CopyAggregateChildren(node, replacement);
         replacement->getSequence()->push_back(
-            CreateReturnValueSymbol(*mReturnValueIds[functionId.get()], node->getType()));
-        *replacement->getFunctionSymbolInfo() = *node->getFunctionSymbolInfo();
+            new TIntermSymbol(mChangedFunctions[functionId.get()].returnValueVariable));
         replacement->setLine(node->getLine());
 
         queueReplacement(replacement, OriginalNode::IS_DROPPED);
@@ -145,11 +162,21 @@ bool ArrayReturnValueToOutParameterTraverser::visitAggregate(Visit visit, TInter
         TIntermBlock *parentBlock = getParentNode()->getAsBlock();
         if (parentBlock)
         {
-            nextTemporaryId();
+            // replace
+            //   f();
+            // with
+            //   type s0[size]; f(s0);
             TIntermSequence replacements;
-            replacements.push_back(createTempDeclaration(node->getType()));
-            TIntermSymbol *returnSymbol = createTempSymbol(node->getType());
-            replacements.push_back(CreateReplacementCall(node, returnSymbol));
+
+            // type s0[size];
+            TIntermDeclaration *returnValueDeclaration = nullptr;
+            TVariable *returnValue = DeclareTempVariable(mSymbolTable, node->getType(),
+                                                         EvqTemporary, &returnValueDeclaration);
+            replacements.push_back(returnValueDeclaration);
+
+            // f(s0);
+            TIntermSymbol *returnValueSymbol = CreateTempSymbolNode(returnValue);
+            replacements.push_back(createReplacementCall(node, returnValueSymbol));
             mMultiReplacements.push_back(
                 NodeReplaceWithMultipleEntry(parentBlock, node, replacements));
         }
@@ -168,11 +195,10 @@ bool ArrayReturnValueToOutParameterTraverser::visitBranch(Visit visit, TIntermBr
         TIntermTyped *expression = node->getExpression();
         ASSERT(expression != nullptr);
         const TSymbolUniqueId &functionId =
-            mFunctionWithArrayReturnValue->getFunctionSymbolInfo()->getId();
-        ASSERT(mReturnValueIds.find(functionId.get()) != mReturnValueIds.end());
-        const TSymbolUniqueId &returnValueId = *mReturnValueIds[functionId.get()];
+            mFunctionWithArrayReturnValue->getFunction()->uniqueId();
+        ASSERT(mChangedFunctions.find(functionId.get()) != mChangedFunctions.end());
         TIntermSymbol *returnValueSymbol =
-            CreateReturnValueSymbol(returnValueId, expression->getType());
+            new TIntermSymbol(mChangedFunctions[functionId.get()].returnValueVariable);
         TIntermBinary *replacementAssignment =
             new TIntermBinary(EOpAssign, returnValueSymbol, expression);
         replacementAssignment->setLine(expression->getLine());
@@ -196,7 +222,7 @@ bool ArrayReturnValueToOutParameterTraverser::visitBinary(Visit visit, TIntermBi
         ASSERT(rightAgg == nullptr || rightAgg->getOp() != EOpCallInternalRawFunction);
         if (rightAgg != nullptr && rightAgg->getOp() == EOpCallFunctionInAST)
         {
-            TIntermAggregate *replacementCall = CreateReplacementCall(rightAgg, node->getLeft());
+            TIntermAggregate *replacementCall = createReplacementCall(rightAgg, node->getLeft());
             queueReplacement(replacementCall, OriginalNode::IS_DROPPED);
         }
     }

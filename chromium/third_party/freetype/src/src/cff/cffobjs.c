@@ -4,7 +4,7 @@
 /*                                                                         */
 /*    OpenType objects manager (body).                                     */
 /*                                                                         */
-/*  Copyright 1996-2017 by                                                 */
+/*  Copyright 1996-2018 by                                                 */
 /*  David Turner, Robert Wilhelm, and Werner Lemberg.                      */
 /*                                                                         */
 /*  This file is part of the FreeType project, and may only be used,       */
@@ -25,11 +25,12 @@
 #include FT_TRUETYPE_IDS_H
 #include FT_TRUETYPE_TAGS_H
 #include FT_INTERNAL_SFNT_H
-#include FT_CFF_DRIVER_H
+#include FT_DRIVER_H
 
 #ifdef TT_CONFIG_OPTION_GX_VAR_SUPPORT
 #include FT_MULTIPLE_MASTERS_H
 #include FT_SERVICE_MULTIPLE_MASTERS_H
+#include FT_SERVICE_METRICS_VARIATIONS_H
 #endif
 
 #include FT_INTERNAL_CFF_OBJECTS_TYPES_H
@@ -41,6 +42,7 @@
 #include "cfferrs.h"
 
 #include FT_INTERNAL_POSTSCRIPT_AUX_H
+#include FT_SERVICE_CFF_TABLE_LOAD_H
 
 
   /*************************************************************************/
@@ -411,7 +413,7 @@
   remove_subset_prefix( FT_String*  name )
   {
     FT_Int32  idx             = 0;
-    FT_Int32  length          = (FT_Int32)strlen( name ) + 1;
+    FT_Int32  length          = (FT_Int32)ft_strlen( name ) + 1;
     FT_Bool   continue_search = 1;
 
 
@@ -448,8 +450,8 @@
     FT_Int32  family_name_length, style_name_length;
 
 
-    family_name_length = (FT_Int32)strlen( family_name );
-    style_name_length  = (FT_Int32)strlen( style_name );
+    family_name_length = (FT_Int32)ft_strlen( family_name );
+    style_name_length  = (FT_Int32)ft_strlen( style_name );
 
     if ( family_name_length > style_name_length )
     {
@@ -1162,9 +1164,9 @@
 
     /* set default property values, cf. `ftcffdrv.h' */
 #ifdef CFF_CONFIG_OPTION_OLD_ENGINE
-    driver->hinting_engine = FT_CFF_HINTING_FREETYPE;
+    driver->hinting_engine = FT_HINTING_FREETYPE;
 #else
-    driver->hinting_engine = FT_CFF_HINTING_ADOBE;
+    driver->hinting_engine = FT_HINTING_ADOBE;
 #endif
 
     driver->no_stem_darkening = TRUE;

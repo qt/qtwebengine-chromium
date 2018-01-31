@@ -4,7 +4,7 @@
 /*                                                                         */
 /*    FreeType high-level API and common types (specification only).       */
 /*                                                                         */
-/*  Copyright 1996-2017 by                                                 */
+/*  Copyright 1996-2018 by                                                 */
 /*  David Turner, Robert Wilhelm, and Werner Lemberg.                      */
 /*                                                                         */
 /*  This file is part of the FreeType project, and may only be used,       */
@@ -651,7 +651,7 @@ FT_BEGIN_HEADER
   /*    FT_ENCODING_MS_SYMBOL ::                                           */
   /*      Microsoft Symbol encoding, used to encode mathematical symbols   */
   /*      and wingdings.  For more information, see                        */
-  /*      `http://www.microsoft.com/typography/otspec/recom.htm',          */
+  /*      `https://www.microsoft.com/typography/otspec/recom.htm',         */
   /*      `http://www.kostis.net/charsets/symbol.htm', and                 */
   /*      `http://www.kostis.net/charsets/wingding.htm'.                   */
   /*                                                                       */
@@ -660,7 +660,7 @@ FT_BEGIN_HEADER
   /*                                                                       */
   /*    FT_ENCODING_SJIS ::                                                */
   /*      Shift JIS encoding for Japanese.  More info at                   */
-  /*      `http://en.wikipedia.org/wiki/Shift_JIS'.  See note on           */
+  /*      `https://en.wikipedia.org/wiki/Shift_JIS'.  See note on          */
   /*      multi-byte encodings below.                                      */
   /*                                                                       */
   /*    FT_ENCODING_PRC ::                                                 */
@@ -676,7 +676,7 @@ FT_BEGIN_HEADER
   /*      Corresponds to the Korean encoding system known as Extended      */
   /*      Wansung (MS Windows code page 949).                              */
   /*      For more information see                                         */
-  /*      `http://www.unicode.org/Public/MAPPINGS/VENDORS/MICSFT/WindowsBestFit/bestfit949.txt'. */
+  /*      `https://www.unicode.org/Public/MAPPINGS/VENDORS/MICSFT/WindowsBestFit/bestfit949.txt'. */
   /*                                                                       */
   /*    FT_ENCODING_JOHAB ::                                               */
   /*      The Korean standard character set (KS~C 5601-1992), which        */
@@ -752,7 +752,7 @@ FT_BEGIN_HEADER
   /*    @FT_Get_CMap_Language_ID to query the Mac language ID that may     */
   /*    be needed to be able to distinguish Apple encoding variants.  See  */
   /*                                                                       */
-  /*      http://www.unicode.org/Public/MAPPINGS/VENDORS/APPLE/Readme.txt  */
+  /*      https://www.unicode.org/Public/MAPPINGS/VENDORS/APPLE/Readme.txt */
   /*                                                                       */
   /*    to get an idea how to do that.  Basically, if the language ID      */
   /*    is~0, don't use it, otherwise subtract 1 from the language ID.     */
@@ -904,9 +904,8 @@ FT_BEGIN_HEADER
   /*                           Bit 31 is always zero (this is,             */
   /*                           `face_index' is always a positive value).   */
   /*                                                                       */
-  /*                           [Since 2.8.2] Changing the design           */
-  /*                           coordinates with                            */
-  /*                           @FT_Set_Var_Design_Coordinates or           */
+  /*                           [Since 2.9] Changing the design coordinates */
+  /*                           with @FT_Set_Var_Design_Coordinates or      */
   /*                           @FT_Set_Var_Blend_Coordinates does not      */
   /*                           influence the named instance index value    */
   /*                           (only @FT_Set_Named_Instance does that).    */
@@ -1230,8 +1229,8 @@ FT_BEGIN_HEADER
   /*      glyphs use @FT_LOAD_COLOR.                                       */
   /*                                                                       */
   /*    FT_FACE_FLAG_VARIATION ::                                          */
-  /*      [Since 2.8.2] Set if the current face (or named instance) has    */
-  /*      been altered with @FT_Set_MM_Design_Coordinates,                 */
+  /*      [Since 2.9] Set if the current face (or named instance) has been */
+  /*      altered with @FT_Set_MM_Design_Coordinates,                      */
   /*      @FT_Set_Var_Design_Coordinates, or                               */
   /*      @FT_Set_Var_Blend_Coordinates.  This flag is unset by a call to  */
   /*      @FT_Set_Named_Instance.                                          */
@@ -1413,7 +1412,7 @@ FT_BEGIN_HEADER
    *   A macro that returns true whenever a face object is a named instance
    *   of a GX or OpenType variation font.
    *
-   *   [Since 2.8.2] Changing the design coordinates with
+   *   [Since 2.9] Changing the design coordinates with
    *   @FT_Set_Var_Design_Coordinates or @FT_Set_Var_Blend_Coordinates does
    *   not influence the return value of this macro (only
    *   @FT_Set_Named_Instance does that).
@@ -1437,7 +1436,7 @@ FT_BEGIN_HEADER
    *   @FT_Set_Var_Blend_Coordinates.
    *
    * @since:
-   *   2.8.2
+   *   2.9
    *
    */
 #define FT_IS_VARIATION( face ) \
@@ -1830,7 +1829,7 @@ FT_BEGIN_HEADER
   /*    If @FT_Load_Glyph is called with default flags (see                */
   /*    @FT_LOAD_DEFAULT) the glyph image is loaded in the glyph slot in   */
   /*    its native format (e.g., an outline glyph for TrueType and Type~1  */
-  /*    formats).  [Since 2.8.2] The prospective bitmap metrics are        */
+  /*    formats).  [Since 2.9] The prospective bitmap metrics are          */
   /*    calculated according to @FT_LOAD_TARGET_XXX and other flags even   */
   /*    for the outline glyph, even if @FT_LOAD_RENDER is not set.         */
   /*                                                                       */
@@ -1981,8 +1980,8 @@ FT_BEGIN_HEADER
   /*                                                                       */
   /*    If compilation option FT_CONFIG_OPTION_ENVIRONMENT_PROPERTIES is   */
   /*    set, this function reads the `FREETYPE_PROPERTIES' environment     */
-  /*    variable to control driver properties.  See sections @auto_hinter, */
-  /*    @cff_driver, @pcf_driver, and @tt_driver for more.                 */
+  /*    variable to control driver properties.  See section @properties    */
+  /*    for more.                                                          */
   /*                                                                       */
   FT_EXPORT( FT_Error )
   FT_Init_FreeType( FT_Library  *alibrary );
@@ -3557,14 +3556,14 @@ FT_BEGIN_HEADER
   /*    retrieve it.  FreeType follows Adobe TechNote #5902, `Generating   */
   /*    PostScript Names for Fonts Using OpenType Font Variations'.        */
   /*                                                                       */
-  /*      http://wwwimages.adobe.com/content/dam/Adobe/en/devnet/font/pdfs/5902.AdobePSNameGeneration.html */
+  /*      https://download.macromedia.com/pub/developer/opentype/tech-notes/5902.AdobePSNameGeneration.html */
   /*                                                                       */
-  /*    [Since 2.8.2] Special PostScript names for named instances are     */
-  /*    only returned if the named instance is set with                    */
-  /*    @FT_Set_Named_Instance (and the font has corresponding entries in  */
-  /*    its `fvar' table).  If @FT_IS_VARIATION returns true, the          */
-  /*    algorithmically derived PostScript name is provided, not looking   */
-  /*    up special entries for named instances.                            */
+  /*    [Since 2.9] Special PostScript names for named instances are only  */
+  /*    returned if the named instance is set with @FT_Set_Named_Instance  */
+  /*    (and the font has corresponding entries in its `fvar' table).  If  */
+  /*    @FT_IS_VARIATION returns true, the algorithmically derived         */
+  /*    PostScript name is provided, not looking up special entries for    */
+  /*    named instances.                                                   */
   /*                                                                       */
   FT_EXPORT( const char* )
   FT_Get_Postscript_Name( FT_Face  face );
@@ -3795,17 +3794,17 @@ FT_BEGIN_HEADER
    *   Note that only a subset of the available properties can be
    *   controlled.
    *
-   *   * Stem darkening (@FT_PARAM_TAG_STEM_DARKENING, corresponding to the
-   *     property `no-stem-darkening' provided by the `autofit' and `cff'
-   *     modules; see @no-stem-darkening[autofit] and
-   *     @no-stem-darkening[cff]).
+   *   * @FT_PARAM_TAG_STEM_DARKENING (stem darkening, corresponding to the
+   *     property `no-stem-darkening' provided by the `autofit', `cff',
+   *     `type1', and `t1cid' modules; see @no-stem-darkening).
    *
-   *   * LCD filter weights (@FT_PARAM_TAG_LCD_FILTER_WEIGHTS, corresponding
+   *   * @FT_PARAM_TAG_LCD_FILTER_WEIGHTS (LCD filter weights, corresponding
    *     to function @FT_Library_SetLcdFilterWeights).
    *
-   *   * Seed value for the CFF `random' operator
-   *     (@FT_PARAM_TAG_RANDOM_SEED, corresponding to the `random-seed'
-   *     property provided by the `cff' module; see @random-seed).
+   *   * @FT_PARAM_TAG_RANDOM_SEED (seed value for the CFF, Type~1, and CID
+   *     `random' operator, corresponding to the `random-seed' property
+   *     provided by the `cff', `type1', and `t1cid' modules; see
+   *     @random-seed).
    *
    *   Pass NULL as `data' in @FT_Parameter for a given tag to reset the
    *   option and use the library or module default again.
@@ -3995,7 +3994,7 @@ FT_BEGIN_HEADER
   /*    and subsetting restrictions associated with a font.                */
   /*                                                                       */
   /*    See                                                                */
-  /*    http://www.adobe.com/content/dam/Adobe/en/devnet/acrobat/pdfs/FontPolicies.pdf */
+  /*    https://www.adobe.com/content/dam/Adobe/en/devnet/acrobat/pdfs/FontPolicies.pdf */
   /*    for more details.                                                  */
   /*                                                                       */
   /* <Values>                                                              */
@@ -4095,9 +4094,9 @@ FT_BEGIN_HEADER
   /*    Sequences' (IVS), collected in the `Ideographic Variation          */
   /*    Database' (IVD).                                                   */
   /*                                                                       */
-  /*      http://unicode.org/Public/UCD/latest/ucd/StandardizedVariants.txt */
-  /*      http://unicode.org/reports/tr37/                                 */
-  /*      http://unicode.org/ivd/                                          */
+  /*      https://unicode.org/Public/UCD/latest/ucd/StandardizedVariants.txt */
+  /*      https://unicode.org/reports/tr37/                                */
+  /*      https://unicode.org/ivd/                                         */
   /*                                                                       */
   /*    To date (January 2017), the character with the most ideographic    */
   /*    variations is U+9089, having 32 such IVS.                          */
@@ -4552,8 +4551,8 @@ FT_BEGIN_HEADER
    *
    */
 #define FREETYPE_MAJOR  2
-#define FREETYPE_MINOR  8
-#define FREETYPE_PATCH  1
+#define FREETYPE_MINOR  9
+#define FREETYPE_PATCH  0
 
 
   /*************************************************************************/

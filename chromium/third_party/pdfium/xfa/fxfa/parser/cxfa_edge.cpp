@@ -6,6 +6,9 @@
 
 #include "xfa/fxfa/parser/cxfa_edge.h"
 
+#include "fxjs/xfa/cjx_edge.h"
+#include "third_party/base/ptr_util.h"
+
 namespace {
 
 const CXFA_Node::PropertyData kPropertyData[] = {{XFA_Element::Color, 1, 0},
@@ -29,13 +32,14 @@ constexpr wchar_t kName[] = L"edge";
 }  // namespace
 
 CXFA_Edge::CXFA_Edge(CXFA_Document* doc, XFA_PacketType packet)
-    : CXFA_Node(doc,
-                packet,
-                (XFA_XDPPACKET_Template | XFA_XDPPACKET_Form),
-                XFA_ObjectType::Node,
-                XFA_Element::Edge,
-                kPropertyData,
-                kAttributeData,
-                kName) {}
+    : CXFA_Stroke(doc,
+                  packet,
+                  (XFA_XDPPACKET_Template | XFA_XDPPACKET_Form),
+                  XFA_ObjectType::Node,
+                  XFA_Element::Edge,
+                  kPropertyData,
+                  kAttributeData,
+                  kName,
+                  pdfium::MakeUnique<CJX_Edge>(this)) {}
 
 CXFA_Edge::~CXFA_Edge() {}

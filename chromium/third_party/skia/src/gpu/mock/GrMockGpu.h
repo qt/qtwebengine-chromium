@@ -20,8 +20,8 @@ class GrPipeline;
 
 class GrMockGpu : public GrGpu {
 public:
-    static GrGpu* Create(GrBackendContext, const GrContextOptions&, GrContext*);
-    static GrGpu* Create(const GrMockOptions*, const GrContextOptions&, GrContext*);
+    static sk_sp<GrGpu> Make(GrBackendContext, const GrContextOptions&, GrContext*);
+    static sk_sp<GrGpu> Make(const GrMockOptions*, const GrContextOptions&, GrContext*);
 
     ~GrMockGpu() override {}
 
@@ -58,10 +58,6 @@ public:
     sk_sp<GrSemaphore> SK_WARN_UNUSED_RESULT makeSemaphore(bool isOwned) override {
         return nullptr;
     }
-    sk_sp<GrSemaphore> wrapBackendSemaphore(const GrBackendSemaphore& semaphore,
-                                            GrWrapOwnership ownership) override { return nullptr; }
-    void insertSemaphore(sk_sp<GrSemaphore> semaphore, bool flush) override {}
-    void waitSemaphore(sk_sp<GrSemaphore> semaphore) override {}
     sk_sp<GrSemaphore> prepareTextureForCrossContextUsage(GrTexture*) override { return nullptr; }
 
     void submitCommandBuffer(const GrMockGpuRTCommandBuffer*);
@@ -98,8 +94,6 @@ private:
     GrBuffer* onCreateBuffer(size_t sizeInBytes, GrBufferType, GrAccessPattern,
                              const void*) override;
 
-    gr_instanced::InstancedRendering* onCreateInstancedRendering() override { return nullptr; }
-
     bool onReadPixels(GrSurface* surface, GrSurfaceOrigin,
                       int left, int top, int width, int height,
                       GrPixelConfig,
@@ -126,17 +120,20 @@ private:
 
     void onFinishFlush(bool insertedSemaphores) override {}
 
+    sk_sp<GrSemaphore> onWrapBackendSemaphore(const GrBackendSemaphore& semaphore,
+                                            GrWrapOwnership ownership) override { return nullptr; }
+    void onInsertSemaphore(sk_sp<GrSemaphore> semaphore, bool flush) override {}
+    void onWaitSemaphore(sk_sp<GrSemaphore> semaphore) override {}
+
     GrStencilAttachment* createStencilAttachmentForRenderTarget(const GrRenderTarget*,
                                                                 int width,
                                                                 int height) override;
     void clearStencil(GrRenderTarget*, int clearValue) override  {}
 
-    GrBackendObject createTestingOnlyBackendTexture(void* pixels, int w, int h, GrPixelConfig,
+    GrBackendTexture createTestingOnlyBackendTexture(void* pixels, int w, int h, GrPixelConfig,
                                                     bool isRT, GrMipMapped) override;
-
-    bool isTestingOnlyBackendTexture(GrBackendObject) const override;
-
-    void deleteTestingOnlyBackendTexture(GrBackendObject, bool abandonTexture) override;
+    bool isTestingOnlyBackendTexture(const GrBackendTexture&) const override;
+    void deleteTestingOnlyBackendTexture(GrBackendTexture*, bool abandonTexture = false) override;
 
     static int NextInternalTextureID();
     static int NextExternalTextureID();

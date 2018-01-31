@@ -61,11 +61,14 @@ namespace sw
 		sRGB = false;
 		gather = false;
 		highPrecisionFiltering = false;
+		border = 0;
 
 		swizzleR = SWIZZLE_RED;
 		swizzleG = SWIZZLE_GREEN;
 		swizzleB = SWIZZLE_BLUE;
 		swizzleA = SWIZZLE_ALPHA;
+
+		compare = COMPARE_BYPASS;
 
 		texture.LOD = 0.0f;
 		exp2LOD = 1.0f;
@@ -93,12 +96,13 @@ namespace sw
 			state.addressingModeV = getAddressingModeV();
 			state.addressingModeW = getAddressingModeW();
 			state.mipmapFilter = mipmapFilter();
-			state.sRGB = sRGB && Surface::isSRGBreadable(externalTextureFormat);
+			state.sRGB = (sRGB && Surface::isSRGBreadable(externalTextureFormat)) || Surface::isSRGBformat(internalTextureFormat);
 			state.swizzleR = swizzleR;
 			state.swizzleG = swizzleG;
 			state.swizzleB = swizzleB;
 			state.swizzleA = swizzleA;
 			state.highPrecisionFiltering = highPrecisionFiltering;
+			state.compare = getCompareFunc();
 
 			#if PERF_PROFILE
 				state.compressedFormat = Surface::isCompressed(externalTextureFormat);
@@ -114,7 +118,8 @@ namespace sw
 		{
 			Mipmap &mipmap = texture.mipmap[level];
 
-			mipmap.buffer[face] = surface->lockInternal(0, 0, 0, LOCK_UNLOCKED, PRIVATE);
+			border = surface->getBorder();
+			mipmap.buffer[face] = surface->lockInternal(-border, -border, 0, LOCK_UNLOCKED, PRIVATE);
 
 			if(face == 0)
 			{
@@ -332,6 +337,11 @@ namespace sw
 		this->swizzleA = swizzleA;
 	}
 
+	void Sampler::setCompareFunc(CompareFunc compare)
+	{
+		this->compare = compare;
+	}
+
 	void Sampler::setBaseLevel(int baseLevel)
 	{
 		texture.baseLevel = baseLevel;
@@ -446,9 +456,9 @@ namespace sw
 
 	AddressingMode Sampler::getAddressingModeU() const
 	{
-		if(hasCubeTexture())
+		if(textureType == TEXTURE_CUBE)
 		{
-			return ADDRESSING_CLAMP;
+			return border ? ADDRESSING_SEAMLESS : ADDRESSING_CLAMP;
 		}
 
 		return addressingModeU;
@@ -456,9 +466,9 @@ namespace sw
 
 	AddressingMode Sampler::getAddressingModeV() const
 	{
-		if(hasCubeTexture())
+		if(textureType == TEXTURE_CUBE)
 		{
-			return ADDRESSING_CLAMP;
+			return border ? ADDRESSING_SEAMLESS : ADDRESSING_CLAMP;
 		}
 
 		return addressingModeV;
@@ -466,16 +476,28 @@ namespace sw
 
 	AddressingMode Sampler::getAddressingModeW() const
 	{
-		if(hasCubeTexture())
-		{
-			return ADDRESSING_CLAMP;
-		}
-
-		if(textureType == TEXTURE_2D_ARRAY || textureType == TEXTURE_2D)
+		if(textureType == TEXTURE_2D_ARRAY ||
+		   textureType == TEXTURE_2D ||
+		   textureType == TEXTURE_CUBE)
 		{
 			return ADDRESSING_LAYER;
 		}
 
 		return addressingModeW;
+	}
+
+	CompareFunc Sampler::getCompareFunc() const
+	{
+		if(getTextureFilter() == FILTER_GATHER)
+		{
+			return COMPARE_BYPASS;
+		}
+
+		if(internalTextureFormat == FORMAT_D32FS8_SHADOW)
+		{
+			return COMPARE_LESSEQUAL;
+		}
+
+		return compare;
 	}
 }

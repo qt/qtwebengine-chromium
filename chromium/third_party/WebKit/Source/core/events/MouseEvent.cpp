@@ -27,8 +27,10 @@
 #include "core/frame/LocalDOMWindow.h"
 #include "core/frame/LocalFrame.h"
 #include "core/frame/LocalFrameView.h"
+#include "core/frame/UseCounter.h"
 #include "core/input/InputDeviceCapabilities.h"
 #include "core/layout/LayoutObject.h"
+#include "core/layout/LayoutView.h"
 #include "core/paint/PaintLayer.h"
 #include "core/svg/SVGElement.h"
 #include "platform/bindings/DOMWrapperWorld.h"
@@ -45,12 +47,13 @@ DoubleSize ContentsScrollOffset(AbstractView* abstract_view) {
   LocalFrame* frame = ToLocalDOMWindow(abstract_view)->GetFrame();
   if (!frame)
     return DoubleSize();
-  LocalFrameView* frame_view = frame->View();
-  if (!frame_view)
+  ScrollableArea* scrollable_area =
+      frame->View()->LayoutViewportScrollableArea();
+  if (!scrollable_area)
     return DoubleSize();
   float scale_factor = frame->PageZoomFactor();
-  return DoubleSize(frame_view->ScrollX() / scale_factor,
-                    frame_view->ScrollY() / scale_factor);
+  return DoubleSize(scrollable_area->ScrollOffsetInt().Width() / scale_factor,
+                    scrollable_area->ScrollOffsetInt().Height() / scale_factor);
 }
 
 float PageZoomFactor(const UIEvent* event) {
@@ -125,7 +128,7 @@ MouseEvent* MouseEvent::Create(const AtomicString& event_type,
   }
 
   TimeTicks timestamp = underlying_event ? underlying_event->PlatformTimeStamp()
-                                         : TimeTicks::Now();
+                                         : CurrentTimeTicks();
   MouseEvent* created_event = new MouseEvent(
       event_type, true, true, view, 0, screen_x, screen_y, 0, 0, 0, 0,
       modifiers, 0, 0, nullptr, timestamp, synthetic_type, String());
@@ -267,15 +270,13 @@ void MouseEvent::InitCoordinatesFromRootFrame(double window_x,
                           ? ToLocalDOMWindow(view())->GetFrame()
                           : nullptr;
   if (frame && HasPosition()) {
+    scroll_offset = ContentsScrollOffset(view());
     if (LocalFrameView* frame_view = frame->View()) {
       adjusted_page_location =
-          frame_view->RootFrameToContents(FloatPoint(window_x, window_y));
-      scroll_offset = frame_view->GetScrollOffset();
+          frame_view->RootFrameToDocument(FloatPoint(window_x, window_y));
       float scale_factor = 1 / frame->PageZoomFactor();
-      if (scale_factor != 1.0f) {
+      if (scale_factor != 1.0f)
         adjusted_page_location.Scale(scale_factor, scale_factor);
-        scroll_offset.Scale(scale_factor, scale_factor);
-      }
     }
   }
 
@@ -291,7 +292,7 @@ void MouseEvent::InitCoordinatesFromRootFrame(double window_x,
   has_cached_relative_position_ = false;
 }
 
-MouseEvent::~MouseEvent() {}
+MouseEvent::~MouseEvent() = default;
 
 unsigned short MouseEvent::WebInputEventModifiersToButtons(unsigned modifiers) {
   unsigned short buttons = 0;
@@ -447,8 +448,19 @@ DispatchEventResult MouseEvent::DispatchEvent(EventDispatcher& dispatcher) {
     return dispatcher.Dispatch();
 
   if (!send_to_disabled_form_controls &&
-      IsDisabledFormControl(&dispatcher.GetNode()))
+      IsDisabledFormControl(&dispatcher.GetNode())) {
+    if (GetEventPath().HasEventListenersInPath(type())) {
+      UseCounter::Count(dispatcher.GetNode().GetDocument(),
+                        WebFeature::kDispatchMouseEventOnDisabledFormControl);
+      if (type() == EventTypeNames::mousedown ||
+          type() == EventTypeNames::mouseup) {
+        UseCounter::Count(
+            dispatcher.GetNode().GetDocument(),
+            WebFeature::kDispatchMouseUpDownEventOnDisabledFormControl);
+      }
+    }
     return DispatchEventResult::kCanceledBeforeDispatch;
+  }
 
   if (type().IsEmpty())
     return DispatchEventResult::kNotCanceled;  // Shouldn't happen.
@@ -485,8 +497,16 @@ DispatchEventResult MouseEvent::DispatchEvent(EventDispatcher& dispatcher) {
 }
 
 void MouseEvent::ComputePageLocation() {
+  LocalFrame* frame = view() && view()->IsLocalDOMWindow()
+                          ? ToLocalDOMWindow(view())->GetFrame()
+                          : nullptr;
+  if (frame && frame->View())
+    absolute_location_ = frame->View()->DocumentToAbsolute(page_location_);
+  else
+    absolute_location_ = page_location_;
+
   float scale_factor = PageZoomFactor(this);
-  absolute_location_ = page_location_.ScaledBy(scale_factor);
+  absolute_location_.Scale(scale_factor, scale_factor);
 }
 
 void MouseEvent::ReceivedTarget() {
@@ -534,6 +554,9 @@ void MouseEvent::ComputeRelativePosition() {
     n = n->parentNode();
 
   if (n) {
+    if (LocalFrameView* view = n->GetLayoutObject()->View()->GetFrameView())
+      layer_location_ = view->DocumentToAbsolute(page_location_);
+
     // FIXME: This logic is a wrong implementation of convertToLayerCoords.
     for (PaintLayer* layer = n->GetLayoutObject()->EnclosingLayer(); layer;
          layer = layer->Parent()) {

@@ -665,6 +665,7 @@ bool ValidationContext::getQueryParameterInfo(GLenum pname, GLenum *type, unsign
     {
         case GL_ATOMIC_COUNTER_BUFFER_BINDING:
         case GL_DRAW_INDIRECT_BUFFER_BINDING:
+        case GL_DISPATCH_INDIRECT_BUFFER_BINDING:
         case GL_MAX_FRAMEBUFFER_WIDTH:
         case GL_MAX_FRAMEBUFFER_HEIGHT:
         case GL_MAX_FRAMEBUFFER_SAMPLES:
@@ -721,6 +722,31 @@ bool ValidationContext::getQueryParameterInfo(GLenum pname, GLenum *type, unsign
             return true;
     }
 
+    if (getExtensions().geometryShader)
+    {
+        switch (pname)
+        {
+            case GL_MAX_FRAMEBUFFER_LAYERS_EXT:
+            case GL_LAYER_PROVOKING_VERTEX_EXT:
+            case GL_MAX_GEOMETRY_UNIFORM_COMPONENTS_EXT:
+            case GL_MAX_GEOMETRY_UNIFORM_BLOCKS_EXT:
+            case GL_MAX_COMBINED_GEOMETRY_UNIFORM_COMPONENTS_EXT:
+            case GL_MAX_GEOMETRY_INPUT_COMPONENTS_EXT:
+            case GL_MAX_GEOMETRY_OUTPUT_COMPONENTS_EXT:
+            case GL_MAX_GEOMETRY_OUTPUT_VERTICES_EXT:
+            case GL_MAX_GEOMETRY_TOTAL_OUTPUT_COMPONENTS_EXT:
+            case GL_MAX_GEOMETRY_SHADER_INVOCATIONS_EXT:
+            case GL_MAX_GEOMETRY_TEXTURE_IMAGE_UNITS_EXT:
+            case GL_MAX_GEOMETRY_ATOMIC_COUNTER_BUFFERS_EXT:
+            case GL_MAX_GEOMETRY_ATOMIC_COUNTERS_EXT:
+            case GL_MAX_GEOMETRY_IMAGE_UNIFORMS_EXT:
+            case GL_MAX_GEOMETRY_SHADER_STORAGE_BLOCKS_EXT:
+                *type      = GL_INT;
+                *numParams = 1;
+                return true;
+        }
+    }
+
     return false;
 }
 
@@ -760,6 +786,12 @@ bool ValidationContext::getIndexedQueryParameterInfo(GLenum target,
 
     switch (target)
     {
+        case GL_IMAGE_BINDING_LAYERED:
+        {
+            *type      = GL_BOOL;
+            *numParams = 1;
+            return true;
+        }
         case GL_MAX_COMPUTE_WORK_GROUP_COUNT:
         case GL_MAX_COMPUTE_WORK_GROUP_SIZE:
         case GL_ATOMIC_COUNTER_BUFFER_BINDING:
@@ -769,6 +801,11 @@ bool ValidationContext::getIndexedQueryParameterInfo(GLenum target,
         case GL_VERTEX_BINDING_OFFSET:
         case GL_VERTEX_BINDING_STRIDE:
         case GL_SAMPLE_MASK_VALUE:
+        case GL_IMAGE_BINDING_NAME:
+        case GL_IMAGE_BINDING_LEVEL:
+        case GL_IMAGE_BINDING_LAYER:
+        case GL_IMAGE_BINDING_ACCESS:
+        case GL_IMAGE_BINDING_FORMAT:
         {
             *type      = GL_INT;
             *numParams = 1;

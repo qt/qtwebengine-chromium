@@ -192,7 +192,8 @@ static WEBP_CSP_MODE webp_decode_mode(SkColorType dstCT, bool premultiply) {
 
 SkWebpCodec::Frame* SkWebpCodec::FrameHolder::appendNewFrame(bool hasAlpha) {
     const int i = this->size();
-    fFrames.emplace_back(i, hasAlpha);
+    fFrames.emplace_back(i, hasAlpha ? SkEncodedInfo::kUnpremul_Alpha
+                                     : SkEncodedInfo::kOpaque_Alpha);
     return &fFrames[i];
 }
 
@@ -300,8 +301,8 @@ bool SkWebpCodec::onGetFrameInfo(int i, FrameInfo* frameInfo) const {
         // libwebp only reports fully received frames for an
         // animated image.
         frameInfo->fFullyReceived = true;
-        frameInfo->fAlpha = frame->hasAlpha() ? SkEncodedInfo::kUnpremul_Alpha
-                                              : SkEncodedInfo::kOpaque_Alpha;
+        frameInfo->fAlphaType = frame->hasAlpha() ? kUnpremul_SkAlphaType
+                                                  : kOpaque_SkAlphaType;
         frameInfo->fDisposalMethod = frame->getDisposalMethod();
     }
 
@@ -363,7 +364,7 @@ static void blend_line(SkColorType dstCT, void* dst,
     // Load the final dst.
     p.append(load_dst, &dst_ctx);
     if (needsSrgbToLinear) {
-        p.append_from_srgb(dstAt);
+        p.append(SkRasterPipeline::from_srgb);
     }
     if (kUnpremul_SkAlphaType == dstAt) {
         p.append(SkRasterPipeline::premul);
@@ -375,7 +376,7 @@ static void blend_line(SkColorType dstCT, void* dst,
     pick_memory_stages(srcCT, &load_src, nullptr);
     p.append(load_src, &src_ctx);
     if (needsSrgbToLinear) {
-        p.append_from_srgb(kUnpremul_SkAlphaType);
+        p.append(SkRasterPipeline::from_srgb);
     }
     if (srcHasAlpha) {
         p.append(SkRasterPipeline::premul);
@@ -401,7 +402,7 @@ SkCodec::Result SkWebpCodec::onGetPixels(const SkImageInfo& dstInfo, void* dst, 
     SkASSERT(0 == index || index < fFrameHolder.size());
 
     const auto& srcInfo = this->getInfo();
-    SkASSERT(0 == index || (!options.fSubset && dstInfo.dimensions() == srcInfo.dimensions()));
+    SkASSERT(0 == index || !options.fSubset);
 
     WebPDecoderConfig config;
     if (0 == WebPInitDecoderConfig(&config)) {

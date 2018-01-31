@@ -5,13 +5,13 @@
 #ifndef InteractiveDetector_h
 #define InteractiveDetector_h
 
+#include "base/macros.h"
 #include "core/CoreExport.h"
 #include "platform/LongTaskDetector.h"
 #include "platform/PODInterval.h"
 #include "platform/Supplementable.h"
 #include "platform/Timer.h"
 #include "platform/heap/Handle.h"
-#include "platform/wtf/Noncopyable.h"
 #include "platform/wtf/Optional.h"
 
 namespace blink {
@@ -27,15 +27,12 @@ class CORE_EXPORT InteractiveDetector
     : public GarbageCollectedFinalized<InteractiveDetector>,
       public Supplement<Document>,
       public LongTaskObserver {
-  WTF_MAKE_NONCOPYABLE(InteractiveDetector);
   USING_GARBAGE_COLLECTED_MIXIN(InteractiveDetector);
 
  public:
   // This class can be easily switched out to allow better testing of
   // InteractiveDetector.
   class CORE_EXPORT NetworkActivityChecker {
-    WTF_MAKE_NONCOPYABLE(NetworkActivityChecker);
-
    public:
     NetworkActivityChecker(Document* document) : document_(document) {}
 
@@ -44,12 +41,14 @@ class CORE_EXPORT InteractiveDetector
 
    private:
     WeakPersistent<Document> document_;
+
+    DISALLOW_COPY_AND_ASSIGN(NetworkActivityChecker);
   };
 
   static InteractiveDetector* From(Document&);
   virtual ~InteractiveDetector();
 
-  // Calls to MonotonicallyIncreasingTime is expensive, so we try not to call it
+  // Calls to CurrentTimeTicksInSeconds is expensive, so we try not to call it
   // unless we really have to. If we already have the event time available, we
   // pass it in as an argument.
   void OnResourceLoadBegin(WTF::Optional<double> load_begin_time);
@@ -139,6 +138,8 @@ class CORE_EXPORT InteractiveDetector
 
   // LongTaskObserver implementation
   void OnLongTaskDetected(double start_time, double end_time) override;
+
+  DISALLOW_COPY_AND_ASSIGN(InteractiveDetector);
 };
 
 }  // namespace blink

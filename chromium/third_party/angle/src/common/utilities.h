@@ -19,6 +19,11 @@
 
 #include "common/mathutil.h"
 
+namespace sh
+{
+struct ShaderVariable;
+}
+
 namespace gl
 {
 
@@ -57,6 +62,11 @@ GLenum LayerIndexToCubeMapTextureTarget(size_t index);
 // outSubscripts.
 std::string ParseResourceName(const std::string &name, std::vector<unsigned int> *outSubscripts);
 
+// Find the child field which matches 'fullName' == var.name + "." + field.name.
+// Return nullptr if not found.
+const sh::ShaderVariable *FindShaderVarField(const sh::ShaderVariable &var,
+                                             const std::string &fullName);
+
 // Find the range of index values in the provided indices pointer.  Primitive restart indices are
 // only counted in the range if primitive restart is disabled.
 IndexRange ComputeIndexRange(GLenum indexType,
@@ -83,7 +93,7 @@ struct UniformTypeInfo final : angle::NonCopyable
 {
     constexpr UniformTypeInfo(GLenum type,
                               GLenum componentType,
-                              GLenum samplerTextureType,
+                              GLenum textureType,
                               GLenum transposedMatrixType,
                               GLenum boolVectorType,
                               int rowCount,
@@ -97,7 +107,7 @@ struct UniformTypeInfo final : angle::NonCopyable
                               bool isImageType)
         : type(type),
           componentType(componentType),
-          samplerTextureType(samplerTextureType),
+          textureType(textureType),
           transposedMatrixType(transposedMatrixType),
           boolVectorType(boolVectorType),
           rowCount(rowCount),
@@ -114,7 +124,7 @@ struct UniformTypeInfo final : angle::NonCopyable
 
     GLenum type;
     GLenum componentType;
-    GLenum samplerTextureType;
+    GLenum textureType;
     GLenum transposedMatrixType;
     GLenum boolVectorType;
     int rowCount;
@@ -153,6 +163,7 @@ namespace egl_gl
 {
 GLenum EGLCubeMapTargetToGLCubeMapTarget(EGLenum eglTarget);
 GLenum EGLImageTargetToGLTextureTarget(EGLenum eglTarget);
+GLenum EGLTextureTargetToGLTextureTarget(EGLenum eglTarget);
 GLuint EGLClientBufferToGLObjectHandle(EGLClientBuffer buffer);
 }
 

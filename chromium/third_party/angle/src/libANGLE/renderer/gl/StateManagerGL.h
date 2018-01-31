@@ -75,6 +75,7 @@ class StateManagerGL final : angle::NonCopyable
     void bindFramebuffer(GLenum type, GLuint framebuffer);
     void bindRenderbuffer(GLenum type, GLuint renderbuffer);
     void bindTransformFeedback(GLenum type, GLuint transformFeedback);
+    void onTransformFeedbackStateChange();
     void beginQuery(GLenum type, GLuint query);
     void endQuery(GLenum type, GLuint query);
     void onBeginQuery(QueryGL *query);
@@ -165,7 +166,7 @@ class StateManagerGL final : angle::NonCopyable
                                    const void *indices,
                                    GLsizei instanceCount,
                                    const void **outIndices);
-    gl::Error setDrawIndirectState(const gl::Context *context, GLenum type);
+    gl::Error setDrawIndirectState(const gl::Context *context);
 
     gl::Error setDispatchComputeState(const gl::Context *context);
 
@@ -198,6 +199,12 @@ class StateManagerGL final : angle::NonCopyable
     void propagateNumViewsToVAO(const gl::Program *program, VertexArrayGL *vao);
 
     void updateProgramTextureAndSamplerBindings(const gl::Context *context);
+    void updateProgramStorageBufferBindings(const gl::Context *context);
+
+    void updateDispatchIndirectBufferBinding(const gl::Context *context);
+    void updateDrawIndirectBufferBinding(const gl::Context *context);
+
+    void syncTransformFeedbackState(const gl::Context *context);
 
     enum MultiviewDirtyBitType
     {
@@ -246,10 +253,9 @@ class StateManagerGL final : angle::NonCopyable
     std::vector<ImageUnitBinding> mImages;
 
     GLuint mTransformFeedback;
+    TransformFeedbackGL *mCurrentTransformFeedback;
 
     std::map<GLenum, GLuint> mQueries;
-
-    TransformFeedbackGL *mPrevDrawTransformFeedback;
     std::set<QueryGL *> mCurrentQueries;
     gl::ContextID mPrevDrawContext;
 
@@ -354,6 +360,7 @@ class StateManagerGL final : angle::NonCopyable
     angle::BitSet<MULTIVIEW_DIRTY_BIT_MAX> mMultiviewDirtyBits;
 
     bool mProgramTexturesAndSamplersDirty;
+    bool mProgramStorageBuffersDirty;
 };
 }
 

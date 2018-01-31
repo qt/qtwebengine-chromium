@@ -75,6 +75,13 @@ cc_library_static {
             srcs: [
                 $x86_srcs
             ],
+            cflags: [
+                // Clang seems to think new/malloc will only be 4-byte aligned
+                // on x86 Android. We're pretty sure it's actually 8-byte
+                // alignment. tests/OverAlignedTest.cpp has more information,
+                // and should fail if we're wrong.
+                "-Wno-over-aligned"
+            ],
         },
 
         x86_64: {
@@ -84,7 +91,35 @@ cc_library_static {
         },
     },
 
-    defaults: ["skia_deps"],
+    defaults: ["skia_deps",
+               "skia_pgo",
+    ],
+}
+
+// Build libskia with PGO by default.
+// Location of PGO profile data is defined in build/soong/cc/pgo.go
+// and is separate from skia.
+// To turn it off, set ANDROID_PGO_NO_PROFILE_USE environment variable
+// or set enable_profile_use property to false.
+cc_defaults {
+    name: "skia_pgo",
+    pgo: {
+        instrumentation: true,
+        profile_file: "skia/skia.profdata",
+        benchmarks: ["hwui", "skia"],
+        enable_profile_use: true,
+    },
+}
+
+// "defaults" property to disable profile use for Skia tools and benchmarks.
+cc_defaults {
+    name: "skia_pgo_no_profile_use",
+    defaults: [
+        "skia_pgo",
+    ],
+    pgo: {
+        enable_profile_use: false,
+    },
 }
 
 cc_defaults {
@@ -119,14 +154,16 @@ cc_defaults {
 cc_defaults {
     name: "skia_tool_deps",
     defaults: [
-        "skia_deps"
+        "skia_deps",
+        "skia_pgo_no_profile_use"
     ],
     static_libs: [
         "libjsoncpp",
         "libskia",
     ],
     cflags: [
-        "-Wno-unused-parameter"
+        "-Wno-unused-parameter",
+        "-Wno-unused-variable",
     ],
 }
 
@@ -160,6 +197,10 @@ cc_test {
     srcs: [
         $nanobench_srcs
     ],
+
+    data: [
+        "resources/*",
+    ],
 }''')
 
 # We'll run GN to get the main source lists and include directories for Skia.
@@ -170,6 +211,7 @@ gn_args = {
   'skia_use_vulkan':    'true',
   'target_cpu':         '"none"',
   'target_os':          '"android"',
+  'skia_vulkan_header': '"Skia_Vulkan_Android.h"',
 }
 gn_args = ' '.join(sorted('%s=%s' % (k,v) for (k,v) in gn_args.iteritems()))
 
@@ -226,6 +268,7 @@ cflags = cflags.union([
     "-DSKIA_DLL",
     "-DSKIA_IMPLEMENTATION=1",
     "-DATRACE_TAG=ATRACE_TAG_VIEW",
+    "-DSK_PRINT_CODEC_MESSAGES",
 ])
 cflags_cc.add("-fexceptions")
 
@@ -233,6 +276,11 @@ cflags_cc.add("-fexceptions")
 # beginning after sorting.
 cflags = sorted(cflags)
 cflags.insert(0, "-U_FORTIFY_SOURCE")
+
+# We need to add the include path to the vulkan defines and header file set in
+# then skia_vulkan_header gn arg that is used for framework builds.
+local_includes.add("platform_tools/android/vulkan")
+export_includes.add("platform_tools/android/vulkan")
 
 # Most defines go into SkUserConfig.h, where they're seen by Skia and its users.
 defines = [str(d) for d in js['targets']['//:skia']['defines']]

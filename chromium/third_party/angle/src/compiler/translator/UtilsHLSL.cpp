@@ -692,7 +692,7 @@ TString RWTextureTypeSuffix(const TBasicType type, TLayoutImageInternalFormat im
 
 TString DecorateField(const TString &string, const TStructure &structure)
 {
-    if (structure.name().compare(0, 3, "gl_") != 0)
+    if (structure.symbolType() != SymbolType::BuiltIn)
     {
         return Decorate(string);
     }
@@ -715,35 +715,36 @@ TString Decorate(const TString &string)
     return string;
 }
 
-TString DecorateVariableIfNeeded(const TName &name)
+TString DecorateVariableIfNeeded(const TVariable &variable)
 {
-    if (name.isInternal())
+    if (variable.symbolType() == SymbolType::AngleInternal)
     {
+        const TString &name = variable.name();
         // The name should not have a prefix reserved for user-defined variables or functions.
-        ASSERT(name.getString().compare(0, 2, "f_") != 0);
-        ASSERT(name.getString().compare(0, 1, "_") != 0);
-        return name.getString();
+        ASSERT(name.compare(0, 2, "f_") != 0);
+        ASSERT(name.compare(0, 1, "_") != 0);
+        return name;
     }
     else
     {
-        return Decorate(name.getString());
+        return Decorate(variable.name());
     }
 }
 
-TString DecorateFunctionIfNeeded(const TName &name)
+TString DecorateFunctionIfNeeded(const TFunction *func)
 {
-    if (name.isInternal())
+    if (func->symbolType() == SymbolType::AngleInternal)
     {
         // The name should not have a prefix reserved for user-defined variables or functions.
-        ASSERT(name.getString().compare(0, 2, "f_") != 0);
-        ASSERT(name.getString().compare(0, 1, "_") != 0);
-        return name.getString();
+        ASSERT(func->name().compare(0, 2, "f_") != 0);
+        ASSERT(func->name().compare(0, 1, "_") != 0);
+        return func->name();
     }
-    ASSERT(name.getString().compare(0, 3, "gl_") != 0);
+    ASSERT(func->name().compare(0, 3, "gl_") != 0);
     // Add an additional f prefix to functions so that they're always disambiguated from variables.
     // This is necessary in the corner case where a variable declaration hides a function that it
     // uses in its initializer.
-    return "f_" + name.getString();
+    return "f_" + func->name();
 }
 
 TString TypeString(const TType &type)
@@ -751,8 +752,7 @@ TString TypeString(const TType &type)
     const TStructure *structure = type.getStruct();
     if (structure)
     {
-        const TString &typeName = structure->name();
-        if (typeName != "")
+        if (structure->symbolType() != SymbolType::Empty)
         {
             return StructNameString(*structure);
         }
@@ -847,7 +847,7 @@ TString TypeString(const TType &type)
 
 TString StructNameString(const TStructure &structure)
 {
-    if (structure.name().empty())
+    if (structure.symbolType() == SymbolType::Empty)
     {
         return "";
     }
@@ -859,14 +859,14 @@ TString StructNameString(const TStructure &structure)
         return Decorate(structure.name());
     }
 
-    return "ss" + str(structure.uniqueId()) + "_" + structure.name();
+    return "ss" + str(structure.uniqueId().get()) + "_" + structure.name();
 }
 
 TString QualifiedStructNameString(const TStructure &structure,
                                   bool useHLSLRowMajorPacking,
                                   bool useStd140Packing)
 {
-    if (structure.name() == "")
+    if (structure.symbolType() == SymbolType::Empty)
     {
         return "";
     }
@@ -960,7 +960,7 @@ TString DisambiguateFunctionName(const TIntermSequence *parameters)
         {
             // Disambiguation is needed for struct parameters, since HLSL thinks that structs with
             // the same fields but a different name are identical.
-            ASSERT(paramType.getStruct()->name() != "");
+            ASSERT(paramType.getStruct()->symbolType() != SymbolType::Empty);
             disambiguatingString += "_" + TypeString(paramType);
         }
     }

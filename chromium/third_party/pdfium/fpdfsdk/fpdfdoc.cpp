@@ -210,6 +210,24 @@ FPDFDest_GetPageIndex(FPDF_DOCUMENT document, FPDF_DEST pDict) {
   return dest.GetPageIndex(pDoc);
 }
 
+FPDF_EXPORT unsigned long FPDF_CALLCONV
+FPDFDest_GetView(FPDF_DEST pDict,
+                 unsigned long* pNumParams,
+                 FS_FLOAT* pParams) {
+  if (!pDict) {
+    *pNumParams = 0;
+    return 0;
+  }
+
+  CPDF_Dest dest(static_cast<CPDF_Array*>(pDict));
+  unsigned long nParams = dest.GetNumParams();
+  ASSERT(nParams <= 4);
+  *pNumParams = nParams;
+  for (unsigned long i = 0; i < nParams; ++i)
+    pParams[i] = dest.GetParam(i);
+  return dest.GetZoomMode();
+}
+
 FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV
 FPDFDest_GetLocationInPage(FPDF_DEST pDict,
                            FPDF_BOOL* hasXVal,
@@ -400,8 +418,8 @@ FPDF_GetPageLabel(FPDF_DOCUMENT document,
 
   // CPDF_PageLabel can deal with NULL |document|.
   CPDF_PageLabel label(CPDFDocumentFromFPDFDocument(document));
-  WideString str;
-  if (!label.GetLabel(page_index, &str))
-    return 0;
-  return Utf16EncodeMaybeCopyAndReturnLength(str, buffer, buflen);
+  Optional<WideString> str = label.GetLabel(page_index);
+  return str.has_value()
+             ? Utf16EncodeMaybeCopyAndReturnLength(str.value(), buffer, buflen)
+             : 0;
 }

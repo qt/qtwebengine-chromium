@@ -476,7 +476,7 @@ TString ArrayString(const TType &type)
 TString GetTypeName(const TType &type, ShHashFunction64 hashFunction, NameMap *nameMap)
 {
     if (type.getBasicType() == EbtStruct)
-        return HashName(TName(type.getStruct()->name()), hashFunction, nameMap);
+        return HashName(type.getStruct(), hashFunction, nameMap);
     else
         return type.getBuiltInTypeNameString();
 }
@@ -527,7 +527,7 @@ bool IsVarying(TQualifier qualifier)
 bool IsGeometryShaderInput(GLenum shaderType, TQualifier qualifier)
 {
     return (qualifier == EvqGeometryIn) ||
-           ((shaderType == GL_GEOMETRY_SHADER_OES) && IsInterpolationIn(qualifier));
+           ((shaderType == GL_GEOMETRY_SHADER_EXT) && IsInterpolationIn(qualifier));
 }
 
 InterpolationType GetInterpolationType(TQualifier qualifier)

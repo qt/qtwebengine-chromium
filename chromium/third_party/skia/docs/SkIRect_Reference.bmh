@@ -40,7 +40,6 @@ its top, it is considered empty.
 # IntersectsNoEmptyCheck # Returns true if areas overlap. Skips empty check. ##
 # MakeEmpty              # Returns bounds of (0, 0, 0, 0). ##
 # MakeLTRB               # Constructs from int left, top, right, bottom. ##
-# MakeLargest            # Constructs from (SK_MinS32, SK_MinS32, SK_MaxS32, SK_MaxS32). ##
 # MakeSize               # Constructs from ISize returning (0, 0, width, height). ##
 # MakeWH                 # Constructs from int input returning (0, 0, width, height). ##
 # MakeXYWH               # Constructs from int input returning (x, y, width, height). ##
@@ -50,12 +49,13 @@ its top, it is considered empty.
 # contains()             # Returns true if points are equal or inside. ##
 # containsNoEmptyCheck   # Returns true if points are equal or inside. Skips empty check. ##
 # height()               # Returns span in y. ##
+# height64()             # Returns span in y as int64_t. ##
 # inset()                # Moves the sides symmetrically about the center. ##
 # intersect              # Sets to shared area; returns true if not empty. ##
 # intersectNoEmptyCheck  # Sets to shared area; returns true if not empty. Skips empty check. ##
 # is16Bit                # Returns true if members fit in 16-bit word. ##
-# isEmpty                # Returns true if width or height are zero or negative. ##
-# isLargest              # Returns true if equal to (SK_MinS32, SK_MinS32, SK_MaxS32, SK_MaxS32). ##
+# isEmpty                # Returns true if width or height are zero or negative or they exceed int32_t. ##
+# isEmpty64              # Returns true if width or height are zero or negative. ##
 # join()                 # Sets to union of bounds. ##
 # left()                 # Returns smaller bounds in x, if sorted. ##
 # makeInset              # Constructs from sides moved symmetrically about the center. ##
@@ -70,13 +70,12 @@ its top, it is considered empty.
 # set()                  # Sets to (left, top, right, bottom). ##
 # setEmpty               # Sets to (0, 0, 0, 0). ##
 # setLTRB                # Sets to SkScalar input (left, top, right, bottom). ##
-# setLargest             # Sets to (SK_MinS32, SK_MinS32, SK_MaxS32, SK_MaxS32). ##
-# setLargestInverted     # Sets to (SK_MaxS32, SK_MaxS32, SK_MinS32, SK_MinS32). ##
 # setXYWH                # Sets to (x, y, width, height). ##
 # size()                 # Returns ISize (width, height). ##
 # sort()                 # Orders sides from smaller to larger. ##
 # top()                  # Returns smaller bounds in y, if sorted. ##
 # width()                # Returns span in x. ##
+# width64()              # Returns span in y as int64_t. ##
 # x()                    # Returns bounds left. ##
 # y()                    # Returns bounds top. ##
 #Table ##
@@ -132,35 +131,7 @@ outset rect isEmpty: false
 ##
 ##
 
-#SeeAlso EmptyIRect isEmpty setEmpty setLargestInverted SkRect::MakeEmpty
-
-##
-
-# ------------------------------------------------------------------------------
-
-#Method static SkIRect SK_WARN_UNUSED_RESULT MakeLargest()
-
-Returns constructed IRect setting left and top to most negative value, and 
-setting right and bottom to most positive value.
-
-#Return bounds (SK_MinS32, SK_MinS32, SK_MaxS32, SK_MaxS32) ##
-
-#Example
-    SkIRect rect = SkIRect::MakeLargest();
-    SkDebugf("MakeLargest isLargest: %s\n", rect.isLargest() ? "true" : "false");
-    SkDebugf("MakeLargest isEmpty: %s\n", rect.isEmpty() ? "true" : "false");
-    rect.outset(1, 1);
-    SkDebugf("outset isLargest: %s\n", rect.isLargest() ? "true" : "false");
-    SkDebugf("outset isEmpty: %s\n", rect.isEmpty() ? "true" : "false");
-#StdOut
-MakeLargest isLargest: true
-MakeLargest isEmpty: false
-outset isLargest: false
-outset isEmpty: true
-##
-##
-
-#SeeAlso isLargest setLargest SkRect::MakeLargest
+#SeeAlso EmptyIRect isEmpty setEmpty SkRect::MakeEmpty
 
 ##
 
@@ -287,7 +258,7 @@ rect: -10, 35, 5, 60  isEmpty: false
 
 # ------------------------------------------------------------------------------
 
-#Method int left() const
+#Method int32_t left() const
 
 Returns left edge of IRect, if sorted.
 Call sort() to reverse fLeft and fRight if needed.
@@ -311,7 +282,7 @@ sorted.fLeft: 10 sorted.left(): 10
 
 # ------------------------------------------------------------------------------
 
-#Method int top() const
+#Method int32_t top() const
 
 Returns top edge of IRect, if sorted. Call isEmpty to see if IRect may be invalid,
 and sort() to reverse fTop and fBottom if needed.
@@ -335,7 +306,7 @@ sorted.fTop: 5 sorted.top(): 5
 
 # ------------------------------------------------------------------------------
 
-#Method int right() const
+#Method int32_t right() const
 
 Returns right edge of IRect, if sorted.
 Call sort() to reverse fLeft and fRight if needed.
@@ -359,7 +330,7 @@ sorted.fRight: 15 sorted.right(): 15
 
 # ------------------------------------------------------------------------------
 
-#Method int bottom() const
+#Method int32_t bottom() const
 
 Returns bottom edge of IRect, if sorted. Call isEmpty to see if IRect may be invalid,
 and sort() to reverse fTop and fBottom if needed.
@@ -383,7 +354,7 @@ sorted.fBottom: 25 sorted.bottom(): 25
 
 # ------------------------------------------------------------------------------
 
-#Method int x() const
+#Method int32_t x() const
 
 Returns left edge of IRect, if sorted. Call isEmpty to see if IRect may be invalid,
 and sort() to reverse fLeft and fRight if needed.
@@ -407,7 +378,7 @@ sorted.fLeft: 10 sorted.x(): 10
 
 # ------------------------------------------------------------------------------
 
-#Method int y() const
+#Method int32_t y() const
 
 Returns top edge of IRect, if sorted. Call isEmpty to see if IRect may be invalid,
 and sort() to reverse fTop and fBottom if needed.
@@ -431,7 +402,7 @@ sorted.fTop: 5 sorted.y(): 5
 
 # ------------------------------------------------------------------------------
 
-#Method int width() const
+#Method int32_t width() const
 
 Returns span on the x-axis. This does not check if IRect is sorted, or if
 result fits in 32-bit signed integer; result may be negative.
@@ -449,13 +420,37 @@ large width: -5
 ##
 ##
 
-#SeeAlso height() SkRect::width()
+#SeeAlso height() width64() height64() SkRect::width()
 
 ##
 
 # ------------------------------------------------------------------------------
 
-#Method int height() const
+#Method int64_t width64() const
+
+Returns span on the x-axis. This does not check if IRect is sorted, so the
+result may be negative. This is safer than calling width() since width() might
+overflow in its calculation.
+
+#Return fRight minus fLeft cast to int64_t ##
+
+#Bug 7489 ##
+# width64 is not yet visible to fiddle
+#NoExample
+SkIRect large = { -2147483647, 1, 2147483644, 2 };
+SkDebugf("width: %d wdith64: %lld\n", large.width(), large.width64());
+#StdOut
+width: -5 width64: 4294967291
+##
+##
+
+#SeeAlso width() height() height64() SkRect::width()
+
+##
+
+# ------------------------------------------------------------------------------
+
+#Method int32_t height() const
 
 Returns span on the y-axis. This does not check if IRect is sorted, or if
 result fits in 32-bit signed integer; result may be negative.
@@ -474,6 +469,30 @@ large height: -5
 ##
 
 #SeeAlso width() SkRect::height()
+
+##
+
+# ------------------------------------------------------------------------------
+
+#Method int64_t height64() const
+
+Returns span on the y-axis. This does not check if IRect is sorted, so the
+result may be negative. This is safer than calling height() since height() might
+overflow in its calculation.
+
+#Return fBottom minus fTop cast to int64_t ##
+
+#Bug 7489 ##
+# height64 not yet visible to fiddle
+#NoExample
+SkIRect large = { 1, -2147483647, 2, 2147483644 };
+SkDebugf("height: %d height64: %lld\n", large.height(), large.height64());
+#StdOut
+height: -5 height64: 4294967291
+##
+##
+
+#SeeAlso width() height() width64() SkRect::height()
 
 ##
 
@@ -512,7 +531,7 @@ original rect: 20, 30, 40, 50  size: 20, 20
 
 # ------------------------------------------------------------------------------
 
-#Method int centerX() const
+#Method int32_t centerX() const
 
 Returns average of left edge and right edge. Result does not change if Rect
 is sorted. Result may be incorrect if Rect is far from the origin.
@@ -543,7 +562,7 @@ left: -10 right:  11 centerX:   0 div2:   0
 
 # ------------------------------------------------------------------------------
 
-#Method int centerY() const
+#Method int32_t centerY() const
 
 Returns average of top edge and bottom edge. Result does not change if Rect
 is sorted. Result may be incorrect if Rect is far from the origin. 
@@ -570,9 +589,7 @@ left: 1073741824 right: 1073741826 centerX: -1073741823 safe mid x: 1073741825
 
 #Method bool isEmpty() const
 
-Returns true if fLeft is equal to or greater than fRight, or if fTop is equal
-to or greater than fBottom. Call sort() to reverse rectangles with negative
-width() or height().
+Returns true if width() or height() .
 
 #Return true if width() or height() are zero or negative ##
 
@@ -599,29 +616,34 @@ sorted: {20, 40, 20, 50} is empty
 
 # ------------------------------------------------------------------------------
 
-#Method bool isLargest() const
+#Method bool isEmpty64() const
 
-Returns true if IRect encloses largest possible area. 
+Returns true if fLeft is equal to or greater than fRight, or if fTop is equal
+to or greater than fBottom. Call sort() to reverse rectangles with negative
+width64() or height64().
 
-#Return true if equal to (SK_MinS32, SK_MinS32, SK_MaxS32, SK_MaxS32) ##
+#Return true if width64() or height64() are zero or negative ##
 
-#Example
-#Description
-Note that the width is not negative, yet it cannot be represented as a 32-bit
-signed integer.
-##
-    SkIRect large = SkIRect::MakeLargest();
-    SkDebugf("large is largest: %s\n" ,large.isLargest() ? "true" : "false");
-    SkDebugf("large width %d\n", large.width());
-    SkDebugf("large is empty: %s\n", large.isEmpty() ? "true" : "false");
+#Bug 7489 ##
+# isEmpty64 not yet visible to fiddle
+#NoExample
+SkIRect tests[] = {{20, 40, 10, 50}, {20, 40, 20, 50}};
+for (auto rect : tests) {
+SkDebugf("rect: {%d, %d, %d, %d} is" "%s empty\n", rect.left(), rect.top(), rect.right(),
+rect.bottom(), isEmpty64() ? "" : " not");
+rect.sort();
+SkDebugf("sorted: {%d, %d, %d, %d} is" "%s empty\n", rect.left(), rect.top(), rect.right(),
+rect.bottom(), isEmpty64() ? "" : " not");
+}
 #StdOut
-large is largest: true
-large width -2
-large is empty: false
+rect: {20, 40, 10, 50} is empty
+sorted: {10, 40, 20, 50} is not empty
+rect: {20, 40, 20, 50} is empty
+sorted: {20, 40, 20, 50} is empty
 ##
 ##
 
-#SeeAlso MakeLargest SkRect::isLargest
+#SeeAlso EmptyIRect MakeEmpty sort SkRect::isEmpty
 
 ##
 
@@ -816,50 +838,6 @@ rect: -10, 35, 5, 60  isEmpty: false
 ##
 
 #SeeAlso MakeXYWH setLTRB set SkRect::setXYWH
-
-##
-
-# ------------------------------------------------------------------------------
-
-#Method void setLargest()
-
-Sets rectangle left and top to most negative value, and sets
-right and bottom to most positive value.
-
-#Example
-    SkIRect rect;
-    rect.setLargest();
-    SkDebugf("MakeLargest isLargest: %s\n", rect.isLargest() ? "true" : "false");
-    SkDebugf("MakeLargest isEmpty: %s\n", rect.isEmpty() ? "true" : "false");
-    rect.outset(1, 1);
-    SkDebugf("outset isLargest: %s\n", rect.isLargest() ? "true" : "false");
-    SkDebugf("outset isEmpty: %s\n", rect.isEmpty() ? "true" : "false");
-#StdOut
-MakeLargest isLargest: true
-MakeLargest isEmpty: false
-outset isLargest: false
-outset isEmpty: true
-##
-##
-
-#SeeAlso MakeLargest isLargest setLargestInverted SK_MinS32 SK_MaxS32
-
-##
-
-# ------------------------------------------------------------------------------
-
-#Method void setLargestInverted()
-#ToDo move this to private
-##
-
-Sets rectangle left and top to most positive value, and sets
-right and bottom to most negative value. This is used internally to
-flag that a condition is met, but otherwise has no special purpose.
-
-#NoExample
-##
-
-#SeeAlso setEmpty setLargest
 
 ##
 
@@ -1663,6 +1641,18 @@ rect: 0, 0, 0, 0
 ##
 
 #SeeAlso MakeEmpty
+
+##
+
+#Method static SkIRect SK_WARN_UNUSED_RESULT MakeLargest()
+
+#Deprecated
+##
+
+Returns constructed SkIRect setting left and top to most negative value, and
+setting right and bottom to most positive value.
+
+#Return  bounds (SK_MinS32, SK_MinS32, SK_MaxS32, SK_MaxS32) ##
 
 ##
 

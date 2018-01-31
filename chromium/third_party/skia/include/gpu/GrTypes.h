@@ -197,7 +197,7 @@ enum GrBackend {
 
 /**
  * Backend-specific 3D context handle
- *      OpenGL: const GrGLInterface*. If null will use the result of GrGLCreateNativeInterface().
+ *      OpenGL: const GrGLInterface*. If null will use the result of GrGLMakeNativeInterface().
  *      Vulkan: GrVkBackendContext*.
  *      Mock: const GrMockOptions* or null for default constructed GrMockContextOptions.
  */
@@ -340,8 +340,10 @@ enum GrPixelConfig {
     kPrivateConfig1_GrPixelConfig,
     kPrivateConfig2_GrPixelConfig,
     kPrivateConfig3_GrPixelConfig,
+    kPrivateConfig4_GrPixelConfig,
+    kPrivateConfig5_GrPixelConfig,
 
-    kLast_GrPixelConfig = kPrivateConfig3_GrPixelConfig
+    kLast_GrPixelConfig = kPrivateConfig5_GrPixelConfig
 };
 static const int kGrPixelConfigCnt = kLast_GrPixelConfig + 1;
 

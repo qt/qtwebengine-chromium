@@ -15,6 +15,7 @@
 #include <stdio.h>
 
 #include <gtest/gtest.h>
+#include <limits.h>
 
 #include <openssl/asn1.h>
 #include <openssl/err.h>
@@ -59,4 +60,31 @@ TEST(ASN1Test, LargeTags) {
   const uint8_t kZero = 0;
   EXPECT_EQ(Bytes(&kZero, 1), Bytes(obj->value.asn1_string->data,
                                     obj->value.asn1_string->length));
+}
+
+TEST(ASN1Test, IntegerSetting) {
+  bssl::UniquePtr<ASN1_INTEGER> by_bn(M_ASN1_INTEGER_new());
+  bssl::UniquePtr<ASN1_INTEGER> by_long(M_ASN1_INTEGER_new());
+  bssl::UniquePtr<ASN1_INTEGER> by_uint64(M_ASN1_INTEGER_new());
+  bssl::UniquePtr<BIGNUM> bn(BN_new());
+
+  const std::vector<int64_t> kValues = {
+      LONG_MIN, -2, -1, 0, 1, 2, 0xff, 0x100, 0xffff, 0x10000, LONG_MAX,
+  };
+  for (const auto &i : kValues) {
+    SCOPED_TRACE(i);
+
+    ASSERT_EQ(1, ASN1_INTEGER_set(by_long.get(), i));
+    const uint64_t abs = i < 0 ? (0 - (uint64_t) i) : i;
+    ASSERT_TRUE(BN_set_u64(bn.get(), abs));
+    BN_set_negative(bn.get(), i < 0);
+    ASSERT_TRUE(BN_to_ASN1_INTEGER(bn.get(), by_bn.get()));
+
+    EXPECT_EQ(0, ASN1_INTEGER_cmp(by_bn.get(), by_long.get()));
+
+    if (i >= 0) {
+      ASSERT_EQ(1, ASN1_INTEGER_set_uint64(by_uint64.get(), i));
+      EXPECT_EQ(0, ASN1_INTEGER_cmp(by_bn.get(), by_uint64.get()));
+    }
+  }
 }

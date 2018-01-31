@@ -140,49 +140,47 @@ class ContextVk : public ContextImpl, public ResourceVk
     // Path object creation
     std::vector<PathImpl *> createPaths(GLsizei) override;
 
-    VkDevice getDevice() const;
-    vk::Error getStartedCommandBuffer(vk::CommandBufferAndState **commandBufferOut);
-    vk::Error submitCommands(vk::CommandBufferAndState *commandBuffer);
+    gl::Error dispatchCompute(const gl::Context *context,
+                              GLuint numGroupsX,
+                              GLuint numGroupsY,
+                              GLuint numGroupsZ) override;
+    gl::Error dispatchComputeIndirect(const gl::Context *context, GLintptr indirect) override;
 
+    gl::Error memoryBarrier(const gl::Context *context, GLbitfield barriers) override;
+    gl::Error memoryBarrierByRegion(const gl::Context *context, GLbitfield barriers) override;
+
+    VkDevice getDevice() const;
     RendererVk *getRenderer() { return mRenderer; }
 
     // TODO(jmadill): Use pipeline cache.
     void invalidateCurrentPipeline();
 
-    gl::Error dispatchCompute(const gl::Context *context,
-                              GLuint numGroupsX,
-                              GLuint numGroupsY,
-                              GLuint numGroupsZ) override;
+    void onVertexArrayChange();
 
     vk::DescriptorPool *getDescriptorPool();
 
   private:
     gl::Error initPipeline(const gl::Context *context);
-    gl::Error setupDraw(const gl::Context *context, GLenum mode);
+    gl::Error setupDraw(const gl::Context *context,
+                        GLenum mode,
+                        DrawType drawType,
+                        vk::CommandBuffer **commandBuffer);
 
     RendererVk *mRenderer;
     vk::Pipeline mCurrentPipeline;
     GLenum mCurrentDrawMode;
 
-    // Keep CreateInfo structures cached so that we can quickly update them when creating
-    // updated pipelines. When we move to a pipeline cache, we will want to use a more compact
-    // structure that we can use to query the pipeline cache in the Renderer.
-    // TODO(jmadill): Update this when we move to a pipeline cache.
-    VkPipelineShaderStageCreateInfo mCurrentShaderStages[2];
-    VkPipelineVertexInputStateCreateInfo mCurrentVertexInputState;
-    VkPipelineInputAssemblyStateCreateInfo mCurrentInputAssemblyState;
-    VkViewport mCurrentViewportVk;
-    VkRect2D mCurrentScissorVk;
-    VkPipelineViewportStateCreateInfo mCurrentViewportState;
-    VkPipelineRasterizationStateCreateInfo mCurrentRasterState;
-    VkPipelineMultisampleStateCreateInfo mCurrentMultisampleState;
-    VkPipelineColorBlendAttachmentState mCurrentBlendAttachmentState;
-    VkPipelineColorBlendStateCreateInfo mCurrentBlendState;
-    VkGraphicsPipelineCreateInfo mCurrentPipelineInfo;
+    // Keep a cached pipeline description structure that can be used to query the pipeline cache.
+    // Kept in a pointer so allocations can be aligned, and structs can be portably packed.
+    std::unique_ptr<vk::PipelineDesc> mPipelineDesc;
 
     // The descriptor pool is externally sychronized, so cannot be accessed from different threads
     // simulataneously. Hence, we keep it in the ContextVk instead of the RendererVk.
     vk::DescriptorPool mDescriptorPool;
+
+    // Triggers adding dependencies to the command graph.
+    bool mVertexArrayDirty;
+    bool mTexturesDirty;
 };
 
 }  // namespace rx

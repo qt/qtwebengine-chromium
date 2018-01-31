@@ -35,7 +35,7 @@
       'Mac64 Release [large tests]': 'release_bot_x64',
 
       # Linux
-      'Linux32 Debug': 'debug_bot_x86',
+      'Linux32 Debug': 'no_h264_debug_bot_x86',
       'Linux32 Release': 'release_bot_x86',
       'Linux32 Debug (ARM)': 'debug_bot_arm',
       'Linux32 Release (ARM)': 'release_bot_arm',
@@ -64,16 +64,15 @@
       'Android32 Builder MIPS (dbg)': 'android_debug_static_bot_mipsel',
 
       # Windows
-      'Win32 Debug': 'debug_bot_x86',
-      'Win32 Release': 'release_bot_x86',
-      'Win64 Debug': 'debug_bot_x64',
-      'Win64 Release': 'release_bot_x64',
+      'Win32 Debug': 'win_msvc_debug_bot_x86',
+      'Win32 Release': 'win_msvc_release_bot_x86',
+      'Win64 Debug': 'win_msvc_debug_bot_x64',
+      'Win64 Release': 'win_msvc_release_bot_x64',
       'Win32 Debug (Clang)': 'win_clang_debug_bot_x86',
       'Win32 Release (Clang)': 'win_clang_release_bot_x86',
       'Win64 Debug (Clang)': 'win_clang_debug_bot_x64',
       'Win64 Release (Clang)': 'win_clang_release_bot_x64',
       'Win32 ASan': 'win_asan_clang_release_bot_x86',
-      'Win32 Release (MSVC)': 'win_msvc_release_bot_x86',
       'Win32 Release [large tests]': 'release_bot_x86',
     },
     'client.webrtc.branches': {
@@ -166,7 +165,7 @@
       'linux_rel': 'release_bot_x64',
       'linux_arm64_dbg': 'debug_bot_arm64',
       'linux_arm64_rel': 'release_bot_arm64',
-      'linux32_dbg': 'debug_bot_x86',
+      'linux32_dbg': 'no_h264_debug_bot_x86',
       'linux32_rel': 'release_bot_x86',
       'linux32_arm_dbg': 'debug_bot_arm',
       'linux32_arm_rel': 'release_bot_arm',
@@ -200,16 +199,15 @@
       'win_compile_rel': 'release_bot_x86',
       'win_compile_x64_dbg': 'debug_bot_x64',
       'win_compile_x64_rel': 'release_bot_x64',
-      'win_dbg': 'debug_bot_x86',
-      'win_rel': 'release_bot_x86',
-      'win_x64_dbg': 'debug_bot_x64',
-      'win_x64_rel': 'release_bot_x64',
+      'win_dbg': 'win_msvc_debug_bot_x86',
+      'win_rel': 'win_msvc_release_bot_x86',
+      'win_x64_dbg': 'win_msvc_debug_bot_x64',
+      'win_x64_rel': 'win_msvc_release_bot_x64',
       'win_clang_dbg': 'win_clang_debug_bot_x86',
       'win_clang_rel': 'win_clang_release_bot_x86',
       'win_x64_clang_dbg': 'win_clang_debug_bot_x64',
       'win_x64_clang_rel': 'win_clang_release_bot_x64',
       'win_asan': 'win_asan_clang_release_bot_x86',
-      'win_msvc_rel': 'win_msvc_release_bot_x86',
       'win_baremetal': 'release_bot_x86',
       'win_experimental': 'release_bot_x86',
       'win_x64_win8': 'debug_bot_x64',
@@ -256,6 +254,9 @@
     ],
     'debug_bot_x86': [
       'gn', 'openh264_debug_bot', 'x86'
+    ],
+    'no_h264_debug_bot_x86': [
+      'gn', 'debug_bot', 'x86'
     ],
     'release_bot_x86': [
       'gn', 'openh264_release_bot', 'x86'
@@ -304,8 +305,17 @@
     'win_clang_release_bot_x64': [
       'gn', 'clang', 'openh264_release_bot', 'x64',
     ],
+    'win_msvc_debug_bot_x86': [
+      'gn', 'no_clang', 'openh264_debug_bot', 'x86',
+    ],
     'win_msvc_release_bot_x86': [
       'gn', 'no_clang', 'openh264_release_bot', 'x86',
+    ],
+    'win_msvc_debug_bot_x64': [
+      'gn', 'no_clang', 'openh264_debug_bot', 'x64',
+    ],
+    'win_msvc_release_bot_x64': [
+      'gn', 'no_clang', 'openh264_release_bot', 'x64',
     ],
     'win_asan_clang_release_bot_x86': [
       'gn', 'asan', 'clang',  'full_symbols', 'openh264_release_bot', 'x86',
@@ -378,6 +388,7 @@
       'gn_args': 'is_asan=true',
     },
 
+    # is_clang=true by default, this is only to guard from upstream changes.
     'clang': {
       'gn_args': 'is_clang=true',
     },

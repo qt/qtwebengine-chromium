@@ -170,6 +170,8 @@ struct Uniform : public VariableWithLocation
 
     int binding;
     int offset;
+    bool readonly;
+    bool writeonly;
 
     // Decide whether two uniforms are the same at shader link time,
     // assuming one from vertex shader and the other from fragment shader.
@@ -224,7 +226,7 @@ struct Varying : public VariableWithLocation
 {
     Varying();
     ~Varying();
-    Varying(const Varying &otherg);
+    Varying(const Varying &other);
     Varying &operator=(const Varying &other);
     bool operator==(const Varying &other) const;
     bool operator!=(const Varying &other) const
@@ -270,7 +272,11 @@ struct InterfaceBlock
     std::string instanceName;
     unsigned int arraySize;
     BlockLayoutType layout;
+
+    // Deprecated. Matrix packing should only be queried from individual fields of the block.
+    // TODO(oetuaho): Remove this once it is no longer used in Chromium.
     bool isRowMajorLayout;
+
     int binding;
     bool staticUse;
     BlockType blockType;

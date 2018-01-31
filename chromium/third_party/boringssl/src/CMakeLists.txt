@@ -1,5 +1,11 @@
 cmake_minimum_required (VERSION 2.8.11)
 
+# Report AppleClang separately from Clang. Their version numbers are different.
+# https://cmake.org/cmake/help/v3.0/policy/CMP0025.html
+if(POLICY CMP0025)
+  cmake_policy(SET CMP0025 NEW)
+endif()
+
 # Defer enabling C and CXX languages.
 project (BoringSSL NONE)
 
@@ -61,6 +67,18 @@ if(CMAKE_COMPILER_IS_GNUCXX OR CLANG)
     # GCC (at least 4.8.4) has a bug where it'll find unreachable free() calls
     # and declare that the code is trying to free a stack pointer.
     set(C_CXX_FLAGS "${C_CXX_FLAGS} -Wno-free-nonheap-object")
+  endif()
+
+  if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND
+     NOT "6.0.0" VERSION_GREATER CMAKE_C_COMPILER_VERSION)
+    # Clang's -Wtautological-constant-compare is far too aggressive and does not
+    # account for, say, wanting the same code to work on both 32-bit and 64-bit
+    # platforms.
+    #
+    # Note "Clang" and "AppleClang" version differently, so we check for an
+    # exact match on the COMPILER_ID. As of writing, the warning is not in any
+    # release of AppleClang yet.
+    set(C_CXX_FLAGS "${C_CXX_FLAGS} -Wno-tautological-constant-compare -Wtautological-constant-out-of-range-compare")
   endif()
 
   if(CLANG OR NOT "7.0.0" VERSION_GREATER CMAKE_C_COMPILER_VERSION)
@@ -321,11 +339,11 @@ else()
   message(FATAL_ERROR "Unknown processor:" ${CMAKE_SYSTEM_PROCESSOR})
 endif()
 
-if (ANDROID AND ${ARCH} STREQUAL "arm")
-  # The Android-NDK CMake files somehow fail to set the -march flag for
-  # assembly files. Without this flag, the compiler believes that it's
+if (ANDROID AND NOT ANDROID_NDK_REVISION AND ${ARCH} STREQUAL "arm")
+  # The third-party Android-NDK CMake files somehow fail to set the -march flag
+  # for assembly files. Without this flag, the compiler believes that it's
   # building for ARMv5.
-  set(CMAKE_ASM_FLAGS "${CMAKE_ASM_FLAGS} -march=${CMAKE_SYSTEM_PROCESSOR}")
+  set(CMAKE_ASM_FLAGS "-march=${CMAKE_SYSTEM_PROCESSOR} ${CMAKE_ASM_FLAGS}")
 endif()
 
 if (${ARCH} STREQUAL "x86" AND APPLE AND ${CMAKE_VERSION} VERSION_LESS "3.0")
@@ -337,8 +355,8 @@ endif()
 
 # Add minimal googletest targets. The provided one has many side-effects, and
 # googletest has a very straightforward build.
-add_library(gtest third_party/googletest/src/gtest-all.cc)
-target_include_directories(gtest PRIVATE third_party/googletest)
+add_library(boringssl_gtest third_party/googletest/src/gtest-all.cc)
+target_include_directories(boringssl_gtest PRIVATE third_party/googletest)
 
 include_directories(third_party/googletest/include)
 

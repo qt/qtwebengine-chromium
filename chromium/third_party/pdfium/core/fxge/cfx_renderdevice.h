@@ -12,11 +12,12 @@
 #include "core/fxcrt/unowned_ptr.h"
 #include "core/fxge/cfx_color.h"
 #include "core/fxge/fx_dib.h"
-#include "core/fxge/fx_font.h"
 
+class CFX_DIBitmap;
 class CFX_Font;
 class CFX_GraphStateData;
 class CFX_ImageRenderer;
+class IFX_PauseIndicator;
 class IFX_RenderDeviceDriver;
 
 #define FXDC_DEVICE_CLASS 1
@@ -113,10 +114,8 @@ class CFX_RenderDevice {
   int GetRenderCaps() const { return m_RenderCaps; }
   int GetDeviceCaps(int id) const;
   CFX_Matrix GetCTM() const;
-  RetainPtr<CFX_DIBitmap> GetBitmap() const { return m_pBitmap; }
-  void SetBitmap(const RetainPtr<CFX_DIBitmap>& pBitmap) {
-    m_pBitmap = pBitmap;
-  }
+  RetainPtr<CFX_DIBitmap> GetBitmap() const;
+  void SetBitmap(const RetainPtr<CFX_DIBitmap>& pBitmap);
   bool CreateCompatibleBitmap(const RetainPtr<CFX_DIBitmap>& pDIB,
                               int width,
                               int height) const;

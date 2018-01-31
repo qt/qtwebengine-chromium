@@ -20,9 +20,10 @@ namespace sh
 
 namespace
 {
+
 void error(const TIntermSymbol &symbol, const char *reason, TDiagnostics *diagnostics)
 {
-    diagnostics->error(symbol.getLine(), reason, symbol.getSymbol().c_str());
+    diagnostics->error(symbol.getLine(), reason, symbol.getName().c_str());
 }
 
 class ValidateOutputsTraverser : public TIntermTraverser
@@ -43,7 +44,7 @@ class ValidateOutputsTraverser : public TIntermTraverser
     OutputVector mOutputs;
     OutputVector mUnspecifiedLocationOutputs;
     OutputVector mYuvOutputs;
-    std::set<std::string> mVisitedSymbols;
+    std::set<int> mVisitedSymbols;  // Visited symbol ids.
 };
 
 ValidateOutputsTraverser::ValidateOutputsTraverser(const TExtensionBehavior &extBehavior,
@@ -58,14 +59,15 @@ ValidateOutputsTraverser::ValidateOutputsTraverser(const TExtensionBehavior &ext
 
 void ValidateOutputsTraverser::visitSymbol(TIntermSymbol *symbol)
 {
-    TString name         = symbol->getSymbol();
-    TQualifier qualifier = symbol->getQualifier();
-
-    if (mVisitedSymbols.count(name.c_str()) == 1)
+    if (symbol->variable().symbolType() == SymbolType::Empty)
         return;
 
-    mVisitedSymbols.insert(name.c_str());
+    if (mVisitedSymbols.count(symbol->uniqueId().get()) == 1)
+        return;
 
+    mVisitedSymbols.insert(symbol->uniqueId().get());
+
+    TQualifier qualifier = symbol->getQualifier();
     if (qualifier == EvqFragmentOut)
     {
         if (symbol->getType().getLayoutQualifier().location != -1)
@@ -111,7 +113,7 @@ void ValidateOutputsTraverser::validate(TDiagnostics *diagnostics) const
                 {
                     std::stringstream strstr;
                     strstr << "conflicting output locations with previously defined output '"
-                           << validOutputs[offsetLocation]->getSymbol() << "'";
+                           << validOutputs[offsetLocation]->getName() << "'";
                     error(*symbol, strstr.str().c_str(), diagnostics);
                 }
                 else

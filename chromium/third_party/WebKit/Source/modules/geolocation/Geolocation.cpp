@@ -108,8 +108,7 @@ Geolocation::Geolocation(ExecutionContext* context)
     : ContextLifecycleObserver(context),
       PageVisibilityObserver(GetDocument()->GetPage()) {}
 
-Geolocation::~Geolocation() {
-}
+Geolocation::~Geolocation() = default;
 
 void Geolocation::Trace(blink::Visitor* visitor) {
   visitor->Trace(one_shots_);
@@ -495,16 +494,16 @@ void Geolocation::UpdateGeolocationConnection() {
       mojo::MakeRequest(&geolocation_),
       Frame::HasTransientUserActivation(GetFrame()));
 
-  geolocation_.set_connection_error_handler(ConvertToBaseCallback(WTF::Bind(
-      &Geolocation::OnGeolocationConnectionError, WrapWeakPersistent(this))));
+  geolocation_.set_connection_error_handler(WTF::Bind(
+      &Geolocation::OnGeolocationConnectionError, WrapWeakPersistent(this)));
   if (enable_high_accuracy_)
     geolocation_->SetHighAccuracy(true);
   QueryNextPosition();
 }
 
 void Geolocation::QueryNextPosition() {
-  geolocation_->QueryNextPosition(ConvertToBaseCallback(
-      WTF::Bind(&Geolocation::OnPositionUpdated, WrapPersistent(this))));
+  geolocation_->QueryNextPosition(
+      WTF::Bind(&Geolocation::OnPositionUpdated, WrapPersistent(this)));
 }
 
 void Geolocation::OnPositionUpdated(
@@ -526,7 +525,8 @@ void Geolocation::PageVisibilityChanged() {
 }
 
 bool Geolocation::HasPendingActivity() const {
-  return !one_shots_.IsEmpty() || !one_shots_being_invoked_.IsEmpty();
+  return !one_shots_.IsEmpty() || !one_shots_being_invoked_.IsEmpty() ||
+         !watchers_.IsEmpty() || !watchers_being_invoked_.IsEmpty();
 }
 
 void Geolocation::OnGeolocationConnectionError() {

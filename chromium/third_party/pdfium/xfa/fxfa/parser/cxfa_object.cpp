@@ -9,11 +9,13 @@
 #include <utility>
 
 #include "core/fxcrt/fx_extension.h"
+#include "fxjs/cfxjse_engine.h"
 #include "fxjs/cfxjse_value.h"
+#include "third_party/base/ptr_util.h"
 #include "xfa/fxfa/cxfa_ffnotify.h"
 #include "xfa/fxfa/parser/cxfa_document.h"
 #include "xfa/fxfa/parser/cxfa_node.h"
-#include "xfa/fxfa/parser/cxfa_nodelist.h"
+#include "xfa/fxfa/parser/cxfa_treelist.h"
 
 CXFA_Object::CXFA_Object(CXFA_Document* pDocument,
                          XFA_ObjectType objectType,
@@ -30,20 +32,32 @@ CXFA_Object::CXFA_Object(CXFA_Document* pDocument,
 
 CXFA_Object::~CXFA_Object() {}
 
+WideString CXFA_Object::GetSOMExpression() {
+  CFXJSE_Engine* pScriptContext = m_pDocument->GetScriptContext();
+  if (!pScriptContext)
+    return WideString();
+
+  return pScriptContext->GetSomExpression(ToNode(this));
+}
+
 CXFA_Node* CXFA_Object::AsNode() {
   return IsNode() ? static_cast<CXFA_Node*>(this) : nullptr;
 }
 
-CXFA_NodeList* CXFA_Object::AsNodeList() {
-  return IsNodeList() ? static_cast<CXFA_NodeList*>(this) : nullptr;
+CXFA_TreeList* CXFA_Object::AsTreeList() {
+  return IsTreeList() ? static_cast<CXFA_TreeList*>(this) : nullptr;
 }
 
 const CXFA_Node* CXFA_Object::AsNode() const {
   return IsNode() ? static_cast<const CXFA_Node*>(this) : nullptr;
 }
 
-const CXFA_NodeList* CXFA_Object::AsNodeList() const {
-  return IsNodeList() ? static_cast<const CXFA_NodeList*>(this) : nullptr;
+const CXFA_TreeList* CXFA_Object::AsTreeList() const {
+  return IsTreeList() ? static_cast<const CXFA_TreeList*>(this) : nullptr;
+}
+
+void CXFA_Object::CreateWidgetAcc() {
+  acc_ = pdfium::MakeUnique<CXFA_WidgetAcc>(AsNode());
 }
 
 CXFA_Node* ToNode(CXFA_Object* pObj) {

@@ -47,8 +47,7 @@ bool ValidateDrawAttribs(ValidationContext *context,
     const VertexArray *vao     = state.getVertexArray();
     const auto &vertexAttribs  = vao->getVertexAttributes();
     const auto &vertexBindings = vao->getVertexBindings();
-    size_t maxEnabledAttrib    = vao->getMaxEnabledAttribute();
-    for (size_t attributeIndex = 0; attributeIndex < maxEnabledAttrib; ++attributeIndex)
+    for (size_t attributeIndex : vao->getEnabledAttributesMask())
     {
         const VertexAttribute &attrib = vertexAttribs[attributeIndex];
 
@@ -397,18 +396,13 @@ bool ValidateFragmentShaderColorBufferTypeMatch(ValidationContext *context)
     const Program *program         = context->getGLState().getProgram();
     const Framebuffer *framebuffer = context->getGLState().getDrawFramebuffer();
 
-    const auto &programOutputTypes = program->getOutputVariableTypes();
-    for (size_t drawBufferIdx = 0; drawBufferIdx < programOutputTypes.size(); drawBufferIdx++)
+    if (!ComponentTypeMask::Validate(program->getDrawBufferTypeMask().to_ulong(),
+                                     framebuffer->getDrawBufferTypeMask().to_ulong(),
+                                     program->getActiveOutputVariables().to_ulong(),
+                                     framebuffer->getDrawBufferMask().to_ulong()))
     {
-        GLenum outputType = programOutputTypes[drawBufferIdx];
-        GLenum inputType  = framebuffer->getDrawbufferWriteType(drawBufferIdx);
-        if (outputType != GL_NONE && inputType != GL_NONE && inputType != outputType)
-        {
-            context->handleError(InvalidOperation() << "Fragment shader output type does not "
-                                                       "match the bound framebuffer attachment "
-                                                       "type.");
-            return false;
-        }
+        ANGLE_VALIDATION_ERR(context, InvalidOperation(), DrawBufferTypeMismatch);
+        return false;
     }
 
     return true;
@@ -419,32 +413,21 @@ bool ValidateVertexShaderAttributeTypeMatch(ValidationContext *context)
     const auto &glState       = context->getGLState();
     const Program *program = context->getGLState().getProgram();
     const VertexArray *vao = context->getGLState().getVertexArray();
-    const auto &vertexAttribs = vao->getVertexAttributes();
-    const auto &currentValues = glState.getVertexAttribCurrentValues();
 
-    for (const sh::Attribute &shaderAttribute : program->getAttributes())
+    unsigned long stateCurrentValuesTypeBits = glState.getCurrentValuesTypeMask().to_ulong();
+    unsigned long vaoAttribTypeBits          = vao->getAttributesTypeMask().to_ulong();
+    unsigned long vaoAttribEnabledMask       = vao->getAttributesMask().to_ulong();
+
+    vaoAttribEnabledMask |= vaoAttribEnabledMask << MAX_COMPONENT_TYPE_MASK_INDEX;
+    vaoAttribTypeBits = (vaoAttribEnabledMask & vaoAttribTypeBits);
+    vaoAttribTypeBits |= (~vaoAttribEnabledMask & stateCurrentValuesTypeBits);
+
+    if (!ComponentTypeMask::Validate(program->getAttributesTypeMask().to_ulong(), vaoAttribTypeBits,
+                                     program->getAttributesMask().to_ulong(), 0xFFFF))
     {
-        // gl_VertexID and gl_InstanceID are active attributes but don't have a bound attribute.
-        if (shaderAttribute.isBuiltIn())
-        {
-            continue;
-        }
-
-        GLenum shaderInputType = VariableComponentType(shaderAttribute.type);
-
-        const auto &attrib = vertexAttribs[shaderAttribute.location];
-        GLenum vertexType  = attrib.enabled ? GetVertexAttributeBaseType(attrib)
-                                           : currentValues[shaderAttribute.location].Type;
-
-        if (shaderInputType != GL_NONE && vertexType != GL_NONE && shaderInputType != vertexType)
-        {
-            context->handleError(InvalidOperation() << "Vertex shader input type does not "
-                                                       "match the type of the bound vertex "
-                                                       "attribute.");
-            return false;
-        }
+        ANGLE_VALIDATION_ERR(context, InvalidOperation(), VertexShaderTypeMismatch);
+        return false;
     }
-
     return true;
 }
 
@@ -649,36 +632,6 @@ bool ValidFramebufferTarget(const ValidationContext *context, GLenum target)
         case GL_DRAW_FRAMEBUFFER:
             return (context->getExtensions().framebufferBlit ||
                     context->getClientMajorVersion() >= 3);
-
-        default:
-            return false;
-    }
-}
-
-bool ValidBufferType(const ValidationContext *context, BufferBinding target)
-{
-    switch (target)
-    {
-        case BufferBinding::ElementArray:
-        case BufferBinding::Array:
-            return true;
-
-        case BufferBinding::PixelPack:
-        case BufferBinding::PixelUnpack:
-            return (context->getExtensions().pixelBufferObject ||
-                    context->getClientMajorVersion() >= 3);
-
-        case BufferBinding::CopyRead:
-        case BufferBinding::CopyWrite:
-        case BufferBinding::TransformFeedback:
-        case BufferBinding::Uniform:
-            return (context->getClientMajorVersion() >= 3);
-
-        case BufferBinding::AtomicCounter:
-        case BufferBinding::ShaderStorage:
-        case BufferBinding::DrawIndirect:
-        case BufferBinding::DispatchIndirect:
-            return context->getClientVersion() >= Version(3, 1);
 
         default:
             return false;
@@ -1195,7 +1148,7 @@ bool ValidateFramebufferRenderbufferParameters(gl::Context *context,
     return true;
 }
 
-bool ValidateBlitFramebufferParameters(ValidationContext *context,
+bool ValidateBlitFramebufferParameters(Context *context,
                                        GLint srcX0,
                                        GLint srcY0,
                                        GLint srcX1,
@@ -1389,9 +1342,9 @@ bool ValidateBlitFramebufferParameters(ValidationContext *context,
         if (mask & masks[i])
         {
             const gl::FramebufferAttachment *readBuffer =
-                readFramebuffer->getAttachment(attachments[i]);
+                readFramebuffer->getAttachment(context, attachments[i]);
             const gl::FramebufferAttachment *drawBuffer =
-                drawFramebuffer->getAttachment(attachments[i]);
+                drawFramebuffer->getAttachment(context, attachments[i]);
 
             if (readBuffer && drawBuffer)
             {
@@ -2541,8 +2494,7 @@ bool ValidateDrawBase(ValidationContext *context, GLenum mode, GLsizei count)
     // vertex shader stage or fragment shader stage is a undefined behaviour.
     // But ANGLE should clearly generate an INVALID_OPERATION error instead of
     // produce undefined result.
-    if (program->isLinked() &&
-        (!program->hasLinkedVertexShader() || !program->hasLinkedFragmentShader()))
+    if (!program->hasLinkedVertexShader() || !program->hasLinkedFragmentShader())
     {
         context->handleError(InvalidOperation() << "It is a undefined behaviour to render without "
                                                    "vertex shader stage or fragment shader stage.");
@@ -3204,8 +3156,15 @@ bool ValidateDiscardFramebufferBase(Context *context,
 
 bool ValidateInsertEventMarkerEXT(Context *context, GLsizei length, const char *marker)
 {
-    // Note that debug marker calls must not set error state
+    if (!context->getExtensions().debugMarker)
+    {
+        // The debug marker calls should not set error state
+        // However, it seems reasonable to set an error state if the extension is not enabled
+        ANGLE_VALIDATION_ERR(context, InvalidOperation(), ExtensionNotEnabled);
+        return false;
+    }
 
+    // Note that debug marker calls must not set error state
     if (length < 0)
     {
         return false;
@@ -3221,8 +3180,15 @@ bool ValidateInsertEventMarkerEXT(Context *context, GLsizei length, const char *
 
 bool ValidatePushGroupMarkerEXT(Context *context, GLsizei length, const char *marker)
 {
-    // Note that debug marker calls must not set error state
+    if (!context->getExtensions().debugMarker)
+    {
+        // The debug marker calls should not set error state
+        // However, it seems reasonable to set an error state if the extension is not enabled
+        ANGLE_VALIDATION_ERR(context, InvalidOperation(), ExtensionNotEnabled);
+        return false;
+    }
 
+    // Note that debug marker calls must not set error state
     if (length < 0)
     {
         return false;
@@ -3236,9 +3202,7 @@ bool ValidatePushGroupMarkerEXT(Context *context, GLsizei length, const char *ma
     return true;
 }
 
-bool ValidateEGLImageTargetTexture2DOES(Context *context,
-                                        GLenum target,
-                                        egl::Image *image)
+bool ValidateEGLImageTargetTexture2DOES(Context *context, GLenum target, GLeglImageOES image)
 {
     if (!context->getExtensions().eglImage && !context->getExtensions().eglImageExternal)
     {
@@ -3269,14 +3233,16 @@ bool ValidateEGLImageTargetTexture2DOES(Context *context,
             return false;
     }
 
+    egl::Image *imageObject = reinterpret_cast<egl::Image *>(image);
+
     ASSERT(context->getCurrentDisplay());
-    if (!context->getCurrentDisplay()->isValidImage(image))
+    if (!context->getCurrentDisplay()->isValidImage(imageObject))
     {
         context->handleError(InvalidValue() << "EGL image is not valid.");
         return false;
     }
 
-    if (image->getSamples() > 0)
+    if (imageObject->getSamples() > 0)
     {
         context->handleError(InvalidOperation()
                              << "cannot create a 2D texture from a multisampled EGL image.");
@@ -3284,7 +3250,7 @@ bool ValidateEGLImageTargetTexture2DOES(Context *context,
     }
 
     const TextureCaps &textureCaps =
-        context->getTextureCaps().get(image->getFormat().info->sizedInternalFormat);
+        context->getTextureCaps().get(imageObject->getFormat().info->sizedInternalFormat);
     if (!textureCaps.texturable)
     {
         context->handleError(InvalidOperation()
@@ -3297,7 +3263,7 @@ bool ValidateEGLImageTargetTexture2DOES(Context *context,
 
 bool ValidateEGLImageTargetRenderbufferStorageOES(Context *context,
                                                   GLenum target,
-                                                  egl::Image *image)
+                                                  GLeglImageOES image)
 {
     if (!context->getExtensions().eglImage)
     {
@@ -3315,15 +3281,17 @@ bool ValidateEGLImageTargetRenderbufferStorageOES(Context *context,
             return false;
     }
 
+    egl::Image *imageObject = reinterpret_cast<egl::Image *>(image);
+
     ASSERT(context->getCurrentDisplay());
-    if (!context->getCurrentDisplay()->isValidImage(image))
+    if (!context->getCurrentDisplay()->isValidImage(imageObject))
     {
         context->handleError(InvalidValue() << "EGL image is not valid.");
         return false;
     }
 
     const TextureCaps &textureCaps =
-        context->getTextureCaps().get(image->getFormat().info->sizedInternalFormat);
+        context->getTextureCaps().get(imageObject->getFormat().info->sizedInternalFormat);
     if (!textureCaps.renderable)
     {
         context->handleError(InvalidOperation()
@@ -3503,7 +3471,7 @@ bool ValidateGetBufferPointervBase(Context *context,
         return false;
     }
 
-    if (!ValidBufferType(context, target))
+    if (!context->isValidBufferBinding(target))
     {
         context->handleError(InvalidEnum() << "Buffer target not valid");
         return false;
@@ -3539,7 +3507,7 @@ bool ValidateGetBufferPointervBase(Context *context,
 
 bool ValidateUnmapBufferBase(Context *context, BufferBinding target)
 {
-    if (!ValidBufferType(context, target))
+    if (!context->isValidBufferBinding(target))
     {
         ANGLE_VALIDATION_ERR(context, InvalidEnum(), InvalidBufferTypes);
         return false;
@@ -3562,7 +3530,7 @@ bool ValidateMapBufferRangeBase(Context *context,
                                 GLsizeiptr length,
                                 GLbitfield access)
 {
-    if (!ValidBufferType(context, target))
+    if (!context->isValidBufferBinding(target))
     {
         ANGLE_VALIDATION_ERR(context, InvalidEnum(), InvalidBufferTypes);
         return false;
@@ -3669,7 +3637,7 @@ bool ValidateFlushMappedBufferRangeBase(Context *context,
         return false;
     }
 
-    if (!ValidBufferType(context, target))
+    if (!context->isValidBufferBinding(target))
     {
         ANGLE_VALIDATION_ERR(context, InvalidEnum(), InvalidBufferTypes);
         return false;
@@ -3745,7 +3713,7 @@ bool ValidateRobustBufferSize(ValidationContext *context, GLsizei bufSize, GLsiz
     return true;
 }
 
-bool ValidateGetFramebufferAttachmentParameterivBase(ValidationContext *context,
+bool ValidateGetFramebufferAttachmentParameterivBase(Context *context,
                                                      GLenum target,
                                                      GLenum attachment,
                                                      GLenum pname,
@@ -3895,7 +3863,7 @@ bool ValidateGetFramebufferAttachmentParameterivBase(ValidationContext *context,
         }
     }
 
-    const FramebufferAttachment *attachmentObject = framebuffer->getAttachment(attachment);
+    const FramebufferAttachment *attachmentObject = framebuffer->getAttachment(context, attachment);
     if (attachmentObject)
     {
         ASSERT(attachmentObject->type() == GL_RENDERBUFFER ||
@@ -4007,7 +3975,7 @@ bool ValidateGetFramebufferAttachmentParameterivBase(ValidationContext *context,
     return true;
 }
 
-bool ValidateGetFramebufferAttachmentParameterivRobustANGLE(ValidationContext *context,
+bool ValidateGetFramebufferAttachmentParameterivRobustANGLE(Context *context,
                                                             GLenum target,
                                                             GLenum attachment,
                                                             GLenum pname,
@@ -4710,7 +4678,7 @@ bool ValidateGetBufferParameterBase(ValidationContext *context,
         *numParams = 0;
     }
 
-    if (!ValidBufferType(context, target))
+    if (!context->isValidBufferBinding(target))
     {
         ANGLE_VALIDATION_ERR(context, InvalidEnum(), InvalidBufferTypes);
         return false;

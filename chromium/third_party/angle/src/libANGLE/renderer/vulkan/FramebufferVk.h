@@ -15,6 +15,7 @@
 
 namespace rx
 {
+class RendererVk;
 class RenderTargetVk;
 class WindowSurfaceVk;
 
@@ -83,24 +84,21 @@ class FramebufferVk : public FramebufferImpl, public ResourceVk
 
     gl::Error getSamplePosition(size_t index, GLfloat *xy) const override;
 
-    gl::Error beginRenderPass(const gl::Context *context,
-                              VkDevice device,
-                              vk::CommandBuffer *commandBuffer,
-                              Serial queueSerial);
-
-    gl::ErrorOrResult<vk::RenderPass *> getRenderPass(const gl::Context *context, VkDevice device);
+    const vk::RenderPassDesc &getRenderPassDesc(const gl::Context *context);
+    gl::Error getRenderNode(const gl::Context *context, vk::CommandBufferNode **nodeOut);
 
   private:
     FramebufferVk(const gl::FramebufferState &state);
     FramebufferVk(const gl::FramebufferState &state, WindowSurfaceVk *backbuffer);
 
     gl::ErrorOrResult<vk::Framebuffer *> getFramebuffer(const gl::Context *context,
-                                                        VkDevice device);
+                                                        RendererVk *rendererVk);
 
     WindowSurfaceVk *mBackbuffer;
 
-    vk::RenderPass mRenderPass;
+    Optional<vk::RenderPassDesc> mRenderPassDesc;
     vk::Framebuffer mFramebuffer;
+    Serial mLastRenderNodeSerial;
 };
 
 }  // namespace rx

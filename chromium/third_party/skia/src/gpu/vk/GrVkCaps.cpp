@@ -6,6 +6,8 @@
  */
 
 #include "GrVkCaps.h"
+
+#include "GrBackendSurface.h"
 #include "GrRenderTargetProxy.h"
 #include "GrShaderCaps.h"
 #include "GrVkUtil.h"
@@ -214,7 +216,8 @@ void GrVkCaps::initShaderCaps(const VkPhysicalDeviceProperties& properties, uint
             shaderCaps->fConfigTextureSwizzle[i] = GrSwizzle::RRRR();
             shaderCaps->fConfigOutputSwizzle[i] = GrSwizzle::AAAA();
         } else {
-            if (kGray_8_GrPixelConfig == config) {
+            if (kGray_8_GrPixelConfig == config ||
+                kGray_8_as_Red_GrPixelConfig == config) {
                 shaderCaps->fConfigTextureSwizzle[i] = GrSwizzle::RRRA();
             } else if (kRGBA_4444_GrPixelConfig == config) {
                 // The vulkan spec does not require R4G4B4A4 to be supported for texturing so we
@@ -410,5 +413,69 @@ int GrVkCaps::getSampleCount(int requestedCount, GrPixelConfig config) const {
         }
     }
     return fConfigTable[config].fColorSampleCounts[count-1];
+}
+
+bool validate_image_info(const GrVkImageInfo* imageInfo, SkColorType ct, GrPixelConfig* config) {
+    if (!imageInfo) {
+        return false;
+    }
+    VkFormat format = imageInfo->fFormat;
+    *config = kUnknown_GrPixelConfig;
+
+    switch (ct) {
+        case kUnknown_SkColorType:
+            return false;
+        case kAlpha_8_SkColorType:
+            if (VK_FORMAT_R8_UNORM == format) {
+                *config = kAlpha_8_as_Red_GrPixelConfig;
+            }
+            break;
+        case kRGB_565_SkColorType:
+            if (VK_FORMAT_R5G6B5_UNORM_PACK16 == format) {
+                *config = kRGB_565_GrPixelConfig;
+            }
+            break;
+        case kARGB_4444_SkColorType:
+            if (VK_FORMAT_B4G4R4A4_UNORM_PACK16 == format) {
+                *config = kRGBA_4444_GrPixelConfig;
+            }
+            break;
+        case kRGBA_8888_SkColorType:
+            if (VK_FORMAT_R8G8B8A8_UNORM == format) {
+                *config = kRGBA_8888_GrPixelConfig;
+            } else if (VK_FORMAT_R8G8B8A8_SRGB == format) {
+                *config = kSRGBA_8888_GrPixelConfig;
+            }
+            break;
+        case kBGRA_8888_SkColorType:
+            if (VK_FORMAT_B8G8R8A8_UNORM == format) {
+                *config = kBGRA_8888_GrPixelConfig;
+            } else if (VK_FORMAT_B8G8R8A8_SRGB == format) {
+                *config = kSBGRA_8888_GrPixelConfig;
+            }
+            break;
+        case kGray_8_SkColorType:
+            if (VK_FORMAT_R8_UNORM == format) {
+                *config = kGray_8_as_Red_GrPixelConfig;
+            }
+            break;
+        case kRGBA_F16_SkColorType:
+            if (VK_FORMAT_R16G16B16A16_SFLOAT == format) {
+                *config = kRGBA_half_GrPixelConfig;
+            }
+            break;
+    }
+
+    return kUnknown_GrPixelConfig != *config;
+}
+
+bool GrVkCaps::validateBackendTexture(const GrBackendTexture& tex, SkColorType ct,
+                                      GrPixelConfig* config) const {
+    return validate_image_info(tex.getVkImageInfo(), ct, config);
+}
+
+bool GrVkCaps::validateBackendRenderTarget(const GrBackendRenderTarget& rt, SkColorType ct,
+                                           GrPixelConfig* config) const {
+    return validate_image_info(rt.getVkImageInfo(), ct, config);
 }
 

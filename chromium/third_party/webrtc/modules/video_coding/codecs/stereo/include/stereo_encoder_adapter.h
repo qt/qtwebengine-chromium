@@ -11,9 +11,11 @@
 #ifndef MODULES_VIDEO_CODING_CODECS_STEREO_INCLUDE_STEREO_ENCODER_ADAPTER_H_
 #define MODULES_VIDEO_CODING_CODECS_STEREO_INCLUDE_STEREO_ENCODER_ADAPTER_H_
 
+#include <map>
 #include <memory>
 #include <vector>
 
+#include "api/video_codecs/sdp_video_format.h"
 #include "api/video_codecs/video_encoder.h"
 #include "api/video_codecs/video_encoder_factory.h"
 #include "modules/video_coding/include/video_codec_interface.h"
@@ -29,7 +31,8 @@ enum AlphaCodecStream {
 class StereoEncoderAdapter : public VideoEncoder {
  public:
   // |factory| is not owned and expected to outlive this class' lifetime.
-  explicit StereoEncoderAdapter(VideoEncoderFactory* factory);
+  explicit StereoEncoderAdapter(VideoEncoderFactory* factory,
+                                const SdpVideoFormat& associated_format);
   virtual ~StereoEncoderAdapter();
 
   // Implements VideoEncoder
@@ -56,15 +59,17 @@ class StereoEncoderAdapter : public VideoEncoder {
   // Wrapper class that redirects OnEncodedImage() calls.
   class AdapterEncodedImageCallback;
 
-  // Holds the encoded image output of a frame.
-  struct EncodedImageData;
-
   VideoEncoderFactory* const factory_;
+  const SdpVideoFormat associated_format_;
   std::vector<std::unique_ptr<VideoEncoder>> encoders_;
   std::vector<std::unique_ptr<AdapterEncodedImageCallback>> adapter_callbacks_;
   EncodedImageCallback* encoded_complete_callback_;
 
-  uint64_t picture_index_ = 0;
+  // Holds the encoded image info.
+  struct ImageStereoInfo;
+  std::map<uint32_t /* timestamp */, ImageStereoInfo> image_stereo_info_;
+
+  uint16_t picture_index_ = 0;
   std::vector<uint8_t> stereo_dummy_planes_;
 };
 

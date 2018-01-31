@@ -251,41 +251,15 @@ namespace es2
 
 	egl::Image *Device::createDepthStencilSurface(unsigned int width, unsigned int height, sw::Format format, int multiSampleDepth, bool discard)
 	{
+		ASSERT(sw::Surface::isDepth(format) || sw::Surface::isStencil(format));
+
 		if(height > OUTLINE_RESOLUTION)
 		{
 			ERR("Invalid parameters: %dx%d", width, height);
 			return nullptr;
 		}
 
-		bool lockable = true;
-
-		switch(format)
-		{
-	//	case FORMAT_D15S1:
-		case FORMAT_D24S8:
-		case FORMAT_D24X8:
-	//	case FORMAT_D24X4S4:
-		case FORMAT_D24FS8:
-		case FORMAT_D32:
-		case FORMAT_D16:
-		case FORMAT_D32F:
-		case FORMAT_D32F_COMPLEMENTARY:
-			lockable = false;
-			break;
-	//	case FORMAT_S8_LOCKABLE:
-	//	case FORMAT_D16_LOCKABLE:
-		case FORMAT_D32F_LOCKABLE:
-	//	case FORMAT_D32_LOCKABLE:
-		case FORMAT_DF24S8:
-		case FORMAT_DF16S8:
-		case FORMAT_D32FS8_TEXTURE:
-		case FORMAT_D32FS8_SHADOW:
-			lockable = true;
-			break;
-		default:
-			UNREACHABLE(format);
-		}
-
+		bool lockable = !sw::Surface::hasQuadLayout(format);
 		egl::Image *surface = egl::Image::create(width, height, format, multiSampleDepth, lockable);
 
 		if(!surface)
@@ -363,7 +337,7 @@ namespace es2
 		scissorEnable = enable;
 	}
 
-	void Device::setRenderTarget(int index, egl::Image *renderTarget)
+	void Device::setRenderTarget(int index, egl::Image *renderTarget, unsigned int layer)
 	{
 		if(renderTarget)
 		{
@@ -377,10 +351,10 @@ namespace es2
 
 		this->renderTarget[index] = renderTarget;
 
-		Renderer::setRenderTarget(index, renderTarget);
+		Renderer::setRenderTarget(index, renderTarget, layer);
 	}
 
-	void Device::setDepthBuffer(egl::Image *depthBuffer)
+	void Device::setDepthBuffer(egl::Image *depthBuffer, unsigned int layer)
 	{
 		if(this->depthBuffer == depthBuffer)
 		{
@@ -399,10 +373,10 @@ namespace es2
 
 		this->depthBuffer = depthBuffer;
 
-		Renderer::setDepthBuffer(depthBuffer);
+		Renderer::setDepthBuffer(depthBuffer, layer);
 	}
 
-	void Device::setStencilBuffer(egl::Image *stencilBuffer)
+	void Device::setStencilBuffer(egl::Image *stencilBuffer, unsigned int layer)
 	{
 		if(this->stencilBuffer == stencilBuffer)
 		{
@@ -421,7 +395,7 @@ namespace es2
 
 		this->stencilBuffer = stencilBuffer;
 
-		Renderer::setStencilBuffer(stencilBuffer);
+		Renderer::setStencilBuffer(stencilBuffer, layer);
 	}
 
 	void Device::setScissorRect(const sw::Rect &rect)
@@ -454,7 +428,7 @@ namespace es2
 		this->viewport = viewport;
 	}
 
-	void Device::copyBuffer(sw::byte *sourceBuffer, sw::byte *destBuffer, unsigned int width, unsigned int height, unsigned int sourcePitch, unsigned int destPitch, unsigned int bytes, bool flipX, bool flipY)
+	void Device::copyBuffer(byte *sourceBuffer, byte *destBuffer, unsigned int width, unsigned int height, unsigned int sourcePitch, unsigned int destPitch, unsigned int bytes, bool flipX, bool flipY)
 	{
 		if(flipX)
 		{
@@ -463,8 +437,8 @@ namespace es2
 				sourceBuffer += (height - 1) * sourcePitch;
 				for(unsigned int y = 0; y < height; ++y, sourceBuffer -= sourcePitch, destBuffer += destPitch)
 				{
-					sw::byte *srcX = sourceBuffer + (width - 1) * bytes;
-					sw::byte *dstX = destBuffer;
+					byte *srcX = sourceBuffer + (width - 1) * bytes;
+					byte *dstX = destBuffer;
 					for(unsigned int x = 0; x < width; ++x, dstX += bytes, srcX -= bytes)
 					{
 						memcpy(dstX, srcX, bytes);
@@ -475,8 +449,8 @@ namespace es2
 			{
 				for(unsigned int y = 0; y < height; ++y, sourceBuffer += sourcePitch, destBuffer += destPitch)
 				{
-					sw::byte *srcX = sourceBuffer + (width - 1) * bytes;
-					sw::byte *dstX = destBuffer;
+					byte *srcX = sourceBuffer + (width - 1) * bytes;
+					byte *dstX = destBuffer;
 					for(unsigned int x = 0; x < width; ++x, dstX += bytes, srcX -= bytes)
 					{
 						memcpy(dstX, srcX, bytes);
@@ -506,7 +480,7 @@ namespace es2
 		}
 	}
 
-	bool Device::stretchRect(sw::Surface *source, const sw::SliceRect *sourceRect, sw::Surface *dest, const sw::SliceRect *destRect, unsigned char flags)
+	bool Device::stretchRect(sw::Surface *source, const sw::SliceRectF *sourceRect, sw::Surface *dest, const sw::SliceRect *destRect, unsigned char flags)
 	{
 		if(!source || !dest)
 		{
@@ -537,12 +511,16 @@ namespace es2
 			flipY = (destRect->y0 > destRect->y1);
 		}
 
-		SliceRect sRect;
+		SliceRectF sRect;
 		SliceRect dRect;
 
 		if(sourceRect)
 		{
-			sRect = *sourceRect;
+			sRect.x0 = sourceRect->x0;
+			sRect.x1 = sourceRect->x1;
+			sRect.y0 = sourceRect->y0;
+			sRect.y1 = sourceRect->y1;
+			sRect.slice = sourceRect->slice;
 
 			if(sRect.x0 > sRect.x1)
 			{
@@ -556,10 +534,10 @@ namespace es2
 		}
 		else
 		{
-			sRect.y0 = 0;
-			sRect.x0 = 0;
-			sRect.y1 = sHeight;
-			sRect.x1 = sWidth;
+			sRect.y0 = 0.0f;
+			sRect.x0 = 0.0f;
+			sRect.y1 = (float)sHeight;
+			sRect.x1 = (float)sWidth;
 		}
 
 		if(destRect)
@@ -584,21 +562,47 @@ namespace es2
 			dRect.x1 = dWidth;
 		}
 
+		sw::Rect srcClipRect(0, 0, sWidth, sHeight);
+		ClipSrcRect(sRect, dRect, srcClipRect, flipX, flipY);
+
+		sw::Rect dstClipRect(0, 0, dWidth, dHeight);
+		ClipDstRect(sRect, dRect, dstClipRect, flipX, flipY);
+
+		if((sRect.width() == 0) || (sRect.height() == 0) ||
+		   (dRect.width() == 0) || (dRect.height() == 0))
+		{
+			return true; // no work to do
+		}
+
 		if(!validRectangle(&sRect, source) || !validRectangle(&dRect, dest))
 		{
 			ERR("Invalid parameters");
 			return false;
 		}
 
-		bool scaling = (sRect.x1 - sRect.x0 != dRect.x1 - dRect.x0) || (sRect.y1 - sRect.y0 != dRect.y1 - dRect.y0);
+		bool isDepth = (flags & Device::DEPTH_BUFFER) && Surface::isDepth(source->getInternalFormat());
+		bool isStencil = (flags & Device::STENCIL_BUFFER) && Surface::isStencil(source->getInternalFormat());
+		bool isColor = (flags & Device::COLOR_BUFFER) == Device::COLOR_BUFFER;
+
+		if(!isColor && !isDepth && !isStencil)
+		{
+			return true;
+		}
+
+		int sourceSliceB = isStencil ? source->getStencilSliceB() : source->getInternalSliceB();
+		int destSliceB = isStencil ? dest->getStencilSliceB() : dest->getInternalSliceB();
+		int sourcePitchB = isStencil ? source->getStencilPitchB() : source->getInternalPitchB();
+		int destPitchB = isStencil ? dest->getStencilPitchB() : dest->getInternalPitchB();
+
+		bool isOutOfBounds = (sRect.x0 < 0.0f) || (sRect.y0 < 0.0f) || (sRect.x1 > (float)sWidth) || (sRect.y1 > (float)sHeight);
+		bool scaling = (sRect.width() != (float)dRect.width()) || (sRect.height() != (float)dRect.height());
 		bool equalFormats = source->getInternalFormat() == dest->getInternalFormat();
 		bool hasQuadLayout = Surface::hasQuadLayout(source->getInternalFormat()) || Surface::hasQuadLayout(dest->getInternalFormat());
-		bool fullCopy = (sRect.x0 == 0) && (sRect.y0 == 0) && (dRect.x0 == 0) && (dRect.y0 == 0) &&
-		                (sRect.x1 == sWidth) && (sRect.y1 == sHeight) && (dRect.x1 == dWidth) && (dRect.y0 == dHeight);
-		bool isDepth = (flags & Device::DEPTH_BUFFER) && egl::Image::isDepth(source->getInternalFormat());
-		bool isStencil = (flags & Device::STENCIL_BUFFER) && (egl::Image::isDepth(source->getInternalFormat()) || egl::Image::isStencil(source->getInternalFormat()));
-		bool isColor = (flags & Device::COLOR_BUFFER) == Device::COLOR_BUFFER;
+		bool fullCopy = (sRect.x0 == 0.0f) && (sRect.y0 == 0.0f) && (dRect.x0 == 0) && (dRect.y0 == 0) &&
+		                (sRect.x1 == (float)sWidth) && (sRect.y1 == (float)sHeight) && (dRect.x1 == dWidth) && (dRect.y1 == dHeight);
 		bool alpha0xFF = false;
+		bool equalSlice = sourceSliceB == destSliceB;
+		bool smallMargin = sourcePitchB <= source->getWidth() * Surface::bytes(source->getInternalFormat()) + 16;
 
 		if((source->getInternalFormat() == FORMAT_A8R8G8B8 && dest->getInternalFormat() == FORMAT_X8R8G8B8) ||
 		   (source->getInternalFormat() == FORMAT_X8R8G8B8 && dest->getInternalFormat() == FORMAT_A8R8G8B8))
@@ -607,50 +611,46 @@ namespace es2
 			alpha0xFF = true;
 		}
 
-		if((isDepth || isStencil) && !scaling && equalFormats && (!hasQuadLayout || fullCopy))
+		if(fullCopy && !scaling && !isOutOfBounds && equalFormats && !alpha0xFF && equalSlice && smallMargin && !flipX && !flipY)
 		{
-			if(source->hasDepth() && isDepth)
-			{
-				sw::byte *sourceBuffer = (sw::byte*)source->lockInternal(sRect.x0, sRect.y0, 0, LOCK_READONLY, PUBLIC);
-				sw::byte *destBuffer = (sw::byte*)dest->lockInternal(dRect.x0, dRect.y0, 0, LOCK_DISCARD, PUBLIC);
+			byte *sourceBuffer = isStencil ? (byte*)source->lockStencil(0, 0, 0, PUBLIC) : (byte*)source->lockInternal(0, 0, 0, LOCK_READONLY, PUBLIC);
+			byte *destBuffer = isStencil ? (byte*)dest->lockStencil(0, 0, 0, PUBLIC) : (byte*)dest->lockInternal(0, 0, 0, LOCK_DISCARD, PUBLIC);
 
-				copyBuffer(sourceBuffer, destBuffer, dRect.width(), dRect.height(), source->getInternalPitchB(), dest->getInternalPitchB(), egl::Image::bytes(source->getInternalFormat()), flipX, flipY);
+			memcpy(destBuffer, sourceBuffer, sourceSliceB);
 
-				source->unlockInternal();
-				dest->unlockInternal();
-			}
-
-			if(source->hasStencil() && isStencil)
-			{
-				sw::byte *sourceBuffer = (sw::byte*)source->lockStencil(sRect.x0, sRect.y0, 0, PUBLIC);
-				sw::byte *destBuffer = (sw::byte*)dest->lockStencil(dRect.x0, dRect.y0, 0, PUBLIC);
-
-				copyBuffer(sourceBuffer, destBuffer, source->getWidth(), source->getHeight(), source->getStencilPitchB(), dest->getStencilPitchB(), egl::Image::bytes(source->getStencilFormat()), flipX, flipY);
-
-				source->unlockStencil();
-				dest->unlockStencil();
-			}
+			isStencil ? source->unlockStencil() : source->unlockInternal();
+			isStencil ? dest->unlockStencil() : dest->unlockInternal();
 		}
-		else if((flags & Device::COLOR_BUFFER) && !scaling && equalFormats && (!hasQuadLayout || fullCopy))
+		else if(isDepth && !scaling && !isOutOfBounds && equalFormats && !hasQuadLayout)
 		{
-			unsigned char *sourceBytes = (unsigned char*)source->lockInternal(sRect.x0, sRect.y0, sourceRect->slice, LOCK_READONLY, PUBLIC);
-			unsigned char *destBytes = (unsigned char*)dest->lockInternal(dRect.x0, dRect.y0, destRect->slice, LOCK_READWRITE, PUBLIC);
-			unsigned int sourcePitch = source->getInternalPitchB();
-			unsigned int destPitch = dest->getInternalPitchB();
+			byte *sourceBuffer = (byte*)source->lockInternal((int)sRect.x0, (int)sRect.y0, 0, LOCK_READONLY, PUBLIC);
+			byte *destBuffer = (byte*)dest->lockInternal(dRect.x0, dRect.y0, 0, fullCopy ? LOCK_DISCARD : LOCK_WRITEONLY, PUBLIC);
+
+			copyBuffer(sourceBuffer, destBuffer, dRect.width(), dRect.height(), sourcePitchB, destPitchB, Surface::bytes(source->getInternalFormat()), flipX, flipY);
+
+			source->unlockInternal();
+			dest->unlockInternal();
+		}
+		else if((flags & Device::COLOR_BUFFER) && !scaling && !isOutOfBounds && equalFormats && !hasQuadLayout)
+		{
+			byte *sourceBytes = (byte*)source->lockInternal((int)sRect.x0, (int)sRect.y0, sourceRect->slice, LOCK_READONLY, PUBLIC);
+			byte *destBytes = (byte*)dest->lockInternal(dRect.x0, dRect.y0, destRect->slice, fullCopy ? LOCK_DISCARD : LOCK_WRITEONLY, PUBLIC);
 
 			unsigned int width = dRect.x1 - dRect.x0;
 			unsigned int height = dRect.y1 - dRect.y0;
 
-			copyBuffer(sourceBytes, destBytes, width, height, sourcePitch, destPitch, egl::Image::bytes(source->getInternalFormat()), flipX, flipY);
+			copyBuffer(sourceBytes, destBytes, width, height, sourcePitchB, destPitchB, Surface::bytes(source->getInternalFormat()), flipX, flipY);
 
 			if(alpha0xFF)
 			{
-				for(unsigned int y = 0; y < height; ++y, destBytes += destPitch)
+				for(unsigned int y = 0; y < height; y++)
 				{
-					for(unsigned int x = 0; x < width; ++x)
+					for(unsigned int x = 0; x < width; x++)
 					{
 						destBytes[4 * x + 3] = 0xFF;
 					}
+
+					destBytes += destPitchB;
 				}
 			}
 
@@ -667,19 +667,17 @@ namespace es2
 			{
 				swap(dRect.y0, dRect.y1);
 			}
+
 			blit(source, sRect, dest, dRect, scaling && (flags & Device::USE_FILTER), isStencil);
 		}
-		else
-		{
-			UNREACHABLE(false);
-		}
+		else UNREACHABLE(false);
 
 		return true;
 	}
 
 	bool Device::stretchCube(sw::Surface *source, sw::Surface *dest)
 	{
-		if(!source || !dest || egl::Image::isDepth(source->getInternalFormat()) || egl::Image::isStencil(source->getInternalFormat()))
+		if(!source || !dest || Surface::isDepth(source->getInternalFormat()) || Surface::isStencil(source->getInternalFormat()))
 		{
 			ERR("Invalid parameters");
 			return false;
@@ -707,19 +705,20 @@ namespace es2
 		{
 			unsigned int sourcePitch = source->getInternalPitchB();
 			unsigned int destPitch = dest->getInternalPitchB();
-			unsigned int bytes = dWidth * egl::Image::bytes(source->getInternalFormat());
+			unsigned int bytes = dWidth * Surface::bytes(source->getInternalFormat());
 
-			for(int z = 0; z < dDepth; ++z)
+			for(int z = 0; z < dDepth; z++)
 			{
 				unsigned char *sourceBytes = (unsigned char*)source->lockInternal(0, 0, z, LOCK_READONLY, PUBLIC);
 				unsigned char *destBytes = (unsigned char*)dest->lockInternal(0, 0, z, LOCK_READWRITE, PUBLIC);
-				for(int y = 0; y < dHeight; ++y)
+
+				for(int y = 0; y < dHeight; y++)
 				{
 					memcpy(destBytes, sourceBytes, bytes);
 
 					if(alpha0xFF)
 					{
-						for(int x = 0; x < dWidth; ++x)
+						for(int x = 0; x < dWidth; x++)
 						{
 							destBytes[4 * x + 3] = 0xFF;
 						}
@@ -728,10 +727,10 @@ namespace es2
 					sourceBytes += sourcePitch;
 					destBytes += destPitch;
 				}
-			}
 
-			source->unlockInternal();
-			dest->unlockInternal();
+				source->unlockInternal();
+				dest->unlockInternal();
+			}
 		}
 		else
 		{
@@ -886,12 +885,147 @@ namespace es2
 			return false;
 		}
 
-		if(rect->x1 > (int)surface->getWidth() || rect->y1 > (int)surface->getHeight())
+		if(rect->x1 >(int)surface->getWidth() || rect->y1 >(int)surface->getHeight())
 		{
 			return false;
 		}
 
 		return true;
+	}
+
+	bool Device::validRectangle(const sw::RectF *rect, sw::Surface *surface)
+	{
+		if(!rect)
+		{
+			return true;
+		}
+
+		if(rect->x1 <= rect->x0 || rect->y1 <= rect->y0)
+		{
+			return false;
+		}
+
+		return true;
+	}
+
+	void Device::ClipDstRect(sw::RectF &srcRect, sw::Rect &dstRect, sw::Rect &clipRect, bool flipX, bool flipY)
+	{
+		if(dstRect.x0 < clipRect.x0)
+		{
+			float offset = (static_cast<float>(clipRect.x0 - dstRect.x0) / static_cast<float>(dstRect.width())) * srcRect.width();
+			if(flipX)
+			{
+				srcRect.x1 -= offset;
+			}
+			else
+			{
+				srcRect.x0 += offset;
+			}
+			dstRect.x0 = clipRect.x0;
+		}
+		if(dstRect.x1 > clipRect.x1)
+		{
+			float offset = (static_cast<float>(dstRect.x1 - clipRect.x1) / static_cast<float>(dstRect.width())) * srcRect.width();
+			if(flipX)
+			{
+				srcRect.x0 += offset;
+			}
+			else
+			{
+				srcRect.x1 -= offset;
+			}
+			dstRect.x1 = clipRect.x1;
+		}
+		if(dstRect.y0 < clipRect.y0)
+		{
+			float offset = (static_cast<float>(clipRect.y0 - dstRect.y0) / static_cast<float>(dstRect.height())) * srcRect.height();
+			if(flipY)
+			{
+				srcRect.y1 -= offset;
+			}
+			else
+			{
+				srcRect.y0 += offset;
+			}
+			dstRect.y0 = clipRect.y0;
+		}
+		if(dstRect.y1 > clipRect.y1)
+		{
+			float offset = (static_cast<float>(dstRect.y1 - clipRect.y1) / static_cast<float>(dstRect.height())) * srcRect.height();
+			if(flipY)
+			{
+				srcRect.y0 += offset;
+			}
+			else
+			{
+				srcRect.y1 -= offset;
+			}
+			dstRect.y1 = clipRect.y1;
+		}
+	}
+
+	void Device::ClipSrcRect(sw::RectF &srcRect, sw::Rect &dstRect, sw::Rect &clipRect, bool flipX, bool flipY)
+	{
+		if(srcRect.x0 < static_cast<float>(clipRect.x0))
+		{
+			float ratio = static_cast<float>(dstRect.width()) / srcRect.width();
+			float offsetf = roundf((static_cast<float>(clipRect.x0) - srcRect.x0) * ratio);
+			int offset = static_cast<int>(offsetf);
+			if(flipX)
+			{
+				dstRect.x1 -= offset;
+			}
+			else
+			{
+				dstRect.x0 += offset;
+			}
+			srcRect.x0 += offsetf / ratio;
+		}
+		if(srcRect.x1 > static_cast<float>(clipRect.x1))
+		{
+			float ratio = static_cast<float>(dstRect.width()) / srcRect.width();
+			float offsetf = roundf((srcRect.x1 - static_cast<float>(clipRect.x1)) * ratio);
+			int offset = static_cast<int>(offsetf);
+			if(flipX)
+			{
+				dstRect.x0 += offset;
+			}
+			else
+			{
+				dstRect.x1 -= offset;
+			}
+			srcRect.x1 -= offsetf / ratio;
+		}
+		if(srcRect.y0 < static_cast<float>(clipRect.y0))
+		{
+			float ratio = static_cast<float>(dstRect.height()) / srcRect.height();
+			float offsetf = roundf((static_cast<float>(clipRect.y0) - srcRect.y0) * ratio);
+			int offset = static_cast<int>(offsetf);
+			if(flipY)
+			{
+				dstRect.y1 -= offset;
+			}
+			else
+			{
+				dstRect.y0 += offset;
+			}
+			srcRect.y0 += offsetf / ratio;
+		}
+		if(srcRect.y1 > static_cast<float>(clipRect.y1))
+		{
+			float ratio = static_cast<float>(dstRect.height()) / srcRect.height();
+			float offsetf = roundf((srcRect.y1 - static_cast<float>(clipRect.y1)) * ratio);
+			int offset = static_cast<int>(offsetf);
+			if(flipY)
+			{
+				dstRect.y0 += offset;
+			}
+			else
+			{
+				dstRect.y1 -= offset;
+			}
+			srcRect.y1 -= offsetf / ratio;
+		}
 	}
 
 	void Device::finish()

@@ -96,7 +96,7 @@ class BufferFactoryD3D : angle::NonCopyable
         GLsizei instances) const = 0;
 };
 
-using AttribIndexArray = std::array<int, gl::MAX_VERTEX_ATTRIBS>;
+using AttribIndexArray = gl::AttribArray<int>;
 
 class RendererD3D : public BufferFactoryD3D, public MultisampleTextureInitializer
 {
@@ -135,7 +135,7 @@ class RendererD3D : public BufferFactoryD3D, public MultisampleTextureInitialize
                                          IUnknown *d3dTexture,
                                          EGLint *width,
                                          EGLint *height,
-                                         GLenum *fboFormat) const = 0;
+                                         const angle::Format **angleFormat) const  = 0;
     virtual egl::Error validateShareHandle(const egl::Config *config,
                                            HANDLE shareHandle,
                                            const egl::AttributeMap &attribs) const = 0;
@@ -278,12 +278,12 @@ class RendererD3D : public BufferFactoryD3D, public MultisampleTextureInitialize
                                         const float clearDepthValue,
                                         const unsigned int clearStencilValue) = 0;
 
-    virtual egl::Error getEGLDevice(DeviceImpl **device) = 0;
+    virtual DeviceImpl *createEGLDevice() = 0;
 
     bool presentPathFastEnabled() const { return mPresentPathFastEnabled; }
 
     // Stream creation
-    virtual StreamProducerImpl *createStreamProducerD3DTextureNV12(
+    virtual StreamProducerImpl *createStreamProducerD3DTexture(
         egl::Stream::ConsumerType consumerType,
         const egl::AttributeMap &attribs) = 0;
 
@@ -311,6 +311,9 @@ class RendererD3D : public BufferFactoryD3D, public MultisampleTextureInitialize
 
     gl::Error initializeMultisampleTextureToBlack(const gl::Context *context,
                                                   gl::Texture *glTexture) override;
+
+    // Should really be handled by Program dirty bits, but that requires splitting Program9/11.
+    virtual void onDirtyUniformBlockBinding(GLuint uniformBlockIndex);
 
   protected:
     virtual bool getLUID(LUID *adapterLuid) const = 0;

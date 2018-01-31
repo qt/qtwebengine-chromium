@@ -4,7 +4,7 @@
 /*                                                                         */
 /*    TrueType bytecode interpreter (body).                                */
 /*                                                                         */
-/*  Copyright 1996-2017 by                                                 */
+/*  Copyright 1996-2018 by                                                 */
 /*  David Turner, Robert Wilhelm, and Werner Lemberg.                      */
 /*                                                                         */
 /*  This file is part of the FreeType project, and may only be used,       */
@@ -25,7 +25,7 @@
 #include FT_INTERNAL_CALC_H
 #include FT_TRIGONOMETRY_H
 #include FT_SYSTEM_H
-#include FT_TRUETYPE_DRIVER_H
+#include FT_DRIVER_H
 #include FT_MULTIPLE_MASTERS_H
 
 #include "ttinterp.h"
@@ -8486,7 +8486,9 @@
     } while ( !exc->instruction_trap );
 
   LNo_Error_:
-    FT_TRACE4(( "  %d instructions executed\n", ins_counter ));
+    FT_TRACE4(( "  %d instruction%s executed\n",
+                ins_counter == 1 ? "" : "s",
+                ins_counter ));
     return FT_Err_Ok;
 
   LErrorCodeOverflow_:

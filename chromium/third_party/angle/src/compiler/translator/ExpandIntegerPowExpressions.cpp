@@ -11,6 +11,7 @@
 #include <cmath>
 #include <cstdlib>
 
+#include "compiler/translator/IntermNode_util.h"
 #include "compiler/translator/IntermTraverse.h"
 
 namespace sh
@@ -54,7 +55,6 @@ Traverser::Traverser(TSymbolTable *symbolTable) : TIntermTraverser(true, false, 
 void Traverser::nextIteration()
 {
     mFound = false;
-    nextTemporaryId();
 }
 
 bool Traverser::visitAggregate(Visit visit, TIntermAggregate *node)
@@ -72,37 +72,31 @@ bool Traverser::visitAggregate(Visit visit, TIntermAggregate *node)
 
     const TIntermSequence *sequence = node->getSequence();
     ASSERT(sequence->size() == 2u);
-    const TIntermConstantUnion *constantNode = sequence->at(1)->getAsConstantUnion();
+    const TIntermConstantUnion *constantExponent = sequence->at(1)->getAsConstantUnion();
 
     // Test 1: check for a single constant.
-    if (!constantNode || constantNode->getNominalSize() != 1)
+    if (!constantExponent || constantExponent->getNominalSize() != 1)
     {
         return true;
     }
 
-    const TConstantUnion *constant = constantNode->getUnionArrayPointer();
+    ASSERT(constantExponent->getBasicType() == EbtFloat);
+    float exponentValue = constantExponent->getConstantValue()->getFConst();
 
-    TConstantUnion asFloat;
-    asFloat.cast(EbtFloat, *constant);
-
-    float value = asFloat.getFConst();
-
-    // Test 2: value is in the problematic range.
-    if (value < -5.0f || value > 9.0f)
+    // Test 2: exponentValue is in the problematic range.
+    if (exponentValue < -5.0f || exponentValue > 9.0f)
     {
         return true;
     }
 
-    // Test 3: value is integer or pretty close to an integer.
-    float absval = std::abs(value);
-    float frac   = absval - std::round(absval);
-    if (frac > 0.0001f)
+    // Test 3: exponentValue is integer or pretty close to an integer.
+    if (std::abs(exponentValue - std::round(exponentValue)) > 0.0001f)
     {
         return true;
     }
 
     // Test 4: skip -1, 0, and 1
-    int exponent = static_cast<int>(value);
+    int exponent = static_cast<int>(std::round(exponentValue));
     int n        = std::abs(exponent);
     if (n < 2)
     {
@@ -110,20 +104,20 @@ bool Traverser::visitAggregate(Visit visit, TIntermAggregate *node)
     }
 
     // Potential problem case detected, apply workaround.
-    nextTemporaryId();
 
     TIntermTyped *lhs = sequence->at(0)->getAsTyped();
     ASSERT(lhs);
 
-    TIntermDeclaration *init = createTempInitDeclaration(lhs);
-    TIntermTyped *current    = createTempSymbol(lhs->getType());
-
-    insertStatementInParentBlock(init);
+    TIntermDeclaration *lhsVariableDeclaration = nullptr;
+    TVariable *lhsVariable =
+        DeclareTempVariable(mSymbolTable, lhs, EvqTemporary, &lhsVariableDeclaration);
+    insertStatementInParentBlock(lhsVariableDeclaration);
 
     // Create a chain of n-1 multiples.
+    TIntermTyped *current = CreateTempSymbolNode(lhsVariable);
     for (int i = 1; i < n; ++i)
     {
-        TIntermBinary *mul = new TIntermBinary(EOpMul, current, createTempSymbol(lhs->getType()));
+        TIntermBinary *mul = new TIntermBinary(EOpMul, current, CreateTempSymbolNode(lhsVariable));
         mul->setLine(node->getLine());
         current = mul;
     }

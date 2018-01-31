@@ -31,6 +31,7 @@
 #include "platform/heap/HeapPage.h"
 
 #include "base/trace_event/process_memory_dump.h"
+#include "platform/Histogram.h"
 #include "platform/MemoryCoordinator.h"
 #include "platform/bindings/ScriptForbiddenScope.h"
 #include "platform/heap/BlinkGCMemoryDumpProvider.h"
@@ -266,10 +267,10 @@ Address BaseArena::LazySweep(size_t allocation_size, size_t gc_info_index) {
   ThreadState::SweepForbiddenScope sweep_forbidden(GetThreadState());
   ScriptForbiddenScope script_forbidden;
 
-  double start_time = WTF::MonotonicallyIncreasingTimeMS();
+  double start_time = WTF::CurrentTimeTicksInMilliseconds();
   Address result = LazySweepPages(allocation_size, gc_info_index);
   GetThreadState()->AccumulateSweepingTime(
-      WTF::MonotonicallyIncreasingTimeMS() - start_time);
+      WTF::CurrentTimeTicksInMilliseconds() - start_time);
   ThreadHeap::ReportMemoryUsageForTracing();
 
   return result;
@@ -313,7 +314,7 @@ bool BaseArena::LazySweepWithDeadline(double deadline_seconds) {
   while (!SweepingCompleted()) {
     SweepUnsweptPage();
     if (page_count % kDeadlineCheckInterval == 0) {
-      if (deadline_seconds <= MonotonicallyIncreasingTime()) {
+      if (deadline_seconds <= CurrentTimeTicksInSeconds()) {
         // Deadline has come.
         ThreadHeap::ReportMemoryUsageForTracing();
         if (normal_arena)
@@ -714,6 +715,8 @@ bool NormalPageArena::Coalesce() {
   DCHECK(!HasCurrentAllocationArea());
   TRACE_EVENT0("blink_gc", "BaseArena::coalesce");
 
+  double coalesce_start_time = WTF::CurrentTimeTicksInMilliseconds();
+
   // Rebuild free lists.
   free_list_.Clear();
   size_t freed_size = 0;
@@ -769,6 +772,14 @@ bool NormalPageArena::Coalesce() {
   GetThreadState()->Heap().HeapStats().DecreaseAllocatedObjectSize(freed_size);
   DCHECK_EQ(promptly_freed_size_, freed_size);
   promptly_freed_size_ = 0;
+
+  double coalesce_time =
+      WTF::CurrentTimeTicksInMilliseconds() - coalesce_start_time;
+  DEFINE_THREAD_SAFE_STATIC_LOCAL(
+      CustomCountHistogram, time_for_heap_coalesce_histogram,
+      ("BlinkGC.TimeForCoalesce", 1, 10 * 1000, 50));
+  time_for_heap_coalesce_histogram.Count(coalesce_time);
+
   return true;
 }
 

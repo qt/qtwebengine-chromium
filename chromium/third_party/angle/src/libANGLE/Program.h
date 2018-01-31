@@ -119,6 +119,8 @@ class InfoLog : angle::NonCopyable
 
     std::string str() const { return mLazyStream ? mLazyStream->str() : ""; }
 
+    bool empty() const;
+
   private:
     void ensureInitialized()
     {
@@ -201,6 +203,17 @@ struct TransformFeedbackVarying : public sh::Varying
     {
         ASSERT(!isArrayOfArrays());
     }
+
+    TransformFeedbackVarying(const sh::ShaderVariable &field, const sh::Varying &parent)
+        : arrayIndex(GL_INVALID_INDEX)
+    {
+        sh::ShaderVariable *thisVar = this;
+        *thisVar                    = field;
+        interpolation               = parent.interpolation;
+        isInvariant                 = parent.isInvariant;
+        name                        = parent.name + "." + name;
+    }
+
     std::string nameWithArrayIndex() const
     {
         std::stringstream fullNameStr;
@@ -332,6 +345,9 @@ class ProgramState final : angle::NonCopyable
     std::vector<sh::Attribute> mAttributes;
     angle::BitSet<MAX_VERTEX_ATTRIBS> mActiveAttribLocationsMask;
     unsigned int mMaxActiveAttribLocation;
+    ComponentTypeMask mAttributesTypeMask;
+    // mAttributesMask is identical to mActiveAttribLocationsMask with built-in attributes removed.
+    AttributesMask mAttributesMask;
 
     // Uniforms are sorted in order:
     //  1. Non-opaque uniforms
@@ -369,6 +385,7 @@ class ProgramState final : angle::NonCopyable
 
     // Fragment output variable base types: FLOAT, INT, or UINT.  Ordered by location.
     std::vector<GLenum> mOutputVariableTypes;
+    ComponentTypeMask mDrawBufferTypeMask;
 
     bool mBinaryRetrieveableHint;
     bool mSeparable;
@@ -377,6 +394,33 @@ class ProgramState final : angle::NonCopyable
     // ANGLE_multiview.
     int mNumViews;
 };
+
+class ProgramBindings final : angle::NonCopyable
+{
+  public:
+    ProgramBindings();
+    ~ProgramBindings();
+
+    void bindLocation(GLuint index, const std::string &name);
+    int getBinding(const std::string &name) const;
+
+    using const_iterator = std::unordered_map<std::string, GLuint>::const_iterator;
+    const_iterator begin() const;
+    const_iterator end() const;
+
+  private:
+    std::unordered_map<std::string, GLuint> mBindings;
+};
+
+struct ProgramVaryingRef
+{
+    const sh::Varying *get() const { return vertex ? vertex : fragment; }
+
+    const sh::Varying *vertex   = nullptr;
+    const sh::Varying *fragment = nullptr;
+};
+
+using ProgramMergedVaryings = std::map<std::string, ProgramVaryingRef>;
 
 class Program final : angle::NonCopyable, public LabeledObject
 {
@@ -539,8 +583,10 @@ class Program final : angle::NonCopyable, public LabeledObject
     GLsizei getTransformFeedbackVaryingCount() const;
     GLsizei getTransformFeedbackVaryingMaxLength() const;
     GLenum getTransformFeedbackBufferMode() const;
+    GLuint getTransformFeedbackVaryingResourceIndex(const GLchar *name) const;
+    const TransformFeedbackVarying &getTransformFeedbackVaryingResource(GLuint index) const;
 
-    static bool linkValidateInterfaceBlockFields(InfoLog &infoLog,
+    static bool LinkValidateInterfaceBlockFields(InfoLog &infoLog,
                                                  const std::string &uniformName,
                                                  const sh::InterfaceBlockField &vertexUniform,
                                                  const sh::InterfaceBlockField &fragmentUniform,
@@ -575,7 +621,7 @@ class Program final : angle::NonCopyable, public LabeledObject
 
     const ProgramState &getState() const { return mState; }
 
-    static bool linkValidateVariablesBase(InfoLog &infoLog,
+    static bool LinkValidateVariablesBase(InfoLog &infoLog,
                                           const std::string &variableName,
                                           const sh::ShaderVariable &vertexVariable,
                                           const sh::ShaderVariable &fragmentVariable,
@@ -593,66 +639,46 @@ class Program final : angle::NonCopyable, public LabeledObject
     const sh::Attribute &getInputResource(GLuint index) const;
     const sh::OutputVariable &getOutputResource(GLuint index) const;
 
-    class Bindings final : angle::NonCopyable
-    {
-      public:
-        Bindings();
-        ~Bindings();
-        void bindLocation(GLuint index, const std::string &name);
-        int getBinding(const std::string &name) const;
-
-        typedef std::unordered_map<std::string, GLuint>::const_iterator const_iterator;
-        const_iterator begin() const;
-        const_iterator end() const;
-
-      private:
-        std::unordered_map<std::string, GLuint> mBindings;
-    };
-
-    const Bindings &getAttributeBindings() const { return mAttributeBindings; }
-    const Bindings &getUniformLocationBindings() const { return mUniformLocationBindings; }
-    const Bindings &getFragmentInputBindings() const { return mFragmentInputBindings; }
+    const ProgramBindings &getAttributeBindings() const { return mAttributeBindings; }
+    const ProgramBindings &getUniformLocationBindings() const { return mUniformLocationBindings; }
+    const ProgramBindings &getFragmentInputBindings() const { return mFragmentInputBindings; }
 
     int getNumViews() const { return mState.getNumViews(); }
     bool usesMultiview() const { return mState.usesMultiview(); }
 
-    struct VaryingRef
-    {
-        const sh::Varying *get() const { return vertex ? vertex : fragment; }
-
-        const sh::Varying *vertex   = nullptr;
-        const sh::Varying *fragment = nullptr;
-    };
-    using MergedVaryings = std::map<std::string, VaryingRef>;
+    ComponentTypeMask getDrawBufferTypeMask() const { return mState.mDrawBufferTypeMask; }
+    ComponentTypeMask getAttributesTypeMask() const { return mState.mAttributesTypeMask; }
+    AttributesMask getAttributesMask() const { return mState.mAttributesMask; }
 
   private:
     ~Program() override;
 
     void unlink();
 
+    bool linkValidateShaders(const Context *context, InfoLog &infoLog);
     bool linkAttributes(const Context *context, InfoLog &infoLog);
-    bool validateVertexAndFragmentInterfaceBlocks(
+    static bool ValidateGraphicsInterfaceBlocks(
         const std::vector<sh::InterfaceBlock> &vertexInterfaceBlocks,
         const std::vector<sh::InterfaceBlock> &fragmentInterfaceBlocks,
         InfoLog &infoLog,
-        bool webglCompatibility) const;
+        bool webglCompatibility);
     bool linkInterfaceBlocks(const Context *context, InfoLog &infoLog);
     bool linkVaryings(const Context *context, InfoLog &infoLog) const;
 
     bool linkUniforms(const Context *context,
                       InfoLog &infoLog,
-                      const Bindings &uniformLocationBindings);
+                      const ProgramBindings &uniformLocationBindings);
     void linkSamplerAndImageBindings();
     bool linkAtomicCounterBuffers();
 
     void updateLinkedShaderStages();
 
-    bool areMatchingInterfaceBlocks(InfoLog &infoLog,
-                                    const sh::InterfaceBlock &vertexInterfaceBlock,
-                                    const sh::InterfaceBlock &fragmentInterfaceBlock,
-                                    bool webglCompatibility) const;
+    static bool AreMatchingInterfaceBlocks(InfoLog &infoLog,
+                                           const sh::InterfaceBlock &vertexInterfaceBlock,
+                                           const sh::InterfaceBlock &fragmentInterfaceBlock,
+                                           bool webglCompatibility);
 
-    static bool linkValidateVaryings(InfoLog &infoLog,
+    static bool LinkValidateVaryings(InfoLog &infoLog,
                                      const std::string &varyingName,
                                      const sh::Varying &vertexVarying,
                                      const sh::Varying &fragmentVarying,
@@ -660,18 +686,17 @@ class Program final : angle::NonCopyable, public LabeledObject
     bool linkValidateBuiltInVaryings(const Context *context, InfoLog &infoLog) const;
     bool linkValidateTransformFeedback(const gl::Context *context,
                                        InfoLog &infoLog,
-                                       const MergedVaryings &linkedVaryings,
+                                       const ProgramMergedVaryings &linkedVaryings,
                                        const Caps &caps) const;
     bool linkValidateGlobalNames(const Context *context, InfoLog &infoLog) const;
 
-    void gatherTransformFeedbackVaryings(const MergedVaryings &varyings);
+    void gatherTransformFeedbackVaryings(const ProgramMergedVaryings &varyings);
 
-    MergedVaryings getMergedVaryings(const Context *context) const;
+    ProgramMergedVaryings getMergedVaryings(const Context *context) const;
     void linkOutputVariables(const Context *context);
 
     void setUniformValuesFromBindingQualifiers();
 
-    void gatherAtomicCounterBuffers();
     void initInterfaceBlockBindings();
 
     // Both these function update the cached uniform values and return a modified "count"
@@ -707,14 +732,14 @@ class Program final : angle::NonCopyable, public LabeledObject
 
     bool mValidated;
 
-    Bindings mAttributeBindings;
+    ProgramBindings mAttributeBindings;
 
     // Note that this has nothing to do with binding layout qualifiers that can be set for some
     // uniforms in GLES3.1+. It is used to pre-set the location of uniforms.
-    Bindings mUniformLocationBindings;
+    ProgramBindings mUniformLocationBindings;
 
     // CHROMIUM_path_rendering
-    Bindings mFragmentInputBindings;
+    ProgramBindings mFragmentInputBindings;
 
     bool mLinked;
     bool mDeleteStatus;   // Flag to indicate that the program can be deleted when no longer in use

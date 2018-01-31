@@ -394,11 +394,16 @@ class State : public OnAttachmentDirtyReceiver, angle::NonCopyable
         DIRTY_BIT_RENDERBUFFER_BINDING,
         DIRTY_BIT_VERTEX_ARRAY_BINDING,
         DIRTY_BIT_DRAW_INDIRECT_BUFFER_BINDING,
+        DIRTY_BIT_DISPATCH_INDIRECT_BUFFER_BINDING,
+        DIRTY_BIT_SHADER_STORAGE_BUFFER_BINDING,
+        // TODO(jmadill): Fine-grained dirty bits for each index.
+        DIRTY_BIT_UNIFORM_BUFFER_BINDINGS,
         DIRTY_BIT_PROGRAM_BINDING,
         DIRTY_BIT_PROGRAM_EXECUTABLE,
         // TODO(jmadill): Fine-grained dirty bits for each texture/sampler.
         DIRTY_BIT_TEXTURE_BINDINGS,
         DIRTY_BIT_SAMPLER_BINDINGS,
+        DIRTY_BIT_TRANSFORM_FEEDBACK_BINDING,
         DIRTY_BIT_MULTISAMPLING,
         DIRTY_BIT_SAMPLE_ALPHA_TO_ONE,
         DIRTY_BIT_COVERAGE_MODULATION,         // CHROMIUM_framebuffer_mixed_samples
@@ -426,13 +431,13 @@ class State : public OnAttachmentDirtyReceiver, angle::NonCopyable
         DIRTY_OBJECT_MAX = DIRTY_OBJECT_UNKNOWN,
     };
 
-    typedef angle::BitSet<DIRTY_BIT_MAX> DirtyBits;
+    using DirtyBits = angle::BitSet<DIRTY_BIT_MAX>;
     const DirtyBits &getDirtyBits() const { return mDirtyBits; }
     void clearDirtyBits() { mDirtyBits.reset(); }
     void clearDirtyBits(const DirtyBits &bitset) { mDirtyBits &= ~bitset; }
     void setAllDirtyBits() { mDirtyBits.set(); }
 
-    typedef angle::BitSet<DIRTY_OBJECT_MAX> DirtyObjects;
+    using DirtyObjects = angle::BitSet<DIRTY_OBJECT_MAX>;
     void clearDirtyObjects() { mDirtyObjects.reset(); }
     void setAllDirtyObjects() { mDirtyObjects.set(); }
     void syncDirtyObjects(const Context *context);
@@ -455,6 +460,7 @@ class State : public OnAttachmentDirtyReceiver, angle::NonCopyable
 
     const ImageUnit &getImageUnit(GLuint unit) const;
     const std::vector<Texture *> &getCompleteTextureCache() const { return mCompleteTextureCache; }
+    ComponentTypeMask getCurrentValuesTypeMask() const { return mCurrentValuesTypeMask; }
 
     // Handle a dirty texture event.
     void signal(size_t textureIndex, InitState initState) override;
@@ -510,6 +516,7 @@ class State : public OnAttachmentDirtyReceiver, angle::NonCopyable
     typedef std::vector<VertexAttribCurrentValueData> VertexAttribVector;
     VertexAttribVector mVertexAttribCurrentValues;  // From glVertexAttrib
     VertexArray *mVertexArray;
+    ComponentTypeMask mCurrentValuesTypeMask;
 
     // Texture and sampler bindings
     size_t mActiveSampler;  // Active texture unit selector - GL_TEXTURE0

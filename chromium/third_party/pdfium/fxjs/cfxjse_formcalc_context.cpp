@@ -10,15 +10,16 @@
 
 #include <algorithm>
 #include <string>
+#include <utility>
 
 #include "core/fxcrt/cfx_decimal.h"
 #include "core/fxcrt/cfx_widetextbuf.h"
 #include "core/fxcrt/fx_extension.h"
 #include "core/fxcrt/fx_random.h"
-#include "fxjs/cfxjse_arguments.h"
 #include "fxjs/cfxjse_class.h"
 #include "fxjs/cfxjse_engine.h"
 #include "fxjs/cfxjse_value.h"
+#include "fxjs/xfa/cjx_object.h"
 #include "third_party/base/ptr_util.h"
 #include "third_party/base/stl_util.h"
 #include "xfa/fxfa/cxfa_ffnotify.h"
@@ -311,15 +312,11 @@ const FXJSE_FUNCTION_DESCRIPTOR formcalc_fm2js_functions[] = {
 
 const FXJSE_CLASS_DESCRIPTOR formcalc_fm2js_descriptor = {
     "XFA_FM2JS_FormCalcClass",               // name
-    nullptr,                                 // constructor
-    nullptr,                                 // properties
     formcalc_fm2js_functions,                // methods
-    0,                                       // number of properties
     FX_ArraySize(formcalc_fm2js_functions),  // number of methods
     nullptr,                                 // dynamic prop type
     nullptr,                                 // dynamic prop getter
     nullptr,                                 // dynamic prop setter
-    nullptr,                                 // dynamic prop deleter
     nullptr,                                 // dynamic prop method call
 };
 
@@ -481,7 +478,7 @@ IFX_Locale* LocaleFromString(CXFA_Document* pDoc,
 
   CXFA_Node* pThisNode = ToNode(pDoc->GetScriptContext()->GetThisObject());
   ASSERT(pThisNode);
-  return CXFA_WidgetData(pThisNode).GetLocale();
+  return pThisNode->GetLocale();
 }
 
 WideString FormatFromString(IFX_Locale* pLocale,
@@ -1645,8 +1642,7 @@ void CFXJSE_FormCalcContext::Time2Num(CFXJSE_Value* pThis,
   if (localString.IsEmpty()) {
     CXFA_Node* pThisNode = ToNode(pDoc->GetScriptContext()->GetThisObject());
     ASSERT(pThisNode);
-    CXFA_WidgetData widgetData(pThisNode);
-    pLocale = widgetData.GetLocale();
+    pLocale = pThisNode->GetLocale();
   } else {
     pLocale =
         pMgr->GetLocaleByName(WideString::FromUTF8(localString.AsStringView()));
@@ -3772,8 +3768,7 @@ void CFXJSE_FormCalcContext::Format(CFXJSE_Value* pThis,
   CXFA_Node* pThisNode = ToNode(pDoc->GetScriptContext()->GetThisObject());
   ASSERT(pThisNode);
 
-  CXFA_WidgetData widgetData(pThisNode);
-  IFX_Locale* pLocale = widgetData.GetLocale();
+  IFX_Locale* pLocale = pThisNode->GetLocale();
   uint32_t patternType;
   WideString wsPattern = WideString::FromUTF8(szPattern.AsStringView());
   WideString wsValue = WideString::FromUTF8(szValue.AsStringView());
@@ -3955,8 +3950,7 @@ void CFXJSE_FormCalcContext::Parse(CFXJSE_Value* pThis,
   CXFA_Node* pThisNode = ToNode(pDoc->GetScriptContext()->GetThisObject());
   ASSERT(pThisNode);
 
-  CXFA_WidgetData widgetData(pThisNode);
-  IFX_Locale* pLocale = widgetData.GetLocale();
+  IFX_Locale* pLocale = pThisNode->GetLocale();
   WideString wsPattern = WideString::FromUTF8(szPattern.AsStringView());
   WideString wsValue = WideString::FromUTF8(szValue.AsStringView());
   uint32_t patternType;
@@ -4980,9 +4974,9 @@ void CFXJSE_FormCalcContext::less_operator(CFXJSE_Value* pThis,
   }
 
   if (argFirst->IsString() && argSecond->IsString()) {
-    args.GetReturnValue()->SetInteger(
-        argFirst->ToString().Compare(argSecond->ToString().AsStringView()) ==
-        -1);
+    int result =
+        argFirst->ToString().Compare(argSecond->ToString().AsStringView()) < 0;
+    args.GetReturnValue()->SetInteger(result);
     return;
   }
 
@@ -5010,9 +5004,9 @@ void CFXJSE_FormCalcContext::lessequal_operator(
   }
 
   if (argFirst->IsString() && argSecond->IsString()) {
-    args.GetReturnValue()->SetInteger(
-        argFirst->ToString().Compare(argSecond->ToString().AsStringView()) !=
-        1);
+    int result =
+        argFirst->ToString().Compare(argSecond->ToString().AsStringView()) <= 0;
+    args.GetReturnValue()->SetInteger(result);
     return;
   }
 
@@ -5038,9 +5032,9 @@ void CFXJSE_FormCalcContext::greater_operator(CFXJSE_Value* pThis,
   }
 
   if (argFirst->IsString() && argSecond->IsString()) {
-    args.GetReturnValue()->SetInteger(
-        argFirst->ToString().Compare(argSecond->ToString().AsStringView()) ==
-        1);
+    int result =
+        argFirst->ToString().Compare(argSecond->ToString().AsStringView()) > 0;
+    args.GetReturnValue()->SetInteger(result);
     return;
   }
 
@@ -5068,9 +5062,9 @@ void CFXJSE_FormCalcContext::greaterequal_operator(
   }
 
   if (argFirst->IsString() && argSecond->IsString()) {
-    args.GetReturnValue()->SetInteger(
-        argFirst->ToString().Compare(argSecond->ToString().AsStringView()) !=
-        -1);
+    int result =
+        argFirst->ToString().Compare(argSecond->ToString().AsStringView()) >= 0;
+    args.GetReturnValue()->SetInteger(result);
     return;
   }
 
@@ -5267,7 +5261,7 @@ void CFXJSE_FormCalcContext::dot_accessor(CFXJSE_Value* pThis,
 
       XFA_RESOLVENODE_RS resolveNodeRS;
       if (ResolveObjects(pThis, hJSObjValue.get(), szSomExp.AsStringView(),
-                         resolveNodeRS, true, szName.IsEmpty()) > 0) {
+                         &resolveNodeRS, true, szName.IsEmpty())) {
         ParseResolveResult(pThis, resolveNodeRS, hJSObjValue.get(),
                            &resolveValues[i - 2], &bAttribute);
         iCounter += resolveValues[i - 2].size();
@@ -5302,19 +5296,19 @@ void CFXJSE_FormCalcContext::dot_accessor(CFXJSE_Value* pThis,
   }
 
   XFA_RESOLVENODE_RS resolveNodeRS;
-  int32_t iRet = 0;
+  bool iRet = false;
   ByteString bsAccessorName = args.GetUTF8String(1);
   if (argAccessor->IsObject() ||
       (argAccessor->IsNull() && bsAccessorName.IsEmpty())) {
     iRet = ResolveObjects(pThis, argAccessor.get(), szSomExp.AsStringView(),
-                          resolveNodeRS, true, szName.IsEmpty());
+                          &resolveNodeRS, true, szName.IsEmpty());
   } else if (!argAccessor->IsObject() && !bsAccessorName.IsEmpty() &&
              GetObjectForName(pThis, argAccessor.get(),
                               bsAccessorName.AsStringView())) {
     iRet = ResolveObjects(pThis, argAccessor.get(), szSomExp.AsStringView(),
-                          resolveNodeRS, true, szName.IsEmpty());
+                          &resolveNodeRS, true, szName.IsEmpty());
   }
-  if (iRet < 1) {
+  if (!iRet) {
     pContext->ThrowPropertyNotInObjectException(
         WideString::FromUTF8(szName.AsStringView()),
         WideString::FromUTF8(szSomExp.AsStringView()));
@@ -5385,7 +5379,7 @@ void CFXJSE_FormCalcContext::dotdot_accessor(CFXJSE_Value* pThis,
       argAccessor->GetObjectPropertyByIdx(i, hJSObjValue.get());
       XFA_RESOLVENODE_RS resolveNodeRS;
       if (ResolveObjects(pThis, hJSObjValue.get(), szSomExp.AsStringView(),
-                         resolveNodeRS, false) > 0) {
+                         &resolveNodeRS, false, false)) {
         ParseResolveResult(pThis, resolveNodeRS, hJSObjValue.get(),
                            &resolveValues[i - 2], &bAttribute);
         iCounter += resolveValues[i - 2].size();
@@ -5420,19 +5414,19 @@ void CFXJSE_FormCalcContext::dotdot_accessor(CFXJSE_Value* pThis,
   }
 
   XFA_RESOLVENODE_RS resolveNodeRS;
-  int32_t iRet = 0;
+  bool iRet = false;
   ByteString bsAccessorName = args.GetUTF8String(1);
   if (argAccessor->IsObject() ||
       (argAccessor->IsNull() && bsAccessorName.IsEmpty())) {
     iRet = ResolveObjects(pThis, argAccessor.get(), szSomExp.AsStringView(),
-                          resolveNodeRS, false);
+                          &resolveNodeRS, false, false);
   } else if (!argAccessor->IsObject() && !bsAccessorName.IsEmpty() &&
              GetObjectForName(pThis, argAccessor.get(),
                               bsAccessorName.AsStringView())) {
     iRet = ResolveObjects(pThis, argAccessor.get(), szSomExp.AsStringView(),
-                          resolveNodeRS, false);
+                          &resolveNodeRS, false, false);
   }
-  if (iRet < 1) {
+  if (!iRet) {
     pContext->ThrowPropertyNotInObjectException(
         WideString::FromUTF8(szName.AsStringView()),
         WideString::FromUTF8(szSomExp.AsStringView()));
@@ -5857,8 +5851,8 @@ void CFXJSE_FormCalcContext::GetObjectDefaultValue(
     pDefaultValue->SetNull();
     return;
   }
-  pNode->JSNode()->Script_Som_DefaultValue(pDefaultValue, false,
-                                           XFA_Attribute::Unknown);
+  pNode->JSObject()->Script_Som_DefaultValue(pDefaultValue, false,
+                                             XFA_Attribute::Unknown);
 }
 
 // static
@@ -5868,8 +5862,8 @@ bool CFXJSE_FormCalcContext::SetObjectDefaultValue(CFXJSE_Value* pValue,
   if (!pNode)
     return false;
 
-  pNode->JSNode()->Script_Som_DefaultValue(hNewValue, true,
-                                           XFA_Attribute::Unknown);
+  pNode->JSObject()->Script_Som_DefaultValue(hNewValue, true,
+                                             XFA_Attribute::Unknown);
   return true;
 }
 
@@ -5917,11 +5911,11 @@ bool CFXJSE_FormCalcContext::GetObjectForName(
   XFA_RESOLVENODE_RS resolveNodeRS;
   uint32_t dwFlags = XFA_RESOLVENODE_Children | XFA_RESOLVENODE_Properties |
                      XFA_RESOLVENODE_Siblings | XFA_RESOLVENODE_Parent;
-  int32_t iRet = pScriptContext->ResolveObjects(
+  bool iRet = pScriptContext->ResolveObjects(
       pScriptContext->GetThisObject(),
-      WideString::FromUTF8(szAccessorName).AsStringView(), resolveNodeRS,
-      dwFlags);
-  if (iRet >= 1 && resolveNodeRS.dwFlags == XFA_RESOLVENODE_RSTYPE_Nodes) {
+      WideString::FromUTF8(szAccessorName).AsStringView(), &resolveNodeRS,
+      dwFlags, nullptr);
+  if (iRet && resolveNodeRS.dwFlags == XFA_ResolveNode_RSType_Nodes) {
     accessorValue->Assign(
         pScriptContext->GetJSValueFromMap(resolveNodeRS.objects.front()));
     return true;
@@ -5930,16 +5924,15 @@ bool CFXJSE_FormCalcContext::GetObjectForName(
 }
 
 // static
-int32_t CFXJSE_FormCalcContext::ResolveObjects(
-    CFXJSE_Value* pThis,
-    CFXJSE_Value* pRefValue,
-    const ByteStringView& bsSomExp,
-    XFA_RESOLVENODE_RS& resolveNodeRS,
-    bool bdotAccessor,
-    bool bHasNoResolveName) {
+bool CFXJSE_FormCalcContext::ResolveObjects(CFXJSE_Value* pThis,
+                                            CFXJSE_Value* pRefValue,
+                                            const ByteStringView& bsSomExp,
+                                            XFA_RESOLVENODE_RS* resolveNodeRS,
+                                            bool bdotAccessor,
+                                            bool bHasNoResolveName) {
   CXFA_Document* pDoc = ToJSContext(pThis, nullptr)->GetDocument();
   if (!pDoc)
-    return -1;
+    return false;
 
   WideString wsSomExpression = WideString::FromUTF8(bsSomExp);
   CFXJSE_Engine* pScriptContext = pDoc->GetScriptContext();
@@ -5955,8 +5948,8 @@ int32_t CFXJSE_FormCalcContext::ResolveObjects(
       if (bHasNoResolveName) {
         WideString wsName;
         if (CXFA_Node* pXFANode = pNode->AsNode()) {
-          pdfium::Optional<WideString> ret =
-              pXFANode->JSNode()->TryAttribute(XFA_Attribute::Name, false);
+          Optional<WideString> ret =
+              pXFANode->JSObject()->TryAttribute(XFA_Attribute::Name, false);
           if (ret)
             wsName = *ret;
         }
@@ -5977,7 +5970,7 @@ int32_t CFXJSE_FormCalcContext::ResolveObjects(
     dFlags = XFA_RESOLVENODE_AnyChild;
   }
   return pScriptContext->ResolveObjects(pNode, wsSomExpression.AsStringView(),
-                                        resolveNodeRS, dFlags);
+                                        resolveNodeRS, dFlags, nullptr);
 }
 
 // static
@@ -5994,7 +5987,7 @@ void CFXJSE_FormCalcContext::ParseResolveResult(
   CFXJSE_FormCalcContext* pContext = ToJSContext(pThis, nullptr);
   v8::Isolate* pIsolate = pContext->GetScriptRuntime();
 
-  if (resolveNodeRS.dwFlags == XFA_RESOLVENODE_RSTYPE_Nodes) {
+  if (resolveNodeRS.dwFlags == XFA_ResolveNode_RSType_Nodes) {
     *bAttribute = false;
     CFXJSE_Engine* pScriptContext = pContext->GetDocument()->GetScriptContext();
     for (CXFA_Object* pObject : resolveNodeRS.objects) {
@@ -6004,18 +5997,21 @@ void CFXJSE_FormCalcContext::ParseResolveResult(
     return;
   }
 
-  CXFA_ValueArray objectProperties(pIsolate);
-  int32_t iRet = resolveNodeRS.GetAttributeResult(&objectProperties);
   *bAttribute = true;
-  if (iRet != 0) {
-    *bAttribute = false;
-    for (int32_t i = 0; i < iRet; i++) {
-      resultValues->push_back(pdfium::MakeUnique<CFXJSE_Value>(pIsolate));
-      resultValues->back()->Assign(objectProperties.m_Values[i].get());
-    }
-    return;
-  }
+  if (resolveNodeRS.pScriptAttribute &&
+      resolveNodeRS.pScriptAttribute->eValueType == XFA_ScriptType::Object) {
+    for (CXFA_Object* pObject : resolveNodeRS.objects) {
+      auto pValue = pdfium::MakeUnique<CFXJSE_Value>(pIsolate);
+      CJX_Object* jsObject = pObject->JSObject();
+      (jsObject->*(resolveNodeRS.pScriptAttribute->callback))(
+          pValue.get(), false, resolveNodeRS.pScriptAttribute->attribute);
 
+      resultValues->push_back(std::move(pValue));
+      *bAttribute = false;
+    }
+  }
+  if (!*bAttribute)
+    return;
   if (!pParentValue || !pParentValue->IsObject())
     return;
 

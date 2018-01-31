@@ -50,7 +50,7 @@ class StringViewTemplate {
       : m_Ptr(ptr), m_Length(size) {}
 
   // Deliberately implicit to avoid calling on every string literal.
-  // |ch| must be an lvalue that outlives the the StringViewTemplate.
+  // |ch| must be an lvalue that outlives the StringViewTemplate.
   // NOLINTNEXTLINE(runtime/explicit)
   StringViewTemplate(CharType& ch) {
     m_Ptr = reinterpret_cast<const UnsignedType*>(&ch);
@@ -149,12 +149,11 @@ class StringViewTemplate {
     return static_cast<CharType>(m_Ptr.Get()[index]);
   }
 
-  pdfium::Optional<size_t> Find(CharType ch) const {
+  Optional<size_t> Find(CharType ch) const {
     const auto* found = reinterpret_cast<const UnsignedType*>(FXSYS_chr(
         reinterpret_cast<const CharType*>(m_Ptr.Get()), ch, m_Length));
 
-    return found ? pdfium::Optional<size_t>(found - m_Ptr.Get())
-                 : pdfium::Optional<size_t>();
+    return found ? Optional<size_t>(found - m_Ptr.Get()) : Optional<size_t>();
   }
 
   bool Contains(CharType ch) const { return Find(ch).has_value(); }

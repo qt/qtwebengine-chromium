@@ -14,6 +14,7 @@
 #include "libANGLE/Context.h"
 #include "libANGLE/Program.h"
 #include "libANGLE/renderer/vulkan/BufferVk.h"
+#include "libANGLE/renderer/vulkan/CommandBufferNode.h"
 #include "libANGLE/renderer/vulkan/CompilerVk.h"
 #include "libANGLE/renderer/vulkan/ContextVk.h"
 #include "libANGLE/renderer/vulkan/DeviceVk.h"
@@ -62,139 +63,12 @@ enum DescriptorPoolIndex : uint8_t
 }  // anonymous namespace
 
 ContextVk::ContextVk(const gl::ContextState &state, RendererVk *renderer)
-    : ContextImpl(state), mRenderer(renderer), mCurrentDrawMode(GL_NONE)
+    : ContextImpl(state),
+      mRenderer(renderer),
+      mCurrentDrawMode(GL_NONE),
+      mVertexArrayDirty(false),
+      mTexturesDirty(false)
 {
-    // The module handle is filled out at draw time.
-    mCurrentShaderStages[0].sType  = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-    mCurrentShaderStages[0].pNext  = nullptr;
-    mCurrentShaderStages[0].flags  = 0;
-    mCurrentShaderStages[0].stage  = VK_SHADER_STAGE_VERTEX_BIT;
-    mCurrentShaderStages[0].module = VK_NULL_HANDLE;
-    mCurrentShaderStages[0].pName  = "main";
-    mCurrentShaderStages[0].pSpecializationInfo = nullptr;
-
-    mCurrentShaderStages[1].sType  = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-    mCurrentShaderStages[1].pNext  = nullptr;
-    mCurrentShaderStages[1].flags  = 0;
-    mCurrentShaderStages[1].stage  = VK_SHADER_STAGE_FRAGMENT_BIT;
-    mCurrentShaderStages[1].module = VK_NULL_HANDLE;
-    mCurrentShaderStages[1].pName  = "main";
-    mCurrentShaderStages[1].pSpecializationInfo = nullptr;
-
-    // The binding descriptions are filled in at draw time.
-    mCurrentVertexInputState.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-    mCurrentVertexInputState.pNext = nullptr;
-    mCurrentVertexInputState.flags = 0;
-    mCurrentVertexInputState.vertexBindingDescriptionCount   = 0;
-    mCurrentVertexInputState.pVertexBindingDescriptions      = nullptr;
-    mCurrentVertexInputState.vertexAttributeDescriptionCount = 0;
-    mCurrentVertexInputState.pVertexAttributeDescriptions    = nullptr;
-
-    // Primitive topology is filled in at draw time.
-    mCurrentInputAssemblyState.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
-    mCurrentInputAssemblyState.pNext = nullptr;
-    mCurrentInputAssemblyState.flags = 0;
-    mCurrentInputAssemblyState.topology = gl_vk::GetPrimitiveTopology(mCurrentDrawMode);
-    mCurrentInputAssemblyState.primitiveRestartEnable = VK_FALSE;
-
-    // Set initial viewport and scissor state.
-    mCurrentViewportVk.x        = 0.0f;
-    mCurrentViewportVk.y        = 0.0f;
-    mCurrentViewportVk.width    = 0.0f;
-    mCurrentViewportVk.height   = 0.0f;
-    mCurrentViewportVk.minDepth = 0.0f;
-    mCurrentViewportVk.maxDepth = 1.0f;
-
-    mCurrentScissorVk.offset.x      = 0;
-    mCurrentScissorVk.offset.y      = 0;
-    mCurrentScissorVk.extent.width  = 0u;
-    mCurrentScissorVk.extent.height = 0u;
-
-    mCurrentViewportState.sType         = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
-    mCurrentViewportState.pNext         = nullptr;
-    mCurrentViewportState.flags         = 0;
-    mCurrentViewportState.viewportCount = 1;
-    mCurrentViewportState.pViewports    = &mCurrentViewportVk;
-    mCurrentViewportState.scissorCount  = 1;
-    mCurrentViewportState.pScissors     = &mCurrentScissorVk;
-
-    // Set initial rasterizer state.
-    // TODO(jmadill): Extra rasterizer state features.
-    mCurrentRasterState.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
-    mCurrentRasterState.pNext = nullptr;
-    mCurrentRasterState.flags = 0;
-    mCurrentRasterState.depthClampEnable        = VK_FALSE;
-    mCurrentRasterState.rasterizerDiscardEnable = VK_FALSE;
-    mCurrentRasterState.polygonMode             = VK_POLYGON_MODE_FILL;
-    mCurrentRasterState.cullMode                = VK_CULL_MODE_NONE;
-    mCurrentRasterState.frontFace               = VK_FRONT_FACE_COUNTER_CLOCKWISE;
-    mCurrentRasterState.depthBiasEnable         = VK_FALSE;
-    mCurrentRasterState.depthBiasConstantFactor = 0.0f;
-    mCurrentRasterState.depthBiasClamp          = 0.0f;
-    mCurrentRasterState.depthBiasSlopeFactor    = 0.0f;
-    mCurrentRasterState.lineWidth               = 1.0f;
-
-    // Initialize a dummy multisample state.
-    // TODO(jmadill): Multisample state.
-    mCurrentMultisampleState.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
-    mCurrentMultisampleState.pNext = nullptr;
-    mCurrentMultisampleState.flags = 0;
-    mCurrentMultisampleState.rasterizationSamples  = VK_SAMPLE_COUNT_1_BIT;
-    mCurrentMultisampleState.sampleShadingEnable   = VK_FALSE;
-    mCurrentMultisampleState.minSampleShading      = 0.0f;
-    mCurrentMultisampleState.pSampleMask           = nullptr;
-    mCurrentMultisampleState.alphaToCoverageEnable = VK_FALSE;
-    mCurrentMultisampleState.alphaToOneEnable      = VK_FALSE;
-
-    // TODO(jmadill): Depth/stencil state.
-
-    // Initialize a dummy MRT blend state.
-    // TODO(jmadill): Blend state/MRT.
-    mCurrentBlendAttachmentState.blendEnable         = VK_FALSE;
-    mCurrentBlendAttachmentState.srcColorBlendFactor = VK_BLEND_FACTOR_ONE;
-    mCurrentBlendAttachmentState.dstColorBlendFactor = VK_BLEND_FACTOR_ONE;
-    mCurrentBlendAttachmentState.colorBlendOp        = VK_BLEND_OP_ADD;
-    mCurrentBlendAttachmentState.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
-    mCurrentBlendAttachmentState.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
-    mCurrentBlendAttachmentState.alphaBlendOp        = VK_BLEND_OP_ADD;
-    mCurrentBlendAttachmentState.colorWriteMask =
-        (VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT |
-         VK_COLOR_COMPONENT_A_BIT);
-
-    mCurrentBlendState.sType             = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
-    mCurrentBlendState.pNext             = 0;
-    mCurrentBlendState.flags             = 0;
-    mCurrentBlendState.logicOpEnable     = VK_FALSE;
-    mCurrentBlendState.logicOp           = VK_LOGIC_OP_CLEAR;
-    mCurrentBlendState.attachmentCount   = 1;
-    mCurrentBlendState.pAttachments      = &mCurrentBlendAttachmentState;
-    mCurrentBlendState.blendConstants[0] = 0.0f;
-    mCurrentBlendState.blendConstants[1] = 0.0f;
-    mCurrentBlendState.blendConstants[2] = 0.0f;
-    mCurrentBlendState.blendConstants[3] = 0.0f;
-
-    // TODO(jmadill): Dynamic state.
-
-    // The layout and renderpass are filled out at draw time.
-    mCurrentPipelineInfo.sType               = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
-    mCurrentPipelineInfo.pNext               = nullptr;
-    mCurrentPipelineInfo.flags               = 0;
-    mCurrentPipelineInfo.stageCount          = 2;
-    mCurrentPipelineInfo.pStages             = mCurrentShaderStages;
-    mCurrentPipelineInfo.pVertexInputState   = &mCurrentVertexInputState;
-    mCurrentPipelineInfo.pInputAssemblyState = &mCurrentInputAssemblyState;
-    mCurrentPipelineInfo.pTessellationState  = nullptr;
-    mCurrentPipelineInfo.pViewportState      = &mCurrentViewportState;
-    mCurrentPipelineInfo.pRasterizationState = &mCurrentRasterState;
-    mCurrentPipelineInfo.pMultisampleState   = &mCurrentMultisampleState;
-    mCurrentPipelineInfo.pDepthStencilState  = nullptr;
-    mCurrentPipelineInfo.pColorBlendState    = &mCurrentBlendState;
-    mCurrentPipelineInfo.pDynamicState       = nullptr;
-    mCurrentPipelineInfo.layout              = VK_NULL_HANDLE;
-    mCurrentPipelineInfo.renderPass          = VK_NULL_HANDLE;
-    mCurrentPipelineInfo.subpass             = 0;
-    mCurrentPipelineInfo.basePipelineHandle  = VK_NULL_HANDLE;
-    mCurrentPipelineInfo.basePipelineIndex   = 0;
 }
 
 ContextVk::~ContextVk()
@@ -233,67 +107,52 @@ gl::Error ContextVk::initialize()
 
     ANGLE_TRY(mDescriptorPool.init(device, descriptorPoolInfo));
 
+    mPipelineDesc.reset(new vk::PipelineDesc());
+    mPipelineDesc->initDefaults();
+
     return gl::NoError();
 }
 
 gl::Error ContextVk::flush(const gl::Context *context)
 {
+    // TODO(jmadill): Flush will need to insert a semaphore for the next flush to wait on.
     UNIMPLEMENTED();
     return gl::InternalError();
 }
 
 gl::Error ContextVk::finish(const gl::Context *context)
 {
-    // TODO(jmadill): Implement finish.
-    // UNIMPLEMENTED();
-    return gl::NoError();
+    return mRenderer->finish(context);
 }
 
 gl::Error ContextVk::initPipeline(const gl::Context *context)
 {
     ASSERT(!mCurrentPipeline.valid());
 
-    VkDevice device       = mRenderer->getDevice();
-    const auto &state     = mState.getState();
-    const gl::Program *programGL   = state.getProgram();
-    const gl::VertexArray *vao     = state.getVertexArray();
-    const gl::Framebuffer *drawFBO = state.getDrawFramebuffer();
-    ProgramVk *programVk  = vk::GetImpl(programGL);
-    FramebufferVk *vkFBO  = vk::GetImpl(drawFBO);
-    VertexArrayVk *vkVAO  = vk::GetImpl(vao);
+    const gl::State &state       = mState.getState();
+    VertexArrayVk *vertexArrayVk = vk::GetImpl(state.getVertexArray());
+    FramebufferVk *framebufferVk = vk::GetImpl(state.getDrawFramebuffer());
+    ProgramVk *programVk         = vk::GetImpl(state.getProgram());
+
+    // Ensure the topology of the pipeline description is updated.
+    mPipelineDesc->updateTopology(mCurrentDrawMode);
 
     // Ensure the attribs and bindings are updated.
-    vkVAO->updateVertexDescriptions(context);
+    vertexArrayVk->updateVertexDescriptions(context, mPipelineDesc.get());
 
-    const auto &vertexBindings = vkVAO->getVertexBindingDescs();
-    const auto &vertexAttribs  = vkVAO->getVertexAttribDescs();
+    // Ensure that the RenderPass description is updated.
+    mPipelineDesc->updateRenderPassDesc(framebufferVk->getRenderPassDesc(context));
 
     // TODO(jmadill): Validate with ASSERT against physical device limits/caps?
-    mCurrentVertexInputState.vertexBindingDescriptionCount =
-        static_cast<uint32_t>(vertexBindings.size());
-    mCurrentVertexInputState.pVertexBindingDescriptions = vertexBindings.data();
-    mCurrentVertexInputState.vertexAttributeDescriptionCount =
-        static_cast<uint32_t>(vertexAttribs.size());
-    mCurrentVertexInputState.pVertexAttributeDescriptions = vertexAttribs.data();
-
-    mCurrentInputAssemblyState.topology = gl_vk::GetPrimitiveTopology(mCurrentDrawMode);
-
-    vk::RenderPass *renderPass = nullptr;
-    ANGLE_TRY_RESULT(vkFBO->getRenderPass(context, device), renderPass);
-    ASSERT(renderPass && renderPass->valid());
-
-    const vk::PipelineLayout &pipelineLayout = programVk->getPipelineLayout();
-    ASSERT(pipelineLayout.valid());
-
-    mCurrentPipelineInfo.layout     = pipelineLayout.getHandle();
-    mCurrentPipelineInfo.renderPass = renderPass->getHandle();
-
-    ANGLE_TRY(mCurrentPipeline.initGraphics(device, mCurrentPipelineInfo));
+    ANGLE_TRY(mPipelineDesc->initializePipeline(mRenderer, programVk, &mCurrentPipeline));
 
     return gl::NoError();
 }
 
-gl::Error ContextVk::setupDraw(const gl::Context *context, GLenum mode)
+gl::Error ContextVk::setupDraw(const gl::Context *context,
+                               GLenum mode,
+                               DrawType drawType,
+                               vk::CommandBuffer **commandBuffer)
 {
     if (mode != mCurrentDrawMode)
     {
@@ -319,38 +178,81 @@ gl::Error ContextVk::setupDraw(const gl::Context *context, GLenum mode)
 
     // Process vertex attributes. Assume zero offsets for now.
     // TODO(jmadill): Offset handling.
-    const std::vector<VkBuffer> &vertexHandles = vkVAO->getCurrentVertexBufferHandlesCache();
-    angle::MemoryBuffer *zeroBuf               = nullptr;
+    const auto &vertexHandles    = vkVAO->getCurrentArrayBufferHandles();
+    angle::MemoryBuffer *zeroBuf = nullptr;
     ANGLE_TRY(context->getZeroFilledBuffer(maxAttrib * sizeof(VkDeviceSize), &zeroBuf));
 
-    vk::CommandBufferAndState *commandBuffer = nullptr;
-    ANGLE_TRY(mRenderer->getStartedCommandBuffer(&commandBuffer));
-    ANGLE_TRY(mRenderer->ensureInRenderPass(context, vkFBO));
+    // TODO(jmadill): Need to link up the TextureVk to the Secondary CB.
+    vk::CommandBufferNode *renderNode = nullptr;
+    ANGLE_TRY(vkFBO->getRenderNode(context, &renderNode));
 
-    commandBuffer->bindPipeline(VK_PIPELINE_BIND_POINT_GRAPHICS, mCurrentPipeline);
-    commandBuffer->bindVertexBuffers(0, maxAttrib, vertexHandles.data(),
-                                     reinterpret_cast<const VkDeviceSize *>(zeroBuf->data()));
+    if (!renderNode->getInsideRenderPassCommands()->valid())
+    {
+        mVertexArrayDirty = true;
+        mTexturesDirty    = true;
+        ANGLE_TRY(renderNode->startRenderPassRecording(mRenderer, commandBuffer));
+    }
+    else
+    {
+        *commandBuffer = renderNode->getInsideRenderPassCommands();
+    }
 
+    // Ensure any writes to the VAO buffers are flushed before we read from them.
+    if (mVertexArrayDirty)
+    {
+        mVertexArrayDirty = false;
+        vkVAO->updateDrawDependencies(renderNode, programGL->getActiveAttribLocationsMask(),
+                                      queueSerial, drawType);
+    }
+
+    // Ensure any writes to the textures are flushed before we read from them.
+    if (mTexturesDirty)
+    {
+        mTexturesDirty = false;
+        // TODO(jmadill): Should probably merge this for loop with programVk's descriptor update.
+        const auto &completeTextures = state.getCompleteTextureCache();
+        for (const gl::SamplerBinding &samplerBinding : programGL->getSamplerBindings())
+        {
+            ASSERT(!samplerBinding.unreferenced);
+
+            // TODO(jmadill): Sampler arrays
+            ASSERT(samplerBinding.boundTextureUnits.size() == 1);
+
+            GLuint textureUnit         = samplerBinding.boundTextureUnits[0];
+            const gl::Texture *texture = completeTextures[textureUnit];
+
+            // TODO(jmadill): Incomplete textures handling.
+            ASSERT(texture);
+
+            TextureVk *textureVk = vk::GetImpl(texture);
+            textureVk->updateDependencies(renderNode, mRenderer->getCurrentQueueSerial());
+        }
+    }
+
+    (*commandBuffer)->bindPipeline(VK_PIPELINE_BIND_POINT_GRAPHICS, mCurrentPipeline);
+    (*commandBuffer)
+        ->bindVertexBuffers(0, maxAttrib, vertexHandles.data(),
+                            reinterpret_cast<const VkDeviceSize *>(zeroBuf->data()));
+
+    // Update the queue serial for the pipeline object.
     // TODO(jmadill): the queue serial should be bound to the pipeline.
-    setQueueSerial(queueSerial);
-    vkVAO->updateCurrentBufferSerials(programGL->getActiveAttribLocationsMask(), queueSerial);
+    updateQueueSerial(queueSerial);
 
     // TODO(jmadill): Can probably use more dirty bits here.
-    ContextVk *contextVk = vk::GetImpl(context);
-    ANGLE_TRY(programVk->updateUniforms(contextVk));
-    programVk->updateTexturesDescriptorSet(contextVk);
+    ANGLE_TRY(programVk->updateUniforms(this));
+    programVk->updateTexturesDescriptorSet(this);
 
     // Bind the graphics descriptor sets.
     // TODO(jmadill): Handle multiple command buffers.
     const auto &descriptorSets = programVk->getDescriptorSets();
-    uint32_t firstSet          = programVk->getDescriptorSetOffset();
-    uint32_t setCount          = static_cast<uint32_t>(descriptorSets.size());
-    if (!descriptorSets.empty() && ((setCount - firstSet) > 0))
+    const gl::RangeUI &usedRange = programVk->getUsedDescriptorSetRange();
+    if (!usedRange.empty())
     {
-        const vk::PipelineLayout &pipelineLayout = programVk->getPipelineLayout();
-        commandBuffer->bindDescriptorSets(VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, firstSet,
-                                          setCount - firstSet, &descriptorSets[firstSet], 0,
-                                          nullptr);
+        ASSERT(!descriptorSets.empty());
+        const vk::PipelineLayout &pipelineLayout = mRenderer->getGraphicsPipelineLayout();
+        (*commandBuffer)
+            ->bindDescriptorSets(VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, usedRange.low(),
+                                 usedRange.length(), &descriptorSets[usedRange.low()], 0, nullptr);
     }
 
     return gl::NoError();
@@ -358,11 +260,8 @@ gl::Error ContextVk::setupDraw(const gl::Context *context, GLenum mode)
 
 gl::Error ContextVk::drawArrays(const gl::Context *context, GLenum mode, GLint first, GLsizei count)
 {
-    ANGLE_TRY(setupDraw(context, mode));
-
-    vk::CommandBufferAndState *commandBuffer = nullptr;
-    ANGLE_TRY(mRenderer->getStartedCommandBuffer(&commandBuffer));
-
+    vk::CommandBuffer *commandBuffer = nullptr;
+    ANGLE_TRY(setupDraw(context, mode, DrawType::Arrays, &commandBuffer));
     commandBuffer->draw(count, 1, first, 0);
     return gl::NoError();
 }
@@ -383,7 +282,8 @@ gl::Error ContextVk::drawElements(const gl::Context *context,
                                   GLenum type,
                                   const void *indices)
 {
-    ANGLE_TRY(setupDraw(context, mode));
+    vk::CommandBuffer *commandBuffer;
+    ANGLE_TRY(setupDraw(context, mode, DrawType::Elements, &commandBuffer));
 
     if (indices)
     {
@@ -398,9 +298,6 @@ gl::Error ContextVk::drawElements(const gl::Context *context,
         UNIMPLEMENTED();
         return gl::InternalError() << "Unsigned byte translation is not yet implemented.";
     }
-
-    vk::CommandBufferAndState *commandBuffer = nullptr;
-    ANGLE_TRY(mRenderer->getStartedCommandBuffer(&commandBuffer));
 
     const gl::Buffer *elementArrayBuffer =
         mState.getState().getVertexArray()->getElementArrayBuffer().get();
@@ -439,18 +336,6 @@ gl::Error ContextVk::drawRangeElements(const gl::Context *context,
 VkDevice ContextVk::getDevice() const
 {
     return mRenderer->getDevice();
-}
-
-vk::Error ContextVk::getStartedCommandBuffer(vk::CommandBufferAndState **commandBufferOut)
-{
-    return mRenderer->getStartedCommandBuffer(commandBufferOut);
-}
-
-vk::Error ContextVk::submitCommands(vk::CommandBufferAndState *commandBuffer)
-{
-    setQueueSerial(mRenderer->getCurrentQueueSerial());
-    ANGLE_TRY(mRenderer->submitCommandBuffer(commandBuffer));
-    return vk::NoError();
 }
 
 gl::Error ContextVk::drawArraysIndirect(const gl::Context *context,
@@ -536,22 +421,9 @@ void ContextVk::syncState(const gl::Context *context, const gl::State::DirtyBits
                 WARN() << "DIRTY_BIT_SCISSOR unimplemented";
                 break;
             case gl::State::DIRTY_BIT_VIEWPORT:
-            {
-                const gl::Rectangle &viewportGL = glState.getViewport();
-                mCurrentViewportVk.x            = static_cast<float>(viewportGL.x);
-                mCurrentViewportVk.y            = static_cast<float>(viewportGL.y);
-                mCurrentViewportVk.width        = static_cast<float>(viewportGL.width);
-                mCurrentViewportVk.height       = static_cast<float>(viewportGL.height);
-                mCurrentViewportVk.minDepth     = glState.getNearPlane();
-                mCurrentViewportVk.maxDepth     = glState.getFarPlane();
-
-                // TODO(jmadill): Scissor.
-                mCurrentScissorVk.offset.x      = viewportGL.x;
-                mCurrentScissorVk.offset.y      = viewportGL.y;
-                mCurrentScissorVk.extent.width  = viewportGL.width;
-                mCurrentScissorVk.extent.height = viewportGL.height;
+                mPipelineDesc->updateViewport(glState.getViewport(), glState.getNearPlane(),
+                                              glState.getFarPlane());
                 break;
-            }
             case gl::State::DIRTY_BIT_DEPTH_RANGE:
                 WARN() << "DIRTY_BIT_DEPTH_RANGE unimplemented";
                 break;
@@ -617,11 +489,10 @@ void ContextVk::syncState(const gl::Context *context, const gl::State::DirtyBits
                 break;
             case gl::State::DIRTY_BIT_CULL_FACE_ENABLED:
             case gl::State::DIRTY_BIT_CULL_FACE:
-                mCurrentRasterState.cullMode = gl_vk::GetCullMode(glState.getRasterizerState());
+                mPipelineDesc->updateCullMode(glState.getRasterizerState());
                 break;
             case gl::State::DIRTY_BIT_FRONT_FACE:
-                mCurrentRasterState.frontFace =
-                    gl_vk::GetFrontFace(glState.getRasterizerState().frontFace);
+                mPipelineDesc->updateFrontFace(glState.getRasterizerState());
                 break;
             case gl::State::DIRTY_BIT_POLYGON_OFFSET_FILL_ENABLED:
                 WARN() << "DIRTY_BIT_POLYGON_OFFSET_FILL_ENABLED unimplemented";
@@ -633,7 +504,7 @@ void ContextVk::syncState(const gl::Context *context, const gl::State::DirtyBits
                 WARN() << "DIRTY_BIT_RASTERIZER_DISCARD_ENABLED unimplemented";
                 break;
             case gl::State::DIRTY_BIT_LINE_WIDTH:
-                mCurrentRasterState.lineWidth = glState.getLineWidth();
+                mPipelineDesc->updateLineWidth(glState.getLineWidth());
                 break;
             case gl::State::DIRTY_BIT_PRIMITIVE_RESTART_ENABLED:
                 WARN() << "DIRTY_BIT_PRIMITIVE_RESTART_ENABLED unimplemented";
@@ -678,24 +549,29 @@ void ContextVk::syncState(const gl::Context *context, const gl::State::DirtyBits
                 WARN() << "DIRTY_BIT_RENDERBUFFER_BINDING unimplemented";
                 break;
             case gl::State::DIRTY_BIT_VERTEX_ARRAY_BINDING:
-                WARN() << "DIRTY_BIT_VERTEX_ARRAY_BINDING unimplemented";
+            {
+                VertexArrayVk *vertexArrayVk = vk::GetImpl(glState.getVertexArray());
+                vertexArrayVk->invalidateVertexDescriptions();
+                mVertexArrayDirty = true;
                 break;
+            }
             case gl::State::DIRTY_BIT_DRAW_INDIRECT_BUFFER_BINDING:
                 WARN() << "DIRTY_BIT_DRAW_INDIRECT_BUFFER_BINDING unimplemented";
+                break;
+            case gl::State::DIRTY_BIT_DISPATCH_INDIRECT_BUFFER_BINDING:
+                WARN() << "DIRTY_BIT_DISPATCH_INDIRECT_BUFFER_BINDING unimplemented";
                 break;
             case gl::State::DIRTY_BIT_PROGRAM_BINDING:
                 WARN() << "DIRTY_BIT_PROGRAM_BINDING unimplemented";
                 break;
             case gl::State::DIRTY_BIT_PROGRAM_EXECUTABLE:
             {
-                // { vertex, fragment }
-                ProgramVk *programVk           = vk::GetImpl(glState.getProgram());
-                mCurrentShaderStages[0].module = programVk->getLinkedVertexModule().getHandle();
-                mCurrentShaderStages[1].module = programVk->getLinkedFragmentModule().getHandle();
+                ProgramVk *programVk = vk::GetImpl(glState.getProgram());
+                mPipelineDesc->updateShaders(programVk);
 
                 // Also invalidate the vertex descriptions cache in the Vertex Array.
-                VertexArrayVk *vaoVk = vk::GetImpl(glState.getVertexArray());
-                vaoVk->invalidateVertexDescriptions();
+                VertexArrayVk *vertexArrayVk = vk::GetImpl(glState.getVertexArray());
+                vertexArrayVk->invalidateVertexDescriptions();
 
                 dirtyTextures = true;
                 break;
@@ -705,6 +581,15 @@ void ContextVk::syncState(const gl::Context *context, const gl::State::DirtyBits
                 break;
             case gl::State::DIRTY_BIT_SAMPLER_BINDINGS:
                 dirtyTextures = true;
+                break;
+            case gl::State::DIRTY_BIT_TRANSFORM_FEEDBACK_BINDING:
+                WARN() << "DIRTY_BIT_TRANSFORM_FEEDBACK_BINDING unimplemented";
+                break;
+            case gl::State::DIRTY_BIT_SHADER_STORAGE_BUFFER_BINDING:
+                WARN() << "DIRTY_BIT_SHADER_STORAGE_BUFFER_BINDING unimplemented";
+                break;
+            case gl::State::DIRTY_BIT_UNIFORM_BUFFER_BINDINGS:
+                WARN() << "DIRTY_BIT_UNIFORM_BUFFER_BINDINGS unimplemented";
                 break;
             case gl::State::DIRTY_BIT_MULTISAMPLING:
                 WARN() << "DIRTY_BIT_MULTISAMPLING unimplemented";
@@ -740,6 +625,7 @@ void ContextVk::syncState(const gl::Context *context, const gl::State::DirtyBits
     {
         ProgramVk *programVk = vk::GetImpl(glState.getProgram());
         programVk->invalidateTextures();
+        mTexturesDirty = true;
     }
 }
 
@@ -860,10 +746,35 @@ void ContextVk::invalidateCurrentPipeline()
     mRenderer->releaseResource(*this, &mCurrentPipeline);
 }
 
+void ContextVk::onVertexArrayChange()
+{
+    // TODO(jmadill): Does not handle dependent state changes.
+    mVertexArrayDirty = true;
+    invalidateCurrentPipeline();
+}
+
 gl::Error ContextVk::dispatchCompute(const gl::Context *context,
                                      GLuint numGroupsX,
                                      GLuint numGroupsY,
                                      GLuint numGroupsZ)
+{
+    UNIMPLEMENTED();
+    return gl::InternalError();
+}
+
+gl::Error ContextVk::dispatchComputeIndirect(const gl::Context *context, GLintptr indirect)
+{
+    UNIMPLEMENTED();
+    return gl::InternalError();
+}
+
+gl::Error ContextVk::memoryBarrier(const gl::Context *context, GLbitfield barriers)
+{
+    UNIMPLEMENTED();
+    return gl::InternalError();
+}
+
+gl::Error ContextVk::memoryBarrierByRegion(const gl::Context *context, GLbitfield barriers)
 {
     UNIMPLEMENTED();
     return gl::InternalError();

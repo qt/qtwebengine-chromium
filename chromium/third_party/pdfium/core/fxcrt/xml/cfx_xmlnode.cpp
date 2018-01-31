@@ -90,11 +90,9 @@ CFX_XMLNode* CFX_XMLNode::GetPath(const wchar_t* pPath,
   wchar_t ch;
   while (pStart < pEnd) {
     ch = *pStart++;
-    if (ch == L'/') {
+    if (ch == L'/')
       break;
-    } else {
-      csPath += ch;
-    }
+    csPath += ch;
   }
   iLength -= pStart - pPath;
   CFX_XMLNode* pFind = nullptr;
@@ -349,7 +347,7 @@ void CFX_XMLNode::SaveXMLNode(
         ws += L"\"?>";
         pXMLStream->WriteString(ws.AsStringView());
       } else {
-        ws = WideString::Format(L"<?%s", pInstruction->GetName().c_str());
+        ws = WideString::Format(L"<?%ls", pInstruction->GetName().c_str());
         pXMLStream->WriteString(ws.AsStringView());
 
         for (auto it : pInstruction->GetAttributes()) {

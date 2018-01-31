@@ -18,9 +18,13 @@
 #include "xfa/fxfa/cxfa_fffield.h"
 #include "xfa/fxfa/cxfa_ffpageview.h"
 #include "xfa/fxfa/cxfa_ffwidget.h"
+#include "xfa/fxfa/parser/cxfa_border.h"
+#include "xfa/fxfa/parser/cxfa_image.h"
+#include "xfa/fxfa/parser/cxfa_para.h"
+#include "xfa/fxfa/parser/cxfa_value.h"
 
-CXFA_FFImageEdit::CXFA_FFImageEdit(CXFA_WidgetAcc* pDataAcc)
-    : CXFA_FFField(pDataAcc), m_pOldDelegate(nullptr) {}
+CXFA_FFImageEdit::CXFA_FFImageEdit(CXFA_Node* pNode)
+    : CXFA_FFField(pNode), m_pOldDelegate(nullptr) {}
 
 CXFA_FFImageEdit::~CXFA_FFImageEdit() {
   CXFA_FFImageEdit::UnloadWidget();
@@ -40,14 +44,14 @@ bool CXFA_FFImageEdit::LoadWidget() {
   pPictureBox->SetDelegate(this);
 
   CXFA_FFField::LoadWidget();
-  if (!m_pDataAcc->GetImageEditImage())
+  if (!m_pNode->GetWidgetAcc()->GetImageEditImage())
     UpdateFWLData();
 
   return true;
 }
 
 void CXFA_FFImageEdit::UnloadWidget() {
-  m_pDataAcc->SetImageEditImage(nullptr);
+  m_pNode->GetWidgetAcc()->SetImageEditImage(nullptr);
   CXFA_FFField::UnloadWidget();
 }
 
@@ -61,39 +65,40 @@ void CXFA_FFImageEdit::RenderWidget(CXFA_Graphics* pGS,
   mtRotate.Concat(matrix);
 
   CXFA_FFWidget::RenderWidget(pGS, mtRotate, dwStatus);
-  DrawBorder(pGS, m_pDataAcc->GetUIBorderData(), m_rtUI, mtRotate);
+  DrawBorder(pGS, m_pNode->GetWidgetAcc()->GetUIBorder(), m_rtUI, mtRotate);
   RenderCaption(pGS, &mtRotate);
-  RetainPtr<CFX_DIBitmap> pDIBitmap = m_pDataAcc->GetImageEditImage();
+  RetainPtr<CFX_DIBitmap> pDIBitmap =
+      m_pNode->GetWidgetAcc()->GetImageEditImage();
   if (!pDIBitmap)
     return;
 
   CFX_RectF rtImage = m_pNormalWidget->GetWidgetRect();
   XFA_AttributeEnum iHorzAlign = XFA_AttributeEnum::Left;
   XFA_AttributeEnum iVertAlign = XFA_AttributeEnum::Top;
-  CXFA_ParaData paraData = m_pDataAcc->GetParaData();
-  if (paraData.HasValidNode()) {
-    iHorzAlign = paraData.GetHorizontalAlign();
-    iVertAlign = paraData.GetVerticalAlign();
+  CXFA_Para* para = m_pNode->GetParaIfExists();
+  if (para) {
+    iHorzAlign = para->GetHorizontalAlign();
+    iVertAlign = para->GetVerticalAlign();
   }
 
   XFA_AttributeEnum iAspect = XFA_AttributeEnum::Fit;
-  CXFA_ValueData valueData = m_pDataAcc->GetFormValueData();
-  if (valueData.HasValidNode()) {
-    CXFA_ImageData imageData = valueData.GetImageData();
-    if (imageData.HasValidNode())
-      iAspect = imageData.GetAspect();
+  CXFA_Value* value = m_pNode->GetFormValueIfExists();
+  if (value) {
+    CXFA_Image* image = value->GetImageIfExists();
+    if (image)
+      iAspect = image->GetAspect();
   }
 
   int32_t iImageXDpi = 0;
   int32_t iImageYDpi = 0;
-  m_pDataAcc->GetImageEditDpi(iImageXDpi, iImageYDpi);
+  m_pNode->GetWidgetAcc()->GetImageEditDpi(iImageXDpi, iImageYDpi);
   XFA_DrawImage(pGS, rtImage, mtRotate, pDIBitmap, iAspect, iImageXDpi,
                 iImageYDpi, iHorzAlign, iVertAlign);
 }
 
 bool CXFA_FFImageEdit::OnLButtonDown(uint32_t dwFlags,
                                      const CFX_PointF& point) {
-  if (!m_pDataAcc->IsOpenAccess())
+  if (!m_pNode->IsOpenAccess())
     return false;
   if (!PtInActiveRect(point))
     return false;
@@ -112,7 +117,7 @@ void CXFA_FFImageEdit::SetFWLRect() {
   if (!m_pNormalWidget)
     return;
 
-  CFX_RectF rtUIMargin = m_pDataAcc->GetUIMargin();
+  CFX_RectF rtUIMargin = m_pNode->GetWidgetAcc()->GetUIMargin();
   CFX_RectF rtImage(m_rtUI);
   rtImage.Deflate(rtUIMargin.left, rtUIMargin.top, rtUIMargin.width,
                   rtUIMargin.height);
@@ -124,8 +129,8 @@ bool CXFA_FFImageEdit::CommitData() {
 }
 
 bool CXFA_FFImageEdit::UpdateFWLData() {
-  m_pDataAcc->SetImageEditImage(nullptr);
-  m_pDataAcc->LoadImageEditImage();
+  m_pNode->GetWidgetAcc()->SetImageEditImage(nullptr);
+  m_pNode->GetWidgetAcc()->LoadImageEditImage(GetDoc());
   return true;
 }
 
@@ -141,4 +146,8 @@ void CXFA_FFImageEdit::OnProcessEvent(CFWL_Event* pEvent) {
 void CXFA_FFImageEdit::OnDrawWidget(CXFA_Graphics* pGraphics,
                                     const CFX_Matrix& matrix) {
   m_pOldDelegate->OnDrawWidget(pGraphics, matrix);
+}
+
+FormFieldType CXFA_FFImageEdit::GetFormFieldType() {
+  return FormFieldType::kXFA_ImageField;
 }

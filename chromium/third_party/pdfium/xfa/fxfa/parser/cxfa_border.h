@@ -7,9 +7,9 @@
 #ifndef XFA_FXFA_PARSER_CXFA_BORDER_H_
 #define XFA_FXFA_PARSER_CXFA_BORDER_H_
 
-#include "xfa/fxfa/parser/cxfa_node.h"
+#include "xfa/fxfa/parser/cxfa_rectangle.h"
 
-class CXFA_Border : public CXFA_Node {
+class CXFA_Border : public CXFA_Rectangle {
  public:
   CXFA_Border(CXFA_Document* doc, XFA_PacketType packet);
   ~CXFA_Border() override;

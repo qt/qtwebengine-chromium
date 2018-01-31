@@ -6,7 +6,10 @@
 
 #include "xfa/fxfa/cxfa_ffarc.h"
 
-CXFA_FFArc::CXFA_FFArc(CXFA_WidgetAcc* pDataAcc) : CXFA_FFDraw(pDataAcc) {}
+#include "xfa/fxfa/parser/cxfa_arc.h"
+#include "xfa/fxfa/parser/cxfa_value.h"
+
+CXFA_FFArc::CXFA_FFArc(CXFA_Node* pNode) : CXFA_FFDraw(pNode) {}
 
 CXFA_FFArc::~CXFA_FFArc() {}
 
@@ -16,17 +19,17 @@ void CXFA_FFArc::RenderWidget(CXFA_Graphics* pGS,
   if (!IsMatchVisibleStatus(dwStatus))
     return;
 
-  CXFA_ValueData valueData = m_pDataAcc->GetFormValueData();
-  if (!valueData.HasValidNode())
+  CXFA_Value* value = m_pNode->GetFormValueIfExists();
+  if (!value)
     return;
 
   CFX_RectF rtArc = GetRectWithoutRotate();
-  CXFA_MarginData marginData = m_pDataAcc->GetMarginData();
-  if (marginData.HasValidNode())
-    XFA_RectWidthoutMargin(rtArc, marginData);
+  CXFA_Margin* margin = m_pNode->GetMarginIfExists();
+  if (margin)
+    XFA_RectWithoutMargin(rtArc, margin);
 
   CFX_Matrix mtRotate = GetRotateMatrix();
   mtRotate.Concat(matrix);
 
-  DrawBorder(pGS, valueData.GetArcData(), rtArc, mtRotate);
+  DrawBorder(pGS, value->GetArcIfExists(), rtArc, mtRotate);
 }

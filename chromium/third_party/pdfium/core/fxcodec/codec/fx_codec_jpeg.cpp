@@ -34,6 +34,8 @@ class CJpegContext : public CCodec_JpegModule::Context {
   CJpegContext();
   ~CJpegContext() override;
 
+  jmp_buf* GetJumpMark() override { return &m_JumpMark; }
+
   jmp_buf m_JumpMark;
   jpeg_decompress_struct m_Info;
   jpeg_error_mgr m_ErrMgr;
@@ -415,7 +417,7 @@ CJpegContext::~CJpegContext() {
 }
 
 std::unique_ptr<CCodec_JpegModule::Context> CCodec_JpegModule::Start() {
-  // Use ordinary pointer until past the fear of a longjump.
+  // Use ordinary pointer until past the possibility of a longjump.
   auto* pContext = new CJpegContext();
   if (setjmp(pContext->m_JumpMark) == -1)
     return nullptr;
@@ -457,9 +459,6 @@ int CCodec_JpegModule::ReadHeader(Context* pContext,
                                   int* nComps) {
 #endif  // PDF_ENABLE_XFA
   auto* ctx = static_cast<CJpegContext*>(pContext);
-  if (setjmp(ctx->m_JumpMark) == -1)
-    return 1;
-
   int ret = jpeg_read_header(&ctx->m_Info, true);
   if (ret == JPEG_SUSPENDED)
     return 2;
@@ -477,20 +476,14 @@ int CCodec_JpegModule::ReadHeader(Context* pContext,
 
 bool CCodec_JpegModule::StartScanline(Context* pContext, int down_scale) {
   auto* ctx = static_cast<CJpegContext*>(pContext);
-  if (setjmp(ctx->m_JumpMark) == -1)
-    return false;
-
-  ctx->m_Info.scale_denom = down_scale;
+  ctx->m_Info.scale_denom = static_cast<unsigned int>(down_scale);
   return !!jpeg_start_decompress(&ctx->m_Info);
 }
 
 bool CCodec_JpegModule::ReadScanline(Context* pContext,
                                      unsigned char* dest_buf) {
   auto* ctx = static_cast<CJpegContext*>(pContext);
-  if (setjmp(ctx->m_JumpMark) == -1)
-    return false;
-
-  int nlines = jpeg_read_scanlines(&ctx->m_Info, &dest_buf, 1);
+  unsigned int nlines = jpeg_read_scanlines(&ctx->m_Info, &dest_buf, 1);
   return nlines == 1;
 }
 

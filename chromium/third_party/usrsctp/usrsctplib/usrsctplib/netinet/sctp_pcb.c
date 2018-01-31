@@ -1,4 +1,6 @@
 /*-
+ * SPDX-License-Identifier: BSD-3-Clause
+ *
  * Copyright (c) 2001-2008, by Cisco Systems, Inc. All rights reserved.
  * Copyright (c) 2008-2012, by Randall Stewart. All rights reserved.
  * Copyright (c) 2008-2012, by Michael Tuexen. All rights reserved.
@@ -32,7 +34,7 @@
 
 #ifdef __FreeBSD__
 #include <sys/cdefs.h>
-__FBSDID("$FreeBSD: head/sys/netinet/sctp_pcb.c 321204 2017-07-19 14:28:58Z tuexen $");
+__FBSDID("$FreeBSD: head/sys/netinet/sctp_pcb.c 325370 2017-11-03 20:46:12Z tuexen $");
 #endif
 
 #include <netinet/sctp_os.h>
@@ -801,12 +803,11 @@ sctp_add_addr_to_vrf(uint32_t vrf_id, void *ifn, uint32_t ifn_index,
 
 		SCTP_WQ_ADDR_LOCK();
 		LIST_INSERT_HEAD(&SCTP_BASE_INFO(addr_wq), wi, sctp_nxt_addr);
-		SCTP_WQ_ADDR_UNLOCK();
-
 		sctp_timer_start(SCTP_TIMER_TYPE_ADDR_WQ,
 				 (struct sctp_inpcb *)NULL,
 				 (struct sctp_tcb *)NULL,
 				 (struct sctp_nets *)NULL);
+		SCTP_WQ_ADDR_UNLOCK();
 	} else {
 		/* it's ready for use */
 		sctp_ifap->localifa_flags &= ~SCTP_ADDR_DEFER_USE;
@@ -912,12 +913,11 @@ sctp_del_addr_from_vrf(uint32_t vrf_id, struct sockaddr *addr,
 		 * newest first :-0
 		 */
 		LIST_INSERT_HEAD(&SCTP_BASE_INFO(addr_wq), wi, sctp_nxt_addr);
-		SCTP_WQ_ADDR_UNLOCK();
-
 		sctp_timer_start(SCTP_TIMER_TYPE_ADDR_WQ,
 				 (struct sctp_inpcb *)NULL,
 				 (struct sctp_tcb *)NULL,
 				 (struct sctp_nets *)NULL);
+		SCTP_WQ_ADDR_UNLOCK();
 	}
 	return;
 }
@@ -2877,16 +2877,16 @@ sctp_inpcb_alloc(struct socket *so, uint32_t vrf_id)
 		inp->sctp_flags = (SCTP_PCB_FLAGS_TCPTYPE |
 		    SCTP_PCB_FLAGS_UNBOUND);
 		/* Be sure we have blocking IO by default */
+		SOCK_LOCK(so);
 		SCTP_CLEAR_SO_NBIO(so);
+		SOCK_UNLOCK(so);
 #if defined(__Panda__)
 	} else if (SCTP_SO_TYPE(so) == SOCK_FASTSEQPACKET) {
 		inp->sctp_flags = (SCTP_PCB_FLAGS_UDPTYPE |
 		    SCTP_PCB_FLAGS_UNBOUND);
-		sctp_feature_on(inp, SCTP_PCB_FLAGS_ZERO_COPY_ACTIVE);
 	} else if (SCTP_SO_TYPE(so) == SOCK_FASTSTREAM) {
 		inp->sctp_flags = (SCTP_PCB_FLAGS_TCPTYPE |
 		    SCTP_PCB_FLAGS_UNBOUND);
-		sctp_feature_on(inp, SCTP_PCB_FLAGS_ZERO_COPY_ACTIVE);
 #endif
 	} else {
 		/*
@@ -3030,6 +3030,7 @@ sctp_inpcb_alloc(struct socket *so, uint32_t vrf_id)
 	/* number of streams to pre-open on a association */
 	m->pre_open_stream_count = SCTP_BASE_SYSCTL(sctp_nr_outgoing_streams_default);
 
+	m->default_mtu = 0;
 	/* Add adaptation cookie */
 	m->adaptation_layer_indicator = 0;
 	m->adaptation_layer_indicator_provided = 0;
@@ -3445,7 +3446,7 @@ sctp_inpcb_bind(struct socket *so, struct sockaddr *addr,
 		/* got to be root to get at low ports */
 #if !defined(__Windows__)
 		if (ntohs(lport) < IPPORT_RESERVED) {
-			if (p && (error =
+			if ((p != NULL) && ((error =
 #ifdef __FreeBSD__
 #if __FreeBSD_version > 602000
 				  priv_check(p, PRIV_NETINET_RESERVEDPORT)
@@ -3461,7 +3462,7 @@ sctp_inpcb_bind(struct socket *so, struct sockaddr *addr,
 #else
 				  suser(p, 0)
 #endif
-				    )) {
+				    ) != 0)) {
 				SCTP_INP_DECR_REF(inp);
 				SCTP_INP_WUNLOCK(inp);
 				SCTP_INP_INFO_WUNLOCK();
@@ -4199,18 +4200,6 @@ sctp_inpcb_free(struct sctp_inpcb *inp, int immediate, int from)
 #endif
 #endif
 
-#if defined(__Panda__)
-	if (inp->pak_to_read) {
-		(void)SCTP_OS_TIMER_STOP(&inp->sctp_ep.zero_copy_timer.timer);
-		SCTP_RELEASE_PKT(inp->pak_to_read);
-		inp->pak_to_read = NULL;
-	}
-	if (inp->pak_to_read_sendq) {
-		(void)SCTP_OS_TIMER_STOP(&inp->sctp_ep.zero_copy_sendq_timer.timer);
-		SCTP_RELEASE_PKT(inp->pak_to_read_sendq);
-		inp->pak_to_read_sendq = NULL;
-	}
-#endif
 	if ((inp->sctp_asocidhash) != NULL) {
 		SCTP_HASH_FREE(inp->sctp_asocidhash, inp->hashasocidmark);
 		inp->sctp_asocidhash = NULL;
@@ -4656,7 +4645,33 @@ sctp_add_remote_addr(struct sctp_tcb *stcb, struct sockaddr *newaddr,
 		                                                net,
 		                                                0,
 		                                                stcb->asoc.vrf_id);
-		if (net->ro._s_addr != NULL) {
+		if (stcb->asoc.default_mtu > 0) {
+			net->mtu = stcb->asoc.default_mtu;
+			switch (net->ro._l_addr.sa.sa_family) {
+#ifdef INET
+			case AF_INET:
+				net->mtu += SCTP_MIN_V4_OVERHEAD;
+				break;
+#endif
+#ifdef INET6
+			case AF_INET6:
+				net->mtu += SCTP_MIN_OVERHEAD;
+				break;
+#endif
+#if defined(__Userspace__)
+			case AF_CONN:
+				net->mtu += sizeof(struct sctphdr);
+				break;
+#endif
+			default:
+				break;
+			}
+#if defined(INET) || defined(INET6)
+			if (net->port) {
+				net->mtu += (uint32_t)sizeof(struct udphdr);
+			}
+#endif
+		} else if (net->ro._s_addr != NULL) {
 			uint32_t imtu, rmtu, hcmtu;
 
 			net->src_addr_selected = 1;
@@ -4682,24 +4697,52 @@ sctp_add_remote_addr(struct sctp_tcb *stcb, struct sockaddr *newaddr,
 	}
 #endif
 	if (net->mtu == 0) {
-		switch (newaddr->sa_family) {
+		if (stcb->asoc.default_mtu > 0) {
+			net->mtu = stcb->asoc.default_mtu;
+			switch (net->ro._l_addr.sa.sa_family) {
 #ifdef INET
-		case AF_INET:
-			net->mtu = SCTP_DEFAULT_MTU;
-			break;
+			case AF_INET:
+				net->mtu += SCTP_MIN_V4_OVERHEAD;
+				break;
 #endif
 #ifdef INET6
-		case AF_INET6:
-			net->mtu = 1280;
-			break;
+			case AF_INET6:
+				net->mtu += SCTP_MIN_OVERHEAD;
+				break;
 #endif
 #if defined(__Userspace__)
-		case AF_CONN:
-			net->mtu = 1280;
-			break;
+			case AF_CONN:
+				net->mtu += sizeof(struct sctphdr);
+				break;
 #endif
-		default:
-			break;
+			default:
+				break;
+			}
+#if defined(INET) || defined(INET6)
+			if (net->port) {
+				net->mtu += (uint32_t)sizeof(struct udphdr);
+			}
+#endif
+		} else {
+			switch (newaddr->sa_family) {
+#ifdef INET
+			case AF_INET:
+				net->mtu = SCTP_DEFAULT_MTU;
+				break;
+#endif
+#ifdef INET6
+			case AF_INET6:
+				net->mtu = 1280;
+				break;
+#endif
+#if defined(__Userspace__)
+			case AF_CONN:
+				net->mtu = 1280;
+				break;
+#endif
+			default:
+				break;
+			}
 		}
 	}
 #if defined(INET) || defined(INET6)

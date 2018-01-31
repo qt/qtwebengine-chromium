@@ -8,16 +8,15 @@
 #include <utility>
 #include <vector>
 
-#include "base/command_line.h"
 #include "base/debug/dump_without_crashing.h"
 #include "base/location.h"
 #include "base/memory/ptr_util.h"
 #include "base/single_thread_task_runner.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "build/build_config.h"
+#include "components/viz/common/features.h"
 #include "components/viz/common/frame_sinks/copy_output_request.h"
 #include "components/viz/common/frame_sinks/copy_output_result.h"
-#include "components/viz/common/switches.h"
 #include "components/viz/host/host_frame_sink_manager.h"
 #include "components/viz/service/frame_sinks/compositor_frame_sink_support.h"
 #include "components/viz/service/frame_sinks/frame_sink_manager_impl.h"
@@ -43,6 +42,7 @@
 #include "gpu/ipc/common/gpu_messages.h"
 #include "services/service_manager/runner/common/client_util.h"
 #include "third_party/WebKit/public/platform/WebTouchEvent.h"
+#include "ui/base/ui_base_switches_util.h"
 #include "ui/gfx/geometry/size_conversions.h"
 #include "ui/gfx/geometry/size_f.h"
 #include "ui/touch_selection/touch_selection_controller.h"
@@ -72,12 +72,12 @@ RenderWidgetHostViewChildFrame::RenderWidgetHostViewChildFrame(
       next_surface_sequence_(1u),
       current_surface_scale_factor_(1.f),
       frame_connector_(nullptr),
-      enable_viz_(base::CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kEnableViz)),
+      enable_viz_(
+          base::FeatureList::IsEnabled(features::kVizDisplayCompositor)),
       background_color_(SK_ColorWHITE),
       scroll_bubbling_state_(NO_ACTIVE_GESTURE_SCROLL),
       weak_factory_(this) {
-  if (IsUsingMus()) {
+  if (switches::IsMusHostingViz()) {
     // In Mus the RenderFrameProxy will eventually assign a viz::FrameSinkId
     // until then set ours invalid, as operations using it will be disregarded.
     frame_sink_id_ = viz::FrameSinkId();
@@ -98,7 +98,7 @@ RenderWidgetHostViewChildFrame::~RenderWidgetHostViewChildFrame() {
   if (frame_connector_)
     DetachFromTouchSelectionClientManagerIfNecessary();
 
-  if (!IsUsingMus()) {
+  if (!switches::IsMusHostingViz()) {
     ResetCompositorFrameSinkSupport();
     if (GetHostFrameSinkManager())
       GetHostFrameSinkManager()->InvalidateFrameSinkId(frame_sink_id_);
@@ -152,7 +152,8 @@ void RenderWidgetHostViewChildFrame::SetFrameConnectorDelegate(
       frame_connector_->GetParentRenderWidgetHostView();
 
   if (parent_view) {
-    DCHECK(parent_view->GetFrameSinkId().is_valid() || IsUsingMus());
+    DCHECK(parent_view->GetFrameSinkId().is_valid() ||
+           switches::IsMusHostingViz());
     SetParentFrameSinkId(parent_view->GetFrameSinkId());
   }
 
@@ -183,7 +184,7 @@ void RenderWidgetHostViewChildFrame::SetFrameConnectorDelegate(
 #if defined(USE_AURA)
 void RenderWidgetHostViewChildFrame::SetFrameSinkId(
     const viz::FrameSinkId& frame_sink_id) {
-  if (IsUsingMus())
+  if (switches::IsMusHostingViz())
     frame_sink_id_ = frame_sink_id;
 }
 #endif  // defined(USE_AURA)
@@ -199,10 +200,6 @@ void RenderWidgetHostViewChildFrame::OnManagerWillDestroy(
 
 void RenderWidgetHostViewChildFrame::InitAsChild(gfx::NativeView parent_view) {
   NOTREACHED();
-}
-
-RenderWidgetHost* RenderWidgetHostViewChildFrame::GetRenderWidgetHost() const {
-  return host_;
 }
 
 void RenderWidgetHostViewChildFrame::SetSize(const gfx::Size& size) {
@@ -539,7 +536,8 @@ void RenderWidgetHostViewChildFrame::DidCreateNewRendererCompositorFrameSink(
 
 void RenderWidgetHostViewChildFrame::SetParentFrameSinkId(
     const viz::FrameSinkId& parent_frame_sink_id) {
-  if (parent_frame_sink_id_ == parent_frame_sink_id || IsUsingMus())
+  if (parent_frame_sink_id_ == parent_frame_sink_id ||
+      switches::IsMusHostingViz())
     return;
 
   auto* host_frame_sink_manager = GetHostFrameSinkManager();
@@ -586,7 +584,7 @@ void RenderWidgetHostViewChildFrame::ProcessCompositorFrame(
 }
 
 void RenderWidgetHostViewChildFrame::SendSurfaceInfoToEmbedder() {
-  if (IsUsingMus())
+  if (switches::IsMusHostingViz())
     return;
   // TODO(kylechar): Remove sequence generation and only send surface info.
   // See https://crbug.com/676384.
@@ -606,7 +604,8 @@ void RenderWidgetHostViewChildFrame::SendSurfaceInfoToEmbedder() {
 void RenderWidgetHostViewChildFrame::SendSurfaceInfoToEmbedderImpl(
     const viz::SurfaceInfo& surface_info,
     const viz::SurfaceSequence& sequence) {
-  frame_connector_->SetChildFrameSurface(surface_info, sequence);
+  if (frame_connector_)
+    frame_connector_->SetChildFrameSurface(surface_info, sequence);
 }
 
 void RenderWidgetHostViewChildFrame::SubmitCompositorFrame(
@@ -684,6 +683,11 @@ bool RenderWidgetHostViewChildFrame::IsMouseLocked() {
   return host_->delegate()->HasMouseLock(host_);
 }
 
+RenderWidgetHostImpl* RenderWidgetHostViewChildFrame::GetRenderWidgetHostImpl()
+    const {
+  return host_;
+}
+
 viz::FrameSinkId RenderWidgetHostViewChildFrame::GetFrameSinkId() {
   return frame_sink_id_;
 }
@@ -694,38 +698,12 @@ viz::LocalSurfaceId RenderWidgetHostViewChildFrame::GetLocalSurfaceId() const {
   return viz::LocalSurfaceId();
 }
 
-void RenderWidgetHostViewChildFrame::ProcessKeyboardEvent(
-    const NativeWebKeyboardEvent& event,
-    const ui::LatencyInfo& latency) {
-  host_->ForwardKeyboardEventWithLatencyInfo(event, latency);
-}
-
-void RenderWidgetHostViewChildFrame::ProcessMouseEvent(
-    const blink::WebMouseEvent& event,
-    const ui::LatencyInfo& latency) {
-  host_->ForwardMouseEventWithLatencyInfo(event, latency);
-}
-
-void RenderWidgetHostViewChildFrame::ProcessMouseWheelEvent(
-    const blink::WebMouseWheelEvent& event,
-    const ui::LatencyInfo& latency) {
-  if (event.delta_x != 0 || event.delta_y != 0 ||
-      event.phase == blink::WebMouseWheelEvent::kPhaseEnded ||
-      event.phase == blink::WebMouseWheelEvent::kPhaseCancelled ||
-      event.momentum_phase == blink::WebMouseWheelEvent::kPhaseEnded ||
-      event.momentum_phase == blink::WebMouseWheelEvent::kPhaseCancelled)
-    host_->ForwardWheelEventWithLatencyInfo(event, latency);
-}
-
-void RenderWidgetHostViewChildFrame::ProcessTouchEvent(
-    const blink::WebTouchEvent& event,
-    const ui::LatencyInfo& latency) {
+void RenderWidgetHostViewChildFrame::PreProcessTouchEvent(
+    const blink::WebTouchEvent& event) {
   if (event.GetType() == blink::WebInputEvent::kTouchStart &&
       frame_connector_ && !frame_connector_->HasFocus()) {
     frame_connector_->FocusRootView();
   }
-
-  host_->ForwardTouchEventWithLatencyInfo(event, latency);
 }
 
 void RenderWidgetHostViewChildFrame::ProcessGestureEvent(
@@ -753,7 +731,11 @@ void RenderWidgetHostViewChildFrame::ProcessGestureEvent(
     return;
   }
 
-  host_->ForwardGestureEventWithLatencyInfo(event, latency);
+  RenderWidgetHostViewBase::ProcessGestureEvent(event, latency);
+}
+
+viz::SurfaceId RenderWidgetHostViewChildFrame::GetCurrentSurfaceId() const {
+  return viz::SurfaceId(frame_sink_id_, last_received_local_surface_id_);
 }
 
 gfx::PointF RenderWidgetHostViewChildFrame::TransformPointToRootCoordSpaceF(
@@ -797,6 +779,24 @@ bool RenderWidgetHostViewChildFrame::TransformPointToCoordSpaceForView(
       transformed_point);
 }
 
+gfx::PointF RenderWidgetHostViewChildFrame::TransformRootPointToViewCoordSpace(
+    const gfx::PointF& point) {
+  if (!frame_connector_)
+    return point;
+
+  RenderWidgetHostViewBase* root_rwhv =
+      frame_connector_->GetRootRenderWidgetHostView();
+  if (!root_rwhv)
+    return point;
+
+  gfx::PointF transformed_point;
+  if (!root_rwhv->TransformPointToCoordSpaceForView(point, this,
+                                                    &transformed_point)) {
+    return point;
+  }
+  return transformed_point;
+}
+
 bool RenderWidgetHostViewChildFrame::IsRenderWidgetHostViewChildFrame() {
   return true;
 }
@@ -818,11 +818,6 @@ void RenderWidgetHostViewChildFrame::WillSendScreenRects() {
 }
 
 #if defined(OS_MACOSX)
-ui::AcceleratedWidgetMac*
-RenderWidgetHostViewChildFrame::GetAcceleratedWidgetMac() const {
-  return nullptr;
-}
-
 void RenderWidgetHostViewChildFrame::SetActive(bool active) {}
 
 void RenderWidgetHostViewChildFrame::ShowDefinitionForSelection() {
@@ -925,6 +920,21 @@ void RenderWidgetHostViewChildFrame::SetNeedsBeginFrames(
     support_->SetNeedsBeginFrame(needs_begin_frames);
 }
 
+TouchSelectionControllerClientManager*
+RenderWidgetHostViewChildFrame::GetTouchSelectionControllerClientManager() {
+  auto* root_view = frame_connector_->GetRootRenderWidgetHostView();
+  if (!root_view)
+    return nullptr;
+
+  // There is only ever one manager, and it's owned by the root view.
+  return root_view->GetTouchSelectionControllerClientManager();
+}
+
+void RenderWidgetHostViewChildFrame::SetWantsAnimateOnlyBeginFrames() {
+  if (support_)
+    support_->SetWantsAnimateOnlyBeginFrames();
+}
+
 InputEventAckState RenderWidgetHostViewChildFrame::FilterInputEvent(
     const blink::WebInputEvent& input_event) {
   if (input_event.GetType() == blink::WebInputEvent::kGestureFlingStart) {
@@ -1017,16 +1027,8 @@ void RenderWidgetHostViewChildFrame::ClearCompositorSurfaceIfNecessary() {
   has_frame_ = false;
 }
 
-bool RenderWidgetHostViewChildFrame::IsChildFrameForTesting() const {
-  return true;
-}
-
-viz::SurfaceId RenderWidgetHostViewChildFrame::SurfaceIdForTesting() const {
-  return viz::SurfaceId(frame_sink_id_, last_received_local_surface_id_);
-}
-
 void RenderWidgetHostViewChildFrame::CreateCompositorFrameSinkSupport() {
-  if (IsUsingMus() || enable_viz_)
+  if (switches::IsMusHostingViz() || enable_viz_)
     return;
 
   DCHECK(!support_);
@@ -1079,17 +1081,6 @@ ui::TextInputType RenderWidgetHostViewChildFrame::GetTextInputType() const {
   if (text_input_manager_->GetTextInputState())
     return text_input_manager_->GetTextInputState()->type;
   return ui::TEXT_INPUT_TYPE_NONE;
-}
-
-gfx::Point RenderWidgetHostViewChildFrame::GetViewOriginInRoot() const {
-  if (frame_connector_) {
-    auto origin = GetViewBounds().origin() -
-                  frame_connector_->GetRootRenderWidgetHostView()
-                      ->GetViewBounds()
-                      .origin();
-    return gfx::Point(origin.x(), origin.y());
-  }
-  return gfx::Point();
 }
 
 RenderWidgetHostViewBase*

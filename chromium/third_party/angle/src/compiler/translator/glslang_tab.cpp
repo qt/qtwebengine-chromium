@@ -89,6 +89,7 @@
 #endif
 
 #include "angle_gl.h"
+#include "compiler/translator/Declarator.h"
 #include "compiler/translator/SymbolTable.h"
 #include "compiler/translator/ParseContext.h"
 #include "GLSLANG/ShaderLang.h"
@@ -334,7 +335,8 @@ union YYSTYPE
             TQualifier qualifier;
             TFunction *function;
             TParameter param;
-            TField *field;
+            TDeclarator *declarator;
+            TDeclaratorList *declaratorList;
             TFieldList *fieldList;
             TQualifierWrapperBase *qualifierWrapper;
             TTypeQualifierBuilder *typeQualifierBuilder;
@@ -741,36 +743,36 @@ static const yytype_uint8 yytranslate[] =
   /* YYRLINE[YYN] -- Source line where rule number YYN was defined.  */
 static const yytype_uint16 yyrline[] =
 {
-       0,   248,   248,   249,   252,   262,   265,   270,   275,   280,
-     285,   294,   300,   303,   306,   309,   312,   315,   321,   328,
-     334,   338,   346,   349,   355,   359,   366,   371,   378,   386,
-     389,   392,   398,   401,   404,   407,   414,   415,   416,   417,
-     425,   426,   429,   432,   439,   440,   443,   449,   450,   454,
-     461,   462,   465,   468,   471,   477,   478,   481,   487,   488,
-     495,   496,   503,   504,   511,   512,   518,   519,   525,   526,
-     532,   533,   539,   540,   546,   547,   548,   549,   553,   554,
-     555,   559,   563,   567,   571,   578,   581,   587,   594,   601,
-     604,   607,   611,   615,   619,   623,   627,   634,   641,   644,
-     651,   659,   676,   686,   689,   695,   699,   703,   707,   714,
-     721,   724,   728,   732,   737,   744,   748,   752,   756,   761,
-     768,   772,   778,   781,   787,   791,   798,   804,   808,   812,
-     815,   818,   827,   832,   836,   839,   842,   845,   848,   852,
-     855,   859,   862,   865,   868,   871,   874,   881,   888,   891,
-     894,   900,   907,   910,   916,   919,   922,   925,   931,   934,
-     941,   946,   953,   958,   969,   972,   975,   978,   981,   984,
-     988,   992,   996,  1000,  1004,  1008,  1012,  1016,  1020,  1024,
-    1028,  1032,  1036,  1040,  1044,  1048,  1052,  1056,  1060,  1064,
-    1068,  1075,  1078,  1081,  1084,  1087,  1090,  1093,  1096,  1099,
-    1102,  1105,  1108,  1111,  1114,  1117,  1120,  1123,  1126,  1129,
-    1139,  1146,  1153,  1156,  1159,  1162,  1165,  1168,  1171,  1174,
-    1177,  1180,  1183,  1186,  1189,  1192,  1195,  1203,  1203,  1206,
-    1206,  1212,  1215,  1221,  1224,  1231,  1235,  1241,  1244,  1250,
-    1254,  1258,  1259,  1265,  1266,  1267,  1268,  1269,  1270,  1271,
-    1275,  1279,  1279,  1279,  1286,  1287,  1291,  1291,  1292,  1292,
-    1297,  1301,  1308,  1312,  1319,  1320,  1324,  1330,  1334,  1343,
-    1343,  1350,  1353,  1359,  1363,  1369,  1369,  1374,  1374,  1378,
-    1378,  1386,  1389,  1395,  1398,  1404,  1408,  1415,  1418,  1421,
-    1424,  1427,  1435,  1441,  1447,  1450,  1456,  1456
+       0,   251,   251,   252,   255,   265,   268,   273,   278,   283,
+     288,   297,   303,   306,   309,   312,   315,   318,   324,   331,
+     337,   341,   349,   352,   358,   362,   369,   374,   381,   389,
+     392,   395,   401,   404,   407,   410,   417,   418,   419,   420,
+     428,   429,   432,   435,   442,   443,   446,   452,   453,   457,
+     464,   465,   468,   471,   474,   480,   481,   484,   490,   491,
+     498,   499,   506,   507,   514,   515,   521,   522,   528,   529,
+     535,   536,   542,   543,   549,   550,   551,   552,   556,   557,
+     558,   562,   566,   570,   574,   581,   584,   590,   597,   604,
+     607,   610,   614,   618,   622,   626,   630,   637,   644,   647,
+     654,   662,   679,   689,   692,   698,   702,   706,   710,   717,
+     724,   727,   731,   735,   740,   747,   751,   755,   759,   764,
+     771,   775,   781,   784,   790,   794,   801,   807,   811,   815,
+     818,   821,   830,   835,   839,   842,   845,   848,   851,   855,
+     858,   862,   865,   868,   871,   874,   877,   884,   891,   894,
+     897,   903,   910,   913,   919,   922,   925,   928,   934,   937,
+     944,   949,   956,   961,   972,   975,   978,   981,   984,   987,
+     991,   995,   999,  1003,  1007,  1011,  1015,  1019,  1023,  1027,
+    1031,  1035,  1039,  1043,  1047,  1051,  1055,  1059,  1063,  1067,
+    1071,  1078,  1081,  1084,  1087,  1090,  1093,  1096,  1099,  1102,
+    1105,  1108,  1111,  1114,  1117,  1120,  1123,  1126,  1129,  1132,
+    1142,  1149,  1156,  1159,  1162,  1165,  1168,  1171,  1174,  1177,
+    1180,  1183,  1186,  1189,  1192,  1195,  1198,  1206,  1206,  1209,
+    1209,  1215,  1218,  1224,  1227,  1234,  1238,  1244,  1247,  1253,
+    1257,  1261,  1262,  1268,  1269,  1270,  1271,  1272,  1273,  1274,
+    1278,  1282,  1282,  1282,  1289,  1290,  1294,  1294,  1295,  1295,
+    1300,  1304,  1311,  1315,  1322,  1323,  1327,  1333,  1337,  1346,
+    1346,  1353,  1356,  1362,  1366,  1372,  1372,  1377,  1377,  1381,
+    1381,  1389,  1392,  1398,  1401,  1407,  1411,  1418,  1421,  1424,
+    1427,  1430,  1438,  1444,  1450,  1453,  1459,  1459
 };
 #endif
 
@@ -938,10 +940,10 @@ static const yytype_uint16 yydefact[] =
      123,   122,   141,   142,   143,   144,   145,   146,     0,   164,
      191,   193,   209,   211,   194,   196,   197,   198,   199,   201,
      202,   203,   204,   195,   200,   205,   192,   206,   207,   208,
-     210,   213,   214,   215,   216,   217,   218,   219,   220,   221,
-     222,   223,   224,   225,     0,   190,   226,   295,   296,     0,
+     210,   212,   213,   214,   215,   216,   217,   218,   219,   220,
+     221,   222,   223,   224,     0,   190,   226,   295,   296,     0,
       99,    98,     0,   110,   115,   130,     0,   131,   124,   127,
-     120,   129,   128,   147,   158,   212,     0,   292,   294,     0,
+     120,   129,   128,   147,   158,   225,     0,   292,   294,     0,
        2,     3,   229,     0,     0,    89,     0,    97,     0,   106,
      100,   108,     0,   109,     0,    90,     2,   116,     0,    95,
        0,   125,   121,     0,   159,     1,   293,     0,     0,   227,
@@ -4268,7 +4270,7 @@ yyreduce:
   case 212:
 
     {
-        (yyval.interm.typeSpecifierNonArray) = (yyvsp[0].interm.typeSpecifierNonArray);
+        (yyval.interm.typeSpecifierNonArray).initialize(EbtImage2D, (yylsp[0]));
     }
 
     break;
@@ -4276,7 +4278,7 @@ yyreduce:
   case 213:
 
     {
-        (yyval.interm.typeSpecifierNonArray).initialize(EbtImage2D, (yylsp[0]));
+        (yyval.interm.typeSpecifierNonArray).initialize(EbtIImage2D, (yylsp[0]));
     }
 
     break;
@@ -4284,7 +4286,7 @@ yyreduce:
   case 214:
 
     {
-        (yyval.interm.typeSpecifierNonArray).initialize(EbtIImage2D, (yylsp[0]));
+        (yyval.interm.typeSpecifierNonArray).initialize(EbtUImage2D, (yylsp[0]));
     }
 
     break;
@@ -4292,7 +4294,7 @@ yyreduce:
   case 215:
 
     {
-        (yyval.interm.typeSpecifierNonArray).initialize(EbtUImage2D, (yylsp[0]));
+        (yyval.interm.typeSpecifierNonArray).initialize(EbtImage3D, (yylsp[0]));
     }
 
     break;
@@ -4300,7 +4302,7 @@ yyreduce:
   case 216:
 
     {
-        (yyval.interm.typeSpecifierNonArray).initialize(EbtImage3D, (yylsp[0]));
+        (yyval.interm.typeSpecifierNonArray).initialize(EbtIImage3D, (yylsp[0]));
     }
 
     break;
@@ -4308,7 +4310,7 @@ yyreduce:
   case 217:
 
     {
-        (yyval.interm.typeSpecifierNonArray).initialize(EbtIImage3D, (yylsp[0]));
+        (yyval.interm.typeSpecifierNonArray).initialize(EbtUImage3D, (yylsp[0]));
     }
 
     break;
@@ -4316,7 +4318,7 @@ yyreduce:
   case 218:
 
     {
-        (yyval.interm.typeSpecifierNonArray).initialize(EbtUImage3D, (yylsp[0]));
+        (yyval.interm.typeSpecifierNonArray).initialize(EbtImage2DArray, (yylsp[0]));
     }
 
     break;
@@ -4324,7 +4326,7 @@ yyreduce:
   case 219:
 
     {
-        (yyval.interm.typeSpecifierNonArray).initialize(EbtImage2DArray, (yylsp[0]));
+        (yyval.interm.typeSpecifierNonArray).initialize(EbtIImage2DArray, (yylsp[0]));
     }
 
     break;
@@ -4332,7 +4334,7 @@ yyreduce:
   case 220:
 
     {
-        (yyval.interm.typeSpecifierNonArray).initialize(EbtIImage2DArray, (yylsp[0]));
+        (yyval.interm.typeSpecifierNonArray).initialize(EbtUImage2DArray, (yylsp[0]));
     }
 
     break;
@@ -4340,7 +4342,7 @@ yyreduce:
   case 221:
 
     {
-        (yyval.interm.typeSpecifierNonArray).initialize(EbtUImage2DArray, (yylsp[0]));
+        (yyval.interm.typeSpecifierNonArray).initialize(EbtImageCube, (yylsp[0]));
     }
 
     break;
@@ -4348,7 +4350,7 @@ yyreduce:
   case 222:
 
     {
-        (yyval.interm.typeSpecifierNonArray).initialize(EbtImageCube, (yylsp[0]));
+        (yyval.interm.typeSpecifierNonArray).initialize(EbtIImageCube, (yylsp[0]));
     }
 
     break;
@@ -4356,7 +4358,7 @@ yyreduce:
   case 223:
 
     {
-        (yyval.interm.typeSpecifierNonArray).initialize(EbtIImageCube, (yylsp[0]));
+        (yyval.interm.typeSpecifierNonArray).initialize(EbtUImageCube, (yylsp[0]));
     }
 
     break;
@@ -4364,7 +4366,7 @@ yyreduce:
   case 224:
 
     {
-        (yyval.interm.typeSpecifierNonArray).initialize(EbtUImageCube, (yylsp[0]));
+        (yyval.interm.typeSpecifierNonArray).initialize(EbtAtomicCounter, (yylsp[0]));
     }
 
     break;
@@ -4372,7 +4374,7 @@ yyreduce:
   case 225:
 
     {
-        (yyval.interm.typeSpecifierNonArray).initialize(EbtAtomicCounter, (yylsp[0]));
+        (yyval.interm.typeSpecifierNonArray) = (yyvsp[0].interm.typeSpecifierNonArray);
     }
 
     break;
@@ -4381,8 +4383,8 @@ yyreduce:
 
     {
         // This is for user defined type names. The lexical phase looked up the type.
-        TType& structure = static_cast<TVariable*>((yyvsp[0].lex).symbol)->getType();
-        (yyval.interm.typeSpecifierNonArray).initializeStruct(structure.getStruct(), false, (yylsp[0]));
+        TStructure *structure = static_cast<TStructure*>((yyvsp[0].lex).symbol);
+        (yyval.interm.typeSpecifierNonArray).initializeStruct(structure, false, (yylsp[0]));
     }
 
     break;
@@ -4410,7 +4412,7 @@ yyreduce:
   case 230:
 
     {
-        (yyval.interm.typeSpecifierNonArray) = context->addStructure((yylsp[-4]), (yyloc), NewPoolTString(""), (yyvsp[-1].interm.fieldList));
+        (yyval.interm.typeSpecifierNonArray) = context->addStructure((yylsp[-4]), (yyloc), nullptr, (yyvsp[-1].interm.fieldList));
     }
 
     break;
@@ -4434,7 +4436,7 @@ yyreduce:
   case 233:
 
     {
-        (yyval.interm.fieldList) = context->addStructDeclaratorList((yyvsp[-2].interm.type), (yyvsp[-1].interm.fieldList));
+        (yyval.interm.fieldList) = context->addStructDeclaratorList((yyvsp[-2].interm.type), (yyvsp[-1].interm.declaratorList));
     }
 
     break;
@@ -4443,7 +4445,7 @@ yyreduce:
 
     {
         // ES3 Only, but errors should be handled elsewhere
-        (yyval.interm.fieldList) = context->addStructDeclaratorListWithQualifiers(*(yyvsp[-3].interm.typeQualifierBuilder), &(yyvsp[-2].interm.type), (yyvsp[-1].interm.fieldList));
+        (yyval.interm.fieldList) = context->addStructDeclaratorListWithQualifiers(*(yyvsp[-3].interm.typeQualifierBuilder), &(yyvsp[-2].interm.type), (yyvsp[-1].interm.declaratorList));
     }
 
     break;
@@ -4451,8 +4453,8 @@ yyreduce:
   case 235:
 
     {
-        (yyval.interm.fieldList) = NewPoolTFieldList();
-        (yyval.interm.fieldList)->push_back((yyvsp[0].interm.field));
+        (yyval.interm.declaratorList) = new TDeclaratorList();
+        (yyval.interm.declaratorList)->push_back((yyvsp[0].interm.declarator));
     }
 
     break;
@@ -4460,7 +4462,7 @@ yyreduce:
   case 236:
 
     {
-        (yyval.interm.fieldList)->push_back((yyvsp[0].interm.field));
+        (yyval.interm.declaratorList)->push_back((yyvsp[0].interm.declarator));
     }
 
     break;
@@ -4468,7 +4470,7 @@ yyreduce:
   case 237:
 
     {
-        (yyval.interm.field) = context->parseStructDeclarator((yyvsp[0].lex).string, (yylsp[0]));
+        (yyval.interm.declarator) = context->parseStructDeclarator((yyvsp[0].lex).string, (yylsp[0]));
     }
 
     break;
@@ -4476,7 +4478,7 @@ yyreduce:
   case 238:
 
     {
-        (yyval.interm.field) = context->parseStructArrayDeclarator((yyvsp[-1].lex).string, (yylsp[-1]), *((yyvsp[0].interm.arraySizes)), (yylsp[0]));
+        (yyval.interm.declarator) = context->parseStructArrayDeclarator((yyvsp[-1].lex).string, (yylsp[-1]), (yyvsp[0].interm.arraySizes));
     }
 
     break;

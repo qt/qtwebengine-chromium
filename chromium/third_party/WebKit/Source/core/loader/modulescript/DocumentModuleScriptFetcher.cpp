@@ -57,7 +57,7 @@ bool WasModuleLoadSuccessful(
         "HTML spec.";
     error_messages->push_back(ConsoleMessage::CreateForRequest(
         kJSMessageSource, kErrorMessageLevel, message,
-        response.Url().GetString(), resource->Identifier()));
+        response.Url().GetString(), nullptr, resource->Identifier()));
     return false;
   }
 
@@ -75,20 +75,8 @@ DocumentModuleScriptFetcher::DocumentModuleScriptFetcher(
 void DocumentModuleScriptFetcher::Fetch(FetchParameters& fetch_params,
                                         ModuleScriptFetcher::Client* client) {
   SetClient(client);
-  ScriptResource* resource = ScriptResource::Fetch(fetch_params, fetcher_);
-  if (was_fetched_) {
-    // ScriptResource::Fetch() has succeeded synchronously,
-    // ::NotifyFinished() already took care of the |resource|.
-    return;
-  }
-  if (!resource) {
-    // ScriptResource::Fetch() has failed synchronously.
+  if (!ScriptResource::Fetch(fetch_params, fetcher_, this))
     NotifyFinished(nullptr /* resource */);
-    return;
-  }
-
-  // ScriptResource::Fetch() is processed asynchronously.
-  SetResource(resource);
 }
 
 void DocumentModuleScriptFetcher::NotifyFinished(Resource* resource) {
@@ -112,13 +100,12 @@ void DocumentModuleScriptFetcher::NotifyFinished(Resource* resource) {
 void DocumentModuleScriptFetcher::Finalize(
     const WTF::Optional<ModuleScriptCreationParams>& params,
     const HeapVector<Member<ConsoleMessage>>& error_messages) {
-  was_fetched_ = true;
   NotifyFetchFinished(params, error_messages);
 }
 
 void DocumentModuleScriptFetcher::Trace(blink::Visitor* visitor) {
   visitor->Trace(fetcher_);
-  ResourceOwner<ScriptResource>::Trace(visitor);
+  ResourceClient::Trace(visitor);
   ModuleScriptFetcher::Trace(visitor);
 }
 

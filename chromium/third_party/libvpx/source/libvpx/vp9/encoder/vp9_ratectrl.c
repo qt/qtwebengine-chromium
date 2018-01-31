@@ -1488,15 +1488,19 @@ void vp9_rc_postencode_update(VP9_COMP *cpi, uint64_t bytes_used) {
     cpi->rc.last_frame_is_src_altref = cpi->rc.is_src_frame_alt_ref;
   }
   if (cm->frame_type != KEY_FRAME) rc->reset_high_source_sad = 0;
+
+  rc->last_avg_frame_bandwidth = rc->avg_frame_bandwidth;
 }
 
 void vp9_rc_postencode_update_drop_frame(VP9_COMP *cpi) {
   // Update buffer level with zero size, update frame counters, and return.
   update_buffer_level(cpi, 0);
+  cpi->common.current_video_frame++;
   cpi->rc.frames_since_key++;
   cpi->rc.frames_to_key--;
   cpi->rc.rc_2_frame = 0;
   cpi->rc.rc_1_frame = 0;
+  cpi->rc.last_avg_frame_bandwidth = cpi->rc.avg_frame_bandwidth;
 }
 
 static int calc_pframe_target_size_one_pass_vbr(const VP9_COMP *const cpi) {
@@ -1873,9 +1877,12 @@ void vp9_rc_set_gf_interval_range(const VP9_COMP *const cpi,
 
     if (oxcf->target_level == LEVEL_AUTO) {
       const uint32_t pic_size = cpi->common.width * cpi->common.height;
+      const uint32_t pic_breadth =
+          VPXMAX(cpi->common.width, cpi->common.height);
       int i;
       for (i = LEVEL_1; i < LEVEL_MAX; ++i) {
-        if (vp9_level_defs[i].max_luma_picture_size > pic_size) {
+        if (vp9_level_defs[i].max_luma_picture_size >= pic_size &&
+            vp9_level_defs[i].max_luma_picture_breadth >= pic_breadth) {
           if (rc->min_gf_interval <=
               (int)vp9_level_defs[i].min_altref_distance) {
             rc->min_gf_interval =

@@ -3,6 +3,7 @@
 # found in the LICENSE file.
 
 import("//build/config/freetype/freetype.gni")
+import("//build/config/jumbo.gni")
 import("//testing/test.gni")
 import("pdfium.gni")
 
@@ -25,14 +26,6 @@ config("pdfium_common_config") {
     "PNG_USE_READ_MACROS",
   ]
 
-  if (pdf_use_skia) {
-    defines += [ "_SKIA_SUPPORT_" ]
-  }
-
-  if (pdf_use_skia_paths) {
-    defines += [ "_SKIA_SUPPORT_PATHS_" ]
-  }
-
   if (pdf_enable_v8) {
     defines += [ "PDF_ENABLE_V8" ]
   }
@@ -51,6 +44,14 @@ config("pdfium_common_config") {
     if (pdf_enable_xfa_tiff) {
       defines += [ "PDF_ENABLE_XFA_TIFF" ]
     }
+  }
+
+  if (pdf_use_skia) {
+    defines += [ "_SKIA_SUPPORT_" ]
+  }
+
+  if (pdf_use_skia_paths) {
+    defines += [ "_SKIA_SUPPORT_PATHS_" ]
   }
 
   if (pdf_use_win32_gdi) {
@@ -100,7 +101,7 @@ config("xfa_warnings") {
   }
 }
 
-static_library("pdfium") {
+jumbo_static_library("pdfium") {
   sources = [
     "fpdfsdk/cba_annotiterator.cpp",
     "fpdfsdk/cba_annotiterator.h",
@@ -231,7 +232,7 @@ static_library("pdfium") {
   }
 }
 
-static_library("test_support") {
+jumbo_static_library("test_support") {
   testonly = true
   sources = [
     "testing/fx_string_testhelpers.cpp",
@@ -264,7 +265,7 @@ static_library("test_support") {
   configs += [ ":pdfium_core_config" ]
 }
 
-static_library("image_diff") {
+jumbo_static_library("image_diff") {
   testonly = true
   sources = [
     "testing/image_diff/image_diff_png.cpp",
@@ -284,7 +285,7 @@ visibility = [
   "//:gn_visibility",
 ]
 
-static_library("fdrm") {
+jumbo_static_library("fdrm") {
   sources = [
     "core/fdrm/crypto/fx_crypt.cpp",
     "core/fdrm/crypto/fx_crypt.h",
@@ -297,7 +298,7 @@ static_library("fdrm") {
   ]
 }
 
-static_library("fpdfdoc") {
+jumbo_static_library("fpdfdoc") {
   sources = [
     "core/fpdfdoc/cline.cpp",
     "core/fpdfdoc/cline.h",
@@ -380,7 +381,7 @@ static_library("fpdfdoc") {
   ]
 }
 
-static_library("fpdfapi") {
+jumbo_static_library("fpdfapi") {
   sources = [
     "core/fpdfapi/cmaps/CNS1/Adobe-CNS1-UCS2_5.cpp",
     "core/fpdfapi/cmaps/CNS1/B5pc-H_0.cpp",
@@ -672,7 +673,7 @@ static_library("fpdfapi") {
   ]
 }
 
-static_library("fpdftext") {
+jumbo_static_library("fpdftext") {
   sources = [
     "core/fpdftext/cpdf_linkextract.cpp",
     "core/fpdftext/cpdf_linkextract.h",
@@ -689,7 +690,7 @@ static_library("fpdftext") {
   ]
 }
 
-static_library("fxcodec") {
+jumbo_static_library("fxcodec") {
   sources = [
     "core/fxcodec/JBig2_DocumentContext.h",
     "core/fxcodec/codec/ccodec_basicmodule.h",
@@ -801,7 +802,7 @@ config("fxge_warnings") {
   }
 }
 
-static_library("fxcrt") {
+jumbo_static_library("fxcrt") {
   sources = [
     "core/fxcrt/autorestorer.h",
     "core/fxcrt/bytestring.cpp",
@@ -862,8 +863,6 @@ static_library("fxcrt") {
     "core/fxcrt/widestring.h",
     "core/fxcrt/xml/cxml_attritem.cpp",
     "core/fxcrt/xml/cxml_attritem.h",
-    "core/fxcrt/xml/cxml_attrmap.cpp",
-    "core/fxcrt/xml/cxml_attrmap.h",
     "core/fxcrt/xml/cxml_content.cpp",
     "core/fxcrt/xml/cxml_content.h",
     "core/fxcrt/xml/cxml_databufacc.cpp",
@@ -969,7 +968,7 @@ static_library("fxcrt") {
   }
 }
 
-static_library("fxge") {
+jumbo_static_library("fxge") {
   sources = [
     "core/fxge/android/cfpf_skiabufferfont.cpp",
     "core/fxge/android/cfpf_skiabufferfont.h",
@@ -1139,7 +1138,7 @@ static_library("fxge") {
   }
 }
 
-static_library("pwl") {
+jumbo_static_library("pwl") {
   sources = [
     "fpdfsdk/pwl/cpwl_appstream.cpp",
     "fpdfsdk/pwl/cpwl_appstream.h",
@@ -1180,7 +1179,7 @@ static_library("pwl") {
   ]
 }
 
-static_library("fxjs") {
+jumbo_static_library("fxjs") {
   sources = [
     "fxjs/ijs_event_context.h",
     "fxjs/ijs_runtime.h",
@@ -1192,6 +1191,7 @@ static_library("fxjs") {
 
   if (pdf_enable_v8) {
     sources += [
+      "fxjs/CJX_Define.h",
       "fxjs/JS_Define.cpp",
       "fxjs/JS_Define.h",
       "fxjs/cjs_annot.cpp",
@@ -1262,6 +1262,8 @@ static_library("fxjs") {
       "fxjs/cjs_timerobj.h",
       "fxjs/cjs_util.cpp",
       "fxjs/cjs_util.h",
+      "fxjs/cjs_v8.cpp",
+      "fxjs/cjs_v8.h",
       "fxjs/cjs_zoomtype.cpp",
       "fxjs/cjs_zoomtype.h",
       "fxjs/fxjs_v8.cpp",
@@ -1297,7 +1299,6 @@ static_library("fxjs") {
         "fxjs/cfxjse_engine.h",
         "fxjs/cfxjse_formcalc_context.cpp",
         "fxjs/cfxjse_formcalc_context.h",
-        "fxjs/cfxjse_isolatetracker.cpp",
         "fxjs/cfxjse_isolatetracker.h",
         "fxjs/cfxjse_resolveprocessor.cpp",
         "fxjs/cfxjse_resolveprocessor.h",
@@ -1305,27 +1306,307 @@ static_library("fxjs") {
         "fxjs/cfxjse_runtimedata.h",
         "fxjs/cfxjse_value.cpp",
         "fxjs/cfxjse_value.h",
-        "fxjs/cjx_datawindow.cpp",
-        "fxjs/cjx_datawindow.h",
-        "fxjs/cjx_eventpseudomodel.cpp",
-        "fxjs/cjx_eventpseudomodel.h",
-        "fxjs/cjx_hostpseudomodel.cpp",
-        "fxjs/cjx_hostpseudomodel.h",
-        "fxjs/cjx_layoutpseudomodel.cpp",
-        "fxjs/cjx_layoutpseudomodel.h",
-        "fxjs/cjx_logpseudomodel.cpp",
-        "fxjs/cjx_logpseudomodel.h",
-        "fxjs/cjx_node.cpp",
-        "fxjs/cjx_node.h",
-        "fxjs/cjx_nodelist.cpp",
-        "fxjs/cjx_nodelist.h",
-        "fxjs/cjx_object.cpp",
-        "fxjs/cjx_object.h",
-        "fxjs/cjx_signaturepseudomodel.cpp",
-        "fxjs/cjx_signaturepseudomodel.h",
-        "fxjs/cjx_thisproxy.cpp",
-        "fxjs/cjx_thisproxy.h",
         "fxjs/fxjse.h",
+        "fxjs/xfa/cjx_arc.cpp",
+        "fxjs/xfa/cjx_arc.h",
+        "fxjs/xfa/cjx_area.cpp",
+        "fxjs/xfa/cjx_area.h",
+        "fxjs/xfa/cjx_assist.cpp",
+        "fxjs/xfa/cjx_assist.h",
+        "fxjs/xfa/cjx_barcode.cpp",
+        "fxjs/xfa/cjx_barcode.h",
+        "fxjs/xfa/cjx_bind.cpp",
+        "fxjs/xfa/cjx_bind.h",
+        "fxjs/xfa/cjx_binditems.cpp",
+        "fxjs/xfa/cjx_binditems.h",
+        "fxjs/xfa/cjx_bookend.cpp",
+        "fxjs/xfa/cjx_bookend.h",
+        "fxjs/xfa/cjx_boolean.cpp",
+        "fxjs/xfa/cjx_boolean.h",
+        "fxjs/xfa/cjx_border.cpp",
+        "fxjs/xfa/cjx_border.h",
+        "fxjs/xfa/cjx_break.cpp",
+        "fxjs/xfa/cjx_break.h",
+        "fxjs/xfa/cjx_breakafter.cpp",
+        "fxjs/xfa/cjx_breakafter.h",
+        "fxjs/xfa/cjx_breakbefore.cpp",
+        "fxjs/xfa/cjx_breakbefore.h",
+        "fxjs/xfa/cjx_button.cpp",
+        "fxjs/xfa/cjx_button.h",
+        "fxjs/xfa/cjx_calculate.cpp",
+        "fxjs/xfa/cjx_calculate.h",
+        "fxjs/xfa/cjx_caption.cpp",
+        "fxjs/xfa/cjx_caption.h",
+        "fxjs/xfa/cjx_certificate.cpp",
+        "fxjs/xfa/cjx_certificate.h",
+        "fxjs/xfa/cjx_certificates.cpp",
+        "fxjs/xfa/cjx_certificates.h",
+        "fxjs/xfa/cjx_checkbutton.cpp",
+        "fxjs/xfa/cjx_checkbutton.h",
+        "fxjs/xfa/cjx_choicelist.cpp",
+        "fxjs/xfa/cjx_choicelist.h",
+        "fxjs/xfa/cjx_color.cpp",
+        "fxjs/xfa/cjx_color.h",
+        "fxjs/xfa/cjx_comb.cpp",
+        "fxjs/xfa/cjx_comb.h",
+        "fxjs/xfa/cjx_command.cpp",
+        "fxjs/xfa/cjx_command.h",
+        "fxjs/xfa/cjx_connect.cpp",
+        "fxjs/xfa/cjx_connect.h",
+        "fxjs/xfa/cjx_connectstring.cpp",
+        "fxjs/xfa/cjx_connectstring.h",
+        "fxjs/xfa/cjx_container.cpp",
+        "fxjs/xfa/cjx_container.h",
+        "fxjs/xfa/cjx_content.cpp",
+        "fxjs/xfa/cjx_content.h",
+        "fxjs/xfa/cjx_contentarea.cpp",
+        "fxjs/xfa/cjx_contentarea.h",
+        "fxjs/xfa/cjx_corner.cpp",
+        "fxjs/xfa/cjx_corner.h",
+        "fxjs/xfa/cjx_datavalue.cpp",
+        "fxjs/xfa/cjx_datavalue.h",
+        "fxjs/xfa/cjx_datawindow.cpp",
+        "fxjs/xfa/cjx_datawindow.h",
+        "fxjs/xfa/cjx_date.cpp",
+        "fxjs/xfa/cjx_date.h",
+        "fxjs/xfa/cjx_datetime.cpp",
+        "fxjs/xfa/cjx_datetime.h",
+        "fxjs/xfa/cjx_datetimeedit.cpp",
+        "fxjs/xfa/cjx_datetimeedit.h",
+        "fxjs/xfa/cjx_decimal.cpp",
+        "fxjs/xfa/cjx_decimal.h",
+        "fxjs/xfa/cjx_defaultui.cpp",
+        "fxjs/xfa/cjx_defaultui.h",
+        "fxjs/xfa/cjx_delete.cpp",
+        "fxjs/xfa/cjx_delete.h",
+        "fxjs/xfa/cjx_delta.cpp",
+        "fxjs/xfa/cjx_delta.h",
+        "fxjs/xfa/cjx_deltas.cpp",
+        "fxjs/xfa/cjx_deltas.h",
+        "fxjs/xfa/cjx_desc.cpp",
+        "fxjs/xfa/cjx_desc.h",
+        "fxjs/xfa/cjx_digestmethod.cpp",
+        "fxjs/xfa/cjx_digestmethod.h",
+        "fxjs/xfa/cjx_digestmethods.cpp",
+        "fxjs/xfa/cjx_digestmethods.h",
+        "fxjs/xfa/cjx_draw.cpp",
+        "fxjs/xfa/cjx_draw.h",
+        "fxjs/xfa/cjx_edge.cpp",
+        "fxjs/xfa/cjx_edge.h",
+        "fxjs/xfa/cjx_encoding.cpp",
+        "fxjs/xfa/cjx_encoding.h",
+        "fxjs/xfa/cjx_encodings.cpp",
+        "fxjs/xfa/cjx_encodings.h",
+        "fxjs/xfa/cjx_encrypt.cpp",
+        "fxjs/xfa/cjx_encrypt.h",
+        "fxjs/xfa/cjx_event.cpp",
+        "fxjs/xfa/cjx_event.h",
+        "fxjs/xfa/cjx_eventpseudomodel.cpp",
+        "fxjs/xfa/cjx_eventpseudomodel.h",
+        "fxjs/xfa/cjx_exclgroup.cpp",
+        "fxjs/xfa/cjx_exclgroup.h",
+        "fxjs/xfa/cjx_exdata.cpp",
+        "fxjs/xfa/cjx_exdata.h",
+        "fxjs/xfa/cjx_execute.cpp",
+        "fxjs/xfa/cjx_execute.h",
+        "fxjs/xfa/cjx_exobject.cpp",
+        "fxjs/xfa/cjx_exobject.h",
+        "fxjs/xfa/cjx_extras.cpp",
+        "fxjs/xfa/cjx_extras.h",
+        "fxjs/xfa/cjx_field.cpp",
+        "fxjs/xfa/cjx_field.h",
+        "fxjs/xfa/cjx_fill.cpp",
+        "fxjs/xfa/cjx_fill.h",
+        "fxjs/xfa/cjx_filter.cpp",
+        "fxjs/xfa/cjx_filter.h",
+        "fxjs/xfa/cjx_float.cpp",
+        "fxjs/xfa/cjx_float.h",
+        "fxjs/xfa/cjx_font.cpp",
+        "fxjs/xfa/cjx_font.h",
+        "fxjs/xfa/cjx_form.cpp",
+        "fxjs/xfa/cjx_form.h",
+        "fxjs/xfa/cjx_format.cpp",
+        "fxjs/xfa/cjx_format.h",
+        "fxjs/xfa/cjx_handler.cpp",
+        "fxjs/xfa/cjx_handler.h",
+        "fxjs/xfa/cjx_hostpseudomodel.cpp",
+        "fxjs/xfa/cjx_hostpseudomodel.h",
+        "fxjs/xfa/cjx_image.cpp",
+        "fxjs/xfa/cjx_image.h",
+        "fxjs/xfa/cjx_imageedit.cpp",
+        "fxjs/xfa/cjx_imageedit.h",
+        "fxjs/xfa/cjx_insert.cpp",
+        "fxjs/xfa/cjx_insert.h",
+        "fxjs/xfa/cjx_instancemanager.cpp",
+        "fxjs/xfa/cjx_instancemanager.h",
+        "fxjs/xfa/cjx_integer.cpp",
+        "fxjs/xfa/cjx_integer.h",
+        "fxjs/xfa/cjx_issuers.cpp",
+        "fxjs/xfa/cjx_issuers.h",
+        "fxjs/xfa/cjx_items.cpp",
+        "fxjs/xfa/cjx_items.h",
+        "fxjs/xfa/cjx_keep.cpp",
+        "fxjs/xfa/cjx_keep.h",
+        "fxjs/xfa/cjx_keyusage.cpp",
+        "fxjs/xfa/cjx_keyusage.h",
+        "fxjs/xfa/cjx_layoutpseudomodel.cpp",
+        "fxjs/xfa/cjx_layoutpseudomodel.h",
+        "fxjs/xfa/cjx_line.cpp",
+        "fxjs/xfa/cjx_line.h",
+        "fxjs/xfa/cjx_linear.cpp",
+        "fxjs/xfa/cjx_linear.h",
+        "fxjs/xfa/cjx_list.cpp",
+        "fxjs/xfa/cjx_list.h",
+        "fxjs/xfa/cjx_logpseudomodel.cpp",
+        "fxjs/xfa/cjx_logpseudomodel.h",
+        "fxjs/xfa/cjx_manifest.cpp",
+        "fxjs/xfa/cjx_manifest.h",
+        "fxjs/xfa/cjx_map.cpp",
+        "fxjs/xfa/cjx_map.h",
+        "fxjs/xfa/cjx_margin.cpp",
+        "fxjs/xfa/cjx_margin.h",
+        "fxjs/xfa/cjx_mdp.cpp",
+        "fxjs/xfa/cjx_mdp.h",
+        "fxjs/xfa/cjx_medium.cpp",
+        "fxjs/xfa/cjx_medium.h",
+        "fxjs/xfa/cjx_message.cpp",
+        "fxjs/xfa/cjx_message.h",
+        "fxjs/xfa/cjx_model.cpp",
+        "fxjs/xfa/cjx_model.h",
+        "fxjs/xfa/cjx_node.cpp",
+        "fxjs/xfa/cjx_node.h",
+        "fxjs/xfa/cjx_numericedit.cpp",
+        "fxjs/xfa/cjx_numericedit.h",
+        "fxjs/xfa/cjx_object.cpp",
+        "fxjs/xfa/cjx_object.h",
+        "fxjs/xfa/cjx_occur.cpp",
+        "fxjs/xfa/cjx_occur.h",
+        "fxjs/xfa/cjx_oid.cpp",
+        "fxjs/xfa/cjx_oid.h",
+        "fxjs/xfa/cjx_oids.cpp",
+        "fxjs/xfa/cjx_oids.h",
+        "fxjs/xfa/cjx_operation.cpp",
+        "fxjs/xfa/cjx_operation.h",
+        "fxjs/xfa/cjx_overflow.cpp",
+        "fxjs/xfa/cjx_overflow.h",
+        "fxjs/xfa/cjx_packet.cpp",
+        "fxjs/xfa/cjx_packet.h",
+        "fxjs/xfa/cjx_pagearea.cpp",
+        "fxjs/xfa/cjx_pagearea.h",
+        "fxjs/xfa/cjx_pageset.cpp",
+        "fxjs/xfa/cjx_pageset.h",
+        "fxjs/xfa/cjx_para.cpp",
+        "fxjs/xfa/cjx_para.h",
+        "fxjs/xfa/cjx_password.cpp",
+        "fxjs/xfa/cjx_password.h",
+        "fxjs/xfa/cjx_passwordedit.cpp",
+        "fxjs/xfa/cjx_passwordedit.h",
+        "fxjs/xfa/cjx_pattern.cpp",
+        "fxjs/xfa/cjx_pattern.h",
+        "fxjs/xfa/cjx_picture.cpp",
+        "fxjs/xfa/cjx_picture.h",
+        "fxjs/xfa/cjx_query.cpp",
+        "fxjs/xfa/cjx_query.h",
+        "fxjs/xfa/cjx_radial.cpp",
+        "fxjs/xfa/cjx_radial.h",
+        "fxjs/xfa/cjx_reason.cpp",
+        "fxjs/xfa/cjx_reason.h",
+        "fxjs/xfa/cjx_reasons.cpp",
+        "fxjs/xfa/cjx_reasons.h",
+        "fxjs/xfa/cjx_recordset.cpp",
+        "fxjs/xfa/cjx_recordset.h",
+        "fxjs/xfa/cjx_rectangle.cpp",
+        "fxjs/xfa/cjx_rectangle.h",
+        "fxjs/xfa/cjx_ref.cpp",
+        "fxjs/xfa/cjx_ref.h",
+        "fxjs/xfa/cjx_rootelement.cpp",
+        "fxjs/xfa/cjx_rootelement.h",
+        "fxjs/xfa/cjx_script.cpp",
+        "fxjs/xfa/cjx_script.h",
+        "fxjs/xfa/cjx_select.cpp",
+        "fxjs/xfa/cjx_select.h",
+        "fxjs/xfa/cjx_setproperty.cpp",
+        "fxjs/xfa/cjx_setproperty.h",
+        "fxjs/xfa/cjx_signature.cpp",
+        "fxjs/xfa/cjx_signature.h",
+        "fxjs/xfa/cjx_signatureproperties.cpp",
+        "fxjs/xfa/cjx_signatureproperties.h",
+        "fxjs/xfa/cjx_signaturepseudomodel.cpp",
+        "fxjs/xfa/cjx_signaturepseudomodel.h",
+        "fxjs/xfa/cjx_signdata.cpp",
+        "fxjs/xfa/cjx_signdata.h",
+        "fxjs/xfa/cjx_signing.cpp",
+        "fxjs/xfa/cjx_signing.h",
+        "fxjs/xfa/cjx_soapaction.cpp",
+        "fxjs/xfa/cjx_soapaction.h",
+        "fxjs/xfa/cjx_soapaddress.cpp",
+        "fxjs/xfa/cjx_soapaddress.h",
+        "fxjs/xfa/cjx_solid.cpp",
+        "fxjs/xfa/cjx_solid.h",
+        "fxjs/xfa/cjx_source.cpp",
+        "fxjs/xfa/cjx_source.h",
+        "fxjs/xfa/cjx_sourceset.cpp",
+        "fxjs/xfa/cjx_sourceset.h",
+        "fxjs/xfa/cjx_speak.cpp",
+        "fxjs/xfa/cjx_speak.h",
+        "fxjs/xfa/cjx_stipple.cpp",
+        "fxjs/xfa/cjx_stipple.h",
+        "fxjs/xfa/cjx_subform.cpp",
+        "fxjs/xfa/cjx_subform.h",
+        "fxjs/xfa/cjx_subformset.cpp",
+        "fxjs/xfa/cjx_subformset.h",
+        "fxjs/xfa/cjx_subjectdn.cpp",
+        "fxjs/xfa/cjx_subjectdn.h",
+        "fxjs/xfa/cjx_subjectdns.cpp",
+        "fxjs/xfa/cjx_subjectdns.h",
+        "fxjs/xfa/cjx_submit.cpp",
+        "fxjs/xfa/cjx_submit.h",
+        "fxjs/xfa/cjx_template.cpp",
+        "fxjs/xfa/cjx_template.h",
+        "fxjs/xfa/cjx_text.cpp",
+        "fxjs/xfa/cjx_text.h",
+        "fxjs/xfa/cjx_textedit.cpp",
+        "fxjs/xfa/cjx_textedit.h",
+        "fxjs/xfa/cjx_textnode.cpp",
+        "fxjs/xfa/cjx_textnode.h",
+        "fxjs/xfa/cjx_time.cpp",
+        "fxjs/xfa/cjx_time.h",
+        "fxjs/xfa/cjx_timestamp.cpp",
+        "fxjs/xfa/cjx_timestamp.h",
+        "fxjs/xfa/cjx_tooltip.cpp",
+        "fxjs/xfa/cjx_tooltip.h",
+        "fxjs/xfa/cjx_traversal.cpp",
+        "fxjs/xfa/cjx_traversal.h",
+        "fxjs/xfa/cjx_traverse.cpp",
+        "fxjs/xfa/cjx_traverse.h",
+        "fxjs/xfa/cjx_tree.cpp",
+        "fxjs/xfa/cjx_tree.h",
+        "fxjs/xfa/cjx_treelist.cpp",
+        "fxjs/xfa/cjx_treelist.h",
+        "fxjs/xfa/cjx_ui.cpp",
+        "fxjs/xfa/cjx_ui.h",
+        "fxjs/xfa/cjx_update.cpp",
+        "fxjs/xfa/cjx_update.h",
+        "fxjs/xfa/cjx_uri.cpp",
+        "fxjs/xfa/cjx_uri.h",
+        "fxjs/xfa/cjx_user.cpp",
+        "fxjs/xfa/cjx_user.h",
+        "fxjs/xfa/cjx_validate.cpp",
+        "fxjs/xfa/cjx_validate.h",
+        "fxjs/xfa/cjx_value.cpp",
+        "fxjs/xfa/cjx_value.h",
+        "fxjs/xfa/cjx_variables.cpp",
+        "fxjs/xfa/cjx_variables.h",
+        "fxjs/xfa/cjx_wsdladdress.cpp",
+        "fxjs/xfa/cjx_wsdladdress.h",
+        "fxjs/xfa/cjx_wsdlconnection.cpp",
+        "fxjs/xfa/cjx_wsdlconnection.h",
+        "fxjs/xfa/cjx_xfa.cpp",
+        "fxjs/xfa/cjx_xfa.h",
+        "fxjs/xfa/cjx_xmlconnection.cpp",
+        "fxjs/xfa/cjx_xmlconnection.h",
+        "fxjs/xfa/cjx_xsdconnection.cpp",
+        "fxjs/xfa/cjx_xsdconnection.h",
       ]
     }
   } else {
@@ -1337,7 +1618,7 @@ static_library("fxjs") {
   }
 }
 
-static_library("formfiller") {
+jumbo_static_library("formfiller") {
   sources = [
     "fpdfsdk/formfiller/cba_fontmap.cpp",
     "fpdfsdk/formfiller/cba_fontmap.h",
@@ -1369,7 +1650,7 @@ static_library("formfiller") {
 }
 
 if (pdf_enable_xfa) {
-  static_library("fpdfxfa") {
+  jumbo_static_library("fpdfxfa") {
     sources = [
       "fpdfsdk/fpdfxfa/cpdfxfa_context.cpp",
       "fpdfsdk/fpdfxfa/cpdfxfa_context.h",
@@ -1388,7 +1669,7 @@ if (pdf_enable_xfa) {
     configs += [ ":pdfium_core_config" ]
   }
 
-  static_library("fxbarcode") {
+  jumbo_static_library("fxbarcode") {
     sources = [
       "fxbarcode/BC_Library.cpp",
       "fxbarcode/BC_Library.h",
@@ -1525,6 +1806,7 @@ if (pdf_enable_xfa) {
     configs += [ ":pdfium_core_config" ]
   }
 
+  # TODO(crbug.com/pdfium/964): Support jumbo builds.
   static_library("xfa") {
     sources = [
       "xfa/fde/cfde_texteditengine.cpp",
@@ -1735,6 +2017,8 @@ if (pdf_enable_xfa) {
       "xfa/fxfa/cxfa_fwladapterwidgetmgr.h",
       "xfa/fxfa/cxfa_fwltheme.cpp",
       "xfa/fxfa/cxfa_fwltheme.h",
+      "xfa/fxfa/cxfa_imagerenderer.cpp",
+      "xfa/fxfa/cxfa_imagerenderer.h",
       "xfa/fxfa/cxfa_linkuserdata.cpp",
       "xfa/fxfa/cxfa_linkuserdata.h",
       "xfa/fxfa/cxfa_loadercontext.cpp",
@@ -1813,7 +2097,6 @@ if (pdf_enable_xfa) {
       "xfa/fxfa/parser/cxfa_appearancefilter.h",
       "xfa/fxfa/parser/cxfa_arc.cpp",
       "xfa/fxfa/parser/cxfa_arc.h",
-      "xfa/fxfa/parser/cxfa_arcdata.h",
       "xfa/fxfa/parser/cxfa_area.cpp",
       "xfa/fxfa/parser/cxfa_area.h",
       "xfa/fxfa/parser/cxfa_arraynodelist.cpp",
@@ -1836,21 +2119,16 @@ if (pdf_enable_xfa) {
       "xfa/fxfa/parser/cxfa_behavioroverride.h",
       "xfa/fxfa/parser/cxfa_bind.cpp",
       "xfa/fxfa/parser/cxfa_bind.h",
-      "xfa/fxfa/parser/cxfa_binddata.cpp",
-      "xfa/fxfa/parser/cxfa_binddata.h",
       "xfa/fxfa/parser/cxfa_binditems.cpp",
       "xfa/fxfa/parser/cxfa_binditems.h",
-      "xfa/fxfa/parser/cxfa_binditemsdata.cpp",
-      "xfa/fxfa/parser/cxfa_binditemsdata.h",
       "xfa/fxfa/parser/cxfa_bookend.cpp",
       "xfa/fxfa/parser/cxfa_bookend.h",
       "xfa/fxfa/parser/cxfa_boolean.cpp",
       "xfa/fxfa/parser/cxfa_boolean.h",
       "xfa/fxfa/parser/cxfa_border.cpp",
       "xfa/fxfa/parser/cxfa_border.h",
-      "xfa/fxfa/parser/cxfa_borderdata.h",
-      "xfa/fxfa/parser/cxfa_boxdata.cpp",
-      "xfa/fxfa/parser/cxfa_boxdata.h",
+      "xfa/fxfa/parser/cxfa_box.cpp",
+      "xfa/fxfa/parser/cxfa_box.h",
       "xfa/fxfa/parser/cxfa_break.cpp",
       "xfa/fxfa/parser/cxfa_break.h",
       "xfa/fxfa/parser/cxfa_breakafter.cpp",
@@ -1863,14 +2141,10 @@ if (pdf_enable_xfa) {
       "xfa/fxfa/parser/cxfa_cache.h",
       "xfa/fxfa/parser/cxfa_calculate.cpp",
       "xfa/fxfa/parser/cxfa_calculate.h",
-      "xfa/fxfa/parser/cxfa_calculatedata.cpp",
-      "xfa/fxfa/parser/cxfa_calculatedata.h",
       "xfa/fxfa/parser/cxfa_calendarsymbols.cpp",
       "xfa/fxfa/parser/cxfa_calendarsymbols.h",
       "xfa/fxfa/parser/cxfa_caption.cpp",
       "xfa/fxfa/parser/cxfa_caption.h",
-      "xfa/fxfa/parser/cxfa_captiondata.cpp",
-      "xfa/fxfa/parser/cxfa_captiondata.h",
       "xfa/fxfa/parser/cxfa_certificate.cpp",
       "xfa/fxfa/parser/cxfa_certificate.h",
       "xfa/fxfa/parser/cxfa_certificates.cpp",
@@ -1919,7 +2193,6 @@ if (pdf_enable_xfa) {
       "xfa/fxfa/parser/cxfa_copies.h",
       "xfa/fxfa/parser/cxfa_corner.cpp",
       "xfa/fxfa/parser/cxfa_corner.h",
-      "xfa/fxfa/parser/cxfa_cornerdata.h",
       "xfa/fxfa/parser/cxfa_creator.cpp",
       "xfa/fxfa/parser/cxfa_creator.h",
       "xfa/fxfa/parser/cxfa_currencysymbol.cpp",
@@ -1930,8 +2203,6 @@ if (pdf_enable_xfa) {
       "xfa/fxfa/parser/cxfa_currentpage.h",
       "xfa/fxfa/parser/cxfa_data.cpp",
       "xfa/fxfa/parser/cxfa_data.h",
-      "xfa/fxfa/parser/cxfa_datadata.cpp",
-      "xfa/fxfa/parser/cxfa_datadata.h",
       "xfa/fxfa/parser/cxfa_dataexporter.cpp",
       "xfa/fxfa/parser/cxfa_dataexporter.h",
       "xfa/fxfa/parser/cxfa_datagroup.cpp",
@@ -1942,8 +2213,6 @@ if (pdf_enable_xfa) {
       "xfa/fxfa/parser/cxfa_datamodel.h",
       "xfa/fxfa/parser/cxfa_datavalue.cpp",
       "xfa/fxfa/parser/cxfa_datavalue.h",
-      "xfa/fxfa/parser/cxfa_datawindow.cpp",
-      "xfa/fxfa/parser/cxfa_datawindow.h",
       "xfa/fxfa/parser/cxfa_date.cpp",
       "xfa/fxfa/parser/cxfa_date.h",
       "xfa/fxfa/parser/cxfa_datepattern.cpp",
@@ -2000,7 +2269,6 @@ if (pdf_enable_xfa) {
       "xfa/fxfa/parser/cxfa_dynamicrender.h",
       "xfa/fxfa/parser/cxfa_edge.cpp",
       "xfa/fxfa/parser/cxfa_edge.h",
-      "xfa/fxfa/parser/cxfa_edgedata.h",
       "xfa/fxfa/parser/cxfa_effectiveinputpolicy.cpp",
       "xfa/fxfa/parser/cxfa_effectiveinputpolicy.h",
       "xfa/fxfa/parser/cxfa_effectiveoutputpolicy.cpp",
@@ -2033,10 +2301,6 @@ if (pdf_enable_xfa) {
       "xfa/fxfa/parser/cxfa_eranames.h",
       "xfa/fxfa/parser/cxfa_event.cpp",
       "xfa/fxfa/parser/cxfa_event.h",
-      "xfa/fxfa/parser/cxfa_eventdata.cpp",
-      "xfa/fxfa/parser/cxfa_eventdata.h",
-      "xfa/fxfa/parser/cxfa_eventpseudomodel.cpp",
-      "xfa/fxfa/parser/cxfa_eventpseudomodel.h",
       "xfa/fxfa/parser/cxfa_exclgroup.cpp",
       "xfa/fxfa/parser/cxfa_exclgroup.h",
       "xfa/fxfa/parser/cxfa_exclude.cpp",
@@ -2045,8 +2309,6 @@ if (pdf_enable_xfa) {
       "xfa/fxfa/parser/cxfa_excludens.h",
       "xfa/fxfa/parser/cxfa_exdata.cpp",
       "xfa/fxfa/parser/cxfa_exdata.h",
-      "xfa/fxfa/parser/cxfa_exdatadata.cpp",
-      "xfa/fxfa/parser/cxfa_exdatadata.h",
       "xfa/fxfa/parser/cxfa_execute.cpp",
       "xfa/fxfa/parser/cxfa_execute.h",
       "xfa/fxfa/parser/cxfa_exobject.cpp",
@@ -2057,8 +2319,6 @@ if (pdf_enable_xfa) {
       "xfa/fxfa/parser/cxfa_field.h",
       "xfa/fxfa/parser/cxfa_fill.cpp",
       "xfa/fxfa/parser/cxfa_fill.h",
-      "xfa/fxfa/parser/cxfa_filldata.cpp",
-      "xfa/fxfa/parser/cxfa_filldata.h",
       "xfa/fxfa/parser/cxfa_filter.cpp",
       "xfa/fxfa/parser/cxfa_filter.h",
       "xfa/fxfa/parser/cxfa_fliplabel.cpp",
@@ -2067,8 +2327,6 @@ if (pdf_enable_xfa) {
       "xfa/fxfa/parser/cxfa_float.h",
       "xfa/fxfa/parser/cxfa_font.cpp",
       "xfa/fxfa/parser/cxfa_font.h",
-      "xfa/fxfa/parser/cxfa_fontdata.cpp",
-      "xfa/fxfa/parser/cxfa_fontdata.h",
       "xfa/fxfa/parser/cxfa_fontinfo.cpp",
       "xfa/fxfa/parser/cxfa_fontinfo.h",
       "xfa/fxfa/parser/cxfa_form.cpp",
@@ -2081,16 +2339,12 @@ if (pdf_enable_xfa) {
       "xfa/fxfa/parser/cxfa_groupparent.h",
       "xfa/fxfa/parser/cxfa_handler.cpp",
       "xfa/fxfa/parser/cxfa_handler.h",
-      "xfa/fxfa/parser/cxfa_hostpseudomodel.cpp",
-      "xfa/fxfa/parser/cxfa_hostpseudomodel.h",
       "xfa/fxfa/parser/cxfa_hyphenation.cpp",
       "xfa/fxfa/parser/cxfa_hyphenation.h",
       "xfa/fxfa/parser/cxfa_ifempty.cpp",
       "xfa/fxfa/parser/cxfa_ifempty.h",
       "xfa/fxfa/parser/cxfa_image.cpp",
       "xfa/fxfa/parser/cxfa_image.h",
-      "xfa/fxfa/parser/cxfa_imagedata.cpp",
-      "xfa/fxfa/parser/cxfa_imagedata.h",
       "xfa/fxfa/parser/cxfa_imageedit.cpp",
       "xfa/fxfa/parser/cxfa_imageedit.h",
       "xfa/fxfa/parser/cxfa_includexdpcontent.cpp",
@@ -2130,8 +2384,6 @@ if (pdf_enable_xfa) {
       "xfa/fxfa/parser/cxfa_layoutpagemgr.h",
       "xfa/fxfa/parser/cxfa_layoutprocessor.cpp",
       "xfa/fxfa/parser/cxfa_layoutprocessor.h",
-      "xfa/fxfa/parser/cxfa_layoutpseudomodel.cpp",
-      "xfa/fxfa/parser/cxfa_layoutpseudomodel.h",
       "xfa/fxfa/parser/cxfa_level.cpp",
       "xfa/fxfa/parser/cxfa_level.h",
       "xfa/fxfa/parser/cxfa_line.cpp",
@@ -2140,8 +2392,6 @@ if (pdf_enable_xfa) {
       "xfa/fxfa/parser/cxfa_linear.h",
       "xfa/fxfa/parser/cxfa_linearized.cpp",
       "xfa/fxfa/parser/cxfa_linearized.h",
-      "xfa/fxfa/parser/cxfa_linedata.cpp",
-      "xfa/fxfa/parser/cxfa_linedata.h",
       "xfa/fxfa/parser/cxfa_list.cpp",
       "xfa/fxfa/parser/cxfa_list.h",
       "xfa/fxfa/parser/cxfa_locale.cpp",
@@ -2156,16 +2406,12 @@ if (pdf_enable_xfa) {
       "xfa/fxfa/parser/cxfa_lockdocument.h",
       "xfa/fxfa/parser/cxfa_log.cpp",
       "xfa/fxfa/parser/cxfa_log.h",
-      "xfa/fxfa/parser/cxfa_logpseudomodel.cpp",
-      "xfa/fxfa/parser/cxfa_logpseudomodel.h",
       "xfa/fxfa/parser/cxfa_manifest.cpp",
       "xfa/fxfa/parser/cxfa_manifest.h",
       "xfa/fxfa/parser/cxfa_map.cpp",
       "xfa/fxfa/parser/cxfa_map.h",
       "xfa/fxfa/parser/cxfa_margin.cpp",
       "xfa/fxfa/parser/cxfa_margin.h",
-      "xfa/fxfa/parser/cxfa_margindata.cpp",
-      "xfa/fxfa/parser/cxfa_margindata.h",
       "xfa/fxfa/parser/cxfa_mdp.cpp",
       "xfa/fxfa/parser/cxfa_mdp.h",
       "xfa/fxfa/parser/cxfa_measurement.cpp",
@@ -2202,8 +2448,6 @@ if (pdf_enable_xfa) {
       "xfa/fxfa/parser/cxfa_nodehelper.cpp",
       "xfa/fxfa/parser/cxfa_nodehelper.h",
       "xfa/fxfa/parser/cxfa_nodeiteratortemplate.h",
-      "xfa/fxfa/parser/cxfa_nodelist.cpp",
-      "xfa/fxfa/parser/cxfa_nodelist.h",
       "xfa/fxfa/parser/cxfa_nodelocale.cpp",
       "xfa/fxfa/parser/cxfa_nodelocale.h",
       "xfa/fxfa/parser/cxfa_numberofcopies.cpp",
@@ -2222,8 +2466,6 @@ if (pdf_enable_xfa) {
       "xfa/fxfa/parser/cxfa_object.h",
       "xfa/fxfa/parser/cxfa_occur.cpp",
       "xfa/fxfa/parser/cxfa_occur.h",
-      "xfa/fxfa/parser/cxfa_occurdata.cpp",
-      "xfa/fxfa/parser/cxfa_occurdata.h",
       "xfa/fxfa/parser/cxfa_oid.cpp",
       "xfa/fxfa/parser/cxfa_oid.h",
       "xfa/fxfa/parser/cxfa_oids.cpp",
@@ -2260,8 +2502,6 @@ if (pdf_enable_xfa) {
       "xfa/fxfa/parser/cxfa_paginationoverride.h",
       "xfa/fxfa/parser/cxfa_para.cpp",
       "xfa/fxfa/parser/cxfa_para.h",
-      "xfa/fxfa/parser/cxfa_paradata.cpp",
-      "xfa/fxfa/parser/cxfa_paradata.h",
       "xfa/fxfa/parser/cxfa_part.cpp",
       "xfa/fxfa/parser/cxfa_part.h",
       "xfa/fxfa/parser/cxfa_password.cpp",
@@ -2320,7 +2560,6 @@ if (pdf_enable_xfa) {
       "xfa/fxfa/parser/cxfa_recordset.h",
       "xfa/fxfa/parser/cxfa_rectangle.cpp",
       "xfa/fxfa/parser/cxfa_rectangle.h",
-      "xfa/fxfa/parser/cxfa_rectangledata.h",
       "xfa/fxfa/parser/cxfa_ref.cpp",
       "xfa/fxfa/parser/cxfa_ref.h",
       "xfa/fxfa/parser/cxfa_relevant.cpp",
@@ -2335,8 +2574,6 @@ if (pdf_enable_xfa) {
       "xfa/fxfa/parser/cxfa_runscripts.h",
       "xfa/fxfa/parser/cxfa_script.cpp",
       "xfa/fxfa/parser/cxfa_script.h",
-      "xfa/fxfa/parser/cxfa_scriptdata.cpp",
-      "xfa/fxfa/parser/cxfa_scriptdata.h",
       "xfa/fxfa/parser/cxfa_scriptmodel.cpp",
       "xfa/fxfa/parser/cxfa_scriptmodel.h",
       "xfa/fxfa/parser/cxfa_select.cpp",
@@ -2355,8 +2592,6 @@ if (pdf_enable_xfa) {
       "xfa/fxfa/parser/cxfa_signature.h",
       "xfa/fxfa/parser/cxfa_signatureproperties.cpp",
       "xfa/fxfa/parser/cxfa_signatureproperties.h",
-      "xfa/fxfa/parser/cxfa_signaturepseudomodel.cpp",
-      "xfa/fxfa/parser/cxfa_signaturepseudomodel.h",
       "xfa/fxfa/parser/cxfa_signdata.cpp",
       "xfa/fxfa/parser/cxfa_signdata.h",
       "xfa/fxfa/parser/cxfa_signing.cpp",
@@ -2385,8 +2620,8 @@ if (pdf_enable_xfa) {
       "xfa/fxfa/parser/cxfa_startpage.h",
       "xfa/fxfa/parser/cxfa_stipple.cpp",
       "xfa/fxfa/parser/cxfa_stipple.h",
-      "xfa/fxfa/parser/cxfa_strokedata.cpp",
-      "xfa/fxfa/parser/cxfa_strokedata.h",
+      "xfa/fxfa/parser/cxfa_stroke.cpp",
+      "xfa/fxfa/parser/cxfa_stroke.h",
       "xfa/fxfa/parser/cxfa_subform.cpp",
       "xfa/fxfa/parser/cxfa_subform.h",
       "xfa/fxfa/parser/cxfa_subformset.cpp",
@@ -2397,8 +2632,6 @@ if (pdf_enable_xfa) {
       "xfa/fxfa/parser/cxfa_subjectdns.h",
       "xfa/fxfa/parser/cxfa_submit.cpp",
       "xfa/fxfa/parser/cxfa_submit.h",
-      "xfa/fxfa/parser/cxfa_submitdata.cpp",
-      "xfa/fxfa/parser/cxfa_submitdata.h",
       "xfa/fxfa/parser/cxfa_submitformat.cpp",
       "xfa/fxfa/parser/cxfa_submitformat.h",
       "xfa/fxfa/parser/cxfa_submiturl.cpp",
@@ -2415,8 +2648,6 @@ if (pdf_enable_xfa) {
       "xfa/fxfa/parser/cxfa_templatecache.h",
       "xfa/fxfa/parser/cxfa_text.cpp",
       "xfa/fxfa/parser/cxfa_text.h",
-      "xfa/fxfa/parser/cxfa_textdata.cpp",
-      "xfa/fxfa/parser/cxfa_textdata.h",
       "xfa/fxfa/parser/cxfa_textedit.cpp",
       "xfa/fxfa/parser/cxfa_textedit.h",
       "xfa/fxfa/parser/cxfa_thisproxy.cpp",
@@ -2450,6 +2681,8 @@ if (pdf_enable_xfa) {
       "xfa/fxfa/parser/cxfa_traversestrategy_layoutitem.h",
       "xfa/fxfa/parser/cxfa_traversestrategy_xfacontainernode.h",
       "xfa/fxfa/parser/cxfa_traversestrategy_xfanode.h",
+      "xfa/fxfa/parser/cxfa_treelist.cpp",
+      "xfa/fxfa/parser/cxfa_treelist.h",
       "xfa/fxfa/parser/cxfa_type.cpp",
       "xfa/fxfa/parser/cxfa_type.h",
       "xfa/fxfa/parser/cxfa_typeface.cpp",
@@ -2468,16 +2701,10 @@ if (pdf_enable_xfa) {
       "xfa/fxfa/parser/cxfa_validate.h",
       "xfa/fxfa/parser/cxfa_validateapprovalsignatures.cpp",
       "xfa/fxfa/parser/cxfa_validateapprovalsignatures.h",
-      "xfa/fxfa/parser/cxfa_validatedata.cpp",
-      "xfa/fxfa/parser/cxfa_validatedata.h",
       "xfa/fxfa/parser/cxfa_validationmessaging.cpp",
       "xfa/fxfa/parser/cxfa_validationmessaging.h",
       "xfa/fxfa/parser/cxfa_value.cpp",
       "xfa/fxfa/parser/cxfa_value.h",
-      "xfa/fxfa/parser/cxfa_valuearray.cpp",
-      "xfa/fxfa/parser/cxfa_valuearray.h",
-      "xfa/fxfa/parser/cxfa_valuedata.cpp",
-      "xfa/fxfa/parser/cxfa_valuedata.h",
       "xfa/fxfa/parser/cxfa_variables.cpp",
       "xfa/fxfa/parser/cxfa_variables.h",
       "xfa/fxfa/parser/cxfa_version.cpp",
@@ -2490,8 +2717,6 @@ if (pdf_enable_xfa) {
       "xfa/fxfa/parser/cxfa_webclient.h",
       "xfa/fxfa/parser/cxfa_whitespace.cpp",
       "xfa/fxfa/parser/cxfa_whitespace.h",
-      "xfa/fxfa/parser/cxfa_widgetdata.cpp",
-      "xfa/fxfa/parser/cxfa_widgetdata.h",
       "xfa/fxfa/parser/cxfa_window.cpp",
       "xfa/fxfa/parser/cxfa_window.h",
       "xfa/fxfa/parser/cxfa_wsdladdress.cpp",
@@ -2692,6 +2917,7 @@ test("pdfium_embeddertests") {
     "fpdfsdk/pwl/cpwl_edit_embeddertest.cpp",
     "testing/embedder_test.cpp",
     "testing/embedder_test.h",
+    "testing/embedder_test_main.cpp",
     "testing/embedder_test_mock_delegate.h",
     "testing/embedder_test_timer_handling_delegate.h",
     "testing/fake_file_access.cpp",
@@ -2700,6 +2926,7 @@ test("pdfium_embeddertests") {
     "testing/range_set.h",
   ]
   deps = [
+    ":image_diff",
     ":pdfium",
     ":test_support",
     "//testing/gmock",

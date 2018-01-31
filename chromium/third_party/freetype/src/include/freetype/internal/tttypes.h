@@ -5,7 +5,7 @@
 /*    Basic SFNT/TrueType type definitions and interface (specification    */
 /*    only).                                                               */
 /*                                                                         */
-/*  Copyright 1996-2017 by                                                 */
+/*  Copyright 1996-2018 by                                                 */
 /*  David Turner, Robert Wilhelm, and Werner Lemberg.                      */
 /*                                                                         */
 /*  This file is part of the FreeType project, and may only be used,       */
@@ -148,7 +148,7 @@ FT_BEGIN_HEADER
   /* <Fields>                                                              */
   /*    See                                                                */
   /*                                                                       */
-  /*      http://www.w3.org/TR/WOFF/#WOFFHeader                            */
+  /*      https://www.w3.org/TR/WOFF/#WOFFHeader                           */
   /*                                                                       */
   typedef struct  WOFF_HeaderRec_
   {

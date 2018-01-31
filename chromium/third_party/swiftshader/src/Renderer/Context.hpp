@@ -399,8 +399,8 @@ namespace sw
 		bool textureActive(int coordinate);
 		bool textureActive(int coordinate, int component);
 
-		unsigned short pixelShaderVersion() const;
-		unsigned short vertexShaderVersion() const;
+		unsigned short pixelShaderModel() const;
+		unsigned short vertexShaderModel() const;
 
 		int getMultiSampleCount() const;
 		int getSuperSampleCount() const;
@@ -465,8 +465,11 @@ namespace sw
 		bool textureTransformProject[8];
 
 		Surface *renderTarget[RENDERTARGETS];
+		unsigned int renderTargetLayer[RENDERTARGETS];
 		Surface *depthBuffer;
+		unsigned int depthBufferLayer;
 		Surface *stencilBuffer;
+		unsigned int stencilBufferLayer;
 
 		// Fog
 		bool fogEnable;

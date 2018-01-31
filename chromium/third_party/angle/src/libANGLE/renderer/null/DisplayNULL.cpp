@@ -19,7 +19,7 @@
 namespace rx
 {
 
-DisplayNULL::DisplayNULL(const egl::DisplayState &state) : DisplayImpl(state), mDevice(nullptr)
+DisplayNULL::DisplayNULL(const egl::DisplayState &state) : DisplayImpl(state)
 {
 }
 
@@ -29,8 +29,6 @@ DisplayNULL::~DisplayNULL()
 
 egl::Error DisplayNULL::initialize(egl::Display *display)
 {
-    mDevice = new DeviceNULL();
-
     constexpr size_t kMaxTotalAllocationSize = 1 << 28;  // 256MB
     mAllocationTracker.reset(new AllocationTrackerNULL(kMaxTotalAllocationSize));
 
@@ -40,7 +38,6 @@ egl::Error DisplayNULL::initialize(egl::Display *display)
 void DisplayNULL::terminate()
 {
     mAllocationTracker.reset();
-    SafeDelete(mDevice);
 }
 
 egl::Error DisplayNULL::makeCurrent(egl::Surface *drawSurface,
@@ -113,10 +110,9 @@ std::string DisplayNULL::getVendorString() const
     return "NULL";
 }
 
-egl::Error DisplayNULL::getDevice(DeviceImpl **device)
+DeviceImpl *DisplayNULL::createDevice()
 {
-    *device = mDevice;
-    return egl::NoError();
+    return new DeviceNULL();
 }
 
 egl::Error DisplayNULL::waitClient(const gl::Context *context) const
@@ -174,7 +170,7 @@ ContextImpl *DisplayNULL::createContext(const gl::ContextState &state)
     return new ContextNULL(state, mAllocationTracker.get());
 }
 
-StreamProducerImpl *DisplayNULL::createStreamProducerD3DTextureNV12(
+StreamProducerImpl *DisplayNULL::createStreamProducerD3DTexture(
     egl::Stream::ConsumerType consumerType,
     const egl::AttributeMap &attribs)
 {

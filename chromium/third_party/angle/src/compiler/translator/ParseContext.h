@@ -6,12 +6,13 @@
 #ifndef COMPILER_TRANSLATOR_PARSECONTEXT_H_
 #define COMPILER_TRANSLATOR_PARSECONTEXT_H_
 
+#include "compiler/preprocessor/Preprocessor.h"
 #include "compiler/translator/Compiler.h"
+#include "compiler/translator/Declarator.h"
 #include "compiler/translator/Diagnostics.h"
 #include "compiler/translator/DirectiveHandler.h"
-#include "compiler/translator/SymbolTable.h"
 #include "compiler/translator/QualifierTypes.h"
-#include "compiler/preprocessor/Preprocessor.h"
+#include "compiler/translator/SymbolTable.h"
 
 namespace sh
 {
@@ -311,11 +312,10 @@ class TParseContext : angle::NonCopyable
                                               const TSourceLoc &fieldLocation);
 
     // Parse declarator for a single field
-    TField *parseStructDeclarator(TString *identifier, const TSourceLoc &loc);
-    TField *parseStructArrayDeclarator(TString *identifier,
-                                       const TSourceLoc &loc,
-                                       const TVector<unsigned int> &arraySizes,
-                                       const TSourceLoc &arraySizeLoc);
+    TDeclarator *parseStructDeclarator(const TString *identifier, const TSourceLoc &loc);
+    TDeclarator *parseStructArrayDeclarator(const TString *identifier,
+                                            const TSourceLoc &loc,
+                                            const TVector<unsigned int> *arraySizes);
 
     void checkDoesNotHaveDuplicateFieldName(const TFieldList::const_iterator begin,
                                             const TFieldList::const_iterator end,
@@ -328,8 +328,9 @@ class TParseContext : angle::NonCopyable
     TFieldList *addStructDeclaratorListWithQualifiers(
         const TTypeQualifierBuilder &typeQualifierBuilder,
         TPublicType *typeSpecifier,
-        TFieldList *fieldList);
-    TFieldList *addStructDeclaratorList(const TPublicType &typeSpecifier, TFieldList *fieldList);
+        const TDeclaratorList *declaratorList);
+    TFieldList *addStructDeclaratorList(const TPublicType &typeSpecifier,
+                                        const TDeclaratorList *declaratorList);
     TTypeSpecifierNonArray addStructure(const TSourceLoc &structLine,
                                         const TSourceLoc &nameLine,
                                         const TString *structName,
@@ -548,16 +549,20 @@ class TParseContext : angle::NonCopyable
                                 const TSourceLoc &loc);
     TIntermTyped *createUnaryMath(TOperator op, TIntermTyped *child, const TSourceLoc &loc);
 
-    TIntermTyped *addMethod(TFunction *fnCall,
+    TIntermTyped *addMethod(const TString &name,
                             TIntermSequence *arguments,
                             TIntermNode *thisNode,
                             const TSourceLoc &loc);
     TIntermTyped *addConstructor(TIntermSequence *arguments,
                                  TType type,
                                  const TSourceLoc &line);
-    TIntermTyped *addNonConstructorFunctionCall(TFunction *fnCall,
+    TIntermTyped *addNonConstructorFunctionCall(const TString &name,
                                                 TIntermSequence *arguments,
                                                 const TSourceLoc &loc);
+
+    // Return either the original expression or the folded version of the expression in case the
+    // folded node will validate the same way during subsequent parsing.
+    TIntermTyped *expressionOrFoldedResult(TIntermTyped *expression);
 
     // Return true if the checks pass
     bool binaryOpCommonCheck(TOperator op,
@@ -643,8 +648,9 @@ class TParseContext : angle::NonCopyable
     int mMaxGeometryShaderInvocations;
     int mMaxGeometryShaderMaxVertices;
 
-    // Track if all input array sizes are same and matches the latter input primitive declaration.
-    unsigned int mGeometryShaderInputArraySize;
+    // Store gl_in variable with its array size once the array size can be determined. The array
+    // size can also be checked against latter input primitive type declaration.
+    const TVariable *mGlInVariableWithArraySize;
 };
 
 int PaParseStrings(size_t count,

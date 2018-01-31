@@ -27,7 +27,7 @@ namespace sw
 
 	void PixelProgram::setBuiltins(Int &x, Int &y, Float4(&z)[4], Float4 &w)
 	{
-		if(shader->getVersion() >= 0x0300)
+		if(shader->getShaderModel() >= 0x0300)
 		{
 			if(shader->isVPosDeclared())
 			{
@@ -230,6 +230,8 @@ namespace sw
 			case Shader::OPCODE_LRP:        lrp(d, s0, s1, s2);                            break;
 			case Shader::OPCODE_STEP:       step(d, s0, s1);                               break;
 			case Shader::OPCODE_SMOOTH:     smooth(d, s0, s1, s2);                         break;
+			case Shader::OPCODE_ISINF:      isinf(d, s0);                                  break;
+			case Shader::OPCODE_ISNAN:      isnan(d, s0);                                  break;
 			case Shader::OPCODE_FLOATBITSTOINT:
 			case Shader::OPCODE_FLOATBITSTOUINT:
 			case Shader::OPCODE_INTBITSTOFLOAT:
@@ -281,17 +283,20 @@ namespace sw
 			case Shader::OPCODE_M3X4:       M3X4(d, s0, src1);                             break;
 			case Shader::OPCODE_M3X3:       M3X3(d, s0, src1);                             break;
 			case Shader::OPCODE_M3X2:       M3X2(d, s0, src1);                             break;
-			case Shader::OPCODE_TEX:        TEXLD(d, s0, src1, project, bias);             break;
-			case Shader::OPCODE_TEXLDD:     TEXLDD(d, s0, src1, s2, s3);                   break;
-			case Shader::OPCODE_TEXLDL:     TEXLDL(d, s0, src1);                           break;
+			case Shader::OPCODE_TEX:        TEX(d, s0, src1, project, bias);               break;
+			case Shader::OPCODE_TEXLDD:     TEXGRAD(d, s0, src1, s2, s3);                  break;
+			case Shader::OPCODE_TEXLDL:     TEXLOD(d, s0, src1, s0.w);                     break;
+			case Shader::OPCODE_TEXLOD:     TEXLOD(d, s0, src1, s2.x);                     break;
 			case Shader::OPCODE_TEXSIZE:    TEXSIZE(d, s0.x, src1);                        break;
 			case Shader::OPCODE_TEXKILL:    TEXKILL(cMask, d, dst.mask);                   break;
-			case Shader::OPCODE_TEXOFFSET:  TEXOFFSET(d, s0, src1, s2, bias);              break;
-			case Shader::OPCODE_TEXLDLOFFSET: TEXLDL(d, s0, src1, s2, bias);               break;
-			case Shader::OPCODE_TEXELFETCH: TEXELFETCH(d, s0, src1);                       break;
-			case Shader::OPCODE_TEXELFETCHOFFSET: TEXELFETCH(d, s0, src1, s2);             break;
+			case Shader::OPCODE_TEXOFFSET:  TEXOFFSET(d, s0, src1, s2);                    break;
+			case Shader::OPCODE_TEXLODOFFSET: TEXLODOFFSET(d, s0, src1, s2, s3.x);         break;
+			case Shader::OPCODE_TEXELFETCH: TEXELFETCH(d, s0, src1, s2.x);                 break;
+			case Shader::OPCODE_TEXELFETCHOFFSET: TEXELFETCHOFFSET(d, s0, src1, s2, s3.x); break;
 			case Shader::OPCODE_TEXGRAD:    TEXGRAD(d, s0, src1, s2, s3);                  break;
-			case Shader::OPCODE_TEXGRADOFFSET: TEXGRAD(d, s0, src1, s2, s3, s4);           break;
+			case Shader::OPCODE_TEXGRADOFFSET: TEXGRADOFFSET(d, s0, src1, s2, s3, s4);     break;
+			case Shader::OPCODE_TEXBIAS:    TEXBIAS(d, s0, src1, s2.x);                    break;
+			case Shader::OPCODE_TEXOFFSETBIAS: TEXOFFSETBIAS(d, s0, src1, s2, s3.x);       break;
 			case Shader::OPCODE_DISCARD:    DISCARD(cMask, instruction);                   break;
 			case Shader::OPCODE_DFDX:       DFDX(d, s0);                                   break;
 			case Shader::OPCODE_DFDY:       DFDY(d, s0);                                   break;
@@ -334,21 +339,6 @@ namespace sw
 
 			if(dst.type != Shader::PARAMETER_VOID && dst.type != Shader::PARAMETER_LABEL && opcode != Shader::OPCODE_TEXKILL && opcode != Shader::OPCODE_NOP)
 			{
-				if(dst.integer)
-				{
-					switch(opcode)
-					{
-					case Shader::OPCODE_DIV:
-						if(dst.x) d.x = Trunc(d.x);
-						if(dst.y) d.y = Trunc(d.y);
-						if(dst.z) d.z = Trunc(d.z);
-						if(dst.w) d.w = Trunc(d.w);
-						break;
-					default:
-						break;   // No truncation to integer required when arguments are integer
-					}
-				}
-
 				if(dst.saturate)
 				{
 					if(dst.x) d.x = Max(d.x, Float4(0.0f));
@@ -535,12 +525,17 @@ namespace sw
 				c[i] = oC[i];
 			}
 		}
+
+		clampColor(c);
+
+		if(state.depthOverride)
+		{
+			oDepth = Min(Max(oDepth, Float4(0.0f)), Float4(1.0f));
+		}
 	}
 
 	Bool PixelProgram::alphaTest(Int cMask[4])
 	{
-		clampColor(c);
-
 		if(!state.alphaTestActive())
 		{
 			return true;
@@ -642,6 +637,7 @@ namespace sw
 			case FORMAT_G32R32F:
 			case FORMAT_X32B32G32R32F:
 			case FORMAT_A32B32G32R32F:
+			case FORMAT_X32B32G32R32F_UNSIGNED:
 			case FORMAT_R32I:
 			case FORMAT_G32R32I:
 			case FORMAT_A32B32G32R32I:
@@ -678,13 +674,13 @@ namespace sw
 		}
 	}
 
-	void PixelProgram::sampleTexture(Vector4f &c, const Src &sampler, Vector4f &uvwq, Vector4f &dsx, Vector4f &dsy, Vector4f &offset, SamplerFunction function)
+	Vector4f PixelProgram::sampleTexture(const Src &sampler, Vector4f &uvwq, Float4 &bias, Vector4f &dsx, Vector4f &dsy, Vector4f &offset, SamplerFunction function)
 	{
 		Vector4f tmp;
 
 		if(sampler.type == Shader::PARAMETER_SAMPLER && sampler.rel.type == Shader::PARAMETER_VOID)
 		{
-			sampleTexture(tmp, sampler.index, uvwq, dsx, dsy, offset, function);
+			tmp = sampleTexture(sampler.index, uvwq, bias, dsx, dsy, offset, function);
 		}
 		else
 		{
@@ -696,31 +692,36 @@ namespace sw
 				{
 					If(index == i)
 					{
-						sampleTexture(tmp, i, uvwq, dsx, dsy, offset, function);
+						tmp = sampleTexture(i, uvwq, bias, dsx, dsy, offset, function);
 						// FIXME: When the sampler states are the same, we could use one sampler and just index the texture
 					}
 				}
 			}
 		}
 
+		Vector4f c;
 		c.x = tmp[(sampler.swizzle >> 0) & 0x3];
 		c.y = tmp[(sampler.swizzle >> 2) & 0x3];
 		c.z = tmp[(sampler.swizzle >> 4) & 0x3];
 		c.w = tmp[(sampler.swizzle >> 6) & 0x3];
+
+		return c;
 	}
 
-	void PixelProgram::sampleTexture(Vector4f &c, int samplerIndex, Vector4f &uvwq, Vector4f &dsx, Vector4f &dsy, Vector4f &offset, SamplerFunction function)
+	Vector4f PixelProgram::sampleTexture(int samplerIndex, Vector4f &uvwq, Float4 &bias, Vector4f &dsx, Vector4f &dsy, Vector4f &offset, SamplerFunction function)
 	{
 		#if PERF_PROFILE
 			Long texTime = Ticks();
 		#endif
 
 		Pointer<Byte> texture = data + OFFSET(DrawData, mipmap) + samplerIndex * sizeof(Texture);
-		sampler[samplerIndex]->sampleTexture(texture, c, uvwq.x, uvwq.y, uvwq.z, uvwq.w, dsx, dsy, offset, function);
+		Vector4f c = SamplerCore(constants, state.sampler[samplerIndex]).sampleTexture(texture, uvwq.x, uvwq.y, uvwq.z, uvwq.w, bias, dsx, dsy, offset, function);
 
 		#if PERF_PROFILE
 			cycles[PERF_TEX] += Ticks() - texTime;
 		#endif
+
+		return c;
 	}
 
 	void PixelProgram::clampColor(Vector4f oC[RENDERTARGETS])
@@ -775,6 +776,12 @@ namespace sw
 			case FORMAT_R8UI:
 			case FORMAT_G8R8UI:
 			case FORMAT_A8B8G8R8UI:
+				break;
+			case FORMAT_X32B32G32R32F_UNSIGNED:
+				oC[index].x = Max(oC[index].x, Float4(0.0f));
+				oC[index].y = Max(oC[index].y, Float4(0.0f));
+				oC[index].z = Max(oC[index].z, Float4(0.0f));
+				oC[index].w = Max(oC[index].w, Float4(0.0f));
 				break;
 			default:
 				ASSERT(false);
@@ -1108,7 +1115,7 @@ namespace sw
 		dst.w = dot4(src0, row3);
 	}
 
-	void PixelProgram::TEXLD(Vector4f &dst, Vector4f &src0, const Src &src1, bool project, bool bias)
+	void PixelProgram::TEX(Vector4f &dst, Vector4f &src0, const Src &src1, bool project, bool bias)
 	{
 		if(project)
 		{
@@ -1118,58 +1125,63 @@ namespace sw
 			proj.y = src0.y * rw;
 			proj.z = src0.z * rw;
 
-			sampleTexture(dst, src1, proj, src0, src0, src0, Implicit);
+			dst = sampleTexture(src1, proj, src0.x, (src0), (src0), (src0), Implicit);
 		}
 		else
 		{
-			sampleTexture(dst, src1, src0, src0, src0, src0, bias ? Bias : Implicit);
+			dst = sampleTexture(src1, src0, src0.x, (src0), (src0), (src0), bias ? Bias : Implicit);
 		}
 	}
 
-	void PixelProgram::TEXOFFSET(Vector4f &dst, Vector4f &src0, const Src &src1, Vector4f &src2, bool bias)
+	void PixelProgram::TEXOFFSET(Vector4f &dst, Vector4f &src0, const Src &src1, Vector4f &offset)
 	{
-		sampleTexture(dst, src1, src0, src0, src0, src2, {bias ? Bias : Implicit, Offset});
+		dst = sampleTexture(src1, src0, (src0.x), (src0), (src0), offset, {Implicit, Offset});
 	}
 
-	void PixelProgram::TEXLDL(Vector4f &dst, Vector4f &src0, const Src &src1, Vector4f &offset, bool bias)
+	void PixelProgram::TEXLODOFFSET(Vector4f &dst, Vector4f &src0, const Src &src1, Vector4f &offset, Float4 &lod)
 	{
-		sampleTexture(dst, src1, src0, src0, src0, offset, {Lod, Offset});
+		dst = sampleTexture(src1, src0, lod, (src0), (src0), offset, {Lod, Offset});
 	}
 
-	void PixelProgram::TEXELFETCH(Vector4f &dst, Vector4f &src0, const Src& src1)
+	void PixelProgram::TEXBIAS(Vector4f &dst, Vector4f &src0, const Src &src1, Float4 &bias)
 	{
-		sampleTexture(dst, src1, src0, src0, src0, src0, Fetch);
+		dst = sampleTexture(src1, src0, bias, (src0), (src0), (src0), Bias);
 	}
 
-	void PixelProgram::TEXELFETCH(Vector4f &dst, Vector4f &src0, const Src& src1, Vector4f &offset)
+	void PixelProgram::TEXOFFSETBIAS(Vector4f &dst, Vector4f &src0, const Src &src1, Vector4f &offset, Float4 &bias)
 	{
-		sampleTexture(dst, src1, src0, src0, src0, offset, {Fetch, Offset});
+		dst = sampleTexture(src1, src0, bias, (src0), (src0), offset, {Bias, Offset});
 	}
 
-	void PixelProgram::TEXGRAD(Vector4f &dst, Vector4f &src0, const Src& src1, Vector4f &src2, Vector4f &src3)
+	void PixelProgram::TEXELFETCH(Vector4f &dst, Vector4f &src0, const Src& src1, Float4 &lod)
 	{
-		sampleTexture(dst, src1, src0, src2, src3, src0, Grad);
+		dst = sampleTexture(src1, src0, lod, (src0), (src0), (src0), Fetch);
 	}
 
-	void PixelProgram::TEXGRAD(Vector4f &dst, Vector4f &src0, const Src& src1, Vector4f &src2, Vector4f &src3, Vector4f &offset)
+	void PixelProgram::TEXELFETCHOFFSET(Vector4f &dst, Vector4f &src0, const Src& src1, Vector4f &offset, Float4 &lod)
 	{
-		sampleTexture(dst, src1, src0, src2, src3, offset, {Grad, Offset});
+		dst = sampleTexture(src1, src0, lod, (src0), (src0), offset, {Fetch, Offset});
 	}
 
-	void PixelProgram::TEXLDD(Vector4f &dst, Vector4f &src0, const Src &src1, Vector4f &src2, Vector4f &src3)
+	void PixelProgram::TEXGRAD(Vector4f &dst, Vector4f &src0, const Src& src1, Vector4f &dsx, Vector4f &dsy)
 	{
-		sampleTexture(dst, src1, src0, src2, src3, src0, Grad);
+		dst = sampleTexture(src1, src0, (src0.x), dsx, dsy, (src0), Grad);
 	}
 
-	void PixelProgram::TEXLDL(Vector4f &dst, Vector4f &src0, const Src &src1)
+	void PixelProgram::TEXGRADOFFSET(Vector4f &dst, Vector4f &src0, const Src& src1, Vector4f &dsx, Vector4f &dsy, Vector4f &offset)
 	{
-		sampleTexture(dst, src1, src0, src0, src0, src0, Lod);
+		dst = sampleTexture(src1, src0, (src0.x), dsx, dsy, offset, {Grad, Offset});
+	}
+
+	void PixelProgram::TEXLOD(Vector4f &dst, Vector4f &src0, const Src &src1, Float4 &lod)
+	{
+		dst = sampleTexture(src1, src0, lod, (src0), (src0), (src0), Lod);
 	}
 
 	void PixelProgram::TEXSIZE(Vector4f &dst, Float4 &lod, const Src &src1)
 	{
 		Pointer<Byte> texture = data + OFFSET(DrawData, mipmap) + src1.index * sizeof(Texture);
-		sampler[src1.index]->textureSize(texture, dst, lod);
+		dst = SamplerCore::textureSize(texture, lod);
 	}
 
 	void PixelProgram::TEXKILL(Int cMask[4], Vector4f &src, unsigned char mask)
@@ -1239,25 +1251,7 @@ namespace sw
 
 	void PixelProgram::BREAK()
 	{
-		BasicBlock *deadBlock = Nucleus::createBasicBlock();
-		BasicBlock *endBlock = loopRepEndBlock[loopRepDepth - 1];
-
-		if(breakDepth == 0)
-		{
-			enableIndex = enableIndex - breakDepth;
-			Nucleus::createBr(endBlock);
-		}
-		else
-		{
-			enableBreak = enableBreak & ~enableStack[enableIndex];
-			Bool allBreak = SignMask(enableBreak) == 0x0;
-
-			enableIndex = enableIndex - breakDepth;
-			branch(allBreak, endBlock, deadBlock);
-		}
-
-		Nucleus::setInsertBlock(deadBlock);
-		enableIndex = enableIndex + breakDepth;
+		enableBreak = enableBreak & ~enableStack[enableIndex];
 	}
 
 	void PixelProgram::BREAKC(Vector4f &src0, Vector4f &src1, Control control)
@@ -1295,17 +1289,7 @@ namespace sw
 	{
 		condition &= enableStack[enableIndex];
 
-		BasicBlock *continueBlock = Nucleus::createBasicBlock();
-		BasicBlock *endBlock = loopRepEndBlock[loopRepDepth - 1];
-
 		enableBreak = enableBreak & ~condition;
-		Bool allBreak = SignMask(enableBreak) == 0x0;
-
-		enableIndex = enableIndex - breakDepth;
-		branch(allBreak, endBlock, continueBlock);
-
-		Nucleus::setInsertBlock(continueBlock);
-		enableIndex = enableIndex + breakDepth;
 	}
 
 	void PixelProgram::CONTINUE()
@@ -1449,7 +1433,6 @@ namespace sw
 
 		if(isConditionalIf[ifDepth])
 		{
-			breakDepth--;
 			enableIndex--;
 		}
 	}
@@ -1495,7 +1478,6 @@ namespace sw
 		Nucleus::setInsertBlock(endBlock);
 
 		enableIndex--;
-		enableBreak = Int4(0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF);
 		whileTest = false;
 	}
 
@@ -1505,11 +1487,8 @@ namespace sw
 
 		BasicBlock *endBlock = loopRepEndBlock[loopRepDepth];
 
-		Nucleus::createBr(loopRepEndBlock[loopRepDepth]);
+		Nucleus::createBr(endBlock);
 		Nucleus::setInsertBlock(endBlock);
-
-		enableIndex--;
-		enableBreak = Int4(0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF);
 	}
 
 	void PixelProgram::IF(const Src &src)
@@ -1600,7 +1579,6 @@ namespace sw
 		ifFalseBlock[ifDepth] = falseBlock;
 
 		ifDepth++;
-		breakDepth++;
 	}
 
 	void PixelProgram::LABEL(int labelIndex)
@@ -1644,7 +1622,6 @@ namespace sw
 		iteration[loopDepth] = iteration[loopDepth] - 1;   // FIXME: --
 
 		loopRepDepth++;
-		breakDepth = 0;
 	}
 
 	void PixelProgram::REP(const Src &integerRegister)
@@ -1671,7 +1648,6 @@ namespace sw
 		iteration[loopDepth] = iteration[loopDepth] - 1;   // FIXME: --
 
 		loopRepDepth++;
-		breakDepth = 0;
 	}
 
 	void PixelProgram::WHILE(const Src &temporaryRegister)
@@ -1688,7 +1664,7 @@ namespace sw
 		Int4 restoreBreak = enableBreak;
 		Int4 restoreContinue = enableContinue;
 
-		// FIXME: jump(testBlock)
+		// TODO: jump(testBlock)
 		Nucleus::createBr(testBlock);
 		Nucleus::setInsertBlock(testBlock);
 		enableContinue = restoreContinue;
@@ -1697,6 +1673,7 @@ namespace sw
 		Int4 condition = As<Int4>(src.x);
 		condition &= enableStack[enableIndex - 1];
 		if(shader->containsLeaveInstruction()) condition &= enableLeave;
+		if(shader->containsBreakInstruction()) condition &= enableBreak;
 		enableStack[enableIndex] = condition;
 
 		Bool notAllFalse = SignMask(condition) != 0;
@@ -1708,21 +1685,25 @@ namespace sw
 		Nucleus::setInsertBlock(loopBlock);
 
 		loopRepDepth++;
-		breakDepth = 0;
 	}
 
 	void PixelProgram::SWITCH()
 	{
-		enableIndex++;
-		enableStack[enableIndex] = Int4(0xFFFFFFFF);
-
 		BasicBlock *endBlock = Nucleus::createBasicBlock();
 
 		loopRepTestBlock[loopRepDepth] = nullptr;
 		loopRepEndBlock[loopRepDepth] = endBlock;
 
+		Int4 restoreBreak = enableBreak;
+
+		BasicBlock *currentBlock = Nucleus::getInsertBlock();
+
+		Nucleus::setInsertBlock(endBlock);
+		enableBreak = restoreBreak;
+
+		Nucleus::setInsertBlock(currentBlock);
+
 		loopRepDepth++;
-		breakDepth = 0;
 	}
 
 	void PixelProgram::RET()

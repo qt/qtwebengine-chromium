@@ -15,6 +15,7 @@
 #include "core/fxge/cfx_defaultrenderdevice.h"
 #include "core/fxge/cfx_facecache.h"
 #include "core/fxge/cfx_font.h"
+#include "core/fxge/cfx_fontmgr.h"
 #include "core/fxge/cfx_gemodule.h"
 #include "core/fxge/cfx_graphstatedata.h"
 #include "core/fxge/cfx_pathdata.h"
@@ -426,6 +427,14 @@ int CFX_RenderDevice::GetDeviceCaps(int caps_id) const {
 
 CFX_Matrix CFX_RenderDevice::GetCTM() const {
   return m_pDeviceDriver->GetCTM();
+}
+
+RetainPtr<CFX_DIBitmap> CFX_RenderDevice::GetBitmap() const {
+  return m_pBitmap;
+}
+
+void CFX_RenderDevice::SetBitmap(const RetainPtr<CFX_DIBitmap>& pBitmap) {
+  m_pBitmap = pBitmap;
 }
 
 bool CFX_RenderDevice::CreateCompatibleBitmap(

@@ -118,7 +118,6 @@ namespace sw
 			OPCODE_CMP,   // D3DSIO_SETP
 			OPCODE_TEXLDL,
 			OPCODE_BREAKP,
-			OPCODE_TEXSIZE,
 
 			OPCODE_PHASE = 0xFFFD,
 			OPCODE_COMMENT = 0xFFFE,
@@ -207,11 +206,15 @@ namespace sw
 			OPCODE_ISNAN,
 			OPCODE_ISINF,
 			OPCODE_TEXOFFSET,
-			OPCODE_TEXLDLOFFSET,
+			OPCODE_TEXLODOFFSET,
 			OPCODE_TEXELFETCH,
 			OPCODE_TEXELFETCHOFFSET,
 			OPCODE_TEXGRAD,
 			OPCODE_TEXGRADOFFSET,
+			OPCODE_TEXBIAS,
+			OPCODE_TEXLOD,
+			OPCODE_TEXOFFSETBIAS,
+			OPCODE_TEXSIZE,
 			OPCODE_FLOATBITSTOINT,
 			OPCODE_FLOATBITSTOUINT,
 			OPCODE_INTBITSTOFLOAT,
@@ -393,6 +396,15 @@ namespace sw
 			ANALYSIS_LEAVE    = 0x00000008,
 		};
 
+		struct Relative
+		{
+			ParameterType type : 8;
+			unsigned int index;
+			unsigned int swizzle : 8;
+			unsigned int scale;
+			bool deterministic;   // Equal accross shader instances run in lockstep (e.g. unrollable loop couters)
+		};
+
 		struct Parameter
 		{
 			union
@@ -401,14 +413,7 @@ namespace sw
 				{
 					unsigned int index;   // For registers types
 
-					struct
-					{
-						ParameterType type : 8;
-						unsigned int index;
-						unsigned int swizzle : 8;
-						unsigned int scale;
-						bool deterministic;   // Equal accross shader instances run in lockstep (e.g. unrollable loop couters)
-					} rel;
+					Relative rel;
 				};
 
 				float value[4];       // For float constants
@@ -453,7 +458,7 @@ namespace sw
 				};
 			};
 
-			DestinationParameter() : mask(0xF), integer(false), saturate(false), partialPrecision(false), centroid(false), shift(0)
+			DestinationParameter() : mask(0xF), saturate(false), partialPrecision(false), centroid(false), shift(0)
 			{
 			}
 
@@ -461,7 +466,6 @@ namespace sw
 			std::string shiftString() const;
 			std::string maskString() const;
 
-			bool integer          : 1;
 			bool saturate         : 1;
 			bool partialPrecision : 1;
 			bool centroid         : 1;
@@ -474,6 +478,7 @@ namespace sw
 			{
 			}
 
+			std::string string(ShaderType shaderType, unsigned short version) const;
 			std::string swizzleString() const;
 			std::string preModifierString() const;
 			std::string postModifierString() const;
@@ -555,14 +560,14 @@ namespace sw
 		int getSerialID() const;
 		size_t getLength() const;
 		ShaderType getShaderType() const;
-		unsigned short getVersion() const;
+		unsigned short getShaderModel() const;
 
 		void append(Instruction *instruction);
 		void declareSampler(int i);
 
 		const Instruction *getInstruction(size_t i) const;
 		int size(unsigned long opcode) const;
-		static int size(unsigned long opcode, unsigned short version);
+		static int size(unsigned long opcode, unsigned short shaderModel);
 
 		void print(const char *fileName, ...) const;
 		void printInstruction(int index, const char *fileName) const;
@@ -629,7 +634,7 @@ namespace sw
 
 		union
 		{
-			unsigned short version;
+			unsigned short shaderModel;
 
 			struct
 			{

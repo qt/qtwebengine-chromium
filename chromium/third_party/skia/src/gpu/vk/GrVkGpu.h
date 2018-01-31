@@ -38,10 +38,8 @@ namespace SkSL {
 
 class GrVkGpu : public GrGpu {
 public:
-    static GrGpu* Create(GrBackendContext backendContext, const GrContextOptions& options,
-                         GrContext* context);
-    static GrGpu* Create(const GrVkBackendContext*, const GrContextOptions& options,
-                         GrContext* context);
+    static sk_sp<GrGpu> Make(GrBackendContext backendContext, const GrContextOptions&, GrContext*);
+    static sk_sp<GrGpu> Make(sk_sp<const GrVkBackendContext>, const GrContextOptions&, GrContext*);
 
     ~GrVkGpu() override;
 
@@ -85,12 +83,12 @@ public:
 
     void xferBarrier(GrRenderTarget*, GrXferBarrierType) override {}
 
-    GrBackendObject createTestingOnlyBackendTexture(void* pixels, int w, int h,
-                                                    GrPixelConfig config,
-                                                    bool isRenderTarget,
-                                                    GrMipMapped) override;
-    bool isTestingOnlyBackendTexture(GrBackendObject id) const override;
-    void deleteTestingOnlyBackendTexture(GrBackendObject id, bool abandonTexture) override;
+    GrBackendTexture createTestingOnlyBackendTexture(void* pixels, int w, int h,
+                                                     GrPixelConfig config,
+                                                     bool isRenderTarget,
+                                                     GrMipMapped) override;
+    bool isTestingOnlyBackendTexture(const GrBackendTexture&) const override;
+    void deleteTestingOnlyBackendTexture(GrBackendTexture*, bool abandonTexture = false) override;
 
     GrStencilAttachment* createStencilAttachmentForRenderTarget(const GrRenderTarget*,
                                                                 int width,
@@ -137,11 +135,6 @@ public:
     void deleteFence(GrFence) const override;
 
     sk_sp<GrSemaphore> SK_WARN_UNUSED_RESULT makeSemaphore(bool isOwned) override;
-    sk_sp<GrSemaphore> wrapBackendSemaphore(const GrBackendSemaphore& semaphore,
-                                            GrWrapOwnership ownership) override;
-    void insertSemaphore(sk_sp<GrSemaphore> semaphore, bool flush) override;
-    void waitSemaphore(sk_sp<GrSemaphore> semaphore) override;
-
     sk_sp<GrSemaphore> prepareTextureForCrossContextUsage(GrTexture*) override;
 
     void generateMipmap(GrVkTexture* tex, GrSurfaceOrigin texOrigin);
@@ -173,8 +166,7 @@ public:
     GrVkHeap* getHeap(Heap heap) const { return fHeaps[heap].get(); }
 
 private:
-    GrVkGpu(GrContext* context, const GrContextOptions& options,
-            const GrVkBackendContext* backendContext);
+    GrVkGpu(GrContext*, const GrContextOptions&, sk_sp<const GrVkBackendContext> backendContext);
 
     void onResetContext(uint32_t resetBits) override {}
 
@@ -195,8 +187,6 @@ private:
     GrBuffer* onCreateBuffer(size_t size, GrBufferType type, GrAccessPattern,
                              const void* data) override;
 
-    gr_instanced::InstancedRendering* onCreateInstancedRendering() override { return nullptr; }
-
     bool onReadPixels(GrSurface* surface, GrSurfaceOrigin,
                       int left, int top, int width, int height,
                       GrPixelConfig,
@@ -213,6 +203,11 @@ private:
                           size_t offset, size_t rowBytes) override;
 
     void onFinishFlush(bool insertedSemaphores) override;
+
+    void onInsertSemaphore(sk_sp<GrSemaphore> semaphore, bool flush) override;
+    void onWaitSemaphore(sk_sp<GrSemaphore> semaphore) override;
+    sk_sp<GrSemaphore> onWrapBackendSemaphore(const GrBackendSemaphore& semaphore,
+                                              GrWrapOwnership ownership) override;
 
     // Ends and submits the current command buffer to the queue and then creates a new command
     // buffer and begins it. If sync is set to kForce_SyncQueue, the function will wait for all

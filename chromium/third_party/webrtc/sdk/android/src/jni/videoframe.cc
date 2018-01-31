@@ -13,7 +13,6 @@
 #include <memory>
 
 #include "common_video/include/video_frame_buffer.h"
-#include "libyuv/scale.h"
 #include "rtc_base/bind.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/keep_ref_until_done.h"
@@ -21,10 +20,11 @@
 #include "rtc_base/scoped_ref_ptr.h"
 #include "rtc_base/timeutils.h"
 #include "sdk/android/generated_video_jni/jni/VideoFrame_jni.h"
-#include "sdk/android/src/jni/classreferenceholder.h"
 #include "sdk/android/src/jni/jni_helpers.h"
+#include "sdk/android/src/jni/surfacetexturehelper.h"
 #include "sdk/android/src/jni/wrapped_native_i420_buffer.h"
 #include "system_wrappers/include/aligned_malloc.h"
+#include "third_party/libyuv/include/libyuv/scale.h"
 
 namespace webrtc {
 namespace jni {
@@ -36,8 +36,11 @@ class AndroidVideoI420Buffer : public I420BufferInterface {
   // Adopts and takes ownership of the Java VideoFrame.Buffer. I.e. retain()
   // will not be called, but release() will be called when the returned
   // AndroidVideoBuffer is destroyed.
-  static rtc::scoped_refptr<AndroidVideoI420Buffer>
-  Adopt(JNIEnv* jni, int width, int height, jobject j_video_frame_buffer);
+  static rtc::scoped_refptr<AndroidVideoI420Buffer> Adopt(
+      JNIEnv* jni,
+      int width,
+      int height,
+      const JavaRef<jobject>& j_video_frame_buffer);
 
  protected:
   // Should not be called directly. Adopts the buffer. Use Adopt() instead for
@@ -45,7 +48,7 @@ class AndroidVideoI420Buffer : public I420BufferInterface {
   AndroidVideoI420Buffer(JNIEnv* jni,
                          int width,
                          int height,
-                         jobject j_video_frame_buffer);
+                         const JavaRef<jobject>& j_video_frame_buffer);
   ~AndroidVideoI420Buffer();
 
  private:
@@ -63,7 +66,7 @@ class AndroidVideoI420Buffer : public I420BufferInterface {
   const int width_;
   const int height_;
   // Holds a VideoFrame.I420Buffer.
-  const ScopedGlobalRef<jobject> j_video_frame_buffer_;
+  const ScopedJavaGlobalRef<jobject> j_video_frame_buffer_;
 
   const uint8_t* data_y_;
   const uint8_t* data_u_;
@@ -77,25 +80,32 @@ rtc::scoped_refptr<AndroidVideoI420Buffer> AndroidVideoI420Buffer::Adopt(
     JNIEnv* jni,
     int width,
     int height,
-    jobject j_video_frame_buffer) {
+    const JavaRef<jobject>& j_video_frame_buffer) {
   return new rtc::RefCountedObject<AndroidVideoI420Buffer>(
       jni, width, height, j_video_frame_buffer);
 }
 
-AndroidVideoI420Buffer::AndroidVideoI420Buffer(JNIEnv* jni,
-                                               int width,
-                                               int height,
-                                               jobject j_video_frame_buffer)
+AndroidVideoI420Buffer::AndroidVideoI420Buffer(
+    JNIEnv* jni,
+    int width,
+    int height,
+    const JavaRef<jobject>& j_video_frame_buffer)
     : width_(width),
       height_(height),
       j_video_frame_buffer_(jni, j_video_frame_buffer) {
-  jobject j_data_y = Java_I420Buffer_getDataY(jni, j_video_frame_buffer);
-  jobject j_data_u = Java_I420Buffer_getDataU(jni, j_video_frame_buffer);
-  jobject j_data_v = Java_I420Buffer_getDataV(jni, j_video_frame_buffer);
+  ScopedJavaLocalRef<jobject> j_data_y =
+      Java_I420Buffer_getDataY(jni, j_video_frame_buffer);
+  ScopedJavaLocalRef<jobject> j_data_u =
+      Java_I420Buffer_getDataU(jni, j_video_frame_buffer);
+  ScopedJavaLocalRef<jobject> j_data_v =
+      Java_I420Buffer_getDataV(jni, j_video_frame_buffer);
 
-  data_y_ = static_cast<const uint8_t*>(jni->GetDirectBufferAddress(j_data_y));
-  data_u_ = static_cast<const uint8_t*>(jni->GetDirectBufferAddress(j_data_u));
-  data_v_ = static_cast<const uint8_t*>(jni->GetDirectBufferAddress(j_data_v));
+  data_y_ =
+      static_cast<const uint8_t*>(jni->GetDirectBufferAddress(j_data_y.obj()));
+  data_u_ =
+      static_cast<const uint8_t*>(jni->GetDirectBufferAddress(j_data_u.obj()));
+  data_v_ =
+      static_cast<const uint8_t*>(jni->GetDirectBufferAddress(j_data_v.obj()));
 
   stride_y_ = Java_I420Buffer_getStrideY(jni, j_video_frame_buffer);
   stride_u_ = Java_I420Buffer_getStrideU(jni, j_video_frame_buffer);
@@ -104,27 +114,28 @@ AndroidVideoI420Buffer::AndroidVideoI420Buffer(JNIEnv* jni,
 
 AndroidVideoI420Buffer::~AndroidVideoI420Buffer() {
   JNIEnv* jni = AttachCurrentThreadIfNeeded();
-  Java_Buffer_release(jni, *j_video_frame_buffer_);
+  Java_Buffer_release(jni, j_video_frame_buffer_);
 }
 
 }  // namespace
 
-int64_t GetJavaVideoFrameTimestampNs(JNIEnv* jni, jobject j_video_frame) {
+int64_t GetJavaVideoFrameTimestampNs(JNIEnv* jni,
+                                     const JavaRef<jobject>& j_video_frame) {
   return Java_VideoFrame_getTimestampNs(jni, j_video_frame);
 }
 
-Matrix::Matrix(JNIEnv* jni, jfloatArray a) {
-  RTC_CHECK_EQ(16, jni->GetArrayLength(a));
-  jfloat* ptr = jni->GetFloatArrayElements(a, nullptr);
+Matrix::Matrix(JNIEnv* jni, const JavaRef<jfloatArray>& a) {
+  RTC_CHECK_EQ(16, jni->GetArrayLength(a.obj()));
+  jfloat* ptr = jni->GetFloatArrayElements(a.obj(), nullptr);
   for (int i = 0; i < 16; ++i) {
     elem_[i] = ptr[i];
   }
-  jni->ReleaseFloatArrayElements(a, ptr, 0);
+  jni->ReleaseFloatArrayElements(a.obj(), ptr, 0);
 }
 
-jfloatArray Matrix::ToJava(JNIEnv* jni) const {
-  jfloatArray matrix = jni->NewFloatArray(16);
-  jni->SetFloatArrayRegion(matrix, 0, 16, elem_);
+ScopedJavaLocalRef<jfloatArray> Matrix::ToJava(JNIEnv* jni) const {
+  ScopedJavaLocalRef<jfloatArray> matrix(jni, jni->NewFloatArray(16));
+  jni->SetFloatArrayRegion(matrix.obj(), 0, 16, elem_);
   return matrix;
 }
 
@@ -200,9 +211,10 @@ static const int kBufferAlignment = 64;
 NativeHandleImpl::NativeHandleImpl(int id, const Matrix& matrix)
     : oes_texture_id(id), sampling_matrix(matrix) {}
 
-NativeHandleImpl::NativeHandleImpl(JNIEnv* jni,
-                                   jint j_oes_texture_id,
-                                   jfloatArray j_transform_matrix)
+NativeHandleImpl::NativeHandleImpl(
+    JNIEnv* jni,
+    jint j_oes_texture_id,
+    const JavaRef<jfloatArray>& j_transform_matrix)
     : oes_texture_id(j_oes_texture_id),
       sampling_matrix(jni, j_transform_matrix) {}
 
@@ -210,16 +222,14 @@ AndroidTextureBuffer::AndroidTextureBuffer(
     int width,
     int height,
     const NativeHandleImpl& native_handle,
-    jobject surface_texture_helper,
-    const rtc::Callback0<void>& no_longer_used)
+    const rtc::scoped_refptr<SurfaceTextureHelper>& surface_texture_helper)
     : width_(width),
       height_(height),
       native_handle_(native_handle),
-      surface_texture_helper_(surface_texture_helper),
-      no_longer_used_cb_(no_longer_used) {}
+      surface_texture_helper_(surface_texture_helper) {}
 
 AndroidTextureBuffer::~AndroidTextureBuffer() {
-  no_longer_used_cb_();
+  surface_texture_helper_->ReturnTextureFrame();
 }
 
 VideoFrameBuffer::Type AndroidTextureBuffer::type() const {
@@ -264,55 +274,46 @@ rtc::scoped_refptr<I420BufferInterface> AndroidTextureBuffer::ToI420() {
       rtc::Bind(&AlignedFree, yuv_data.release()));
 
   JNIEnv* jni = AttachCurrentThreadIfNeeded();
-  ScopedLocalRefFrame local_ref_frame(jni);
 
   // TODO(sakal): This call to a deperecated method will be removed when
   // AndroidTextureBuffer is removed.
-  jmethodID transform_mid = GetMethodID(
-      jni,
-      GetObjectClass(jni, surface_texture_helper_),
-      "textureToYUV",
-      "(Ljava/nio/ByteBuffer;IIII[F)V");
-
-  jobject byte_buffer = jni->NewDirectByteBuffer(y_data, size);
-
-  jfloatArray sampling_matrix = native_handle_.sampling_matrix.ToJava(jni);
-  jni->CallVoidMethod(surface_texture_helper_,
-                      transform_mid,
-                      byte_buffer, width(), height(), stride,
-                      native_handle_.oes_texture_id, sampling_matrix);
-  CHECK_EXCEPTION(jni) << "textureToYUV throwed an exception";
-
+  ScopedJavaLocalRef<jobject> byte_buffer =
+      NewDirectByteBuffer(jni, y_data, size);
+  SurfaceTextureHelperTextureToYUV(
+      jni, surface_texture_helper_->GetJavaSurfaceTextureHelper(), byte_buffer,
+      width(), height(), stride, native_handle_);
   return copy;
 }
 
 rtc::scoped_refptr<AndroidVideoBuffer> AndroidVideoBuffer::Adopt(
     JNIEnv* jni,
-    jobject j_video_frame_buffer) {
+    const JavaRef<jobject>& j_video_frame_buffer) {
   return new rtc::RefCountedObject<AndroidVideoBuffer>(jni,
                                                        j_video_frame_buffer);
 }
 
 rtc::scoped_refptr<AndroidVideoBuffer> AndroidVideoBuffer::Create(
     JNIEnv* jni,
-    jobject j_video_frame_buffer) {
+    const JavaRef<jobject>& j_video_frame_buffer) {
   Java_Buffer_retain(jni, j_video_frame_buffer);
   return Adopt(jni, j_video_frame_buffer);
 }
 
-AndroidVideoBuffer::AndroidVideoBuffer(JNIEnv* jni,
-                                       jobject j_video_frame_buffer)
+AndroidVideoBuffer::AndroidVideoBuffer(
+    JNIEnv* jni,
+    const JavaRef<jobject>& j_video_frame_buffer)
     : width_(Java_Buffer_getWidth(jni, j_video_frame_buffer)),
       height_(Java_Buffer_getHeight(jni, j_video_frame_buffer)),
       j_video_frame_buffer_(jni, j_video_frame_buffer) {}
 
 AndroidVideoBuffer::~AndroidVideoBuffer() {
   JNIEnv* jni = AttachCurrentThreadIfNeeded();
-  Java_Buffer_release(jni, *j_video_frame_buffer_);
+  Java_Buffer_release(jni, j_video_frame_buffer_);
 }
 
-jobject AndroidVideoBuffer::video_frame_buffer() const {
-  return *j_video_frame_buffer_;
+const ScopedJavaGlobalRef<jobject>& AndroidVideoBuffer::video_frame_buffer()
+    const {
+  return j_video_frame_buffer_;
 }
 
 rtc::scoped_refptr<AndroidVideoBuffer> AndroidVideoBuffer::CropAndScale(
@@ -323,9 +324,9 @@ rtc::scoped_refptr<AndroidVideoBuffer> AndroidVideoBuffer::CropAndScale(
     int crop_height,
     int scale_width,
     int scale_height) {
-  return Adopt(jni, Java_Buffer_cropAndScale(
-                        jni, *j_video_frame_buffer_, crop_x, crop_y, crop_width,
-                        crop_height, scale_width, scale_height));
+  return Adopt(jni, Java_Buffer_cropAndScale(jni, j_video_frame_buffer_, crop_x,
+                                             crop_y, crop_width, crop_height,
+                                             scale_width, scale_height));
 }
 
 VideoFrameBuffer::Type AndroidVideoBuffer::type() const {
@@ -342,33 +343,19 @@ int AndroidVideoBuffer::height() const {
 
 rtc::scoped_refptr<I420BufferInterface> AndroidVideoBuffer::ToI420() {
   JNIEnv* jni = AttachCurrentThreadIfNeeded();
-  ScopedLocalRefFrame local_ref_frame(jni);
-  jobject j_i420_buffer = Java_Buffer_toI420(jni, *j_video_frame_buffer_);
+  ScopedJavaLocalRef<jobject> j_i420_buffer =
+      Java_Buffer_toI420(jni, j_video_frame_buffer_);
 
   // We don't need to retain the buffer because toI420 returns a new object that
   // we are assumed to take the ownership of.
   return AndroidVideoI420Buffer::Adopt(jni, width_, height_, j_i420_buffer);
 }
 
-jobject AndroidVideoBuffer::ToJavaI420Frame(JNIEnv* jni, int rotation) {
-  jclass j_byte_buffer_class = jni->FindClass("java/nio/ByteBuffer");
-  jclass j_i420_frame_class =
-      FindClass(jni, "org/webrtc/VideoRenderer$I420Frame");
-  jmethodID j_i420_frame_ctor_id = GetMethodID(
-      jni, j_i420_frame_class, "<init>", "(ILorg/webrtc/VideoFrame$Buffer;J)V");
-  // Java code just uses the native frame to hold a reference to the buffer so
-  // this is okay.
-  VideoFrame* native_frame =
-      new VideoFrame(this, 0 /* timestamp */, 0 /* render_time_ms */,
-                     VideoRotation::kVideoRotation_0 /* rotation */);
-  return jni->NewObject(j_i420_frame_class, j_i420_frame_ctor_id, rotation,
-                        *j_video_frame_buffer_, jlongFromPointer(native_frame));
-}
-
 VideoFrame JavaToNativeFrame(JNIEnv* jni,
-                             jobject j_video_frame,
+                             const JavaRef<jobject>& j_video_frame,
                              uint32_t timestamp_rtp) {
-  jobject j_video_frame_buffer = Java_VideoFrame_getBuffer(jni, j_video_frame);
+  ScopedJavaLocalRef<jobject> j_video_frame_buffer =
+      Java_VideoFrame_getBuffer(jni, j_video_frame);
   int rotation = Java_VideoFrame_getRotation(jni, j_video_frame);
   int64_t timestamp_ns = Java_VideoFrame_getTimestampNs(jni, j_video_frame);
   rtc::scoped_refptr<AndroidVideoBuffer> buffer =
@@ -388,9 +375,10 @@ static bool IsJavaVideoBuffer(rtc::scoped_refptr<VideoFrameBuffer> buffer) {
          AndroidVideoFrameBuffer::AndroidType::kJavaBuffer;
 }
 
-jobject NativeToJavaFrame(JNIEnv* jni, const VideoFrame& frame) {
+ScopedJavaLocalRef<jobject> NativeToJavaFrame(JNIEnv* jni,
+                                              const VideoFrame& frame) {
   rtc::scoped_refptr<VideoFrameBuffer> buffer = frame.video_frame_buffer();
-  jobject j_buffer;
+
   if (IsJavaVideoBuffer(buffer)) {
     RTC_DCHECK(buffer->type() == VideoFrameBuffer::Type::kNative);
     AndroidVideoFrameBuffer* android_buffer =
@@ -399,45 +387,54 @@ jobject NativeToJavaFrame(JNIEnv* jni, const VideoFrame& frame) {
                AndroidVideoFrameBuffer::AndroidType::kJavaBuffer);
     AndroidVideoBuffer* android_video_buffer =
         static_cast<AndroidVideoBuffer*>(android_buffer);
-    j_buffer = android_video_buffer->video_frame_buffer();
+
+    return Java_VideoFrame_Constructor(
+        jni, android_video_buffer->video_frame_buffer(),
+        static_cast<jint>(frame.rotation()),
+        static_cast<jlong>(frame.timestamp_us() *
+                           rtc::kNumNanosecsPerMicrosec));
   } else {
-    j_buffer = WrapI420Buffer(jni, buffer->ToI420());
+    return Java_VideoFrame_Constructor(
+        jni, WrapI420Buffer(jni, buffer->ToI420()),
+        static_cast<jint>(frame.rotation()),
+        static_cast<jlong>(frame.timestamp_us() *
+                           rtc::kNumNanosecsPerMicrosec));
   }
-  return Java_VideoFrame_Constructor(
-      jni, j_buffer, static_cast<jint>(frame.rotation()),
-      static_cast<jlong>(frame.timestamp_us() * rtc::kNumNanosecsPerMicrosec));
 }
 
-extern "C" JNIEXPORT void JNICALL
-Java_org_webrtc_VideoFrame_cropAndScaleI420Native(JNIEnv* jni,
-                                                  jclass,
-                                                  jobject j_src_y,
-                                                  jint src_stride_y,
-                                                  jobject j_src_u,
-                                                  jint src_stride_u,
-                                                  jobject j_src_v,
-                                                  jint src_stride_v,
-                                                  jint crop_x,
-                                                  jint crop_y,
-                                                  jint crop_width,
-                                                  jint crop_height,
-                                                  jobject j_dst_y,
-                                                  jint dst_stride_y,
-                                                  jobject j_dst_u,
-                                                  jint dst_stride_u,
-                                                  jobject j_dst_v,
-                                                  jint dst_stride_v,
-                                                  jint scale_width,
-                                                  jint scale_height) {
+static void JNI_VideoFrame_CropAndScaleI420(
+    JNIEnv* jni,
+    const JavaParamRef<jclass>&,
+    const JavaParamRef<jobject>& j_src_y,
+    jint src_stride_y,
+    const JavaParamRef<jobject>& j_src_u,
+    jint src_stride_u,
+    const JavaParamRef<jobject>& j_src_v,
+    jint src_stride_v,
+    jint crop_x,
+    jint crop_y,
+    jint crop_width,
+    jint crop_height,
+    const JavaParamRef<jobject>& j_dst_y,
+    jint dst_stride_y,
+    const JavaParamRef<jobject>& j_dst_u,
+    jint dst_stride_u,
+    const JavaParamRef<jobject>& j_dst_v,
+    jint dst_stride_v,
+    jint scale_width,
+    jint scale_height) {
   uint8_t const* src_y =
-      static_cast<uint8_t*>(jni->GetDirectBufferAddress(j_src_y));
+      static_cast<uint8_t*>(jni->GetDirectBufferAddress(j_src_y.obj()));
   uint8_t const* src_u =
-      static_cast<uint8_t*>(jni->GetDirectBufferAddress(j_src_u));
+      static_cast<uint8_t*>(jni->GetDirectBufferAddress(j_src_u.obj()));
   uint8_t const* src_v =
-      static_cast<uint8_t*>(jni->GetDirectBufferAddress(j_src_v));
-  uint8_t* dst_y = static_cast<uint8_t*>(jni->GetDirectBufferAddress(j_dst_y));
-  uint8_t* dst_u = static_cast<uint8_t*>(jni->GetDirectBufferAddress(j_dst_u));
-  uint8_t* dst_v = static_cast<uint8_t*>(jni->GetDirectBufferAddress(j_dst_v));
+      static_cast<uint8_t*>(jni->GetDirectBufferAddress(j_src_v.obj()));
+  uint8_t* dst_y =
+      static_cast<uint8_t*>(jni->GetDirectBufferAddress(j_dst_y.obj()));
+  uint8_t* dst_u =
+      static_cast<uint8_t*>(jni->GetDirectBufferAddress(j_dst_u.obj()));
+  uint8_t* dst_v =
+      static_cast<uint8_t*>(jni->GetDirectBufferAddress(j_dst_v.obj()));
 
   // Perform cropping using pointer arithmetic.
   src_y += crop_x + crop_y * src_stride_y;

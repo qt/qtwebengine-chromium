@@ -1,3 +1,13 @@
+##
+##  Copyright (c) 2017 The WebM project authors. All Rights Reserved.
+##
+##  Use of this source code is governed by a BSD-style license
+##  that can be found in the LICENSE file in the root of the source
+##  tree. An additional intellectual property rights grant can be found
+##  in the file PATENTS.  All contributing project authors may
+##  be found in the AUTHORS file in the root of the source tree.
+##
+
 sub vp9_common_forward_decls() {
 print <<EOF
 /*
@@ -87,6 +97,9 @@ if (vpx_config("CONFIG_VP9_HIGHBITDEPTH") eq "yes") {
   # Note as optimized versions of these functions are added we need to add a check to ensure
   # that when CONFIG_EMULATE_HARDWARE is on, it defaults to the C versions only.
   add_proto qw/void vp9_highbd_iht4x4_16_add/, "const tran_low_t *input, uint16_t *dest, int stride, int tx_type, int bd";
+  if (vpx_config("CONFIG_EMULATE_HARDWARE") ne "yes") {
+    specialize qw/vp9_highbd_iht4x4_16_add sse4_1/;
+  }
 
   add_proto qw/void vp9_highbd_iht8x8_64_add/, "const tran_low_t *input, uint16_t *dest, int stride, int tx_type, int bd";
 

@@ -3,14 +3,14 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+"""Generate data struct from GPU blacklist and driver bug workarounds json."""
+
 import json
 import os
 import platform
 import sys
 from optparse import OptionParser
 from subprocess import call
-
-"""Generate data struct from GPU blacklist and driver bug workarounds json."""
 
 _LICENSE = """// Copyright 2017 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
@@ -110,7 +110,7 @@ def get_feature_set(features, total_feature_set):
             assert exception in feature_set
             feature_set.remove(exception)
         else:
-          raise KeyException('only exceptions are allowed')
+          raise KeyError('only exceptions are allowed')
     else:
       assert feature in total_feature_set
       feature_set.add(feature)
@@ -254,6 +254,8 @@ def write_string_value(string, name_tag, data_file):
 def write_boolean_value(value, name_tag, data_file):
   data_file.write('%s,  // %s\n' % (str(value).lower(), name_tag))
 
+def write_integer_value(value, name_tag, data_file):
+  data_file.write('%s,  // %s\n' % (str(value), name_tag))
 
 def write_machine_model_info(entry_id, is_exception, exception_id,
                              machine_model_name, machine_model_version,
@@ -339,7 +341,7 @@ def write_gl_type(gl_type, data_file):
 
 
 def write_conditions(entry_id, is_exception, exception_id, entry,
-                     data_file, data_helper_file, data_exception_file):
+                     data_file, data_helper_file, _data_exception_file):
   os_type = ''
   os_version = None
   vendor_id = 0
@@ -360,10 +362,10 @@ def write_conditions(entry_id, is_exception, exception_id, entry,
   gl_reset_notification_strategy = None
   direct_rendering = True
   gpu_count = None
+  test_group = 0
   machine_model_name = None
   machine_model_version = None
   exception_count = 0
-  exception_var = 'nullptr'
   # process the entry
   for key in entry:
     if key == 'id':
@@ -430,6 +432,9 @@ def write_conditions(entry_id, is_exception, exception_id, entry,
       direct_rendering = False
     elif key == 'gpu_count':
       gpu_count = entry[key]
+    elif key == 'test_group':
+      assert entry[key] > 0
+      test_group = entry[key]
     elif key == 'machine_model_name':
       machine_model_name = entry[key]
     elif key == 'machine_model_version':
@@ -468,11 +473,11 @@ def write_conditions(entry_id, is_exception, exception_id, entry,
   # group a bunch of less used conditions
   if (gl_version != None or pixel_shader_version != None or in_process_gpu or
       gl_reset_notification_strategy != None or (not direct_rendering) or
-      gpu_count != None):
+      gpu_count != None or test_group != 0):
     write_entry_more_data(entry_id, is_exception, exception_id, gl_type,
                           gl_version, pixel_shader_version, in_process_gpu,
                           gl_reset_notification_strategy, direct_rendering,
-                          gpu_count, data_file, data_helper_file)
+                          gpu_count, test_group, data_file, data_helper_file)
   else:
     data_file.write('nullptr,  // more conditions\n')
 
@@ -480,7 +485,7 @@ def write_conditions(entry_id, is_exception, exception_id, entry,
 def write_entry_more_data(entry_id, is_exception, exception_id, gl_type,
                           gl_version, pixel_shader_version, in_process_gpu,
                           gl_reset_notification_strategy, direct_rendering,
-                          gpu_count, data_file, data_helper_file):
+                          gpu_count, test_group, data_file, data_helper_file):
   # write more data
   var_name = 'kMoreForEntry' + str(entry_id)
   if is_exception:
@@ -496,6 +501,7 @@ def write_entry_more_data(entry_id, is_exception, exception_id, gl_type,
                          gl_reset_notification_strategy)
   write_boolean_value(direct_rendering, 'direct_rendering', data_helper_file)
   write_version(gpu_count, 'gpu_count', data_helper_file)
+  write_integer_value(test_group, 'test_group', data_helper_file)
   data_helper_file.write('};\n\n')
   # reference more data in entry
   data_file.write('&%s,  // more data\n' % var_name)
@@ -783,7 +789,7 @@ def main(argv):
                     help="skip testing data generation.")
   parser.add_option("--os-filter",
                     help="only output entries applied to the specified os.")
-  (options, args) = parser.parse_args(args=argv)
+  (options, _) = parser.parse_args(args=argv)
 
   script_dir = os.path.dirname(os.path.realpath(__file__))
 

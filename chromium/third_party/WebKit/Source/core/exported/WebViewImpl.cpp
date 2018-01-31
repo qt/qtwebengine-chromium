@@ -30,13 +30,14 @@
 
 #include "core/exported/WebViewImpl.h"
 
+#include <algorithm>
 #include <memory>
+#include <utility>
 
 #include "base/memory/scoped_refptr.h"
 #include "build/build_config.h"
 #include "core/CSSValueKeywords.h"
 #include "core/CoreInitializer.h"
-#include "core/animation/CompositorMutatorImpl.h"
 #include "core/clipboard/DataObject.h"
 #include "core/dom/ContextFeaturesClientImpl.h"
 #include "core/dom/Document.h"
@@ -85,8 +86,8 @@
 #include "core/input/TouchActionUtil.h"
 #include "core/inspector/DevToolsEmulator.h"
 #include "core/layout/LayoutEmbeddedContent.h"
+#include "core/layout/LayoutView.h"
 #include "core/layout/TextAutosizer.h"
-#include "core/layout/api/LayoutViewItem.h"
 #include "core/loader/DocumentLoader.h"
 #include "core/loader/FrameLoadRequest.h"
 #include "core/loader/FrameLoader.h"
@@ -123,10 +124,10 @@
 #include "platform/geometry/FloatRect.h"
 #include "platform/graphics/Color.h"
 #include "platform/graphics/CompositorMutatorClient.h"
+#include "platform/graphics/CompositorMutatorImpl.h"
 #include "platform/graphics/FirstPaintInvalidationTracking.h"
 #include "platform/graphics/GraphicsContext.h"
 #include "platform/graphics/Image.h"
-#include "platform/graphics/ImageBuffer.h"
 #include "platform/graphics/gpu/DrawingBuffer.h"
 #include "platform/graphics/paint/DrawingRecorder.h"
 #include "platform/image-decoders/ImageDecoder.h"
@@ -149,6 +150,7 @@
 #include "public/platform/WebInputEvent.h"
 #include "public/platform/WebLayerTreeView.h"
 #include "public/platform/WebMenuSourceType.h"
+#include "public/platform/WebScrollIntoViewParams.h"
 #include "public/platform/WebTextInputInfo.h"
 #include "public/platform/WebURLRequest.h"
 #include "public/platform/WebVector.h"
@@ -301,14 +303,18 @@ class ColorOverlay final : public PageOverlay::Delegate {
 // WebView ----------------------------------------------------------------
 
 WebView* WebView::Create(WebViewClient* client,
-                         mojom::PageVisibilityState visibility_state) {
-  return WebViewImpl::Create(client, visibility_state);
+                         mojom::PageVisibilityState visibility_state,
+                         WebView* opener) {
+  return WebViewImpl::Create(client, visibility_state,
+                             static_cast<WebViewImpl*>(opener));
 }
 
 WebViewImpl* WebViewImpl::Create(WebViewClient* client,
-                                 mojom::PageVisibilityState visibility_state) {
+                                 mojom::PageVisibilityState visibility_state,
+                                 WebViewImpl* opener) {
   // Pass the WebViewImpl's self-reference to the caller.
-  auto web_view = base::AdoptRef(new WebViewImpl(client, visibility_state));
+  auto web_view =
+      base::AdoptRef(new WebViewImpl(client, visibility_state, opener));
   web_view->AddRef();
   return web_view.get();
 }
@@ -321,13 +327,6 @@ void WebView::ResetVisitedLinkState(bool invalidate_visited_link_hashes) {
   Page::AllVisitedStateChanged(invalidate_visited_link_hashes);
 }
 
-void WebViewImpl::SetCredentialManagerClient(
-    WebCredentialManagerClient* web_credential_manager_client) {
-  DCHECK(page_);
-  CoreInitializer::GetInstance().ProvideCredentialManagerClient(
-      *page_, web_credential_manager_client);
-}
-
 void WebViewImpl::SetPrerendererClient(
     WebPrerendererClient* prerenderer_client) {
   DCHECK(page_);
@@ -336,11 +335,10 @@ void WebViewImpl::SetPrerendererClient(
 }
 
 WebViewImpl::WebViewImpl(WebViewClient* client,
-                         mojom::PageVisibilityState visibility_state)
+                         mojom::PageVisibilityState visibility_state,
+                         WebViewImpl* opener)
     : client_(client),
       chrome_client_(ChromeClientImpl::Create(this)),
-      context_menu_client_(*this),
-      editor_client_(*this),
       should_auto_resize_(false),
       zoom_level_(0),
       minimum_zoom_level_(ZoomFactorToZoomLevel(kMinTextSizeMultiplier)),
@@ -382,10 +380,9 @@ WebViewImpl::WebViewImpl(WebViewClient* client,
       override_compositor_visibility_(false) {
   Page::PageClients page_clients;
   page_clients.chrome_client = chrome_client_.Get();
-  page_clients.context_menu_client = &context_menu_client_;
-  page_clients.editor_client = &editor_client_;
 
-  page_ = Page::CreateOrdinary(page_clients);
+  page_ =
+      Page::CreateOrdinary(page_clients, opener ? opener->GetPage() : nullptr);
   CoreInitializer::GetInstance().ProvideModulesToPage(*page_, client_);
   page_->SetValidationMessageClient(ValidationMessageClientImpl::Create(*this));
   SetVisibilityState(visibility_state, true);
@@ -537,7 +534,7 @@ void WebViewImpl::MouseContextMenu(const WebMouseEvent& event) {
     target_local_frame->GetEventHandler().SendContextMenuEvent(
         transformed_event, nullptr);
   }
-  // Actually showing the context menu is handled by the ContextMenuClient
+  // Actually showing the context menu is handled by the ContextMenuController
   // implementation...
 }
 
@@ -959,10 +956,10 @@ void WebViewImpl::RequestBeginMainFrameNotExpected(bool new_state) {
 void WebViewImpl::SetPageStopped(bool stopped) {
   if (!GetPage())
     return;
-  GetPage()->SetLifecycleState(
-      stopped ? PageLifecycleState::kStopped
-              // TODO(fmeawad): if not stopped, fall back to visibility state.
-              : PageLifecycleState::kUnknown);
+  GetPage()->SetLifecycleState(stopped ? PageLifecycleState::kStopped
+                                       : GetPage()->IsPageVisible()
+                                             ? PageLifecycleState::kActive
+                                             : PageLifecycleState::kHidden);
 }
 
 WebInputEventResult WebViewImpl::HandleKeyEvent(const WebKeyboardEvent& event) {
@@ -1013,13 +1010,10 @@ WebInputEventResult WebViewImpl::HandleKeyEvent(const WebKeyboardEvent& event) {
         if (event.windows_key_code == VKEY_TAB) {
           // If the plugin supports keyboard focus then we should not send a tab
           // keypress event.
-          PluginView* plugin_view =
+          WebPluginContainerImpl* plugin_view =
               ToLayoutEmbeddedContent(element->GetLayoutObject())->Plugin();
-          if (plugin_view && plugin_view->IsPluginContainer()) {
-            WebPluginContainerImpl* plugin =
-                ToWebPluginContainerImpl(plugin_view);
-            if (plugin && plugin->SupportsKeyboardFocus())
-              suppress_next_keypress_event_ = true;
+          if (plugin_view && plugin_view->SupportsKeyboardFocus()) {
+            suppress_next_keypress_event_ = true;
           }
         }
       } else {
@@ -1535,7 +1529,9 @@ PagePopup* WebViewImpl::OpenPagePopup(PagePopupClient* client) {
     HidePopups();
   DCHECK(!page_popup_);
 
-  WebWidget* popup_widget = client_->CreatePopup(kWebPopupTypePage);
+  WebLocalFrameImpl* frame = WebLocalFrameImpl::FromFrame(
+      client->OwnerElement().GetDocument().GetFrame()->LocalFrameRoot());
+  WebWidget* popup_widget = client_->CreatePopup(frame, kWebPopupTypePage);
   // CreatePopup returns nullptr if this renderer process is about to die.
   if (!popup_widget)
     return nullptr;
@@ -1544,8 +1540,7 @@ PagePopup* WebViewImpl::OpenPagePopup(PagePopupClient* client) {
     page_popup_->ClosePopup();
     page_popup_ = nullptr;
   }
-  EnablePopupMouseWheelEventListener(WebLocalFrameImpl::FromFrame(
-      client->OwnerElement().GetDocument().GetFrame()->LocalFrameRoot()));
+  EnablePopupMouseWheelEventListener(frame);
   return page_popup_.get();
 }
 
@@ -1855,7 +1850,7 @@ void WebViewImpl::BeginFrame(double last_frame_time_monotonic) {
     client->LayoutOverlay();
 }
 
-void WebViewImpl::UpdateAllLifecyclePhases() {
+void WebViewImpl::UpdateLifecycle(LifecycleUpdate requested_update) {
   TRACE_EVENT0("blink", "WebViewImpl::updateAllLifecyclePhases");
   if (!MainFrameImpl())
     return;
@@ -1863,9 +1858,12 @@ void WebViewImpl::UpdateAllLifecyclePhases() {
   DocumentLifecycle::AllowThrottlingScope throttling_scope(
       MainFrameImpl()->GetFrame()->GetDocument()->Lifecycle());
 
-  PageWidgetDelegate::UpdateAllLifecyclePhases(*page_,
-                                               *MainFrameImpl()->GetFrame());
+  PageWidgetDelegate::UpdateLifecycle(*page_, *MainFrameImpl()->GetFrame(),
+                                      requested_update);
   UpdateLayerTreeBackgroundColor();
+
+  if (requested_update == LifecycleUpdate::kPrePaint)
+    return;
 
   if (auto* client = GetValidationMessageClient())
     client->PaintOverlay();
@@ -1973,7 +1971,23 @@ bool WebViewImpl::HasVerticalScrollbar() {
       ->VerticalScrollbar();
 }
 
+WebInputEventResult WebViewImpl::DispatchBufferedTouchEvents() {
+  if (!MainFrameImpl())
+    return WebInputEventResult::kNotHandled;
+  if (WebDevToolsAgentImpl* devtools = MainFrameDevToolsAgentImpl())
+    devtools->DispatchBufferedTouchEvents();
+  return MainFrameImpl()
+      ->GetFrame()
+      ->GetEventHandler()
+      .DispatchBufferedTouchEvents();
+}
+
 WebInputEventResult WebViewImpl::HandleInputEvent(
+    const WebCoalescedInputEvent& coalesced_event) {
+  return HandleInputEventIncludingTouch(coalesced_event);
+}
+
+WebInputEventResult WebViewImpl::HandleInputEventInternal(
     const WebCoalescedInputEvent& coalesced_event) {
   const WebInputEvent& input_event = coalesced_event.Event();
   // TODO(dcheng): The fact that this is getting called when there is no local
@@ -1981,6 +1995,8 @@ WebInputEventResult WebViewImpl::HandleInputEvent(
   // routing code.
   if (!MainFrameImpl())
     return WebInputEventResult::kNotHandled;
+
+  DCHECK(!WebInputEvent::IsTouchEventType(input_event.GetType()));
 
   GetPage()->GetVisualViewport().StartTrackingPinchStats();
 
@@ -2052,6 +2068,9 @@ WebInputEventResult WebViewImpl::HandleInputEvent(
 
     AtomicString event_type;
     switch (input_event.GetType()) {
+      case WebInputEvent::kMouseEnter:
+        event_type = EventTypeNames::mouseover;
+        break;
       case WebInputEvent::kMouseMove:
         event_type = EventTypeNames::mousemove;
         break;
@@ -2160,7 +2179,7 @@ void WebViewImpl::SetFocus(bool enable) {
           // instead. Note that this has the side effect of moving the
           // caret back to the beginning of the text.
           Position position(element, 0);
-          focused_frame->Selection().SetSelection(
+          focused_frame->Selection().SetSelectionAndEndTyping(
               SelectionInDOMTree::Builder().Collapse(position).Build());
         }
       }
@@ -2454,7 +2473,8 @@ bool WebViewImpl::ScrollFocusedEditableElementIntoView() {
     LayoutObject* layout_object = element->GetLayoutObject();
     if (!layout_object)
       return false;
-    layout_object->ScrollRectToVisible(element->BoundingBox());
+    layout_object->ScrollRectToVisible(element->BoundingBox(),
+                                       WebScrollIntoViewParams());
     return true;
   }
 
@@ -2982,11 +3002,11 @@ void WebViewImpl::UpdateMainFrameLayoutSize() {
 IntSize WebViewImpl::ContentsSize() const {
   if (!GetPage()->MainFrame()->IsLocalFrame())
     return IntSize();
-  LayoutViewItem root =
-      GetPage()->DeprecatedLocalMainFrame()->ContentLayoutItem();
-  if (root.IsNull())
+  auto* layout_view =
+      GetPage()->DeprecatedLocalMainFrame()->ContentLayoutObject();
+  if (!layout_view)
     return IntSize();
-  return root.DocumentRect().Size();
+  return layout_view->DocumentRect().Size();
 }
 
 WebSize WebViewImpl::ContentsPreferredMinimumSize() {
@@ -3000,15 +3020,14 @@ WebSize WebViewImpl::ContentsPreferredMinimumSize() {
   Document* document = page_->MainFrame()->IsLocalFrame()
                            ? page_->DeprecatedLocalMainFrame()->GetDocument()
                            : nullptr;
-  if (!document || document->GetLayoutViewItem().IsNull() ||
-      !document->documentElement() ||
+  if (!document || !document->GetLayoutView() || !document->documentElement() ||
       !document->documentElement()->GetLayoutBox())
     return WebSize();
 
   // Needed for computing MinPreferredWidth.
   FontCachePurgePreventer fontCachePurgePreventer;
-  int width_scaled = document->GetLayoutViewItem()
-                         .MinPreferredLogicalWidth()
+  int width_scaled = document->GetLayoutView()
+                         ->MinPreferredLogicalWidth()
                          .Round();  // Already accounts for zoom.
   int height_scaled =
       document->documentElement()->GetLayoutBox()->ScrollHeight().Round();
@@ -3103,15 +3122,16 @@ void WebViewImpl::PerformPluginAction(const WebPluginAction& action,
 
   LayoutObject* object = node->GetLayoutObject();
   if (object && object->IsLayoutEmbeddedContent()) {
-    PluginView* plugin_view = ToLayoutEmbeddedContent(object)->Plugin();
-    if (plugin_view && plugin_view->IsPluginContainer()) {
-      WebPluginContainerImpl* plugin = ToWebPluginContainerImpl(plugin_view);
+    WebPluginContainerImpl* plugin_view =
+        ToLayoutEmbeddedContent(object)->Plugin();
+    if (plugin_view) {
       switch (action.type) {
         case WebPluginAction::kRotate90Clockwise:
-          plugin->Plugin()->RotateView(WebPlugin::kRotationType90Clockwise);
+          plugin_view->Plugin()->RotateView(
+              WebPlugin::kRotationType90Clockwise);
           break;
         case WebPluginAction::kRotate90Counterclockwise:
-          plugin->Plugin()->RotateView(
+          plugin_view->Plugin()->RotateView(
               WebPlugin::kRotationType90Counterclockwise);
           break;
         default:
@@ -3251,9 +3271,8 @@ WebInputMethodController* WebViewImpl::GetActiveWebInputMethodController()
 }
 
 void WebViewImpl::RequestDecode(const PaintImage& image,
-                                WTF::Function<void(bool)> callback) {
-  layer_tree_view_->RequestDecode(image,
-                                  ConvertToBaseCallback(std::move(callback)));
+                                base::OnceCallback<void(bool)> callback) {
+  layer_tree_view_->RequestDecode(image, std::move(callback));
 }
 
 Color WebViewImpl::BaseBackgroundColor() const {
@@ -3499,7 +3518,7 @@ WebHitTestResult WebViewImpl::HitTestResultForTap(
 
   WebGestureEvent tap_event(WebInputEvent::kGestureTap,
                             WebInputEvent::kNoModifiers,
-                            WTF::MonotonicallyIncreasingTime());
+                            WTF::CurrentTimeTicksInSeconds());
   tap_event.x = tap_point_window_pos.x;
   tap_event.y = tap_point_window_pos.y;
   // GestureTap is only ever from a touchscreen.
@@ -3653,10 +3672,10 @@ PaintLayerCompositor* WebViewImpl::Compositor() const {
     return nullptr;
 
   Document* document = frame->GetFrame()->GetDocument();
-  if (!document || document->GetLayoutViewItem().IsNull())
+  if (!document || !document->GetLayoutView())
     return nullptr;
 
-  return document->GetLayoutViewItem().Compositor();
+  return document->GetLayoutView()->Compositor();
 }
 
 GraphicsLayer* WebViewImpl::RootGraphicsLayer() {

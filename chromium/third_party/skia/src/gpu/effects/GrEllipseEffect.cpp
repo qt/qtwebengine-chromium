@@ -13,6 +13,7 @@
 #include "glsl/GrGLSLFragmentProcessor.h"
 #include "glsl/GrGLSLFragmentShaderBuilder.h"
 #include "glsl/GrGLSLProgramBuilder.h"
+#include "GrTexture.h"
 #include "SkSLCPP.h"
 #include "SkSLUtil.h"
 class GrGLSLEllipseEffect : public GrGLSLFragmentProcessor {
@@ -139,7 +140,8 @@ std::unique_ptr<GrFragmentProcessor> GrEllipseEffect::TestCreate(GrProcessorTest
     do {
         et = (GrClipEdgeType)testData->fRandom->nextULessThan(kGrClipEdgeTypeCnt);
     } while (GrClipEdgeType::kHairlineAA == et);
-    return GrEllipseEffect::Make(et, center, SkPoint::Make(rx, ry));
+    return GrEllipseEffect::Make(et, center, SkPoint::Make(rx, ry),
+                                 *testData->caps()->shaderCaps());
 }
 #endif
 #endif

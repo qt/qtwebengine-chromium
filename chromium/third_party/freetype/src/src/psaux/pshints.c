@@ -842,7 +842,15 @@
                            cf2_arrstack_size( hStemHintArray ) +
                              cf2_arrstack_size( vStemHintArray ) );
       if ( !cf2_hintmask_isValid( hintMask ) )
+      {
+        if ( font->isT1 )
+        {
+          /* no error, just continue unhinted */
+          *hintMask->error = FT_Err_Ok;
+          hintmap->hinted  = FALSE;
+        }
         return;                   /* too many stem hints */
+      }
     }
 
     /* begin by clearing the map */
@@ -1202,7 +1210,7 @@
      * second segment.
      * Let `w 'be the zero-based vector from `u1' to `v1'.
      * `perp' is the `perpendicular dot product'; see
-     * http://mathworld.wolfram.com/PerpDotProduct.html.
+     * https://mathworld.wolfram.com/PerpDotProduct.html.
      * `s' is the parameter for the parametric line for the first segment
      * (`u').
      *

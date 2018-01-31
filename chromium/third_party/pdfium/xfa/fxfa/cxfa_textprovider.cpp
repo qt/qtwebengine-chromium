@@ -14,6 +14,7 @@
 #include "core/fxcrt/xml/cfx_xmlnode.h"
 #include "fxjs/cfxjse_engine.h"
 #include "fxjs/cfxjse_value.h"
+#include "fxjs/xfa/cjx_object.h"
 #include "third_party/base/ptr_util.h"
 #include "third_party/base/stl_util.h"
 #include "xfa/fde/cfde_textout.h"
@@ -27,9 +28,14 @@
 #include "xfa/fxfa/cxfa_ffwidget.h"
 #include "xfa/fxfa/cxfa_fontmgr.h"
 #include "xfa/fxfa/cxfa_fwladapterwidgetmgr.h"
+#include "xfa/fxfa/parser/cxfa_caption.h"
+#include "xfa/fxfa/parser/cxfa_font.h"
+#include "xfa/fxfa/parser/cxfa_items.h"
 #include "xfa/fxfa/parser/cxfa_layoutprocessor.h"
 #include "xfa/fxfa/parser/cxfa_localevalue.h"
 #include "xfa/fxfa/parser/cxfa_node.h"
+#include "xfa/fxfa/parser/cxfa_para.h"
+#include "xfa/fxfa/parser/cxfa_value.h"
 #include "xfa/fxfa/parser/xfa_resolvenode_rs.h"
 #include "xfa/fxfa/parser/xfa_utils.h"
 
@@ -38,15 +44,15 @@ CXFA_Node* CXFA_TextProvider::GetTextNode(bool& bRichText) {
 
   if (m_eType == XFA_TEXTPROVIDERTYPE_Text) {
     CXFA_Node* pElementNode = m_pWidgetAcc->GetNode();
-    CXFA_Node* pValueNode =
-        pElementNode->GetChild(0, XFA_Element::Value, false);
+    CXFA_Value* pValueNode =
+        pElementNode->GetChild<CXFA_Value>(0, XFA_Element::Value, false);
     if (!pValueNode)
       return nullptr;
 
-    CXFA_Node* pChildNode = pValueNode->GetNodeItem(XFA_NODEITEM_FirstChild);
+    CXFA_Node* pChildNode = pValueNode->GetFirstChild();
     if (pChildNode && pChildNode->GetElementType() == XFA_Element::ExData) {
-      pdfium::Optional<WideString> contentType =
-          pChildNode->JSNode()->TryAttribute(XFA_Attribute::ContentType, false);
+      Optional<WideString> contentType = pChildNode->JSObject()->TryAttribute(
+          XFA_Attribute::ContentType, false);
       if (contentType && *contentType == L"text/html")
         bRichText = true;
     }
@@ -54,7 +60,7 @@ CXFA_Node* CXFA_TextProvider::GetTextNode(bool& bRichText) {
   }
 
   if (m_eType == XFA_TEXTPROVIDERTYPE_Datasets) {
-    CXFA_Node* pBind = m_pWidgetAcc->GetDatasets();
+    CXFA_Node* pBind = m_pWidgetAcc->GetNode()->GetBindData();
     CFX_XMLNode* pXMLNode = pBind->GetXMLMappingNode();
     ASSERT(pXMLNode);
     for (CFX_XMLNode* pXMLChild =
@@ -71,68 +77,69 @@ CXFA_Node* CXFA_TextProvider::GetTextNode(bool& bRichText) {
   }
 
   if (m_eType == XFA_TEXTPROVIDERTYPE_Caption) {
-    CXFA_Node* pCaptionNode =
-        m_pWidgetAcc->GetNode()->GetChild(0, XFA_Element::Caption, false);
+    CXFA_Caption* pCaptionNode =
+        m_pWidgetAcc->GetNode()->GetChild<CXFA_Caption>(0, XFA_Element::Caption,
+                                                        false);
     if (!pCaptionNode)
       return nullptr;
 
-    CXFA_Node* pValueNode =
-        pCaptionNode->GetChild(0, XFA_Element::Value, false);
+    CXFA_Value* pValueNode =
+        pCaptionNode->GetChild<CXFA_Value>(0, XFA_Element::Value, false);
     if (!pValueNode)
       return nullptr;
 
-    CXFA_Node* pChildNode = pValueNode->GetNodeItem(XFA_NODEITEM_FirstChild);
+    CXFA_Node* pChildNode = pValueNode->GetFirstChild();
     if (pChildNode && pChildNode->GetElementType() == XFA_Element::ExData) {
-      pdfium::Optional<WideString> contentType =
-          pChildNode->JSNode()->TryAttribute(XFA_Attribute::ContentType, false);
+      Optional<WideString> contentType = pChildNode->JSObject()->TryAttribute(
+          XFA_Attribute::ContentType, false);
       if (contentType && *contentType == L"text/html")
         bRichText = true;
     }
     return pChildNode;
   }
 
-  CXFA_Node* pItemNode =
-      m_pWidgetAcc->GetNode()->GetChild(0, XFA_Element::Items, false);
+  CXFA_Items* pItemNode = m_pWidgetAcc->GetNode()->GetChild<CXFA_Items>(
+      0, XFA_Element::Items, false);
   if (!pItemNode)
     return nullptr;
 
-  CXFA_Node* pNode = pItemNode->GetNodeItem(XFA_NODEITEM_FirstChild);
+  CXFA_Node* pNode = pItemNode->GetFirstChild();
   while (pNode) {
-    WideString wsName = pNode->JSNode()->GetCData(XFA_Attribute::Name);
+    WideString wsName = pNode->JSObject()->GetCData(XFA_Attribute::Name);
     if (m_eType == XFA_TEXTPROVIDERTYPE_Rollover && wsName == L"rollover")
       return pNode;
     if (m_eType == XFA_TEXTPROVIDERTYPE_Down && wsName == L"down")
       return pNode;
 
-    pNode = pNode->GetNodeItem(XFA_NODEITEM_NextSibling);
+    pNode = pNode->GetNextSibling();
   }
   return nullptr;
 }
 
-CXFA_ParaData CXFA_TextProvider::GetParaData() {
+CXFA_Para* CXFA_TextProvider::GetParaIfExists() {
   if (m_eType == XFA_TEXTPROVIDERTYPE_Text)
-    return m_pWidgetAcc->GetParaData();
+    return m_pWidgetAcc->GetNode()->GetParaIfExists();
 
-  CXFA_Node* pNode =
-      m_pWidgetAcc->GetNode()->GetChild(0, XFA_Element::Caption, false);
-  return CXFA_ParaData(pNode->GetChild(0, XFA_Element::Para, false));
+  CXFA_Caption* pNode = m_pWidgetAcc->GetNode()->GetChild<CXFA_Caption>(
+      0, XFA_Element::Caption, false);
+  return pNode->GetChild<CXFA_Para>(0, XFA_Element::Para, false);
 }
 
-CXFA_FontData CXFA_TextProvider::GetFontData() {
+CXFA_Font* CXFA_TextProvider::GetFontIfExists() {
   if (m_eType == XFA_TEXTPROVIDERTYPE_Text)
-    return m_pWidgetAcc->GetFontData(false);
+    return m_pWidgetAcc->GetNode()->GetFontIfExists();
 
-  CXFA_Node* pNode =
-      m_pWidgetAcc->GetNode()->GetChild(0, XFA_Element::Caption, false);
-  pNode = pNode->GetChild(0, XFA_Element::Font, false);
-  return pNode ? CXFA_FontData(pNode) : m_pWidgetAcc->GetFontData(false);
+  CXFA_Caption* pNode = m_pWidgetAcc->GetNode()->GetChild<CXFA_Caption>(
+      0, XFA_Element::Caption, false);
+  CXFA_Font* font = pNode->GetChild<CXFA_Font>(0, XFA_Element::Font, false);
+  return font ? font : m_pWidgetAcc->GetNode()->GetFontIfExists();
 }
 
 bool CXFA_TextProvider::IsCheckButtonAndAutoWidth() {
   XFA_Element eType = m_pWidgetAcc->GetUIType();
   if (eType != XFA_Element::CheckButton)
     return false;
-  return !m_pWidgetAcc->TryWidth();
+  return !m_pWidgetAcc->GetNode()->TryWidth();
 }
 
 bool CXFA_TextProvider::GetEmbbedObj(bool bURI,
@@ -146,7 +153,7 @@ bool CXFA_TextProvider::GetEmbbedObj(bool bURI,
     return false;
 
   CXFA_Node* pWidgetNode = m_pWidgetAcc->GetNode();
-  CXFA_Node* pParent = pWidgetNode->GetNodeItem(XFA_NODEITEM_Parent);
+  CXFA_Node* pParent = pWidgetNode->GetParent();
   CXFA_Document* pDocument = pWidgetNode->GetDocument();
   CXFA_Node* pIDNode = nullptr;
   CXFA_WidgetAcc* pEmbAcc = nullptr;
@@ -159,7 +166,7 @@ bool CXFA_TextProvider::GetEmbbedObj(bool bURI,
         wsAttr.AsStringView());
   }
   if (pIDNode)
-    pEmbAcc = static_cast<CXFA_WidgetAcc*>(pIDNode->GetWidgetData());
+    pEmbAcc = pIDNode->GetWidgetAcc();
 
   if (!pEmbAcc)
     return false;

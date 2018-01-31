@@ -1249,8 +1249,8 @@ Does not copy, and returns false if:
 
 #List
 # Source and destination rectangles do not intersect. ##
-# pixels could not be converted to this->imageInfo().colorType() or
-this->imageInfo().alphaType(). ##
+# pixels could not be converted to Canvas imageInfo().colorType() or
+  imageInfo().alphaType(). ##
 # Canvas pixels are not writable; for instance, Canvas is document-based. ##
 # rowBytes is too small to contain one row of pixels. ##
 ##
@@ -1308,8 +1308,8 @@ Does not copy, and returns false if:
 #List
 # Source and destination rectangles do not intersect. ##
 # bitmap does not have allocated pixels. ##
-# bitmap pixels could not be converted to this->imageInfo().colorType() or
-this->imageInfo().alphaType(). ##
+# bitmap pixels could not be converted to Canvas imageInfo().colorType() or
+  imageInfo().alphaType(). ##
 # Canvas pixels are not writable; for instance, Canvas is document based. ##
 # bitmap pixels are inaccessible; for instance, bitmap wraps a texture. ##
 ##
@@ -2034,7 +2034,7 @@ Where Layer was cleared, the original image will draw unchanged.
 Outside of the circle the mandrill is brightened.
 ##
     #Image 3
-    // sk_sp<SkImage> image = GetResourceAsImage("mandrill_256.png");
+    // sk_sp<SkImage> image = GetResourceAsImage("images/mandrill_256.png");
     canvas->drawImage(image, 0, 0, nullptr);
     SkCanvas::SaveLayerRec rec;
     SkPaint paint;
@@ -4711,14 +4711,15 @@ void draw(SkCanvas* canvas) {
 
 #Code
     struct Lattice {
-        enum Flags {...
+        enum RectType ...
 
-        const int*     fXDivs;
-        const int*     fYDivs;
-        const Flags*   fFlags;
-        int            fXCount;
-        int            fYCount;
-        const SkIRect* fBounds;
+        const int*      fXDivs;
+        const int*      fYDivs;
+        const RectType* fRectTypes;
+        int             fXCount;
+        int             fYCount;
+        const SkIRect*  fBounds;
+        const SkColor*  fColors;
     };
 ##
 
@@ -4730,17 +4731,28 @@ void draw(SkCanvas* canvas) {
     The grid entries not on even columns and rows are scaled to fit the
     remaining space, if any.
 
-    #Enum Flags
+    #Enum RectType
         #Code
-            enum Flags : uint8_t {
-                kTransparent_Flags = 1 << 0,
+            enum RectType : uint8_t {
+                kDefault = 0,
+                kTransparent,
+                kFixedColor,
             };
         ##
 
-        Optional setting per rectangular grid entry to make it transparent.
+        Optional setting per rectangular grid entry to make it transparent,
+        or to fill the grid entry with a color.
 
-        #Const kTransparent_Flags 1
-            Set to skip lattice rectangle by making it transparent.
+        #Const kDefault 0
+            Draws Bitmap into lattice rectangle.
+        ##
+
+        #Const kTransparent 1
+            Skips lattice rectangle by making it transparent.
+        ##
+
+        #Const kFixedColor 2
+            Draws one of fColors into lattice rectangle.
         ##
     ##
 
@@ -4760,13 +4772,15 @@ void draw(SkCanvas* canvas) {
         grid entries.
     ##
 
-    #Member const Flags*  fFlags
-        Optional array of Flags, one per rectangular grid entry:
+    #Member const RectType* fRectTypes
+        Optional array of fill types, one per rectangular grid entry:
         array length must be
     #Formula
         (fXCount + 1) * (fYCount + 1)
     ##
         .
+
+        Each RectType is one of: kDefault, kTransparent, kFixedColor.
 
         Array entries correspond to the rectangular grid entries, ascending
         left to right and then top to bottom.
@@ -4785,6 +4799,18 @@ void draw(SkCanvas* canvas) {
     #Member const SkIRect*   fBounds
        Optional subset IRect source to draw from.
        If nullptr, source bounds is dimensions of Bitmap or Image.
+    ##
+
+    #Member const SkColor*   fColors
+       Optional array of colors, one per rectangular grid entry.
+       Array length must be
+       #Formula
+       (fXCount + 1) * (fYCount + 1)
+       ##
+       .
+
+       Array entries correspond to the rectangular grid entries, ascending
+       left to right, then top to bottom.
     ##
 
 #Struct Lattice ##
@@ -4848,13 +4874,14 @@ void draw(SkCanvas* canvas) {
     }
     const int xDivs[] = { center.fLeft, center.fRight };
     const int yDivs[] = { center.fTop, center.fBottom };
-    SkCanvas::Lattice::Flags flags[3][3];
-    memset(flags, 0, sizeof(flags));  
-    flags[1][1] = SkCanvas::Lattice::kTransparent_Flags;
-    SkCanvas::Lattice lattice = { xDivs, yDivs, flags[0], SK_ARRAY_COUNT(xDivs),
-         SK_ARRAY_COUNT(yDivs), nullptr };
+    SkCanvas::Lattice::RectType fillTypes[3][3];
+    memset(fillTypes, 0, sizeof(fillTypes));
+    fillTypes[1][1] = SkCanvas::Lattice::kTransparent;
+    SkColor dummy[9];  // temporary pending bug fix
+    SkCanvas::Lattice lattice = { xDivs, yDivs, fillTypes[0], SK_ARRAY_COUNT(xDivs),
+         SK_ARRAY_COUNT(yDivs), nullptr, dummy };
     for (auto dest: { 20, 30, 40, 60, 90 } ) {
-        canvas->drawBitmapLattice(bitmap, lattice , SkRect::MakeWH(dest, 110 - dest), nullptr);
+        canvas->drawBitmapLattice(bitmap, lattice, SkRect::MakeWH(dest, 110 - dest), nullptr);
         canvas->translate(dest + 4, 0);
     }
 }
@@ -4923,11 +4950,12 @@ void draw(SkCanvas* canvas) {
     }
     const int xDivs[] = { center.fLeft, center.fRight };
     const int yDivs[] = { center.fTop, center.fBottom };
-    SkCanvas::Lattice::Flags flags[3][3];
-    memset(flags, 0, sizeof(flags));  
-    flags[1][1] = SkCanvas::Lattice::kTransparent_Flags;
-    SkCanvas::Lattice lattice = { xDivs, yDivs, flags[0], SK_ARRAY_COUNT(xDivs),
-         SK_ARRAY_COUNT(yDivs), nullptr };
+    SkCanvas::Lattice::RectType fillTypes[3][3];
+    memset(fillTypes, 0, sizeof(fillTypes));  
+    fillTypes[1][1] = SkCanvas::Lattice::kTransparent;
+    SkColor dummy[9];  // temporary pending bug fix
+    SkCanvas::Lattice lattice = { xDivs, yDivs, fillTypes[0], SK_ARRAY_COUNT(xDivs),
+         SK_ARRAY_COUNT(yDivs), nullptr, dummy };
     sk_sp<SkImage> image = SkImage::MakeFromBitmap(bitmap);
     SkImage* imagePtr = image.get();
     for (auto dest: { 20, 30, 40, 60, 90 } ) {
@@ -5316,6 +5344,8 @@ Paint_Text_Align, Paint_Hinting, Anti-alias, Paint_Fake_Bold,
 Font_Embedded_Bitmaps, Full_Hinting_Spacing, LCD_Text, Linear_Text,
 Subpixel_Text, and Paint_Vertical_Text.
 
+Paint_Text_Encoding must be set to SkPaint::kGlyphID_TextEncoding.
+
 Elements of paint: Path_Effect, Rasterizer, Mask_Filter, Shader, Color_Filter, 
 Image_Filter, and Draw_Looper; apply to blob.
 
@@ -5333,6 +5363,7 @@ Image_Filter, and Draw_Looper; apply to blob.
         uint16_t glyphs[len];
         SkPaint paint;
         paint.textToGlyphs(bunny, len, glyphs);
+        paint.setTextEncoding(SkPaint::kGlyphID_TextEncoding);
         int runs[] = { 3, 1, 3 };
         SkPoint textPos = { 20, 100 };
         int glyphIndex = 0;
@@ -5341,7 +5372,7 @@ Image_Filter, and Draw_Looper; apply to blob.
             const SkTextBlobBuilder::RunBuffer& run = 
                     textBlobBuilder.allocRun(paint, runLen, textPos.fX, textPos.fY);
             memcpy(run.glyphs, &glyphs[glyphIndex], sizeof(glyphs[0]) * runLen);
-            textPos.fX += paint.measureText(&bunny[glyphIndex], runLen, nullptr);
+            textPos.fX += paint.measureText(&glyphs[glyphIndex], sizeof(glyphs[0]) * runLen, nullptr);
             glyphIndex += runLen;
         }
         sk_sp<const SkTextBlob> blob = textBlobBuilder.make();
@@ -5366,6 +5397,8 @@ Paint_Text_Align, Paint_Hinting, Anti-alias, Paint_Fake_Bold,
 Font_Embedded_Bitmaps, Full_Hinting_Spacing, LCD_Text, Linear_Text,
 Subpixel_Text, and Paint_Vertical_Text.
 
+Paint_Text_Encoding must be set to SkPaint::kGlyphID_TextEncoding.
+
 Elements of paint: Path_Effect, Rasterizer, Mask_Filter, Shader, Color_Filter, 
 Image_Filter, and Draw_Looper; apply to blob.
 
@@ -5385,6 +5418,7 @@ Paint attributes related to text, like text size, have no effect on paint passed
         SkPaint paint;
         paint.setTextSize(50);
         paint.setColor(SK_ColorRED);
+        paint.setTextEncoding(SkPaint::kGlyphID_TextEncoding);
         const SkTextBlobBuilder::RunBuffer& run = 
                 textBlobBuilder.allocRun(paint, 1, 20, 100);
         run.glyphs[0] = 20;

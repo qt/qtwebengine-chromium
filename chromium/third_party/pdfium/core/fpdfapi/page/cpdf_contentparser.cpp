@@ -37,7 +37,7 @@ CPDF_ContentParser::CPDF_ContentParser(CPDF_Page* pPage)
   CPDF_Stream* pStream = pContent->AsStream();
   if (pStream) {
     m_pSingleStream = pdfium::MakeRetain<CPDF_StreamAcc>(pStream);
-    m_pSingleStream->LoadAllData(false);
+    m_pSingleStream->LoadAllDataFiltered();
     return;
   }
   CPDF_Array* pArray = pContent->AsArray();
@@ -102,7 +102,7 @@ CPDF_ContentParser::CPDF_ContentParser(CPDF_Form* pForm,
   }
   m_pSingleStream =
       pdfium::MakeRetain<CPDF_StreamAcc>(pForm->m_pFormStream.Get());
-  m_pSingleStream->LoadAllData(false);
+  m_pSingleStream->LoadAllDataFiltered();
   m_pData.Reset(m_pSingleStream->GetData());
   m_Size = m_pSingleStream->GetSize();
 }
@@ -149,7 +149,7 @@ bool CPDF_ContentParser::Continue(IFX_PauseIndicator* pPause) {
             pContent ? pContent->GetDirectObjectAt(m_CurrentOffset) : nullptr);
         m_StreamArray[m_CurrentOffset] =
             pdfium::MakeRetain<CPDF_StreamAcc>(pStreamObj);
-        m_StreamArray[m_CurrentOffset]->LoadAllData(false);
+        m_StreamArray[m_CurrentOffset]->LoadAllDataFiltered();
         m_CurrentOffset++;
       }
     }
@@ -173,18 +173,10 @@ bool CPDF_ContentParser::Continue(IFX_PauseIndicator* pPause) {
     }
     if (m_InternalStage == STAGE_CHECKCLIP) {
       if (m_pType3Char) {
-        m_pType3Char->m_bColored = m_pParser->IsColored();
-        m_pType3Char->m_Width =
-            FXSYS_round(m_pParser->GetType3Data()[0] * 1000);
-        m_pType3Char->m_BBox.left =
-            FXSYS_round(m_pParser->GetType3Data()[2] * 1000);
-        m_pType3Char->m_BBox.bottom =
-            FXSYS_round(m_pParser->GetType3Data()[3] * 1000);
-        m_pType3Char->m_BBox.right =
-            FXSYS_round(m_pParser->GetType3Data()[4] * 1000);
-        m_pType3Char->m_BBox.top =
-            FXSYS_round(m_pParser->GetType3Data()[5] * 1000);
+        m_pType3Char->InitializeFromStreamData(m_pParser->IsColored(),
+                                               m_pParser->GetType3Data());
       }
+
       for (auto& pObj : *m_pObjectHolder->GetPageObjectList()) {
         if (!pObj->m_ClipPath.HasRef())
           continue;

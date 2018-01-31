@@ -11,6 +11,7 @@
 #include "compiler/translator/IntermNodePatternMatcher.h"
 
 #include "compiler/translator/IntermNode.h"
+#include "compiler/translator/SymbolTable.h"
 
 namespace sh
 {
@@ -187,7 +188,7 @@ bool IntermNodePatternMatcher::match(TIntermDeclaration *node)
     {
         TIntermTyped *declarator = node->getSequence()->front()->getAsTyped();
         if (declarator->getBasicType() == EbtStruct &&
-            declarator->getType().getStruct()->name() == "")
+            declarator->getType().getStruct()->symbolType() == SymbolType::Empty)
         {
             return true;
         }

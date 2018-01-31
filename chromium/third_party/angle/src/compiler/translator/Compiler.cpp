@@ -12,12 +12,14 @@
 #include "common/utilities.h"
 #include "compiler/translator/AddAndTrueToLoopCondition.h"
 #include "compiler/translator/CallDAG.h"
+#include "compiler/translator/ClampFragDepth.h"
 #include "compiler/translator/ClampPointSize.h"
 #include "compiler/translator/CollectVariables.h"
 #include "compiler/translator/DeclareAndInitBuiltinsForInstancedMultiview.h"
 #include "compiler/translator/DeferGlobalInitializers.h"
 #include "compiler/translator/EmulateGLFragColorBroadcast.h"
 #include "compiler/translator/EmulatePrecision.h"
+#include "compiler/translator/FoldExpressions.h"
 #include "compiler/translator/Initialize.h"
 #include "compiler/translator/InitializeVariables.h"
 #include "compiler/translator/IntermNodePatternMatcher.h"
@@ -157,7 +159,7 @@ int GetMaxUniformVectorsForShaderType(GLenum shaderType, const ShBuiltInResource
         // TODO (jiawei.shao@intel.com): check if we need finer-grained component counting
         case GL_COMPUTE_SHADER:
             return resources.MaxComputeUniformComponents / 4;
-        case GL_GEOMETRY_SHADER_OES:
+        case GL_GEOMETRY_SHADER_EXT:
             return resources.MaxGeometryUniformComponents / 4;
         default:
             UNREACHABLE();
@@ -380,7 +382,7 @@ void TCompiler::setASTMetadata(const TParseContext &parseContext)
     // Highp might have been auto-enabled based on shader version
     fragmentPrecisionHigh = parseContext.getFragmentPrecisionHigh();
 
-    if (shaderType == GL_GEOMETRY_SHADER_OES)
+    if (shaderType == GL_GEOMETRY_SHADER_EXT)
     {
         mGeometryShaderInputPrimitiveType  = parseContext.getGeometryShaderInputPrimitiveType();
         mGeometryShaderOutputPrimitiveType = parseContext.getGeometryShaderOutputPrimitiveType();
@@ -399,6 +401,18 @@ bool TCompiler::checkAndSimplifyAST(TIntermBlock *root,
         return false;
     }
 
+    if (shouldRunLoopAndIndexingValidation(compileOptions) &&
+        !ValidateLimitations(root, shaderType, &symbolTable, shaderVersion, &mDiagnostics))
+    {
+        return false;
+    }
+
+    // Fold expressions that could not be folded before validation that was done as a part of
+    // parsing.
+    FoldExpressions(root, &mDiagnostics);
+    // Folding should only be able to generate warnings.
+    ASSERT(mDiagnostics.numErrors() == 0);
+
     // We prune no-ops to work around driver bugs and to keep AST processing and output simple.
     // The following kinds of no-ops are pruned:
     //   1. Empty declarations "int;".
@@ -406,7 +420,7 @@ bool TCompiler::checkAndSimplifyAST(TIntermBlock *root,
     //      for float, so float literal statements would end up with no precision which is
     //      invalid ESSL.
     // After this empty declarations are not allowed in the AST.
-    PruneNoOps(root);
+    PruneNoOps(root, &symbolTable);
 
     // In case the last case inside a switch statement is a certain type of no-op, GLSL
     // compilers in drivers may not accept it. In this case we clean up the dead code from the
@@ -454,12 +468,6 @@ bool TCompiler::checkAndSimplifyAST(TIntermBlock *root,
         return false;
     }
 
-    if (shouldRunLoopAndIndexingValidation(compileOptions) &&
-        !ValidateLimitations(root, shaderType, &symbolTable, shaderVersion, &mDiagnostics))
-    {
-        return false;
-    }
-
     // Fail compilation if precision emulation not supported.
     if (getResources().WEBGL_debug_shader_precision && getPragma().debugShaderPrecision &&
         !EmulatePrecision::SupportedInLanguage(outputType))
@@ -503,7 +511,7 @@ bool TCompiler::checkAndSimplifyAST(TIntermBlock *root,
 
     if (compileOptions & SH_REGENERATE_STRUCT_NAMES)
     {
-        RegenerateStructNames gen(&symbolTable, shaderVersion);
+        RegenerateStructNames gen(&symbolTable);
         root->traverse(&gen);
     }
 
@@ -602,7 +610,10 @@ bool TCompiler::checkAndSimplifyAST(TIntermBlock *root,
     bool initializeLocalsAndGlobals =
         (compileOptions & SH_INITIALIZE_UNINITIALIZED_LOCALS) && !IsOutputHLSL(getOutputType());
     bool canUseLoopsToInitialize = !(compileOptions & SH_DONT_USE_LOOPS_TO_INITIALIZE_VARIABLES);
-    DeferGlobalInitializers(root, initializeLocalsAndGlobals, canUseLoopsToInitialize, &symbolTable);
+    bool highPrecisionSupported =
+        shaderType != GL_FRAGMENT_SHADER || compileResources.FragmentPrecisionHigh;
+    DeferGlobalInitializers(root, initializeLocalsAndGlobals, canUseLoopsToInitialize,
+                            highPrecisionSupported, &symbolTable);
 
     if (initializeLocalsAndGlobals)
     {
@@ -623,12 +634,17 @@ bool TCompiler::checkAndSimplifyAST(TIntermBlock *root,
         }
 
         InitializeUninitializedLocals(root, getShaderVersion(), canUseLoopsToInitialize,
-                                      &getSymbolTable());
+                                      highPrecisionSupported, &getSymbolTable());
     }
 
     if (getShaderType() == GL_VERTEX_SHADER && (compileOptions & SH_CLAMP_POINT_SIZE))
     {
         ClampPointSize(root, compileResources.MaxPointSize, &getSymbolTable());
+    }
+
+    if (getShaderType() == GL_FRAGMENT_SHADER && (compileOptions & SH_CLAMP_FRAG_DEPTH))
+    {
+        ClampFragDepth(root, &getSymbolTable());
     }
 
     if (compileOptions & SH_REWRITE_VECTOR_SCALAR_ARITHMETIC)
@@ -708,7 +724,7 @@ bool TCompiler::InitBuiltInSymbolTable(const ShBuiltInResources &resources)
             break;
         case GL_VERTEX_SHADER:
         case GL_COMPUTE_SHADER:
-        case GL_GEOMETRY_SHADER_OES:
+        case GL_GEOMETRY_SHADER_EXT:
             symbolTable.setDefaultPrecision(EbtInt, EbpHigh);
             symbolTable.setDefaultPrecision(EbtFloat, EbpHigh);
             break;
@@ -732,6 +748,8 @@ bool TCompiler::InitBuiltInSymbolTable(const ShBuiltInResources &resources)
     InsertBuiltInFunctions(shaderType, shaderSpec, resources, symbolTable);
 
     IdentifyBuiltIns(shaderType, shaderSpec, resources, symbolTable);
+
+    symbolTable.markBuiltInInitializationFinished();
 
     return true;
 }
@@ -773,7 +791,7 @@ void TCompiler::setResourceString()
         << ":ARM_shader_framebuffer_fetch:" << compileResources.ARM_shader_framebuffer_fetch
         << ":OVR_multiview:" << compileResources.OVR_multiview
         << ":EXT_YUV_target:" << compileResources.EXT_YUV_target
-        << ":OES_geometry_shader:" << compileResources.OES_geometry_shader
+        << ":EXT_geometry_shader:" << compileResources.EXT_geometry_shader
         << ":MaxVertexOutputVectors:" << compileResources.MaxVertexOutputVectors
         << ":MaxFragmentInputVectors:" << compileResources.MaxFragmentInputVectors
         << ":MinProgramTexelOffset:" << compileResources.MinProgramTexelOffset
@@ -867,6 +885,8 @@ void TCompiler::clearResults()
     nameMap.clear();
 
     mSourcePath     = nullptr;
+
+    symbolTable.clearCompilationResults();
 }
 
 bool TCompiler::initCallDag(TIntermNode *root)
@@ -909,14 +929,17 @@ bool TCompiler::checkCallDepth()
             // Trace back the function chain to have a meaningful info log.
             std::stringstream errorStream;
             errorStream << "Call stack too deep (larger than " << maxCallStackDepth
-                        << ") with the following call chain: " << record.name;
+                        << ") with the following call chain: "
+                        << record.node->getFunction()->name();
 
             int currentFunction = static_cast<int>(i);
             int currentDepth    = depth;
 
             while (currentFunction != -1)
             {
-                errorStream << " -> " << mCallDag.getRecordFromIndex(currentFunction).name;
+                errorStream
+                    << " -> "
+                    << mCallDag.getRecordFromIndex(currentFunction).node->getFunction()->name();
 
                 int nextFunction = -1;
                 for (auto &calleeIndex : mCallDag.getRecordFromIndex(currentFunction).callees)
@@ -946,7 +969,7 @@ bool TCompiler::tagUsedFunctions()
     // Search from main, starting from the end of the DAG as it usually is the root.
     for (size_t i = mCallDag.size(); i-- > 0;)
     {
-        if (mCallDag.getRecordFromIndex(i).name == "main")
+        if (mCallDag.getRecordFromIndex(i).node->getFunction()->isMain())
         {
             internalTagUsedFunction(i);
             return true;
@@ -986,22 +1009,22 @@ class TCompiler::UnusedPredicate
         const TIntermFunctionPrototype *asFunctionPrototype   = node->getAsFunctionPrototypeNode();
         const TIntermFunctionDefinition *asFunctionDefinition = node->getAsFunctionDefinition();
 
-        const TFunctionSymbolInfo *functionInfo = nullptr;
+        const TFunction *func = nullptr;
 
         if (asFunctionDefinition)
         {
-            functionInfo = asFunctionDefinition->getFunctionSymbolInfo();
+            func = asFunctionDefinition->getFunction();
         }
         else if (asFunctionPrototype)
         {
-            functionInfo = asFunctionPrototype->getFunctionSymbolInfo();
+            func = asFunctionPrototype->getFunction();
         }
-        if (functionInfo == nullptr)
+        if (func == nullptr)
         {
             return false;
         }
 
-        size_t callDagIndex = mCallDag->findIndex(functionInfo);
+        size_t callDagIndex = mCallDag->findIndex(func->uniqueId());
         if (callDagIndex == CallDAG::InvalidIndex)
         {
             // This happens only for unimplemented prototypes which are thus unused
@@ -1063,7 +1086,7 @@ void TCompiler::initializeGLPosition(TIntermBlock *root)
     sh::ShaderVariable var(GL_FLOAT_VEC4);
     var.name = "gl_Position";
     list.push_back(var);
-    InitializeVariables(root, list, &symbolTable, shaderVersion, extensionBehavior, false);
+    InitializeVariables(root, list, &symbolTable, shaderVersion, extensionBehavior, false, false);
 }
 
 void TCompiler::useAllMembersInUnusedStandardAndSharedBlocks(TIntermBlock *root)
@@ -1085,7 +1108,7 @@ void TCompiler::useAllMembersInUnusedStandardAndSharedBlocks(TIntermBlock *root)
 void TCompiler::initializeOutputVariables(TIntermBlock *root)
 {
     InitVariableList list;
-    if (shaderType == GL_VERTEX_SHADER || shaderType == GL_GEOMETRY_SHADER_OES)
+    if (shaderType == GL_VERTEX_SHADER || shaderType == GL_GEOMETRY_SHADER_EXT)
     {
         for (auto var : outputVaryings)
         {
@@ -1105,7 +1128,7 @@ void TCompiler::initializeOutputVariables(TIntermBlock *root)
             list.push_back(var);
         }
     }
-    InitializeVariables(root, list, &symbolTable, shaderVersion, extensionBehavior, false);
+    InitializeVariables(root, list, &symbolTable, shaderVersion, extensionBehavior, false, false);
 }
 
 const TExtensionBehavior &TCompiler::getExtensionBehavior() const

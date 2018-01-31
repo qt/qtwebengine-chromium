@@ -396,9 +396,9 @@ bool CSSStyleSheet::IsLoading() const {
   return contents_->IsLoading();
 }
 
-MediaList* CSSStyleSheet::media() const {
+MediaList* CSSStyleSheet::media() {
   if (!media_queries_)
-    return nullptr;
+    media_queries_ = MediaQuerySet::Create();
 
   if (!media_cssom_wrapper_)
     media_cssom_wrapper_ = MediaList::Create(media_queries_.get(),
@@ -418,7 +418,7 @@ Document* CSSStyleSheet::OwnerDocument() const {
 }
 
 void CSSStyleSheet::SetAllowRuleAccessFromOrigin(
-    scoped_refptr<SecurityOrigin> allowed_origin) {
+    scoped_refptr<const SecurityOrigin> allowed_origin) {
   allow_rule_access_from_origin_ = std::move(allowed_origin);
 }
 

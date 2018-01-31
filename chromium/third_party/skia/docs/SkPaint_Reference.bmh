@@ -1,4 +1,4 @@
-﻿#Topic Paint
+#Topic Paint
 #Alias Paint_Reference
 
 #Class SkPaint
@@ -567,47 +567,10 @@ can reconstitute the paint at a later time.
 
 #Param buffer  Write_Buffer receiving the flattened Paint data ##
 
-#Example
-    class PaintDumper : public SkWriteBuffer {
-    public:
-        bool isCrossProcess() const override { return false; };
-        void writeByteArray(const void* data, size_t size) override {}
-        void writeBool(bool value) override {}
-        void writeScalar(SkScalar value) override {}
-        void writeScalarArray(const SkScalar* value, uint32_t count) override {}
-        void writeInt(int32_t value) override {}
-        void writeIntArray(const int32_t* value, uint32_t count) override {}
-        void writeUInt(uint32_t value) override {}
-        void writeString(const char* value) override {}
-        void writeFlattenable(const SkFlattenable* flattenable) override {}
-        void writeColorArray(const SkColor* color, uint32_t count) override {}
-        void writeColor4f(const SkColor4f& color) override {}
-        void writeColor4fArray(const SkColor4f* color, uint32_t count) override {}
-        void writePoint(const SkPoint& point) override {}
-        void writePointArray(const SkPoint* point, uint32_t count) override {}
-        void writeMatrix(const SkMatrix& matrix) override {}
-        void writeIRect(const SkIRect& rect) override {}
-        void writeRect(const SkRect& rect) override {}
-        void writeRegion(const SkRegion& region) override {}
-        void writePath(const SkPath& path) override {}
-        size_t writeStream(SkStream* stream, size_t length) override { return 0; }
-        void writeBitmap(const SkBitmap& bitmap) override {}
-        void writeImage(const SkImage*) override {}
-        void writeTypeface(SkTypeface* typeface) override {}
-        void writePaint(const SkPaint& paint) override {}
+# why is flatten() public? 
+#Bug 6172 ##
 
-        void writeColor(SkColor color) override {
-            SkDebugf("color = 0x%08x\n", color);
-        }
-    } dumper;
-
-    SkPaint paint;
-    paint.setColor(SK_ColorRED);
-    paint.flatten(dumper);
-
-    #StdOut
-        color = 0xffff0000
-    ##
+#NoExample
 ##
 
 ##
@@ -1395,7 +1358,7 @@ kEmbeddedBitmapText_Flag at compile time.
     SkPaint paint;
     paint.setAntiAlias(true);
     paint.setTextSize(13);
-    paint.setTypeface(MakeResourceAsTypeface("/fonts/hintgasp.ttf"));
+    paint.setTypeface(MakeResourceAsTypeface("fonts/hintgasp.ttf"));
     for (bool embedded : { false, true}) {
         paint.setEmbeddedBitmapText(embedded);
         offscreen.drawString("A", embedded ? 5 : 15, 15, paint);
@@ -1906,8 +1869,8 @@ on the output device, which may have more or fewer bits, and may have a differen
     Unpremultiplied, packing 8-bit components for Alpha, Red, Blue, and Green. 
 
     #Param color    Unpremultiplied Color_ARGB ##
-        
-    #Example
+    
+    #Example
         SkPaint green1, green2;
         unsigned a = 255;
         unsigned r = 0;
@@ -2598,7 +2561,7 @@ void draw(SkCanvas* canvas) {
 
 #Method Join getStrokeJoin() const
 
-    The geometry drawn at the corners of strokes. 
+    The geometry drawn at the corners of strokes.
 
     #Return  one of: kMiter_Join, kRound_Join, kBevel_Join ##
 
@@ -2617,7 +2580,7 @@ void draw(SkCanvas* canvas) {
 
 #Method void setStrokeJoin(Join join)
 
-    The geometry drawn at the corners of strokes. 
+    The geometry drawn at the corners of strokes.
 
     #Param join  one of: kMiter_Join, kRound_Join, kBevel_Join;
                  otherwise, has no effect 
@@ -3269,7 +3232,7 @@ implementation.
         void draw(SkCanvas* canvas) {
            SkPaint paint;
            SkDebugf("nullptr %c= typeface\n", paint.getTypeface() ? '!' : '=');
-           paint.setTypeface(SkTypeface::MakeFromName("Times New Roman", SkFontStyle()));
+           paint.setTypeface(SkTypeface::MakeFromName("monospace", SkFontStyle()));
            SkDebugf("nullptr %c= typeface\n", paint.getTypeface() ? '!' : '=');
         }
 
@@ -3290,7 +3253,7 @@ implementation.
     #Example
         void draw(SkCanvas* canvas) {
            SkPaint paint1, paint2;
-           paint1.setTypeface(SkTypeface::MakeFromName("Times New Roman", 
+           paint1.setTypeface(SkTypeface::MakeFromName("monospace", 
                     SkFontStyle(SkFontStyle::kNormal_Weight, SkFontStyle::kNormal_Width,
                     SkFontStyle::kItalic_Slant)));
            SkDebugf("typeface1 %c= typeface2\n",
@@ -3320,10 +3283,10 @@ typeface Reference_Count by one.
     #Height 64
         void draw(SkCanvas* canvas) {
             SkPaint paint;
-            paint.setTypeface(SkTypeface::MakeFromName("Courier New", SkFontStyle()));
-            canvas->drawString("Courier New", 10, 30, paint);
+            paint.setTypeface(SkTypeface::MakeFromName("monospace", SkFontStyle()));
+            canvas->drawString("hamburgerfons", 10, 30, paint);
             paint.setTypeface(nullptr);
-            canvas->drawString("default", 10, 50, paint);
+            canvas->drawString("hamburgerfons", 10, 50, paint);
         }
     ##
 
@@ -4448,7 +4411,7 @@ void draw(SkCanvas* canvas) {
     dimensions required by stroking and Path_Effect.
     Returns the same result as getFontMetrics.
 
-    #Return         recommended spacing between lines ##
+    #Return         recommended spacing between lines ##
 
     #Example
         SkPaint paint;
@@ -5093,10 +5056,12 @@ void draw(SkCanvas* canvas) {
     bounds describes a pair of lines parallel to the text advance.
     The return count is zero or a multiple of two, and is at most twice the number of Glyphs in
     the string. 
-    Uses Text_Encoding to decode text, Typeface to get the glyph paths,
+    Uses Typeface to get the glyph paths,
     and Text_Size, Fake_Bold, and Path_Effect to scale and modify the glyph paths.
     Uses run array and Text_Align to position intervals.
     
+    Text_Encoding must be set to SkPaint::kGlyphID_TextEncoding.
+
     Pass nullptr for intervals to determine the size of the interval array.
     
     intervals are cached to improve performance for multiple calls.
@@ -5111,6 +5076,7 @@ void draw(SkCanvas* canvas) {
     #Height 143
         void draw(SkCanvas* canvas) {
             SkPaint paint;
+            paint.setTextEncoding(SkPaint::kGlyphID_TextEncoding);
             paint.setTextSize(120);
             SkPoint textPos = { 20, 110 };
             int len = 3;

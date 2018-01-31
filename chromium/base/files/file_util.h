@@ -23,7 +23,7 @@
 #include "build/build_config.h"
 
 #if defined(OS_WIN)
-#include <windows.h>
+#include "base/win/windows_types.h"
 #elif defined(OS_POSIX)
 #include <sys/stat.h>
 #include <unistd.h>
@@ -129,6 +129,12 @@ BASE_EXPORT bool CopyFile(const FilePath& from_path, const FilePath& to_path);
 BASE_EXPORT bool CopyDirectory(const FilePath& from_path,
                                const FilePath& to_path,
                                bool recursive);
+
+// Like CopyDirectory() except trying to overwrite an existing file will not
+// work and will return false.
+BASE_EXPORT bool CopyDirectoryExcl(const FilePath& from_path,
+                                   const FilePath& to_path,
+                                   bool recursive);
 
 // Returns true if the given path exists on the local filesystem,
 // false otherwise.

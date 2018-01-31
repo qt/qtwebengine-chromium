@@ -193,7 +193,7 @@ TType::TType(const TPublicType &p)
     }
 }
 
-TType::TType(TStructure *userDef)
+TType::TType(const TStructure *userDef)
     : type(EbtStruct),
       precision(EbpUndefined),
       qualifier(EvqTemporary),
@@ -422,6 +422,57 @@ TString TType::getCompleteString() const
     return stream.str();
 }
 
+int TType::getDeepestStructNesting() const
+{
+    return mStructure ? mStructure->deepestNesting() : 0;
+}
+
+bool TType::isNamelessStruct() const
+{
+    return mStructure && mStructure->symbolType() == SymbolType::Empty;
+}
+
+bool TType::isStructureContainingArrays() const
+{
+    return mStructure ? mStructure->containsArrays() : false;
+}
+
+bool TType::isStructureContainingMatrices() const
+{
+    return mStructure ? mStructure->containsMatrices() : false;
+}
+
+bool TType::isStructureContainingType(TBasicType t) const
+{
+    return mStructure ? mStructure->containsType(t) : false;
+}
+
+bool TType::isStructureContainingSamplers() const
+{
+    return mStructure ? mStructure->containsSamplers() : false;
+}
+
+bool TType::canReplaceWithConstantUnion() const
+{
+    if (isArray())
+    {
+        return false;
+    }
+    if (!mStructure)
+    {
+        return true;
+    }
+    if (isStructureContainingArrays())
+    {
+        return false;
+    }
+    if (getObjectSize() > 16)
+    {
+        return false;
+    }
+    return true;
+}
+
 //
 // Recursively generate mangled names.
 //
@@ -444,10 +495,17 @@ const char *TType::buildMangledName() const
         switch (type)
         {
             case EbtStruct:
-                mangledName += mStructure->mangledName();
+                mangledName += "struct-";
+                if (mStructure->symbolType() != SymbolType::Empty)
+                {
+                    mangledName += mStructure->name();
+                }
+                mangledName += mStructure->mangledFieldList();
                 break;
             case EbtInterfaceBlock:
-                mangledName += mInterfaceBlock->mangledName();
+                mangledName += "iblock-";
+                mangledName += mInterfaceBlock->name();
+                mangledName += mInterfaceBlock->mangledFieldList();
                 break;
             default:
                 UNREACHABLE();
@@ -708,15 +766,6 @@ void TType::setInterfaceBlock(TInterfaceBlock *interfaceBlockIn)
     }
 }
 
-void TType::setStruct(TStructure *s)
-{
-    if (mStructure != s)
-    {
-        mStructure = s;
-        invalidateMangledName();
-    }
-}
-
 const char *TType::getMangledName() const
 {
     if (mMangledName == nullptr)
@@ -737,57 +786,10 @@ void TType::invalidateMangledName()
     mMangledName = nullptr;
 }
 
-// TStructure implementation.
-TStructure::TStructure(TSymbolTable *symbolTable, const TString *name, TFieldList *fields)
-    : TFieldListCollection(name, fields),
-      mDeepestNesting(0),
-      mUniqueId(symbolTable->nextUniqueId()),
-      mAtGlobalScope(false)
-{
-}
-
-bool TStructure::equals(const TStructure &other) const
-{
-    return (uniqueId() == other.uniqueId());
-}
-
-bool TStructure::containsArrays() const
-{
-    for (size_t i = 0; i < mFields->size(); ++i)
-    {
-        const TType *fieldType = (*mFields)[i]->type();
-        if (fieldType->isArray() || fieldType->isStructureContainingArrays())
-            return true;
-    }
-    return false;
-}
-
-bool TStructure::containsType(TBasicType type) const
-{
-    for (size_t i = 0; i < mFields->size(); ++i)
-    {
-        const TType *fieldType = (*mFields)[i]->type();
-        if (fieldType->getBasicType() == type || fieldType->isStructureContainingType(type))
-            return true;
-    }
-    return false;
-}
-
-bool TStructure::containsSamplers() const
-{
-    for (size_t i = 0; i < mFields->size(); ++i)
-    {
-        const TType *fieldType = (*mFields)[i]->type();
-        if (IsSampler(fieldType->getBasicType()) || fieldType->isStructureContainingSamplers())
-            return true;
-    }
-    return false;
-}
-
 void TType::createSamplerSymbols(const TString &namePrefix,
                                  const TString &apiNamePrefix,
-                                 TVector<TIntermSymbol *> *outputSymbols,
-                                 TMap<TIntermSymbol *, TString> *outputSymbolsToAPINames,
+                                 TVector<const TVariable *> *outputSymbols,
+                                 TMap<const TVariable *, TString> *outputSymbolsToAPINames,
                                  TSymbolTable *symbolTable) const
 {
     if (isStructureContainingSamplers())
@@ -816,42 +818,71 @@ void TType::createSamplerSymbols(const TString &namePrefix,
     }
 
     ASSERT(IsSampler(type));
-    TIntermSymbol *symbol = new TIntermSymbol(symbolTable->nextUniqueId(), namePrefix, *this);
-    outputSymbols->push_back(symbol);
+    TVariable *variable   = new TVariable(symbolTable, NewPoolTString(namePrefix.c_str()), *this,
+                                        SymbolType::AngleInternal);
+    outputSymbols->push_back(variable);
     if (outputSymbolsToAPINames)
     {
-        (*outputSymbolsToAPINames)[symbol] = apiNamePrefix;
+        (*outputSymbolsToAPINames)[variable] = apiNamePrefix;
     }
 }
 
-void TStructure::createSamplerSymbols(const TString &namePrefix,
-                                      const TString &apiNamePrefix,
-                                      TVector<TIntermSymbol *> *outputSymbols,
-                                      TMap<TIntermSymbol *, TString> *outputSymbolsToAPINames,
-                                      TSymbolTable *symbolTable) const
+TFieldListCollection::TFieldListCollection(const TFieldList *fields)
+    : mFields(fields), mObjectSize(0), mDeepestNesting(0)
 {
-    ASSERT(containsSamplers());
-    for (auto &field : *mFields)
+}
+
+bool TFieldListCollection::containsArrays() const
+{
+    for (const auto *field : *mFields)
+    {
+        const TType *fieldType = field->type();
+        if (fieldType->isArray() || fieldType->isStructureContainingArrays())
+            return true;
+    }
+    return false;
+}
+
+bool TFieldListCollection::containsMatrices() const
+{
+    for (const auto *field : *mFields)
+    {
+        const TType *fieldType = field->type();
+        if (fieldType->isMatrix() || fieldType->isStructureContainingMatrices())
+            return true;
+    }
+    return false;
+}
+
+bool TFieldListCollection::containsType(TBasicType type) const
+{
+    for (const auto *field : *mFields)
+    {
+        const TType *fieldType = field->type();
+        if (fieldType->getBasicType() == type || fieldType->isStructureContainingType(type))
+            return true;
+    }
+    return false;
+}
+
+bool TFieldListCollection::containsSamplers() const
+{
+    for (const auto *field : *mFields)
     {
         const TType *fieldType = field->type();
         if (IsSampler(fieldType->getBasicType()) || fieldType->isStructureContainingSamplers())
-        {
-            TString fieldName    = namePrefix + "_" + field->name();
-            TString fieldApiName = apiNamePrefix + "." + field->name();
-            fieldType->createSamplerSymbols(fieldName, fieldApiName, outputSymbols,
-                                            outputSymbolsToAPINames, symbolTable);
-        }
+            return true;
     }
+    return false;
 }
 
-TString TFieldListCollection::buildMangledName(const TString &mangledNamePrefix) const
+TString TFieldListCollection::buildMangledFieldList() const
 {
-    TString mangledName(mangledNamePrefix);
-    mangledName += *mName;
-    for (size_t i = 0; i < mFields->size(); ++i)
+    TString mangledName;
+    for (const auto *field : *mFields)
     {
         mangledName += '-';
-        mangledName += (*mFields)[i]->type()->getMangledName();
+        mangledName += field->type()->getMangledName();
     }
     return mangledName;
 }
@@ -868,6 +899,13 @@ size_t TFieldListCollection::calculateObjectSize() const
             size += fieldSize;
     }
     return size;
+}
+
+size_t TFieldListCollection::objectSize() const
+{
+    if (mObjectSize == 0)
+        mObjectSize = calculateObjectSize();
+    return mObjectSize;
 }
 
 int TFieldListCollection::getLocationCount() const
@@ -888,7 +926,21 @@ int TFieldListCollection::getLocationCount() const
     return count;
 }
 
-int TStructure::calculateDeepestNesting() const
+int TFieldListCollection::deepestNesting() const
+{
+    if (mDeepestNesting == 0)
+        mDeepestNesting = calculateDeepestNesting();
+    return mDeepestNesting;
+}
+
+const TString &TFieldListCollection::mangledFieldList() const
+{
+    if (mMangledFieldList.empty())
+        mMangledFieldList = buildMangledFieldList();
+    return mMangledFieldList;
+}
+
+int TFieldListCollection::calculateDeepestNesting() const
 {
     int maxNesting = 0;
     for (size_t i = 0; i < mFields->size(); ++i)

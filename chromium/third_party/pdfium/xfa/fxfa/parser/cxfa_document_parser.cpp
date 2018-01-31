@@ -12,7 +12,7 @@
 #include "xfa/fxfa/parser/cxfa_document.h"
 
 CXFA_DocumentParser::CXFA_DocumentParser(CXFA_FFNotify* pNotify)
-    : m_nodeParser(nullptr, true), m_pNotify(pNotify) {}
+    : m_pNotify(pNotify) {}
 
 CXFA_DocumentParser::~CXFA_DocumentParser() {
 }
@@ -45,7 +45,7 @@ CFX_XMLDoc* CXFA_DocumentParser::GetXMLDoc() const {
 }
 
 CXFA_FFNotify* CXFA_DocumentParser::GetNotify() const {
-  return m_pNotify;
+  return m_pNotify.Get();
 }
 
 CXFA_Document* CXFA_DocumentParser::GetDocument() const {

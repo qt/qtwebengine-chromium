@@ -87,6 +87,7 @@ ContextNULL::ContextNULL(const gl::ContextState &state, AllocationTrackerNULL *a
     mExtensions.textureCompressionASTCLDR  = true;
     mExtensions.compressedETC1RGB8Texture  = true;
     mExtensions.lossyETCDecode             = true;
+    mExtensions.geometryShader             = true;
 
     const gl::Version maxClientVersion(3, 1);
     mCaps = GenerateMinimumCaps(maxClientVersion, mExtensions);
@@ -410,6 +411,21 @@ gl::Error ContextNULL::dispatchCompute(const gl::Context *context,
                                        GLuint numGroupsX,
                                        GLuint numGroupsY,
                                        GLuint numGroupsZ)
+{
+    return gl::NoError();
+}
+
+gl::Error ContextNULL::dispatchComputeIndirect(const gl::Context *context, GLintptr indirect)
+{
+    return gl::NoError();
+}
+
+gl::Error ContextNULL::memoryBarrier(const gl::Context *context, GLbitfield barriers)
+{
+    return gl::NoError();
+}
+
+gl::Error ContextNULL::memoryBarrierByRegion(const gl::Context *context, GLbitfield barriers)
 {
     return gl::NoError();
 }

@@ -6,6 +6,9 @@
 
 #include "xfa/fxfa/parser/cxfa_border.h"
 
+#include "fxjs/xfa/cjx_border.h"
+#include "third_party/base/ptr_util.h"
+
 namespace {
 
 const CXFA_Node::PropertyData kPropertyData[] = {
@@ -30,13 +33,14 @@ constexpr wchar_t kName[] = L"border";
 }  // namespace
 
 CXFA_Border::CXFA_Border(CXFA_Document* doc, XFA_PacketType packet)
-    : CXFA_Node(doc,
-                packet,
-                (XFA_XDPPACKET_Template | XFA_XDPPACKET_Form),
-                XFA_ObjectType::Node,
-                XFA_Element::Border,
-                kPropertyData,
-                kAttributeData,
-                kName) {}
+    : CXFA_Rectangle(doc,
+                     packet,
+                     (XFA_XDPPACKET_Template | XFA_XDPPACKET_Form),
+                     XFA_ObjectType::Node,
+                     XFA_Element::Border,
+                     kPropertyData,
+                     kAttributeData,
+                     kName,
+                     pdfium::MakeUnique<CJX_Border>(this)) {}
 
 CXFA_Border::~CXFA_Border() {}

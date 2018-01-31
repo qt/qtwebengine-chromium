@@ -709,8 +709,15 @@ void PrintVP9Info(const uint8_t* data, int size, FILE* o, int64_t time_ns,
 
   do {
     const size_t frame_length = (count > 0) ? sizes[i] : size;
+    if (frame_length > std::numeric_limits<int>::max() ||
+        static_cast<int>(frame_length) > size) {
+      fprintf(o, " invalid VP9 frame size (%u)\n",
+              static_cast<uint32_t>(frame_length));
+      return;
+    }
     parser->SetFrame(data, frame_length);
-    parser->ParseUncompressedHeader();
+    if (!parser->ParseUncompressedHeader())
+      return;
     level_stats->AddFrame(*parser, time_ns);
 
     // const int frame_marker = (data[0] >> 6) & 0x3;
@@ -1085,8 +1092,8 @@ bool OutputCues(const mkvparser::Segment& segment,
   indent->Adjust(libwebm::kIncreaseIndent);
 
   do {
-    for (int track_num = 1; track_num <= num_tracks; ++track_num) {
-      const mkvparser::Track* const track = tracks.GetTrackByNumber(track_num);
+    for (int track_num = 0; track_num < num_tracks; ++track_num) {
+      const mkvparser::Track* const track = tracks.GetTrackByIndex(track_num);
       const mkvparser::CuePoint::TrackPosition* const track_pos =
           cue_point->Find(track);
 
@@ -1095,7 +1102,7 @@ bool OutputCues(const mkvparser::Segment& segment,
             (track->GetType() == mkvparser::Track::kVideo) ? 'V' : 'A';
         fprintf(o, "%sCue Point:%d type:%c track:%d",
                 indent->indent_str().c_str(), cue_point_num, track_type,
-                track_num);
+                static_cast<int>(track->GetNumber()));
 
         if (options.output_seconds) {
           fprintf(o, " secs:%g",

@@ -20,14 +20,16 @@
 #include "components/ntp_snippets/remote/request_params.h"
 #include "net/url_request/url_request_context_getter.h"
 
-class AccessTokenFetcher;
-class OAuth2TokenService;
 class PrefService;
-class SigninManagerBase;
 
 namespace base {
 class Value;
 }  // namespace base
+
+namespace identity {
+class IdentityManager;
+class PrimaryAccountAccessTokenFetcher;
+}
 
 namespace language {
 class UrlLanguageHistogram;
@@ -40,8 +42,7 @@ class UserClassifier;
 class RemoteSuggestionsFetcherImpl : public RemoteSuggestionsFetcher {
  public:
   RemoteSuggestionsFetcherImpl(
-      SigninManagerBase* signin_manager,
-      OAuth2TokenService* token_service,
+      identity::IdentityManager* identity_manager,
       scoped_refptr<net::URLRequestContextGetter> url_request_context_getter,
       PrefService* pref_service,
       language::UrlLanguageHistogram* language_histogram,
@@ -59,9 +60,7 @@ class RemoteSuggestionsFetcherImpl : public RemoteSuggestionsFetcher {
   const GURL& GetFetchUrlForDebugging() const override;
 
   // Overrides internal clock for testing purposes.
-  void SetClockForTesting(std::unique_ptr<base::Clock> clock) {
-    clock_ = std::move(clock);
-  }
+  void SetClockForTesting(base::Clock* clock) { clock_ = clock; }
 
  private:
   void FetchSnippetsNonAuthenticated(internal::JsonRequest::Builder builder,
@@ -89,10 +88,9 @@ class RemoteSuggestionsFetcherImpl : public RemoteSuggestionsFetcher {
                      const std::string& error_details);
 
   // Authentication for signed-in users.
-  SigninManagerBase* signin_manager_;
-  OAuth2TokenService* token_service_;
+  identity::IdentityManager* identity_manager_;
 
-  std::unique_ptr<AccessTokenFetcher> token_fetcher_;
+  std::unique_ptr<identity::PrimaryAccountAccessTokenFetcher> token_fetcher_;
 
   // Holds the URL request context.
   scoped_refptr<net::URLRequestContextGetter> url_request_context_getter_;
@@ -114,7 +112,7 @@ class RemoteSuggestionsFetcherImpl : public RemoteSuggestionsFetcher {
   const std::string api_key_;
 
   // Allow for an injectable clock for testing.
-  std::unique_ptr<base::Clock> clock_;
+  base::Clock* clock_;
 
   // Classifier that tells us how active the user is. Not owned.
   const UserClassifier* user_classifier_;

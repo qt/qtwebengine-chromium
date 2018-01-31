@@ -12,10 +12,20 @@
 
 #include <utility>
 
+#include "api/audio_codecs/builtin_audio_decoder_factory.h"
+#include "api/audio_codecs/builtin_audio_encoder_factory.h"
 #include "api/test/fakeconstraints.h"
 #include "api/videosourceproxy.h"
+#include "media/engine/internaldecoderfactory.h"
+#include "media/engine/internalencoderfactory.h"
+#include "media/engine/stereocodecfactory.h"
 #include "media/engine/webrtcvideocapturerfactory.h"
+#include "media/engine/webrtcvideodecoderfactory.h"
+#include "media/engine/webrtcvideoencoderfactory.h"
+#include "modules/audio_device/include/audio_device.h"
+#include "modules/audio_processing/include/audio_processing.h"
 #include "modules/video_capture/video_capture_factory.h"
+#include "rtc_base/ptr_util.h"
 
 #if defined(WEBRTC_ANDROID)
 #include "examples/unityplugin/classreferenceholder.h"
@@ -91,7 +101,15 @@ bool SimplePeerConnection::InitializePeerConnection(const char** turn_urls,
 
     g_peer_connection_factory = webrtc::CreatePeerConnectionFactory(
         g_worker_thread.get(), g_worker_thread.get(), g_signaling_thread.get(),
-        nullptr, nullptr, nullptr);
+        nullptr, webrtc::CreateBuiltinAudioEncoderFactory(),
+        webrtc::CreateBuiltinAudioDecoderFactory(),
+        std::unique_ptr<webrtc::VideoEncoderFactory>(
+            new webrtc::StereoEncoderFactory(
+                rtc::MakeUnique<webrtc::InternalEncoderFactory>())),
+        std::unique_ptr<webrtc::VideoDecoderFactory>(
+            new webrtc::StereoDecoderFactory(
+                rtc::MakeUnique<webrtc::InternalDecoderFactory>())),
+        nullptr, nullptr);
   }
   if (!g_peer_connection_factory.get()) {
     DeletePeerConnection();
@@ -99,19 +117,19 @@ bool SimplePeerConnection::InitializePeerConnection(const char** turn_urls,
   }
 
   g_peer_count++;
-  if (!CreatePeerConnection(turn_urls, no_of_urls, username, credential,
-                            is_receiver)) {
+  if (!CreatePeerConnection(turn_urls, no_of_urls, username, credential)) {
     DeletePeerConnection();
     return false;
   }
+
+  mandatory_receive_ = is_receiver;
   return peer_connection_.get() != nullptr;
 }
 
 bool SimplePeerConnection::CreatePeerConnection(const char** turn_urls,
                                                 const int no_of_urls,
                                                 const char* username,
-                                                const char* credential,
-                                                bool is_receiver) {
+                                                const char* credential) {
   RTC_DCHECK(g_peer_connection_factory.get() != nullptr);
   RTC_DCHECK(peer_connection_.get() == nullptr);
 
@@ -147,11 +165,6 @@ bool SimplePeerConnection::CreatePeerConnection(const char** turn_urls,
 
   webrtc::FakeConstraints constraints;
   constraints.SetAllowDtlsSctpDataChannels();
-
-  if (is_receiver) {
-    constraints.SetMandatoryReceiveAudio(true);
-    constraints.SetMandatoryReceiveVideo(true);
-  }
 
   peer_connection_ = g_peer_connection_factory->CreatePeerConnection(
       config_, &constraints, nullptr, nullptr, this);
@@ -192,7 +205,12 @@ bool SimplePeerConnection::CreateOffer() {
   if (!peer_connection_.get())
     return false;
 
-  peer_connection_->CreateOffer(this, nullptr);
+  webrtc::FakeConstraints constraints;
+  if (mandatory_receive_) {
+    constraints.SetMandatoryReceiveAudio(true);
+    constraints.SetMandatoryReceiveVideo(true);
+  }
+  peer_connection_->CreateOffer(this, &constraints);
   return true;
 }
 
@@ -200,7 +218,12 @@ bool SimplePeerConnection::CreateAnswer() {
   if (!peer_connection_.get())
     return false;
 
-  peer_connection_->CreateAnswer(this, nullptr);
+  webrtc::FakeConstraints constraints;
+  if (mandatory_receive_) {
+    constraints.SetMandatoryReceiveAudio(true);
+    constraints.SetMandatoryReceiveVideo(true);
+  }
+  peer_connection_->CreateAnswer(this, &constraints);
   return true;
 }
 
@@ -421,8 +444,8 @@ void SimplePeerConnection::AddStreams(bool audio_only) {
     RTC_DCHECK(texture_helper != nullptr)
         << "Cannot get the Surface Texture Helper.";
 
-    rtc::scoped_refptr<AndroidVideoTrackSource> source(
-        new rtc::RefCountedObject<AndroidVideoTrackSource>(
+    rtc::scoped_refptr<webrtc::jni::AndroidVideoTrackSource> source(
+        new rtc::RefCountedObject<webrtc::jni::AndroidVideoTrackSource>(
             g_signaling_thread.get(), env, texture_helper, false));
     rtc::scoped_refptr<webrtc::VideoTrackSourceProxy> proxy_source =
         webrtc::VideoTrackSourceProxy::Create(g_signaling_thread.get(),

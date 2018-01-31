@@ -49,7 +49,7 @@ typedef struct {
   uint8_t speed;
 } LAYER_CONTEXT;
 
-typedef struct {
+typedef struct SVC {
   int spatial_layer_id;
   int temporal_layer_id;
   int number_spatial_layers;
@@ -99,6 +99,10 @@ typedef struct {
 
   BLOCK_SIZE *prev_partition_svc;
   int mi_stride[VPX_MAX_LAYERS];
+
+  int first_layer_denoise;
+
+  int skip_enhancement_layer;
 } SVC;
 
 struct VP9_COMP;
@@ -128,6 +132,10 @@ void vp9_save_layer_context(struct VP9_COMP *const cpi);
 // Initialize second pass rc for spatial svc.
 void vp9_init_second_pass_spatial_svc(struct VP9_COMP *cpi);
 
+void get_layer_resolution(const int width_org, const int height_org,
+                          const int num, const int den, int *width_out,
+                          int *height_out);
+
 // Increment number of video frames in layer
 void vp9_inc_frame_in_layer(struct VP9_COMP *const cpi);
 
@@ -147,6 +155,8 @@ int vp9_one_pass_cbr_svc_start_layer(struct VP9_COMP *const cpi);
 void vp9_free_svc_cyclic_refresh(struct VP9_COMP *const cpi);
 
 void vp9_svc_reset_key_frame(struct VP9_COMP *const cpi);
+
+void vp9_svc_check_reset_layer_rc_flag(struct VP9_COMP *const cpi);
 
 #ifdef __cplusplus
 }  // extern "C"

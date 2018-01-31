@@ -31,6 +31,7 @@
 #include "content/public/common/process_type.h"
 #include "content/public/common/sandboxed_process_launcher_delegate.h"
 #include "content/public/common/service_names.mojom.h"
+#include "content/public/common/zygote_features.h"
 #include "mojo/edk/embedder/embedder.h"
 #include "net/base/network_change_notifier.h"
 #include "ppapi/proxy/ppapi_messages.h"
@@ -38,18 +39,17 @@
 #include "services/service_manager/sandbox/switches.h"
 #include "ui/base/ui_base_switches.h"
 
-#if defined(OS_POSIX)
-#include "content/public/browser/zygote_handle_linux.h"
-#endif  // defined(OS_POSIX)
-
 #if defined(OS_WIN)
 #include "base/win/windows_version.h"
-#include "content/browser/renderer_host/dwrite_font_proxy_message_filter_win.h"
 #include "sandbox/win/src/process_mitigations.h"
 #include "sandbox/win/src/sandbox_policy.h"
 #include "services/service_manager/sandbox/win/sandbox_win.h"
 #include "ui/display/win/dpi.h"
 #include "ui/gfx/font_render_params.h"
+#endif
+
+#if BUILDFLAG(USE_ZYGOTE_HANDLE)
+#include "content/public/common/zygote_handle.h"
 #endif
 
 namespace content {
@@ -94,7 +94,7 @@ class PpapiPluginSandboxedProcessLauncherDelegate
       if (result != sandbox::SBOX_ALL_OK)
         return false;
     }
-#endif
+#endif  // !defined(NACL_WIN64)
     const base::string16& sid =
         browser_client->GetAppContainerSidForSandboxType(GetSandboxType());
     if (!sid.empty())
@@ -102,8 +102,9 @@ class PpapiPluginSandboxedProcessLauncherDelegate
 
     return true;
   }
+#endif  // OS_WIN
 
-#elif defined(OS_POSIX) && !defined(OS_MACOSX) && !defined(OS_ANDROID)
+#if BUILDFLAG(USE_ZYGOTE_HANDLE)
   ZygoteHandle GetZygote() override {
     const base::CommandLine& browser_command_line =
         *base::CommandLine::ForCurrentProcess();
@@ -113,7 +114,7 @@ class PpapiPluginSandboxedProcessLauncherDelegate
       return nullptr;
     return GetGenericZygote();
   }
-#endif  // OS_WIN
+#endif  // BUILDFLAG(USE_ZYGOTE_HANDLE)
 
   service_manager::SandboxType GetSandboxType() override {
 #if defined(OS_WIN)
@@ -296,9 +297,6 @@ PpapiPluginProcessHost::PpapiPluginProcessHost(
   filter_ = new PepperMessageFilter();
   process_->AddFilter(filter_.get());
   process_->GetHost()->AddFilter(host_impl_->message_filter().get());
-#if defined(OS_WIN)
-  process_->AddFilter(new DWriteFontProxyMessageFilter());
-#endif
 
   GetContentClient()->browser()->DidCreatePpapiPlugin(host_impl_.get());
 
@@ -372,6 +370,10 @@ bool PpapiPluginProcessHost::Init(const PepperPluginInfo& info) {
       service_manager::switches::kDisableSeccompFilterSandbox,
 #if defined(OS_MACOSX)
       switches::kEnableSandboxLogging,
+#endif
+#if defined(USE_AURA)
+      switches::kMus,
+      switches::kMusHostingViz,
 #endif
       switches::kNoSandbox,
       switches::kPpapiStartupDialog,

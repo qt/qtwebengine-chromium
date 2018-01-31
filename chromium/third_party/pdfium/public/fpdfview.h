@@ -112,7 +112,14 @@ typedef struct _FPDF_BSTR {
 // system wide string by yourself.
 typedef const char* FPDF_STRING;
 
-// Matrix for transformation.
+// Matrix for transformation, in the form [a b c d e f], equivalent to:
+// | a  b  0 |
+// | c  d  0 |
+// | e  f  1 |
+//
+// Translation is performed with [1 0 0 1 tx ty].
+// Scaling is performed with [sx 0 0 sy 0 0].
+// See PDF Reference 1.7, 4.2.2 Common Transformations for more.
 typedef struct _FS_MATRIX_ {
   float a;
   float b;
@@ -137,8 +144,9 @@ typedef struct _FS_RECTF_ {
 // Const Pointer to FS_RECTF structure.
 typedef const FS_RECTF* FS_LPCRECTF;
 
-// Annotation subtype.
+// Annotation enums.
 typedef int FPDF_ANNOTATION_SUBTYPE;
+typedef int FPDF_ANNOT_APPEARANCEMODE;
 
 // Dictionary value types.
 typedef int FPDF_OBJECT_TYPE;
@@ -546,6 +554,19 @@ FPDF_EXPORT double FPDF_CALLCONV FPDF_GetPageWidth(FPDF_PAGE page);
 //          One point is 1/72 inch (around 0.3528 mm)
 FPDF_EXPORT double FPDF_CALLCONV FPDF_GetPageHeight(FPDF_PAGE page);
 
+// Experimental API.
+// Function: FPDF_GetPageBoundingBox
+//          Get the bounding box of the page. This is the intersection between
+//          its media box and its crop box.
+// Parameters:
+//          page        -   Handle to the page. Returned by FPDF_LoadPage.
+//          rect        -   Pointer to a rect to receive the page bounding box.
+//                          On an error, |rect| won't be filled.
+// Return value:
+//          True for success.
+FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV FPDF_GetPageBoundingBox(FPDF_PAGE page,
+                                                            FS_RECTF* rect);
+
 // Function: FPDF_GetPageSizeByIndex
 //          Get the size of the page at the given index.
 // Parameters:
@@ -666,9 +687,10 @@ FPDF_EXPORT void FPDF_CALLCONV FPDF_RenderPageBitmap(FPDF_BITMAP bitmap,
 //                          output buffer). The bitmap handle can be created
 //                          by FPDFBitmap_Create or retrieved by
 //                          FPDFImageObj_GetBitmap.
-//          page        -   Handle to the page. Returned by FPDF_LoadPage
-//          matrix      -   The transform matrix. It must be invertible.
-//          clipping    -   The rect to clip to.
+//          page        -   Handle to the page. Returned by FPDF_LoadPage.
+//          matrix      -   The transform matrix, which must be invertible.
+//                          See PDF Reference 1.7, 4.2.2 Common Transformations.
+//          clipping    -   The rect to clip to in device coords.
 //          flags       -   0 for normal display, or combination of the Page
 //                          Rendering flags defined above. With the FPDF_ANNOT
 //                          flag, it renders all annotations that do not require

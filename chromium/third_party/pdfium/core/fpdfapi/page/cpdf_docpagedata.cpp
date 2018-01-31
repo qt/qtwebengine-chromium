@@ -346,19 +346,20 @@ CPDF_Pattern* CPDF_DocPageData::GetPattern(CPDF_Object* pPatternObj,
         m_pPDFDoc.Get(), pPatternObj, true, matrix);
   } else {
     CPDF_Dictionary* pDict = pPatternObj->GetDict();
-    if (pDict) {
-      int type = pDict->GetIntegerFor("PatternType");
-      if (type == CPDF_Pattern::TILING) {
-        pPattern = pdfium::MakeUnique<CPDF_TilingPattern>(m_pPDFDoc.Get(),
-                                                          pPatternObj, matrix);
-      } else if (type == CPDF_Pattern::SHADING) {
-        pPattern = pdfium::MakeUnique<CPDF_ShadingPattern>(
-            m_pPDFDoc.Get(), pPatternObj, false, matrix);
-      }
+    if (!pDict)
+      return nullptr;
+
+    int type = pDict->GetIntegerFor("PatternType");
+    if (type == CPDF_Pattern::TILING) {
+      pPattern = pdfium::MakeUnique<CPDF_TilingPattern>(m_pPDFDoc.Get(),
+                                                        pPatternObj, matrix);
+    } else if (type == CPDF_Pattern::SHADING) {
+      pPattern = pdfium::MakeUnique<CPDF_ShadingPattern>(
+          m_pPDFDoc.Get(), pPatternObj, false, matrix);
+    } else {
+      return nullptr;
     }
   }
-  if (!pPattern)
-    return nullptr;
 
   if (ptData) {
     ptData->reset(std::move(pPattern));
@@ -417,7 +418,7 @@ RetainPtr<CPDF_IccProfile> CPDF_DocPageData::GetIccProfile(
     return it->second;
 
   auto pAccessor = pdfium::MakeRetain<CPDF_StreamAcc>(pProfileStream);
-  pAccessor->LoadAllData(false);
+  pAccessor->LoadAllDataFiltered();
 
   uint8_t digest[20];
   CRYPT_SHA1Generate(pAccessor->GetData(), pAccessor->GetSize(), digest);
@@ -457,7 +458,7 @@ RetainPtr<CPDF_StreamAcc> CPDF_DocPageData::GetFontFileStreamAcc(
   org_size = std::max(org_size, 0);
 
   auto pFontAcc = pdfium::MakeRetain<CPDF_StreamAcc>(pFontStream);
-  pFontAcc->LoadAllData(false, org_size);
+  pFontAcc->LoadAllData(false, org_size, false);
   m_FontFileMap[pFontStream] = pFontAcc;
   return pFontAcc;
 }

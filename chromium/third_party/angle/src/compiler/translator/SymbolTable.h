@@ -38,191 +38,10 @@
 #include "compiler/translator/ExtensionBehavior.h"
 #include "compiler/translator/InfoSink.h"
 #include "compiler/translator/IntermNode.h"
-#include "compiler/translator/SymbolUniqueId.h"
+#include "compiler/translator/Symbol.h"
 
 namespace sh
 {
-
-// Symbol base class. (Can build functions or variables out of these...)
-class TSymbol : angle::NonCopyable
-{
-  public:
-    POOL_ALLOCATOR_NEW_DELETE();
-    TSymbol(TSymbolTable *symbolTable, const TString *name);
-
-    virtual ~TSymbol()
-    {
-        // don't delete name, it's from the pool
-    }
-
-    const TString &name() const { return *mName; }
-    virtual const TString &getMangledName() const { return name(); }
-    virtual bool isFunction() const { return false; }
-    virtual bool isVariable() const { return false; }
-    const TSymbolUniqueId &uniqueId() const { return mUniqueId; }
-    void relateToExtension(TExtension ext) { mExtension = ext; }
-    TExtension extension() const { return mExtension; }
-
-  private:
-    const TSymbolUniqueId mUniqueId;
-    const TString *mName;
-    TExtension mExtension;
-};
-
-// Variable, meaning a symbol that's not a function.
-//
-// May store the value of a constant variable of any type (float, int, bool or struct).
-class TVariable : public TSymbol
-{
-  public:
-    ~TVariable() override {}
-    bool isVariable() const override { return true; }
-    TType &getType() { return type; }
-    const TType &getType() const { return type; }
-    bool isUserType() const { return userType; }
-    void setQualifier(TQualifier qualifier) { type.setQualifier(qualifier); }
-
-    const TConstantUnion *getConstPointer() const { return unionArray; }
-
-    void shareConstPointer(const TConstantUnion *constArray) { unionArray = constArray; }
-
-  private:
-    friend class TSymbolTable;
-
-    TVariable(TSymbolTable *symbolTable,
-              const TString *name,
-              const TType &t,
-              bool isUserTypeDefinition = false)
-        : TSymbol(symbolTable, name), type(t), userType(isUserTypeDefinition), unionArray(0)
-    {
-    }
-
-    TType type;
-
-    // Set to true if this represents a struct type, as opposed to a variable.
-    bool userType;
-
-    // we are assuming that Pool Allocator will free the memory
-    // allocated to unionArray when this object is destroyed.
-    const TConstantUnion *unionArray;
-};
-
-// Immutable version of TParameter.
-struct TConstParameter
-{
-    TConstParameter() : name(nullptr), type(nullptr) {}
-    explicit TConstParameter(const TString *n) : name(n), type(nullptr) {}
-    explicit TConstParameter(const TType *t) : name(nullptr), type(t) {}
-    TConstParameter(const TString *n, const TType *t) : name(n), type(t) {}
-
-    // Both constructor arguments must be const.
-    TConstParameter(TString *n, TType *t)       = delete;
-    TConstParameter(const TString *n, TType *t) = delete;
-    TConstParameter(TString *n, const TType *t) = delete;
-
-    const TString *const name;
-    const TType *const type;
-};
-
-// The function sub-class of symbols and the parser will need to
-// share this definition of a function parameter.
-struct TParameter
-{
-    // Destructively converts to TConstParameter.
-    // This method resets name and type to nullptrs to make sure
-    // their content cannot be modified after the call.
-    TConstParameter turnToConst()
-    {
-        const TString *constName = name;
-        const TType *constType   = type;
-        name                     = nullptr;
-        type                     = nullptr;
-        return TConstParameter(constName, constType);
-    }
-
-    const TString *name;
-    TType *type;
-};
-
-// The function sub-class of a symbol.
-class TFunction : public TSymbol
-{
-  public:
-    TFunction(TSymbolTable *symbolTable,
-              const TString *name,
-              const TType *retType,
-              TOperator tOp  = EOpNull,
-              TExtension ext = TExtension::UNDEFINED)
-        : TSymbol(symbolTable, name),
-          returnType(retType),
-          mangledName(nullptr),
-          op(tOp),
-          defined(false),
-          mHasPrototypeDeclaration(false)
-    {
-        relateToExtension(ext);
-    }
-    ~TFunction() override;
-    bool isFunction() const override { return true; }
-
-    void addParameter(const TConstParameter &p)
-    {
-        parameters.push_back(p);
-        mangledName = nullptr;
-    }
-
-    void swapParameters(const TFunction &parametersSource);
-
-    const TString &getMangledName() const override
-    {
-        if (mangledName == nullptr)
-        {
-            mangledName = buildMangledName();
-        }
-        return *mangledName;
-    }
-
-    static const TString &GetMangledNameFromCall(const TString &functionName,
-                                                 const TIntermSequence &arguments);
-
-    const TType &getReturnType() const { return *returnType; }
-
-    TOperator getBuiltInOp() const { return op; }
-
-    void setDefined() { defined = true; }
-    bool isDefined() { return defined; }
-    void setHasPrototypeDeclaration() { mHasPrototypeDeclaration = true; }
-    bool hasPrototypeDeclaration() const { return mHasPrototypeDeclaration; }
-
-    size_t getParamCount() const { return parameters.size(); }
-    const TConstParameter &getParam(size_t i) const { return parameters[i]; }
-
-  private:
-    void clearParameters();
-
-    const TString *buildMangledName() const;
-
-    typedef TVector<TConstParameter> TParamList;
-    TParamList parameters;
-    const TType *returnType;
-    mutable const TString *mangledName;
-    TOperator op;
-    bool defined;
-    bool mHasPrototypeDeclaration;
-};
-
-// Interface block name sub-symbol
-class TInterfaceBlockName : public TSymbol
-{
-  public:
-    virtual ~TInterfaceBlockName() {}
-
-  private:
-    friend class TSymbolTable;
-    TInterfaceBlockName(TSymbolTable *symbolTable, const TString *name) : TSymbol(symbolTable, name)
-    {
-    }
-};
 
 class TSymbolTableLevel
 {
@@ -287,7 +106,7 @@ const int GLOBAL_LEVEL       = 5;
 class TSymbolTable : angle::NonCopyable
 {
   public:
-    TSymbolTable() : mUniqueIdCounter(0), mEmptySymbolId(this)
+    TSymbolTable() : mUniqueIdCounter(0), mUserDefinedUniqueIdsStart(-1)
     {
         // The symbol table cannot be used until push() is called, but
         // the lack of an initial call to push() can be used to detect
@@ -318,29 +137,29 @@ class TSymbolTable : angle::NonCopyable
     }
 
     // The declare* entry points are used when parsing and declare symbols at the current scope.
-    // They return the created symbol in case the declaration was successful, and nullptr if the
-    // declaration failed due to redefinition.
-    TVariable *declareVariable(const TString *name, const TType &type);
-    TVariable *declareStructType(TStructure *str);
-    TInterfaceBlockName *declareInterfaceBlockName(const TString *name);
+    // They return the created symbol / true in case the declaration was successful, and nullptr /
+    // false if the declaration failed due to redefinition.
+    bool declareVariable(TVariable *variable);
+    bool declareStructType(TStructure *str);
+    bool declareInterfaceBlock(TInterfaceBlock *interfaceBlock);
 
     // The insert* entry points are used when initializing the symbol table with built-ins.
-    // They return the created symbol in case the declaration was successful, and nullptr if the
-    // declaration failed due to redefinition.
+    // They return the created symbol / true in case the declaration was successful, and nullptr /
+    // false if the declaration failed due to redefinition.
     TVariable *insertVariable(ESymbolLevel level, const char *name, const TType &type);
     TVariable *insertVariableExt(ESymbolLevel level,
                                  TExtension ext,
                                  const char *name,
                                  const TType &type);
-    TVariable *insertStructType(ESymbolLevel level, TStructure *str);
-    TInterfaceBlockName *insertInterfaceBlockNameExt(ESymbolLevel level,
-                                                     TExtension ext,
-                                                     const TString *name);
+    bool insertVariable(ESymbolLevel level, TVariable *variable);
+    bool insertStructType(ESymbolLevel level, TStructure *str);
+    bool insertInterfaceBlock(ESymbolLevel level, TInterfaceBlock *interfaceBlock);
 
     bool insertConstInt(ESymbolLevel level, const char *name, int value, TPrecision precision)
     {
-        TVariable *constant =
-            new TVariable(this, NewPoolTString(name), TType(EbtInt, precision, EvqConst, 1));
+        TVariable *constant = new TVariable(
+            this, NewPoolTString(name), TType(EbtInt, precision, EvqConst, 1), SymbolType::BuiltIn);
+        constant->getType().realize();
         TConstantUnion *unionArray = new TConstantUnion[1];
         unionArray[0].setIConst(value);
         constant->shareConstPointer(unionArray);
@@ -354,11 +173,13 @@ class TSymbolTable : angle::NonCopyable
                            TPrecision precision)
     {
         TVariable *constant =
-            new TVariable(this, NewPoolTString(name), TType(EbtInt, precision, EvqConst, 1));
+            new TVariable(this, NewPoolTString(name), TType(EbtInt, precision, EvqConst, 1),
+                          SymbolType::BuiltIn, ext);
+        constant->getType().realize();
         TConstantUnion *unionArray = new TConstantUnion[1];
         unionArray[0].setIConst(value);
         constant->shareConstPointer(unionArray);
-        return insert(level, ext, constant);
+        return insert(level, constant);
     }
 
     bool insertConstIvec3(ESymbolLevel level,
@@ -366,8 +187,9 @@ class TSymbolTable : angle::NonCopyable
                           const std::array<int, 3> &values,
                           TPrecision precision)
     {
-        TVariable *constantIvec3 =
-            new TVariable(this, NewPoolTString(name), TType(EbtInt, precision, EvqConst, 3));
+        TVariable *constantIvec3 = new TVariable(
+            this, NewPoolTString(name), TType(EbtInt, precision, EvqConst, 3), SymbolType::BuiltIn);
+        constantIvec3->getType().realize();
 
         TConstantUnion *unionArray = new TConstantUnion[3];
         for (size_t index = 0u; index < 3u; ++index)
@@ -501,27 +323,26 @@ class TSymbolTable : angle::NonCopyable
 
     const TSymbolUniqueId nextUniqueId() { return TSymbolUniqueId(this); }
 
-    // The empty symbol id is shared between all empty string ("") symbols. They are used in the
-    // AST for unused function parameters and struct type declarations that don't declare a
-    // variable, for example.
-    const TSymbolUniqueId &getEmptySymbolId() { return mEmptySymbolId; }
-
     // Checks whether there is a built-in accessible by a shader with the specified version.
     bool hasUnmangledBuiltInForShaderVersion(const char *name, int shaderVersion);
 
+    void markBuiltInInitializationFinished();
+    void clearCompilationResults();
+
   private:
     friend class TSymbolUniqueId;
-    int nextUniqueIdValue() { return ++mUniqueIdCounter; }
+    int nextUniqueIdValue();
 
     ESymbolLevel currentLevel() const { return static_cast<ESymbolLevel>(table.size() - 1); }
 
-    TVariable *insertVariable(ESymbolLevel level, const TString *name, const TType &type);
+    TVariable *insertVariable(ESymbolLevel level,
+                              const TString *name,
+                              const TType &type,
+                              SymbolType symbolType);
 
-    bool insert(ESymbolLevel level, TSymbol *symbol) { return table[level]->insert(symbol); }
-
-    bool insert(ESymbolLevel level, TExtension ext, TSymbol *symbol)
+    bool insert(ESymbolLevel level, TSymbol *symbol)
     {
-        symbol->relateToExtension(ext);
+        ASSERT(level > LAST_BUILTIN_LEVEL || mUserDefinedUniqueIdsStart == -1);
         return table[level]->insert(symbol);
     }
 
@@ -537,7 +358,10 @@ class TSymbolTable : angle::NonCopyable
 
     int mUniqueIdCounter;
 
-    const TSymbolUniqueId mEmptySymbolId;
+    // -1 before built-in init has finished, one past the last built-in id afterwards.
+    // TODO(oetuaho): Make this a compile-time constant once the symbol table is initialized at
+    // compile time. http://anglebug.com/1432
+    int mUserDefinedUniqueIdsStart;
 };
 
 }  // namespace sh

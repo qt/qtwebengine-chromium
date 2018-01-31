@@ -14,6 +14,8 @@
             'common/MemoryBuffer.cpp',
             'common/MemoryBuffer.h',
             'common/Optional.h',
+            'common/aligned_memory.cpp',
+            'common/aligned_memory.h',
             'common/angleutils.cpp',
             'common/angleutils.h',
             'common/bitset_utils.h',
@@ -277,6 +279,8 @@
             'libANGLE/validationEGL.h',
             'libANGLE/validationES.cpp',
             'libANGLE/validationES.h',
+            'libANGLE/validationES1.cpp',
+            'libANGLE/validationES1.h',
             'libANGLE/validationES2.cpp',
             'libANGLE/validationES2.h',
             'libANGLE/validationES3.cpp',
@@ -525,8 +529,8 @@
             'libANGLE/renderer/d3d/d3d11/shaders/compiled/swizzleui3dps.h',
             'libANGLE/renderer/d3d/d3d11/StateManager11.cpp',
             'libANGLE/renderer/d3d/d3d11/StateManager11.h',
-            'libANGLE/renderer/d3d/d3d11/StreamProducerNV12.cpp',
-            'libANGLE/renderer/d3d/d3d11/StreamProducerNV12.h',
+            'libANGLE/renderer/d3d/d3d11/StreamProducerD3DTexture.cpp',
+            'libANGLE/renderer/d3d/d3d11/StreamProducerD3DTexture.h',
             'libANGLE/renderer/d3d/d3d11/SwapChain11.cpp',
             'libANGLE/renderer/d3d/d3d11/SwapChain11.h',
             'libANGLE/renderer/d3d/d3d11/TextureStorage11.cpp',
@@ -696,6 +700,8 @@
         [
             'libANGLE/renderer/gl/cgl/DisplayCGL.mm',
             'libANGLE/renderer/gl/cgl/DisplayCGL.h',
+            'libANGLE/renderer/gl/cgl/IOSurfaceSurfaceCGL.mm',
+            'libANGLE/renderer/gl/cgl/IOSurfaceSurfaceCGL.h',
             'libANGLE/renderer/gl/cgl/PbufferSurfaceCGL.mm',
             'libANGLE/renderer/gl/cgl/PbufferSurfaceCGL.h',
             'libANGLE/renderer/gl/cgl/WindowSurfaceCGL.mm',
@@ -705,6 +711,8 @@
         [
             'libANGLE/renderer/vulkan/BufferVk.cpp',
             'libANGLE/renderer/vulkan/BufferVk.h',
+            'libANGLE/renderer/vulkan/CommandBufferNode.cpp',
+            'libANGLE/renderer/vulkan/CommandBufferNode.h',
             'libANGLE/renderer/vulkan/CompilerVk.cpp',
             'libANGLE/renderer/vulkan/CompilerVk.h',
             'libANGLE/renderer/vulkan/ContextVk.cpp',
@@ -818,6 +826,8 @@
             'libGLESv2/entry_points_egl.h',
             'libGLESv2/entry_points_egl_ext.cpp',
             'libGLESv2/entry_points_egl_ext.h',
+            'libGLESv2/entry_points_gles_1_0_autogen.cpp',
+            'libGLESv2/entry_points_gles_1_0_autogen.h',
             'libGLESv2/entry_points_gles_2_0_autogen.cpp',
             'libGLESv2/entry_points_gles_2_0_autogen.h',
             'libGLESv2/entry_points_gles_2_0_ext.cpp',
@@ -826,6 +836,8 @@
             'libGLESv2/entry_points_gles_3_0_autogen.h',
             'libGLESv2/entry_points_gles_3_1_autogen.cpp',
             'libGLESv2/entry_points_gles_3_1_autogen.h',
+            'libGLESv2/entry_points_gles_ext_autogen.cpp',
+            'libGLESv2/entry_points_gles_ext_autogen.h',
             'libGLESv2/global_state.cpp',
             'libGLESv2/global_state.h',
             'libGLESv2/libGLESv2.cpp',
@@ -834,6 +846,13 @@
             'libGLESv2/proc_table.h',
             'libGLESv2/proc_table_autogen.cpp',
             'libGLESv2/resource.h',
+        ],
+        'libglesv1_cm_sources':
+        [
+            'libGLESv1_CM/libGLESv1_CM.cpp',
+            'libGLESv1_CM/libGLESv1_CM.def',
+            'libGLESv1_CM/libGLESv1_CM.rc',
+            'libGLESv1_CM/resource.h',
         ],
         'libegl_sources':
         [
@@ -924,13 +943,6 @@
                             'ANGLE_ENABLE_OPENGL_NULL',
                         ],
                     }],
-                    ['angle_enable_vulkan==1',
-                    {
-                        'defines':
-                        [
-                            'ANGLE_ENABLE_VULKAN',
-                        ],
-                    }],
                     ['angle_enable_null==1',
                     {
                         'defines':
@@ -1000,11 +1012,13 @@
                         'defines':
                         [
                             'GL_APICALL=',
+                            'GL_API=',
                         ],
                     }, {
                         'defines':
                         [
                             'GL_APICALL=__attribute__((visibility("default")))',
+                            'GL_API=__attribute__((visibility("default")))',
                         ],
                     }],
                     ['OS == "mac"',
@@ -1186,38 +1200,6 @@
                         }],
                     ],
                 }],
-                ['angle_enable_vulkan==1',
-                {
-                    'sources':
-                    [
-                        '<@(libangle_vulkan_sources)',
-                    ],
-                    'conditions':
-                    [
-                        ['OS=="win"',
-                        {
-                            'sources':
-                            [
-                                '<@(libangle_vulkan_win32_sources)',
-                            ],
-                        }],
-                        ['OS=="linux"',
-                        {
-                            'sources':
-                            [
-                                '<@(libangle_vulkan_xcb_sources)',
-                            ],
-                        }],
-                    ],
-                    'dependencies':
-                    [
-                        'angle_vulkan',
-                    ],
-                    'export_dependent_settings':
-                    [
-                        'angle_vulkan',
-                    ],
-                }],
                 ['angle_enable_null==1',
                 {
                     'sources':
@@ -1272,6 +1254,67 @@
             'sources':
             [
                 '<@(libglesv2_sources)',
+            ],
+            'conditions':
+            [
+                ['angle_build_winrt==1',
+                {
+                    'msvs_requires_importlibrary' : 'true',
+                }],
+            ],
+        },
+
+        {
+            'target_name': 'libGLESv1_CM',
+            'type': '<(angle_gl_library_type)',
+            'dependencies': [ 'libGLESv2' ],
+            'includes': [ '../gyp/common_defines.gypi', ],
+            'include_dirs':
+            [
+                '.',
+                '../include',
+            ],
+            'sources':
+            [
+                '<@(libglesv1_cm_sources)',
+            ],
+            'conditions':
+            [
+                ['angle_build_winrt==1',
+                {
+                    'msvs_requires_importlibrary' : 'true',
+                }],
+                ['OS=="win"',
+                {
+                    'defines':
+                    [
+                        'GL_APICALL=',
+                        'GL_API=',
+                    ],
+                },
+                {
+                    'defines':
+                    [
+                        'GL_APICALL=__attribute__((visibility("default")))',
+                        'GL_API=__attribute__((visibility("default")))',
+                    ],
+                }],
+            ],
+        },
+
+        {
+            'target_name': 'libGLESv1_CM_static',
+            'type': 'static_library',
+            'dependencies': [ 'libGLESv2_static' ],
+            'includes': [ '../gyp/common_defines.gypi', ],
+            'include_dirs':
+            [
+                '.',
+                '../include',
+            ],
+            'sources':
+            [
+                '<@(libglesv1_cm_sources)',
             ],
             'conditions':
             [

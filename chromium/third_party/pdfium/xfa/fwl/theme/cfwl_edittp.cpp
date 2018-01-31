@@ -11,6 +11,8 @@
 #include "xfa/fwl/cfwl_widget.h"
 #include "xfa/fxfa/cxfa_ffwidget.h"
 #include "xfa/fxfa/cxfa_fwltheme.h"
+#include "xfa/fxfa/parser/cxfa_border.h"
+#include "xfa/fxfa/parser/cxfa_edge.h"
 #include "xfa/fxgraphics/cxfa_gecolor.h"
 #include "xfa/fxgraphics/cxfa_gepath.h"
 
@@ -21,14 +23,14 @@ CFWL_EditTP::~CFWL_EditTP() {}
 void CFWL_EditTP::DrawBackground(CFWL_ThemeBackground* pParams) {
   if (CFWL_Part::CombTextLine == pParams->m_iPart) {
     CXFA_FFWidget* pWidget = XFA_ThemeGetOuterWidget(pParams->m_pWidget);
-    CXFA_BorderData borderUIData = pWidget->GetDataAcc()->GetUIBorderData();
+    CXFA_Border* borderUI = pWidget->GetNode()->GetWidgetAcc()->GetUIBorder();
     FX_ARGB cr = 0xFF000000;
     float fWidth = 1.0f;
-    if (borderUIData.HasValidNode()) {
-      CXFA_EdgeData edgeData = borderUIData.GetEdgeData(0);
-      if (edgeData.HasValidNode()) {
-        cr = edgeData.GetColor();
-        fWidth = edgeData.GetThickness();
+    if (borderUI) {
+      CXFA_Edge* edge = borderUI->GetEdgeIfExists(0);
+      if (edge) {
+        cr = edge->GetColor();
+        fWidth = edge->GetThickness();
       }
     }
     pParams->m_pGraphics->SetStrokeColor(CXFA_GEColor(cr));

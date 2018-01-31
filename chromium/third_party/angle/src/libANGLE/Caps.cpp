@@ -228,9 +228,7 @@ Extensions::Extensions()
       robustResourceInitialization(false),
       programCacheControl(false),
       textureRectangle(false),
-      geometryShader(false),
-      maxGeometryOutputVertices(0),
-      maxGeometryShaderInvocations(0)
+      geometryShader(false)
 {
 }
 
@@ -849,7 +847,28 @@ Caps::Caps()
       maxTransformFeedbackSeparateComponents(0),
 
       // Table 20.49
-      maxSamples(0)
+      maxSamples(0),
+
+      // Table 20.40 (cont.) (GL_EXT_geometry_shader)
+      maxFramebufferLayers(0),
+      layerProvokingVertex(0),
+
+      // Table 20.43gs (GL_EXT_geometry_shader)
+      maxGeometryUniformComponents(0),
+      maxGeometryUniformBlocks(0),
+      maxGeometryInputComponents(0),
+      maxGeometryOutputComponents(0),
+      maxGeometryOutputVertices(0),
+      maxGeometryTotalOutputComponents(0),
+      maxGeometryTextureImageUnits(0),
+      maxGeometryAtomicCounterBuffers(0),
+      maxGeometryAtomicCounters(0),
+      maxGeometryShaderStorageBlocks(0),
+      maxGeometryShaderInvocations(0),
+
+      // Table 20.46 (GL_EXT_geometry_shader)
+      maxGeometryImageUniforms(0),
+      maxCombinedGeometryUniformComponents(0)
 {
     for (size_t i = 0; i < 3; ++i)
     {
@@ -1053,6 +1072,37 @@ Caps GenerateMinimumCaps(const Version &clientVersion, const Extensions &extensi
         caps.maxRectangleTextureSize = 64;
     }
 
+    if (extensions.geometryShader)
+    {
+        // Table 20.40 (GL_EXT_geometry_shader)
+        caps.maxFramebufferLayers = 256;
+        caps.layerProvokingVertex = GL_LAST_VERTEX_CONVENTION_EXT;
+
+        // Table 20.43gs (GL_EXT_geometry_shader)
+        caps.maxGeometryUniformComponents     = 1024;
+        caps.maxGeometryUniformBlocks         = 12;
+        caps.maxGeometryInputComponents       = 64;
+        caps.maxGeometryOutputComponents      = 64;
+        caps.maxGeometryOutputVertices        = 256;
+        caps.maxGeometryTotalOutputComponents = 1024;
+        caps.maxGeometryTextureImageUnits     = 16;
+        caps.maxGeometryAtomicCounterBuffers  = 0;
+        caps.maxGeometryAtomicCounters        = 0;
+        caps.maxGeometryShaderStorageBlocks   = 0;
+        caps.maxGeometryShaderInvocations     = 32;
+
+        // Table 20.46 (GL_EXT_geometry_shader)
+        caps.maxGeometryImageUniforms = 0;
+        caps.maxCombinedGeometryUniformComponents =
+            caps.maxGeometryUniformBlocks * static_cast<GLuint>(caps.maxUniformBlockSize / 4) +
+            caps.maxGeometryUniformComponents;
+
+        // Table 20.46 (GL_EXT_geometry_shader)
+        caps.maxUniformBufferBindings     = 48;
+        caps.maxCombinedUniformBlocks     = 36;
+        caps.maxCombinedTextureImageUnits = 64;
+    }
+
     return caps;
 }
 }
@@ -1091,7 +1141,7 @@ DisplayExtensions::DisplayExtensions()
       stream(false),
       streamConsumerGLTexture(false),
       streamConsumerGLTextureYUV(false),
-      streamProducerD3DTextureNV12(false),
+      streamProducerD3DTexture(false),
       createContextWebGLCompatibility(false),
       createContextBindGeneratesResource(false),
       getSyncValues(false),
@@ -1101,7 +1151,8 @@ DisplayExtensions::DisplayExtensions()
       displayTextureShareGroup(false),
       createContextClientArrays(false),
       programCacheControl(false),
-      robustResourceInitialization(false)
+      robustResourceInitialization(false),
+      iosurfaceClientBuffer(false)
 {
 }
 
@@ -1135,7 +1186,7 @@ std::vector<std::string> DisplayExtensions::getStrings() const
     InsertExtensionString("EGL_KHR_stream_consumer_gltexture",                   streamConsumerGLTexture,            &extensionStrings);
     InsertExtensionString("EGL_NV_stream_consumer_gltexture_yuv",                streamConsumerGLTextureYUV,         &extensionStrings);
     InsertExtensionString("EGL_ANGLE_flexible_surface_compatibility",            flexibleSurfaceCompatibility,       &extensionStrings);
-    InsertExtensionString("EGL_ANGLE_stream_producer_d3d_texture_nv12",          streamProducerD3DTextureNV12,       &extensionStrings);
+    InsertExtensionString("EGL_ANGLE_stream_producer_d3d_texture",               streamProducerD3DTexture,           &extensionStrings);
     InsertExtensionString("EGL_ANGLE_create_context_webgl_compatibility",        createContextWebGLCompatibility,    &extensionStrings);
     InsertExtensionString("EGL_CHROMIUM_create_context_bind_generates_resource", createContextBindGeneratesResource, &extensionStrings);
     InsertExtensionString("EGL_CHROMIUM_sync_control",                           getSyncValues,                      &extensionStrings);
@@ -1146,6 +1197,7 @@ std::vector<std::string> DisplayExtensions::getStrings() const
     InsertExtensionString("EGL_ANGLE_create_context_client_arrays",              createContextClientArrays,          &extensionStrings);
     InsertExtensionString("EGL_ANGLE_program_cache_control",                     programCacheControl,                &extensionStrings);
     InsertExtensionString("EGL_ANGLE_robust_resource_initialization",            robustResourceInitialization,       &extensionStrings);
+    InsertExtensionString("EGL_ANGLE_iosurface_client_buffer",                   iosurfaceClientBuffer,              &extensionStrings);
     // TODO(jmadill): Enable this when complete.
     //InsertExtensionString("KHR_create_context_no_error",                       createContextNoError,               &extensionStrings);
     // clang-format on

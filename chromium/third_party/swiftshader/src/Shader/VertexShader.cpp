@@ -23,7 +23,7 @@ namespace sw
 {
 	VertexShader::VertexShader(const VertexShader *vs) : Shader()
 	{
-		version = 0x0300;
+		shaderModel = 0x0300;
 		positionRegister = Pos;
 		pointSizeRegister = Unused;
 		instanceIdDeclared = false;
@@ -226,16 +226,16 @@ namespace sw
 
 	void VertexShader::analyzeOutput()
 	{
-		if(version < 0x0300)
+		if(shaderModel < 0x0300)
 		{
 			output[Pos][0] = Semantic(Shader::USAGE_POSITION, 0);
 			output[Pos][1] = Semantic(Shader::USAGE_POSITION, 0);
 			output[Pos][2] = Semantic(Shader::USAGE_POSITION, 0);
 			output[Pos][3] = Semantic(Shader::USAGE_POSITION, 0);
 
-			for(unsigned int i = 0; i < instruction.size(); i++)
+			for(const auto &inst : instruction)
 			{
-				const DestinationParameter &dst = instruction[i]->dst;
+				const DestinationParameter &dst = inst->dst;
 
 				switch(dst.type)
 				{
@@ -285,15 +285,15 @@ namespace sw
 		}
 		else   // Shader Model 3.0 input declaration
 		{
-			for(unsigned int i = 0; i < instruction.size(); i++)
+			for(const auto &inst : instruction)
 			{
-				if(instruction[i]->opcode == Shader::OPCODE_DCL &&
-				   instruction[i]->dst.type == Shader::PARAMETER_OUTPUT)
+				if(inst->opcode == Shader::OPCODE_DCL &&
+				   inst->dst.type == Shader::PARAMETER_OUTPUT)
 				{
-					unsigned char usage = instruction[i]->usage;
-					unsigned char usageIndex = instruction[i]->usageIndex;
+					unsigned char usage = inst->usage;
+					unsigned char usageIndex = inst->usageIndex;
 
-					const DestinationParameter &dst = instruction[i]->dst;
+					const DestinationParameter &dst = inst->dst;
 
 					if(dst.x) output[dst.index][0] = Semantic(usage, usageIndex);
 					if(dst.y) output[dst.index][1] = Semantic(usage, usageIndex);
@@ -318,11 +318,12 @@ namespace sw
 	{
 		textureSampling = false;
 
-		for(unsigned int i = 0; i < instruction.size() && !textureSampling; i++)
+		for(const auto &inst : instruction)
 		{
-			if(instruction[i]->src[1].type == PARAMETER_SAMPLER)
+			if(inst->src[1].type == PARAMETER_SAMPLER)
 			{
 				textureSampling = true;
+				break;
 			}
 		}
 	}

@@ -18,11 +18,14 @@
 #include "xfa/fxfa/cxfa_ffwidget.h"
 #include "xfa/fxfa/cxfa_textlayout.h"
 #include "xfa/fxfa/cxfa_textprovider.h"
+#include "xfa/fxfa/parser/cxfa_border.h"
+#include "xfa/fxfa/parser/cxfa_caption.h"
+#include "xfa/fxfa/parser/cxfa_edge.h"
 #include "xfa/fxgraphics/cxfa_gecolor.h"
 #include "xfa/fxgraphics/cxfa_gepath.h"
 
-CXFA_FFPushButton::CXFA_FFPushButton(CXFA_WidgetAcc* pDataAcc)
-    : CXFA_FFField(pDataAcc), m_pOldDelegate(nullptr) {}
+CXFA_FFPushButton::CXFA_FFPushButton(CXFA_Node* pNode)
+    : CXFA_FFField(pNode), m_pOldDelegate(nullptr) {}
 
 CXFA_FFPushButton::~CXFA_FFPushButton() {
   CXFA_FFPushButton::UnloadWidget();
@@ -68,7 +71,7 @@ bool CXFA_FFPushButton::LoadWidget() {
 
 void CXFA_FFPushButton::UpdateWidgetProperty() {
   uint32_t dwStyleEx = 0;
-  switch (m_pDataAcc->GetButtonHighlight()) {
+  switch (m_pNode->GetWidgetAcc()->GetButtonHighlight()) {
     case XFA_AttributeEnum::Inverted:
       dwStyleEx = XFA_FWL_PSBSTYLEEXT_HiliteInverted;
       break;
@@ -97,15 +100,16 @@ bool CXFA_FFPushButton::PerformLayout() {
   CFX_RectF rtWidget = GetRectWithoutRotate();
 
   m_rtUI = rtWidget;
-  CXFA_MarginData marginData = m_pDataAcc->GetMarginData();
-  if (marginData.HasValidNode())
-    XFA_RectWidthoutMargin(rtWidget, marginData);
+  CXFA_Margin* margin = m_pNode->GetMarginIfExists();
+  if (margin)
+    XFA_RectWithoutMargin(rtWidget, margin);
 
-  CXFA_CaptionData captionData = m_pDataAcc->GetCaptionData();
   m_rtCaption = rtWidget;
-  CXFA_MarginData captionMarginData = captionData.GetMarginData();
-  if (captionMarginData.HasValidNode())
-    XFA_RectWidthoutMargin(m_rtCaption, captionMarginData);
+
+  CXFA_Caption* caption = m_pNode->GetCaptionIfExists();
+  CXFA_Margin* captionMargin = caption ? caption->GetMarginIfExists() : nullptr;
+  if (captionMargin)
+    XFA_RectWithoutMargin(m_rtCaption, captionMargin);
 
   LayoutHighlightCaption();
   SetFWLRect();
@@ -114,13 +118,13 @@ bool CXFA_FFPushButton::PerformLayout() {
 
   return true;
 }
-float CXFA_FFPushButton::GetLineWidth() {
-  CXFA_BorderData borderData = m_pDataAcc->GetBorderData(false);
-  if (borderData.HasValidNode() &&
-      borderData.GetPresence() == XFA_AttributeEnum::Visible) {
-    return borderData.GetEdgeData(0).GetThickness();
-  }
 
+float CXFA_FFPushButton::GetLineWidth() {
+  CXFA_Border* border = m_pNode->GetBorderIfExists();
+  if (border && border->GetPresence() == XFA_AttributeEnum::Visible) {
+    CXFA_Edge* edge = border->GetEdgeIfExists(0);
+    return edge ? edge->GetThickness() : 0;
+  }
   return 0;
 }
 
@@ -133,26 +137,26 @@ FX_ARGB CXFA_FFPushButton::GetFillColor() {
 }
 
 void CXFA_FFPushButton::LoadHighlightCaption() {
-  CXFA_CaptionData captionData = m_pDataAcc->GetCaptionData();
-  if (!captionData.HasValidNode() || captionData.IsHidden())
+  CXFA_Caption* caption = m_pNode->GetCaptionIfExists();
+  if (!caption || caption->IsHidden())
     return;
 
-  if (m_pDataAcc->HasButtonRollover()) {
+  if (m_pNode->GetWidgetAcc()->HasButtonRollover()) {
     if (!m_pRollProvider) {
       m_pRollProvider = pdfium::MakeUnique<CXFA_TextProvider>(
-          m_pDataAcc.Get(), XFA_TEXTPROVIDERTYPE_Rollover);
+          m_pNode->GetWidgetAcc(), XFA_TEXTPROVIDERTYPE_Rollover);
     }
     m_pRolloverTextLayout =
-        pdfium::MakeUnique<CXFA_TextLayout>(m_pRollProvider.get());
+        pdfium::MakeUnique<CXFA_TextLayout>(GetDoc(), m_pRollProvider.get());
   }
 
-  if (m_pDataAcc->HasButtonDown()) {
+  if (m_pNode->GetWidgetAcc()->HasButtonDown()) {
     if (!m_pDownProvider) {
       m_pDownProvider = pdfium::MakeUnique<CXFA_TextProvider>(
-          m_pDataAcc.Get(), XFA_TEXTPROVIDERTYPE_Down);
+          m_pNode->GetWidgetAcc(), XFA_TEXTPROVIDERTYPE_Down);
     }
     m_pDownTextLayout =
-        pdfium::MakeUnique<CXFA_TextLayout>(m_pDownProvider.get());
+        pdfium::MakeUnique<CXFA_TextLayout>(GetDoc(), m_pDownProvider.get());
   }
 }
 
@@ -167,9 +171,10 @@ void CXFA_FFPushButton::LayoutHighlightCaption() {
 
 void CXFA_FFPushButton::RenderHighlightCaption(CXFA_Graphics* pGS,
                                                CFX_Matrix* pMatrix) {
-  CXFA_TextLayout* pCapTextLayout = m_pDataAcc->GetCaptionTextLayout();
-  CXFA_CaptionData captionData = m_pDataAcc->GetCaptionData();
-  if (!captionData.HasValidNode() || !captionData.IsVisible())
+  CXFA_TextLayout* pCapTextLayout =
+      m_pNode->GetWidgetAcc()->GetCaptionTextLayout();
+  CXFA_Caption* caption = m_pNode->GetCaptionIfExists();
+  if (!caption || !caption->IsVisible())
     return;
 
   CFX_RenderDevice* pRenderDevice = pGS->GetRenderDevice();
@@ -233,4 +238,8 @@ void CXFA_FFPushButton::OnDrawWidget(CXFA_Graphics* pGraphics,
       pGraphics->StrokePath(&path, &matrix);
     }
   }
+}
+
+FormFieldType CXFA_FFPushButton::GetFormFieldType() {
+  return FormFieldType::kXFA_PushButton;
 }

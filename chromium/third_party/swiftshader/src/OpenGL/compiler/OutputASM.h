@@ -55,9 +55,9 @@ namespace glsl
 		bool isRowMajorMatrix;
 	};
 
-	struct Uniform
+	struct ShaderVariable
 	{
-		Uniform(GLenum type, GLenum precision, const std::string &name, int arraySize, int registerIndex, int blockId, const BlockMemberInfo& blockMemberInfo);
+		ShaderVariable(const TType& type, const std::string& name, int registerIndex);
 
 		GLenum type;
 		GLenum precision;
@@ -65,6 +65,13 @@ namespace glsl
 		int arraySize;
 
 		int registerIndex;
+
+		std::vector<ShaderVariable> fields;
+	};
+
+	struct Uniform : public ShaderVariable
+	{
+		Uniform(const TType& type, const std::string &name, int registerIndex, int blockId, const BlockMemberInfo& blockMemberInfo);
 
 		int blockId;
 		BlockMemberInfo blockInfo;
@@ -150,10 +157,10 @@ namespace glsl
 
 	typedef std::vector<Attribute> ActiveAttributes;
 
-	struct Varying
+	struct Varying : public ShaderVariable
 	{
-		Varying(GLenum type, const std::string &name, int arraySize, int reg = -1, int col = -1)
-			: type(type), name(name), arraySize(arraySize), reg(reg), col(col)
+		Varying(const TType& type, const std::string &name, int reg = -1, int col = -1)
+			: ShaderVariable(type, name, reg), qualifier(type.getQualifier()), column(col)
 		{
 		}
 
@@ -167,12 +174,8 @@ namespace glsl
 			return arraySize > 0 ? arraySize : 1;
 		}
 
-		GLenum type;
-		std::string name;
-		int arraySize;
-
-		int reg;    // First varying register, assigned during link
-		int col;    // First register element, assigned during link
+		TQualifier qualifier;
+		int column;    // First register element, assigned during link
 	};
 
 	typedef std::list<Varying> VaryingList;
@@ -185,12 +188,15 @@ namespace glsl
 		virtual sw::Shader *getShader() const = 0;
 		virtual sw::PixelShader *getPixelShader() const;
 		virtual sw::VertexShader *getVertexShader() const;
+		int getShaderVersion() const { return shaderVersion; }
 
 	protected:
 		VaryingList varyings;
 		ActiveUniforms activeUniforms;
+		ActiveUniforms activeUniformStructs;
 		ActiveAttributes activeAttributes;
 		ActiveUniformBlocks activeUniformBlocks;
+		int shaderVersion;
 	};
 
 	struct Function
@@ -251,14 +257,14 @@ namespace glsl
 		void emitShader(Scope scope);
 
 		// Visit AST nodes and output their code to the body stream
-		virtual void visitSymbol(TIntermSymbol*);
-		virtual bool visitBinary(Visit visit, TIntermBinary*);
-		virtual bool visitUnary(Visit visit, TIntermUnary*);
-		virtual bool visitSelection(Visit visit, TIntermSelection*);
-		virtual bool visitAggregate(Visit visit, TIntermAggregate*);
-		virtual bool visitLoop(Visit visit, TIntermLoop*);
-		virtual bool visitBranch(Visit visit, TIntermBranch*);
-		virtual bool visitSwitch(Visit, TIntermSwitch*);
+		void visitSymbol(TIntermSymbol*) override;
+		bool visitBinary(Visit visit, TIntermBinary*) override;
+		bool visitUnary(Visit visit, TIntermUnary*) override;
+		bool visitSelection(Visit visit, TIntermSelection*) override;
+		bool visitAggregate(Visit visit, TIntermAggregate*) override;
+		bool visitLoop(Visit visit, TIntermLoop*) override;
+		bool visitBranch(Visit visit, TIntermBranch*) override;
+		bool visitSwitch(Visit, TIntermSwitch*) override;
 
 		sw::Shader::Opcode getOpcode(sw::Shader::Opcode op, TIntermTyped *in) const;
 		Instruction *emit(sw::Shader::Opcode op, TIntermTyped *dst = 0, TIntermNode *src0 = 0, TIntermNode *src1 = 0, TIntermNode *src2 = 0, TIntermNode *src3 = 0, TIntermNode *src4 = 0);
@@ -270,10 +276,13 @@ namespace glsl
 		void emitAssign(sw::Shader::Opcode op, TIntermTyped *result, TIntermTyped *lhs, TIntermTyped *src0, TIntermTyped *src1 = 0);
 		void emitCmp(sw::Shader::Control cmpOp, TIntermTyped *dst, TIntermNode *left, TIntermNode *right, int index = 0);
 		void emitDeterminant(TIntermTyped *result, TIntermTyped *arg, int size, int col = -1, int row = -1, int outCol = 0, int outRow = 0);
-		void argument(sw::Shader::SourceParameter &parameter, TIntermNode *argument, int index = 0);
+		void source(sw::Shader::SourceParameter &parameter, TIntermNode *argument, int index = 0);
+		void destination(sw::Shader::DestinationParameter &parameter, TIntermTyped *argument, int index = 0);
 		void copy(TIntermTyped *dst, TIntermNode *src, int offset = 0);
 		void assignLvalue(TIntermTyped *dst, TIntermTyped *src);
-		int lvalue(sw::Shader::DestinationParameter &dst, Temporary &address, TIntermTyped *node);
+		void evaluateRvalue(TIntermTyped *node);
+		int lvalue(sw::Shader::DestinationParameter &dst, TIntermTyped *node);
+		int lvalue(TIntermTyped *&root, unsigned int &offset, sw::Shader::Relative &rel, unsigned char &mask, Temporary &address, TIntermTyped *node);
 		sw::Shader::ParameterType registerType(TIntermTyped *operand);
 		bool hasFlatQualifier(TIntermTyped *operand);
 		unsigned int registerIndex(TIntermTyped *operand);
@@ -285,7 +294,9 @@ namespace glsl
 
 		int temporaryRegister(TIntermTyped *temporary);
 		int varyingRegister(TIntermTyped *varying);
+		void setPixelShaderInputs(const TType& type, int var, bool flat);
 		void declareVarying(TIntermTyped *varying, int reg);
+		void declareVarying(const TType &type, const TString &name, int registerIndex);
 		int uniformRegister(TIntermTyped *uniform);
 		int attributeRegister(TIntermTyped *attribute);
 		int fragmentOutputRegister(TIntermTyped *fragmentOutput);
@@ -298,12 +309,10 @@ namespace glsl
 		int lookup(VariableArray &list, TIntermTyped *variable);
 		int lookup(VariableArray &list, TInterfaceBlock *block);
 		int blockMemberLookup(const TType &type, const TString &name, int registerIndex);
-		int allocate(VariableArray &list, TIntermTyped *variable);
+		int allocate(VariableArray &list, TIntermTyped *variable, bool samplersOnly = false);
 		void free(VariableArray &list, TIntermTyped *variable);
 
-		void declareUniform(const TType &type, const TString &name, int registerIndex, int blockId = -1, BlockLayoutEncoder* encoder = nullptr);
-		GLenum glVariableType(const TType &type);
-		GLenum glVariablePrecision(const TType &type);
+		void declareUniform(const TType &type, const TString &name, int registerIndex, bool samplersOnly, int blockId = -1, BlockLayoutEncoder* encoder = nullptr);
 
 		static int dim(TIntermNode *v);
 		static int dim2(TIntermNode *m);

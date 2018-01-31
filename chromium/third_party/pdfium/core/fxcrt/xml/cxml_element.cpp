@@ -9,6 +9,25 @@
 #include "core/fxcrt/xml/cxml_content.h"
 #include "core/fxcrt/xml/cxml_parser.h"
 
+namespace {
+
+void SplitQualifiedName(const ByteStringView& bsFullName,
+                        ByteStringView* bsSpace,
+                        ByteStringView* bsName) {
+  if (bsFullName.IsEmpty())
+    return;
+
+  auto iStart = bsFullName.Find(':');
+  if (iStart.has_value()) {
+    *bsSpace = bsFullName.Left(iStart.value());
+    *bsName = bsFullName.Right(bsFullName.GetLength() - (iStart.value() + 1));
+  } else {
+    *bsName = bsFullName;
+  }
+}
+
+}  // namespace
+
 // static
 std::unique_ptr<CXML_Element> CXML_Element::Parse(const void* pBuffer,
                                                   size_t size) {
@@ -33,173 +52,114 @@ const CXML_Element* CXML_Element::AsElement() const {
   return this;
 }
 
-ByteString CXML_Element::GetTagName(bool bQualified) const {
-  if (!bQualified || m_QSpaceName.IsEmpty()) {
-    return m_TagName;
-  }
-  ByteString bsTag = m_QSpaceName;
-  bsTag += ":";
-  bsTag += m_TagName;
-  return bsTag;
-}
-
-ByteString CXML_Element::GetNamespace(bool bQualified) const {
-  return bQualified ? m_QSpaceName : GetNamespaceURI(m_QSpaceName);
+ByteString CXML_Element::GetTagName() const {
+  return m_TagName;
 }
 
 ByteString CXML_Element::GetNamespaceURI(const ByteString& qName) const {
-  const WideString* pwsSpace;
   const CXML_Element* pElement = this;
   do {
+    const WideString* pwsSpace;
     if (qName.IsEmpty())
-      pwsSpace = pElement->m_AttrMap.Lookup("", "xmlns");
+      pwsSpace = pElement->Lookup("", "xmlns");
     else
-      pwsSpace = pElement->m_AttrMap.Lookup("xmlns", qName);
+      pwsSpace = pElement->Lookup("xmlns", qName);
     if (pwsSpace)
-      break;
+      return pwsSpace->UTF8Encode();
 
     pElement = pElement->GetParent();
   } while (pElement);
-  return pwsSpace ? pwsSpace->UTF8Encode() : ByteString();
+  return ByteString();
 }
 
-void CXML_Element::GetAttrByIndex(int index,
+void CXML_Element::GetAttrByIndex(size_t index,
                                   ByteString* space,
                                   ByteString* name,
                                   WideString* value) const {
-  if (index < 0 || index >= m_AttrMap.GetSize())
+  if (index >= m_AttrMap.size())
     return;
 
-  CXML_AttrItem& item = m_AttrMap.GetAt(index);
+  const CXML_AttrItem& item = m_AttrMap[index];
   *space = item.m_QSpaceName;
   *name = item.m_AttrName;
   *value = item.m_Value;
 }
 
-bool CXML_Element::HasAttr(const ByteStringView& name) const {
+WideString CXML_Element::GetAttrValue(const ByteStringView& name) const {
   ByteStringView bsSpace;
   ByteStringView bsName;
-  FX_XML_SplitQualifiedName(name, bsSpace, bsName);
-  return !!m_AttrMap.Lookup(ByteString(bsSpace), ByteString(bsName));
+  SplitQualifiedName(name, &bsSpace, &bsName);
+
+  WideString attr;
+  const WideString* pValue = Lookup(ByteString(bsSpace), ByteString(bsName));
+  if (pValue)
+    attr = *pValue;
+  return attr;
 }
 
-bool CXML_Element::GetAttrValue(const ByteStringView& name,
-                                WideString& attribute) const {
+int CXML_Element::GetAttrInteger(const ByteStringView& name) const {
   ByteStringView bsSpace;
   ByteStringView bsName;
-  FX_XML_SplitQualifiedName(name, bsSpace, bsName);
-  return GetAttrValue(bsSpace, bsName, attribute);
+  SplitQualifiedName(name, &bsSpace, &bsName);
+
+  const WideString* pwsValue = Lookup(ByteString(bsSpace), ByteString(bsName));
+  return pwsValue ? pwsValue->GetInteger() : 0;
 }
 
-bool CXML_Element::GetAttrValue(const ByteStringView& space,
-                                const ByteStringView& name,
-                                WideString& attribute) const {
-  const WideString* pValue =
-      m_AttrMap.Lookup(ByteString(space), ByteString(name));
-  if (!pValue)
-    return false;
-
-  attribute = *pValue;
-  return true;
-}
-
-bool CXML_Element::GetAttrInteger(const ByteStringView& name,
-                                  int& attribute) const {
-  ByteStringView bsSpace;
-  ByteStringView bsName;
-  FX_XML_SplitQualifiedName(name, bsSpace, bsName);
-  const WideString* pwsValue =
-      m_AttrMap.Lookup(ByteString(bsSpace), ByteString(bsName));
-  if (!pwsValue)
-    return false;
-
-  attribute = pwsValue->GetInteger();
-  return true;
-}
-
-bool CXML_Element::GetAttrInteger(const ByteStringView& space,
-                                  const ByteStringView& name,
-                                  int& attribute) const {
-  const WideString* pwsValue =
-      m_AttrMap.Lookup(ByteString(space), ByteString(name));
-  if (!pwsValue)
-    return false;
-
-  attribute = pwsValue->GetInteger();
-  return true;
-}
-
-bool CXML_Element::GetAttrFloat(const ByteStringView& name,
-                                float& attribute) const {
-  ByteStringView bsSpace;
-  ByteStringView bsName;
-  FX_XML_SplitQualifiedName(name, bsSpace, bsName);
-  return GetAttrFloat(bsSpace, bsName, attribute);
-}
-
-bool CXML_Element::GetAttrFloat(const ByteStringView& space,
-                                const ByteStringView& name,
-                                float& attribute) const {
-  const WideString* pValue =
-      m_AttrMap.Lookup(ByteString(space), ByteString(name));
-  if (!pValue)
-    return false;
-
-  attribute = pValue->GetFloat();
-  return true;
-}
-
-uint32_t CXML_Element::CountElements(const ByteStringView& space,
-                                     const ByteStringView& tag) const {
-  int count = 0;
+size_t CXML_Element::CountElements(const ByteStringView& space,
+                                   const ByteStringView& tag) const {
+  size_t count = 0;
   for (const auto& pChild : m_Children) {
     const CXML_Element* pKid = pChild->AsElement();
-    if (pKid && pKid->m_TagName == tag &&
-        (space.IsEmpty() || pKid->m_QSpaceName == space)) {
+    if (MatchesElement(pKid, space, tag))
       count++;
-    }
   }
   return count;
 }
 
-CXML_Object* CXML_Element::GetChild(uint32_t index) const {
+CXML_Object* CXML_Element::GetChild(size_t index) const {
   return index < m_Children.size() ? m_Children[index].get() : nullptr;
 }
 
 CXML_Element* CXML_Element::GetElement(const ByteStringView& space,
                                        const ByteStringView& tag,
-                                       int nth) const {
-  if (nth < 0)
-    return nullptr;
-
+                                       size_t nth) const {
   for (const auto& pChild : m_Children) {
     CXML_Element* pKid = pChild->AsElement();
-    if (pKid && pKid->m_TagName == tag &&
-        (space.IsEmpty() || pKid->m_QSpaceName == space)) {
-      if (nth-- == 0)
+    if (MatchesElement(pKid, space, tag)) {
+      if (nth == 0)
         return pKid;
+      --nth;
     }
   }
   return nullptr;
 }
 
-uint32_t CXML_Element::FindElement(CXML_Element* pElement) const {
-  int index = 0;
-  for (const auto& pChild : m_Children) {
-    CXML_Element* pKid = pChild->AsElement();
-    if (pKid && pKid == pElement)
-      return index;
-
-    ++index;
+void CXML_Element::SetAttribute(const ByteString& space,
+                                const ByteString& name,
+                                const WideString& value) {
+  for (CXML_AttrItem& item : m_AttrMap) {
+    if (item.Matches(space, name)) {
+      item.m_Value = value;
+      return;
+    }
   }
-  return 0xFFFFFFFF;
+  m_AttrMap.push_back({space, name, WideString(value)});
 }
 
-void CXML_Element::SetTag(const ByteStringView& qTagName) {
-  ASSERT(!qTagName.IsEmpty());
-  ByteStringView bsSpace;
-  ByteStringView bsName;
-  FX_XML_SplitQualifiedName(qTagName, bsSpace, bsName);
-  m_QSpaceName = bsSpace;
-  m_TagName = bsName;
+// static
+bool CXML_Element::MatchesElement(const CXML_Element* pKid,
+                                  const ByteStringView& space,
+                                  const ByteStringView& tag) {
+  return pKid && pKid->m_TagName == tag &&
+         (space.IsEmpty() || pKid->m_QSpaceName == space);
+}
+
+const WideString* CXML_Element::Lookup(const ByteString& space,
+                                       const ByteString& name) const {
+  for (const CXML_AttrItem& item : m_AttrMap) {
+    if (item.Matches(space, name))
+      return &item.m_Value;
+  }
+  return nullptr;
 }

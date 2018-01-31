@@ -182,6 +182,11 @@ bool Texture::setMaxAnisotropy(float textureMaxAnisotropy)
 
 bool Texture::setBaseLevel(GLint baseLevel)
 {
+	if(baseLevel < 0)
+	{
+		return false;
+	}
+
 	mBaseLevel = baseLevel;
 	return true;
 }
@@ -431,22 +436,7 @@ void Texture::subImage(egl::Context *context, GLint xoffset, GLint yoffset, GLin
 		return error(GL_INVALID_OPERATION);
 	}
 
-	if(width + xoffset > image->getWidth() || height + yoffset > image->getHeight() || depth + zoffset > image->getDepth())
-	{
-		return error(GL_INVALID_VALUE);
-	}
-
-	if(IsCompressed(image->getFormat(), egl::getClientVersion()))
-	{
-		return error(GL_INVALID_OPERATION);
-	}
-
-	if(format != image->getFormat())
-	{
-		return error(GL_INVALID_OPERATION);
-	}
-
-	if(pixels)
+	if(pixels && width > 0 && height > 0 && depth > 0)
 	{
 		image->loadImageData(context, xoffset, yoffset, zoffset, width, height, depth, format, type, unpackInfo, pixels);
 	}
@@ -459,28 +449,23 @@ void Texture::subImageCompressed(GLint xoffset, GLint yoffset, GLint zoffset, GL
 		return error(GL_INVALID_OPERATION);
 	}
 
-	if(width + xoffset > image->getWidth() || height + yoffset > image->getHeight() || depth + zoffset > image->getDepth())
-	{
-		return error(GL_INVALID_VALUE);
-	}
-
-	if(format != image->getFormat())
-	{
-		return error(GL_INVALID_OPERATION);
-	}
-
 	if(pixels && (imageSize > 0)) // imageSize's correlation to width and height is already validated with egl::ComputeCompressedSize() at the API level
 	{
 		image->loadCompressedData(xoffset, yoffset, zoffset, width, height, depth, imageSize, pixels);
 	}
 }
 
-bool Texture::copy(egl::Image *source, const sw::SliceRect &sourceRect, GLenum destFormat, GLint xoffset, GLint yoffset, GLint zoffset, egl::Image *dest)
+bool Texture::copy(egl::Image *source, const sw::SliceRect &sourceRect, GLint xoffset, GLint yoffset, GLint zoffset, egl::Image *dest)
 {
 	Device *device = getDevice();
 
 	sw::SliceRect destRect(xoffset, yoffset, xoffset + (sourceRect.x1 - sourceRect.x0), yoffset + (sourceRect.y1 - sourceRect.y0), zoffset);
-	bool success = device->stretchRect(source, &sourceRect, dest, &destRect, Device::ALL_BUFFERS);
+	sw::SliceRectF sourceRectF(static_cast<float>(sourceRect.x0),
+	                           static_cast<float>(sourceRect.y0),
+	                           static_cast<float>(sourceRect.x1),
+	                           static_cast<float>(sourceRect.y1),
+	                           sourceRect.slice);
+	bool success = device->stretchRect(source, &sourceRectF, dest, &destRect, Device::ALL_BUFFERS);
 
 	if(!success)
 	{
@@ -614,23 +599,17 @@ GLenum Texture2D::getType(GLenum target, GLint level) const
 	return image[level] ? image[level]->getType() : GL_NONE;
 }
 
-sw::Format Texture2D::getInternalFormat(GLenum target, GLint level) const
-{
-	ASSERT(target == GL_TEXTURE_2D);
-	return image[level] ? image[level]->getInternalFormat() : sw::FORMAT_NULL;
-}
-
-int Texture2D::getLevelCount() const
+int Texture2D::getTopLevel() const
 {
 	ASSERT(isSamplerComplete());
-	int levels = 0;
+	int level = mBaseLevel;
 
-	while(levels < IMPLEMENTATION_MAX_TEXTURE_LEVELS && image[levels])
+	while(level < IMPLEMENTATION_MAX_TEXTURE_LEVELS && image[level])
 	{
-		levels++;
+		level++;
 	}
 
-	return levels;
+	return level - 1;
 }
 
 void Texture2D::setImage(egl::Context *context, GLint level, GLsizei width, GLsizei height, GLenum format, GLenum type, const egl::Image::UnpackInfo& unpackInfo, const void *pixels)
@@ -698,7 +677,7 @@ void Texture2D::setCompressedImage(GLint level, GLenum format, GLsizei width, GL
 		image[level]->release();
 	}
 
-	GLenum sizedInternalFormat = GetSizedInternalFormat(format, GL_UNSIGNED_BYTE);
+	GLint sizedInternalFormat = GetSizedInternalFormat(format, GL_UNSIGNED_BYTE);
 	image[level] = egl::Image::create(this, width, height, sizedInternalFormat, GL_UNSIGNED_BYTE);
 
 	if(!image[level])
@@ -734,7 +713,7 @@ void Texture2D::copyImage(GLint level, GLenum format, GLint x, GLint y, GLsizei 
 		image[level]->release();
 	}
 
-	GLenum sizedInternalFormat = GetSizedInternalFormat(format, GL_UNSIGNED_BYTE);
+	GLint sizedInternalFormat = GetSizedInternalFormat(format, GL_UNSIGNED_BYTE);
 	image[level] = egl::Image::create(this, width, height, sizedInternalFormat, GL_UNSIGNED_BYTE);
 
 	if(!image[level])
@@ -755,7 +734,7 @@ void Texture2D::copyImage(GLint level, GLenum format, GLint x, GLint y, GLsizei 
 		sw::SliceRect sourceRect(x, y, x + width, y + height, 0);
 		sourceRect.clip(0, 0, renderbuffer->getWidth(), renderbuffer->getHeight());
 
-		copy(renderTarget, sourceRect, sizedInternalFormat, 0, 0, 0, image[level]);
+		copy(renderTarget, sourceRect, 0, 0, 0, image[level]);
 	}
 
 	renderTarget->release();
@@ -773,28 +752,31 @@ void Texture2D::copySubImage(GLenum target, GLint level, GLint xoffset, GLint yo
 		return error(GL_INVALID_VALUE);
 	}
 
-	egl::Image *renderTarget = source->getRenderTarget(0);
-
-	if(!renderTarget)
+	if(width > 0 && height > 0)
 	{
-		ERR("Failed to retrieve the render target.");
-		return error(GL_OUT_OF_MEMORY);
+		egl::Image *renderTarget = source->getRenderTarget(0);
+
+		if(!renderTarget)
+		{
+			ERR("Failed to retrieve the render target.");
+			return error(GL_OUT_OF_MEMORY);
+		}
+
+		Renderbuffer* renderbuffer = source->getReadColorbuffer();
+
+		if(!renderbuffer)
+		{
+			ERR("Failed to retrieve the source colorbuffer.");
+			return;
+		}
+
+		sw::SliceRect sourceRect(x, y, x + width, y + height, 0);
+		sourceRect.clip(0, 0, renderbuffer->getWidth(), renderbuffer->getHeight());
+
+		copy(renderTarget, sourceRect, xoffset, yoffset, zoffset, image[level]);
+
+		renderTarget->release();
 	}
-
-	Renderbuffer* renderbuffer = source->getReadColorbuffer();
-
-	if(!renderbuffer)
-	{
-		ERR("Failed to retrieve the source colorbuffer.");
-		return;
-	}
-
-	sw::SliceRect sourceRect(x, y, x + width, y + height, 0);
-	sourceRect.clip(0, 0, renderbuffer->getWidth(), renderbuffer->getHeight());
-
-	copy(renderTarget, sourceRect, image[level]->getFormat(), xoffset, yoffset, zoffset, image[level]);
-
-	renderTarget->release();
 }
 
 void Texture2D::setSharedImage(egl::Image *sharedImage)
@@ -814,16 +796,16 @@ void Texture2D::setSharedImage(egl::Image *sharedImage)
 	image[0] = sharedImage;
 }
 
-// Tests for 2D texture sampling completeness. [OpenGL ES 2.0.24] section 3.8.2 page 85.
+// Tests for 2D texture sampling completeness. [OpenGL ES 3.0.5] section 3.8.13 page 160.
 bool Texture2D::isSamplerComplete() const
 {
-	if(!image[0])
+	if(!image[mBaseLevel])
 	{
 		return false;
 	}
 
-	GLsizei width = image[0]->getWidth();
-	GLsizei height = image[0]->getHeight();
+	GLsizei width = image[mBaseLevel]->getWidth();
+	GLsizei height = image[mBaseLevel]->getHeight();
 
 	if(width <= 0 || height <= 0)
 	{
@@ -841,13 +823,19 @@ bool Texture2D::isSamplerComplete() const
 	return true;
 }
 
-// Tests for 2D texture (mipmap) completeness. [OpenGL ES 2.0.24] section 3.7.10 page 81.
+// Tests for 2D texture (mipmap) completeness. [OpenGL ES 3.0.5] section 3.8.13 page 160.
 bool Texture2D::isMipmapComplete() const
 {
+	if(mBaseLevel > mMaxLevel)
+	{
+		return false;
+	}
+
 	GLsizei width = image[mBaseLevel]->getWidth();
 	GLsizei height = image[mBaseLevel]->getHeight();
-
-	int q = std::min(log2(std::max(width, height)), mMaxLevel);
+	int maxsize = std::max(width, height);
+	int p = log2(maxsize) + mBaseLevel;
+	int q = std::min(p, mMaxLevel);
 
 	for(int level = mBaseLevel + 1; level <= q; level++)
 	{
@@ -856,22 +844,24 @@ bool Texture2D::isMipmapComplete() const
 			return false;
 		}
 
-		if(image[level]->getFormat() != image[0]->getFormat())
+		if(image[level]->getFormat() != image[mBaseLevel]->getFormat())
 		{
 			return false;
 		}
 
-		if(image[level]->getType() != image[0]->getType())
+		if(image[level]->getType() != image[mBaseLevel]->getType())
 		{
 			return false;
 		}
 
-		if(image[level]->getWidth() != std::max(1, width >> level))
+		int i = level - mBaseLevel;
+
+		if(image[level]->getWidth() != std::max(1, width >> i))
 		{
 			return false;
 		}
 
-		if(image[level]->getHeight() != std::max(1, height >> level))
+		if(image[level]->getHeight() != std::max(1, height >> i))
 		{
 			return false;
 		}
@@ -892,21 +882,20 @@ bool Texture2D::isDepth(GLenum target, GLint level) const
 
 void Texture2D::generateMipmaps()
 {
-	if(!image[0])
-	{
-		return;   // FIXME: error?
-	}
+	ASSERT(image[mBaseLevel]);
 
-	unsigned int q = log2(std::max(image[0]->getWidth(), image[0]->getHeight()));
+	int maxsize = std::max(image[mBaseLevel]->getWidth(), image[mBaseLevel]->getHeight());
+	int p = log2(maxsize) + mBaseLevel;
+	int q = std::min(p, mMaxLevel);
 
-	for(unsigned int i = 1; i <= q; i++)
+	for(int i = mBaseLevel + 1; i <= q; i++)
 	{
 		if(image[i])
 		{
 			image[i]->release();
 		}
 
-		image[i] = egl::Image::create(this, std::max(image[0]->getWidth() >> i, 1), std::max(image[0]->getHeight() >> i, 1), image[0]->getFormat(), image[0]->getType());
+		image[i] = egl::Image::create(this, std::max(image[mBaseLevel]->getWidth() >> i, 1), std::max(image[mBaseLevel]->getHeight() >> i, 1), image[mBaseLevel]->getFormat(), image[mBaseLevel]->getType());
 
 		if(!image[i])
 		{
@@ -922,7 +911,7 @@ egl::Image *Texture2D::getImage(unsigned int level)
 	return image[level];
 }
 
-Renderbuffer *Texture2D::getRenderbuffer(GLenum target, GLint level, GLint layer)
+Renderbuffer *Texture2D::getRenderbuffer(GLenum target, GLint level)
 {
 	if(target != GL_TEXTURE_2D)
 	{
@@ -1099,23 +1088,17 @@ GLenum TextureCubeMap::getType(GLenum target, GLint level) const
 	return image[face][level] ? image[face][level]->getType() : 0;
 }
 
-sw::Format TextureCubeMap::getInternalFormat(GLenum target, GLint level) const
-{
-	int face = CubeFaceIndex(target);
-	return image[face][level] ? image[face][level]->getInternalFormat() : sw::FORMAT_NULL;
-}
-
-int TextureCubeMap::getLevelCount() const
+int TextureCubeMap::getTopLevel() const
 {
 	ASSERT(isSamplerComplete());
-	int levels = 0;
+	int level = mBaseLevel;
 
-	while(levels < IMPLEMENTATION_MAX_TEXTURE_LEVELS && image[0][levels])
+	while(level < IMPLEMENTATION_MAX_TEXTURE_LEVELS && image[0][level])
 	{
-		levels++;
+		level++;
 	}
 
-	return levels;
+	return level - 1;
 }
 
 void TextureCubeMap::setCompressedImage(GLenum target, GLint level, GLenum format, GLsizei width, GLsizei height, GLsizei imageSize, const void *pixels)
@@ -1127,8 +1110,9 @@ void TextureCubeMap::setCompressedImage(GLenum target, GLint level, GLenum forma
 		image[face][level]->release();
 	}
 
-	GLenum sizedInternalFormat = GetSizedInternalFormat(format, GL_UNSIGNED_BYTE);
-	image[face][level] = egl::Image::create(this, width, height, sizedInternalFormat, GL_UNSIGNED_BYTE);
+	GLint sizedInternalFormat = GetSizedInternalFormat(format, GL_UNSIGNED_BYTE);
+	int border = (egl::getClientVersion() >= 3) ? 1 : 0;
+	image[face][level] = egl::Image::create(this, width, height, 1, border, sizedInternalFormat, GL_UNSIGNED_BYTE);
 
 	if(!image[face][level])
 	{
@@ -1148,18 +1132,18 @@ void TextureCubeMap::subImageCompressed(GLenum target, GLint level, GLint xoffse
 	Texture::subImageCompressed(xoffset, yoffset, 0, width, height, 1, format, imageSize, pixels, image[CubeFaceIndex(target)][level]);
 }
 
-// Tests for cube map sampling completeness. [OpenGL ES 2.0.24] section 3.8.2 page 86.
+// Tests for cube map sampling completeness. [OpenGL ES 3.0.5] section 3.8.13 page 161.
 bool TextureCubeMap::isSamplerComplete() const
 {
 	for(int face = 0; face < 6; face++)
 	{
-		if(!image[face][0])
+		if(!image[face][mBaseLevel])
 		{
 			return false;
 		}
 	}
 
-	int size = image[0][0]->getWidth();
+	int size = image[0][mBaseLevel]->getWidth();
 
 	if(size <= 0)
 	{
@@ -1184,7 +1168,7 @@ bool TextureCubeMap::isSamplerComplete() const
 	return true;
 }
 
-// Tests for cube texture completeness. [OpenGL ES 2.0.24] section 3.7.10 page 81.
+// Tests for cube texture completeness. [OpenGL ES 3.0.5] section 3.8.13 page 160.
 bool TextureCubeMap::isCubeComplete() const
 {
 	if(image[0][mBaseLevel]->getWidth() <= 0 || image[0][mBaseLevel]->getHeight() != image[0][mBaseLevel]->getWidth())
@@ -1208,13 +1192,19 @@ bool TextureCubeMap::isCubeComplete() const
 
 bool TextureCubeMap::isMipmapCubeComplete() const
 {
+	if(mBaseLevel > mMaxLevel)
+	{
+		return false;
+	}
+
 	if(!isCubeComplete())
 	{
 		return false;
 	}
 
 	GLsizei size = image[0][mBaseLevel]->getWidth();
-	int q = std::min(log2(size), mMaxLevel);
+	int p = log2(size) + mBaseLevel;
+	int q = std::min(p, mMaxLevel);
 
 	for(int face = 0; face < 6; face++)
 	{
@@ -1235,7 +1225,9 @@ bool TextureCubeMap::isMipmapCubeComplete() const
 				return false;
 			}
 
-			if(image[face][level]->getWidth() != std::max(1, size >> level))
+			int i = level - mBaseLevel;
+
+			if(image[face][level]->getWidth() != std::max(1, size >> i))
 			{
 				return false;
 			}
@@ -1243,6 +1235,69 @@ bool TextureCubeMap::isMipmapCubeComplete() const
 	}
 
 	return true;
+}
+
+void TextureCubeMap::updateBorders(int level)
+{
+	egl::Image *posX = image[CubeFaceIndex(GL_TEXTURE_CUBE_MAP_POSITIVE_X)][level];
+	egl::Image *negX = image[CubeFaceIndex(GL_TEXTURE_CUBE_MAP_NEGATIVE_X)][level];
+	egl::Image *posY = image[CubeFaceIndex(GL_TEXTURE_CUBE_MAP_POSITIVE_Y)][level];
+	egl::Image *negY = image[CubeFaceIndex(GL_TEXTURE_CUBE_MAP_NEGATIVE_Y)][level];
+	egl::Image *posZ = image[CubeFaceIndex(GL_TEXTURE_CUBE_MAP_POSITIVE_Z)][level];
+	egl::Image *negZ = image[CubeFaceIndex(GL_TEXTURE_CUBE_MAP_NEGATIVE_Z)][level];
+
+	if(!posX || !negX || !posY || !negY || !posZ || !negZ)
+	{
+		return;
+	}
+
+	if(posX->getBorder() == 0)   // Non-seamless cube map.
+	{
+		return;
+	}
+
+	if(!posX->hasDirtyContents() || !posY->hasDirtyContents() || !posZ->hasDirtyContents() || !negX->hasDirtyContents() || !negY->hasDirtyContents() || !negY->hasDirtyContents())
+	{
+		return;
+	}
+
+	// Copy top / bottom first.
+	posX->copyCubeEdge(sw::Surface::BOTTOM, negY, sw::Surface::RIGHT);
+	posY->copyCubeEdge(sw::Surface::BOTTOM, posZ, sw::Surface::TOP);
+	posZ->copyCubeEdge(sw::Surface::BOTTOM, negY, sw::Surface::TOP);
+	negX->copyCubeEdge(sw::Surface::BOTTOM, negY, sw::Surface::LEFT);
+	negY->copyCubeEdge(sw::Surface::BOTTOM, negZ, sw::Surface::BOTTOM);
+	negZ->copyCubeEdge(sw::Surface::BOTTOM, negY, sw::Surface::BOTTOM);
+
+	posX->copyCubeEdge(sw::Surface::TOP, posY, sw::Surface::RIGHT);
+	posY->copyCubeEdge(sw::Surface::TOP, negZ, sw::Surface::TOP);
+	posZ->copyCubeEdge(sw::Surface::TOP, posY, sw::Surface::BOTTOM);
+	negX->copyCubeEdge(sw::Surface::TOP, posY, sw::Surface::LEFT);
+	negY->copyCubeEdge(sw::Surface::TOP, posZ, sw::Surface::BOTTOM);
+	negZ->copyCubeEdge(sw::Surface::TOP, posY, sw::Surface::TOP);
+
+	// Copy left / right after top and bottom are done.
+	// The corner colors will be computed assuming top / bottom are already set.
+	posX->copyCubeEdge(sw::Surface::RIGHT, negZ, sw::Surface::LEFT);
+	posY->copyCubeEdge(sw::Surface::RIGHT, posX, sw::Surface::TOP);
+	posZ->copyCubeEdge(sw::Surface::RIGHT, posX, sw::Surface::LEFT);
+	negX->copyCubeEdge(sw::Surface::RIGHT, posZ, sw::Surface::LEFT);
+	negY->copyCubeEdge(sw::Surface::RIGHT, posX, sw::Surface::BOTTOM);
+	negZ->copyCubeEdge(sw::Surface::RIGHT, negX, sw::Surface::LEFT);
+
+	posX->copyCubeEdge(sw::Surface::LEFT, posZ, sw::Surface::RIGHT);
+	posY->copyCubeEdge(sw::Surface::LEFT, negX, sw::Surface::TOP);
+	posZ->copyCubeEdge(sw::Surface::LEFT, negX, sw::Surface::RIGHT);
+	negX->copyCubeEdge(sw::Surface::LEFT, negZ, sw::Surface::RIGHT);
+	negY->copyCubeEdge(sw::Surface::LEFT, negX, sw::Surface::BOTTOM);
+	negZ->copyCubeEdge(sw::Surface::LEFT, posX, sw::Surface::RIGHT);
+
+	posX->markContentsClean();
+	posY->markContentsClean();
+	posZ->markContentsClean();
+	negX->markContentsClean();
+	negY->markContentsClean();
+	negY->markContentsClean();
 }
 
 bool TextureCubeMap::isCompressed(GLenum target, GLint level) const
@@ -1269,7 +1324,8 @@ void TextureCubeMap::setImage(egl::Context *context, GLenum target, GLint level,
 		image[face][level]->release();
 	}
 
-	image[face][level] = egl::Image::create(this, width, height, format, type);
+	int border = (egl::getClientVersion() >= 3) ? 1 : 0;
+	image[face][level] = egl::Image::create(this, width, height, 1, border, format, type);
 
 	if(!image[face][level])
 	{
@@ -1296,8 +1352,9 @@ void TextureCubeMap::copyImage(GLenum target, GLint level, GLenum format, GLint 
 		image[face][level]->release();
 	}
 
-	GLenum sizedInternalFormat = GetSizedInternalFormat(format, GL_UNSIGNED_BYTE);
-	image[face][level] = egl::Image::create(this, width, height, sizedInternalFormat, GL_UNSIGNED_BYTE);
+	GLint sizedInternalFormat = GetSizedInternalFormat(format, GL_UNSIGNED_BYTE);
+	int border = (egl::getClientVersion() >= 3) ? 1 : 0;
+	image[face][level] = egl::Image::create(this, width, height, 1, border, sizedInternalFormat, GL_UNSIGNED_BYTE);
 
 	if(!image[face][level])
 	{
@@ -1317,7 +1374,7 @@ void TextureCubeMap::copyImage(GLenum target, GLint level, GLenum format, GLint 
 		sw::SliceRect sourceRect(x, y, x + width, y + height, 0);
 		sourceRect.clip(0, 0, renderbuffer->getWidth(), renderbuffer->getHeight());
 
-		copy(renderTarget, sourceRect, sizedInternalFormat, 0, 0, 0, image[face][level]);
+		copy(renderTarget, sourceRect, 0, 0, 0, image[face][level]);
 	}
 
 	renderTarget->release();
@@ -1349,49 +1406,53 @@ void TextureCubeMap::copySubImage(GLenum target, GLint level, GLint xoffset, GLi
 		return error(GL_INVALID_VALUE);
 	}
 
-	egl::Image *renderTarget = source->getRenderTarget(0);
-
-	if(!renderTarget)
+	if(width > 0 && height > 0)
 	{
-		ERR("Failed to retrieve the render target.");
-		return error(GL_OUT_OF_MEMORY);
+		egl::Image *renderTarget = source->getRenderTarget(0);
+
+		if(!renderTarget)
+		{
+			ERR("Failed to retrieve the render target.");
+			return error(GL_OUT_OF_MEMORY);
+		}
+
+		Renderbuffer* renderbuffer = source->getReadColorbuffer();
+
+		if(!renderbuffer)
+		{
+			ERR("Failed to retrieve the source colorbuffer.");
+			return;
+		}
+
+		sw::SliceRect sourceRect(x, y, x + width, y + height, 0);
+		sourceRect.clip(0, 0, renderbuffer->getWidth(), renderbuffer->getHeight());
+
+		copy(renderTarget, sourceRect, xoffset, yoffset, zoffset, image[face][level]);
+
+		renderTarget->release();
 	}
-
-	Renderbuffer* renderbuffer = source->getReadColorbuffer();
-
-	if(!renderbuffer)
-	{
-		ERR("Failed to retrieve the source colorbuffer.");
-		return;
-	}
-
-	sw::SliceRect sourceRect(x, y, x + width, y + height, 0);
-	sourceRect.clip(0, 0, renderbuffer->getWidth(), renderbuffer->getHeight());
-
-	copy(renderTarget, sourceRect, image[face][level]->getFormat(), xoffset, yoffset, zoffset, image[face][level]);
-
-	renderTarget->release();
 }
 
 void TextureCubeMap::generateMipmaps()
 {
-	if(!isCubeComplete())
-	{
-		return error(GL_INVALID_OPERATION);
-	}
+	ASSERT(isCubeComplete());
 
-	unsigned int q = log2(image[0][0]->getWidth());
+	int p = log2(image[0][mBaseLevel]->getWidth()) + mBaseLevel;
+	int q = std::min(p, mMaxLevel);
 
-	for(unsigned int f = 0; f < 6; f++)
+	for(int f = 0; f < 6; f++)
 	{
-		for(unsigned int i = 1; i <= q; i++)
+		ASSERT(image[f][mBaseLevel]);
+
+		for(int i = mBaseLevel + 1; i <= q; i++)
 		{
 			if(image[f][i])
 			{
 				image[f][i]->release();
 			}
 
-			image[f][i] = egl::Image::create(this, std::max(image[0][0]->getWidth() >> i, 1), std::max(image[0][0]->getHeight() >> i, 1), image[0][0]->getFormat(), image[0][0]->getType());
+			int border = (egl::getClientVersion() >= 3) ? 1 : 0;
+			image[f][i] = egl::Image::create(this, std::max(image[f][mBaseLevel]->getWidth() >> i, 1), std::max(image[f][mBaseLevel]->getHeight() >> i, 1), 1, border, image[f][mBaseLevel]->getFormat(), image[f][mBaseLevel]->getType());
 
 			if(!image[f][i])
 			{
@@ -1403,7 +1464,7 @@ void TextureCubeMap::generateMipmaps()
 	}
 }
 
-Renderbuffer *TextureCubeMap::getRenderbuffer(GLenum target, GLint level, GLint layer)
+Renderbuffer *TextureCubeMap::getRenderbuffer(GLenum target, GLint level)
 {
 	if(!IsCubemapTextureTarget(target))
 	{
@@ -1566,23 +1627,17 @@ GLenum Texture3D::getType(GLenum target, GLint level) const
 	return image[level] ? image[level]->getType() : GL_NONE;
 }
 
-sw::Format Texture3D::getInternalFormat(GLenum target, GLint level) const
-{
-	ASSERT(target == getTarget());
-	return image[level] ? image[level]->getInternalFormat() : sw::FORMAT_NULL;
-}
-
-int Texture3D::getLevelCount() const
+int Texture3D::getTopLevel() const
 {
 	ASSERT(isSamplerComplete());
-	int levels = 0;
+	int level = mBaseLevel;
 
-	while(levels < IMPLEMENTATION_MAX_TEXTURE_LEVELS && image[levels])
+	while(level < IMPLEMENTATION_MAX_TEXTURE_LEVELS && image[level])
 	{
-		levels++;
+		level++;
 	}
 
-	return levels;
+	return level - 1;
 }
 
 void Texture3D::setImage(egl::Context *context, GLint level, GLsizei width, GLsizei height, GLsizei depth, GLenum format, GLenum type, const egl::Image::UnpackInfo& unpackInfo, const void *pixels)
@@ -1592,7 +1647,7 @@ void Texture3D::setImage(egl::Context *context, GLint level, GLsizei width, GLsi
 		image[level]->release();
 	}
 
-	image[level] = egl::Image::create(this, width, height, depth, format, type);
+	image[level] = egl::Image::create(this, width, height, depth, 0, format, type);
 
 	if(!image[level])
 	{
@@ -1615,7 +1670,7 @@ void Texture3D::setCompressedImage(GLint level, GLenum format, GLsizei width, GL
 	}
 
 	GLenum sizedInternalFormat = GetSizedInternalFormat(format, GL_UNSIGNED_BYTE);
-	image[level] = egl::Image::create(this, width, height, depth, sizedInternalFormat, GL_UNSIGNED_BYTE);
+	image[level] = egl::Image::create(this, width, height, depth, 0, sizedInternalFormat, GL_UNSIGNED_BYTE);
 
 	if(!image[level])
 	{
@@ -1650,8 +1705,8 @@ void Texture3D::copyImage(GLint level, GLenum format, GLint x, GLint y, GLint z,
 		image[level]->release();
 	}
 
-	GLenum sizedInternalFormat = GetSizedInternalFormat(format, GL_UNSIGNED_BYTE);
-	image[level] = egl::Image::create(this, width, height, depth, sizedInternalFormat, GL_UNSIGNED_BYTE);
+	GLint sizedInternalFormat = GetSizedInternalFormat(format, GL_UNSIGNED_BYTE);
+	image[level] = egl::Image::create(this, width, height, depth, 0, sizedInternalFormat, GL_UNSIGNED_BYTE);
 
 	if(!image[level])
 	{
@@ -1672,7 +1727,7 @@ void Texture3D::copyImage(GLint level, GLenum format, GLint x, GLint y, GLint z,
 		sourceRect.clip(0, 0, renderbuffer->getWidth(), renderbuffer->getHeight());
 		for(GLint sliceZ = 0; sliceZ < depth; ++sliceZ, ++sourceRect.slice)
 		{
-			copy(renderTarget, sourceRect, sizedInternalFormat, 0, 0, sliceZ, image[level]);
+			copy(renderTarget, sourceRect, 0, 0, sliceZ, image[level]);
 		}
 	}
 
@@ -1691,28 +1746,31 @@ void Texture3D::copySubImage(GLenum target, GLint level, GLint xoffset, GLint yo
 		return error(GL_INVALID_VALUE);
 	}
 
-	egl::Image *renderTarget = source->getRenderTarget(0);
-
-	if(!renderTarget)
+	if(width > 0 && height > 0)
 	{
-		ERR("Failed to retrieve the render target.");
-		return error(GL_OUT_OF_MEMORY);
+		egl::Image *renderTarget = source->getRenderTarget(0);
+
+		if(!renderTarget)
+		{
+			ERR("Failed to retrieve the render target.");
+			return error(GL_OUT_OF_MEMORY);
+		}
+
+		Renderbuffer* renderbuffer = source->getReadColorbuffer();
+
+		if(!renderbuffer)
+		{
+			ERR("Failed to retrieve the source colorbuffer.");
+			return;
+		}
+
+		sw::SliceRect sourceRect = {x, y, x + width, y + height, 0};
+		sourceRect.clip(0, 0, renderbuffer->getWidth(), renderbuffer->getHeight());
+
+		copy(renderTarget, sourceRect, xoffset, yoffset, zoffset, image[level]);
+
+		renderTarget->release();
 	}
-
-	Renderbuffer* renderbuffer = source->getReadColorbuffer();
-
-	if(!renderbuffer)
-	{
-		ERR("Failed to retrieve the source colorbuffer.");
-		return;
-	}
-
-	sw::SliceRect sourceRect = {x, y, x + width, y + height, 0};
-	sourceRect.clip(0, 0, renderbuffer->getWidth(), renderbuffer->getHeight());
-
-	copy(renderTarget, sourceRect, image[level]->getFormat(), xoffset, yoffset, zoffset, image[level]);
-
-	renderTarget->release();
 }
 
 void Texture3D::setSharedImage(egl::Image *sharedImage)
@@ -1727,17 +1785,17 @@ void Texture3D::setSharedImage(egl::Image *sharedImage)
 	image[0] = sharedImage;
 }
 
-// Tests for 3D texture sampling completeness. [OpenGL ES 2.0.24] section 3.8.2 page 85.
+// Tests for 3D texture sampling completeness. [OpenGL ES 3.0.5] section 3.8.13 page 160.
 bool Texture3D::isSamplerComplete() const
 {
-	if(!image[0])
+	if(!image[mBaseLevel])
 	{
 		return false;
 	}
 
-	GLsizei width = image[0]->getWidth();
-	GLsizei height = image[0]->getHeight();
-	GLsizei depth = image[0]->getDepth();
+	GLsizei width = image[mBaseLevel]->getWidth();
+	GLsizei height = image[mBaseLevel]->getHeight();
+	GLsizei depth = image[mBaseLevel]->getDepth();
 
 	if(width <= 0 || height <= 0 || depth <= 0)
 	{
@@ -1755,16 +1813,22 @@ bool Texture3D::isSamplerComplete() const
 	return true;
 }
 
-// Tests for 3D texture (mipmap) completeness. [OpenGL ES 2.0.24] section 3.7.10 page 81.
+// Tests for 3D texture (mipmap) completeness. [OpenGL ES 3.0.5] section 3.8.13 page 160.
 bool Texture3D::isMipmapComplete() const
 {
+	if(mBaseLevel > mMaxLevel)
+	{
+		return false;
+	}
+
 	GLsizei width = image[mBaseLevel]->getWidth();
 	GLsizei height = image[mBaseLevel]->getHeight();
 	GLsizei depth = image[mBaseLevel]->getDepth();
 	bool isTexture2DArray = getTarget() == GL_TEXTURE_2D_ARRAY;
 
-	int q = isTexture2DArray ? std::min(log2(std::max(width, height)), mMaxLevel) :
-	        std::min(log2(std::max(std::max(width, height), depth)), mMaxLevel);
+	int maxsize = isTexture2DArray ? std::max(width, height) : std::max(std::max(width, height), depth);
+	int p = log2(maxsize) + mBaseLevel;
+	int q = std::min(p, mMaxLevel);
 
 	for(int level = mBaseLevel + 1; level <= q; level++)
 	{
@@ -1773,27 +1837,29 @@ bool Texture3D::isMipmapComplete() const
 			return false;
 		}
 
-		if(image[level]->getFormat() != image[0]->getFormat())
+		if(image[level]->getFormat() != image[mBaseLevel]->getFormat())
 		{
 			return false;
 		}
 
-		if(image[level]->getType() != image[0]->getType())
+		if(image[level]->getType() != image[mBaseLevel]->getType())
 		{
 			return false;
 		}
 
-		if(image[level]->getWidth() != std::max(1, width >> level))
+		int i = level - mBaseLevel;
+
+		if(image[level]->getWidth() != std::max(1, width >> i))
 		{
 			return false;
 		}
 
-		if(image[level]->getHeight() != std::max(1, height >> level))
+		if(image[level]->getHeight() != std::max(1, height >> i))
 		{
 			return false;
 		}
 
-		int levelDepth = isTexture2DArray ? depth : std::max(1, depth >> level);
+		int levelDepth = isTexture2DArray ? depth : std::max(1, depth >> i);
 		if(image[level]->getDepth() != levelDepth)
 		{
 			return false;
@@ -1815,21 +1881,20 @@ bool Texture3D::isDepth(GLenum target, GLint level) const
 
 void Texture3D::generateMipmaps()
 {
-	if(!image[0])
-	{
-		return;   // FIXME: error?
-	}
+	ASSERT(image[mBaseLevel]);
 
-	unsigned int q = log2(std::max(std::max(image[0]->getWidth(), image[0]->getHeight()), image[0]->getDepth()));
+	int maxsize = std::max(std::max(image[mBaseLevel]->getWidth(), image[mBaseLevel]->getHeight()), image[mBaseLevel]->getDepth());
+	int p = log2(maxsize) + mBaseLevel;
+	int q = std::min(p, mMaxLevel);
 
-	for(unsigned int i = 1; i <= q; i++)
+	for(int i = mBaseLevel + 1; i <= q; i++)
 	{
 		if(image[i])
 		{
 			image[i]->release();
 		}
 
-		image[i] = egl::Image::create(this, std::max(image[0]->getWidth() >> i, 1), std::max(image[0]->getHeight() >> i, 1), std::max(image[0]->getDepth() >> i, 1), image[0]->getFormat(), image[0]->getType());
+		image[i] = egl::Image::create(this, std::max(image[mBaseLevel]->getWidth() >> i, 1), std::max(image[mBaseLevel]->getHeight() >> i, 1), std::max(image[mBaseLevel]->getDepth() >> i, 1), 0, image[mBaseLevel]->getFormat(), image[mBaseLevel]->getType());
 
 		if(!image[i])
 		{
@@ -1845,7 +1910,7 @@ egl::Image *Texture3D::getImage(unsigned int level)
 	return image[level];
 }
 
-Renderbuffer *Texture3D::getRenderbuffer(GLenum target, GLint level, GLint layer)
+Renderbuffer *Texture3D::getRenderbuffer(GLenum target, GLint level)
 {
 	if(target != getTarget())
 	{
@@ -1854,12 +1919,11 @@ Renderbuffer *Texture3D::getRenderbuffer(GLenum target, GLint level, GLint layer
 
 	if(!mColorbufferProxy)
 	{
-		mColorbufferProxy = new Renderbuffer(name, new RenderbufferTexture3D(this, level, layer));
+		mColorbufferProxy = new Renderbuffer(name, new RenderbufferTexture3D(this, level));
 	}
 	else
 	{
 		mColorbufferProxy->setLevel(level);
-		mColorbufferProxy->setLayer(layer);
 	}
 
 	return mColorbufferProxy;
@@ -1911,24 +1975,23 @@ GLenum Texture2DArray::getTarget() const
 
 void Texture2DArray::generateMipmaps()
 {
-	int depth = image[0] ? image[0]->getDepth() : 0;
-	if(!depth)
-	{
-		return;   // FIXME: error?
-	}
+	ASSERT(image[mBaseLevel]);
 
-	unsigned int q = log2(std::max(image[0]->getWidth(), image[0]->getHeight()));
+	int depth = image[mBaseLevel]->getDepth();
+	int maxsize = std::max(image[mBaseLevel]->getWidth(), image[mBaseLevel]->getHeight());
+	int p = log2(maxsize) + mBaseLevel;
+	int q = std::min(p, mMaxLevel);
 
-	for(unsigned int i = 1; i <= q; i++)
+	for(int i = mBaseLevel + 1; i <= q; i++)
 	{
 		if(image[i])
 		{
 			image[i]->release();
 		}
 
-		GLsizei w = std::max(image[0]->getWidth() >> i, 1);
-		GLsizei h = std::max(image[0]->getHeight() >> i, 1);
-		image[i] = egl::Image::create(this, w, h, depth, image[0]->getFormat(), image[0]->getType());
+		GLsizei w = std::max(image[mBaseLevel]->getWidth() >> i, 1);
+		GLsizei h = std::max(image[mBaseLevel]->getHeight() >> i, 1);
+		image[i] = egl::Image::create(this, w, h, depth, 0, image[mBaseLevel]->getFormat(), image[mBaseLevel]->getType());
 
 		if(!image[i])
 		{
@@ -1939,7 +2002,7 @@ void Texture2DArray::generateMipmaps()
 		GLsizei srch = image[i - 1]->getHeight();
 		for(int z = 0; z < depth; ++z)
 		{
-			sw::SliceRect srcRect(0, 0, srcw, srch, z);
+			sw::SliceRectF srcRect(0.0f, 0.0f, static_cast<float>(srcw), static_cast<float>(srch), z);
 			sw::SliceRect dstRect(0, 0, w, h, z);
 			getDevice()->stretchRect(image[i - 1], &srcRect, image[i], &dstRect, Device::ALL_BUFFERS | Device::USE_FILTER);
 		}

@@ -75,11 +75,14 @@ static enum ssl_hs_wait_t do_read_hello_retry_request(SSL_HANDSHAKE *hs) {
 
     CBS body = msg.body, server_random, session_id;
     uint16_t server_version;
+    uint8_t compression_method;
     if (!CBS_get_u16(&body, &server_version) ||
         !CBS_get_bytes(&body, &server_random, SSL3_RANDOM_SIZE) ||
         !CBS_get_u8_length_prefixed(&body, &session_id) ||
+        !CBS_mem_equal(&session_id, hs->session_id, hs->session_id_len) ||
         !CBS_get_u16(&body, &cipher_suite) ||
-        !CBS_skip(&body, 1) ||
+        !CBS_get_u8(&body, &compression_method) ||
+        compression_method != 0 ||
         !CBS_get_u16_length_prefixed(&body, &extensions) ||
         CBS_len(&extensions) == 0 ||
         CBS_len(&body) != 0) {
@@ -101,7 +104,7 @@ static enum ssl_hs_wait_t do_read_hello_retry_request(SSL_HANDSHAKE *hs) {
     CBS body = msg.body;
     uint16_t server_version;
     if (!CBS_get_u16(&body, &server_version) ||
-        (ssl_is_draft21(ssl->version) &&
+        (ssl_is_draft22(ssl->version) &&
          !CBS_get_u16(&body, &cipher_suite)) ||
         !CBS_get_u16_length_prefixed(&body, &extensions) ||
         CBS_len(&body) != 0) {
@@ -111,7 +114,7 @@ static enum ssl_hs_wait_t do_read_hello_retry_request(SSL_HANDSHAKE *hs) {
     }
   }
 
-  if (ssl_is_draft21(ssl->version)) {
+  if (ssl_is_draft22(ssl->version)) {
     const SSL_CIPHER *cipher = SSL_get_cipher_by_value(cipher_suite);
     // Check if the cipher is a TLS 1.3 cipher.
     if (cipher == NULL ||
@@ -133,8 +136,10 @@ static enum ssl_hs_wait_t do_read_hello_retry_request(SSL_HANDSHAKE *hs) {
 
   bool have_cookie, have_key_share, have_supported_versions;
   CBS cookie, key_share, supported_versions;
-  const SSL_EXTENSION_TYPE ext_types[] = {
-      {TLSEXT_TYPE_key_share, &have_key_share, &key_share},
+  SSL_EXTENSION_TYPE ext_types[] = {
+      {ssl_is_draft23(ssl->version) ? (uint16_t)TLSEXT_TYPE_new_key_share
+                                    : (uint16_t)TLSEXT_TYPE_old_key_share,
+       &have_key_share, &key_share},
       {TLSEXT_TYPE_cookie, &have_cookie, &cookie},
       {TLSEXT_TYPE_supported_versions, &have_supported_versions,
        &supported_versions},
@@ -250,11 +255,11 @@ static enum ssl_hs_wait_t do_read_server_hello(SSL_HANDSHAKE *hs) {
   uint8_t compression_method;
   if (!CBS_get_u16(&body, &server_version) ||
       !CBS_get_bytes(&body, &server_random, SSL3_RANDOM_SIZE) ||
-      (ssl_is_resumption_experiment(ssl->version) &&
-       !CBS_get_u8_length_prefixed(&body, &session_id)) ||
+      !CBS_get_u8_length_prefixed(&body, &session_id) ||
+      !CBS_mem_equal(&session_id, hs->session_id, hs->session_id_len) ||
       !CBS_get_u16(&body, &cipher_suite) ||
-      (ssl_is_resumption_experiment(ssl->version) &&
-       (!CBS_get_u8(&body, &compression_method) || compression_method != 0)) ||
+      !CBS_get_u8(&body, &compression_method) ||
+      compression_method != 0 ||
       !CBS_get_u16_length_prefixed(&body, &extensions) ||
       CBS_len(&body) != 0) {
     ssl_send_alert(ssl, SSL3_AL_FATAL, SSL_AD_DECODE_ERROR);
@@ -262,10 +267,7 @@ static enum ssl_hs_wait_t do_read_server_hello(SSL_HANDSHAKE *hs) {
     return ssl_hs_error;
   }
 
-  uint16_t expected_version = ssl_is_resumption_experiment(ssl->version)
-                                  ? TLS1_2_VERSION
-                                  : ssl->version;
-  if (server_version != expected_version) {
+  if (server_version != TLS1_2_VERSION) {
     ssl_send_alert(ssl, SSL3_AL_FATAL, SSL_AD_DECODE_ERROR);
     OPENSSL_PUT_ERROR(SSL, SSL_R_WRONG_VERSION_NUMBER);
     return ssl_hs_error;
@@ -293,7 +295,7 @@ static enum ssl_hs_wait_t do_read_server_hello(SSL_HANDSHAKE *hs) {
   }
 
   // Check that the cipher matches the one in the HelloRetryRequest.
-  if (ssl_is_draft21(ssl->version) &&
+  if (ssl_is_draft22(ssl->version) &&
       hs->received_hello_retry_request &&
       hs->new_cipher != cipher) {
     OPENSSL_PUT_ERROR(SSL, SSL_R_WRONG_CIPHER_RETURNED);
@@ -305,8 +307,10 @@ static enum ssl_hs_wait_t do_read_server_hello(SSL_HANDSHAKE *hs) {
   bool have_key_share = false, have_pre_shared_key = false,
        have_supported_versions = false;
   CBS key_share, pre_shared_key, supported_versions;
-  const SSL_EXTENSION_TYPE ext_types[] = {
-      {TLSEXT_TYPE_key_share, &have_key_share, &key_share},
+  SSL_EXTENSION_TYPE ext_types[] = {
+      {ssl_is_draft23(ssl->version) ? (uint16_t)TLSEXT_TYPE_new_key_share
+                                    : (uint16_t)TLSEXT_TYPE_old_key_share,
+       &have_key_share, &key_share},
       {TLSEXT_TYPE_pre_shared_key, &have_pre_shared_key, &pre_shared_key},
       {TLSEXT_TYPE_supported_versions, &have_supported_versions,
        &supported_versions},
@@ -317,14 +321,6 @@ static enum ssl_hs_wait_t do_read_server_hello(SSL_HANDSHAKE *hs) {
                             OPENSSL_ARRAY_SIZE(ext_types),
                             0 /* reject unknown */)) {
     ssl_send_alert(ssl, SSL3_AL_FATAL, alert);
-    return ssl_hs_error;
-  }
-
-  // supported_versions is parsed in handshake_client to select the experimental
-  // TLS 1.3 version.
-  if (have_supported_versions && !ssl_is_resumption_experiment(ssl->version)) {
-    OPENSSL_PUT_ERROR(SSL, SSL_R_UNEXPECTED_EXTENSION);
-    ssl_send_alert(ssl, SSL3_AL_FATAL, SSL_AD_UNSUPPORTED_EXTENSION);
     return ssl_hs_error;
   }
 
@@ -422,8 +418,7 @@ static enum ssl_hs_wait_t do_read_server_hello(SSL_HANDSHAKE *hs) {
   if (!hs->early_data_offered) {
     // Earlier versions of the resumption experiment added ChangeCipherSpec just
     // before the Finished flight.
-    if (ssl_is_resumption_client_ccs_experiment(ssl->version) &&
-        !ssl_is_draft22(ssl->version) &&
+    if (!ssl_is_draft22(ssl->version) &&
         !ssl->method->add_change_cipher_spec(ssl)) {
       return ssl_hs_error;
     }
@@ -473,7 +468,7 @@ static enum ssl_hs_wait_t do_read_encrypted_extensions(SSL_HANDSHAKE *hs) {
     hs->new_session->early_alpn_len = ssl->s3->alpn_selected.size();
   }
 
-  if (ssl->early_data_accepted) {
+  if (ssl->s3->early_data_accepted) {
     if (hs->early_session->cipher != hs->new_session->cipher ||
         MakeConstSpan(hs->early_session->early_alpn,
                       hs->early_session->early_alpn_len) !=
@@ -493,7 +488,7 @@ static enum ssl_hs_wait_t do_read_encrypted_extensions(SSL_HANDSHAKE *hs) {
 
   ssl->method->next_message(ssl);
   hs->tls13_state = state_read_certificate_request;
-  if (hs->in_early_data && !ssl->early_data_accepted) {
+  if (hs->in_early_data && !ssl->s3->early_data_accepted) {
     return ssl_hs_early_data_rejected;
   }
   return ssl_hs_ok;
@@ -519,7 +514,7 @@ static enum ssl_hs_wait_t do_read_certificate_request(SSL_HANDSHAKE *hs) {
   }
 
 
-  if (ssl_is_draft21(ssl->version)) {
+  if (ssl_is_draft22(ssl->version)) {
     bool have_sigalgs = false, have_ca = false;
     CBS sigalgs, ca;
     const SSL_EXTENSION_TYPE ext_types[] = {
@@ -672,9 +667,9 @@ static enum ssl_hs_wait_t do_read_server_finished(SSL_HANDSHAKE *hs) {
 static enum ssl_hs_wait_t do_send_end_of_early_data(SSL_HANDSHAKE *hs) {
   SSL *const ssl = hs->ssl;
 
-  if (ssl->early_data_accepted) {
+  if (ssl->s3->early_data_accepted) {
     hs->can_early_write = false;
-    if (ssl_is_draft21(ssl->version)) {
+    if (ssl_is_draft22(ssl->version)) {
       ScopedCBB cbb;
       CBB body;
       if (!ssl->method->init_message(ssl, cbb.get(), &body,
@@ -913,7 +908,7 @@ int tls13_process_new_session_ticket(SSL *ssl, const SSLMessage &msg) {
   CBS body = msg.body, ticket_nonce, ticket, extensions;
   if (!CBS_get_u32(&body, &server_timeout) ||
       !CBS_get_u32(&body, &session->ticket_age_add) ||
-      (ssl_is_draft21(ssl->version) &&
+      (ssl_is_draft22(ssl->version) &&
        !CBS_get_u8_length_prefixed(&body, &ticket_nonce)) ||
       !CBS_get_u16_length_prefixed(&body, &ticket) ||
       !CBS_stow(&ticket, &session->tlsext_tick, &session->tlsext_ticklen) ||
@@ -937,7 +932,7 @@ int tls13_process_new_session_ticket(SSL *ssl, const SSLMessage &msg) {
   // Parse out the extensions.
   bool have_early_data_info = false;
   CBS early_data_info;
-  uint16_t ext_id = ssl_is_draft21(ssl->version)
+  uint16_t ext_id = ssl_is_draft22(ssl->version)
                         ? TLSEXT_TYPE_early_data
                         : TLSEXT_TYPE_ticket_early_data_info;
   const SSL_EXTENSION_TYPE ext_types[] = {

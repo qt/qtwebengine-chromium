@@ -67,11 +67,6 @@ public:
     // https://bugs.chromium.org/p/skia/issues/detail?id=7111
     virtual void endFlush();
 
-    // TODO: in an MDB world, where the OpLists don't allocate GPU resources, it seems like
-    // these could go away
-    virtual void abandonGpuResources() = 0;
-    virtual void freeGpuResources() = 0;
-
     bool isClosed() const { return this->isSetFlag(kClosed_Flag); }
 
     /*
@@ -102,7 +97,7 @@ public:
      */
     virtual GrRenderTargetOpList* asRenderTargetOpList() { return nullptr; }
 
-    int32_t uniqueID() const { return fUniqueID; }
+    uint32_t uniqueID() const { return fUniqueID; }
 
     /*
      * Dump out the GrOpList dependency DAG

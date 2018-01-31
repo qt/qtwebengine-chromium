@@ -322,7 +322,7 @@ namespace sw
 		void draw(DrawType drawType, unsigned int indexOffset, unsigned int count, bool update = true);
 
 		void clear(void *value, Format format, Surface *dest, const Rect &rect, unsigned int rgbaMask);
-		void blit(Surface *source, const SliceRect &sRect, Surface *dest, const SliceRect &dRect, bool filter, bool isStencil = false);
+		void blit(Surface *source, const SliceRectF &sRect, Surface *dest, const SliceRect &dRect, bool filter, bool isStencil = false, bool sRGBconversion = true);
 		void blit3D(Surface *source, Surface *dest);
 
 		void setIndexBuffer(Resource *indexBuffer);
@@ -348,6 +348,7 @@ namespace sw
 		void setSwizzleG(SamplerType type, int sampler, SwizzleType swizzleG);
 		void setSwizzleB(SamplerType type, int sampler, SwizzleType swizzleB);
 		void setSwizzleA(SamplerType type, int sampler, SwizzleType swizzleA);
+		void setCompareFunc(SamplerType type, int sampler, CompareFunc compare);
 		void setBaseLevel(SamplerType type, int sampler, int baseLevel);
 		void setMaxLevel(SamplerType type, int sampler, int maxLevel);
 		void setMinLod(SamplerType type, int sampler, float minLod);

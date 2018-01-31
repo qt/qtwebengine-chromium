@@ -769,20 +769,6 @@ void Context::setFramebufferDrawBuffers(GLsizei n, const GLenum *bufs)
 	}
 }
 
-GLuint Context::getReadFramebufferColorIndex() const
-{
-	GLenum buf = getReadFramebuffer()->getReadBuffer();
-	switch(buf)
-	{
-	case GL_BACK:
-		return 0;
-	case GL_NONE:
-		return GL_INVALID_INDEX;
-	default:
-		return buf - GL_COLOR_ATTACHMENT0;
-}
-}
-
 GLuint Context::getArrayBufferName() const
 {
 	return mState.arrayBuffer.name();
@@ -836,10 +822,10 @@ const VertexAttribute &Context::getVertexAttribState(unsigned int attribNum) con
 	return getCurrentVertexArray()->getVertexAttribute(attribNum);
 }
 
-void Context::setVertexAttribState(unsigned int attribNum, Buffer *boundBuffer, GLint size, GLenum type, bool normalized,
-                                   GLsizei stride, const void *pointer)
+void Context::setVertexAttribState(unsigned int attribNum, Buffer *boundBuffer, GLint size, GLenum type,
+                                   bool normalized, bool pureInteger, GLsizei stride, const void *pointer)
 {
-	getCurrentVertexArray()->setAttributeState(attribNum, boundBuffer, size, type, normalized, stride, pointer);
+	getCurrentVertexArray()->setAttributeState(attribNum, boundBuffer, size, type, normalized, pureInteger, stride, pointer);
 }
 
 const void *Context::getVertexAttribPointer(unsigned int attribNum) const
@@ -1227,7 +1213,14 @@ void Context::bindReadFramebuffer(GLuint framebuffer)
 {
 	if(!getFramebuffer(framebuffer))
 	{
-		mFramebufferNameSpace.insert(framebuffer, new Framebuffer());
+		if(framebuffer == 0)
+		{
+			mFramebufferNameSpace.insert(framebuffer, new DefaultFramebuffer());
+		}
+		else
+		{
+			mFramebufferNameSpace.insert(framebuffer, new Framebuffer());
+		}
 	}
 
 	mState.readFramebuffer = framebuffer;
@@ -1237,7 +1230,14 @@ void Context::bindDrawFramebuffer(GLuint framebuffer)
 {
 	if(!getFramebuffer(framebuffer))
 	{
-		mFramebufferNameSpace.insert(framebuffer, new Framebuffer());
+		if(framebuffer == 0)
+		{
+			mFramebufferNameSpace.insert(framebuffer, new DefaultFramebuffer());
+		}
+		else
+		{
+			mFramebufferNameSpace.insert(framebuffer, new Framebuffer());
+		}
 	}
 
 	mState.drawFramebuffer = framebuffer;
@@ -1357,7 +1357,25 @@ void Context::beginQuery(GLenum target, GLuint query)
 	{
 		if(mState.activeQuery[i])
 		{
-			return error(GL_INVALID_OPERATION);
+			switch(mState.activeQuery[i]->getType())
+			{
+			case GL_ANY_SAMPLES_PASSED_EXT:
+			case GL_ANY_SAMPLES_PASSED_CONSERVATIVE_EXT:
+				if((target == GL_ANY_SAMPLES_PASSED_EXT) ||
+				   (target == GL_ANY_SAMPLES_PASSED_CONSERVATIVE_EXT))
+				{
+					return error(GL_INVALID_OPERATION);
+				}
+				break;
+			case GL_TRANSFORM_FEEDBACK_PRIMITIVES_WRITTEN:
+				if(target == GL_TRANSFORM_FEEDBACK_PRIMITIVES_WRITTEN)
+				{
+					return error(GL_INVALID_OPERATION);
+				}
+				break;
+			default:
+				break;
+			}
 		}
 	}
 
@@ -1511,6 +1529,11 @@ TransformFeedback *Context::getTransformFeedback(GLuint transformFeedback) const
 	return mTransformFeedbackNameSpace.find(transformFeedback);
 }
 
+bool Context::isTransformFeedback(GLuint array) const
+{
+	return mTransformFeedbackNameSpace.isReserved(array);
+}
+
 Sampler *Context::getSampler(GLuint sampler) const
 {
 	return mResourceManager->getSampler(sampler);
@@ -1556,11 +1579,32 @@ Buffer *Context::getGenericUniformBuffer() const
 	return mState.genericUniformBuffer;
 }
 
-const GLvoid* Context::getPixels(const GLvoid* data) const
+GLsizei Context::getRequiredBufferSize(GLsizei width, GLsizei height, GLsizei depth, GLint internalformat, GLenum type) const
 {
-	es2::Buffer* unpackBuffer = getPixelUnpackBuffer();
-	const unsigned char* unpackBufferData = unpackBuffer ? static_cast<const unsigned char*>(unpackBuffer->data()) : nullptr;
-	return unpackBufferData ? unpackBufferData + (ptrdiff_t)(data) : data;
+	GLenum format = GetSizedInternalFormat(internalformat, type);
+	GLsizei inputWidth = (mState.unpackInfo.rowLength == 0) ? width : mState.unpackInfo.rowLength;
+	GLsizei inputPitch = egl::ComputePitch(inputWidth, format, type, mState.unpackInfo.alignment);
+	GLsizei inputHeight = (mState.unpackInfo.imageHeight == 0) ? height : mState.unpackInfo.imageHeight;
+	return inputPitch * inputHeight * depth;
+}
+
+GLenum Context::getPixels(const GLvoid **data, GLenum type, GLsizei imageSize) const
+{
+	if(mState.pixelUnpackBuffer)
+	{
+		if(mState.pixelUnpackBuffer->name)
+		{
+			if(mState.pixelUnpackBuffer->isMapped() ||
+			   (mState.pixelUnpackBuffer->size() < static_cast<size_t>(imageSize)) ||
+			   (static_cast<GLsizei>((ptrdiff_t)(*data)) % GetTypeSize(type)))
+			{
+				return GL_INVALID_OPERATION;
+			}
+		}
+
+		*data = static_cast<const unsigned char*>(mState.pixelUnpackBuffer->data()) + (ptrdiff_t)(*data);
+	}
+	return GL_NONE;
 }
 
 bool Context::getBuffer(GLenum target, es2::Buffer **buffer) const
@@ -1686,16 +1730,16 @@ void Context::samplerParameteri(GLuint sampler, GLenum pname, GLint param)
 
 	switch(pname)
 	{
-	case GL_TEXTURE_MIN_FILTER:    samplerObject->setMinFilter(static_cast<GLenum>(param));       break;
-	case GL_TEXTURE_MAG_FILTER:    samplerObject->setMagFilter(static_cast<GLenum>(param));       break;
-	case GL_TEXTURE_WRAP_S:        samplerObject->setWrapS(static_cast<GLenum>(param));           break;
-	case GL_TEXTURE_WRAP_T:        samplerObject->setWrapT(static_cast<GLenum>(param));           break;
-	case GL_TEXTURE_WRAP_R:        samplerObject->setWrapR(static_cast<GLenum>(param));           break;
-	case GL_TEXTURE_MIN_LOD:       samplerObject->setMinLod(static_cast<GLfloat>(param));         break;
-	case GL_TEXTURE_MAX_LOD:       samplerObject->setMaxLod(static_cast<GLfloat>(param));         break;
-	case GL_TEXTURE_COMPARE_MODE:  samplerObject->setComparisonMode(static_cast<GLenum>(param));  break;
-	case GL_TEXTURE_COMPARE_FUNC:  samplerObject->setComparisonFunc(static_cast<GLenum>(param));  break;
-	default:                       UNREACHABLE(pname); break;
+	case GL_TEXTURE_MIN_FILTER:   samplerObject->setMinFilter(static_cast<GLenum>(param));   break;
+	case GL_TEXTURE_MAG_FILTER:   samplerObject->setMagFilter(static_cast<GLenum>(param));   break;
+	case GL_TEXTURE_WRAP_S:       samplerObject->setWrapS(static_cast<GLenum>(param));       break;
+	case GL_TEXTURE_WRAP_T:       samplerObject->setWrapT(static_cast<GLenum>(param));       break;
+	case GL_TEXTURE_WRAP_R:       samplerObject->setWrapR(static_cast<GLenum>(param));       break;
+	case GL_TEXTURE_MIN_LOD:      samplerObject->setMinLod(static_cast<GLfloat>(param));     break;
+	case GL_TEXTURE_MAX_LOD:      samplerObject->setMaxLod(static_cast<GLfloat>(param));     break;
+	case GL_TEXTURE_COMPARE_MODE: samplerObject->setCompareMode(static_cast<GLenum>(param)); break;
+	case GL_TEXTURE_COMPARE_FUNC: samplerObject->setCompareFunc(static_cast<GLenum>(param)); break;
+	default:                      UNREACHABLE(pname); break;
 	}
 }
 
@@ -1708,16 +1752,16 @@ void Context::samplerParameterf(GLuint sampler, GLenum pname, GLfloat param)
 
 	switch(pname)
 	{
-	case GL_TEXTURE_MIN_FILTER:    samplerObject->setMinFilter(static_cast<GLenum>(roundf(param)));       break;
-	case GL_TEXTURE_MAG_FILTER:    samplerObject->setMagFilter(static_cast<GLenum>(roundf(param)));       break;
-	case GL_TEXTURE_WRAP_S:        samplerObject->setWrapS(static_cast<GLenum>(roundf(param)));           break;
-	case GL_TEXTURE_WRAP_T:        samplerObject->setWrapT(static_cast<GLenum>(roundf(param)));           break;
-	case GL_TEXTURE_WRAP_R:        samplerObject->setWrapR(static_cast<GLenum>(roundf(param)));           break;
-	case GL_TEXTURE_MIN_LOD:       samplerObject->setMinLod(param);                                       break;
-	case GL_TEXTURE_MAX_LOD:       samplerObject->setMaxLod(param);                                       break;
-	case GL_TEXTURE_COMPARE_MODE:  samplerObject->setComparisonMode(static_cast<GLenum>(roundf(param)));  break;
-	case GL_TEXTURE_COMPARE_FUNC:  samplerObject->setComparisonFunc(static_cast<GLenum>(roundf(param)));  break;
-	default:                       UNREACHABLE(pname); break;
+	case GL_TEXTURE_MIN_FILTER:   samplerObject->setMinFilter(static_cast<GLenum>(roundf(param)));   break;
+	case GL_TEXTURE_MAG_FILTER:   samplerObject->setMagFilter(static_cast<GLenum>(roundf(param)));   break;
+	case GL_TEXTURE_WRAP_S:       samplerObject->setWrapS(static_cast<GLenum>(roundf(param)));       break;
+	case GL_TEXTURE_WRAP_T:       samplerObject->setWrapT(static_cast<GLenum>(roundf(param)));       break;
+	case GL_TEXTURE_WRAP_R:       samplerObject->setWrapR(static_cast<GLenum>(roundf(param)));       break;
+	case GL_TEXTURE_MIN_LOD:      samplerObject->setMinLod(param);                                   break;
+	case GL_TEXTURE_MAX_LOD:      samplerObject->setMaxLod(param);                                   break;
+	case GL_TEXTURE_COMPARE_MODE: samplerObject->setCompareMode(static_cast<GLenum>(roundf(param))); break;
+	case GL_TEXTURE_COMPARE_FUNC: samplerObject->setCompareFunc(static_cast<GLenum>(roundf(param))); break;
+	default:                      UNREACHABLE(pname); break;
 	}
 }
 
@@ -1730,16 +1774,16 @@ GLint Context::getSamplerParameteri(GLuint sampler, GLenum pname)
 
 	switch(pname)
 	{
-	case GL_TEXTURE_MIN_FILTER:    return static_cast<GLint>(samplerObject->getMinFilter());
-	case GL_TEXTURE_MAG_FILTER:    return static_cast<GLint>(samplerObject->getMagFilter());
-	case GL_TEXTURE_WRAP_S:        return static_cast<GLint>(samplerObject->getWrapS());
-	case GL_TEXTURE_WRAP_T:        return static_cast<GLint>(samplerObject->getWrapT());
-	case GL_TEXTURE_WRAP_R:        return static_cast<GLint>(samplerObject->getWrapR());
-	case GL_TEXTURE_MIN_LOD:       return static_cast<GLint>(roundf(samplerObject->getMinLod()));
-	case GL_TEXTURE_MAX_LOD:       return static_cast<GLint>(roundf(samplerObject->getMaxLod()));
-	case GL_TEXTURE_COMPARE_MODE:  return static_cast<GLint>(samplerObject->getComparisonMode());
-	case GL_TEXTURE_COMPARE_FUNC:  return static_cast<GLint>(samplerObject->getComparisonFunc());
-	default:                       UNREACHABLE(pname); return 0;
+	case GL_TEXTURE_MIN_FILTER:   return static_cast<GLint>(samplerObject->getMinFilter());
+	case GL_TEXTURE_MAG_FILTER:   return static_cast<GLint>(samplerObject->getMagFilter());
+	case GL_TEXTURE_WRAP_S:       return static_cast<GLint>(samplerObject->getWrapS());
+	case GL_TEXTURE_WRAP_T:       return static_cast<GLint>(samplerObject->getWrapT());
+	case GL_TEXTURE_WRAP_R:       return static_cast<GLint>(samplerObject->getWrapR());
+	case GL_TEXTURE_MIN_LOD:      return static_cast<GLint>(roundf(samplerObject->getMinLod()));
+	case GL_TEXTURE_MAX_LOD:      return static_cast<GLint>(roundf(samplerObject->getMaxLod()));
+	case GL_TEXTURE_COMPARE_MODE: return static_cast<GLint>(samplerObject->getCompareMode());
+	case GL_TEXTURE_COMPARE_FUNC: return static_cast<GLint>(samplerObject->getCompareFunc());
+	default:                      UNREACHABLE(pname); return 0;
 	}
 }
 
@@ -1752,16 +1796,16 @@ GLfloat Context::getSamplerParameterf(GLuint sampler, GLenum pname)
 
 	switch(pname)
 	{
-	case GL_TEXTURE_MIN_FILTER:    return static_cast<GLfloat>(samplerObject->getMinFilter());
-	case GL_TEXTURE_MAG_FILTER:    return static_cast<GLfloat>(samplerObject->getMagFilter());
-	case GL_TEXTURE_WRAP_S:        return static_cast<GLfloat>(samplerObject->getWrapS());
-	case GL_TEXTURE_WRAP_T:        return static_cast<GLfloat>(samplerObject->getWrapT());
-	case GL_TEXTURE_WRAP_R:        return static_cast<GLfloat>(samplerObject->getWrapR());
-	case GL_TEXTURE_MIN_LOD:       return samplerObject->getMinLod();
-	case GL_TEXTURE_MAX_LOD:       return samplerObject->getMaxLod();
-	case GL_TEXTURE_COMPARE_MODE:  return static_cast<GLfloat>(samplerObject->getComparisonMode());
-	case GL_TEXTURE_COMPARE_FUNC:  return static_cast<GLfloat>(samplerObject->getComparisonFunc());
-	default:                       UNREACHABLE(pname); return 0;
+	case GL_TEXTURE_MIN_FILTER:   return static_cast<GLfloat>(samplerObject->getMinFilter());
+	case GL_TEXTURE_MAG_FILTER:   return static_cast<GLfloat>(samplerObject->getMagFilter());
+	case GL_TEXTURE_WRAP_S:       return static_cast<GLfloat>(samplerObject->getWrapS());
+	case GL_TEXTURE_WRAP_T:       return static_cast<GLfloat>(samplerObject->getWrapT());
+	case GL_TEXTURE_WRAP_R:       return static_cast<GLfloat>(samplerObject->getWrapR());
+	case GL_TEXTURE_MIN_LOD:      return samplerObject->getMinLod();
+	case GL_TEXTURE_MAX_LOD:      return samplerObject->getMaxLod();
+	case GL_TEXTURE_COMPARE_MODE: return static_cast<GLfloat>(samplerObject->getCompareMode());
+	case GL_TEXTURE_COMPARE_FUNC: return static_cast<GLfloat>(samplerObject->getCompareFunc());
+	default:                      UNREACHABLE(pname); return 0;
 	}
 }
 
@@ -2379,6 +2423,20 @@ template bool Context::getUniformBufferiv<GLint64>(GLuint index, GLenum pname, G
 
 template<typename T> bool Context::getUniformBufferiv(GLuint index, GLenum pname, T *param) const
 {
+	switch(pname)
+	{
+	case GL_UNIFORM_BUFFER_BINDING:
+	case GL_UNIFORM_BUFFER_SIZE:
+	case GL_UNIFORM_BUFFER_START:
+		if(index >= MAX_UNIFORM_BUFFER_BINDINGS)
+		{
+			return error(GL_INVALID_VALUE, true);
+		}
+		break;
+	default:
+		break;
+	}
+
 	const BufferBinding& uniformBuffer = mState.uniformBuffers[index];
 
 	switch(pname)
@@ -2673,21 +2731,24 @@ bool Context::applyRenderTarget()
 		if(framebuffer->getDrawBuffer(i) != GL_NONE)
 		{
 			egl::Image *renderTarget = framebuffer->getRenderTarget(i);
-			device->setRenderTarget(i, renderTarget);
+			GLint layer = framebuffer->getColorbufferLayer(i);
+			device->setRenderTarget(i, renderTarget, layer);
 			if(renderTarget) renderTarget->release();
 		}
 		else
 		{
-			device->setRenderTarget(i, nullptr);
+			device->setRenderTarget(i, nullptr, 0);
 		}
 	}
 
 	egl::Image *depthBuffer = framebuffer->getDepthBuffer();
-	device->setDepthBuffer(depthBuffer);
+	GLint dLayer = framebuffer->getDepthbufferLayer();
+	device->setDepthBuffer(depthBuffer, dLayer);
 	if(depthBuffer) depthBuffer->release();
 
 	egl::Image *stencilBuffer = framebuffer->getStencilBuffer();
-	device->setStencilBuffer(stencilBuffer);
+	GLint sLayer = framebuffer->getStencilbufferLayer();
+	device->setStencilBuffer(stencilBuffer, sLayer);
 	if(stencilBuffer) stencilBuffer->release();
 
 	Viewport viewport;
@@ -3027,7 +3088,7 @@ void Context::applyTextures(sw::SamplerType samplerType)
 
 			if(texture->isSamplerComplete())
 			{
-				GLenum wrapS, wrapT, wrapR, minFilter, magFilter;
+				GLenum wrapS, wrapT, wrapR, minFilter, magFilter, compFunc, compMode;
 				GLfloat minLOD, maxLOD;
 
 				Sampler *samplerObject = mState.sampler[textureUnit];
@@ -3040,6 +3101,8 @@ void Context::applyTextures(sw::SamplerType samplerType)
 					magFilter = samplerObject->getMagFilter();
 					minLOD = samplerObject->getMinLod();
 					maxLOD = samplerObject->getMaxLod();
+					compFunc = samplerObject->getCompareFunc();
+					compMode = samplerObject->getCompareMode();
 				}
 				else
 				{
@@ -3050,9 +3113,11 @@ void Context::applyTextures(sw::SamplerType samplerType)
 					magFilter = texture->getMagFilter();
 					minLOD = texture->getMinLOD();
 					maxLOD = texture->getMaxLOD();
+					compFunc = texture->getCompareFunc();
+					compMode = texture->getCompareMode();
 				}
-				GLfloat maxAnisotropy = texture->getMaxAnisotropy();
 
+				GLfloat maxAnisotropy = texture->getMaxAnisotropy();
 				GLint baseLevel = texture->getBaseLevel();
 				GLint maxLevel = texture->getMaxLevel();
 				GLenum swizzleR = texture->getSwizzleR();
@@ -3063,6 +3128,7 @@ void Context::applyTextures(sw::SamplerType samplerType)
 				device->setAddressingModeU(samplerType, samplerIndex, es2sw::ConvertTextureWrap(wrapS));
 				device->setAddressingModeV(samplerType, samplerIndex, es2sw::ConvertTextureWrap(wrapT));
 				device->setAddressingModeW(samplerType, samplerIndex, es2sw::ConvertTextureWrap(wrapR));
+				device->setCompareFunc(samplerType, samplerIndex, es2sw::ConvertCompareFunc(compFunc, compMode));
 				device->setSwizzleR(samplerType, samplerIndex, es2sw::ConvertSwizzleType(swizzleR));
 				device->setSwizzleG(samplerType, samplerIndex, es2sw::ConvertSwizzleType(swizzleG));
 				device->setSwizzleB(samplerType, samplerIndex, es2sw::ConvertSwizzleType(swizzleB));
@@ -3071,7 +3137,6 @@ void Context::applyTextures(sw::SamplerType samplerType)
 				device->setMaxLod(samplerType, samplerIndex, maxLOD);
 				device->setBaseLevel(samplerType, samplerIndex, baseLevel);
 				device->setMaxLevel(samplerType, samplerIndex, maxLevel);
-
 				device->setTextureFilter(samplerType, samplerIndex, es2sw::ConvertTextureFilter(minFilter, magFilter, maxAnisotropy));
 				device->setMipmapFilter(samplerType, samplerIndex, es2sw::ConvertMipMapFilter(minFilter));
 				device->setMaxAnisotropy(samplerType, samplerIndex, maxAnisotropy);
@@ -3107,7 +3172,7 @@ void Context::applyTexture(sw::SamplerType type, int index, Texture *baseTexture
 	}
 	else UNREACHABLE(type);
 
-	sw::Resource *resource = 0;
+	sw::Resource *resource = nullptr;
 
 	if(baseTexture && textureUsed)
 	{
@@ -3118,7 +3183,8 @@ void Context::applyTexture(sw::SamplerType type, int index, Texture *baseTexture
 
 	if(baseTexture && textureUsed)
 	{
-		int levelCount = baseTexture->getLevelCount();
+		int baseLevel = baseTexture->getBaseLevel();
+		int maxLevel = std::min(baseTexture->getTopLevel(), baseTexture->getMaxLevel());
 
 		if(baseTexture->getTarget() == GL_TEXTURE_2D || baseTexture->getTarget() == GL_TEXTURE_EXTERNAL_OES)
 		{
@@ -3126,36 +3192,28 @@ void Context::applyTexture(sw::SamplerType type, int index, Texture *baseTexture
 
 			for(int mipmapLevel = 0; mipmapLevel < sw::MIPMAP_LEVELS; mipmapLevel++)
 			{
-				int surfaceLevel = mipmapLevel;
+				int surfaceLevel = mipmapLevel + baseLevel;
 
-				if(surfaceLevel < 0)
+				if(surfaceLevel > maxLevel)
 				{
-					surfaceLevel = 0;
-				}
-				else if(surfaceLevel >= levelCount)
-				{
-					surfaceLevel = levelCount - 1;
+					surfaceLevel = maxLevel;
 				}
 
 				egl::Image *surface = texture->getImage(surfaceLevel);
 				device->setTextureLevel(sampler, 0, mipmapLevel, surface, sw::TEXTURE_2D);
 			}
 		}
-		else if(baseTexture->getTarget() == GL_TEXTURE_3D_OES)
+		else if(baseTexture->getTarget() == GL_TEXTURE_3D)
 		{
 			Texture3D *texture = static_cast<Texture3D*>(baseTexture);
 
 			for(int mipmapLevel = 0; mipmapLevel < sw::MIPMAP_LEVELS; mipmapLevel++)
 			{
-				int surfaceLevel = mipmapLevel;
+				int surfaceLevel = mipmapLevel + baseLevel;
 
-				if(surfaceLevel < 0)
+				if(surfaceLevel > maxLevel)
 				{
-					surfaceLevel = 0;
-				}
-				else if(surfaceLevel >= levelCount)
-				{
-					surfaceLevel = levelCount - 1;
+					surfaceLevel = maxLevel;
 				}
 
 				egl::Image *surface = texture->getImage(surfaceLevel);
@@ -3168,15 +3226,11 @@ void Context::applyTexture(sw::SamplerType type, int index, Texture *baseTexture
 
 			for(int mipmapLevel = 0; mipmapLevel < sw::MIPMAP_LEVELS; mipmapLevel++)
 			{
-				int surfaceLevel = mipmapLevel;
+				int surfaceLevel = mipmapLevel + baseLevel;
 
-				if(surfaceLevel < 0)
+				if(surfaceLevel > maxLevel)
 				{
-					surfaceLevel = 0;
-				}
-				else if(surfaceLevel >= levelCount)
-				{
-					surfaceLevel = levelCount - 1;
+					surfaceLevel = maxLevel;
 				}
 
 				egl::Image *surface = texture->getImage(surfaceLevel);
@@ -3185,21 +3239,19 @@ void Context::applyTexture(sw::SamplerType type, int index, Texture *baseTexture
 		}
 		else if(baseTexture->getTarget() == GL_TEXTURE_CUBE_MAP)
 		{
-			for(int face = 0; face < 6; face++)
+			TextureCubeMap *cubeTexture = static_cast<TextureCubeMap*>(baseTexture);
+
+			for(int mipmapLevel = 0; mipmapLevel < sw::MIPMAP_LEVELS; mipmapLevel++)
 			{
-				TextureCubeMap *cubeTexture = static_cast<TextureCubeMap*>(baseTexture);
+				cubeTexture->updateBorders(mipmapLevel);
 
-				for(int mipmapLevel = 0; mipmapLevel < sw::MIPMAP_LEVELS; mipmapLevel++)
+				for(int face = 0; face < 6; face++)
 				{
-					int surfaceLevel = mipmapLevel;
+					int surfaceLevel = mipmapLevel + baseLevel;
 
-					if(surfaceLevel < 0)
+					if(surfaceLevel > maxLevel)
 					{
-						surfaceLevel = 0;
-					}
-					else if(surfaceLevel >= levelCount)
-					{
-						surfaceLevel = levelCount - 1;
+						surfaceLevel = maxLevel;
 					}
 
 					egl::Image *surface = cubeTexture->getImage(face, surfaceLevel);
@@ -3254,7 +3306,7 @@ void Context::readPixels(GLint x, GLint y, GLsizei width, GLsizei height, GLenum
 	egl::Image *renderTarget = nullptr;
 	switch(format)
 	{
-	case GL_DEPTH_COMPONENT:
+	case GL_DEPTH_COMPONENT:   // GL_NV_read_depth
 		renderTarget = framebuffer->getDepthBuffer();
 		break;
 	default:
@@ -3267,14 +3319,14 @@ void Context::readPixels(GLint x, GLint y, GLsizei width, GLsizei height, GLenum
 		return error(GL_INVALID_OPERATION);
 	}
 
-	sw::Rect rect = {x, y, x + width, y + height};
-	sw::Rect dstRect = { 0, 0, width, height };
-	rect.clip(0, 0, renderTarget->getWidth(), renderTarget->getHeight());
+	sw::RectF rect((float)x, (float)y, (float)(x + width), (float)(y + height));
+	sw::Rect dstRect(0, 0, width, height);
+	rect.clip(0.0f, 0.0f, (float)renderTarget->getWidth(), (float)renderTarget->getHeight());
 
 	sw::Surface *externalSurface = sw::Surface::create(width, height, 1, egl::ConvertFormatType(format, type), pixels, outputPitch, outputPitch * outputHeight);
-	sw::SliceRect sliceRect(rect);
+	sw::SliceRectF sliceRect(rect);
 	sw::SliceRect dstSliceRect(dstRect);
-	device->blit(renderTarget, sliceRect, externalSurface, dstSliceRect, false);
+	device->blit(renderTarget, sliceRect, externalSurface, dstSliceRect, false, false, false);
 	delete externalSurface;
 
 	renderTarget->release();
@@ -3417,21 +3469,13 @@ void Context::clearStencilBuffer(const GLint value)
 
 void Context::drawArrays(GLenum mode, GLint first, GLsizei count, GLsizei instanceCount)
 {
-	if(!mState.currentProgram)
-	{
-		return error(GL_INVALID_OPERATION);
-	}
-
 	sw::DrawType primitiveType;
 	int primitiveCount;
 	int verticesPerPrimitive;
 
 	if(!es2sw::ConvertPrimitiveType(mode, count, GL_NONE, primitiveType, primitiveCount, verticesPerPrimitive))
-		return error(GL_INVALID_ENUM);
-
-	if(primitiveCount <= 0)
 	{
-		return;
+		return error(GL_INVALID_ENUM);
 	}
 
 	if(!applyRenderTarget())
@@ -3451,12 +3495,22 @@ void Context::drawArrays(GLenum mode, GLint first, GLsizei count, GLsizei instan
 			return error(err);
 		}
 
+		if(!mState.currentProgram)
+		{
+			return;
+		}
+
 		applyShaders();
 		applyTextures();
 
 		if(!getCurrentProgram()->validateSamplers(false))
 		{
 			return error(GL_INVALID_OPERATION);
+		}
+
+		if(primitiveCount <= 0)
+		{
+			return;
 		}
 
 		TransformFeedback* transformFeedback = getTransformFeedback();
@@ -3473,11 +3527,6 @@ void Context::drawArrays(GLenum mode, GLint first, GLsizei count, GLsizei instan
 
 void Context::drawElements(GLenum mode, GLuint start, GLuint end, GLsizei count, GLenum type, const void *indices, GLsizei instanceCount)
 {
-	if(!mState.currentProgram)
-	{
-		return error(GL_INVALID_OPERATION);
-	}
-
 	if(!indices && !getCurrentVertexArray()->getElementArrayBuffer())
 	{
 		return error(GL_INVALID_OPERATION);
@@ -3506,11 +3555,8 @@ void Context::drawElements(GLenum mode, GLuint start, GLuint end, GLsizei count,
 	int verticesPerPrimitive;
 
 	if(!es2sw::ConvertPrimitiveType(internalMode, count, type, primitiveType, primitiveCount, verticesPerPrimitive))
-		return error(GL_INVALID_ENUM);
-
-	if(primitiveCount <= 0)
 	{
-		return;
+		return error(GL_INVALID_ENUM);
 	}
 
 	if(!applyRenderTarget())
@@ -3538,12 +3584,22 @@ void Context::drawElements(GLenum mode, GLuint start, GLuint end, GLsizei count,
 			return error(err);
 		}
 
+		if(!mState.currentProgram)
+		{
+			return;
+		}
+
 		applyShaders();
 		applyTextures();
 
 		if(!getCurrentProgram()->validateSamplers(false))
 		{
 			return error(GL_INVALID_OPERATION);
+		}
+
+		if(primitiveCount <= 0)
+		{
+			return;
 		}
 
 		TransformFeedback* transformFeedback = getTransformFeedback();
@@ -3560,7 +3616,8 @@ void Context::drawElements(GLenum mode, GLuint start, GLuint end, GLsizei count,
 
 void Context::blit(sw::Surface *source, const sw::SliceRect &sRect, sw::Surface *dest, const sw::SliceRect &dRect)
 {
-	device->blit(source, sRect, dest, dRect, false);
+	sw::SliceRectF sRectF((float)sRect.x0, (float)sRect.y0, (float)sRect.x1, (float)sRect.y1, sRect.slice);
+	device->blit(source, sRectF, dest, dRect, false);
 }
 
 void Context::finish()
@@ -3890,7 +3947,7 @@ void Context::blitFramebuffer(GLint srcX0, GLint srcY0, GLint srcX1, GLint srcY1
 	sw::SliceRect sourceRect;
 	sw::SliceRect destRect;
 	bool flipX = (srcX0 < srcX1) ^ (dstX0 < dstX1);
-	bool flipy = (srcY0 < srcY1) ^ (dstY0 < dstY1);
+	bool flipY = (srcY0 < srcY1) ^ (dstY0 < dstY1);
 
 	if(srcX0 < srcX1)
 	{
@@ -3936,100 +3993,26 @@ void Context::blitFramebuffer(GLint srcX0, GLint srcY0, GLint srcX1, GLint srcY1
 		destRect.y1 = dstY0;
 	}
 
-	sw::Rect sourceScissoredRect = sourceRect;
+	sw::RectF sourceScissoredRect(static_cast<float>(sourceRect.x0), static_cast<float>(sourceRect.y0),
+	                              static_cast<float>(sourceRect.x1), static_cast<float>(sourceRect.y1));
 	sw::Rect destScissoredRect = destRect;
 
 	if(mState.scissorTestEnabled)   // Only write to parts of the destination framebuffer which pass the scissor test
 	{
-		if(destRect.x0 < mState.scissorX)
-		{
-			int xDiff = mState.scissorX - destRect.x0;
-			destScissoredRect.x0 = mState.scissorX;
-			sourceScissoredRect.x0 += xDiff;
-		}
-
-		if(destRect.x1 > mState.scissorX + mState.scissorWidth)
-		{
-			int xDiff = destRect.x1 - (mState.scissorX + mState.scissorWidth);
-			destScissoredRect.x1 = mState.scissorX + mState.scissorWidth;
-			sourceScissoredRect.x1 -= xDiff;
-		}
-
-		if(destRect.y0 < mState.scissorY)
-		{
-			int yDiff = mState.scissorY - destRect.y0;
-			destScissoredRect.y0 = mState.scissorY;
-			sourceScissoredRect.y0 += yDiff;
-		}
-
-		if(destRect.y1 > mState.scissorY + mState.scissorHeight)
-		{
-			int yDiff = destRect.y1 - (mState.scissorY + mState.scissorHeight);
-			destScissoredRect.y1 = mState.scissorY + mState.scissorHeight;
-			sourceScissoredRect.y1 -= yDiff;
-		}
+		sw::Rect scissorRect(mState.scissorX, mState.scissorY, mState.scissorX + mState.scissorWidth, mState.scissorY + mState.scissorHeight);
+		Device::ClipDstRect(sourceScissoredRect, destScissoredRect, scissorRect, flipX, flipY);
 	}
 
-	sw::Rect sourceTrimmedRect = sourceScissoredRect;
-	sw::Rect destTrimmedRect = destScissoredRect;
+	sw::SliceRectF sourceTrimmedRect = sourceScissoredRect;
+	sw::SliceRect destTrimmedRect = destScissoredRect;
 
-	// The source & destination rectangles also may need to be trimmed if they fall out of the bounds of
-	// the actual draw and read surfaces.
-	if(sourceTrimmedRect.x0 < 0)
-	{
-		int xDiff = 0 - sourceTrimmedRect.x0;
-		sourceTrimmedRect.x0 = 0;
-		destTrimmedRect.x0 += xDiff;
-	}
+	// The source & destination rectangles also may need to be trimmed if
+	// they fall out of the bounds of the actual draw and read surfaces.
+	sw::Rect sourceTrimRect(0, 0, readBufferWidth, readBufferHeight);
+	Device::ClipSrcRect(sourceTrimmedRect, destTrimmedRect, sourceTrimRect, flipX, flipY);
 
-	if(sourceTrimmedRect.x1 > readBufferWidth)
-	{
-		int xDiff = sourceTrimmedRect.x1 - readBufferWidth;
-		sourceTrimmedRect.x1 = readBufferWidth;
-		destTrimmedRect.x1 -= xDiff;
-	}
-
-	if(sourceTrimmedRect.y0 < 0)
-	{
-		int yDiff = 0 - sourceTrimmedRect.y0;
-		sourceTrimmedRect.y0 = 0;
-		destTrimmedRect.y0 += yDiff;
-	}
-
-	if(sourceTrimmedRect.y1 > readBufferHeight)
-	{
-		int yDiff = sourceTrimmedRect.y1 - readBufferHeight;
-		sourceTrimmedRect.y1 = readBufferHeight;
-		destTrimmedRect.y1 -= yDiff;
-	}
-
-	if(destTrimmedRect.x0 < 0)
-	{
-		int xDiff = 0 - destTrimmedRect.x0;
-		destTrimmedRect.x0 = 0;
-		sourceTrimmedRect.x0 += xDiff;
-	}
-
-	if(destTrimmedRect.x1 > drawBufferWidth)
-	{
-		int xDiff = destTrimmedRect.x1 - drawBufferWidth;
-		destTrimmedRect.x1 = drawBufferWidth;
-		sourceTrimmedRect.x1 -= xDiff;
-	}
-
-	if(destTrimmedRect.y0 < 0)
-	{
-		int yDiff = 0 - destTrimmedRect.y0;
-		destTrimmedRect.y0 = 0;
-		sourceTrimmedRect.y0 += yDiff;
-	}
-
-	if(destTrimmedRect.y1 > drawBufferHeight)
-	{
-		int yDiff = destTrimmedRect.y1 - drawBufferHeight;
-		destTrimmedRect.y1 = drawBufferHeight;
-		sourceTrimmedRect.y1 -= yDiff;
-	}
+	sw::Rect destTrimRect(0, 0, drawBufferWidth, drawBufferHeight);
+	Device::ClipDstRect(sourceTrimmedRect, destTrimmedRect, destTrimRect, flipX, flipY);
 
 	bool partialBufferCopy = false;
 
@@ -4049,7 +4032,7 @@ void Context::blitFramebuffer(GLint srcX0, GLint srcY0, GLint srcX1, GLint srcY1
 
 	if(mask & GL_COLOR_BUFFER_BIT)
 	{
-		GLenum readColorbufferType = readFramebuffer->getColorbufferType(getReadFramebufferColorIndex());
+		GLenum readColorbufferType = readFramebuffer->getReadBufferType();
 		GLenum drawColorbufferType = drawFramebuffer->getColorbufferType(0);
 		const bool validReadType = readColorbufferType == GL_TEXTURE_2D || Framebuffer::IsRenderbuffer(readColorbufferType);
 		const bool validDrawType = drawColorbufferType == GL_TEXTURE_2D || Framebuffer::IsRenderbuffer(drawColorbufferType);
@@ -4059,6 +4042,52 @@ void Context::blitFramebuffer(GLint srcX0, GLint srcY0, GLint srcX1, GLint srcY1
 		}
 
 		if(partialBufferCopy && readBufferSamples > 1 && !sameBounds)
+		{
+			return error(GL_INVALID_OPERATION);
+		}
+
+		// The GL ES 3.0.2 spec (pg 193) states that:
+		// 1) If the read buffer is fixed point format, the draw buffer must be as well
+		// 2) If the read buffer is an unsigned integer format, the draw buffer must be
+		// as well
+		// 3) If the read buffer is a signed integer format, the draw buffer must be as
+		// well
+		es2::Renderbuffer *readRenderbuffer = readFramebuffer->getReadColorbuffer();
+		es2::Renderbuffer *drawRenderbuffer = drawFramebuffer->getColorbuffer(0);
+		GLint readFormat = readRenderbuffer->getFormat();
+		GLint drawFormat = drawRenderbuffer->getFormat();
+		GLenum readComponentType = GetComponentType(readFormat, GL_COLOR_ATTACHMENT0);
+		GLenum drawComponentType = GetComponentType(drawFormat, GL_COLOR_ATTACHMENT0);
+		bool readFixedPoint = ((readComponentType == GL_UNSIGNED_NORMALIZED) ||
+		                       (readComponentType == GL_SIGNED_NORMALIZED));
+		bool drawFixedPoint = ((drawComponentType == GL_UNSIGNED_NORMALIZED) ||
+		                       (drawComponentType == GL_SIGNED_NORMALIZED));
+		bool readFixedOrFloat = (readFixedPoint || (readComponentType == GL_FLOAT));
+		bool drawFixedOrFloat = (drawFixedPoint || (drawComponentType == GL_FLOAT));
+
+		if(readFixedOrFloat != drawFixedOrFloat)
+		{
+			return error(GL_INVALID_OPERATION);
+		}
+
+		if((readComponentType == GL_UNSIGNED_INT) && (drawComponentType != GL_UNSIGNED_INT))
+		{
+			return error(GL_INVALID_OPERATION);
+		}
+
+		if((readComponentType == GL_INT) && (drawComponentType != GL_INT))
+		{
+			return error(GL_INVALID_OPERATION);
+		}
+
+		// Cannot filter integer data
+		if(((readComponentType == GL_UNSIGNED_INT) || (readComponentType == GL_INT)) && filter)
+		{
+			return error(GL_INVALID_OPERATION);
+		}
+
+		if((readRenderbuffer->getSamples() > 0) &&
+		   (readRenderbuffer->getFormat() != drawRenderbuffer->getFormat()))
 		{
 			return error(GL_INVALID_OPERATION);
 		}
@@ -4086,6 +4115,11 @@ void Context::blitFramebuffer(GLint srcX0, GLint srcY0, GLint srcX1, GLint srcY1
 				blitDepth = true;
 				readDSBuffer = readFramebuffer->getDepthbuffer();
 				drawDSBuffer = drawFramebuffer->getDepthbuffer();
+
+				if(readDSBuffer->getFormat() != drawDSBuffer->getFormat())
+				{
+					return error(GL_INVALID_OPERATION);
+				}
 			}
 		}
 
@@ -4104,6 +4138,11 @@ void Context::blitFramebuffer(GLint srcX0, GLint srcY0, GLint srcX1, GLint srcY1
 				blitStencil = true;
 				readDSBuffer = readFramebuffer->getStencilbuffer();
 				drawDSBuffer = drawFramebuffer->getStencilbuffer();
+
+				if(readDSBuffer->getFormat() != drawDSBuffer->getFormat())
+				{
+					return error(GL_INVALID_OPERATION);
+				}
 			}
 		}
 
@@ -4129,21 +4168,21 @@ void Context::blitFramebuffer(GLint srcX0, GLint srcY0, GLint srcX1, GLint srcY1
 
 	if(blitRenderTarget || blitDepth || blitStencil)
 	{
+		if(flipX)
+		{
+			swap(destTrimmedRect.x0, destTrimmedRect.x1);
+		}
+		if(flipY)
+		{
+			swap(destTrimmedRect.y0, destTrimmedRect.y1);
+		}
+
 		if(blitRenderTarget)
 		{
 			egl::Image *readRenderTarget = readFramebuffer->getReadRenderTarget();
 			egl::Image *drawRenderTarget = drawFramebuffer->getRenderTarget(0);
 
-			if(flipX)
-			{
-				swap(destRect.x0, destRect.x1);
-			}
-			if(flipy)
-			{
-				swap(destRect.y0, destRect.y1);
-			}
-
-			bool success = device->stretchRect(readRenderTarget, &sourceRect, drawRenderTarget, &destRect, (filter ? Device::USE_FILTER : 0) | Device::COLOR_BUFFER);
+			bool success = device->stretchRect(readRenderTarget, &sourceTrimmedRect, drawRenderTarget, &destTrimmedRect, (filter ? Device::USE_FILTER : 0) | Device::COLOR_BUFFER);
 
 			readRenderTarget->release();
 			drawRenderTarget->release();
@@ -4160,7 +4199,7 @@ void Context::blitFramebuffer(GLint srcX0, GLint srcY0, GLint srcX1, GLint srcY1
 			egl::Image *readRenderTarget = readFramebuffer->getDepthBuffer();
 			egl::Image *drawRenderTarget = drawFramebuffer->getDepthBuffer();
 
-			bool success = device->stretchRect(readRenderTarget, &sourceRect, drawRenderTarget, &destRect, (filter ? Device::USE_FILTER : 0) | Device::DEPTH_BUFFER);
+			bool success = device->stretchRect(readRenderTarget, &sourceTrimmedRect, drawRenderTarget, &destTrimmedRect, (filter ? Device::USE_FILTER : 0) | Device::DEPTH_BUFFER);
 
 			readRenderTarget->release();
 			drawRenderTarget->release();
@@ -4177,7 +4216,7 @@ void Context::blitFramebuffer(GLint srcX0, GLint srcY0, GLint srcX1, GLint srcY1
 			egl::Image *readRenderTarget = readFramebuffer->getStencilBuffer();
 			egl::Image *drawRenderTarget = drawFramebuffer->getStencilBuffer();
 
-			bool success = device->stretchRect(readRenderTarget, &sourceRect, drawRenderTarget, &destRect, (filter ? Device::USE_FILTER : 0) | Device::STENCIL_BUFFER);
+			bool success = device->stretchRect(readRenderTarget, &sourceTrimmedRect, drawRenderTarget, &destTrimmedRect, (filter ? Device::USE_FILTER : 0) | Device::STENCIL_BUFFER);
 
 			readRenderTarget->release();
 			drawRenderTarget->release();
@@ -4248,7 +4287,7 @@ EGLenum Context::validateSharedImage(EGLenum target, GLuint name, GLuint texture
 			return EGL_BAD_PARAMETER;
 		}
 
-		if(textureLevel == 0 && !(texture->isSamplerComplete() && texture->getLevelCount() == 1))
+		if(textureLevel == 0 && !(texture->isSamplerComplete() && texture->getTopLevel() == 0))
 		{
 			return EGL_BAD_PARAMETER;
 		}
@@ -4354,6 +4393,10 @@ const GLubyte *Context::getExtensions(GLuint index, GLuint *numExt) const
 		"GL_EXT_texture_filter_anisotropic",
 		"GL_EXT_texture_format_BGRA8888",
 		"GL_EXT_texture_rg",
+#if (ASTC_SUPPORT)
+		"GL_KHR_texture_compression_astc_hdr",
+		"GL_KHR_texture_compression_astc_ldr",
+#endif
 		"GL_ANGLE_framebuffer_blit",
 		"GL_ANGLE_framebuffer_multisample",
 		"GL_ANGLE_instanced_arrays",
@@ -4361,6 +4404,7 @@ const GLubyte *Context::getExtensions(GLuint index, GLuint *numExt) const
 		"GL_ANGLE_texture_compression_dxt3",
 		"GL_ANGLE_texture_compression_dxt5",
 #endif
+		//"GL_APPLE_texture_format_BGRA8888",
 		"GL_CHROMIUM_texture_filtering_hint",
 		"GL_NV_fence",
 		"GL_NV_framebuffer_blit",

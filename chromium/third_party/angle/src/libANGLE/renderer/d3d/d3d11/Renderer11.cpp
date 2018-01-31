@@ -47,7 +47,7 @@
 #include "libANGLE/renderer/d3d/d3d11/Query11.h"
 #include "libANGLE/renderer/d3d/d3d11/RenderTarget11.h"
 #include "libANGLE/renderer/d3d/d3d11/ShaderExecutable11.h"
-#include "libANGLE/renderer/d3d/d3d11/StreamProducerNV12.h"
+#include "libANGLE/renderer/d3d/d3d11/StreamProducerD3DTexture.h"
 #include "libANGLE/renderer/d3d/d3d11/SwapChain11.h"
 #include "libANGLE/renderer/d3d/d3d11/TextureStorage11.h"
 #include "libANGLE/renderer/d3d/d3d11/TransformFeedback11.h"
@@ -473,7 +473,6 @@ Renderer11::Renderer11(egl::Display *display)
     mDxgiModule           = nullptr;
     mDCompModule          = nullptr;
     mCreatedWithDeviceEXT = false;
-    mEGLDevice            = nullptr;
 
     mDevice         = nullptr;
     mDeviceContext  = nullptr;
@@ -534,11 +533,11 @@ Renderer11::Renderer11(egl::Display *display)
                 mRequestedDriverType = D3D_DRIVER_TYPE_HARDWARE;
                 break;
 
-            case EGL_PLATFORM_ANGLE_DEVICE_TYPE_WARP_ANGLE:
+            case EGL_PLATFORM_ANGLE_DEVICE_TYPE_D3D_WARP_ANGLE:
                 mRequestedDriverType = D3D_DRIVER_TYPE_WARP;
                 break;
 
-            case EGL_PLATFORM_ANGLE_DEVICE_TYPE_REFERENCE_ANGLE:
+            case EGL_PLATFORM_ANGLE_DEVICE_TYPE_D3D_REFERENCE_ANGLE:
                 mRequestedDriverType = D3D_DRIVER_TYPE_REFERENCE;
                 break;
 
@@ -556,10 +555,9 @@ Renderer11::Renderer11(egl::Display *display)
 
         mCreateDebugDevice = ShouldUseDebugLayers(attributes);
     }
-    else if (display->getPlatform() == EGL_PLATFORM_DEVICE_EXT)
+    else if (mDisplay->getPlatform() == EGL_PLATFORM_DEVICE_EXT)
     {
-        mEGLDevice = GetImplAs<DeviceD3D>(display->getDevice());
-        ASSERT(mEGLDevice != nullptr);
+        ASSERT(mDisplay->getDevice() != nullptr);
         mCreatedWithDeviceEXT = true;
 
         // Also set EGL_PLATFORM_ANGLE_ANGLE variables, in case they're used elsewhere in ANGLE
@@ -832,9 +830,12 @@ egl::Error Renderer11::initializeD3DDevice()
     }
     else
     {
+        DeviceD3D *deviceD3D = GetImplAs<DeviceD3D>(mDisplay->getDevice());
+        ASSERT(deviceD3D != nullptr);
+
         // We should use the inputted D3D11 device instead
         void *device = nullptr;
-        ANGLE_TRY(mEGLDevice->getDevice(&device));
+        ANGLE_TRY(deviceD3D->getDevice(&device));
 
         ID3D11Device *d3dDevice = reinterpret_cast<ID3D11Device *>(device);
         if (FAILED(d3dDevice->GetDeviceRemovedReason()))
@@ -1204,11 +1205,7 @@ void Renderer11::generateDisplayExtensions(egl::DisplayExtensions *outExtensions
     outExtensions->stream                     = true;
     outExtensions->streamConsumerGLTexture    = true;
     outExtensions->streamConsumerGLTextureYUV = true;
-    // Not all D3D11 devices support NV12 textures
-    if (getNV12TextureSupport())
-    {
-        outExtensions->streamProducerD3DTextureNV12 = true;
-    }
+    outExtensions->streamProducerD3DTexture   = true;
 
     outExtensions->flexibleSurfaceCompatibility = true;
     outExtensions->directComposition            = !!mDCompModule;
@@ -1302,7 +1299,7 @@ egl::Error Renderer11::getD3DTextureInfo(const egl::Config *configuration,
                                          IUnknown *d3dTexture,
                                          EGLint *width,
                                          EGLint *height,
-                                         GLenum *fboFormat) const
+                                         const angle::Format **angleFormat) const
 {
     ID3D11Texture2D *texture = d3d11::DynamicCastComObject<ID3D11Texture2D>(d3dTexture);
     if (texture == nullptr)
@@ -1358,10 +1355,9 @@ egl::Error Renderer11::getD3DTextureInfo(const egl::Config *configuration,
                    << "Unknown client buffer texture format: " << desc.Format;
     }
 
-    if (fboFormat)
+    if (angleFormat)
     {
-        const angle::Format &angleFormat = d3d11_angle::GetFormat(desc.Format);
-        *fboFormat                       = angleFormat.fboImplementationInternalFormat;
+        *angleFormat = &d3d11_angle::GetFormat(desc.Format);
     }
 
     return egl::NoError();
@@ -2100,13 +2096,6 @@ void Renderer11::release()
 
     releaseDeviceResources();
 
-    if (!mCreatedWithDeviceEXT)
-    {
-        // Only delete the device if the Renderer11 owns it
-        // Otherwise we should keep it around in case we try to reinitialize the renderer later
-        SafeDelete(mEGLDevice);
-    }
-
     SafeRelease(mDxgiFactory);
     SafeRelease(mDxgiAdapter);
 
@@ -2303,18 +2292,6 @@ bool Renderer11::getShareHandleSupport() const
     ASSERT(mCreatedWithDeviceEXT || mRequestedDriverType == D3D_DRIVER_TYPE_HARDWARE);
     mSupportsShareHandles = true;
     return true;
-}
-
-bool Renderer11::getNV12TextureSupport() const
-{
-    HRESULT result;
-    UINT formatSupport;
-    result = mDevice->CheckFormatSupport(DXGI_FORMAT_NV12, &formatSupport);
-    if (result == E_FAIL)
-    {
-        return false;
-    }
-    return (formatSupport & D3D11_FORMAT_SUPPORT_TEXTURE2D) != 0;
 }
 
 int Renderer11::getMajorShaderModel() const
@@ -2996,11 +2973,11 @@ IndexBuffer *Renderer11::createIndexBuffer()
     return new IndexBuffer11(this);
 }
 
-StreamProducerImpl *Renderer11::createStreamProducerD3DTextureNV12(
+StreamProducerImpl *Renderer11::createStreamProducerD3DTexture(
     egl::Stream::ConsumerType consumerType,
     const egl::AttributeMap &attribs)
 {
-    return new StreamProducerNV12(this);
+    return new StreamProducerD3DTexture(this);
 }
 
 bool Renderer11::supportsFastCopyBufferToTexture(GLenum internalFormat) const
@@ -3314,12 +3291,7 @@ gl::Error Renderer11::packPixels(const TextureHelper11 &textureHelper,
     ID3D11Resource *readResource = textureHelper.get();
 
     D3D11_MAPPED_SUBRESOURCE mapping;
-    HRESULT hr = mDeviceContext->Map(readResource, 0, D3D11_MAP_READ, 0, &mapping);
-    if (FAILED(hr))
-    {
-        ASSERT(hr == E_OUTOFMEMORY);
-        return gl::OutOfMemory() << "Failed to map internal texture for reading, " << gl::FmtHR(hr);
-    }
+    ANGLE_TRY(mapResource(readResource, 0, D3D11_MAP_READ, 0, &mapping));
 
     uint8_t *source = static_cast<uint8_t *>(mapping.pData);
     int inputPitch  = static_cast<int>(mapping.RowPitch);
@@ -3820,8 +3792,8 @@ void Renderer11::generateCaps(gl::Caps *outCaps,
                               gl::Extensions *outExtensions,
                               gl::Limitations *outLimitations) const
 {
-    d3d11_gl::GenerateCaps(mDevice, mDeviceContext, mRenderer11DeviceCaps, outCaps, outTextureCaps,
-                           outExtensions, outLimitations);
+    d3d11_gl::GenerateCaps(mDevice, mDeviceContext, mRenderer11DeviceCaps, getWorkarounds(),
+                           outCaps, outTextureCaps, outExtensions, outLimitations);
 }
 
 angle::WorkaroundsD3D Renderer11::generateWorkarounds() const
@@ -3829,24 +3801,9 @@ angle::WorkaroundsD3D Renderer11::generateWorkarounds() const
     return d3d11::GenerateWorkarounds(mRenderer11DeviceCaps, mAdapterDescription);
 }
 
-egl::Error Renderer11::getEGLDevice(DeviceImpl **device)
+DeviceImpl *Renderer11::createEGLDevice()
 {
-    if (mEGLDevice == nullptr)
-    {
-        ASSERT(mDevice != nullptr);
-        mEGLDevice       = new DeviceD3D();
-        egl::Error error = mEGLDevice->initialize(reinterpret_cast<void *>(mDevice),
-                                                  EGL_D3D11_DEVICE_ANGLE, EGL_FALSE);
-
-        if (error.isError())
-        {
-            SafeDelete(mEGLDevice);
-            return error;
-        }
-    }
-
-    *device = static_cast<DeviceImpl *>(mEGLDevice);
-    return egl::NoError();
+    return new DeviceD3D(EGL_D3D11_DEVICE_ANGLE, mDevice);
 }
 
 ContextImpl *Renderer11::createContext(const gl::ContextState &state)
@@ -4048,6 +4005,29 @@ bool Renderer11::canSelectViewInVertexShader() const
            getRenderer11DeviceCaps().supportsVpRtIndexWriteFromVertexShader;
 }
 
+gl::Error Renderer11::mapResource(ID3D11Resource *resource,
+                                  UINT subResource,
+                                  D3D11_MAP mapType,
+                                  UINT mapFlags,
+                                  D3D11_MAPPED_SUBRESOURCE *mappedResource)
+{
+    HRESULT hr = mDeviceContext->Map(resource, subResource, mapType, mapFlags, mappedResource);
+    if (FAILED(hr))
+    {
+        if (d3d11::isDeviceLostError(hr))
+        {
+            this->notifyDeviceLost();
+        }
+
+        // Note: gl::OutOfMemory is used instead of gl::InternalError to avoid requiring
+        // additional context queries. This is needed as gl::InternalError corresponds to
+        // GL_INVALID_OPERATION, which does not uniquely identify a device reset error.
+        return gl::OutOfMemory() << "Failed to map D3D11 resource." << gl::FmtHR(hr);
+    }
+
+    return gl::NoError();
+}
+
 gl::Error Renderer11::markTransformFeedbackUsage(const gl::Context *context)
 {
     const gl::State &glState                       = context->getGLState();
@@ -4064,6 +4044,11 @@ gl::Error Renderer11::markTransformFeedbackUsage(const gl::Context *context)
     }
 
     return gl::NoError();
+}
+
+void Renderer11::onDirtyUniformBlockBinding(GLuint /*uniformBlockIndex*/)
+{
+    mStateManager.invalidateProgramUniformBuffers();
 }
 
 }  // namespace rx

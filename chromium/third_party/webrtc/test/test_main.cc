@@ -15,6 +15,7 @@
 #include "test/gmock.h"
 #include "test/gtest.h"
 #include "test/testsupport/fileutils.h"
+#include "test/testsupport/perf_test.h"
 
 #if defined(WEBRTC_IOS)
 #include "test/ios/test_support.h"
@@ -23,6 +24,24 @@ DEFINE_string(NSTreatUnknownArgumentsAsOpen, "",
     "Intentionally ignored flag intended for iOS simulator.");
 DEFINE_string(ApplePersistenceIgnoreState, "",
     "Intentionally ignored flag intended for iOS simulator.");
+DEFINE_bool(
+    save_chartjson_result,
+    false,
+    "Store the perf results in Documents/perf_result.json in the format "
+    "described by "
+    "https://github.com/catapult-project/catapult/blob/master/dashboard/docs/"
+    "data-format.md.");
+
+#else
+
+DEFINE_string(
+    chartjson_result_file,
+    "",
+    "Path where the perf results should be stored in the JSON format described "
+    "by "
+    "https://github.com/catapult-project/catapult/blob/master/dashboard/docs/"
+    "data-format.md.");
+
 #endif
 
 DEFINE_bool(logs, false, "print logs to stderr");
@@ -55,11 +74,25 @@ int main(int argc, char* argv[]) {
   webrtc::test::InitFieldTrialsFromString(fieldtrials);
   webrtc::metrics::Enable();
 
-  rtc::LogMessage::SetLogToStderr(FLAG_logs);
-#if defined(WEBRTC_IOS)
-  rtc::test::InitTestSuite(RUN_ALL_TESTS, argc, argv);
-  rtc::test::RunTestsFromIOSApp();
-#endif
 
-  return RUN_ALL_TESTS();
+  rtc::LogMessage::SetLogToStderr(FLAG_logs);
+
+#if defined(WEBRTC_IOS)
+
+  rtc::test::InitTestSuite(RUN_ALL_TESTS, argc, argv,
+                           FLAG_save_chartjson_result);
+  rtc::test::RunTestsFromIOSApp();
+
+#else
+
+  int exit_code = RUN_ALL_TESTS();
+
+  std::string chartjson_result_file = FLAG_chartjson_result_file;
+  if (!chartjson_result_file.empty()) {
+    webrtc::test::WritePerfResults(chartjson_result_file);
+  }
+
+  return exit_code;
+
+#endif
 }

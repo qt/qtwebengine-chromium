@@ -80,6 +80,9 @@ typedef struct FPDF_IMAGEOBJ_METADATA {
   unsigned int bits_per_pixel;
   // The image's colorspace. See above for the list of FPDF_COLORSPACE_*.
   int colorspace;
+  // The image's marked content ID. Useful for pairing with associated alt-text.
+  // A value of -1 indicates no ID.
+  int marked_content_id;
 } FPDF_IMAGEOBJ_METADATA;
 
 #ifdef __cplusplus
@@ -524,8 +527,8 @@ FPDFPath_SetStrokeWidth(FPDF_PAGEOBJECT path, float width);
 //
 // Line join can be one of following: FPDF_LINEJOIN_MITER, FPDF_LINEJOIN_ROUND,
 // FPDF_LINEJOIN_BEVEL
-FPDF_EXPORT void FPDF_CALLCONV FPDF_CALLCONV
-FPDFPath_SetLineJoin(FPDF_PAGEOBJECT page_object, int line_join);
+FPDF_EXPORT void FPDF_CALLCONV FPDFPath_SetLineJoin(FPDF_PAGEOBJECT page_object,
+                                                    int line_join);
 
 // Set the line cap of |page_object|.
 //

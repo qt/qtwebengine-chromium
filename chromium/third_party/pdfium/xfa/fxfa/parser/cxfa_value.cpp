@@ -6,6 +6,15 @@
 
 #include "xfa/fxfa/parser/cxfa_value.h"
 
+#include "fxjs/xfa/cjx_object.h"
+#include "fxjs/xfa/cjx_value.h"
+#include "third_party/base/ptr_util.h"
+#include "xfa/fxfa/parser/cxfa_arc.h"
+#include "xfa/fxfa/parser/cxfa_exdata.h"
+#include "xfa/fxfa/parser/cxfa_image.h"
+#include "xfa/fxfa/parser/cxfa_line.h"
+#include "xfa/fxfa/parser/cxfa_rectangle.h"
+
 namespace {
 
 const CXFA_Node::PropertyData kPropertyData[] = {
@@ -43,6 +52,53 @@ CXFA_Value::CXFA_Value(CXFA_Document* doc, XFA_PacketType packet)
                 XFA_Element::Value,
                 kPropertyData,
                 kAttributeData,
-                kName) {}
+                kName,
+                pdfium::MakeUnique<CJX_Value>(this)) {}
 
 CXFA_Value::~CXFA_Value() {}
+
+XFA_Element CXFA_Value::GetChildValueClassID() const {
+  CXFA_Node* pNode = GetFirstChild();
+  return pNode ? pNode->GetElementType() : XFA_Element::Unknown;
+}
+
+WideString CXFA_Value::GetChildValueContent() const {
+  CXFA_Node* pNode = GetFirstChild();
+  return pNode ? pNode->JSObject()->TryContent(false, true).value_or(L"") : L"";
+}
+
+CXFA_Arc* CXFA_Value::GetArcIfExists() const {
+  CXFA_Node* node = GetFirstChild();
+  ASSERT(!node || node->GetElementType() == XFA_Element::Arc);
+  return static_cast<CXFA_Arc*>(node);
+}
+
+CXFA_Line* CXFA_Value::GetLineIfExists() const {
+  CXFA_Node* node = GetFirstChild();
+  ASSERT(!node || node->GetElementType() == XFA_Element::Line);
+  return static_cast<CXFA_Line*>(node);
+}
+
+CXFA_Rectangle* CXFA_Value::GetRectangleIfExists() const {
+  CXFA_Node* node = GetFirstChild();
+  ASSERT(!node || node->GetElementType() == XFA_Element::Rectangle);
+  return static_cast<CXFA_Rectangle*>(node);
+}
+
+CXFA_Text* CXFA_Value::GetTextIfExists() const {
+  CXFA_Node* node = GetFirstChild();
+  ASSERT(!node || node->GetElementType() == XFA_Element::Text);
+  return static_cast<CXFA_Text*>(node);
+}
+
+CXFA_ExData* CXFA_Value::GetExDataIfExists() const {
+  CXFA_Node* node = GetFirstChild();
+  ASSERT(!node || node->GetElementType() == XFA_Element::ExData);
+  return static_cast<CXFA_ExData*>(node);
+}
+
+CXFA_Image* CXFA_Value::GetImageIfExists() const {
+  CXFA_Node* node = GetFirstChild();
+  ASSERT(!node || node->GetElementType() == XFA_Element::Image);
+  return static_cast<CXFA_Image*>(node);
+}

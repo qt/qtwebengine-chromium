@@ -16,7 +16,7 @@ namespace gl
 {
 
 VertexArrayState::VertexArrayState(size_t maxAttribs, size_t maxAttribBindings)
-    : mLabel(), mVertexBindings(maxAttribBindings), mMaxEnabledAttribute(0)
+    : mLabel(), mVertexBindings(maxAttribBindings)
 {
     ASSERT(maxAttribs <= maxAttribBindings);
 
@@ -175,6 +175,8 @@ void VertexArray::setVertexAttribFormatImpl(size_t attribIndex,
     attrib->normalized     = normalized;
     attrib->pureInteger    = pureInteger;
     attrib->relativeOffset = relativeOffset;
+    mState.mVertexAttributesTypeMask.setIndex(GetVertexAttributeBaseType(*attrib), attribIndex);
+    mState.mEnabledAttributesMask.set(attribIndex);
 }
 
 void VertexArray::setVertexAttribFormat(size_t attribIndex,
@@ -202,22 +204,13 @@ void VertexArray::enableAttribute(size_t attribIndex, bool enabledState)
     ASSERT(attribIndex < getMaxAttribs());
 
     mState.mVertexAttributes[attribIndex].enabled = enabledState;
+    mState.mVertexAttributesTypeMask.setIndex(
+        GetVertexAttributeBaseType(mState.mVertexAttributes[attribIndex]), attribIndex);
 
     mDirtyBits.set(DIRTY_BIT_ATTRIB_0_ENABLED + attribIndex);
 
     // Update state cache
-    if (enabledState)
-    {
-        mState.mMaxEnabledAttribute = std::max(attribIndex + 1, mState.mMaxEnabledAttribute);
-    }
-    else if (mState.mMaxEnabledAttribute == attribIndex + 1)
-    {
-        while (mState.mMaxEnabledAttribute > 0 &&
-               !mState.mVertexAttributes[mState.mMaxEnabledAttribute - 1].enabled)
-        {
-            --mState.mMaxEnabledAttribute;
-        }
-    }
+    mState.mEnabledAttributesMask.set(attribIndex, enabledState);
 }
 
 void VertexArray::setVertexAttribPointer(const Context *context,

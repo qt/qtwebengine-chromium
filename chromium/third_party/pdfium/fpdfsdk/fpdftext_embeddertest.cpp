@@ -87,7 +87,23 @@ TEST_F(FPDFTextEmbeddertest, Text) {
   double right = 0.0;
   double bottom = 0.0;
   double top = 0.0;
-  FPDFText_GetCharBox(textpage, 4, &left, &right, &bottom, &top);
+  EXPECT_FALSE(FPDFText_GetCharBox(nullptr, 4, &left, &right, &bottom, &top));
+  EXPECT_DOUBLE_EQ(0.0, left);
+  EXPECT_DOUBLE_EQ(0.0, right);
+  EXPECT_DOUBLE_EQ(0.0, bottom);
+  EXPECT_DOUBLE_EQ(0.0, top);
+  EXPECT_FALSE(FPDFText_GetCharBox(textpage, -1, &left, &right, &bottom, &top));
+  EXPECT_DOUBLE_EQ(0.0, left);
+  EXPECT_DOUBLE_EQ(0.0, right);
+  EXPECT_DOUBLE_EQ(0.0, bottom);
+  EXPECT_DOUBLE_EQ(0.0, top);
+  EXPECT_FALSE(FPDFText_GetCharBox(textpage, 55, &left, &right, &bottom, &top));
+  EXPECT_DOUBLE_EQ(0.0, left);
+  EXPECT_DOUBLE_EQ(0.0, right);
+  EXPECT_DOUBLE_EQ(0.0, bottom);
+  EXPECT_DOUBLE_EQ(0.0, top);
+
+  EXPECT_TRUE(FPDFText_GetCharBox(textpage, 4, &left, &right, &bottom, &top));
   EXPECT_NEAR(41.071, left, 0.001);
   EXPECT_NEAR(46.243, right, 0.001);
   EXPECT_NEAR(49.844, bottom, 0.001);
@@ -115,7 +131,7 @@ TEST_F(FPDFTextEmbeddertest, Text) {
   right = 0.0;
   bottom = 0.0;
   top = 0.0;
-  FPDFText_GetRect(textpage, 1, &left, &top, &right, &bottom);
+  EXPECT_TRUE(FPDFText_GetRect(textpage, 1, &left, &top, &right, &bottom));
   EXPECT_NEAR(20.847, left, 0.001);
   EXPECT_NEAR(135.167, right, 0.001);
   EXPECT_NEAR(96.655, bottom, 0.001);
@@ -126,7 +142,7 @@ TEST_F(FPDFTextEmbeddertest, Text) {
   right = -1.0;
   bottom = -1.0;
   top = -1.0;
-  FPDFText_GetRect(textpage, -1, &left, &top, &right, &bottom);
+  EXPECT_FALSE(FPDFText_GetRect(textpage, -1, &left, &top, &right, &bottom));
   EXPECT_EQ(0.0, left);
   EXPECT_EQ(0.0, right);
   EXPECT_EQ(0.0, bottom);
@@ -136,7 +152,7 @@ TEST_F(FPDFTextEmbeddertest, Text) {
   right = -2.0;
   bottom = -2.0;
   top = -2.0;
-  FPDFText_GetRect(textpage, 2, &left, &top, &right, &bottom);
+  EXPECT_FALSE(FPDFText_GetRect(textpage, 2, &left, &top, &right, &bottom));
   EXPECT_EQ(0.0, left);
   EXPECT_EQ(0.0, right);
   EXPECT_EQ(0.0, bottom);
@@ -365,7 +381,7 @@ TEST_F(FPDFTextEmbeddertest, WebLinks) {
   double right = 0.0;
   double top = 0.0;
   double bottom = 0.0;
-  FPDFLink_GetRect(pagelink, 0, 0, &left, &top, &right, &bottom);
+  EXPECT_TRUE(FPDFLink_GetRect(pagelink, 0, 0, &left, &top, &right, &bottom));
   EXPECT_NEAR(50.791, left, 0.001);
   EXPECT_NEAR(187.963, right, 0.001);
   EXPECT_NEAR(97.624, bottom, 0.001);
@@ -376,7 +392,7 @@ TEST_F(FPDFTextEmbeddertest, WebLinks) {
   right = -1.0;
   top = -1.0;
   bottom = -1.0;
-  FPDFLink_GetRect(pagelink, 0, 1, &left, &top, &right, &bottom);
+  EXPECT_FALSE(FPDFLink_GetRect(pagelink, 0, 1, &left, &top, &right, &bottom));
   EXPECT_EQ(-1.0, left);
   EXPECT_EQ(-1.0, right);
   EXPECT_EQ(-1.0, bottom);
@@ -387,7 +403,7 @@ TEST_F(FPDFTextEmbeddertest, WebLinks) {
   right = -2.0;
   top = -2.0;
   bottom = -2.0;
-  FPDFLink_GetRect(pagelink, -1, 0, &left, &top, &right, &bottom);
+  EXPECT_FALSE(FPDFLink_GetRect(pagelink, -1, 0, &left, &top, &right, &bottom));
   EXPECT_EQ(-2.0, left);
   EXPECT_EQ(-2.0, right);
   EXPECT_EQ(-2.0, bottom);

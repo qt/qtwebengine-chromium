@@ -7,12 +7,29 @@
 #ifndef XFA_FXFA_PARSER_CXFA_FONT_H_
 #define XFA_FXFA_PARSER_CXFA_FONT_H_
 
+#include "core/fxge/fx_dib.h"
 #include "xfa/fxfa/parser/cxfa_node.h"
 
 class CXFA_Font : public CXFA_Node {
  public:
   CXFA_Font(CXFA_Document* doc, XFA_PacketType packet);
   ~CXFA_Font() override;
+
+  float GetBaselineShift() const;
+  float GetHorizontalScale();
+  float GetVerticalScale();
+  float GetLetterSpacing();
+  int32_t GetLineThrough();
+  int32_t GetUnderline();
+  XFA_AttributeEnum GetUnderlinePeriod();
+  float GetFontSize() const;
+  WideString GetTypeface();
+
+  bool IsBold();
+  bool IsItalic();
+
+  FX_ARGB GetColor();
+  void SetColor(FX_ARGB color);
 };
 
 #endif  // XFA_FXFA_PARSER_CXFA_FONT_H_

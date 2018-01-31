@@ -16,9 +16,11 @@
 #include "core/fxcrt/xml/cfx_xmltext.h"
 #include "core/fxge/cfx_graphstatedata.h"
 #include "core/fxge/cfx_pathdata.h"
+#include "fxjs/xfa/cjx_object.h"
 #include "third_party/base/ptr_util.h"
 #include "third_party/base/stl_util.h"
 #include "xfa/fde/cfde_textout.h"
+#include "xfa/fgas/font/cfgas_gefont.h"
 #include "xfa/fxfa/cxfa_linkuserdata.h"
 #include "xfa/fxfa/cxfa_loadercontext.h"
 #include "xfa/fxfa/cxfa_pieceline.h"
@@ -27,14 +29,16 @@
 #include "xfa/fxfa/cxfa_textprovider.h"
 #include "xfa/fxfa/cxfa_texttabstopscontext.h"
 #include "xfa/fxfa/cxfa_textuserdata.h"
-#include "xfa/fxfa/parser/cxfa_fontdata.h"
+#include "xfa/fxfa/parser/cxfa_font.h"
 #include "xfa/fxfa/parser/cxfa_node.h"
-#include "xfa/fxfa/parser/cxfa_paradata.h"
+#include "xfa/fxfa/parser/cxfa_para.h"
 
 #define XFA_LOADERCNTXTFLG_FILTERSPACE 0x001
 
-CXFA_TextLayout::CXFA_TextLayout(CXFA_TextProvider* pTextProvider)
+CXFA_TextLayout::CXFA_TextLayout(CXFA_FFDoc* doc,
+                                 CXFA_TextProvider* pTextProvider)
     : m_bHasBlock(false),
+      m_pDoc(doc),
       m_pTextProvider(pTextProvider),
       m_pTextDataNode(nullptr),
       m_bRichText(false),
@@ -96,18 +100,18 @@ std::unique_ptr<CFX_RTFBreak> CXFA_TextLayout::CreateBreak(bool bDefault) {
 
   auto pBreak = pdfium::MakeUnique<CFX_RTFBreak>(dwStyle);
   pBreak->SetLineBreakTolerance(1);
-  pBreak->SetFont(m_textParser.GetFont(m_pTextProvider, nullptr));
+  pBreak->SetFont(m_textParser.GetFont(m_pDoc, m_pTextProvider, nullptr));
   pBreak->SetFontSize(m_textParser.GetFontSize(m_pTextProvider, nullptr));
   return pBreak;
 }
 
 void CXFA_TextLayout::InitBreak(float fLineWidth) {
-  CXFA_ParaData paraData = m_pTextProvider->GetParaData();
+  CXFA_Para* para = m_pTextProvider->GetParaIfExists();
   float fStart = 0;
   float fStartPos = 0;
-  if (paraData.HasValidNode()) {
+  if (para) {
     CFX_RTFLineAlignment iAlign = CFX_RTFLineAlignment::Left;
-    switch (paraData.GetHorizontalAlign()) {
+    switch (para->GetHorizontalAlign()) {
       case XFA_AttributeEnum::Center:
         iAlign = CFX_RTFLineAlignment::Center;
         break;
@@ -129,18 +133,18 @@ void CXFA_TextLayout::InitBreak(float fLineWidth) {
     }
     m_pBreak->SetAlignment(iAlign);
 
-    fStart = paraData.GetMarginLeft();
+    fStart = para->GetMarginLeft();
     if (m_pTextProvider->IsCheckButtonAndAutoWidth()) {
       if (iAlign != CFX_RTFLineAlignment::Left)
-        fLineWidth -= paraData.GetMarginRight();
+        fLineWidth -= para->GetMarginRight();
     } else {
-      fLineWidth -= paraData.GetMarginRight();
+      fLineWidth -= para->GetMarginRight();
     }
     if (fLineWidth < 0)
       fLineWidth = fStart;
 
     fStartPos = fStart;
-    float fIndent = paraData.GetTextIndent();
+    float fIndent = para->GetTextIndent();
     if (fIndent > 0)
       fStartPos += fIndent;
   }
@@ -148,18 +152,17 @@ void CXFA_TextLayout::InitBreak(float fLineWidth) {
   m_pBreak->SetLineBoundary(fStart, fLineWidth);
   m_pBreak->SetLineStartPos(fStartPos);
 
-  CXFA_FontData fontData = m_pTextProvider->GetFontData();
-  if (fontData.HasValidNode()) {
+  CXFA_Font* font = m_pTextProvider->GetFontIfExists();
+  if (font) {
     m_pBreak->SetHorizontalScale(
-        static_cast<int32_t>(fontData.GetHorizontalScale()));
-    m_pBreak->SetVerticalScale(
-        static_cast<int32_t>(fontData.GetVerticalScale()));
-    m_pBreak->SetCharSpace(fontData.GetLetterSpacing());
+        static_cast<int32_t>(font->GetHorizontalScale()));
+    m_pBreak->SetVerticalScale(static_cast<int32_t>(font->GetVerticalScale()));
+    m_pBreak->SetCharSpace(font->GetLetterSpacing());
   }
 
   float fFontSize = m_textParser.GetFontSize(m_pTextProvider, nullptr);
   m_pBreak->SetFontSize(fFontSize);
-  m_pBreak->SetFont(m_textParser.GetFont(m_pTextProvider, nullptr));
+  m_pBreak->SetFont(m_textParser.GetFont(m_pDoc, m_pTextProvider, nullptr));
   m_pBreak->SetLineBreakTolerance(fFontSize * 0.2f);
 }
 
@@ -239,7 +242,7 @@ void CXFA_TextLayout::InitBreak(CFX_CSSComputedStyle* pStyle,
   float fFontSize = m_textParser.GetFontSize(m_pTextProvider, pStyle);
   m_pBreak->SetFontSize(fFontSize);
   m_pBreak->SetLineBreakTolerance(fFontSize * 0.2f);
-  m_pBreak->SetFont(m_textParser.GetFont(m_pTextProvider, pStyle));
+  m_pBreak->SetFont(m_textParser.GetFont(m_pDoc, m_pTextProvider, pStyle));
   m_pBreak->SetHorizontalScale(
       m_textParser.GetHorScale(m_pTextProvider, pStyle, pXMLNode));
   m_pBreak->SetVerticalScale(m_textParser.GetVerScale(m_pTextProvider, pStyle));
@@ -651,14 +654,14 @@ void CXFA_TextLayout::LoadText(CXFA_Node* pNode,
                                bool bSavePieces) {
   InitBreak(textWidth);
 
-  CXFA_ParaData paraData = m_pTextProvider->GetParaData();
+  CXFA_Para* para = m_pTextProvider->GetParaIfExists();
   float fSpaceAbove = 0;
-  if (paraData.HasValidNode()) {
-    fSpaceAbove = paraData.GetSpaceAbove();
+  if (para) {
+    fSpaceAbove = para->GetSpaceAbove();
     if (fSpaceAbove < 0.1f)
       fSpaceAbove = 0;
 
-    switch (paraData.GetVerticalAlign()) {
+    switch (para->GetVerticalAlign()) {
       case XFA_AttributeEnum::Top:
       case XFA_AttributeEnum::Middle:
       case XFA_AttributeEnum::Bottom: {
@@ -671,7 +674,7 @@ void CXFA_TextLayout::LoadText(CXFA_Node* pNode,
     }
   }
 
-  WideString wsText = pNode->JSNode()->GetContent(false);
+  WideString wsText = pNode->JSObject()->GetContent(false);
   wsText.TrimRight(L" ");
   bool bRet = AppendChar(wsText, fLinePos, fSpaceAbove, bSavePieces);
   if (bRet && m_pLoader)
@@ -1032,7 +1035,7 @@ void CXFA_TextLayout::AppendTextLine(CFX_BreakType dwStatus,
       m_textParser.GetLinethrough(m_pTextProvider, pStyle.Get(),
                                   pTP->iLineThrough);
       pTP->dwColor = m_textParser.GetColor(m_pTextProvider, pStyle.Get());
-      pTP->pFont = m_textParser.GetFont(m_pTextProvider, pStyle.Get());
+      pTP->pFont = m_textParser.GetFont(m_pDoc, m_pTextProvider, pStyle.Get());
       pTP->fFontSize = m_textParser.GetFontSize(m_pTextProvider, pStyle.Get());
       pTP->rtPiece.left = pPiece->m_iStartPos / 20000.0f;
       pTP->rtPiece.width = pPiece->m_iWidth / 20000.0f;
@@ -1099,14 +1102,14 @@ void CXFA_TextLayout::AppendTextLine(CFX_BreakType dwStatus,
   if (dwStatus == CFX_BreakType::Paragraph) {
     m_pBreak->Reset();
     if (!pStyle && bEndBreak) {
-      CXFA_ParaData paraData = m_pTextProvider->GetParaData();
-      if (paraData.HasValidNode()) {
-        float fStartPos = paraData.GetMarginLeft();
-        float fIndent = paraData.GetTextIndent();
+      CXFA_Para* para = m_pTextProvider->GetParaIfExists();
+      if (para) {
+        float fStartPos = para->GetMarginLeft();
+        float fIndent = para->GetTextIndent();
         if (fIndent > 0)
           fStartPos += fIndent;
 
-        float fSpaceBelow = paraData.GetSpaceBelow();
+        float fSpaceBelow = para->GetSpaceBelow();
         if (fSpaceBelow < 0.1f)
           fSpaceBelow = 0;
 

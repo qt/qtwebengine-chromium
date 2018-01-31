@@ -233,14 +233,11 @@ class CFX_FloatRect {
 
   explicit CFX_FloatRect(const FX_RECT& rect);
 
+  static CFX_FloatRect GetBBox(const CFX_PointF* pPoints, int nPoints);
+
   void Normalize();
 
-  void Reset() {
-    left = 0.0f;
-    right = 0.0f;
-    bottom = 0.0f;
-    top = 0.0f;
-  }
+  void Reset();
 
   bool IsEmpty() const { return left >= right || bottom >= top; }
 
@@ -250,12 +247,21 @@ class CFX_FloatRect {
   void Intersect(const CFX_FloatRect& other_rect);
   void Union(const CFX_FloatRect& other_rect);
 
+  // These may be better at rounding than ToFxRect() and friends.
+  //
+  // Returned rect has bounds rounded up/down such that it is contained in the
+  // original.
   FX_RECT GetInnerRect() const;
-  FX_RECT GetOuterRect() const;
-  FX_RECT GetClosestRect() const;
-  CFX_FloatRect GetCenterSquare() const;
 
-  int Substract4(CFX_FloatRect& substract_rect, CFX_FloatRect* pRects);
+  // Returned rect has bounds rounded up/down such that the original is
+  // contained in it.
+  FX_RECT GetOuterRect() const;
+
+  // Returned rect has bounds rounded up/down such that the dimensions are
+  // rounded up and the sum of the error in the bounds is minimized.
+  FX_RECT GetClosestRect() const;
+
+  CFX_FloatRect GetCenterSquare() const;
 
   void InitRect(const CFX_PointF& point) {
     left = point.x;
@@ -331,31 +337,29 @@ class CFX_FloatRect {
     bottom += f;
   }
 
-  void Scale(float fScale) {
-    float fHalfWidth = (right - left) / 2.0f;
-    float fHalfHeight = (top - bottom) / 2.0f;
+  void Scale(float fScale);
+  void ScaleFromCenterPoint(float fScale);
 
-    float center_x = (left + right) / 2;
-    float center_y = (top + bottom) / 2;
+  // GetInnerRect() and friends may be better at rounding than these methods.
+  // Unlike the methods above, these two blindly floor / round the LBRT values.
+  // Doing so may introduce rounding errors that are visible to users as
+  // off-by-one pixels/lines.
+  //
+  // Floors LBRT values.
+  FX_RECT ToFxRect() const;
 
-    left = center_x - fHalfWidth * fScale;
-    bottom = center_y - fHalfHeight * fScale;
-    right = center_x + fHalfWidth * fScale;
-    top = center_y + fHalfHeight * fScale;
-  }
-
-  static CFX_FloatRect GetBBox(const CFX_PointF* pPoints, int nPoints);
-
-  FX_RECT ToFxRect() const {
-    return FX_RECT(static_cast<int32_t>(left), static_cast<int32_t>(top),
-                   static_cast<int32_t>(right), static_cast<int32_t>(bottom));
-  }
+  // Rounds LBRT values.
+  FX_RECT ToRoundedFxRect() const;
 
   float left;
   float bottom;
   float right;
   float top;
 };
+
+#ifndef NDEBUG
+std::ostream& operator<<(std::ostream& os, const CFX_FloatRect& rect);
+#endif
 
 // LTWH rectangles (y-axis runs downwards).
 template <class BaseType>
@@ -644,7 +648,6 @@ class CFX_Matrix {
   CFX_FloatRect GetUnitRect() const;
 
   float TransformXDistance(float dx) const;
-  float TransformDistance(float dx, float dy) const;
   float TransformDistance(float distance) const;
 
   CFX_PointF Transform(const CFX_PointF& point) const;

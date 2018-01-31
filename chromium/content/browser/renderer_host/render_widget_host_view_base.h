@@ -88,7 +88,6 @@ class TextInputManager;
 class TouchSelectionControllerClientManager;
 class WebContentsAccessibility;
 class WebCursor;
-struct NativeWebKeyboardEvent;
 struct TextInputState;
 
 // Basic implementation shared by concrete RenderWidgetHostView subclasses.
@@ -105,7 +104,7 @@ class CONTENT_EXPORT RenderWidgetHostViewBase : public RenderWidgetHostView,
   RenderWidgetHostImpl* GetFocusedWidget() const;
 
   // RenderWidgetHostView implementation.
-  RenderWidgetHost* GetRenderWidgetHost() const override;
+  RenderWidgetHost* GetRenderWidgetHost() const final;
   void SetBackgroundColorToDefault() final;
   ui::TextInputClient* GetTextInputClient() override;
   void WasUnOccluded() override {}
@@ -156,7 +155,7 @@ class CONTENT_EXPORT RenderWidgetHostViewBase : public RenderWidgetHostView,
   void DidReceiveRendererFrame();
 
   // Notification that a resize or move session ended on the native widget.
-  virtual void UpdateScreenInfo(gfx::NativeView view);
+  void UpdateScreenInfo(gfx::NativeView view);
 
   // Tells if the display property (work area/scale factor) has
   // changed since the last time.
@@ -297,20 +296,27 @@ class CONTENT_EXPORT RenderWidgetHostViewBase : public RenderWidgetHostView,
   // methods are invoked on the RenderWidgetHostView that should be able to
   // properly handle the event (i.e. it has focus for keyboard events, or has
   // been identified by hit testing mouse, touch or gesture events).
+  // |out_query_renderer| is set if there is low confidence in the hit test
+  // result which means that renderer process hit testing could potentially
+  // give a different result. In that case the returned FrameSinkId and
+  // transformed point should be ignored.
   virtual viz::FrameSinkId FrameSinkIdAtPoint(
       viz::SurfaceHittestDelegate* delegate,
       const gfx::PointF& point,
-      gfx::PointF* transformed_point);
-  virtual void ProcessKeyboardEvent(const NativeWebKeyboardEvent& event,
-                                    const ui::LatencyInfo& latency) {}
-  virtual void ProcessMouseEvent(const blink::WebMouseEvent& event,
-                                 const ui::LatencyInfo& latency) {}
-  virtual void ProcessMouseWheelEvent(const blink::WebMouseWheelEvent& event,
-                                      const ui::LatencyInfo& latency) {}
-  virtual void ProcessTouchEvent(const blink::WebTouchEvent& event,
-                                 const ui::LatencyInfo& latency) {}
+      gfx::PointF* transformed_point,
+      bool* out_query_renderer);
+
+  virtual void PreProcessMouseEvent(const blink::WebMouseEvent& event) {}
+  virtual void PreProcessTouchEvent(const blink::WebTouchEvent& event) {}
+
+  void ProcessMouseEvent(const blink::WebMouseEvent& event,
+                         const ui::LatencyInfo& latency);
+  void ProcessMouseWheelEvent(const blink::WebMouseWheelEvent& event,
+                              const ui::LatencyInfo& latency);
+  void ProcessTouchEvent(const blink::WebTouchEvent& event,
+                         const ui::LatencyInfo& latency);
   virtual void ProcessGestureEvent(const blink::WebGestureEvent& event,
-                                   const ui::LatencyInfo& latency) {}
+                                   const ui::LatencyInfo& latency);
 
   // Transform a point that is in the coordinate space of a Surface that is
   // embedded within the RenderWidgetHostViewBase's Surface to the
@@ -355,6 +361,13 @@ class CONTENT_EXPORT RenderWidgetHostViewBase : public RenderWidgetHostView,
 
   // Returns true if the current view is in virtual reality mode.
   virtual bool IsInVR() const;
+
+  // Obtains the root window FrameSinkId.
+  virtual viz::FrameSinkId GetRootFrameSinkId();
+
+  // Returns the SurfaceId currently in use by the renderer to submit compositor
+  // frames.
+  virtual viz::SurfaceId GetCurrentSurfaceId() const = 0;
 
   //----------------------------------------------------------------------------
   // The following methods are related to IME.
@@ -452,6 +465,9 @@ class CONTENT_EXPORT RenderWidgetHostViewBase : public RenderWidgetHostView,
   // changes.
   virtual void SetShowingContextMenu(bool showing) {}
 
+  // Returns the associated RenderWidgetHostImpl.
+  virtual RenderWidgetHostImpl* GetRenderWidgetHostImpl() const;
+
   // Process swap messages sent before |frame_token| in RenderWidgetHostImpl.
   void OnFrameTokenChangedForView(uint32_t frame_token);
 
@@ -490,10 +506,6 @@ class CONTENT_EXPORT RenderWidgetHostViewBase : public RenderWidgetHostView,
       ui::mojom::WindowTreeClientPtr renderer_window_tree_client);
   void OnChildFrameDestroyed(int routing_id);
 #endif
-
-  // Exposed for testing.
-  virtual bool IsChildFrameForTesting() const;
-  virtual viz::SurfaceId SurfaceIdForTesting() const;
 
  protected:
   // Interface class only, do not construct.
@@ -548,6 +560,12 @@ class CONTENT_EXPORT RenderWidgetHostViewBase : public RenderWidgetHostView,
                           int embed_id,
                           const base::UnguessableToken& token);
 #endif
+
+  // Called when display properties that need to be synchronized with the
+  // renderer process changes. This method is called before notifying
+  // RenderWidgetHostImpl in order to allow the view to allocate a new
+  // LocalSurfaceId.
+  virtual void OnSynchronizedDisplayPropertiesChanged() {}
 
   gfx::Rect current_display_area_;
 

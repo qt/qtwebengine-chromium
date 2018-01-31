@@ -281,7 +281,7 @@ namespace sw
 				setupPrimitives = &Renderer::setupPoints;
 			}
 
-			DrawCall *draw = 0;
+			DrawCall *draw = nullptr;
 
 			do
 			{
@@ -309,13 +309,12 @@ namespace sw
 			{
 				draw->queries = new std::list<Query*>();
 				bool includePrimitivesWrittenQueries = vertexState.transformFeedbackQueryEnabled && vertexState.transformFeedbackEnabled;
-				for(std::list<Query*>::iterator query = queries.begin(); query != queries.end(); query++)
+				for(auto &query : queries)
 				{
-					Query* q = *query;
-					if(includePrimitivesWrittenQueries || (q->type != Query::TRANSFORM_FEEDBACK_PRIMITIVES_WRITTEN))
+					if(includePrimitivesWrittenQueries || (query->type != Query::TRANSFORM_FEEDBACK_PRIMITIVES_WRITTEN))
 					{
-						++q->reference; // Atomic
-						draw->queries->push_back(q);
+						++query->reference; // Atomic
+						draw->queries->push_back(query);
 					}
 				}
 			}
@@ -402,7 +401,7 @@ namespace sw
 				}
 			}
 
-			if(context->pixelShaderVersion() <= 0x0104)
+			if(context->pixelShaderModel() <= 0x0104)
 			{
 				for(int stage = 0; stage < 8; stage++)
 				{
@@ -416,11 +415,11 @@ namespace sw
 
 			if(context->vertexShader)
 			{
-				if(context->vertexShader->getVersion() >= 0x0300)
+				if(context->vertexShader->getShaderModel() >= 0x0300)
 				{
 					for(int sampler = 0; sampler < VERTEX_TEXTURE_IMAGE_UNITS; sampler++)
 					{
-						if(vertexState.samplerState[sampler].textureType != TEXTURE_NULL)
+						if(vertexState.sampler[sampler].textureType != TEXTURE_NULL)
 						{
 							draw->texture[TEXTURE_IMAGE_UNITS + sampler] = context->texture[TEXTURE_IMAGE_UNITS + sampler];
 							draw->texture[TEXTURE_IMAGE_UNITS + sampler]->lock(PUBLIC, PRIVATE);
@@ -607,7 +606,9 @@ namespace sw
 
 					if(draw->renderTarget[index])
 					{
-						data->colorBuffer[index] = (unsigned int*)context->renderTarget[index]->lockInternal(0, 0, q * ms, LOCK_READWRITE, MANAGED);
+						unsigned int layer = context->renderTargetLayer[index];
+						data->colorBuffer[index] = (unsigned int*)context->renderTarget[index]->lockInternal(0, 0, layer, LOCK_READWRITE, MANAGED);
+						data->colorBuffer[index] += q * ms * context->renderTarget[index]->getSliceB(true);
 						data->colorPitchB[index] = context->renderTarget[index]->getInternalPitchB();
 						data->colorSliceB[index] = context->renderTarget[index]->getInternalSliceB();
 					}
@@ -618,14 +619,18 @@ namespace sw
 
 				if(draw->depthBuffer)
 				{
-					data->depthBuffer = (float*)context->depthBuffer->lockInternal(0, 0, q * ms, LOCK_READWRITE, MANAGED);
+					unsigned int layer = context->depthBufferLayer;
+					data->depthBuffer = (float*)context->depthBuffer->lockInternal(0, 0, layer, LOCK_READWRITE, MANAGED);
+					data->depthBuffer += q * ms * context->depthBuffer->getSliceB(true);
 					data->depthPitchB = context->depthBuffer->getInternalPitchB();
 					data->depthSliceB = context->depthBuffer->getInternalSliceB();
 				}
 
 				if(draw->stencilBuffer)
 				{
-					data->stencilBuffer = (unsigned char*)context->stencilBuffer->lockStencil(0, 0, q * ms, MANAGED);
+					unsigned int layer = context->stencilBufferLayer;
+					data->stencilBuffer = (unsigned char*)context->stencilBuffer->lockStencil(0, 0, layer, MANAGED);
+					data->stencilBuffer += q * ms * context->stencilBuffer->getSliceB(true);
 					data->stencilPitchB = context->stencilBuffer->getStencilPitchB();
 					data->stencilSliceB = context->stencilBuffer->getStencilSliceB();
 				}
@@ -674,18 +679,12 @@ namespace sw
 
 	void Renderer::clear(void *value, Format format, Surface *dest, const Rect &clearRect, unsigned int rgbaMask)
 	{
-		SliceRect rect = clearRect;
-		int samples = dest->getDepth();
-
-		for(rect.slice = 0; rect.slice < samples; rect.slice++)
-		{
-			blitter->clear(value, format, dest, rect, rgbaMask);
-		}
+		blitter->clear(value, format, dest, clearRect, rgbaMask);
 	}
 
-	void Renderer::blit(Surface *source, const SliceRect &sRect, Surface *dest, const SliceRect &dRect, bool filter, bool isStencil)
+	void Renderer::blit(Surface *source, const SliceRectF &sRect, Surface *dest, const SliceRect &dRect, bool filter, bool isStencil, bool sRGBconversion)
 	{
-		blitter->blit(source, sRect, dest, dRect, filter, isStencil);
+		blitter->blit(source, sRect, dest, dRect, {filter, isStencil, sRGBconversion});
 	}
 
 	void Renderer::blit3D(Surface *source, Surface *dest)
@@ -972,10 +971,8 @@ namespace sw
 
 				if(draw.queries)
 				{
-					for(std::list<Query*>::iterator q = draw.queries->begin(); q != draw.queries->end(); q++)
+					for(auto &query : *(draw.queries))
 					{
-						Query *query = *q;
-
 						switch(query->type)
 						{
 						case Query::FRAGMENTS_PASSED:
@@ -1168,9 +1165,18 @@ namespace sw
 
 				for(unsigned int i = 0; i < triangleCount; i++)
 				{
-					batch[i][0] = index + 0;
-					batch[i][1] = index + (index & 1) + 1;
-					batch[i][2] = index + (~index & 1) + 1;
+					if(leadingVertexFirst)
+					{
+						batch[i][0] = index + 0;
+						batch[i][1] = index + (index & 1) + 1;
+						batch[i][2] = index + (~index & 1) + 1;
+					}
+					else
+					{
+						batch[i][0] = index + (index & 1);
+						batch[i][1] = index + (~index & 1);
+						batch[i][2] = index + 2;
+					}
 
 					index += 1;
 				}
@@ -1182,9 +1188,18 @@ namespace sw
 
 				for(unsigned int i = 0; i < triangleCount; i++)
 				{
-					batch[i][0] = index + 1;
-					batch[i][1] = index + 2;
-					batch[i][2] = 0;
+					if(leadingVertexFirst)
+					{
+						batch[i][0] = index + 1;
+						batch[i][1] = index + 2;
+						batch[i][2] = 0;
+					}
+					else
+					{
+						batch[i][0] = 0;
+						batch[i][1] = index + 1;
+						batch[i][2] = index + 2;
+					}
 
 					index += 1;
 				}
@@ -1728,7 +1743,7 @@ namespace sw
 			return false;
 		}
 
-		if(false)   // Rectangle
+		if(state.multiSample > 1)   // Rectangle
 		{
 			float4 P[4];
 			int C[4];
@@ -2385,6 +2400,18 @@ namespace sw
 		else
 		{
 			VertexProcessor::setSwizzleA(sampler, swizzleA);
+		}
+	}
+
+	void Renderer::setCompareFunc(SamplerType type, int sampler, CompareFunc compFunc)
+	{
+		if(type == SAMPLER_PIXEL)
+		{
+			PixelProcessor::setCompareFunc(sampler, compFunc);
+		}
+		else
+		{
+			VertexProcessor::setCompareFunc(sampler, compFunc);
 		}
 	}
 

@@ -1,4 +1,6 @@
 /*-
+ * SPDX-License-Identifier: BSD-3-Clause
+ *
  * Copyright (c) 2001-2007, by Cisco Systems, Inc. All rights reserved.
  * Copyright (c) 2008-2012, by Randall Stewart. All rights reserved.
  * Copyright (c) 2008-2012, by Michael Tuexen. All rights reserved.
@@ -32,7 +34,7 @@
 
 #ifdef __FreeBSD__
 #include <sys/cdefs.h>
-__FBSDID("$FreeBSD: head/sys/netinet6/sctp6_usrreq.c 321204 2017-07-19 14:28:58Z tuexen $");
+__FBSDID("$FreeBSD: head/sys/netinet6/sctp6_usrreq.c 325370 2017-11-03 20:46:12Z tuexen $");
 #endif
 
 #include <netinet/sctp_os.h>
@@ -396,6 +398,10 @@ sctp6_notify(struct sctp_inpcb *inp,
 		}
 		break;
 	case ICMP6_PACKET_TOO_BIG:
+		if ((net->dest_state & SCTP_ADDR_NO_PMTUD) == 0) {
+			SCTP_TCB_UNLOCK(stcb);
+			break;
+		}
 		if (SCTP_OS_TIMER_PENDING(&net->pmtu_timer.timer)) {
 			timer_stopped = 1;
 			sctp_timer_stop(SCTP_TIMER_TYPE_PATHMTURAISE, inp, stcb, net,
@@ -1247,7 +1253,7 @@ sctp6_connect(struct socket *so, struct mbuf *nam, struct proc *p)
 	if (inp->sctp_flags & SCTP_PCB_FLAGS_CONNECTED) {
 		stcb = LIST_FIRST(&inp->sctp_asoc_list);
 		if (stcb) {
-			SCTP_TCB_UNLOCK(stcb);
+			SCTP_TCB_LOCK(stcb);
 		}
 		SCTP_INP_RUNLOCK(inp);
 	} else {

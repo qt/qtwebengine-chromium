@@ -40,6 +40,8 @@ struct Box;
 struct Extents;
 struct RasterizerState;
 struct Rectangle;
+struct VertexAttribute;
+class VertexBinding;
 
 ANGLE_GL_OBJECTS_X(ANGLE_PRE_DECLARE_OBJECT);
 }
@@ -49,6 +51,16 @@ ANGLE_GL_OBJECTS_X(ANGLE_PRE_DECLARE_OBJECT);
 namespace rx
 {
 class DisplayVk;
+class RenderTargetVk;
+class RendererVk;
+class ResourceVk;
+class RenderPassCache;
+
+enum class DrawType
+{
+    Arrays,
+    Elements,
+};
 
 ANGLE_GL_OBJECTS_X(ANGLE_PRE_DECLARE_VK_OBJECT);
 
@@ -66,27 +78,11 @@ enum class TextureDimension
     TEX_2D_ARRAY,
 };
 
-// This is a small helper mixin for any GL object used in Vk command buffers. It records a serial
-// at command recording times indicating an order in the queue. We use Fences to detect when
-// commands finish, and then release any unreferenced and deleted resources based on the stored
-// queue serial in a special 'garbage' queue.
-class ResourceVk
-{
-  public:
-    void setQueueSerial(Serial queueSerial)
-    {
-        ASSERT(queueSerial >= mStoredQueueSerial);
-        mStoredQueueSerial = queueSerial;
-    }
-
-    Serial getQueueSerial() const { return mStoredQueueSerial; }
-
-  private:
-    Serial mStoredQueueSerial;
-};
-
 namespace vk
 {
+class CommandBufferNode;
+struct Format;
+
 template <typename T>
 struct ImplTypeHelper;
 
@@ -309,6 +305,7 @@ class CommandBuffer : public WrappedObject<CommandBuffer, VkCommandBuffer>
   public:
     CommandBuffer();
 
+    VkCommandBuffer releaseHandle();
     void destroy(VkDevice device, const vk::CommandPool &commandPool);
     Error init(VkDevice device, const VkCommandBufferAllocateInfo &createInfo);
     using WrappedObject::operator=;
@@ -345,10 +342,7 @@ class CommandBuffer : public WrappedObject<CommandBuffer, VkCommandBuffer>
                    uint32_t regionCount,
                    const VkImageCopy *regions);
 
-    void beginRenderPass(const RenderPass &renderPass,
-                         const Framebuffer &framebuffer,
-                         const gl::Rectangle &renderArea,
-                         const std::vector<VkClearValue> &clearValues);
+    void beginRenderPass(const VkRenderPassBeginInfo &beginInfo, VkSubpassContents subpassContents);
     void endRenderPass();
 
     void draw(uint32_t vertexCount,
@@ -375,6 +369,8 @@ class CommandBuffer : public WrappedObject<CommandBuffer, VkCommandBuffer>
                             const VkDescriptorSet *descriptorSets,
                             uint32_t dynamicOffsetCount,
                             const uint32_t *dynamicOffsets);
+
+    void executeCommands(uint32_t commandBufferCount, const vk::CommandBuffer *commandBuffers);
 };
 
 class Image final : public WrappedObject<Image, VkImage>
@@ -436,6 +432,9 @@ class Framebuffer final : public WrappedObject<Framebuffer, VkFramebuffer>
   public:
     Framebuffer();
     void destroy(VkDevice device);
+
+    // Use this method only in necessary cases. (RenderPass)
+    void setHandle(VkFramebuffer handle);
 
     Error init(VkDevice device, const VkFramebufferCreateInfo &createInfo);
 };
@@ -623,6 +622,11 @@ class ObjectAndSerial final : angle::NonCopyable
     }
 
     Serial queueSerial() const { return mQueueSerial; }
+    void updateSerial(Serial newSerial)
+    {
+        ASSERT(newSerial >= mQueueSerial);
+        mQueueSerial = newSerial;
+    }
 
     const ObjT &get() const { return mObject; }
     ObjT &get() { return mObject; }
@@ -648,48 +652,305 @@ struct BufferAndMemory final : private angle::NonCopyable
     vk::DeviceMemory memory;
 };
 
-class CommandBufferAndState : public vk::CommandBuffer
+using RenderPassAndSerial = ObjectAndSerial<RenderPass>;
+
+// Packed Vk resource descriptions.
+// Most Vk types use many more bits than required to represent the underlying data.
+// Since ANGLE wants cache things like RenderPasses and Pipeline State Objects using
+// hashing (and also needs to check equality) we can optimize these operations by
+// using fewer bits. Hence the packed types.
+//
+// One implementation note: these types could potentially be improved by using even
+// fewer bits. For example, boolean values could be represented by a single bit instead
+// of a uint8_t. However at the current time there are concerns about the portability
+// of bitfield operators, and complexity issues with using bit mask operations. This is
+// something likely we will want to investigate as the Vulkan implementation progresses.
+//
+// Second implementation note: the struct packing is also a bit fragile, and some of the
+// packing requirements depend on using alignas and field ordering to get the result of
+// packing nicely into the desired space. This is something we could also potentially fix
+// with a redesign to use bitfields or bit mask operations.
+
+struct alignas(4) PackedAttachmentDesc
 {
-  public:
-    CommandBufferAndState();
-
-    Error ensureStarted(VkDevice device,
-                        const vk::CommandPool &commandPool,
-                        VkCommandBufferLevel level);
-    Error ensureFinished();
-
-    bool started() const { return mStarted; }
-
-  private:
-    bool mStarted;
+    uint8_t flags;
+    uint8_t samples;
+    uint16_t format;
 };
 
-using CommandBufferAndSerial = ObjectAndSerial<CommandBufferAndState>;
-using FenceAndSerial         = ObjectAndSerial<Fence>;
+static_assert(sizeof(PackedAttachmentDesc) == 4, "Size check failed");
 
-struct RenderPassDesc final
+class RenderPassDesc final
 {
+  public:
     RenderPassDesc();
     ~RenderPassDesc();
     RenderPassDesc(const RenderPassDesc &other);
     RenderPassDesc &operator=(const RenderPassDesc &other);
 
-    // These also increment the attachment counts. DS attachments are limited to a count of 1.
-    VkAttachmentDescription *nextColorAttachment();
-    VkAttachmentDescription *nextDepthStencilAttachment();
+    // Depth stencil attachments must be packed after color attachments.
+    void packColorAttachment(const Format &format, GLsizei samples);
+    void packDepthStencilAttachment(const Format &format, GLsizei samples);
+
+    size_t hash() const;
+
     uint32_t attachmentCount() const;
+    uint32_t colorAttachmentCount() const;
+    uint32_t depthStencilAttachmentCount() const;
+    const PackedAttachmentDesc &operator[](size_t index) const;
 
-    // Fully padded out, with no bools, to avoid any undefined behaviour.
-    uint32_t colorAttachmentCount;
-    uint32_t depthStencilAttachmentCount;
+  private:
+    void packAttachment(uint32_t index, const vk::Format &format, GLsizei samples);
 
-    // The last element in this array is the depth/stencil attachment, if present.
-    gl::AttachmentArray<VkAttachmentDescription> attachmentDescs;
+    uint32_t mColorAttachmentCount;
+    uint32_t mDepthStencilAttachmentCount;
+    gl::AttachmentArray<PackedAttachmentDesc> mAttachmentDescs;
+    uint32_t mPadding[4];
 };
+
+bool operator==(const RenderPassDesc &lhs, const RenderPassDesc &rhs);
+
+static_assert(sizeof(RenderPassDesc) == 64, "Size check failed");
+
+struct alignas(8) PackedAttachmentOpsDesc final
+{
+    uint8_t loadOp;
+    uint8_t storeOp;
+    uint8_t stencilLoadOp;
+    uint8_t stencilStoreOp;
+
+    // 16-bits to force pad the structure to exactly 8 bytes.
+    uint16_t initialLayout;
+    uint16_t finalLayout;
+};
+
+static_assert(sizeof(PackedAttachmentOpsDesc) == 8, "Size check failed");
+
+class AttachmentOpsArray final
+{
+  public:
+    AttachmentOpsArray();
+    ~AttachmentOpsArray();
+    AttachmentOpsArray(const AttachmentOpsArray &other);
+    AttachmentOpsArray &operator=(const AttachmentOpsArray &other);
+
+    const PackedAttachmentOpsDesc &operator[](size_t index) const;
+    PackedAttachmentOpsDesc &operator[](size_t index);
+
+    // Initializes an attachment op with whatever values. Used for compatible RenderPass checks.
+    void initDummyOp(size_t index, VkImageLayout finalLayout);
+
+    size_t hash() const;
+
+  private:
+    gl::AttachmentArray<PackedAttachmentOpsDesc> mOps;
+};
+
+bool operator==(const AttachmentOpsArray &lhs, const AttachmentOpsArray &rhs);
+
+static_assert(sizeof(AttachmentOpsArray) == 80, "Size check failed");
 
 Error InitializeRenderPassFromDesc(VkDevice device,
                                    const RenderPassDesc &desc,
+                                   const AttachmentOpsArray &ops,
                                    RenderPass *renderPass);
+
+struct alignas(8) PackedShaderStageInfo final
+{
+    uint32_t stage;
+    uint32_t moduleSerial;
+    // TODO(jmadill): Do we want specialization constants?
+};
+
+static_assert(sizeof(PackedShaderStageInfo) == 8, "Size check failed");
+
+struct alignas(4) PackedVertexInputBindingDesc final
+{
+    // Although techncially stride can be any value in ES 2.0, in practice supporting stride
+    // greater than MAX_USHORT should not be that helpful. Note that stride limits are
+    // introduced in ES 3.1.
+    uint16_t stride;
+    uint16_t inputRate;
+};
+
+static_assert(sizeof(PackedVertexInputBindingDesc) == 4, "Size check failed");
+
+struct alignas(8) PackedVertexInputAttributeDesc final
+{
+    uint16_t location;
+    uint16_t format;
+    uint32_t offset;
+};
+
+static_assert(sizeof(PackedVertexInputAttributeDesc) == 8, "Size check failed");
+
+struct alignas(8) PackedInputAssemblyInfo
+{
+    uint32_t topology;
+    uint32_t primitiveRestartEnable;
+};
+
+static_assert(sizeof(PackedInputAssemblyInfo) == 8, "Size check failed");
+
+struct alignas(32) PackedRasterizationStateInfo
+{
+    // Padded to ensure there's no gaps in this structure or those that use it.
+    uint32_t depthClampEnable;
+    uint32_t rasterizationDiscardEnable;
+    uint16_t polygonMode;
+    uint16_t cullMode;
+    uint16_t frontFace;
+    uint16_t depthBiasEnable;
+    float depthBiasConstantFactor;
+    // Note: depth bias clamp is only exposed in a 3.1 extension, but left here for completeness.
+    float depthBiasClamp;
+    float depthBiasSlopeFactor;
+    float lineWidth;
+};
+
+static_assert(sizeof(PackedRasterizationStateInfo) == 32, "Size check failed");
+
+struct alignas(16) PackedMultisampleStateInfo final
+{
+    uint8_t rasterizationSamples;
+    uint8_t sampleShadingEnable;
+    uint8_t alphaToCoverageEnable;
+    uint8_t alphaToOneEnable;
+    float minSampleShading;
+    uint32_t sampleMask[gl::MAX_SAMPLE_MASK_WORDS];
+};
+
+static_assert(sizeof(PackedMultisampleStateInfo) == 16, "Size check failed");
+
+struct alignas(16) PackedStencilOpState final
+{
+    uint8_t failOp;
+    uint8_t passOp;
+    uint8_t depthFailOp;
+    uint8_t compareOp;
+    uint32_t compareMask;
+    uint32_t writeMask;
+    uint32_t reference;
+};
+
+static_assert(sizeof(PackedStencilOpState) == 16, "Size check failed");
+
+struct PackedDepthStencilStateInfo final
+{
+    uint8_t depthTestEnable;
+    uint8_t depthWriteEnable;
+    uint8_t depthCompareOp;
+    uint8_t depthBoundsTestEnable;
+    // 32-bits to pad the alignments.
+    uint32_t stencilTestEnable;
+    float minDepthBounds;
+    float maxDepthBounds;
+    PackedStencilOpState front;
+    PackedStencilOpState back;
+};
+
+static_assert(sizeof(PackedDepthStencilStateInfo) == 48, "Size check failed");
+
+struct alignas(8) PackedColorBlendAttachmentState final
+{
+    uint8_t blendEnable;
+    uint8_t srcColorBlendFactor;
+    uint8_t dstColorBlendFactor;
+    uint8_t colorBlendOp;
+    uint8_t srcAlphaBlendFactor;
+    uint8_t dstAlphaBlendFactor;
+    uint8_t alphaBlendOp;
+    uint8_t colorWriteMask;
+};
+
+static_assert(sizeof(PackedColorBlendAttachmentState) == 8, "Size check failed");
+
+struct PackedColorBlendStateInfo final
+{
+    // Padded to round the strut size.
+    uint32_t logicOpEnable;
+    uint32_t logicOp;
+    uint32_t attachmentCount;
+    float blendConstants[4];
+    PackedColorBlendAttachmentState attachments[gl::IMPLEMENTATION_MAX_DRAW_BUFFERS];
+};
+
+static_assert(sizeof(PackedColorBlendStateInfo) == 96, "Size check failed");
+
+using ShaderStageInfo       = std::array<PackedShaderStageInfo, 2>;
+using VertexInputBindings   = gl::AttribArray<PackedVertexInputBindingDesc>;
+using VertexInputAttributes = gl::AttribArray<PackedVertexInputAttributeDesc>;
+
+class PipelineDesc final
+{
+  public:
+    // Use aligned allocation and free so we can use the alignas keyword.
+    void *operator new(std::size_t size);
+    void operator delete(void *ptr);
+
+    PipelineDesc();
+    ~PipelineDesc();
+    PipelineDesc(const PipelineDesc &other);
+    PipelineDesc &operator=(const PipelineDesc &other);
+
+    size_t hash() const;
+    bool operator==(const PipelineDesc &other) const;
+
+    void initDefaults();
+    Error initializePipeline(RendererVk *renderer, ProgramVk *programVk, Pipeline *pipelineOut);
+
+    void updateViewport(const gl::Rectangle &viewport, float nearPlane, float farPlane);
+
+    // Shader stage info
+    void updateShaders(ProgramVk *programVk);
+
+    // Vertex input state
+    void resetVertexInputState();
+    void updateVertexInputInfo(uint32_t attribIndex,
+                               const gl::VertexBinding &binding,
+                               const gl::VertexAttribute &attrib);
+
+    // Input assembly info
+    void updateTopology(GLenum drawMode);
+
+    // Raster states
+    void updateCullMode(const gl::RasterizerState &rasterState);
+    void updateFrontFace(const gl::RasterizerState &rasterState);
+    void updateLineWidth(float lineWidth);
+
+    // RenderPass description.
+    void updateRenderPassDesc(const RenderPassDesc &renderPassDesc);
+
+  private:
+    // TODO(jmadill): Handle Geometry/Compute shaders when necessary.
+    ShaderStageInfo mShaderStageInfo;
+    VertexInputBindings mVertexInputBindings;
+    VertexInputAttributes mVertexInputAttribs;
+    PackedInputAssemblyInfo mInputAssemblyInfo;
+    // TODO(jmadill): Consider using dynamic state for viewport/scissor.
+    VkViewport mViewport;
+    VkRect2D mScissor;
+    PackedRasterizationStateInfo mRasterizationStateInfo;
+    PackedMultisampleStateInfo mMultisampleStateInfo;
+    PackedDepthStencilStateInfo mDepthStencilStateInfo;
+    PackedColorBlendStateInfo mColorBlendStateInfo;
+    // TODO(jmadill): Dynamic state.
+    // TODO(jmadill): Pipeline layout
+    RenderPassDesc mRenderPassDesc;
+};
+
+// Verify the packed pipeline description has no gaps in the packing.
+// This is not guaranteed by the spec, but is validated by a compile-time check.
+// No gaps or padding at the end ensures that hashing and memcmp checks will not run
+// into uninitialized memory regions.
+constexpr size_t PipelineDescSumOfSizes =
+    sizeof(ShaderStageInfo) + sizeof(VertexInputBindings) + sizeof(VertexInputAttributes) +
+    sizeof(PackedInputAssemblyInfo) + sizeof(VkViewport) + sizeof(VkRect2D) +
+    sizeof(PackedRasterizationStateInfo) + sizeof(PackedMultisampleStateInfo) +
+    sizeof(PackedDepthStencilStateInfo) + sizeof(PackedColorBlendStateInfo) +
+    sizeof(RenderPassDesc);
+
+static_assert(sizeof(PipelineDesc) == PipelineDescSumOfSizes, "Size mismatch");
 
 }  // namespace vk
 
@@ -699,6 +960,46 @@ VkPrimitiveTopology GetPrimitiveTopology(GLenum mode);
 VkCullModeFlags GetCullMode(const gl::RasterizerState &rasterState);
 VkFrontFace GetFrontFace(GLenum frontFace);
 }  // namespace gl_vk
+
+// This is a helper class for back-end objects used in Vk command buffers. It records a serial
+// at command recording times indicating an order in the queue. We use Fences to detect when
+// commands finish, and then release any unreferenced and deleted resources based on the stored
+// queue serial in a special 'garbage' queue. Resources also track current read and write
+// dependencies. Only one command buffer node can be writing to the Resource at a time, but many
+// can be reading from it. Together the dependencies will form a command graph at submission time.
+class ResourceVk
+{
+  public:
+    ResourceVk();
+    virtual ~ResourceVk();
+
+    void updateQueueSerial(Serial queueSerial);
+    Serial getQueueSerial() const;
+
+    // Returns true if any tracked read or write nodes match |currentSerial|.
+    bool isCurrentlyRecording(Serial currentSerial) const;
+
+    // Returns the active write node, and asserts |currentSerial| matches the stored serial.
+    vk::CommandBufferNode *getCurrentWriteNode(Serial currentSerial);
+
+    // Allocates a new write node and calls setWriteNode internally.
+    vk::CommandBufferNode *getNewWriteNode(RendererVk *renderer);
+
+    // Called on an operation that will modify this ResourceVk.
+    void setWriteNode(Serial serial, vk::CommandBufferNode *newCommands);
+
+    // Allocates a write node via getNewWriteNode and returns a started command buffer.
+    // The started command buffer will render outside of a RenderPass.
+    vk::Error recordWriteCommands(RendererVk *renderer, vk::CommandBuffer **commandBufferOut);
+
+    // Sets up the dependency relations. |readNode| has the commands that read from this object.
+    void updateDependencies(vk::CommandBufferNode *readNode, Serial serial);
+
+  private:
+    Serial mStoredQueueSerial;
+    std::vector<vk::CommandBufferNode *> mCurrentReadNodes;
+    vk::CommandBufferNode *mCurrentWriteNode;
+};
 
 }  // namespace rx
 
@@ -715,5 +1016,21 @@ VkFrontFace GetFrontFace(GLenum frontFace);
 #define ANGLE_VK_CHECK(test, error) ANGLE_VK_TRY(test ? VK_SUCCESS : error)
 
 std::ostream &operator<<(std::ostream &stream, const rx::vk::Error &error);
+
+// Introduce a std::hash for a RenderPassDesc
+namespace std
+{
+template <>
+struct hash<rx::vk::RenderPassDesc>
+{
+    size_t operator()(const rx::vk::RenderPassDesc &key) const { return key.hash(); }
+};
+
+template <>
+struct hash<rx::vk::AttachmentOpsArray>
+{
+    size_t operator()(const rx::vk::AttachmentOpsArray &key) const { return key.hash(); }
+};
+}  // namespace std
 
 #endif  // LIBANGLE_RENDERER_VULKAN_RENDERERVK_UTILS_H_

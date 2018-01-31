@@ -16,21 +16,22 @@
 #include "xfa/fgas/layout/cfx_rtfbreak.h"
 #include "xfa/fxfa/cxfa_textparser.h"
 
-class CFX_CSSComputedStyle;
 class CFDE_RenderDevice;
-class CFX_XMLNode;
+class CFX_CSSComputedStyle;
+class CFX_RenderDevice;
 class CFX_RTFBreak;
-class CXFA_LoaderContext;
+class CFX_XMLNode;
 class CXFA_LinkUserData;
+class CXFA_LoaderContext;
 class CXFA_Node;
 class CXFA_PieceLine;
+class CXFA_TextPiece;
 class CXFA_TextProvider;
 class CXFA_TextTabstopsContext;
-class CXFA_TextPiece;
 
 class CXFA_TextLayout {
  public:
-  explicit CXFA_TextLayout(CXFA_TextProvider* pTextProvider);
+  explicit CXFA_TextLayout(CXFA_FFDoc* doc, CXFA_TextProvider* pTextProvider);
   ~CXFA_TextLayout();
 
   float GetLayoutHeight();
@@ -110,6 +111,7 @@ class CXFA_TextLayout {
   bool Layout(int32_t iBlock);
   int32_t CountBlocks() const;
 
+  CXFA_FFDoc* m_pDoc;
   CXFA_TextProvider* m_pTextProvider;
   CXFA_Node* m_pTextDataNode;
   bool m_bRichText;

@@ -516,7 +516,16 @@ void GuestViewBase::SetGuestHost(content::GuestHost* guest_host) {
 void GuestViewBase::WillAttach(WebContents* embedder_web_contents,
                                int element_instance_id,
                                bool is_full_page_plugin,
-                               const base::Closure& callback) {
+                               const base::Closure& completion_callback) {
+  WillAttach(embedder_web_contents, element_instance_id, is_full_page_plugin,
+             base::OnceClosure(), completion_callback);
+}
+
+void GuestViewBase::WillAttach(WebContents* embedder_web_contents,
+                               int element_instance_id,
+                               bool is_full_page_plugin,
+                               base::OnceClosure perform_attach,
+                               const base::Closure& completion_callback) {
   // Stop tracking the old embedder's zoom level.
   if (owner_web_contents())
     StopTrackingEmbedderZoomLevel();
@@ -537,9 +546,12 @@ void GuestViewBase::WillAttach(WebContents* embedder_web_contents,
 
   WillAttachToEmbedder();
 
+  if (perform_attach)
+    std::move(perform_attach).Run();
+
   // Completing attachment will resume suspended resource loads and then send
   // queued events.
-  SignalWhenReady(callback);
+  SignalWhenReady(completion_callback);
 }
 
 void GuestViewBase::SignalWhenReady(const base::Closure& callback) {
@@ -642,7 +654,7 @@ void GuestViewBase::LoadingStateChanged(WebContents* source,
 content::ColorChooser* GuestViewBase::OpenColorChooser(
     WebContents* web_contents,
     SkColor color,
-    const std::vector<content::ColorSuggestion>& suggestions) {
+    const std::vector<blink::mojom::ColorSuggestionPtr>& suggestions) {
   if (!attached() || !embedder_web_contents()->GetDelegate())
     return nullptr;
 

@@ -87,9 +87,16 @@ class EmbedderTest : public ::testing::Test,
   // environment, or return false on failure.
   // The filename is relative to the test data directory where we store all the
   // test files.
-  virtual bool OpenDocument(const std::string& filename,
-                            const char* password = nullptr,
-                            bool must_linearize = false);
+  // |password| can be nullptr if there is none.
+  virtual bool OpenDocumentWithOptions(const std::string& filename,
+                                       const char* password,
+                                       bool must_linearize);
+
+  // Variants provided for convenience.
+  bool OpenDocument(const std::string& filename);
+  bool OpenDocumentLinearized(const std::string& filename);
+  bool OpenDocumentWithPassword(const std::string& filename,
+                                const char* password);
 
   // Perform JavaScript actions that are to run at document open time.
   void DoOpenActions();
@@ -127,6 +134,12 @@ class EmbedderTest : public ::testing::Test,
   // Return the hash of |bitmap|.
   static std::string HashBitmap(FPDF_BITMAP bitmap);
 
+#ifndef NDEBUG
+  // For debugging purposes.
+  // Write |bitmap| to a png file.
+  static void WriteBitmapToPng(FPDF_BITMAP bitmap, const std::string& filename);
+#endif
+
   // Check |bitmap| to make sure it has the right dimensions and content.
   static void CompareBitmap(FPDF_BITMAP bitmap,
                             int expected_width,
@@ -160,9 +173,6 @@ class EmbedderTest : public ::testing::Test,
   FPDF_FORMHANDLE form_handle_;
   FPDF_AVAIL avail_;
   FPDF_FILEACCESS file_access_;  // must outlive avail_.
-#ifdef PDF_ENABLE_V8
-  v8::Platform* platform_;
-#endif  // PDF_ENABLE_V8
   void* external_isolate_;
   TestLoader* loader_;
   size_t file_length_;

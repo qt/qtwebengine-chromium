@@ -477,7 +477,6 @@ FPDF_InitLibraryWithConfig(const FPDF_LIBRARY_CONFIG* cfg) {
   pModuleMgr->Init();
 
 #ifdef PDF_ENABLE_XFA
-  FXJSE_Initialize();
   BC_Library_Init();
 #endif  // PDF_ENABLE_XFA
   if (cfg && cfg->version >= 2)
@@ -492,7 +491,6 @@ FPDF_EXPORT void FPDF_CALLCONV FPDF_DestroyLibrary() {
 
 #ifdef PDF_ENABLE_XFA
   BC_Library_Destroy();
-  FXJSE_Finalize();
 #endif  // PDF_ENABLE_XFA
 
   CPDF_ModuleMgr::Destroy();
@@ -726,6 +724,19 @@ FPDF_EXPORT double FPDF_CALLCONV FPDF_GetPageWidth(FPDF_PAGE page) {
 FPDF_EXPORT double FPDF_CALLCONV FPDF_GetPageHeight(FPDF_PAGE page) {
   UnderlyingPageType* pPage = UnderlyingFromFPDFPage(page);
   return pPage ? pPage->GetPageHeight() : 0.0;
+}
+
+FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV FPDF_GetPageBoundingBox(FPDF_PAGE page,
+                                                            FS_RECTF* rect) {
+  if (!rect)
+    return false;
+
+  CPDF_Page* pPage = CPDFPageFromFPDFPage(page);
+  if (!pPage)
+    return false;
+
+  FSRECTFFromCFXFloatRect(pPage->GetPageBBox(), rect);
+  return true;
 }
 
 #if defined(_WIN32)
@@ -1023,13 +1034,16 @@ FPDF_RenderPageBitmapWithMatrix(FPDF_BITMAP bitmap,
   if (clipping)
     clipping_rect = CFXFloatRectFromFSRECTF(*clipping);
   FX_RECT clip_rect = clipping_rect.ToFxRect();
-  RenderPageImpl(
-      pContext, pPage,
-      pPage->GetDisplayMatrixWithTransformation(
-          clip_rect.left, clip_rect.top, clip_rect.Width(), clip_rect.Height(),
-          CFX_Matrix(matrix->a, matrix->b, matrix->c, matrix->d, matrix->e,
-                     matrix->f)),
-      clip_rect, flags, true, nullptr);
+
+  CFX_Matrix transform_matrix = pPage->GetDisplayMatrix(
+      0, 0, pPage->GetPageWidth(), pPage->GetPageHeight(), 0);
+
+  if (matrix) {
+    transform_matrix.Concat(CFX_Matrix(matrix->a, matrix->b, matrix->c,
+                                       matrix->d, matrix->e, matrix->f));
+  }
+  RenderPageImpl(pContext, pPage, transform_matrix, clip_rect, flags, true,
+                 nullptr);
 
   pPage->SetRenderContext(nullptr);
 }
@@ -1409,19 +1423,14 @@ FPDF_EXPORT FPDF_RESULT FPDF_CALLCONV FPDF_BStr_Init(FPDF_BSTR* str) {
 FPDF_EXPORT FPDF_RESULT FPDF_CALLCONV FPDF_BStr_Set(FPDF_BSTR* str,
                                                     FPDF_LPCSTR bstr,
                                                     int length) {
-  if (!str)
+  if (!str || !bstr || !length)
     return -1;
-  if (!bstr || !length)
-    return -1;
+
   if (length == -1)
     length = strlen(bstr);
 
   if (length == 0) {
-    if (str->str) {
-      FX_Free(str->str);
-      str->str = nullptr;
-    }
-    str->len = 0;
+    FPDF_BStr_Clear(str);
     return 0;
   }
 

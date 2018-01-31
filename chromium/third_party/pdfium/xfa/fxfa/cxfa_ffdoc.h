@@ -17,6 +17,7 @@
 
 class CFGAS_PDFFontMgr;
 class CFX_ChecksumContext;
+class CPDF_Document;
 class CXFA_FFApp;
 class CXFA_FFNotify;
 class CXFA_FFDocView;
@@ -85,13 +86,13 @@ class CXFA_FFDoc {
   UnownedPtr<IXFA_DocEnvironment> const m_pDocEnvironment;
   std::unique_ptr<CXFA_DocumentParser> m_pDocumentParser;
   RetainPtr<IFX_SeekableStream> m_pStream;
-  UnownedPtr<CXFA_FFApp> m_pApp;
+  UnownedPtr<CXFA_FFApp> const m_pApp;
   std::unique_ptr<CXFA_FFNotify> m_pNotify;
   UnownedPtr<CPDF_Document> m_pPDFDoc;
   std::map<uint32_t, FX_IMAGEDIB_AND_DPI> m_HashToDibDpiMap;
   std::unique_ptr<CXFA_FFDocView> m_DocView;
   std::unique_ptr<CFGAS_PDFFontMgr> m_pPDFFontMgr;
-  FormType m_FormType;
+  FormType m_FormType = FormType::kXFAForeground;
 };
 
 #endif  // XFA_FXFA_CXFA_FFDOC_H_

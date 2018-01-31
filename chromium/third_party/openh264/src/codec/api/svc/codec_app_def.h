@@ -165,6 +165,7 @@ typedef enum {
   DECODER_OPTION_PROFILE,               ///< get current AU profile info, only is used in GetOption
   DECODER_OPTION_LEVEL,                 ///< get current AU level info,only is used in GetOption
   DECODER_OPTION_STATISTICS_LOG_INTERVAL,///< set log output interval
+  DECODER_OPTION_IS_REF_PIC,             ///< feedback current frame is ref pic or not
 
 } DECODER_OPTION;
 
@@ -439,7 +440,7 @@ typedef enum {
   ASP_15x11 = 11,
   ASP_64x33 = 12,
   ASP_160x99 = 13,
-  
+
   ASP_EXT_SAR = 255
 } ESampleAspectRatio;
 
@@ -484,14 +485,16 @@ typedef struct {
 typedef enum {
   CAMERA_VIDEO_REAL_TIME,      ///< camera video for real-time communication
   SCREEN_CONTENT_REAL_TIME,    ///< screen content signal
-  CAMERA_VIDEO_NON_REAL_TIME
+  CAMERA_VIDEO_NON_REAL_TIME,
+  SCREEN_CONTENT_NON_REAL_TIME,
+  INPUT_CONTENT_TYPE_ALL,
 } EUsageType;
 
 /**
 * @brief Enumulate the complexity mode
 */
 typedef enum {
-  LOW_COMPLEXITY,             ///< the lowest compleixty,the fastest speed,
+  LOW_COMPLEXITY = 0 ,             ///< the lowest compleixty,the fastest speed,
   MEDIUM_COMPLEXITY,          ///< medium complexity, medium speed,medium quality
   HIGH_COMPLEXITY             ///< high complexity, lowest speed, high quality
 } ECOMPLEXITY_MODE;
@@ -742,7 +745,11 @@ typedef struct TagVideoEncoderStatistics {
   unsigned int uiLTRSentNum;                   ///< number of LTR sent/marked
 
   long long    iStatisticsTs;                  ///< Timestamp of updating the statistics
-} SEncoderStatistics; // in building, coming soon
+
+  unsigned long iTotalEncodedBytes;
+  unsigned long iLastStatisticsBytes;
+  unsigned long iLastStatisticsFrameCount;
+} SEncoderStatistics;
 
 /**
 * @brief  Structure for decoder statistics

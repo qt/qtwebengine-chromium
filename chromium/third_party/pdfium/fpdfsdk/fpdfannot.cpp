@@ -104,6 +104,18 @@ static_assert(static_cast<int>(CPDF_Annot::Subtype::XFAWIDGET) ==
                   FPDF_ANNOT_XFAWIDGET,
               "CPDF_Annot::XFAWIDGET value mismatch");
 
+// These checks ensure the consistency of annotation appearance mode values
+// across core/ and public.
+static_assert(static_cast<int>(CPDF_Annot::AppearanceMode::Normal) ==
+                  FPDF_ANNOT_APPEARANCEMODE_NORMAL,
+              "CPDF_Annot::AppearanceMode::Normal value mismatch");
+static_assert(static_cast<int>(CPDF_Annot::AppearanceMode::Rollover) ==
+                  FPDF_ANNOT_APPEARANCEMODE_ROLLOVER,
+              "CPDF_Annot::AppearanceMode::Rollover value mismatch");
+static_assert(static_cast<int>(CPDF_Annot::AppearanceMode::Down) ==
+                  FPDF_ANNOT_APPEARANCEMODE_DOWN,
+              "CPDF_Annot::AppearanceMode::Down value mismatch");
+
 // These checks ensure the consistency of dictionary value types across core/
 // and public/.
 static_assert(static_cast<int>(CPDF_Object::Type::BOOLEAN) ==
@@ -733,6 +745,75 @@ FPDFAnnot_GetStringValue(FPDF_ANNOTATION annot,
 
   return Utf16EncodeMaybeCopyAndReturnLength(pAnnotDict->GetUnicodeTextFor(key),
                                              buffer, buflen);
+}
+
+FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV
+FPDFAnnot_SetAP(FPDF_ANNOTATION annot,
+                FPDF_ANNOT_APPEARANCEMODE appearanceMode,
+                FPDF_WIDESTRING value) {
+  if (appearanceMode < 0 || appearanceMode >= FPDF_ANNOT_APPEARANCEMODE_COUNT)
+    return false;
+
+  if (!annot)
+    return false;
+
+  CPDF_Dictionary* pAnnotDict =
+      CPDFAnnotContextFromFPDFAnnotation(annot)->GetAnnotDict();
+  if (!pAnnotDict)
+    return false;
+
+  constexpr const char* modeKeyForMode[] = {"N", "R", "D"};
+  static_assert(FX_ArraySize(modeKeyForMode) == FPDF_ANNOT_APPEARANCEMODE_COUNT,
+                "length of modeKeyForMode should be equal to "
+                "FPDF_ANNOT_APPEARANCEMODE_COUNT");
+  const char* modeKey = modeKeyForMode[appearanceMode];
+
+  CPDF_Dictionary* pApDict = pAnnotDict->GetDictFor("AP");
+
+  // If value is null, we're in remove mode. Otherwise, we're in add/update
+  // mode.
+  if (value) {
+    if (!pApDict)
+      pApDict = pAnnotDict->SetNewFor<CPDF_Dictionary>("AP");
+
+    ByteString newValue = CFXByteStringFromFPDFWideString(value);
+    auto pNewApStream = pdfium::MakeUnique<CPDF_Stream>();
+    pNewApStream->SetData(newValue.raw_str(), newValue.GetLength());
+    pApDict->SetFor(modeKey, std::move(pNewApStream));
+  } else {
+    if (pApDict) {
+      if (appearanceMode == FPDF_ANNOT_APPEARANCEMODE_NORMAL)
+        pAnnotDict->RemoveFor("AP");
+      else
+        pApDict->RemoveFor(modeKey);
+    }
+  }
+
+  return true;
+}
+
+FPDF_EXPORT unsigned long FPDF_CALLCONV
+FPDFAnnot_GetAP(FPDF_ANNOTATION annot,
+                FPDF_ANNOT_APPEARANCEMODE appearanceMode,
+                void* buffer,
+                unsigned long buflen) {
+  if (appearanceMode < 0 || appearanceMode >= FPDF_ANNOT_APPEARANCEMODE_COUNT)
+    return 0;
+
+  if (!annot)
+    return 0;
+
+  CPDF_Dictionary* pAnnotDict =
+      CPDFAnnotContextFromFPDFAnnotation(annot)->GetAnnotDict();
+  if (!pAnnotDict)
+    return 0;
+
+  CPDF_Annot::AppearanceMode mode =
+      static_cast<CPDF_Annot::AppearanceMode>(appearanceMode);
+
+  CPDF_Stream* pStream = FPDFDOC_GetAnnotAPNoFallback(pAnnotDict, mode);
+  return Utf16EncodeMaybeCopyAndReturnLength(
+      pStream ? pStream->GetUnicodeText() : L"", buffer, buflen);
 }
 
 FPDF_EXPORT FPDF_ANNOTATION FPDF_CALLCONV

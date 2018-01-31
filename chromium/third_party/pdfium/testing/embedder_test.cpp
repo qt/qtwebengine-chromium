@@ -6,6 +6,7 @@
 
 #include <limits.h>
 
+#include <fstream>
 #include <list>
 #include <string>
 #include <utility>
@@ -17,6 +18,7 @@
 #include "public/fpdf_text.h"
 #include "public/fpdfview.h"
 #include "testing/gmock/include/gmock/gmock.h"
+#include "testing/image_diff/image_diff_png.h"
 #include "testing/test_support.h"
 #include "testing/utils/path_service.h"
 #include "third_party/base/ptr_util.h"
@@ -27,15 +29,6 @@
 #endif  // PDF_ENABLE_V8
 
 namespace {
-
-const char* g_exe_path = nullptr;
-
-#ifdef PDF_ENABLE_V8
-#ifdef V8_USE_EXTERNAL_STARTUP_DATA
-v8::StartupData* g_v8_natives = nullptr;
-v8::StartupData* g_v8_snapshot = nullptr;
-#endif  // V8_USE_EXTERNAL_STARTUP_DATA
-#endif  // PDF_ENABLE_V8
 
 int GetBitmapBytesPerPixel(FPDF_BITMAP bitmap) {
   const int format = FPDFBitmap_GetFormat(bitmap);
@@ -67,31 +60,11 @@ EmbedderTest::EmbedderTest()
   memset(&file_access_, 0, sizeof(file_access_));
   delegate_ = default_delegate_.get();
 
-#ifdef PDF_ENABLE_V8
-#ifdef V8_USE_EXTERNAL_STARTUP_DATA
-  if (g_v8_natives && g_v8_snapshot) {
-    InitializeV8ForPDFium(g_exe_path, std::string(), nullptr, nullptr,
-                          &platform_);
-  } else {
-    g_v8_natives = new v8::StartupData;
-    g_v8_snapshot = new v8::StartupData;
-    InitializeV8ForPDFium(g_exe_path, std::string(), g_v8_natives,
-                          g_v8_snapshot, &platform_);
-  }
-#else
-  InitializeV8ForPDFium(g_exe_path, &platform_);
-#endif  // V8_USE_EXTERNAL_STARTUP_DATA
-#endif  // FPDF_ENABLE_V8
   FPDF_FILEWRITE::version = 1;
   FPDF_FILEWRITE::WriteBlock = WriteBlockCallback;
 }
 
-EmbedderTest::~EmbedderTest() {
-#ifdef PDF_ENABLE_V8
-  v8::V8::ShutdownPlatform();
-  delete platform_;
-#endif  // PDF_ENABLE_V8
-}
+EmbedderTest::~EmbedderTest() {}
 
 void EmbedderTest::SetUp() {
   FPDF_LIBRARY_CONFIG config;
@@ -131,9 +104,22 @@ bool EmbedderTest::CreateEmptyDocument() {
   return true;
 }
 
-bool EmbedderTest::OpenDocument(const std::string& filename,
-                                const char* password,
-                                bool must_linearize) {
+bool EmbedderTest::OpenDocument(const std::string& filename) {
+  return OpenDocumentWithOptions(filename, nullptr, false);
+}
+
+bool EmbedderTest::OpenDocumentLinearized(const std::string& filename) {
+  return OpenDocumentWithOptions(filename, nullptr, true);
+}
+
+bool EmbedderTest::OpenDocumentWithPassword(const std::string& filename,
+                                            const char* password) {
+  return OpenDocumentWithOptions(filename, password, false);
+}
+
+bool EmbedderTest::OpenDocumentWithOptions(const std::string& filename,
+                                           const char* password,
+                                           bool must_linearize) {
   std::string file_path;
   if (!PathService::GetTestFilePath(filename, &file_path))
     return false;
@@ -235,7 +221,8 @@ FPDF_FORMHANDLE EmbedderTest::SetupFormFillEnvironment(FPDF_DOCUMENT doc) {
   formfillinfo->m_pJsPlatform = platform;
   FPDF_FORMHANDLE form_handle =
       FPDFDOC_InitFormFillEnvironment(doc, formfillinfo);
-  FPDF_SetFormFieldHighlightColor(form_handle, 0, 0xFFE4DD);
+  FPDF_SetFormFieldHighlightColor(form_handle, FPDF_FORMFIELD_UNKNOWN,
+                                  0xFFE4DD);
   FPDF_SetFormFieldHighlightAlpha(form_handle, 100);
   return form_handle;
 }
@@ -441,6 +428,32 @@ std::string EmbedderTest::HashBitmap(FPDF_BITMAP bitmap) {
   return CryptToBase16(digest);
 }
 
+#ifndef NDEBUG
+// static
+void EmbedderTest::WriteBitmapToPng(FPDF_BITMAP bitmap,
+                                    const std::string& filename) {
+  const int stride = FPDFBitmap_GetStride(bitmap);
+  const int width = FPDFBitmap_GetWidth(bitmap);
+  const int height = FPDFBitmap_GetHeight(bitmap);
+  const auto* buffer =
+      static_cast<const unsigned char*>(FPDFBitmap_GetBuffer(bitmap));
+
+  std::vector<unsigned char> png_encoding;
+  bool encoded = image_diff_png::EncodeBGRAPNG(buffer, width, height, stride,
+                                               false, &png_encoding);
+
+  ASSERT_TRUE(encoded);
+  ASSERT_LT(filename.size(), 256u);
+
+  std::ofstream png_file;
+  png_file.open(filename, std::ios_base::out | std::ios_base::binary);
+  png_file.write(reinterpret_cast<char*>(&png_encoding.front()),
+                 png_encoding.size());
+  ASSERT_TRUE(png_file.good());
+  png_file.close();
+}
+#endif
+
 // static
 void EmbedderTest::CompareBitmap(FPDF_BITMAP bitmap,
                                  int expected_width,
@@ -485,24 +498,4 @@ int EmbedderTest::GetBlockFromString(void* param,
 
   memcpy(buf, new_file->data() + pos, size);
   return 1;
-}
-
-// Can't use gtest-provided main since we need to stash the path to the
-// executable in order to find the external V8 binary data files.
-int main(int argc, char** argv) {
-  g_exe_path = argv[0];
-  testing::InitGoogleTest(&argc, argv);
-  testing::InitGoogleMock(&argc, argv);
-  int ret_val = RUN_ALL_TESTS();
-
-#ifdef PDF_ENABLE_V8
-#ifdef V8_USE_EXTERNAL_STARTUP_DATA
-  if (g_v8_natives)
-    free(const_cast<char*>(g_v8_natives->data));
-  if (g_v8_snapshot)
-    free(const_cast<char*>(g_v8_snapshot->data));
-#endif  // V8_USE_EXTERNAL_STARTUP_DATA
-#endif  // PDF_ENABLE_V8
-
-  return ret_val;
 }

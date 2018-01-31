@@ -11,26 +11,31 @@
 #include "xfa/fxfa/cxfa_ffdraw.h"
 #include "xfa/fxfa/cxfa_ffpageview.h"
 #include "xfa/fxfa/cxfa_ffwidget.h"
+#include "xfa/fxfa/parser/cxfa_image.h"
+#include "xfa/fxfa/parser/cxfa_para.h"
+#include "xfa/fxfa/parser/cxfa_value.h"
 
-CXFA_FFImage::CXFA_FFImage(CXFA_WidgetAcc* pDataAcc) : CXFA_FFDraw(pDataAcc) {}
+CXFA_FFImage::CXFA_FFImage(CXFA_Node* pNode) : CXFA_FFDraw(pNode) {}
 
 CXFA_FFImage::~CXFA_FFImage() {
   CXFA_FFImage::UnloadWidget();
 }
 
 bool CXFA_FFImage::IsLoaded() {
-  return !!GetDataAcc()->GetImageImage();
+  return !!GetNode()->GetWidgetAcc()->GetImageImage();
 }
 
 bool CXFA_FFImage::LoadWidget() {
-  if (GetDataAcc()->GetImageImage())
+  if (GetNode()->GetWidgetAcc()->GetImageImage())
     return true;
 
-  return GetDataAcc()->LoadImageImage() ? CXFA_FFDraw::LoadWidget() : false;
+  return GetNode()->GetWidgetAcc()->LoadImageImage(GetDoc())
+             ? CXFA_FFDraw::LoadWidget()
+             : false;
 }
 
 void CXFA_FFImage::UnloadWidget() {
-  GetDataAcc()->SetImageImage(nullptr);
+  GetNode()->GetWidgetAcc()->SetImageImage(nullptr);
 }
 
 void CXFA_FFImage::RenderWidget(CXFA_Graphics* pGS,
@@ -44,27 +49,32 @@ void CXFA_FFImage::RenderWidget(CXFA_Graphics* pGS,
 
   CXFA_FFWidget::RenderWidget(pGS, mtRotate, dwStatus);
 
-  RetainPtr<CFX_DIBitmap> pDIBitmap = GetDataAcc()->GetImageImage();
+  RetainPtr<CFX_DIBitmap> pDIBitmap =
+      GetNode()->GetWidgetAcc()->GetImageImage();
   if (!pDIBitmap)
     return;
 
   CFX_RectF rtImage = GetRectWithoutRotate();
-  CXFA_MarginData marginData = m_pDataAcc->GetMarginData();
-  if (marginData.HasValidNode())
-    XFA_RectWidthoutMargin(rtImage, marginData);
+  CXFA_Margin* margin = m_pNode->GetMarginIfExists();
+  if (margin)
+    XFA_RectWithoutMargin(rtImage, margin);
 
   XFA_AttributeEnum iHorzAlign = XFA_AttributeEnum::Left;
   XFA_AttributeEnum iVertAlign = XFA_AttributeEnum::Top;
-  CXFA_ParaData paraData = m_pDataAcc->GetParaData();
-  if (paraData.HasValidNode()) {
-    iHorzAlign = paraData.GetHorizontalAlign();
-    iVertAlign = paraData.GetVerticalAlign();
+  CXFA_Para* para = m_pNode->GetParaIfExists();
+  if (para) {
+    iHorzAlign = para->GetHorizontalAlign();
+    iVertAlign = para->GetVerticalAlign();
   }
 
   int32_t iImageXDpi = 0;
   int32_t iImageYDpi = 0;
-  m_pDataAcc->GetImageDpi(iImageXDpi, iImageYDpi);
-  XFA_DrawImage(pGS, rtImage, mtRotate, pDIBitmap,
-                m_pDataAcc->GetFormValueData().GetImageData().GetAspect(),
-                iImageXDpi, iImageYDpi, iHorzAlign, iVertAlign);
+  m_pNode->GetWidgetAcc()->GetImageDpi(iImageXDpi, iImageYDpi);
+
+  auto* value = m_pNode->GetFormValueIfExists();
+  CXFA_Image* image = value ? value->GetImageIfExists() : nullptr;
+  if (image) {
+    XFA_DrawImage(pGS, rtImage, mtRotate, pDIBitmap, image->GetAspect(),
+                  iImageXDpi, iImageYDpi, iHorzAlign, iVertAlign);
+  }
 }

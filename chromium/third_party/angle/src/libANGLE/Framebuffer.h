@@ -60,7 +60,7 @@ class FramebufferState final : angle::NonCopyable
     const std::string &getLabel();
     size_t getReadIndex() const;
 
-    const FramebufferAttachment *getAttachment(GLenum attachment) const;
+    const FramebufferAttachment *getAttachment(const Context *context, GLenum attachment) const;
     const FramebufferAttachment *getReadAttachment() const;
     const FramebufferAttachment *getFirstNonNullAttachment() const;
     const FramebufferAttachment *getFirstColorAttachment() const;
@@ -100,6 +100,10 @@ class FramebufferState final : angle::NonCopyable
     GLint getBaseViewIndex() const;
 
   private:
+    const FramebufferAttachment *getWebGLDepthStencilAttachment() const;
+    const FramebufferAttachment *getWebGLDepthAttachment() const;
+    const FramebufferAttachment *getWebGLStencilAttachment() const;
+
     friend class Framebuffer;
 
     std::string mLabel;
@@ -111,6 +115,7 @@ class FramebufferState final : angle::NonCopyable
     std::vector<GLenum> mDrawBufferStates;
     GLenum mReadBufferState;
     DrawBufferMask mEnabledDrawBuffers;
+    ComponentTypeMask mDrawBufferTypeMask;
 
     GLint mDefaultWidth;
     GLint mDefaultHeight;
@@ -184,7 +189,7 @@ class Framebuffer final : public LabeledObject, public OnAttachmentDirtyReceiver
     const FramebufferAttachment *getFirstColorbuffer() const;
     const FramebufferAttachment *getFirstNonNullAttachment() const;
 
-    const FramebufferAttachment *getAttachment(GLenum attachment) const;
+    const FramebufferAttachment *getAttachment(const Context *context, GLenum attachment) const;
     GLenum getMultiviewLayout() const;
     GLsizei getNumViews() const;
     GLint getBaseViewIndex() const;
@@ -196,6 +201,8 @@ class Framebuffer final : public LabeledObject, public OnAttachmentDirtyReceiver
     void setDrawBuffers(size_t count, const GLenum *buffers);
     const FramebufferAttachment *getDrawBuffer(size_t drawBuffer) const;
     GLenum getDrawbufferWriteType(size_t drawBuffer) const;
+    ComponentTypeMask getDrawBufferTypeMask() const;
+    DrawBufferMask getDrawBufferMask() const;
     bool hasEnabledDrawBuffer() const;
 
     GLenum getReadBufferState() const;
@@ -295,7 +302,7 @@ class Framebuffer final : public LabeledObject, public OnAttachmentDirtyReceiver
         DIRTY_BIT_MAX = DIRTY_BIT_UNKNOWN
     };
 
-    typedef angle::BitSet<DIRTY_BIT_MAX> DirtyBits;
+    using DirtyBits = angle::BitSet<DIRTY_BIT_MAX>;
     bool hasAnyDirtyBit() const { return mDirtyBits.any(); }
 
     void syncState(const Context *context);

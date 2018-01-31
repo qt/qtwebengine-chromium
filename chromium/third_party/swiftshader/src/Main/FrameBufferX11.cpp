@@ -120,19 +120,19 @@ namespace sw
 	void *FrameBufferX11::lock()
 	{
 		stride = x_image->bytes_per_line;
-		locked = buffer;
+		framebuffer = buffer;
 
-		return locked;
+		return framebuffer;
 	}
 
 	void FrameBufferX11::unlock()
 	{
-		locked = nullptr;
+		framebuffer = nullptr;
 	}
 
-	void FrameBufferX11::blit(void *source, const Rect *sourceRect, const Rect *destRect, Format sourceFormat, size_t sourceStride)
+	void FrameBufferX11::blit(sw::Surface *source, const Rect *sourceRect, const Rect *destRect)
 	{
-		copy(source, sourceFormat, sourceStride);
+		copy(source);
 
 		if(!mit_shm)
 		{

@@ -105,24 +105,26 @@ FPDF_EXPORT double FPDF_CALLCONV FPDFText_GetFontSize(FPDF_TEXTPAGE text_page,
   return charinfo.m_FontSize;
 }
 
-FPDF_EXPORT void FPDF_CALLCONV FPDFText_GetCharBox(FPDF_TEXTPAGE text_page,
-                                                   int index,
-                                                   double* left,
-                                                   double* right,
-                                                   double* bottom,
-                                                   double* top) {
-  if (!text_page)
-    return;
-  CPDF_TextPage* textpage = CPDFTextPageFromFPDFTextPage(text_page);
+FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV FPDFText_GetCharBox(FPDF_TEXTPAGE text_page,
+                                                        int index,
+                                                        double* left,
+                                                        double* right,
+                                                        double* bottom,
+                                                        double* top) {
+  if (!text_page || index < 0)
+    return false;
 
-  if (index < 0 || index >= textpage->CountChars())
-    return;
+  CPDF_TextPage* textpage = CPDFTextPageFromFPDFTextPage(text_page);
+  if (index >= textpage->CountChars())
+    return false;
+
   FPDF_CHAR_INFO charinfo;
   textpage->GetCharInfo(index, &charinfo);
   *left = charinfo.m_CharBox.left;
   *right = charinfo.m_CharBox.right;
   *bottom = charinfo.m_CharBox.bottom;
   *top = charinfo.m_CharBox.top;
+  return true;
 }
 
 FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV
@@ -205,22 +207,24 @@ FPDF_EXPORT int FPDF_CALLCONV FPDFText_CountRects(FPDF_TEXTPAGE text_page,
   return textpage->CountRects(start, count);
 }
 
-FPDF_EXPORT void FPDF_CALLCONV FPDFText_GetRect(FPDF_TEXTPAGE text_page,
-                                                int rect_index,
-                                                double* left,
-                                                double* top,
-                                                double* right,
-                                                double* bottom) {
+FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV FPDFText_GetRect(FPDF_TEXTPAGE text_page,
+                                                     int rect_index,
+                                                     double* left,
+                                                     double* top,
+                                                     double* right,
+                                                     double* bottom) {
   if (!text_page)
-    return;
+    return false;
 
   CPDF_TextPage* textpage = CPDFTextPageFromFPDFTextPage(text_page);
   CFX_FloatRect rect;
-  textpage->GetRect(rect_index, rect.left, rect.top, rect.right, rect.bottom);
+  bool result = textpage->GetRect(rect_index, &rect);
+
   *left = rect.left;
   *top = rect.top;
   *right = rect.right;
   *bottom = rect.bottom;
+  return result;
 }
 
 FPDF_EXPORT int FPDF_CALLCONV FPDFText_GetBoundedText(FPDF_TEXTPAGE text_page,
@@ -263,10 +267,9 @@ FPDFText_FindStart(FPDF_TEXTPAGE text_page,
   CPDF_TextPageFind* textpageFind =
       new CPDF_TextPageFind(CPDFTextPageFromFPDFTextPage(text_page));
   size_t len = WideString::WStringLength(findwhat);
-  textpageFind->FindFirst(WideString::FromUTF16LE(findwhat, len), flags,
-                          start_index >= 0
-                              ? pdfium::Optional<size_t>(start_index)
-                              : pdfium::Optional<size_t>());
+  textpageFind->FindFirst(
+      WideString::FromUTF16LE(findwhat, len), flags,
+      start_index >= 0 ? Optional<size_t>(start_index) : Optional<size_t>());
   return textpageFind;
 }
 
@@ -363,25 +366,26 @@ FPDF_EXPORT int FPDF_CALLCONV FPDFLink_CountRects(FPDF_PAGELINK link_page,
   return pdfium::CollectionSize<int>(pageLink->GetRects(link_index));
 }
 
-FPDF_EXPORT void FPDF_CALLCONV FPDFLink_GetRect(FPDF_PAGELINK link_page,
-                                                int link_index,
-                                                int rect_index,
-                                                double* left,
-                                                double* top,
-                                                double* right,
-                                                double* bottom) {
+FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV FPDFLink_GetRect(FPDF_PAGELINK link_page,
+                                                     int link_index,
+                                                     int rect_index,
+                                                     double* left,
+                                                     double* top,
+                                                     double* right,
+                                                     double* bottom) {
   if (!link_page || link_index < 0 || rect_index < 0)
-    return;
+    return false;
 
   CPDF_LinkExtract* pageLink = CPDFLinkExtractFromFPDFPageLink(link_page);
   std::vector<CFX_FloatRect> rectArray = pageLink->GetRects(link_index);
   if (rect_index >= pdfium::CollectionSize<int>(rectArray))
-    return;
+    return false;
 
   *left = rectArray[rect_index].left;
   *right = rectArray[rect_index].right;
   *top = rectArray[rect_index].top;
   *bottom = rectArray[rect_index].bottom;
+  return true;
 }
 
 FPDF_EXPORT void FPDF_CALLCONV FPDFLink_CloseWebLinks(FPDF_PAGELINK link_page) {

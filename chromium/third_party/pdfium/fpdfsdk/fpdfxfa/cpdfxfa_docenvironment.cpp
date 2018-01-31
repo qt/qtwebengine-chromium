@@ -22,6 +22,7 @@
 #include "xfa/fxfa/cxfa_ffwidget.h"
 #include "xfa/fxfa/cxfa_ffwidgethandler.h"
 #include "xfa/fxfa/cxfa_widgetacciterator.h"
+#include "xfa/fxfa/parser/cxfa_submit.h"
 
 #define IDS_XFA_Validate_Input                                          \
   "At least one required field was empty. Please fill in the required " \
@@ -127,7 +128,7 @@ bool CPDFXFA_DocEnvironment::GetPopupPos(CXFA_FFWidget* hWidget,
   int t1;
   int t2;
   CFX_FloatRect rcAnchor = rtAnchor.ToFloatRect();
-  int nRotate = hWidget->GetDataAcc()->GetRotate();
+  int nRotate = hWidget->GetNode()->GetRotate();
   switch (nRotate) {
     case 90: {
       t1 = (int)(pageViewRect.right - rcAnchor.right);
@@ -288,7 +289,7 @@ void CPDFXFA_DocEnvironment::PageViewEvent(CXFA_FFPageView* pPageView,
 }
 
 void CPDFXFA_DocEnvironment::WidgetPostAdd(CXFA_FFWidget* hWidget,
-                                           CXFA_WidgetAcc* pWidgetData) {
+                                           CXFA_WidgetAcc* pWidgetAcc) {
   if (m_pContext->GetFormType() != FormType::kXFAFull || !hWidget)
     return;
 
@@ -306,7 +307,7 @@ void CPDFXFA_DocEnvironment::WidgetPostAdd(CXFA_FFWidget* hWidget,
 }
 
 void CPDFXFA_DocEnvironment::WidgetPreRemove(CXFA_FFWidget* hWidget,
-                                             CXFA_WidgetAcc* pWidgetData) {
+                                             CXFA_WidgetAcc* pWidgetAcc) {
   if (m_pContext->GetFormType() != FormType::kXFAFull || !hWidget)
     return;
 
@@ -496,7 +497,7 @@ void CPDFXFA_DocEnvironment::ExportData(CXFA_FFDoc* hDoc,
                               content.GetLength());
       }
       auto pAcc = pdfium::MakeRetain<CPDF_StreamAcc>(pStream);
-      pAcc->LoadAllData();
+      pAcc->LoadAllDataFiltered();
       fileWrite->WriteBlock(pAcc->GetData(), fileWrite->GetSize(),
                             pAcc->GetSize());
     }
@@ -597,7 +598,7 @@ FX_ARGB CPDFXFA_DocEnvironment::GetHighlightColor(CXFA_FFDoc* hDoc) {
     return 0;
 
   return ArgbEncode(pInterForm->GetHighlightAlpha(),
-                    pInterForm->GetHighlightColor(FPDF_FORMFIELD_XFA));
+                    pInterForm->GetHighlightColor(FormFieldType::kXFA));
 }
 
 bool CPDFXFA_DocEnvironment::NotifySubmit(bool bPrevOrPost) {
@@ -612,16 +613,16 @@ bool CPDFXFA_DocEnvironment::OnBeforeNotifySubmit() {
   if (!m_pContext->ContainsXFAForm())
     return true;
 
-  if (!m_pContext->GetXFADocView())
+  CXFA_FFDocView* docView = m_pContext->GetXFADocView();
+  if (!docView)
     return true;
 
-  CXFA_FFWidgetHandler* pWidgetHandler =
-      m_pContext->GetXFADocView()->GetWidgetHandler();
+  CXFA_FFWidgetHandler* pWidgetHandler = docView->GetWidgetHandler();
   if (!pWidgetHandler)
     return true;
 
   std::unique_ptr<CXFA_WidgetAccIterator> pWidgetAccIterator =
-      m_pContext->GetXFADocView()->CreateWidgetAccIterator();
+      docView->CreateWidgetAccIterator();
   if (pWidgetAccIterator) {
     CXFA_EventParam Param;
     Param.m_eType = XFA_EVENT_PreSubmit;
@@ -629,21 +630,20 @@ bool CPDFXFA_DocEnvironment::OnBeforeNotifySubmit() {
       pWidgetHandler->ProcessEvent(pWidgetAcc, &Param);
   }
 
-  pWidgetAccIterator = m_pContext->GetXFADocView()->CreateWidgetAccIterator();
+  pWidgetAccIterator = docView->CreateWidgetAccIterator();
   if (!pWidgetAccIterator)
     return true;
 
   CXFA_WidgetAcc* pWidgetAcc = pWidgetAccIterator->MoveToNext();
   pWidgetAcc = pWidgetAccIterator->MoveToNext();
   while (pWidgetAcc) {
-    int fRet = pWidgetAcc->ProcessValidate(-1);
+    int fRet = pWidgetAcc->GetNode()->ProcessValidate(docView, -1);
     if (fRet == XFA_EVENTERROR_Error) {
       CPDFSDK_FormFillEnvironment* pFormFillEnv = m_pContext->GetFormFillEnv();
       if (!pFormFillEnv)
         return false;
 
-      WideString ws;
-      ws.FromLocal(IDS_XFA_Validate_Input);
+      WideString ws = WideString::FromLocal(IDS_XFA_Validate_Input);
       ByteString bs = ws.UTF16LE_Encode();
       int len = bs.GetLength();
       pFormFillEnv->Alert((FPDF_WIDESTRING)bs.GetBuffer(len),
@@ -653,7 +653,7 @@ bool CPDFXFA_DocEnvironment::OnBeforeNotifySubmit() {
     }
     pWidgetAcc = pWidgetAccIterator->MoveToNext();
   }
-  m_pContext->GetXFADocView()->UpdateDocView();
+  docView->UpdateDocView();
 
   return true;
 }
@@ -685,13 +685,12 @@ void CPDFXFA_DocEnvironment::OnAfterNotifySubmit() {
   m_pContext->GetXFADocView()->UpdateDocView();
 }
 
-bool CPDFXFA_DocEnvironment::SubmitData(CXFA_FFDoc* hDoc,
-                                        CXFA_SubmitData submitData) {
+bool CPDFXFA_DocEnvironment::Submit(CXFA_FFDoc* hDoc, CXFA_Submit* submit) {
   if (!NotifySubmit(true) || !m_pContext->GetXFADocView())
     return false;
 
   m_pContext->GetXFADocView()->UpdateDocView();
-  bool ret = SubmitDataInternal(hDoc, submitData);
+  bool ret = SubmitInternal(hDoc, submit);
   NotifySubmit(false);
   return ret;
 }
@@ -894,16 +893,15 @@ bool CPDFXFA_DocEnvironment::MailToInfo(WideString& csURL,
   return true;
 }
 
-bool CPDFXFA_DocEnvironment::SubmitDataInternal(CXFA_FFDoc* hDoc,
-                                                CXFA_SubmitData submitData) {
+bool CPDFXFA_DocEnvironment::SubmitInternal(CXFA_FFDoc* hDoc,
+                                            CXFA_Submit* submit) {
   CPDFSDK_FormFillEnvironment* pFormFillEnv = m_pContext->GetFormFillEnv();
   if (!pFormFillEnv)
     return false;
 
-  WideString csURL = submitData.GetSubmitTarget();
+  WideString csURL = submit->GetSubmitTarget();
   if (csURL.IsEmpty()) {
-    WideString ws;
-    ws.FromLocal("Submit cancelled.");
+    WideString ws = WideString::FromLocal("Submit cancelled.");
     ByteString bs = ws.UTF16LE_Encode();
     int len = bs.GetLength();
     pFormFillEnv->Alert(reinterpret_cast<FPDF_WIDESTRING>(bs.GetBuffer(len)),
@@ -914,16 +912,15 @@ bool CPDFXFA_DocEnvironment::SubmitDataInternal(CXFA_FFDoc* hDoc,
 
   FPDF_FILEHANDLER* pFileHandler = nullptr;
   int fileFlag = -1;
-  switch (submitData.GetSubmitFormat()) {
+  switch (submit->GetSubmitFormat()) {
     case XFA_AttributeEnum::Xdp: {
-      WideString csContent = submitData.GetSubmitXDPContent();
+      WideString csContent = submit->GetSubmitXDPContent();
       csContent.Trim();
 
-      WideString space;
-      space.FromLocal(" ");
+      WideString space = WideString::FromLocal(" ");
       csContent = space + csContent + space;
       FPDF_DWORD flag = 0;
-      if (submitData.IsSubmitEmbedPDF())
+      if (submit->IsSubmitEmbedPDF())
         flag |= FXFA_PDF;
 
       ToXFAContentFlags(csContent, flag);

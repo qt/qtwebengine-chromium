@@ -20,7 +20,7 @@ sk_sp<SkPicture> ToSkPicture(sk_sp<PaintRecord> record,
   SkCanvas* canvas = recorder.beginRecording(bounds);
   if (matrix)
     canvas->setMatrix(*matrix);
-  record->Playback(canvas, image_provider);
+  record->Playback(canvas, PlaybackParams(image_provider));
   return recorder.finishRecordingAsPicture();
 }
 
@@ -293,8 +293,10 @@ void PaintShader::CreateSkShader(ImageProvider* image_provider,
           flags_, local_matrix_ ? &*local_matrix_ : nullptr);
       break;
     case Type::kImage:
-      cached_shader_ = image_.GetSkImage()->makeShader(
-          tx_, ty_, local_matrix_ ? &*local_matrix_ : nullptr);
+      if (image_) {
+        cached_shader_ = image_.GetSkImage()->makeShader(
+            tx_, ty_, local_matrix_ ? &*local_matrix_ : nullptr);
+      }
       break;
     case Type::kPaintRecord: {
       // Create a recording at the desired scale if this record has images which
@@ -385,7 +387,9 @@ bool PaintShader::IsValid() const {
       return colors_.size() >= 2 &&
              (positions_.empty() || positions_.size() == colors_.size());
     case Type::kImage:
-      return !!image_;
+      // We may not be able to decode the image, in which case it would be
+      // false, but that would still make a valid shader.
+      return true;
     case Type::kPaintRecord:
       return !!record_;
     case Type::kShaderCount:
@@ -455,7 +459,12 @@ bool PaintShader::operator==(const PaintShader& other) const {
       // TODO(enne): add comparison of images once those are serialized.
       break;
     case Type::kPaintRecord:
-      // TODO(enne): add comparison of records once those are serialized.
+      // If we have a record but not other.record, or vice versa, then shaders
+      // aren't the same.
+      if (!record_ != !other.record_)
+        return false;
+      if (record_ && *record_ != *other.record_)
+        return false;
       if (!PaintOp::AreSkRectsEqual(tile_, other.tile_))
         return false;
       break;

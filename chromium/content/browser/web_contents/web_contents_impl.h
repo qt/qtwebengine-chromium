@@ -47,12 +47,13 @@
 #include "content/public/common/renderer_preferences.h"
 #include "content/public/common/resource_type.h"
 #include "content/public/common/three_d_api_types.h"
-#include "device/geolocation/public/interfaces/geolocation_context.mojom.h"
 #include "net/base/load_states.h"
 #include "net/http/http_response_headers.h"
 #include "ppapi/features/features.h"
+#include "services/device/public/interfaces/geolocation_context.mojom.h"
 #include "services/device/public/interfaces/wake_lock.mojom.h"
 #include "services/metrics/public/cpp/ukm_recorder.h"
+#include "third_party/WebKit/common/color_chooser/color_chooser.mojom.h"
 #include "third_party/WebKit/public/platform/WebDragOperation.h"
 #include "ui/accessibility/ax_modes.h"
 #include "ui/base/page_transition_types.h"
@@ -96,11 +97,9 @@ class WebContentsImpl;
 class WebContentsView;
 class WebContentsViewDelegate;
 struct AXEventNotificationDetails;
-struct ColorSuggestion;
 struct FaviconURL;
 struct LoadNotificationDetails;
 struct MHTMLGenerationParams;
-struct ResourceRequestDetails;
 
 namespace mojom {
 class CreateNewWindowParams;
@@ -128,6 +127,7 @@ class CONTENT_EXPORT WebContentsImpl : public WebContents,
                                        public RenderViewHostDelegate,
                                        public RenderWidgetHostDelegate,
                                        public RenderFrameHostManager::Delegate,
+                                       public blink::mojom::ColorChooserFactory,
                                        public NotificationObserver,
                                        public NavigationControllerDelegate,
                                        public NavigatorDelegate {
@@ -211,10 +211,6 @@ class CONTENT_EXPORT WebContentsImpl : public WebContents,
                         uint64_t upload_position,
                         uint64_t upload_size);
 
-  // A response has been received for a resource request.
-  void DidGetResourceResponseStart(
-      const ResourceRequestDetails& details);
-
   // Notify observers that the web contents has been focused.
   void NotifyWebContentsFocused(RenderWidgetHost* render_widget_host);
 
@@ -289,6 +285,10 @@ class CONTENT_EXPORT WebContentsImpl : public WebContents,
 
   void NotifyManifestUrlChanged(const base::Optional<GURL>& manifest_url);
 
+  ManifestManagerHost* GetManifestManagerHost() const {
+    return manifest_manager_host_.get();
+  }
+
 #if defined(OS_ANDROID)
   std::set<RenderWidgetHostImpl*> GetAllRenderWidgetHosts();
   void SetImportance(ChildProcessImportance importance);
@@ -310,7 +310,7 @@ class CONTENT_EXPORT WebContentsImpl : public WebContents,
   RenderFrameHostImpl* UnsafeFindFrameByFrameTreeNodeId(
       int frame_tree_node_id) override;
   void ForEachFrame(
-      const base::Callback<void(RenderFrameHost*)>& on_frame) override;
+      const base::RepeatingCallback<void(RenderFrameHost*)>& on_frame) override;
   std::vector<RenderFrameHost*> GetAllFrames() override;
   int SendToAllFrames(IPC::Message* message) override;
   RenderViewHostImpl* GetRenderViewHost() const override;
@@ -331,7 +331,6 @@ class CONTENT_EXPORT WebContentsImpl : public WebContents,
   void UpdateTitleForEntry(NavigationEntry* entry,
                            const base::string16& title) override;
   SiteInstanceImpl* GetSiteInstance() const override;
-  SiteInstanceImpl* GetPendingSiteInstance() const override;
   bool IsLoading() const override;
   bool IsLoadingToDifferentDocument() const override;
   bool IsWaitingForResponse() const override;
@@ -343,7 +342,7 @@ class CONTENT_EXPORT WebContentsImpl : public WebContents,
   const std::string& GetEncoding() const override;
   void IncrementCapturerCount(const gfx::Size& capture_size) override;
   void DecrementCapturerCount() override;
-  int GetCapturerCount() const override;
+  bool IsBeingCaptured() const override;
   bool IsAudioMuted() const override;
   void SetAudioMuted(bool mute) override;
   bool IsCurrentlyAudible() override;
@@ -357,7 +356,6 @@ class CONTENT_EXPORT WebContentsImpl : public WebContents,
   void OnAudioStateChanged(bool is_audible) override;
   base::TimeTicks GetLastActiveTime() const override;
   void SetLastActiveTime(base::TimeTicks last_active_time) override;
-  base::TimeTicks GetLastHiddenTime() const override;
   void WasShown() override;
   void WasHidden() override;
   bool IsVisible() const override;
@@ -566,6 +564,12 @@ class CONTENT_EXPORT WebContentsImpl : public WebContents,
   base::android::ScopedJavaLocalRef<jobject> GetJavaRenderFrameHostDelegate()
       override;
 #endif
+  void SubresourceResponseStarted(const GURL& url,
+                                  const GURL& referrer,
+                                  const std::string& method,
+                                  ResourceType resource_type,
+                                  const std::string& ip,
+                                  net::CertStatus cert_status) override;
 
   // RenderViewHostDelegate ----------------------------------------------------
   RenderViewHostDelegateView* GetDelegateView() override;
@@ -753,7 +757,7 @@ class CONTENT_EXPORT WebContentsImpl : public WebContents,
       bool* proceed_to_fire_unload) override;
   void RenderProcessGoneFromRenderManager(
       RenderViewHost* render_view_host) override;
-  void UpdateRenderViewSizeForRenderManager() override;
+  void UpdateRenderViewSizeForRenderManager(bool is_main_frame) override;
   void CancelModalDialogsForRenderManager() override;
   void NotifySwappedFromRenderManager(RenderFrameHost* old_host,
                                       RenderFrameHost* new_host,
@@ -769,6 +773,16 @@ class CONTENT_EXPORT WebContentsImpl : public WebContents,
   bool IsHidden() override;
   int GetOuterDelegateFrameTreeNodeId() override;
   RenderWidgetHostImpl* GetFullscreenRenderWidgetHost() const override;
+
+  // blink::mojom::ColorChooserFactory ---------------------------------------
+
+  void OnColorChooserFactoryRequest(
+      blink::mojom::ColorChooserFactoryRequest request);
+  void OpenColorChooser(
+      blink::mojom::ColorChooserRequest chooser,
+      blink::mojom::ColorChooserClientPtr client,
+      SkColor color,
+      std::vector<blink::mojom::ColorSuggestionPtr> suggestions) override;
 
   // NotificationObserver ------------------------------------------------------
 
@@ -825,6 +839,11 @@ class CONTENT_EXPORT WebContentsImpl : public WebContents,
 
   // Forces overscroll to be disabled (used by touch emulation).
   void SetForceDisableOverscrollContent(bool force_disable);
+
+  // Override the render view/widget size of the main frame, return whether the
+  // size changed.
+  bool SetDeviceEmulationSize(const gfx::Size& new_size);
+  void ClearDeviceEmulationSize();
 
   AudioStreamMonitor* audio_stream_monitor() {
     return &audio_stream_monitor_;
@@ -1070,10 +1089,8 @@ class CONTENT_EXPORT WebContentsImpl : public WebContents,
   void OnDidRunInsecureContent(RenderFrameHostImpl* source,
                                const GURL& security_origin,
                                const GURL& target_url);
-  void OnDidDisplayContentWithCertificateErrors(RenderFrameHostImpl* source,
-                                                const GURL& url);
-  void OnDidRunContentWithCertificateErrors(RenderFrameHostImpl* source,
-                                            const GURL& url);
+  void OnDidDisplayContentWithCertificateErrors(RenderFrameHostImpl* source);
+  void OnDidRunContentWithCertificateErrors(RenderFrameHostImpl* source);
   void OnDocumentLoadedInFrame(RenderFrameHostImpl* source);
   void OnDidFinishLoad(RenderFrameHostImpl* source, const GURL& url);
   void OnGoToEntryAtOffset(RenderViewHostImpl* source, int offset);
@@ -1118,14 +1135,6 @@ class CONTENT_EXPORT WebContentsImpl : public WebContents,
   void OnAppCacheAccessed(RenderViewHostImpl* source,
                           const GURL& manifest_url,
                           bool blocked_by_policy);
-  void OnOpenColorChooser(RenderFrameHostImpl* source,
-                          int color_chooser_id,
-                          SkColor color,
-                          const std::vector<ColorSuggestion>& suggestions);
-  void OnEndColorChooser(RenderFrameHostImpl* source, int color_chooser_id);
-  void OnSetSelectedColorInColorChooser(RenderFrameHostImpl* source,
-                                        int color_chooser_id,
-                                        SkColor color);
   void OnUpdatePageImportanceSignals(RenderFrameHostImpl* source,
                                      const PageImportanceSignals& signals);
 #if BUILDFLAG(ENABLE_PLUGINS)
@@ -1271,7 +1280,7 @@ class CONTENT_EXPORT WebContentsImpl : public WebContents,
   void RemoveBrowserPluginEmbedder();
 
   // Helper function to invoke WebContentsDelegate::GetSizeForNewRenderView().
-  gfx::Size GetSizeForNewRenderView();
+  gfx::Size GetSizeForNewRenderView(bool is_main_frame);
 
   void OnFrameRemoved(RenderFrameHost* render_frame_host);
 
@@ -1489,10 +1498,6 @@ class CONTENT_EXPORT WebContentsImpl : public WebContents,
   // the WebContents creation time.
   base::TimeTicks last_active_time_;
 
-  // The time that this WebContents was last made hidden. The initial value is
-  // zero.
-  base::TimeTicks last_hidden_time_;
-
   // See description above setter.
   bool closed_by_user_gesture_;
 
@@ -1514,6 +1519,11 @@ class CONTENT_EXPORT WebContentsImpl : public WebContents,
   // out-of-process iframes for their visible viewport size.
   gfx::Size auto_resize_size_;
 
+  // When device emulation is enabled, override the size of current and newly
+  // created render views/widgets.
+  gfx::Size device_emulation_size_;
+  gfx::Size view_size_before_emulation_;
+
 #if defined(OS_ANDROID)
   // Date time chooser opened by this tab.
   // Only used in Android since all other platforms use a multi field UI.
@@ -1521,32 +1531,8 @@ class CONTENT_EXPORT WebContentsImpl : public WebContents,
 #endif
 
   // Holds information about a current color chooser dialog, if one is visible.
-  struct ColorChooserInfo {
-    ColorChooserInfo(int render_process_id,
-                     int render_frame_id,
-                     ColorChooser* chooser,
-                     int identifier);
-    ~ColorChooserInfo();
-
-    bool Matches(RenderFrameHostImpl* render_frame_host, int color_chooser_id);
-
-    int render_process_id;
-    int render_frame_id;
-
-    // Color chooser that was opened by this tab.
-    std::unique_ptr<ColorChooser> chooser;
-
-    // A unique identifier for the current color chooser.  Identifiers are
-    // unique across a renderer process.  This avoids race conditions in
-    // synchronizing the browser and renderer processes.  For example, if a
-    // renderer closes one chooser and opens another, and simultaneously the
-    // user picks a color in the first chooser, the IDs can be used to drop the
-    // "chose a color" message rather than erroneously tell the renderer that
-    // the user picked a color in the second chooser.
-    int identifier;
-  };
-
-  std::unique_ptr<ColorChooserInfo> color_chooser_info_;
+  class ColorChooser;
+  std::unique_ptr<ColorChooser> color_chooser_;
 
   // Manages the embedder state for browser plugins, if this WebContents is an
   // embedder; NULL otherwise.
@@ -1601,6 +1587,11 @@ class CONTENT_EXPORT WebContentsImpl : public WebContents,
   std::unique_ptr<WakeLockContextHost> wake_lock_context_host_;
 
   device::mojom::WakeLockPtr renderer_wake_lock_;
+
+  service_manager::BinderRegistry registry_;
+
+  mojo::BindingSet<blink::mojom::ColorChooserFactory>
+      color_chooser_factory_bindings_;
 
 #if defined(OS_ANDROID)
   std::unique_ptr<NFCHost> nfc_host_;

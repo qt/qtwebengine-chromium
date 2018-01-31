@@ -1,3 +1,13 @@
+##
+##  Copyright (c) 2017 The WebM project authors. All Rights Reserved.
+##
+##  Use of this source code is governed by a BSD-style license
+##  that can be found in the LICENSE file in the root of the source
+##  tree. An additional intellectual property rights grant can be found
+##  in the file PATENTS.  All contributing project authors may
+##  be found in the AUTHORS file in the root of the source tree.
+##
+
 sub vpx_dsp_forward_decls() {
 print <<EOF
 /*
@@ -374,7 +384,7 @@ add_proto qw/void vpx_convolve8_avg_vert/, "const uint8_t *src, ptrdiff_t src_st
 specialize qw/vpx_convolve8_avg_vert sse2 ssse3 avx2 neon dspr2 msa vsx/;
 
 add_proto qw/void vpx_scaled_2d/, "const uint8_t *src, ptrdiff_t src_stride, uint8_t *dst, ptrdiff_t dst_stride, const InterpKernel *filter, int x0_q4, int x_step_q4, int y0_q4, int y_step_q4, int w, int h";
-specialize qw/vpx_scaled_2d ssse3 neon/;
+specialize qw/vpx_scaled_2d ssse3 neon msa/;
 
 add_proto qw/void vpx_scaled_horiz/, "const uint8_t *src, ptrdiff_t src_stride, uint8_t *dst, ptrdiff_t dst_stride, const InterpKernel *filter, int x0_q4, int x_step_q4, int y0_q4, int y_step_q4, int w, int h";
 
@@ -616,6 +626,7 @@ if (vpx_config("CONFIG_EMULATE_HARDWARE") ne "yes") {
   specialize qw/vpx_idct32x32_135_add neon sse2 ssse3/;
   specialize qw/vpx_idct32x32_34_add neon sse2 ssse3/;
   specialize qw/vpx_idct32x32_1_add neon sse2/;
+  specialize qw/vpx_iwht4x4_16_add sse2/;
 
   if (vpx_config("CONFIG_VP9_HIGHBITDEPTH") ne "yes") {
     # Note that these specializations are appended to the above ones.
@@ -636,7 +647,7 @@ if (vpx_config("CONFIG_EMULATE_HARDWARE") ne "yes") {
     $vpx_idct32x32_135_add_msa=vpx_idct32x32_1024_add_msa;
     specialize qw/vpx_idct32x32_34_add dspr2 msa/;
     specialize qw/vpx_idct32x32_1_add dspr2 msa/;
-    specialize qw/vpx_iwht4x4_16_add msa sse2/;
+    specialize qw/vpx_iwht4x4_16_add msa/;
     specialize qw/vpx_iwht4x4_1_add msa/;
   } # !CONFIG_VP9_HIGHBITDEPTH
 }  # !CONFIG_EMULATE_HARDWARE
@@ -644,7 +655,6 @@ if (vpx_config("CONFIG_EMULATE_HARDWARE") ne "yes") {
 if (vpx_config("CONFIG_VP9_HIGHBITDEPTH") eq "yes") {
   # Note as optimized versions of these functions are added we need to add a check to ensure
   # that when CONFIG_EMULATE_HARDWARE is on, it defaults to the C versions only.
-  specialize qw/vpx_iwht4x4_16_add sse2/;
 
   add_proto qw/void vpx_highbd_idct4x4_16_add/, "const tran_low_t *input, uint16_t *dest, int stride, int bd";
   add_proto qw/void vpx_highbd_idct4x4_1_add/, "const tran_low_t *input, uint16_t *dest, int stride, int bd";

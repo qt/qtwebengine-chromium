@@ -52,8 +52,8 @@ class [[clang::lto_visibility_public]] Image : public sw::Surface, public gl::Ob
 protected:
 	// 2D texture image
 	Image(Texture *parentTexture, GLsizei width, GLsizei height, GLenum format, GLenum type)
-		: sw::Surface(parentTexture->getResource(), width, height, 1, SelectInternalFormat(format, type), true, true),
-		  width(width), height(height), format(format), type(type), internalFormat(SelectInternalFormat(format, type)), depth(1),
+		: sw::Surface(parentTexture->getResource(), width, height, 1, 0, 1, SelectInternalFormat(format, type), true, true),
+		  width(width), height(height), depth(1), format(format), type(type), internalFormat(SelectInternalFormat(format, type)),
 		  parentTexture(parentTexture)
 	{
 		shared = false;
@@ -61,10 +61,10 @@ protected:
 		parentTexture->addRef();
 	}
 
-	// 3D texture image
-	Image(Texture *parentTexture, GLsizei width, GLsizei height, GLsizei depth, GLenum format, GLenum type)
-		: sw::Surface(parentTexture->getResource(), width, height, depth, SelectInternalFormat(format, type), true, true),
-		  width(width), height(height), format(format), type(type), internalFormat(SelectInternalFormat(format, type)), depth(depth),
+	// 3D/Cube texture image
+	Image(Texture *parentTexture, GLsizei width, GLsizei height, GLsizei depth, int border, GLenum format, GLenum type)
+		: sw::Surface(parentTexture->getResource(), width, height, depth, border, 1, SelectInternalFormat(format, type), true, true),
+		  width(width), height(height), depth(depth), format(format), type(type), internalFormat(SelectInternalFormat(format, type)),
 		  parentTexture(parentTexture)
 	{
 		shared = false;
@@ -74,8 +74,8 @@ protected:
 
 	// Native EGL image
 	Image(GLsizei width, GLsizei height, GLenum format, GLenum type, int pitchP)
-		: sw::Surface(nullptr, width, height, 1, SelectInternalFormat(format, type), true, true, pitchP),
-		  width(width), height(height), format(format), type(type), internalFormat(SelectInternalFormat(format, type)), depth(1),
+		: sw::Surface(nullptr, width, height, 1, 0, 1, SelectInternalFormat(format, type), true, true, pitchP),
+		  width(width), height(height), depth(1), format(format), type(type), internalFormat(SelectInternalFormat(format, type)),
 		  parentTexture(nullptr)
 	{
 		shared = true;
@@ -84,8 +84,8 @@ protected:
 
 	// Render target
 	Image(GLsizei width, GLsizei height, sw::Format internalFormat, int multiSampleDepth, bool lockable)
-		: sw::Surface(nullptr, width, height, multiSampleDepth, internalFormat, lockable, true),
-		  width(width), height(height), format(0 /*GL_NONE*/), type(0 /*GL_NONE*/), internalFormat(internalFormat), depth(multiSampleDepth),
+		: sw::Surface(nullptr, width, height, 1, 0, multiSampleDepth, internalFormat, lockable, true),
+		  width(width), height(height), depth(1), format(0 /*GL_NONE*/), type(0 /*GL_NONE*/), internalFormat(internalFormat),
 		  parentTexture(nullptr)
 	{
 		shared = false;
@@ -96,8 +96,8 @@ public:
 	// 2D texture image
 	static Image *create(Texture *parentTexture, GLsizei width, GLsizei height, GLenum format, GLenum type);
 
-	// 3D texture image
-	static Image *create(Texture *parentTexture, GLsizei width, GLsizei height, GLsizei depth, GLenum format, GLenum type);
+	// 3D/Cube texture image
+	static Image *create(Texture *parentTexture, GLsizei width, GLsizei height, GLsizei depth, int border, GLenum format, GLenum type);
 
 	// Native EGL image
 	static Image *create(GLsizei width, GLsizei height, GLenum format, GLenum type, int pitchP);
@@ -157,6 +157,11 @@ public:
 		return getExternalPitchB();
 	}
 
+	unsigned int getSlice() const
+	{
+		return getExternalSliceB();
+	}
+
 	virtual void unlock()
 	{
 		unlockExternal();
@@ -194,10 +199,10 @@ public:
 protected:
 	const GLsizei width;
 	const GLsizei height;
+	const int depth;
 	const GLenum format;
 	const GLenum type;
 	const sw::Format internalFormat;
-	const int depth;
 
 	bool shared;   // Used as an EGLImage
 

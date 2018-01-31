@@ -310,9 +310,9 @@ void TOutputGLSLBase::writeVariableType(const TType &type)
 
         declareStruct(structure);
 
-        if (!structure->name().empty())
+        if (structure->symbolType() != SymbolType::Empty)
         {
-            mDeclaredStructs.insert(structure->uniqueId());
+            mDeclaredStructs.insert(structure->uniqueId().get());
         }
     }
     else if (type.getBasicType() == EbtInterfaceBlock)
@@ -339,8 +339,8 @@ void TOutputGLSLBase::writeFunctionParameters(const TIntermSequence &args)
         const TType &type = arg->getType();
         writeVariableType(type);
 
-        if (!arg->getName().getString().empty())
-            out << " " << hashName(arg->getName());
+        if (arg->variable().symbolType() != SymbolType::Empty)
+            out << " " << hashName(&arg->variable());
         if (type.isArray())
             out << ArrayString(type);
 
@@ -358,7 +358,7 @@ const TConstantUnion *TOutputGLSLBase::writeConstantUnion(const TType &type,
     if (type.getBasicType() == EbtStruct)
     {
         const TStructure *structure = type.getStruct();
-        out << hashName(TName(structure->name())) << "(";
+        out << hashName(structure) << "(";
 
         const TFieldList &fields = structure->fields();
         for (size_t i = 0; i < fields.size(); ++i)
@@ -433,7 +433,7 @@ void TOutputGLSLBase::writeConstructorTriplet(Visit visit, const TType &type)
 void TOutputGLSLBase::visitSymbol(TIntermSymbol *node)
 {
     TInfoSinkBase &out = objSink();
-    out << hashVariableName(node->getName());
+    out << hashName(&node->variable());
 
     if (mDeclaringVariable && node->getType().isArray())
         out << ArrayString(node->getType());
@@ -441,7 +441,7 @@ void TOutputGLSLBase::visitSymbol(TIntermSymbol *node)
 
 void TOutputGLSLBase::visitConstantUnion(TIntermConstantUnion *node)
 {
-    writeConstantUnion(node->getType(), node->getUnionArrayPointer());
+    writeConstantUnion(node->getType(), node->getConstantValue());
 }
 
 bool TOutputGLSLBase::visitSwizzle(Visit visit, TIntermSwizzle *node)
@@ -582,11 +582,7 @@ bool TOutputGLSLBase::visitBinary(Visit visit, TIntermBinary *node)
                 const TIntermConstantUnion *index = node->getRight()->getAsConstantUnion();
                 const TField *field               = structure->fields()[index->getIConst(0)];
 
-                TString fieldName = field->name();
-                if (!mSymbolTable->findBuiltIn(structure->name(), mShaderVersion))
-                    fieldName = hashName(TName(fieldName));
-
-                out << fieldName;
+                out << hashFieldName(structure, field->name());
                 visitChildren = false;
             }
             break;
@@ -598,18 +594,9 @@ bool TOutputGLSLBase::visitBinary(Visit visit, TIntermBinary *node)
                     node->getLeft()->getType().getInterfaceBlock();
                 const TIntermConstantUnion *index = node->getRight()->getAsConstantUnion();
                 const TField *field               = interfaceBlock->fields()[index->getIConst(0)];
-
-                TString fieldName = field->name();
-                if (!mSymbolTable->findBuiltIn(interfaceBlock->name(), mShaderVersion))
-                {
-                    fieldName = hashName(TName(fieldName));
-                }
-                else
-                {
-                    ASSERT(interfaceBlock->name() == "gl_PerVertex");
-                }
-
-                out << fieldName;
+                ASSERT(interfaceBlock->symbolType() == SymbolType::UserDefined ||
+                       interfaceBlock->name() == "gl_PerVertex");
+                out << hashFieldName(interfaceBlock, field->name());
                 visitChildren = false;
             }
             break;
@@ -899,7 +886,7 @@ bool TOutputGLSLBase::visitInvariantDeclaration(Visit visit, TIntermInvariantDec
     TInfoSinkBase &out = objSink();
     ASSERT(visit == PreVisit);
     const TIntermSymbol *symbol = node->getSymbol();
-    out << "invariant " << hashVariableName(symbol->getName());
+    out << "invariant " << hashName(&symbol->variable());
     return false;
 }
 
@@ -913,7 +900,7 @@ bool TOutputGLSLBase::visitFunctionPrototype(Visit visit, TIntermFunctionPrototy
     if (type.isArray())
         out << ArrayString(type);
 
-    out << " " << hashFunctionNameIfNeeded(*node->getFunctionSymbolInfo());
+    out << " " << hashFunctionNameIfNeeded(node->getFunction());
 
     out << "(";
     writeFunctionParameters(*(node->getSequence()));
@@ -936,11 +923,11 @@ bool TOutputGLSLBase::visitAggregate(Visit visit, TIntermAggregate *node)
             {
                 if (node->getOp() == EOpCallBuiltInFunction)
                 {
-                    out << translateTextureFunction(node->getFunctionSymbolInfo()->getName());
+                    out << translateTextureFunction(node->getFunction()->name());
                 }
                 else
                 {
-                    out << hashFunctionNameIfNeeded(*node->getFunctionSymbolInfo());
+                    out << hashFunctionNameIfNeeded(node->getFunction());
                 }
                 out << "(";
             }
@@ -1014,7 +1001,7 @@ bool TOutputGLSLBase::visitDeclaration(Visit visit, TIntermDeclaration *node)
         writeLayoutQualifier(variable);
         writeVariableType(variable->getType());
         if (variable->getAsSymbolNode() == nullptr ||
-            !variable->getAsSymbolNode()->getSymbol().empty())
+            variable->getAsSymbolNode()->variable().symbolType() != SymbolType::Empty)
         {
             out << " ";
         }
@@ -1126,63 +1113,65 @@ TString TOutputGLSLBase::getTypeName(const TType &type)
     return GetTypeName(type, mHashFunction, &mNameMap);
 }
 
-TString TOutputGLSLBase::hashName(const TName &name)
+TString TOutputGLSLBase::hashName(const TSymbol *symbol)
 {
-    return HashName(name, mHashFunction, &mNameMap);
+    return HashName(symbol, mHashFunction, &mNameMap);
 }
 
-TString TOutputGLSLBase::hashVariableName(const TName &name)
+TString TOutputGLSLBase::hashFieldName(const TSymbol *containingStruct, const TString &fieldName)
 {
-    if (mSymbolTable->findBuiltIn(name.getString(), mShaderVersion) != nullptr ||
-        name.getString().substr(0, 3) == "gl_")
+    if (containingStruct->symbolType() == SymbolType::UserDefined ||
+        containingStruct->symbolType() == SymbolType::Empty)
     {
-        if (mCompileOptions & SH_TRANSLATE_VIEWID_OVR_TO_UNIFORM &&
-            name.getString() == "gl_ViewID_OVR")
-        {
-            TName uniformName(TString("ViewID_OVR"));
-            uniformName.setInternal(true);
-            return hashName(uniformName);
-        }
-        return name.getString();
-    }
-    return hashName(name);
-}
-
-TString TOutputGLSLBase::hashFunctionNameIfNeeded(const TFunctionSymbolInfo &info)
-{
-    if (info.isMain())
-    {
-        return info.getName();
+        return HashName(fieldName, mHashFunction, &mNameMap);
     }
     else
     {
-        return hashName(info.getNameObj());
+        return fieldName;
+    }
+}
+
+TString TOutputGLSLBase::hashFunctionNameIfNeeded(const TFunction *func)
+{
+    if (func->isMain())
+    {
+        return func->name();
+    }
+    else
+    {
+        return hashName(func);
     }
 }
 
 bool TOutputGLSLBase::structDeclared(const TStructure *structure) const
 {
     ASSERT(structure);
-    if (structure->name().empty())
+    if (structure->symbolType() == SymbolType::Empty)
     {
         return false;
     }
 
-    return (mDeclaredStructs.count(structure->uniqueId()) > 0);
+    return (mDeclaredStructs.count(structure->uniqueId().get()) > 0);
 }
 
 void TOutputGLSLBase::declareStruct(const TStructure *structure)
 {
     TInfoSinkBase &out = objSink();
 
-    out << "struct " << hashName(TName(structure->name())) << "{\n";
+    out << "struct ";
+
+    if (structure->symbolType() != SymbolType::Empty)
+    {
+        out << hashName(structure) << " ";
+    }
+    out << "{\n";
     const TFieldList &fields = structure->fields();
     for (size_t i = 0; i < fields.size(); ++i)
     {
         const TField *field = fields[i];
         if (writeVariablePrecision(field->type()->getPrecision()))
             out << " ";
-        out << getTypeName(*field->type()) << " " << hashName(TName(field->name()));
+        out << getTypeName(*field->type()) << " " << hashFieldName(structure, field->name());
         if (field->type()->isArray())
             out << ArrayString(*field->type());
         out << ";\n";
@@ -1221,29 +1210,10 @@ void TOutputGLSLBase::declareInterfaceBlockLayout(const TInterfaceBlock *interfa
             break;
     }
 
-    out << ", ";
-
-    if (interfaceBlock->blockBinding() > 0)
+    if (interfaceBlock->blockBinding() >= 0)
     {
-        out << "binding = " << interfaceBlock->blockBinding();
         out << ", ";
-    }
-
-    switch (interfaceBlock->matrixPacking())
-    {
-        case EmpUnspecified:
-        case EmpColumnMajor:
-            // Default matrix packing is column major.
-            out << "column_major";
-            break;
-
-        case EmpRowMajor:
-            out << "row_major";
-            break;
-
-        default:
-            UNREACHABLE();
-            break;
+        out << "binding = " << interfaceBlock->blockBinding();
     }
 
     out << ") ";
@@ -1253,14 +1223,35 @@ void TOutputGLSLBase::declareInterfaceBlock(const TInterfaceBlock *interfaceBloc
 {
     TInfoSinkBase &out = objSink();
 
-    out << hashName(TName(interfaceBlock->name())) << "{\n";
+    out << hashName(interfaceBlock) << "{\n";
     const TFieldList &fields = interfaceBlock->fields();
-    for (size_t i = 0; i < fields.size(); ++i)
+    for (const TField *field : fields)
     {
-        const TField *field = fields[i];
+        if (field->type()->isMatrix() || field->type()->isStructureContainingMatrices())
+        {
+            out << "layout(";
+            switch (field->type()->getLayoutQualifier().matrixPacking)
+            {
+                case EmpUnspecified:
+                case EmpColumnMajor:
+                    // Default matrix packing is column major.
+                    out << "column_major";
+                    break;
+
+                case EmpRowMajor:
+                    out << "row_major";
+                    break;
+
+                default:
+                    UNREACHABLE();
+                    break;
+            }
+            out << ") ";
+        }
+
         if (writeVariablePrecision(field->type()->getPrecision()))
             out << " ";
-        out << getTypeName(*field->type()) << " " << hashName(TName(field->name()));
+        out << getTypeName(*field->type()) << " " << hashFieldName(interfaceBlock, field->name());
         if (field->type()->isArray())
             out << ArrayString(*field->type());
         out << ";\n";

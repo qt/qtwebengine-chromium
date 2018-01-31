@@ -24,11 +24,22 @@ namespace sh
 class StructureHLSL;
 class TextureFunctionHLSL;
 class TSymbolTable;
+class TVariable;
 class ImageFunctionHLSL;
 class UnfoldShortCircuit;
 class UniformHLSL;
 
-typedef std::map<TString, TIntermSymbol *> ReferencedSymbols;
+struct TReferencedBlock : angle::NonCopyable
+{
+    POOL_ALLOCATOR_NEW_DELETE();
+    TReferencedBlock(const TInterfaceBlock *block, const TVariable *instanceVariable);
+    const TInterfaceBlock *block;
+    const TVariable *instanceVariable;  // May be nullptr if the block is not instanced.
+};
+
+// Maps from uniqueId to a variable.
+using ReferencedInterfaceBlocks = std::map<int, const TReferencedBlock *>;
+using ReferencedVariables       = std::map<int, const TVariable *>;
 
 class OutputHLSL : public TIntermTraverser
 {
@@ -51,15 +62,13 @@ class OutputHLSL : public TIntermTraverser
     const std::map<std::string, unsigned int> &getUniformBlockRegisterMap() const;
     const std::map<std::string, unsigned int> &getUniformRegisterMap() const;
 
-    static TString initializer(const TType &type);
+    static TString zeroInitializer(const TType &type);
 
     TInfoSinkBase &getInfoSink()
     {
         ASSERT(!mInfoSinkStack.empty());
         return *mInfoSinkStack.top();
     }
-
-    static bool canWriteAsHLSLLiteral(TIntermTyped *expression);
 
   protected:
     void header(TInfoSinkBase &out,
@@ -154,11 +163,14 @@ class OutputHLSL : public TIntermTraverser
     // TODO (jmadill): Just passing an InfoSink in function parameters would be simpler.
     std::stack<TInfoSinkBase *> mInfoSinkStack;
 
-    ReferencedSymbols mReferencedUniforms;
-    ReferencedSymbols mReferencedUniformBlocks;
-    ReferencedSymbols mReferencedAttributes;
-    ReferencedSymbols mReferencedVaryings;
-    ReferencedSymbols mReferencedOutputVariables;
+    ReferencedVariables mReferencedUniforms;
+
+    // Indexed by block id, not instance id.
+    ReferencedInterfaceBlocks mReferencedUniformBlocks;
+
+    ReferencedVariables mReferencedAttributes;
+    ReferencedVariables mReferencedVaryings;
+    ReferencedVariables mReferencedOutputVariables;
 
     StructureHLSL *mStructureHLSL;
     UniformHLSL *mUniformHLSL;

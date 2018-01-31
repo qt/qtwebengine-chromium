@@ -39,8 +39,6 @@ bool ValidTexture2DDestinationTarget(const ValidationContext *context, GLenum ta
 bool ValidTexture3DDestinationTarget(const ValidationContext *context, GLenum target);
 bool ValidTexLevelDestinationTarget(const ValidationContext *context, GLenum target);
 bool ValidFramebufferTarget(const ValidationContext *context, GLenum target);
-bool ValidBufferType(const ValidationContext *context, BufferBinding target);
-bool ValidBufferParameter(const ValidationContext *context, GLenum pname, GLsizei *numParams);
 bool ValidMipLevel(const ValidationContext *context, GLenum target, GLint level);
 bool ValidImageSizeParameters(ValidationContext *context,
                               GLenum target,
@@ -104,7 +102,7 @@ bool ValidateFramebufferRenderbufferParameters(Context *context,
                                                GLenum renderbuffertarget,
                                                GLuint renderbuffer);
 
-bool ValidateBlitFramebufferParameters(ValidationContext *context,
+bool ValidateBlitFramebufferParameters(Context *context,
                                        GLint srcX0,
                                        GLint srcY0,
                                        GLint srcX1,
@@ -338,12 +336,10 @@ bool ValidateDiscardFramebufferBase(Context *context,
 bool ValidateInsertEventMarkerEXT(Context *context, GLsizei length, const char *marker);
 bool ValidatePushGroupMarkerEXT(Context *context, GLsizei length, const char *marker);
 
-bool ValidateEGLImageTargetTexture2DOES(Context *context,
-                                        GLenum target,
-                                        egl::Image *image);
+bool ValidateEGLImageTargetTexture2DOES(Context *context, GLenum target, GLeglImageOES image);
 bool ValidateEGLImageTargetRenderbufferStorageOES(Context *context,
                                                   GLenum target,
-                                                  egl::Image *image);
+                                                  GLeglImageOES image);
 
 bool ValidateBindVertexArrayBase(Context *context, GLuint array);
 
@@ -382,12 +378,12 @@ bool ValidateGenOrDelete(Context *context, GLint n);
 bool ValidateRobustEntryPoint(ValidationContext *context, GLsizei bufSize);
 bool ValidateRobustBufferSize(ValidationContext *context, GLsizei bufSize, GLsizei numParams);
 
-bool ValidateGetFramebufferAttachmentParameterivBase(ValidationContext *context,
+bool ValidateGetFramebufferAttachmentParameterivBase(Context *context,
                                                      GLenum target,
                                                      GLenum attachment,
                                                      GLenum pname,
                                                      GLsizei *numParams);
-bool ValidateGetFramebufferAttachmentParameterivRobustANGLE(ValidationContext *context,
+bool ValidateGetFramebufferAttachmentParameterivRobustANGLE(Context *context,
                                                             GLenum target,
                                                             GLenum attachment,
                                                             GLenum pname,

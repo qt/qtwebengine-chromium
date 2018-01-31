@@ -22,14 +22,14 @@ void XFAJSEmbedderTest::SetUp() {
   v8::Isolate::CreateParams params;
   params.array_buffer_allocator = array_buffer_allocator_.get();
   isolate_ = v8::Isolate::New(params);
-  ASSERT_TRUE(isolate_ != nullptr);
+  ASSERT_TRUE(isolate_);
 
   EmbedderTest::SetExternalIsolate(isolate_);
   EmbedderTest::SetUp();
 }
 
 void XFAJSEmbedderTest::TearDown() {
-  value_ = nullptr;
+  value_.reset();
   script_context_ = nullptr;
 
   EmbedderTest::TearDown();
@@ -42,10 +42,11 @@ CXFA_Document* XFAJSEmbedderTest::GetXFADocument() {
   return UnderlyingFromFPDFDocument(document())->GetXFADoc()->GetXFADoc();
 }
 
-bool XFAJSEmbedderTest::OpenDocument(const std::string& filename,
-                                     const char* password,
-                                     bool must_linearize) {
-  if (!EmbedderTest::OpenDocument(filename, password, must_linearize))
+bool XFAJSEmbedderTest::OpenDocumentWithOptions(const std::string& filename,
+                                                const char* password,
+                                                bool must_linearize) {
+  if (!EmbedderTest::OpenDocumentWithOptions(filename, password,
+                                             must_linearize))
     return false;
 
   script_context_ = GetXFADocument()->GetScriptContext();
@@ -74,7 +75,7 @@ bool XFAJSEmbedderTest::ExecuteSilenceFailure(const ByteStringView& input) {
 
 bool XFAJSEmbedderTest::ExecuteHelper(const ByteStringView& input) {
   value_ = pdfium::MakeUnique<CFXJSE_Value>(GetIsolate());
-  return script_context_->RunScript(CXFA_ScriptData::Type::Formcalc,
+  return script_context_->RunScript(CXFA_Script::Type::Formcalc,
                                     WideString::FromUTF8(input).AsStringView(),
                                     value_.get(), GetXFADocument()->GetRoot());
 }

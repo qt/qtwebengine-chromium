@@ -358,7 +358,7 @@ gl::Error RendererGL::drawArraysIndirect(const gl::Context *context,
                                          GLenum mode,
                                          const void *indirect)
 {
-    ANGLE_TRY(mStateManager->setDrawIndirectState(context, GL_NONE));
+    ANGLE_TRY(mStateManager->setDrawIndirectState(context));
     mFunctions->drawArraysIndirect(mode, indirect);
     return gl::NoError();
 }
@@ -368,7 +368,7 @@ gl::Error RendererGL::drawElementsIndirect(const gl::Context *context,
                                            GLenum type,
                                            const void *indirect)
 {
-    ANGLE_TRY(mStateManager->setDrawIndirectState(context, type));
+    ANGLE_TRY(mStateManager->setDrawIndirectState(context));
     mFunctions->drawElementsIndirect(mode, type, indirect);
     return gl::NoError();
 }
@@ -731,6 +731,24 @@ gl::Error RendererGL::dispatchCompute(const gl::Context *context,
 {
     ANGLE_TRY(mStateManager->setDispatchComputeState(context));
     mFunctions->dispatchCompute(numGroupsX, numGroupsY, numGroupsZ);
+    return gl::NoError();
+}
+
+gl::Error RendererGL::dispatchComputeIndirect(const gl::Context *context, GLintptr indirect)
+{
+    ANGLE_TRY(mStateManager->setDispatchComputeState(context));
+    mFunctions->dispatchComputeIndirect(indirect);
+    return gl::NoError();
+}
+
+gl::Error RendererGL::memoryBarrier(GLbitfield barriers)
+{
+    mFunctions->memoryBarrier(barriers);
+    return gl::NoError();
+}
+gl::Error RendererGL::memoryBarrierByRegion(GLbitfield barriers)
+{
+    mFunctions->memoryBarrierByRegion(barriers);
     return gl::NoError();
 }
 

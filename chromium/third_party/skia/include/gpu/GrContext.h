@@ -30,6 +30,7 @@ class GrIndexBuffer;
 struct GrMockOptions;
 class GrOvalRenderer;
 class GrPath;
+class GrProxyProvider;
 class GrRenderTargetContext;
 class GrResourceEntry;
 class GrResourceCache;
@@ -56,12 +57,15 @@ public:
     static GrContext* Create(GrBackend, GrBackendContext, const GrContextOptions& options);
     static GrContext* Create(GrBackend, GrBackendContext);
 
-    static sk_sp<GrContext> MakeGL(const GrGLInterface*, const GrContextOptions&);
+    static sk_sp<GrContext> MakeGL(sk_sp<const GrGLInterface>, const GrContextOptions&);
+    static sk_sp<GrContext> MakeGL(sk_sp<const GrGLInterface>);
+    // Deprecated
     static sk_sp<GrContext> MakeGL(const GrGLInterface*);
+    static sk_sp<GrContext> MakeGL(const GrGLInterface*, const GrContextOptions&);
 
 #ifdef SK_VULKAN
-    static sk_sp<GrContext> MakeVulkan(const GrVkBackendContext*, const GrContextOptions&);
-    static sk_sp<GrContext> MakeVulkan(const GrVkBackendContext*);
+    static sk_sp<GrContext> MakeVulkan(sk_sp<const GrVkBackendContext>, const GrContextOptions&);
+    static sk_sp<GrContext> MakeVulkan(sk_sp<const GrVkBackendContext>);
 #endif
 
 #ifdef SK_METAL
@@ -187,10 +191,15 @@ public:
     void purgeAllUnlockedResources();
 
     /**
-     * Purge GPU resources that haven't been used in the past 'ms' milliseconds, regardless of
-     * whether the context is currently under budget.
+     * Purge GPU resources that haven't been used in the past 'msNotUsed' milliseconds or are
+     * otherwise marked for deletion, regardless of whether the context is under budget.
      */
-    void purgeResourcesNotUsedInMs(std::chrono::milliseconds ms);
+    void performDeferredCleanup(std::chrono::milliseconds msNotUsed);
+
+    // Temporary compatibility API for Android.
+    void purgeResourcesNotUsedInMs(std::chrono::milliseconds msNotUsed) {
+        this->performDeferredCleanup(msNotUsed);
+    }
 
     /**
      * Purge unlocked resources from the cache until the the provided byte count has been reached
@@ -205,7 +214,7 @@ public:
     void purgeUnlockedResources(size_t bytesToPurge, bool preferScratchResources);
 
     /** Access the context capabilities */
-    const GrCaps* caps() const { return fCaps; }
+    const GrCaps* caps() const { return fCaps.get(); }
 
     /**
      * Returns the recommended sample count for a render target when using this
@@ -291,14 +300,11 @@ public:
 
     ///////////////////////////////////////////////////////////////////////////
     // Functions intended for internal use only.
-    GrGpu* getGpu() { return fGpu; }
-    const GrGpu* getGpu() const { return fGpu; }
+    GrGpu* getGpu() { return fGpu.get(); }
+    const GrGpu* getGpu() const { return fGpu.get(); }
     GrAtlasGlyphCache* getAtlasGlyphCache() { return fAtlasGlyphCache; }
     GrTextBlobCache* getTextBlobCache() { return fTextBlobCache.get(); }
     bool abandoned() const;
-    GrResourceProvider* resourceProvider() { return fResourceProvider; }
-    const GrResourceProvider* resourceProvider() const { return fResourceProvider; }
-    GrResourceCache* getResourceCache() { return fResourceCache; }
 
     /** Reset GPU stats */
     void resetGpuStats() const ;
@@ -344,10 +350,11 @@ public:
     const GrContextPriv contextPriv() const;
 
 private:
-    GrGpu*                                  fGpu;
-    const GrCaps*                           fCaps;
+    sk_sp<GrGpu>                            fGpu;
+    sk_sp<const GrCaps>                     fCaps;
     GrResourceCache*                        fResourceCache;
     GrResourceProvider*                     fResourceProvider;
+    GrProxyProvider*                        fProxyProvider;
 
     sk_sp<GrContextThreadSafeProxy>         fThreadSafeProxy;
 
@@ -379,16 +386,16 @@ private:
 
     GrAuditTrail                            fAuditTrail;
 
-    GrBackend                               fBackend;
+    const GrBackend                         fBackend;
 
     GrContextOptions::PersistentCache*      fPersistentCache;
 
     // TODO: have the GrClipStackClip use renderTargetContexts and rm this friending
     friend class GrContextPriv;
 
-    GrContext(); // init must be called after the constructor.
-    bool init(GrBackend, GrBackendContext, const GrContextOptions& options);
-    bool init(const GrContextOptions& options);
+    GrContext(GrBackend); // init must be called after the constructor.
+    GrContext(GrContextThreadSafeProxy*);
+    bool init(const GrContextOptions&);
 
     /**
      * These functions create premul <-> unpremul effects. If the second argument is 'true', they
@@ -420,15 +427,28 @@ private:
  * proxy does not access the 3D API (e.g. OpenGL) that backs the generating GrContext.
  */
 class GrContextThreadSafeProxy : public SkRefCnt {
-private:
-    GrContextThreadSafeProxy(sk_sp<const GrCaps> caps, uint32_t uniqueID)
-        : fCaps(std::move(caps))
-        , fContextUniqueID(uniqueID) {}
+public:
+    bool matches(GrContext* context) const { return context->uniqueID() == fContextUniqueID; }
 
-    sk_sp<const GrCaps> fCaps;
-    uint32_t            fContextUniqueID;
+private:
+    // DDL TODO: need to add unit tests for backend & maybe options
+    GrContextThreadSafeProxy(sk_sp<const GrCaps> caps,
+                             uint32_t uniqueID,
+                             GrBackend backend,
+                             const GrContextOptions& options)
+        : fCaps(std::move(caps))
+        , fContextUniqueID(uniqueID)
+        , fBackend(backend)
+        , fOptions(options) {
+    }
+
+    sk_sp<const GrCaps>    fCaps;
+    const uint32_t         fContextUniqueID;
+    const GrBackend        fBackend;
+    const GrContextOptions fOptions;
 
     friend class GrContext;
+    friend class GrContextPriv;
     friend class SkImage;
 
     typedef SkRefCnt INHERITED;

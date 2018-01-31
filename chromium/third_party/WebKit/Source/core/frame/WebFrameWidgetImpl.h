@@ -31,10 +31,10 @@
 #ifndef WebFrameWidgetImpl_h
 #define WebFrameWidgetImpl_h
 
-#include "core/animation/CompositorMutatorImpl.h"
 #include "core/frame/WebFrameWidgetBase.h"
 #include "core/frame/WebLocalFrameImpl.h"
 #include "core/page/PageWidgetDelegate.h"
+#include "platform/graphics/CompositorMutatorImpl.h"
 #include "platform/graphics/GraphicsLayer.h"
 #include "platform/heap/SelfKeepAlive.h"
 #include "platform/scroll/ScrollTypes.h"
@@ -78,12 +78,14 @@ class WebFrameWidgetImpl final : public WebFrameWidgetBase,
   void DidExitFullscreen() override;
   void SetSuppressFrameRequestsWorkaroundFor704763Only(bool) final;
   void BeginFrame(double last_frame_time_monotonic) override;
-  void UpdateAllLifecyclePhases() override;
+  void UpdateLifecycle(LifecycleUpdate requested_update) override;
   void Paint(WebCanvas*, const WebRect&) override;
   void LayoutAndPaintAsync(WebLayoutAndPaintAsyncCallback*) override;
   void CompositeAndReadbackAsync(
       WebCompositeAndReadbackAsyncCallback*) override;
   void ThemeChanged() override;
+  WebHitTestResult HitTestResultAt(const WebPoint&) override;
+  WebInputEventResult DispatchBufferedTouchEvents() override;
   WebInputEventResult HandleInputEvent(const WebCoalescedInputEvent&) override;
   void SetCursorVisibilityState(bool is_visible) override;
 
@@ -153,6 +155,9 @@ class WebFrameWidgetImpl final : public WebFrameWidgetBase,
   friend class WebFrameWidget;  // For WebFrameWidget::create.
 
   explicit WebFrameWidgetImpl(WebWidgetClient*, WebLocalFrame*);
+
+  WebInputEventResult HandleInputEventInternal(
+      const WebCoalescedInputEvent&) override;
 
   // Perform a hit test for a point relative to the root frame of the page.
   HitTestResult HitTestResultForRootFramePos(

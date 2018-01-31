@@ -181,8 +181,9 @@ const size_t kMaxWasmCodeMemory = 256 * MB;
 
 #if V8_HOST_ARCH_64_BIT
 const int kPointerSizeLog2 = 3;
-const intptr_t kIntptrSignBit = V8_INT64_C(0x8000000000000000);
-const uintptr_t kUintptrAllBitsSet = V8_UINT64_C(0xFFFFFFFFFFFFFFFF);
+const intptr_t kIntptrSignBit =
+    static_cast<intptr_t>(uintptr_t{0x8000000000000000});
+const uintptr_t kUintptrAllBitsSet = uintptr_t{0xFFFFFFFFFFFFFFFF};
 const bool kRequiresCodeRange = true;
 #if V8_TARGET_ARCH_MIPS64
 // To use pseudo-relative jumps such as j/jal instructions which have 28-bit
@@ -412,30 +413,24 @@ const int kCodeAlignmentBits = 5;
 const intptr_t kCodeAlignment = 1 << kCodeAlignmentBits;
 const intptr_t kCodeAlignmentMask = kCodeAlignment - 1;
 
-// The owner field of a page is tagged with the page header tag. We need that
-// to find out if a slot is part of a large object. If we mask out the lower
-// 0xfffff bits (1M pages), go to the owner offset, and see that this field
-// is tagged with the page header tag, we can just look up the owner.
-// Otherwise, we know that we are somewhere (not within the first 1M) in a
-// large object.
-const int kPageHeaderTag = 3;
-const int kPageHeaderTagSize = 2;
-const intptr_t kPageHeaderTagMask = (1 << kPageHeaderTagSize) - 1;
-
+// Weak references are tagged using the second bit in a pointer.
+const int kWeakReferenceTag = 3;
+const int kWeakReferenceTagSize = 2;
+const intptr_t kWeakReferenceTagMask = (1 << kWeakReferenceTagSize) - 1;
 
 // Zap-value: The value used for zapping dead objects.
 // Should be a recognizable hex value tagged as a failure.
 #ifdef V8_HOST_ARCH_64_BIT
 const Address kZapValue =
-    reinterpret_cast<Address>(V8_UINT64_C(0xdeadbeedbeadbeef));
+    reinterpret_cast<Address>(uint64_t{0xdeadbeedbeadbeef});
 const Address kHandleZapValue =
-    reinterpret_cast<Address>(V8_UINT64_C(0x1baddead0baddeaf));
+    reinterpret_cast<Address>(uint64_t{0x1baddead0baddeaf});
 const Address kGlobalHandleZapValue =
-    reinterpret_cast<Address>(V8_UINT64_C(0x1baffed00baffedf));
+    reinterpret_cast<Address>(uint64_t{0x1baffed00baffedf});
 const Address kFromSpaceZapValue =
-    reinterpret_cast<Address>(V8_UINT64_C(0x1beefdad0beefdaf));
-const uint64_t kDebugZapValue = V8_UINT64_C(0xbadbaddbbadbaddb);
-const uint64_t kSlotsZapValue = V8_UINT64_C(0xbeefdeadbeefdeef);
+    reinterpret_cast<Address>(uint64_t{0x1beefdad0beefdaf});
+const uint64_t kDebugZapValue = uint64_t{0xbadbaddbbadbaddb};
+const uint64_t kSlotsZapValue = uint64_t{0xbeefdeadbeefdeef};
 const uint64_t kFreeListZapValue = 0xfeed1eaffeed1eaf;
 #else
 const Address kZapValue = reinterpret_cast<Address>(0xdeadbeef);
@@ -543,7 +538,6 @@ enum AllocationSpace {
   LAST_PAGED_SPACE = MAP_SPACE
 };
 const int kSpaceTagSize = 3;
-const int kSpaceTagMask = (1 << kSpaceTagSize) - 1;
 
 enum AllocationAlignment { kWordAligned, kDoubleAligned, kDoubleUnaligned };
 
@@ -628,7 +622,7 @@ enum VisitMode {
   VISIT_ALL_IN_SCAVENGE,
   VISIT_ALL_IN_SWEEP_NEWSPACE,
   VISIT_ONLY_STRONG,
-  VISIT_ONLY_STRONG_FOR_SERIALIZATION,
+  VISIT_FOR_SERIALIZATION,
 };
 
 // Flag indicating whether code is built into the VM (one of the natives files).
@@ -1094,7 +1088,6 @@ enum FunctionKind : uint16_t {
   kArrowFunction = 1 << 0,
   kGeneratorFunction = 1 << 1,
   kConciseMethod = 1 << 2,
-  kConciseGeneratorMethod = kGeneratorFunction | kConciseMethod,
   kDefaultConstructor = 1 << 3,
   kDerivedConstructor = 1 << 4,
   kBaseConstructor = 1 << 5,
@@ -1102,6 +1095,10 @@ enum FunctionKind : uint16_t {
   kSetterFunction = 1 << 7,
   kAsyncFunction = 1 << 8,
   kModule = 1 << 9,
+  kClassFieldsInitializerFunction = 1 << 10 | kConciseMethod,
+  kLastFunctionKind = kClassFieldsInitializerFunction,
+
+  kConciseGeneratorMethod = kGeneratorFunction | kConciseMethod,
   kAccessorFunction = kGetterFunction | kSetterFunction,
   kDefaultBaseConstructor = kDefaultConstructor | kBaseConstructor,
   kDefaultDerivedConstructor = kDefaultConstructor | kDerivedConstructor,
@@ -1133,7 +1130,8 @@ inline bool IsValidFunctionKind(FunctionKind kind) {
          kind == FunctionKind::kAsyncArrowFunction ||
          kind == FunctionKind::kAsyncConciseMethod ||
          kind == FunctionKind::kAsyncConciseGeneratorMethod ||
-         kind == FunctionKind::kAsyncGeneratorFunction;
+         kind == FunctionKind::kAsyncGeneratorFunction ||
+         kind == FunctionKind::kClassFieldsInitializerFunction;
 }
 
 
@@ -1211,6 +1209,11 @@ inline bool IsClassConstructor(FunctionKind kind) {
   return (kind & FunctionKind::kClassConstructor) != 0;
 }
 
+inline bool IsClassFieldsInitializerFunction(FunctionKind kind) {
+  DCHECK(IsValidFunctionKind(kind));
+  return kind == FunctionKind::kClassFieldsInitializerFunction;
+}
+
 inline bool IsConstructable(FunctionKind kind) {
   if (IsAccessorFunction(kind)) return false;
   if (IsConciseMethod(kind)) return false;
@@ -1253,14 +1256,17 @@ inline uint32_t ObjectHash(Address address) {
 // Type feedback is encoded in such a way that, we can combine the feedback
 // at different points by performing an 'OR' operation. Type feedback moves
 // to a more generic type when we combine feedback.
-// kSignedSmall -> kSignedSmallInputs -> kNumber  -> kNumberOrOddball -> kAny
-//                                                   kString          -> kAny
-// kBigInt -> kAny
-// TODO(mythria): Remove kNumber type when crankshaft can handle Oddballs
-// similar to Numbers. We don't need kNumber feedback for Turbofan. Extra
-// information about Number might reduce few instructions but causes more
-// deopts. We collect Number only because crankshaft does not handle all
-// cases of oddballs.
+//
+//   kSignedSmall -> kSignedSmallInputs -> kNumber  -> kNumberOrOddball -> kAny
+//                                                     kString          -> kAny
+//                                                     kBigInt          -> kAny
+//
+// Technically we wouldn't need the separation between the kNumber and the
+// kNumberOrOddball values here, since for binary operations, we always
+// truncate oddballs to numbers. In practice though it causes TurboFan to
+// generate quite a lot of unused code though if we always handle numbers
+// and oddballs everywhere, although in 99% of the use sites they are only
+// used with numbers.
 class BinaryOperationFeedback {
  public:
   enum {
@@ -1278,11 +1284,15 @@ class BinaryOperationFeedback {
 // Type feedback is encoded in such a way that, we can combine the feedback
 // at different points by performing an 'OR' operation. Type feedback moves
 // to a more generic type when we combine feedback.
-// kSignedSmall        -> kNumber   -> kAny
-// kInternalizedString -> kString   -> kAny
-//                        kSymbol   -> kAny
-//                        kReceiver -> kAny
-// TODO(epertoso): consider unifying this with BinaryOperationFeedback.
+//
+//   kSignedSmall -> kNumber             -> kNumberOrOddball -> kAny
+//                   kInternalizedString -> kString          -> kAny
+//                                          kSymbol          -> kAny
+//                                          kBigInt          -> kAny
+//                                          kReceiver        -> kAny
+//
+// This is distinct from BinaryOperationFeedback on purpose, because the
+// feedback that matters differs greatly as well as the way it is consumed.
 class CompareOperationFeedback {
  public:
   enum {
@@ -1293,6 +1303,7 @@ class CompareOperationFeedback {
     kInternalizedString = 0x8,
     kString = 0x18,
     kSymbol = 0x20,
+    kBigInt = 0x30,
     kReceiver = 0x40,
     kAny = 0xff
   };
@@ -1419,6 +1430,7 @@ inline std::ostream& operator<<(std::ostream& os,
 }
 
 enum class OptimizationMarker {
+  kLogFirstExecution,
   kNone,
   kCompileOptimized,
   kCompileOptimizedConcurrent,
@@ -1428,6 +1440,8 @@ enum class OptimizationMarker {
 inline std::ostream& operator<<(std::ostream& os,
                                 const OptimizationMarker& marker) {
   switch (marker) {
+    case OptimizationMarker::kLogFirstExecution:
+      return os << "OptimizationMarker::kLogFirstExecution";
     case OptimizationMarker::kNone:
       return os << "OptimizationMarker::kNone";
     case OptimizationMarker::kCompileOptimized:
@@ -1436,6 +1450,20 @@ inline std::ostream& operator<<(std::ostream& os,
       return os << "OptimizationMarker::kCompileOptimizedConcurrent";
     case OptimizationMarker::kInOptimizationQueue:
       return os << "OptimizationMarker::kInOptimizationQueue";
+  }
+  UNREACHABLE();
+  return os;
+}
+
+enum class SpeculationMode { kAllowSpeculation, kDisallowSpeculation };
+
+inline std::ostream& operator<<(std::ostream& os,
+                                SpeculationMode speculation_mode) {
+  switch (speculation_mode) {
+    case SpeculationMode::kAllowSpeculation:
+      return os << "SpeculationMode::kAllowSpeculation";
+    case SpeculationMode::kDisallowSpeculation:
+      return os << "SpeculationMode::kDisallowSpeculation";
   }
   UNREACHABLE();
   return os;
@@ -1455,7 +1483,9 @@ enum class ConcurrencyMode { kNotConcurrent, kConcurrent };
   C(PendingHandlerFP, pending_handler_fp)                      \
   C(PendingHandlerSP, pending_handler_sp)                      \
   C(ExternalCaughtException, external_caught_exception)        \
-  C(JSEntrySP, js_entry_sp)
+  C(JSEntrySP, js_entry_sp)                                    \
+  C(MicrotaskQueueBailoutIndex, microtask_queue_bailout_index) \
+  C(MicrotaskQueueBailoutCount, microtask_queue_bailout_count)
 
 enum IsolateAddressId {
 #define DECLARE_ENUM(CamelName, hacker_name) k##CamelName##Address,

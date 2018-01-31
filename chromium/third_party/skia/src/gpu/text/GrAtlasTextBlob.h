@@ -17,7 +17,9 @@
 #include "SkMaskFilter.h"
 #include "SkOpts.h"
 #include "SkPathEffect.h"
+#include "SkPoint3.h"
 #include "SkRasterizer.h"
+#include "SkRectPriv.h"
 #include "SkSurfaceProps.h"
 #include "SkTInternalLList.h"
 
@@ -53,6 +55,12 @@ public:
 
     static sk_sp<GrAtlasTextBlob> Make(GrMemoryPool* pool, int glyphCount, int runCount);
 
+    /**
+     * We currently force regeneration of a blob if old or new matrix differ in having perspective.
+     * If we ever change that then the key must contain the perspectiveness when there are distance
+     * fields as perspective distance field use 3 component vertex positions and non-perspective
+     * uses 2.
+     */
     struct Key {
         Key() {
             sk_bzero(this, sizeof(Key));
@@ -126,16 +134,17 @@ public:
     }
 
     // sets the last subrun of runIndex to use distance field text
-    void setSubRunHasDistanceFields(int runIndex, bool hasLCD, bool isAntiAlias) {
+    void setSubRunHasDistanceFields(int runIndex, bool hasLCD, bool isAntiAlias, bool hasWCoord) {
         Run& run = fRuns[runIndex];
         Run::SubRunInfo& subRun = run.fSubRunInfo.back();
         subRun.setUseLCDText(hasLCD);
         subRun.setAntiAliased(isAntiAlias);
         subRun.setDrawAsDistanceFields();
+        subRun.setHasWCoord(hasWCoord);
     }
 
-    void setRunDrawAsPaths(int runIndex) {
-        fRuns[runIndex].fDrawAsPaths = true;
+    void setRunTooBigForAtlas(int runIndex) {
+        fRuns[runIndex].fTooBigForAtlas = true;
     }
 
     void setMinAndMaxScale(SkScalar scaledMax, SkScalar scaledMin) {
@@ -169,13 +178,15 @@ public:
                      SkGlyphCache*, const SkGlyph& skGlyph,
                      SkScalar x, SkScalar y, SkScalar scale, bool treatAsBMP);
 
-    static size_t GetVertexStride(GrMaskFormat maskFormat) {
+    static size_t GetVertexStride(GrMaskFormat maskFormat, bool isDistanceFieldWithWCoord) {
         switch (maskFormat) {
             case kA8_GrMaskFormat:
-                return kGrayTextVASize;
+                return isDistanceFieldWithWCoord ? kGrayTextDFPerspectiveVASize : kGrayTextVASize;
             case kARGB_GrMaskFormat:
+                SkASSERT(!isDistanceFieldWithWCoord);
                 return kColorTextVASize;
             default:
+                SkASSERT(!isDistanceFieldWithWCoord);
                 return kLCDTextVASize;
         }
     }
@@ -232,8 +243,10 @@ public:
     // position + local coord
     static const size_t kColorTextVASize = sizeof(SkPoint) + sizeof(SkIPoint16);
     static const size_t kGrayTextVASize = sizeof(SkPoint) + sizeof(GrColor) + sizeof(SkIPoint16);
+    static const size_t kGrayTextDFPerspectiveVASize =
+            sizeof(SkPoint3) + sizeof(GrColor) + sizeof(SkIPoint16);
     static const size_t kLCDTextVASize = kGrayTextVASize;
-    static const size_t kMaxVASize = kGrayTextVASize;
+    static const size_t kMaxVASize = kGrayTextDFPerspectiveVASize;
     static const int kVerticesPerGlyph = 4;
 
     static void AssertEqual(const GrAtlasTextBlob&, const GrAtlasTextBlob&);
@@ -273,8 +286,8 @@ private:
         , fMinMaxScale(SK_ScalarMax)
         , fTextType(0) {}
 
-    void appendLargeGlyph(GrGlyph* glyph, SkGlyphCache* cache, const SkGlyph& skGlyph,
-                          SkScalar x, SkScalar y, SkScalar scale, bool treatAsBMP);
+    void appendBigGlyph(GrGlyph* glyph, SkGlyphCache* cache, const SkGlyph& skGlyph,
+                        SkScalar x, SkScalar y, SkScalar scale, bool treatAsBMP);
 
     inline void flushRun(GrTextUtils::Target*, const GrClip&, int run, const SkMatrix& viewMatrix,
                          SkScalar x, SkScalar y, const GrTextUtils::Paint& paint,
@@ -286,11 +299,11 @@ private:
                         const SkPaint& paint, const SkMatrix& viewMatrix, SkScalar x, SkScalar y,
                         const SkIRect& clipBounds);
 
-    void flushRunAsPaths(GrContext* context, GrTextUtils::Target*, const SkSurfaceProps& props,
-                         const SkTextBlobRunIterator& it, const GrClip& clip,
-                         const GrTextUtils::Paint& paint, SkDrawFilter* drawFilter,
-                         const SkMatrix& viewMatrix, const SkIRect& clipBounds, SkScalar x,
-                         SkScalar y);
+    void flushBigRun(GrContext* context, GrTextUtils::Target*, const SkSurfaceProps& props,
+                     const SkTextBlobRunIterator& it, const GrClip& clip,
+                     const GrTextUtils::Paint& paint, SkDrawFilter* drawFilter,
+                     const SkMatrix& viewMatrix, const SkIRect& clipBounds, SkScalar x,
+                     SkScalar y);
 
     // This function will only be called when we are generating a blob from scratch. We record the
     // initial view matrix and initial offsets(x,y), because we record vertex bounds relative to
@@ -325,19 +338,19 @@ private:
      * practice, the vast majority of runs have only a single subrun.
      *
      * Finally, for runs where the entire thing is too large for the GrAtlasTextContext to
-     * handle, we have a bit to mark the run as flushable via rendering as paths.  It is worth
-     * pointing. It would be a bit expensive to figure out ahead of time whether or not a run
+     * handle, we have a bit to mark the run as flushable via rendering as paths or as scaled
+     * glyphs. It would be a bit expensive to figure out ahead of time whether or not a run
      * can flush in this manner, so we always allocate vertices for the run, regardless of
      * whether or not it is too large.  The benefit of this strategy is that we can always reuse
      * a blob allocation regardless of viewmatrix changes.  We could store positions for these
-     * glyphs.  However, its not clear if this is a win because we'd still have to either go the
+     * glyphs, however, it's not clear if this is a win because we'd still have to either go to the
      * glyph cache to get the path at flush time, or hold onto the path in the cache, which
      * would greatly increase the memory of these cached items.
      */
     struct Run {
         Run()
             : fInitialized(false)
-            , fDrawAsPaths(false) {
+            , fTooBigForAtlas(false) {
             // To ensure we always have one subrun, we push back a fresh run here
             fSubRunInfo.push_back();
         }
@@ -351,7 +364,7 @@ private:
                     , fColor(GrColor_ILLEGAL)
                     , fMaskFormat(kA8_GrMaskFormat)
                     , fFlags(0) {
-                fVertexBounds.setLargestInverted();
+                fVertexBounds = SkRectPriv::MakeLargestInverted();
             }
             SubRunInfo(const SubRunInfo& that)
                 : fBulkUseToken(that.fBulkUseToken)
@@ -419,7 +432,7 @@ private:
 
             // This function assumes the translation will be applied before it is called again
             void computeTranslation(const SkMatrix& viewMatrix, SkScalar x, SkScalar y,
-                                    SkScalar*transX, SkScalar* transY);
+                                    SkScalar* transX, SkScalar* transY);
 
             // df properties
             void setDrawAsDistanceFields() { fFlags |= kDrawAsSDF_Flag; }
@@ -432,12 +445,17 @@ private:
                 fFlags = antiAliased ? fFlags | kAntiAliased_Flag : fFlags & ~kAntiAliased_Flag;
             }
             bool isAntiAliased() const { return SkToBool(fFlags & kAntiAliased_Flag); }
+            void setHasWCoord(bool hasW) {
+                fFlags  = hasW ? (fFlags | kHasWCoord_Flag) : fFlags & ~kHasWCoord_Flag;
+            }
+            bool hasWCoord() const { return SkToBool(fFlags & kHasWCoord_Flag); }
 
         private:
             enum Flag {
                 kDrawAsSDF_Flag = 0x1,
                 kUseLCDText_Flag = 0x2,
-                kAntiAliased_Flag = 0x4
+                kAntiAliased_Flag = 0x4,
+                kHasWCoord_Flag = 0x8
             };
 
             GrDrawOpAtlas::BulkUseTokenUpdater fBulkUseToken;
@@ -480,7 +498,7 @@ private:
         // will be used in place of the run's descriptor to regen texture coords
         std::unique_ptr<SkAutoDescriptor> fOverrideDescriptor; // df properties
         bool fInitialized;
-        bool fDrawAsPaths;
+        bool fTooBigForAtlas;
     };  // Run
 
     inline std::unique_ptr<GrAtlasTextOp> makeOp(

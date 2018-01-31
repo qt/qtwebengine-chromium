@@ -17,6 +17,7 @@
 #include "xfa/fxfa/cxfa_ffpageview.h"
 #include "xfa/fxfa/cxfa_ffwidget.h"
 #include "xfa/fxfa/cxfa_fwladapterwidgetmgr.h"
+#include "xfa/fxfa/parser/cxfa_border.h"
 
 namespace {
 
@@ -95,23 +96,22 @@ const BarCodeInfo g_BarCodeData[] = {
 
 // static
 const BarCodeInfo* CXFA_FFBarcode::GetBarcodeTypeByName(
-    const WideStringView& wsName) {
+    const WideString& wsName) {
   if (wsName.IsEmpty())
     return nullptr;
 
   auto* it = std::lower_bound(
       std::begin(g_BarCodeData), std::end(g_BarCodeData),
-      FX_HashCode_GetW(wsName, true),
+      FX_HashCode_GetW(wsName.AsStringView(), true),
       [](const BarCodeInfo& arg, uint32_t hash) { return arg.uHash < hash; });
 
-  if (it != std::end(g_BarCodeData) && wsName == it->pName)
+  if (it != std::end(g_BarCodeData) && wsName.AsStringView() == it->pName)
     return it;
 
   return nullptr;
 }
 
-CXFA_FFBarcode::CXFA_FFBarcode(CXFA_WidgetAcc* pDataAcc)
-    : CXFA_FFTextEdit(pDataAcc) {}
+CXFA_FFBarcode::CXFA_FFBarcode(CXFA_Node* pNode) : CXFA_FFTextEdit(pNode) {}
 
 CXFA_FFBarcode::~CXFA_FFBarcode() {}
 
@@ -129,7 +129,8 @@ bool CXFA_FFBarcode::LoadWidget() {
   m_pNormalWidget->SetDelegate(this);
   m_pNormalWidget->LockUpdate();
 
-  pFWLBarcode->SetText(m_pDataAcc->GetValue(XFA_VALUEPICTURE_Display));
+  pFWLBarcode->SetText(
+      m_pNode->GetWidgetAcc()->GetValue(XFA_VALUEPICTURE_Display));
   UpdateWidgetProperty();
   m_pNormalWidget->UnlockUpdate();
   return CXFA_FFField::LoadWidget();
@@ -145,7 +146,7 @@ void CXFA_FFBarcode::RenderWidget(CXFA_Graphics* pGS,
   mtRotate.Concat(matrix);
 
   CXFA_FFWidget::RenderWidget(pGS, mtRotate, dwStatus);
-  DrawBorder(pGS, m_pDataAcc->GetUIBorderData(), m_rtUI, mtRotate);
+  DrawBorder(pGS, m_pNode->GetWidgetAcc()->GetUIBorder(), m_rtUI, mtRotate);
   RenderCaption(pGS, &mtRotate);
   CFX_RectF rtWidget = m_pNormalWidget->GetWidgetRect();
 
@@ -157,69 +158,66 @@ void CXFA_FFBarcode::RenderWidget(CXFA_Graphics* pGS,
 void CXFA_FFBarcode::UpdateWidgetProperty() {
   CXFA_FFTextEdit::UpdateWidgetProperty();
 
-  auto* pBarCodeWidget = static_cast<CFWL_Barcode*>(m_pNormalWidget.get());
-  WideString wsType = GetDataAcc()->GetBarcodeType();
-  const BarCodeInfo* pBarcodeInfo = GetBarcodeTypeByName(wsType.AsStringView());
-  if (!pBarcodeInfo)
+  auto* node = GetNode();
+  const BarCodeInfo* info = GetBarcodeTypeByName(node->GetBarcodeType());
+  if (!info)
     return;
 
-  pBarCodeWidget->SetType(pBarcodeInfo->eBCType);
+  auto* pBarCodeWidget = static_cast<CFWL_Barcode*>(m_pNormalWidget.get());
+  pBarCodeWidget->SetType(info->eBCType);
 
-  CXFA_WidgetAcc* pAcc = GetDataAcc();
-  pdfium::Optional<BC_CHAR_ENCODING> encoding =
-      pAcc->GetBarcodeAttribute_CharEncoding();
+  Optional<BC_CHAR_ENCODING> encoding =
+      node->GetBarcodeAttribute_CharEncoding();
   if (encoding)
     pBarCodeWidget->SetCharEncoding(*encoding);
 
-  pdfium::Optional<bool> calcChecksum = pAcc->GetBarcodeAttribute_Checksum();
+  Optional<bool> calcChecksum = node->GetBarcodeAttribute_Checksum();
   if (calcChecksum)
     pBarCodeWidget->SetCalChecksum(*calcChecksum);
 
-  pdfium::Optional<int32_t> dataLen = pAcc->GetBarcodeAttribute_DataLength();
+  Optional<int32_t> dataLen = node->GetBarcodeAttribute_DataLength();
   if (dataLen)
     pBarCodeWidget->SetDataLength(*dataLen);
 
-  pdfium::Optional<char> startChar = pAcc->GetBarcodeAttribute_StartChar();
+  Optional<char> startChar = node->GetBarcodeAttribute_StartChar();
   if (startChar)
     pBarCodeWidget->SetStartChar(*startChar);
 
-  pdfium::Optional<char> endChar = pAcc->GetBarcodeAttribute_EndChar();
+  Optional<char> endChar = node->GetBarcodeAttribute_EndChar();
   if (endChar)
     pBarCodeWidget->SetEndChar(*endChar);
 
-  pdfium::Optional<int32_t> ecLevel = pAcc->GetBarcodeAttribute_ECLevel();
+  Optional<int32_t> ecLevel = node->GetBarcodeAttribute_ECLevel();
   if (ecLevel)
     pBarCodeWidget->SetErrorCorrectionLevel(*ecLevel);
 
-  pdfium::Optional<int32_t> width = pAcc->GetBarcodeAttribute_ModuleWidth();
+  Optional<int32_t> width = node->GetBarcodeAttribute_ModuleWidth();
   if (width)
     pBarCodeWidget->SetModuleWidth(*width);
 
-  pdfium::Optional<int32_t> height = pAcc->GetBarcodeAttribute_ModuleHeight();
+  Optional<int32_t> height = node->GetBarcodeAttribute_ModuleHeight();
   if (height)
     pBarCodeWidget->SetModuleHeight(*height);
 
-  pdfium::Optional<bool> printCheck = pAcc->GetBarcodeAttribute_PrintChecksum();
+  Optional<bool> printCheck = node->GetBarcodeAttribute_PrintChecksum();
   if (printCheck)
     pBarCodeWidget->SetPrintChecksum(*printCheck);
 
-  pdfium::Optional<BC_TEXT_LOC> textLoc =
-      pAcc->GetBarcodeAttribute_TextLocation();
+  Optional<BC_TEXT_LOC> textLoc = node->GetBarcodeAttribute_TextLocation();
   if (textLoc)
     pBarCodeWidget->SetTextLocation(*textLoc);
 
-  pdfium::Optional<bool> truncate = pAcc->GetBarcodeAttribute_Truncate();
+  Optional<bool> truncate = node->GetBarcodeAttribute_Truncate();
   if (truncate)
     pBarCodeWidget->SetTruncated(*truncate);
 
-  pdfium::Optional<int8_t> ratio = pAcc->GetBarcodeAttribute_WideNarrowRatio();
+  Optional<int8_t> ratio = node->GetBarcodeAttribute_WideNarrowRatio();
   if (ratio)
     pBarCodeWidget->SetWideNarrowRatio(*ratio);
 
-  if (pBarcodeInfo->eName == BarcodeType::code3Of9 ||
-      pBarcodeInfo->eName == BarcodeType::ean8 ||
-      pBarcodeInfo->eName == BarcodeType::ean13 ||
-      pBarcodeInfo->eName == BarcodeType::upcA) {
+  if (info->eName == BarcodeType::code3Of9 ||
+      info->eName == BarcodeType::ean8 || info->eName == BarcodeType::ean13 ||
+      info->eName == BarcodeType::upcA) {
     pBarCodeWidget->SetPrintChecksum(true);
   }
 }
@@ -228,7 +226,7 @@ bool CXFA_FFBarcode::OnLButtonDown(uint32_t dwFlags, const CFX_PointF& point) {
   auto* pBarCodeWidget = static_cast<CFWL_Barcode*>(m_pNormalWidget.get());
   if (!pBarCodeWidget || pBarCodeWidget->IsProtectedType())
     return false;
-  if (!m_pDataAcc->IsOpenAccess())
+  if (!m_pNode->IsOpenAccess())
     return false;
   return CXFA_FFTextEdit::OnLButtonDown(dwFlags, point);
 }

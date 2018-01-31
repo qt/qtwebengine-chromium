@@ -89,6 +89,8 @@ RtpUtility::Payload* RTPSenderVideo::CreateVideoPayload(
     video_type = kRtpVideoH264;
   } else if (RtpUtility::StringCompare(payload_name, "I420", 4)) {
     video_type = kRtpVideoGeneric;
+  } else if (RtpUtility::StringCompare(payload_name, "stereo", 6)) {
+    video_type = kRtpVideoStereo;
   } else {
     video_type = kRtpVideoGeneric;
   }
@@ -143,8 +145,7 @@ void RTPSenderVideo::SendVideoPacketAsRedMaybeWithUlpfec(
         uint16_t first_fec_sequence_number =
             rtp_sender_->AllocateSequenceNumber(num_fec_packets);
         fec_packets = ulpfec_generator_.GetUlpfecPacketsAsRed(
-            red_payload_type_, ulpfec_payload_type_, first_fec_sequence_number,
-            media_packet->headers_size());
+            red_payload_type_, ulpfec_payload_type_, first_fec_sequence_number);
         RTC_DCHECK_EQ(num_fec_packets, fec_packets.size());
         if (retransmission_settings_ & kRetransmitFECPackets)
           fec_storage = kAllowRetransmission;

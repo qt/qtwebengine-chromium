@@ -29,8 +29,8 @@ namespace {
 
 // Empty method used for keeping a reference to the original media::VideoFrame.
 // The reference to |frame| is kept in the closure that calls this method.
-void ReleaseOriginalFrame(const scoped_refptr<media::VideoFrame>& frame) {
-}
+void CapturerReleaseOriginalFrame(
+    const scoped_refptr<media::VideoFrame>& frame) {}
 
 // Helper class that signals a WaitableEvent when it goes out of scope.
 class ScopedWaitableEvent {
@@ -168,8 +168,7 @@ void WebRtcVideoCapturerAdapter::OnFrameCaptured(
   TRACE_EVENT0("video", "WebRtcVideoCapturerAdapter::OnFrameCaptured");
   if (!(input_frame->IsMappable() &&
         (input_frame->format() == media::PIXEL_FORMAT_I420 ||
-         input_frame->format() == media::PIXEL_FORMAT_YV12 ||
-         input_frame->format() == media::PIXEL_FORMAT_YV12A)) &&
+         input_frame->format() == media::PIXEL_FORMAT_I420A)) &&
       !input_frame->HasTextures()) {
     // Since connecting sources and sinks do not check the format, we need to
     // just ignore formats that we can not handle.
@@ -229,7 +228,7 @@ void WebRtcVideoCapturerAdapter::OnFrameCaptured(
     return;
 
   video_frame->AddDestructionObserver(
-      base::BindOnce(&ReleaseOriginalFrame, frame));
+      base::BindOnce(&CapturerReleaseOriginalFrame, frame));
 
   // If no scaling is needed, return a wrapped version of |frame| directly.
   if (video_frame->natural_size() == video_frame->visible_rect().size()) {
@@ -243,10 +242,10 @@ void WebRtcVideoCapturerAdapter::OnFrameCaptured(
   }
 
   // We need to scale the frame before we hand it over to webrtc.
-  const bool has_alpha = video_frame->format() == media::PIXEL_FORMAT_YV12A;
+  const bool has_alpha = video_frame->format() == media::PIXEL_FORMAT_I420A;
   scoped_refptr<media::VideoFrame> scaled_frame =
       scaled_frame_pool_.CreateFrame(
-          has_alpha ? media::PIXEL_FORMAT_YV12A : media::PIXEL_FORMAT_I420,
+          has_alpha ? media::PIXEL_FORMAT_I420A : media::PIXEL_FORMAT_I420,
           adapted_size, gfx::Rect(adapted_size), adapted_size,
           frame->timestamp());
   libyuv::I420Scale(video_frame->visible_data(media::VideoFrame::kYPlane),

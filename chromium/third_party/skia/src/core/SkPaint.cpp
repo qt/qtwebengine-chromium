@@ -384,18 +384,18 @@ static bool tooBig(const SkMatrix& m, SkScalar ma2max) {
             mag2(m[SkMatrix::kMSkewX], m[SkMatrix::kMScaleY]) > ma2max;
 }
 
-bool SkPaint::TooBigToUseCache(const SkMatrix& ctm, const SkMatrix& textM) {
+bool SkPaint::TooBigToUseCache(const SkMatrix& ctm, const SkMatrix& textM, SkScalar maxLimit) {
     SkASSERT(!ctm.hasPerspective());
     SkASSERT(!textM.hasPerspective());
 
     SkMatrix matrix;
     matrix.setConcat(ctm, textM);
-    return tooBig(matrix, MaxCacheSize2());
+    return tooBig(matrix, MaxCacheSize2(maxLimit));
 }
 
-SkScalar SkPaint::MaxCacheSize2() {
+SkScalar SkPaint::MaxCacheSize2(SkScalar maxLimit) {
     // we have a self-imposed maximum, just for memory-usage sanity
-    const int limit = SkMin32(SkGraphics::GetFontCachePointSizeLimit(), 1024);
+    const int limit = SkMin32(SkGraphics::GetFontCachePointSizeLimit(), maxLimit);
     const SkScalar maxSize = SkIntToScalar(limit);
     return maxSize * maxSize;
 }
@@ -420,9 +420,9 @@ int SkPaint::textToGlyphs(const void* textData, size_t byteLength, uint16_t glyp
     if (nullptr == glyphs) {
         switch (this->getTextEncoding()) {
         case kUTF8_TextEncoding:
-            return SkUTF8_CountUnichars((const char*)textData, byteLength);
+            return SkUTF8_CountUnichars(textData, byteLength);
         case kUTF16_TextEncoding:
-            return SkUTF16_CountUnichars((const uint16_t*)textData, SkToInt(byteLength >> 1));
+            return SkUTF16_CountUnichars(textData, byteLength);
         case kUTF32_TextEncoding:
             return SkToInt(byteLength >> 2);
         case kGlyphID_TextEncoding:
@@ -1865,17 +1865,16 @@ static FlatFlags unpack_paint_flags(SkPaint* paint, uint32_t packed) {
     it if there are not tricky elements like shaders, etc.
  */
 void SkPaint::flatten(SkWriteBuffer& buffer) const {
-    // If the writer is xprocess, then we force recording our typeface, even if its "default"
-    // since the other process may have a different notion of default.
     SkTypeface* tf = this->getTypeface();
-    if (!tf && buffer.isCrossProcess()) {
+    if (!tf) {
+        // We force recording our typeface, even if its "default" since the receiver process
+        // may have a different notion of default.
         tf = SkTypeface::GetDefaultTypeface();
+        SkASSERT(tf);
     }
 
-    uint8_t flatFlags = 0;
-    if (tf) {
-        flatFlags |= kHasTypeface_FlatFlag;
-    }
+    uint8_t flatFlags = kHasTypeface_FlatFlag;
+
     if (asint(this->getPathEffect()) |
         asint(this->getShader()) |
         asint(this->getMaskFilter()) |
@@ -1899,11 +1898,8 @@ void SkPaint::flatten(SkWriteBuffer& buffer) const {
                             (this->getStyle() << 4) | this->getTextEncoding(),
                             fBlendMode));
 
-    // now we're done with ptr and the (pre)reserved space. If we need to write
-    // additional fields, use the buffer directly
-    if (flatFlags & kHasTypeface_FlatFlag) {
-        buffer.writeTypeface(tf);
-    }
+    buffer.writeTypeface(tf);
+
     if (flatFlags & kHasEffects_FlatFlag) {
         buffer.writeFlattenable(this->getPathEffect());
         buffer.writeFlattenable(this->getShader());

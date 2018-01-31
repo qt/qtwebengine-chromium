@@ -38,7 +38,7 @@ BlockLayoutType GetBlockLayoutType(TLayoutBlockStorage blockStorage)
     }
 }
 
-// TODO(jiawei.shao@intel.com): implement GL_OES_shader_io_blocks.
+// TODO(jiawei.shao@intel.com): implement GL_EXT_shader_io_blocks.
 BlockType GetBlockType(TQualifier qualifier)
 {
     switch (qualifier)
@@ -123,16 +123,21 @@ class CollectVariablesTraverser : public TIntermTraverser
     bool visitBinary(Visit visit, TIntermBinary *binaryNode) override;
 
   private:
-    std::string getMappedName(const TName &name) const;
+    std::string getMappedName(const TSymbol *symbol) const;
 
+    void setFieldOrVariableProperties(const TType &type, ShaderVariable *variableOut) const;
+    void setFieldProperties(const TType &type,
+                            const TString &name,
+                            ShaderVariable *variableOut) const;
     void setCommonVariableProperties(const TType &type,
-                                     const TName &name,
+                                     const TVariable &variable,
                                      ShaderVariable *variableOut) const;
 
     Attribute recordAttribute(const TIntermSymbol &variable) const;
     OutputVariable recordOutputVariable(const TIntermSymbol &variable) const;
     Varying recordVarying(const TIntermSymbol &variable) const;
-    void recordInterfaceBlock(const TType &interfaceBlockType,
+    void recordInterfaceBlock(const char *instanceName,
+                              const TType &interfaceBlockType,
                               InterfaceBlock *interfaceBlock) const;
     Uniform recordUniform(const TIntermSymbol &variable) const;
 
@@ -246,9 +251,9 @@ CollectVariablesTraverser::CollectVariablesTraverser(
 {
 }
 
-std::string CollectVariablesTraverser::getMappedName(const TName &name) const
+std::string CollectVariablesTraverser::getMappedName(const TSymbol *symbol) const
 {
-    return HashName(name, mHashFunction, nullptr).c_str();
+    return HashName(symbol, mHashFunction, nullptr).c_str();
 }
 
 void CollectVariablesTraverser::setBuiltInInfoFromSymbolTable(const char *name,
@@ -316,7 +321,7 @@ InterfaceBlock *CollectVariablesTraverser::recordGLInUsed(const TType &glInType)
     {
         ASSERT(glInType.getQualifier() == EvqPerVertexIn);
         InterfaceBlock info;
-        recordInterfaceBlock(glInType, &info);
+        recordInterfaceBlock("gl_in", glInType, &info);
         info.staticUse = true;
 
         mPerVertexInAdded = true;
@@ -338,20 +343,26 @@ void CollectVariablesTraverser::visitSymbol(TIntermSymbol *symbol)
 {
     ASSERT(symbol != nullptr);
 
-    if (symbol->getName().isInternal())
+    if (symbol->variable().symbolType() == SymbolType::AngleInternal ||
+        symbol->variable().symbolType() == SymbolType::Empty)
     {
-        // Internal variables are not collected.
+        // Internal variables or nameless variables are not collected.
         return;
     }
 
     ShaderVariable *var       = nullptr;
-    const TString &symbolName = symbol->getName().getString();
 
-    if (IsVaryingIn(symbol->getQualifier()))
+    const TString &symbolName = symbol->getName();
+
+    // Check the qualifier from the variable, not from the symbol node. The node may have a
+    // different qualifier if it's the result of a folded ternary node.
+    TQualifier qualifier = symbol->variable().getType().getQualifier();
+
+    if (IsVaryingIn(qualifier))
     {
         var = FindVariable(symbolName, mInputVaryings);
     }
-    else if (IsVaryingOut(symbol->getQualifier()))
+    else if (IsVaryingOut(qualifier))
     {
         var = FindVariable(symbolName, mOutputVaryings);
     }
@@ -361,7 +372,7 @@ void CollectVariablesTraverser::visitSymbol(TIntermSymbol *symbol)
     }
     else if (symbolName == "gl_DepthRange")
     {
-        ASSERT(symbol->getQualifier() == EvqUniform);
+        ASSERT(qualifier == EvqUniform);
 
         if (!mDepthRangeAdded)
         {
@@ -404,7 +415,7 @@ void CollectVariablesTraverser::visitSymbol(TIntermSymbol *symbol)
     }
     else
     {
-        switch (symbol->getQualifier())
+        switch (qualifier)
         {
             case EvqAttribute:
             case EvqVertexIn:
@@ -516,7 +527,7 @@ void CollectVariablesTraverser::visitSymbol(TIntermSymbol *symbol)
                 recordBuiltInVaryingUsed("gl_PrimitiveIDIn", &mPrimitiveIDInAdded, mInputVaryings);
                 break;
             case EvqPrimitiveID:
-                if (mShaderType == GL_GEOMETRY_SHADER_OES)
+                if (mShaderType == GL_GEOMETRY_SHADER_EXT)
                 {
                     recordBuiltInVaryingUsed("gl_PrimitiveID", &mPrimitiveIDAdded, mOutputVaryings);
                 }
@@ -527,7 +538,7 @@ void CollectVariablesTraverser::visitSymbol(TIntermSymbol *symbol)
                 }
                 break;
             case EvqLayer:
-                if (mShaderType == GL_GEOMETRY_SHADER_OES)
+                if (mShaderType == GL_GEOMETRY_SHADER_EXT)
                 {
                     recordBuiltInVaryingUsed("gl_Layer", &mLayerAdded, mOutputVaryings);
                 }
@@ -551,14 +562,12 @@ void CollectVariablesTraverser::visitSymbol(TIntermSymbol *symbol)
     }
 }
 
-void CollectVariablesTraverser::setCommonVariableProperties(const TType &type,
-                                                            const TName &name,
-                                                            ShaderVariable *variableOut) const
+void CollectVariablesTraverser::setFieldOrVariableProperties(const TType &type,
+                                                             ShaderVariable *variableOut) const
 {
     ASSERT(variableOut);
 
     const TStructure *structure = type.getStruct();
-
     if (!structure)
     {
         variableOut->type      = GLVariableType(type);
@@ -568,26 +577,48 @@ void CollectVariablesTraverser::setCommonVariableProperties(const TType &type,
     {
         // Structures use a NONE type that isn't exposed outside ANGLE.
         variableOut->type       = GL_NONE;
-        variableOut->structName = structure->name().c_str();
+        if (structure->symbolType() != SymbolType::Empty)
+        {
+            variableOut->structName = structure->name().c_str();
+        }
 
         const TFieldList &fields = structure->fields();
 
-        for (TField *field : fields)
+        for (const TField *field : fields)
         {
             // Regardless of the variable type (uniform, in/out etc.) its fields are always plain
             // ShaderVariable objects.
             ShaderVariable fieldVariable;
-            setCommonVariableProperties(*field->type(), TName(field->name()), &fieldVariable);
+            setFieldProperties(*field->type(), field->name(), &fieldVariable);
             variableOut->fields.push_back(fieldVariable);
         }
     }
-    variableOut->name       = name.getString().c_str();
-    variableOut->mappedName = getMappedName(name);
-
     if (auto *arraySizes = type.getArraySizes())
     {
         variableOut->arraySizes.assign(arraySizes->begin(), arraySizes->end());
     }
+}
+
+void CollectVariablesTraverser::setFieldProperties(const TType &type,
+                                                   const TString &name,
+                                                   ShaderVariable *variableOut) const
+{
+    ASSERT(variableOut);
+    setFieldOrVariableProperties(type, variableOut);
+    variableOut->name       = name.c_str();
+    variableOut->mappedName = HashName(name, mHashFunction, nullptr).c_str();
+}
+
+void CollectVariablesTraverser::setCommonVariableProperties(const TType &type,
+                                                            const TVariable &variable,
+                                                            ShaderVariable *variableOut) const
+{
+    ASSERT(variableOut);
+
+    setFieldOrVariableProperties(type, variableOut);
+    ASSERT(variable.symbolType() != SymbolType::Empty);
+    variableOut->name       = variable.name().c_str();
+    variableOut->mappedName = getMappedName(&variable);
 }
 
 Attribute CollectVariablesTraverser::recordAttribute(const TIntermSymbol &variable) const
@@ -596,7 +627,7 @@ Attribute CollectVariablesTraverser::recordAttribute(const TIntermSymbol &variab
     ASSERT(!type.getStruct());
 
     Attribute attribute;
-    setCommonVariableProperties(type, variable.getName(), &attribute);
+    setCommonVariableProperties(type, variable.variable(), &attribute);
 
     attribute.location = type.getLayoutQualifier().location;
     return attribute;
@@ -608,7 +639,7 @@ OutputVariable CollectVariablesTraverser::recordOutputVariable(const TIntermSymb
     ASSERT(!type.getStruct());
 
     OutputVariable outputVariable;
-    setCommonVariableProperties(type, variable.getName(), &outputVariable);
+    setCommonVariableProperties(type, variable.variable(), &outputVariable);
 
     outputVariable.location = type.getLayoutQualifier().location;
     return outputVariable;
@@ -619,7 +650,7 @@ Varying CollectVariablesTraverser::recordVarying(const TIntermSymbol &variable) 
     const TType &type = variable.getType();
 
     Varying varying;
-    setCommonVariableProperties(type, variable.getName(), &varying);
+    setCommonVariableProperties(type, variable.variable(), &varying);
     varying.location = type.getLayoutQualifier().location;
 
     switch (type.getQualifier())
@@ -631,8 +662,7 @@ Varying CollectVariablesTraverser::recordVarying(const TIntermSymbol &variable) 
         case EvqFlatOut:
         case EvqCentroidOut:
         case EvqGeometryOut:
-            if (mSymbolTable->isVaryingInvariant(std::string(variable.getSymbol().c_str())) ||
-                type.isInvariant())
+            if (mSymbolTable->isVaryingInvariant(varying.name) || type.isInvariant())
             {
                 varying.isInvariant = true;
             }
@@ -645,8 +675,9 @@ Varying CollectVariablesTraverser::recordVarying(const TIntermSymbol &variable) 
     return varying;
 }
 
-// TODO(jiawei.shao@intel.com): implement GL_OES_shader_io_blocks.
-void CollectVariablesTraverser::recordInterfaceBlock(const TType &interfaceBlockType,
+// TODO(jiawei.shao@intel.com): implement GL_EXT_shader_io_blocks.
+void CollectVariablesTraverser::recordInterfaceBlock(const char *instanceName,
+                                                     const TType &interfaceBlockType,
                                                      InterfaceBlock *interfaceBlock) const
 {
     ASSERT(interfaceBlockType.getBasicType() == EbtInterfaceBlock);
@@ -656,9 +687,11 @@ void CollectVariablesTraverser::recordInterfaceBlock(const TType &interfaceBlock
     ASSERT(blockType);
 
     interfaceBlock->name       = blockType->name().c_str();
-    interfaceBlock->mappedName = getMappedName(TName(blockType->name()));
-    interfaceBlock->instanceName =
-        (blockType->hasInstanceName() ? blockType->instanceName().c_str() : "");
+    interfaceBlock->mappedName = getMappedName(blockType);
+    if (instanceName != nullptr)
+    {
+        interfaceBlock->instanceName = instanceName;
+    }
     ASSERT(!interfaceBlockType.isArrayOfArrays());  // Disallowed by GLSL ES 3.10 section 4.3.9
     interfaceBlock->arraySize = interfaceBlockType.isArray() ? interfaceBlockType.getOutermostArraySize() : 0;
 
@@ -666,7 +699,8 @@ void CollectVariablesTraverser::recordInterfaceBlock(const TType &interfaceBlock
     if (interfaceBlock->blockType == BlockType::BLOCK_UNIFORM ||
         interfaceBlock->blockType == BlockType::BLOCK_BUFFER)
     {
-        interfaceBlock->isRowMajorLayout = (blockType->matrixPacking() == EmpRowMajor);
+        // TODO(oetuaho): Remove setting isRowMajorLayout.
+        interfaceBlock->isRowMajorLayout = false;
         interfaceBlock->binding          = blockType->blockBinding();
         interfaceBlock->layout           = GetBlockLayoutType(blockType->blockStorage());
     }
@@ -677,7 +711,7 @@ void CollectVariablesTraverser::recordInterfaceBlock(const TType &interfaceBlock
         const TType &fieldType = *field->type();
 
         InterfaceBlockField fieldVariable;
-        setCommonVariableProperties(fieldType, TName(field->name()), &fieldVariable);
+        setFieldProperties(fieldType, field->name(), &fieldVariable);
         fieldVariable.isRowMajorLayout =
             (fieldType.getLayoutQualifier().matrixPacking == EmpRowMajor);
         interfaceBlock->fields.push_back(fieldVariable);
@@ -687,10 +721,12 @@ void CollectVariablesTraverser::recordInterfaceBlock(const TType &interfaceBlock
 Uniform CollectVariablesTraverser::recordUniform(const TIntermSymbol &variable) const
 {
     Uniform uniform;
-    setCommonVariableProperties(variable.getType(), variable.getName(), &uniform);
+    setCommonVariableProperties(variable.getType(), variable.variable(), &uniform);
     uniform.binding  = variable.getType().getLayoutQualifier().binding;
     uniform.location = variable.getType().getLayoutQualifier().location;
     uniform.offset   = variable.getType().getLayoutQualifier().offset;
+    uniform.readonly  = variable.getType().getMemoryQualifier().readonly;
+    uniform.writeonly = variable.getType().getMemoryQualifier().writeonly;
     return uniform;
 }
 
@@ -718,17 +754,20 @@ bool CollectVariablesTraverser::visitDeclaration(Visit, TIntermDeclaration *node
         // uniforms, varyings, outputs and interface blocks cannot be initialized in a shader, we
         // must have only TIntermSymbol nodes in the sequence in the cases we are interested in.
         const TIntermSymbol &variable = *variableNode->getAsSymbolNode();
-        if (variable.getName().isInternal())
+        if (variable.variable().symbolType() == SymbolType::AngleInternal)
         {
             // Internal variables are not collected.
             continue;
         }
 
-        // TODO(jiawei.shao@intel.com): implement GL_OES_shader_io_blocks.
+        // TODO(jiawei.shao@intel.com): implement GL_EXT_shader_io_blocks.
         if (typedNode.getBasicType() == EbtInterfaceBlock)
         {
             InterfaceBlock interfaceBlock;
-            recordInterfaceBlock(variable.getType(), &interfaceBlock);
+            recordInterfaceBlock(variable.variable().symbolType() != SymbolType::Empty
+                                     ? variable.getName().c_str()
+                                     : nullptr,
+                                 variable.getType(), &interfaceBlock);
 
             switch (qualifier)
             {
@@ -744,6 +783,7 @@ bool CollectVariablesTraverser::visitDeclaration(Visit, TIntermDeclaration *node
         }
         else
         {
+            ASSERT(variable.variable().symbolType() != SymbolType::Empty);
             switch (qualifier)
             {
                 case EvqAttribute:
@@ -777,7 +817,7 @@ bool CollectVariablesTraverser::visitDeclaration(Visit, TIntermDeclaration *node
 }
 
 // TODO(jiawei.shao@intel.com): add search on mInBlocks and mOutBlocks when implementing
-// GL_OES_shader_io_blocks.
+// GL_EXT_shader_io_blocks.
 InterfaceBlock *CollectVariablesTraverser::findNamedInterfaceBlock(const TString &blockName) const
 {
     InterfaceBlock *namedBlock = FindVariable(blockName, mUniformBlocks);

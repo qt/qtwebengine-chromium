@@ -31,7 +31,7 @@ namespace sw
 
 	PixelRoutine::PixelRoutine(const PixelProcessor::State &state, const PixelShader *shader) : QuadRasterizer(state, shader), v(shader && shader->dynamicallyIndexedInput)
 	{
-		if(!shader || shader->getVersion() < 0x0200 || forceClearRegisters)
+		if(!shader || shader->getShaderModel() < 0x0200 || forceClearRegisters)
 		{
 			for(int i = 0; i < MAX_FRAGMENT_INPUTS; i++)
 			{
@@ -45,10 +45,6 @@ namespace sw
 
 	PixelRoutine::~PixelRoutine()
 	{
-		for(int i = 0; i < TEXTURE_IMAGE_UNITS; i++)
-		{
-			delete sampler[i];
-		}
 	}
 
 	void PixelRoutine::quad(Pointer<Byte> cBuffer[RENDERTARGETS], Pointer<Byte> &zBuffer, Pointer<Byte> &sBuffer, Int cMask[4], Int &x, Int &y)
@@ -56,11 +52,6 @@ namespace sw
 		#if PERF_PROFILE
 			Long pipeTime = Ticks();
 		#endif
-
-		for(int i = 0; i < TEXTURE_IMAGE_UNITS; i++)
-		{
-			sampler[i] = new SamplerCore(constants, state.sampler[i]);
-		}
 
 		const bool earlyDepthTest = !state.depthOverride && !state.alphaTestActive();
 
@@ -1000,7 +991,7 @@ namespace sw
 
 	bool PixelRoutine::isSRGB(int index) const
 	{
-		return state.targetFormat[index] == FORMAT_SRGB8_A8 || state.targetFormat[index] == FORMAT_SRGB8_X8;
+		return Surface::isSRGBformat(state.targetFormat[index]);
 	}
 
 	void PixelRoutine::readPixel(int index, Pointer<Byte> &cBuffer, Int &x, Vector4s &pixel)
@@ -1097,6 +1088,16 @@ namespace sw
 			pixel.x = UnpackLow(As<Byte8>(pixel.x), As<Byte8>(pixel.x));
 			pixel.y = UnpackHigh(As<Byte8>(pixel.y), As<Byte8>(pixel.y));
 			pixel.z = UnpackLow(As<Byte8>(pixel.z), As<Byte8>(pixel.z));
+			pixel.w = Short4(0xFFFFu);
+			break;
+		case FORMAT_G8R8:
+			buffer = cBuffer + 2 * x;
+			c01 = As<Short4>(Insert(As<Int2>(c01), *Pointer<Int>(buffer), 0));
+			buffer += *Pointer<Int>(data + OFFSET(DrawData, colorPitchB[index]));
+			c01 = As<Short4>(Insert(As<Int2>(c01), *Pointer<Int>(buffer), 1));
+			pixel.x = (c01 & Short4(0x00FFu)) | (c01 << 8);
+			pixel.y = (c01 & Short4(0xFF00u)) | As<Short4>(As<UShort4>(c01) >> 8);
+			pixel.z = Short4(0x0000u);
 			pixel.w = Short4(0xFFFFu);
 			break;
 		case FORMAT_X8B8G8R8:
@@ -2079,6 +2080,7 @@ namespace sw
 			break;
 		case FORMAT_X32B32G32R32F:
 		case FORMAT_A32B32G32R32F:
+		case FORMAT_X32B32G32R32F_UNSIGNED:
 		case FORMAT_A32B32G32R32I:
 		case FORMAT_A32B32G32R32UI:
 			buffer = cBuffer;
@@ -2088,7 +2090,8 @@ namespace sw
 			pixel.z = *Pointer<Float4>(buffer + 16 * x, 16);
 			pixel.w = *Pointer<Float4>(buffer + 16 * x + 16, 16);
 			transpose4x4(pixel.x, pixel.y, pixel.z, pixel.w);
-			if(state.targetFormat[index] == FORMAT_X32B32G32R32F)
+			if(state.targetFormat[index] == FORMAT_X32B32G32R32F ||
+			   state.targetFormat[index] == FORMAT_X32B32G32R32F_UNSIGNED)
 			{
 				pixel.w = Float4(1.0f);
 			}
@@ -2240,6 +2243,7 @@ namespace sw
 			break;
 		case FORMAT_X32B32G32R32F:
 		case FORMAT_A32B32G32R32F:
+		case FORMAT_X32B32G32R32F_UNSIGNED:
 		case FORMAT_A32B32G32R32I:
 		case FORMAT_A32B32G32R32UI:
 		case FORMAT_A16B16G16R16I:
@@ -2493,6 +2497,7 @@ namespace sw
 			break;
 		case FORMAT_X32B32G32R32F:
 		case FORMAT_A32B32G32R32F:
+		case FORMAT_X32B32G32R32F_UNSIGNED:
 		case FORMAT_A32B32G32R32I:
 		case FORMAT_A32B32G32R32UI:
 			buffer = cBuffer + 16 * x;
@@ -2652,16 +2657,11 @@ namespace sw
 
 	void PixelRoutine::sRGBtoLinear16_12_16(Vector4s &c)
 	{
+		Pointer<Byte> LUT = constants + OFFSET(Constants,sRGBtoLinear12_16);
+
 		c.x = As<UShort4>(c.x) >> 4;
 		c.y = As<UShort4>(c.y) >> 4;
 		c.z = As<UShort4>(c.z) >> 4;
-
-		sRGBtoLinear12_16(c);
-	}
-
-	void PixelRoutine::sRGBtoLinear12_16(Vector4s &c)
-	{
-		Pointer<Byte> LUT = constants + OFFSET(Constants,sRGBtoLinear12_16);
 
 		c.x = Insert(c.x, *Pointer<Short>(LUT + 2 * Int(Extract(c.x, 0))), 0);
 		c.x = Insert(c.x, *Pointer<Short>(LUT + 2 * Int(Extract(c.x, 1))), 1);

@@ -4,7 +4,7 @@
 /*                                                                         */
 /*    Multiple Master font support (body).                                 */
 /*                                                                         */
-/*  Copyright 1996-2017 by                                                 */
+/*  Copyright 1996-2018 by                                                 */
 /*  David Turner, Robert Wilhelm, and Werner Lemberg.                      */
 /*                                                                         */
 /*  This file is part of the FreeType project, and may only be used,       */
@@ -148,6 +148,25 @@
   /* documentation is in ftmm.h */
 
   FT_EXPORT_DEF( FT_Error )
+  FT_Done_MM_Var( FT_Library  library,
+                  FT_MM_Var*  amaster )
+  {
+    FT_Memory  memory;
+
+
+    if ( !library )
+      return FT_THROW( Invalid_Library_Handle );
+
+    memory = library->memory;
+    FT_FREE( amaster );
+
+    return FT_Err_Ok;
+  }
+
+
+  /* documentation is in ftmm.h */
+
+  FT_EXPORT_DEF( FT_Error )
   FT_Set_MM_Design_Coordinates( FT_Face   face,
                                 FT_UInt   num_coords,
                                 FT_Long*  coords )
@@ -203,6 +222,10 @@
       error = FT_ERR( Invalid_Argument );
       if ( service_mm->set_var_design )
         error = service_mm->set_var_design( face, num_coords, coords );
+
+      /* internal error code -1 means `no change'; we can exit immediately */
+      if ( error == -1 )
+        return FT_Err_Ok;
     }
 
     if ( !error )
@@ -275,6 +298,10 @@
       error = FT_ERR( Invalid_Argument );
       if ( service_mm->set_mm_blend )
         error = service_mm->set_mm_blend( face, num_coords, coords );
+
+      /* internal error code -1 means `no change'; we can exit immediately */
+      if ( error == -1 )
+        return FT_Err_Ok;
     }
 
     if ( !error )
@@ -322,6 +349,10 @@
       error = FT_ERR( Invalid_Argument );
       if ( service_mm->set_mm_blend )
         error = service_mm->set_mm_blend( face, num_coords, coords );
+
+      /* internal error code -1 means `no change'; we can exit immediately */
+      if ( error == -1 )
+        return FT_Err_Ok;
     }
 
     if ( !error )

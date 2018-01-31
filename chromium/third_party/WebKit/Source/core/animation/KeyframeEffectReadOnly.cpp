@@ -4,7 +4,6 @@
 
 #include "core/animation/KeyframeEffectReadOnly.h"
 
-#include "bindings/core/v8/Dictionary.h"
 #include "bindings/core/v8/ExceptionState.h"
 #include "bindings/core/v8/ScriptValue.h"
 #include "bindings/core/v8/V8ObjectBuilder.h"
@@ -38,9 +37,9 @@ KeyframeEffectReadOnly* KeyframeEffectReadOnly::Create(
 }
 
 KeyframeEffectReadOnly* KeyframeEffectReadOnly::Create(
-    ExecutionContext* execution_context,
+    ScriptState* script_state,
     Element* element,
-    const DictionarySequenceOrDictionary& effect_input,
+    const ScriptValue& keyframes,
     const UnrestrictedDoubleOrKeyframeEffectOptions& options,
     ExceptionState& exception_state) {
   DCHECK(RuntimeEnabledFeatures::WebAnimationsAPIEnabled());
@@ -62,16 +61,18 @@ KeyframeEffectReadOnly* KeyframeEffectReadOnly::Create(
     return nullptr;
   }
 
-  return Create(element,
-                EffectInput::Convert(element, effect_input, composite,
-                                     execution_context, exception_state),
-                timing);
+  KeyframeEffectModelBase* model = EffectInput::Convert(
+      element, keyframes, composite, script_state, exception_state);
+  if (exception_state.HadException())
+    return nullptr;
+
+  return Create(element, model, timing);
 }
 
 KeyframeEffectReadOnly* KeyframeEffectReadOnly::Create(
-    ExecutionContext* execution_context,
+    ScriptState* script_state,
     Element* element,
-    const DictionarySequenceOrDictionary& effect_input,
+    const ScriptValue& keyframes,
     ExceptionState& exception_state) {
   DCHECK(RuntimeEnabledFeatures::WebAnimationsAPIEnabled());
   if (element) {
@@ -79,11 +80,23 @@ KeyframeEffectReadOnly* KeyframeEffectReadOnly::Create(
         element->GetDocument(),
         WebFeature::kAnimationConstructorKeyframeListEffectNoTiming);
   }
-  return Create(element,
-                EffectInput::Convert(element, effect_input,
-                                     EffectModel::kCompositeReplace,
-                                     execution_context, exception_state),
-                Timing());
+  KeyframeEffectModelBase* model =
+      EffectInput::Convert(element, keyframes, EffectModel::kCompositeReplace,
+                           script_state, exception_state);
+  if (exception_state.HadException())
+    return nullptr;
+  return Create(element, model, Timing());
+}
+
+KeyframeEffectReadOnly* KeyframeEffectReadOnly::Create(
+    ScriptState* script_state,
+    KeyframeEffectReadOnly* source,
+    ExceptionState& exception_state) {
+  Timing new_timing = source->SpecifiedTiming();
+  KeyframeEffectModelBase* model = source->Model()->Clone();
+  return new KeyframeEffectReadOnly(source->Target(), model, new_timing,
+                                    source->GetPriority(),
+                                    source->GetEventDelegate());
 }
 
 KeyframeEffectReadOnly::KeyframeEffectReadOnly(Element* target,
@@ -153,13 +166,12 @@ bool KeyframeEffectReadOnly::HasIncompatibleStyle() {
   if (!target_->GetComputedStyle())
     return false;
 
-  bool affects_transform =
-      GetAnimation()->Affects(*target_, GetCSSPropertyTransform()) ||
-      GetAnimation()->Affects(*target_, GetCSSPropertyScale()) ||
-      GetAnimation()->Affects(*target_, GetCSSPropertyRotate()) ||
-      GetAnimation()->Affects(*target_, GetCSSPropertyTranslate());
+  bool affects_transform = Affects(PropertyHandle(GetCSSPropertyTransform())) ||
+                           Affects(PropertyHandle(GetCSSPropertyScale())) ||
+                           Affects(PropertyHandle(GetCSSPropertyRotate())) ||
+                           Affects(PropertyHandle(GetCSSPropertyTranslate()));
 
-  if (GetAnimation()->HasActiveAnimationsOnCompositor()) {
+  if (HasActiveAnimationsOnCompositor()) {
     if (target_->GetComputedStyle()->HasOffset() && affects_transform)
       return true;
     return HasMultipleTransformProperties();

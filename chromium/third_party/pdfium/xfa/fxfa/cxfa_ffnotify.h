@@ -11,6 +11,8 @@
 #include "xfa/fxfa/parser/cxfa_document.h"
 
 class CXFA_FFWidgetHandler;
+class CXFA_ContainerLayoutItem;
+class CXFA_ContentLayoutItem;
 
 class CXFA_FFNotify {
  public:
@@ -19,11 +21,11 @@ class CXFA_FFNotify {
 
   void OnPageEvent(CXFA_ContainerLayoutItem* pSender, uint32_t dwEvent);
 
-  void OnWidgetListItemAdded(CXFA_WidgetData* pSender,
+  void OnWidgetListItemAdded(CXFA_WidgetAcc* pSender,
                              const wchar_t* pLabel,
                              const wchar_t* pValue,
                              int32_t iIndex);
-  void OnWidgetListItemRemoved(CXFA_WidgetData* pSender, int32_t iIndex);
+  void OnWidgetListItemRemoved(CXFA_WidgetAcc* pSender, int32_t iIndex);
 
   // Node events
   void OnNodeReady(CXFA_Node* pNode);
@@ -35,7 +37,9 @@ class CXFA_FFNotify {
   void OnChildAdded(CXFA_Node* pSender);
   void OnChildRemoved();
 
-  CXFA_LayoutItem* OnCreateLayoutItem(CXFA_Node* pNode);
+  CXFA_ContainerLayoutItem* OnCreateContainerLayoutItem(CXFA_Node* pNode);
+  CXFA_ContentLayoutItem* OnCreateContentLayoutItem(CXFA_Node* pNode);
+
   void OnLayoutItemAdded(CXFA_LayoutProcessor* pLayout,
                          CXFA_LayoutItem* pSender,
                          int32_t iPageIdx,
@@ -49,7 +53,7 @@ class CXFA_FFNotify {
   bool FindSplitPos(CXFA_Node* pItem,
                     int32_t iBlockIndex,
                     float& fCalcHeightPos);
-  bool RunScript(CXFA_Node* pScript, CXFA_Node* pFormItem);
+  bool RunScript(CXFA_Script* pScript, CXFA_Node* pFormItem);
   int32_t ExecEventByDeepFirst(CXFA_Node* pFormNode,
                                XFA_EVENTTYPE eEventType,
                                bool bIsFormReady = false,
@@ -63,7 +67,7 @@ class CXFA_FFNotify {
   CXFA_FFWidget* GetHWidget(CXFA_LayoutItem* pLayoutItem);
   void OpenDropDownList(CXFA_FFWidget* hWidget);
   WideString GetCurrentDateTime();
-  void ResetData(CXFA_WidgetData* pWidgetData = nullptr);
+  void ResetData(CXFA_WidgetAcc* pWidgetAcc = nullptr);
   int32_t GetLayoutStatus();
   void RunNodeInitialize(CXFA_Node* pNode);
   void RunSubformIndexChange(CXFA_Node* pSubformNode);

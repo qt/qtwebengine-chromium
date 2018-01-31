@@ -15,6 +15,7 @@
         'angle_unittests_sources':
         [
             '<(angle_path)/src/common/Optional_unittest.cpp',
+            '<(angle_path)/src/common/aligned_memory_unittest.cpp',
             '<(angle_path)/src/common/angleutils_unittest.cpp',
             '<(angle_path)/src/common/bitset_utils_unittest.cpp',
             '<(angle_path)/src/common/mathutil_unittest.cpp',
@@ -78,6 +79,7 @@
             '<(angle_path)/src/tests/compiler_tests/QualificationOrderESSL31_test.cpp',
             '<(angle_path)/src/tests/compiler_tests/QualificationOrder_test.cpp',
             '<(angle_path)/src/tests/compiler_tests/RecordConstantPrecision_test.cpp',
+            '<(angle_path)/src/tests/compiler_tests/RegenerateStructNames_test.cpp',
             '<(angle_path)/src/tests/compiler_tests/RemovePow_test.cpp',
             '<(angle_path)/src/tests/compiler_tests/RemoveUnreferencedVariables_test.cpp',
             '<(angle_path)/src/tests/compiler_tests/RewriteDoWhile_test.cpp',

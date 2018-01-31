@@ -17,9 +17,10 @@
 #include "xfa/fxfa/cxfa_pieceline.h"
 #include "xfa/fxfa/cxfa_textlayout.h"
 #include "xfa/fxfa/cxfa_textpiece.h"
+#include "xfa/fxfa/parser/cxfa_margin.h"
 #include "xfa/fxgraphics/cxfa_graphics.h"
 
-CXFA_FFText::CXFA_FFText(CXFA_WidgetAcc* pDataAcc) : CXFA_FFDraw(pDataAcc) {}
+CXFA_FFText::CXFA_FFText(CXFA_Node* pNode) : CXFA_FFDraw(pNode) {}
 
 CXFA_FFText::~CXFA_FFText() {}
 
@@ -34,27 +35,27 @@ void CXFA_FFText::RenderWidget(CXFA_Graphics* pGS,
 
   CXFA_FFWidget::RenderWidget(pGS, mtRotate, dwStatus);
 
-  CXFA_TextLayout* pTextLayout = m_pDataAcc->GetTextLayout();
+  CXFA_TextLayout* pTextLayout = m_pNode->GetWidgetAcc()->GetTextLayout();
   if (!pTextLayout)
     return;
 
   CFX_RenderDevice* pRenderDevice = pGS->GetRenderDevice();
   CFX_RectF rtText = GetRectWithoutRotate();
-  CXFA_MarginData marginData = m_pDataAcc->GetMarginData();
-  if (marginData.HasValidNode()) {
+  CXFA_Margin* margin = m_pNode->GetMarginIfExists();
+  if (margin) {
     CXFA_LayoutItem* pItem = this;
     if (!pItem->GetPrev() && !pItem->GetNext()) {
-      XFA_RectWidthoutMargin(rtText, marginData);
+      XFA_RectWithoutMargin(rtText, margin);
     } else {
       float fTopInset = 0;
       float fBottomInset = 0;
       if (!pItem->GetPrev())
-        fTopInset = marginData.GetTopInset();
+        fTopInset = margin->GetTopInset();
       else if (!pItem->GetNext())
-        fBottomInset = marginData.GetBottomInset();
+        fBottomInset = margin->GetBottomInset();
 
-      rtText.Deflate(marginData.GetLeftInset(), fTopInset,
-                     marginData.GetRightInset(), fBottomInset);
+      rtText.Deflate(margin->GetLeftInset(), fTopInset, margin->GetRightInset(),
+                     fBottomInset);
     }
   }
 
@@ -65,13 +66,13 @@ void CXFA_FFText::RenderWidget(CXFA_Graphics* pGS,
 }
 
 bool CXFA_FFText::IsLoaded() {
-  CXFA_TextLayout* pTextLayout = m_pDataAcc->GetTextLayout();
+  CXFA_TextLayout* pTextLayout = m_pNode->GetWidgetAcc()->GetTextLayout();
   return pTextLayout && !pTextLayout->m_bHasBlock;
 }
 
 bool CXFA_FFText::PerformLayout() {
   CXFA_FFDraw::PerformLayout();
-  CXFA_TextLayout* pTextLayout = m_pDataAcc->GetTextLayout();
+  CXFA_TextLayout* pTextLayout = m_pNode->GetWidgetAcc()->GetTextLayout();
   if (!pTextLayout)
     return false;
   if (!pTextLayout->m_bHasBlock)
@@ -85,12 +86,12 @@ bool CXFA_FFText::PerformLayout() {
   pItem = pItem->GetFirst();
   while (pItem) {
     CFX_RectF rtText = pItem->GetRect(false);
-    CXFA_MarginData marginData = m_pDataAcc->GetMarginData();
-    if (marginData.HasValidNode()) {
+    CXFA_Margin* margin = m_pNode->GetMarginIfExists();
+    if (margin) {
       if (!pItem->GetPrev())
-        rtText.height -= marginData.GetTopInset();
+        rtText.height -= margin->GetTopInset();
       else if (!pItem->GetNext())
-        rtText.height -= marginData.GetBottomInset();
+        rtText.height -= margin->GetBottomInset();
     }
     pTextLayout->ItemBlocks(rtText, pItem->GetIndex());
     pItem = pItem->GetNext();
@@ -138,7 +139,7 @@ FWL_WidgetHit CXFA_FFText::OnHitTest(const CFX_PointF& point) {
 }
 
 const wchar_t* CXFA_FFText::GetLinkURLAtPoint(const CFX_PointF& point) {
-  CXFA_TextLayout* pTextLayout = m_pDataAcc->GetTextLayout();
+  CXFA_TextLayout* pTextLayout = m_pNode->GetWidgetAcc()->GetTextLayout();
   if (!pTextLayout)
     return nullptr;
 

@@ -116,6 +116,7 @@
 #include <utility>
 
 #include <openssl/bytestring.h>
+#include <openssl/chacha.h>
 #include <openssl/digest.h>
 #include <openssl/err.h>
 #include <openssl/evp.h>
@@ -549,9 +550,18 @@ static bool forbid_parse_serverhello(SSL_HANDSHAKE *hs, uint8_t *out_alert,
   return true;
 }
 
+static bool dont_add_clienthello(SSL_HANDSHAKE *hs, CBB *out) {
+  return true;
+}
+
 static bool ignore_parse_clienthello(SSL_HANDSHAKE *hs, uint8_t *out_alert,
                                     CBS *contents) {
   // This extension from the client is handled elsewhere.
+  return true;
+}
+
+static bool ignore_parse_serverhello(SSL_HANDSHAKE *hs, uint8_t *out_alert,
+                                     CBS *contents) {
   return true;
 }
 
@@ -1810,7 +1820,7 @@ static bool ext_pre_shared_key_add_clienthello(SSL_HANDSHAKE *hs, CBB *out) {
   // selected cipher in HelloRetryRequest does not match. This avoids performing
   // the transcript hash transformation for multiple hashes.
   if (hs->received_hello_retry_request &&
-      ssl_is_draft21(ssl->version) &&
+      ssl_is_draft22(ssl->version) &&
       ssl->session->cipher->algorithm_prf != hs->new_cipher->algorithm_prf) {
     return true;
   }
@@ -2033,7 +2043,7 @@ static bool ext_early_data_parse_serverhello(SSL_HANDSHAKE *hs,
     return false;
   }
 
-  ssl->early_data_accepted = true;
+  ssl->s3->early_data_accepted = true;
   return true;
 }
 
@@ -2055,7 +2065,7 @@ static bool ext_early_data_parse_clienthello(SSL_HANDSHAKE *hs,
 }
 
 static bool ext_early_data_add_serverhello(SSL_HANDSHAKE *hs, CBB *out) {
-  if (!hs->ssl->early_data_accepted) {
+  if (!hs->ssl->s3->early_data_accepted) {
     return true;
   }
 
@@ -2080,7 +2090,9 @@ static bool ext_key_share_add_clienthello(SSL_HANDSHAKE *hs, CBB *out) {
   }
 
   CBB contents, kse_bytes;
-  if (!CBB_add_u16(out, TLSEXT_TYPE_key_share) ||
+  if (!CBB_add_u16(out, ssl_is_draft23_variant(ssl->tls13_variant)
+                            ? TLSEXT_TYPE_new_key_share
+                            : TLSEXT_TYPE_old_key_share) ||
       !CBB_add_u16_length_prefixed(out, &contents) ||
       !CBB_add_u16_length_prefixed(&contents, &kse_bytes)) {
     return false;
@@ -2237,7 +2249,9 @@ bool ssl_ext_key_share_add_serverhello(SSL_HANDSHAKE *hs, CBB *out) {
   uint16_t group_id;
   CBB kse_bytes, public_key;
   if (!tls1_get_shared_group(hs, &group_id) ||
-      !CBB_add_u16(out, TLSEXT_TYPE_key_share) ||
+      !CBB_add_u16(out, ssl_is_draft23(hs->ssl->version)
+                            ? TLSEXT_TYPE_new_key_share
+                            : TLSEXT_TYPE_old_key_share) ||
       !CBB_add_u16_length_prefixed(out, &kse_bytes) ||
       !CBB_add_u16(&kse_bytes, group_id) ||
       !CBB_add_u16_length_prefixed(&kse_bytes, &public_key) ||
@@ -2307,6 +2321,42 @@ static bool ext_cookie_add_clienthello(SSL_HANDSHAKE *hs, CBB *out) {
   // The cookie is no longer needed in memory.
   hs->cookie.Reset();
   return true;
+}
+
+
+// Dummy PQ Padding extension
+//
+// Dummy post-quantum padding invovles the client (and later server) sending
+// useless, random-looking bytes in an extension in their ClientHello or
+// ServerHello. These extensions are sized to simulate a post-quantum
+// key-exchange and so enable measurement of the latency impact of the
+// additional bandwidth.
+
+static bool ext_dummy_pq_padding_add_clienthello(SSL_HANDSHAKE *hs, CBB *out) {
+  const size_t len = hs->ssl->dummy_pq_padding_len;
+  if (len == 0) {
+    return true;
+  }
+
+  CBB contents;
+  uint8_t *buffer;
+  if (!CBB_add_u16(out, TLSEXT_TYPE_dummy_pq_padding) ||
+      !CBB_add_u16_length_prefixed(out, &contents) ||
+      !CBB_add_space(&contents, &buffer, len)) {
+    return false;
+  }
+
+  // The length is used as the nonce so that different length extensions have
+  // different contents. There's no reason this has to be the case, it just
+  // makes things a little more obvious in a packet dump.
+  uint8_t nonce[12] = {0};
+  memcpy(nonce, &len, sizeof(len));
+
+  memset(buffer, 0, len);
+  static const uint8_t kZeroKey[32] = {0};
+  CRYPTO_chacha_20(buffer, buffer, len, kZeroKey, nonce, 0);
+
+  return CBB_flush(out);
 }
 
 
@@ -2491,7 +2541,16 @@ static const struct tls_extension kExtensions[] = {
     ext_ec_point_add_serverhello,
   },
   {
-    TLSEXT_TYPE_key_share,
+    TLSEXT_TYPE_old_key_share,
+    // This is added by TLSEXT_TYPE_new_key_share's callback.
+    NULL,
+    dont_add_clienthello,
+    forbid_parse_serverhello,
+    ignore_parse_clienthello,
+    dont_add_serverhello,
+  },
+  {
+    TLSEXT_TYPE_new_key_share,
     NULL,
     ext_key_share_add_clienthello,
     forbid_parse_serverhello,
@@ -2527,6 +2586,14 @@ static const struct tls_extension kExtensions[] = {
     NULL,
     ext_cookie_add_clienthello,
     forbid_parse_serverhello,
+    ignore_parse_clienthello,
+    dont_add_serverhello,
+  },
+  {
+    TLSEXT_TYPE_dummy_pq_padding,
+    NULL,
+    ext_dummy_pq_padding_add_clienthello,
+    ignore_parse_serverhello,
     ignore_parse_clienthello,
     dont_add_serverhello,
   },
@@ -3264,6 +3331,7 @@ int tls1_verify_channel_id(SSL_HANDSHAKE *hs, const SSLMessage &msg) {
   int sig_ok = ECDSA_do_verify(digest, digest_len, sig.get(), key.get());
 #if defined(BORINGSSL_UNSAFE_FUZZER_MODE)
   sig_ok = 1;
+  ERR_clear_error();
 #endif
   if (!sig_ok) {
     OPENSSL_PUT_ERROR(SSL, SSL_R_CHANNEL_ID_SIGNATURE_INVALID);

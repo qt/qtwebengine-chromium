@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <cwchar>
 #include <memory>
 #include <string>
 #include <vector>
@@ -11,11 +12,20 @@
 #include "public/fpdf_edit.h"
 #include "public/fpdfview.h"
 #include "testing/embedder_test.h"
+#include "testing/gmock/include/gmock/gmock-matchers.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 static constexpr char kContentsKey[] = "Contents";
 
 class FPDFAnnotEmbeddertest : public EmbedderTest {};
+
+std::wstring BufferToWString(const std::vector<char>& buf) {
+  return GetPlatformWString(reinterpret_cast<FPDF_WIDESTRING>(buf.data()));
+}
+
+std::string BufferToString(const std::vector<char>& buf) {
+  return GetPlatformString(reinterpret_cast<FPDF_WIDESTRING>(buf.data()));
+}
 
 TEST_F(FPDFAnnotEmbeddertest, RenderAnnotWithOnlyRolloverAP) {
   // Open a file with one annotation and load its first page.
@@ -66,9 +76,7 @@ TEST_F(FPDFAnnotEmbeddertest, ExtractHighlightLongContent) {
   unsigned long len = FPDFAnnot_GetStringValue(annot, kAuthorKey, nullptr, 0);
   std::vector<char> buf(len);
   EXPECT_EQ(28u, FPDFAnnot_GetStringValue(annot, kAuthorKey, buf.data(), len));
-  EXPECT_STREQ(L"Jae Hyun Park",
-               GetPlatformWString(reinterpret_cast<unsigned short*>(buf.data()))
-                   .c_str());
+  EXPECT_STREQ(L"Jae Hyun Park", BufferToWString(buf).c_str());
 
   // Check that the content is correct.
   EXPECT_EQ(FPDF_OBJECT_STRING, FPDFAnnot_GetValueType(annot, kContentsKey));
@@ -98,9 +106,7 @@ TEST_F(FPDFAnnotEmbeddertest, ExtractHighlightLongContent) {
       "longLong long longLong long longLong long longLong long longLong long "
       "longLong long longLong long longLong long longLong long longLong long "
       "longLong long long. END";
-  EXPECT_STREQ(contents,
-               GetPlatformWString(reinterpret_cast<unsigned short*>(buf.data()))
-                   .c_str());
+  EXPECT_STREQ(contents, BufferToWString(buf).c_str());
 
   // Check that the quadpoints are correct.
   FS_QUADPOINTSF quadpoints;
@@ -243,9 +249,7 @@ TEST_F(FPDFAnnotEmbeddertest, AddFirstTextAnnotation) {
   std::vector<char> buf(len);
   EXPECT_EQ(74u,
             FPDFAnnot_GetStringValue(annot, kContentsKey, buf.data(), len));
-  EXPECT_STREQ(contents,
-               GetPlatformWString(reinterpret_cast<unsigned short*>(buf.data()))
-                   .c_str());
+  EXPECT_STREQ(contents, BufferToWString(buf).c_str());
 
   FPDFPage_CloseAnnot(annot);
   UnloadPage(page);
@@ -838,8 +842,7 @@ TEST_F(FPDFAnnotEmbeddertest, GetSetStringValue) {
   std::vector<char> buf(len);
   EXPECT_EQ(66u, FPDFAnnot_GetStringValue(annot, kHashKey, buf.data(), len));
   EXPECT_STREQ(L"395fbcb98d558681742f30683a62a2ad",
-               GetPlatformWString(reinterpret_cast<unsigned short*>(buf.data()))
-                   .c_str());
+               BufferToWString(buf).c_str());
 
   // Check that the string value of the modified date is correct.
   static constexpr char kDateKey[] = "M";
@@ -848,9 +851,7 @@ TEST_F(FPDFAnnotEmbeddertest, GetSetStringValue) {
   buf.clear();
   buf.resize(len);
   EXPECT_EQ(44u, FPDFAnnot_GetStringValue(annot, kDateKey, buf.data(), len));
-  EXPECT_STREQ(L"D:201706071721Z00'00'",
-               GetPlatformWString(reinterpret_cast<unsigned short*>(buf.data()))
-                   .c_str());
+  EXPECT_STREQ(L"D:201706071721Z00'00'", BufferToWString(buf).c_str());
 
   // Update the date entry for the annotation.
   const wchar_t new_date[] = L"D:201706282359Z00'00'";
@@ -881,13 +882,190 @@ TEST_F(FPDFAnnotEmbeddertest, GetSetStringValue) {
   buf.resize(len);
   EXPECT_EQ(44u,
             FPDFAnnot_GetStringValue(new_annot, kDateKey, buf.data(), len));
-  EXPECT_STREQ(new_date,
-               GetPlatformWString(reinterpret_cast<unsigned short*>(buf.data()))
-                   .c_str());
+  EXPECT_STREQ(new_date, BufferToWString(buf).c_str());
 
   FPDFPage_CloseAnnot(new_annot);
   CloseSavedPage(page);
   CloseSavedDocument();
+}
+
+TEST_F(FPDFAnnotEmbeddertest, GetSetAP) {
+  // Open a file with four annotations and load its first page.
+  ASSERT_TRUE(OpenDocument("annotation_stamp_with_ap.pdf"));
+  FPDF_PAGE page = FPDF_LoadPage(document(), 0);
+  ASSERT_TRUE(page);
+
+  // Retrieve the first annotation.
+  FPDF_ANNOTATION annot = FPDFPage_GetAnnot(page, 0);
+  ASSERT_TRUE(annot);
+
+  // Check that the string value of an AP returns the expected length.
+  unsigned long normal_len =
+      FPDFAnnot_GetAP(annot, FPDF_ANNOT_APPEARANCEMODE_NORMAL, nullptr, 0);
+  EXPECT_EQ(73970u, normal_len);
+
+  // Check that the string value of an AP is not returned if the buffer is too
+  // small. The result buffer should be overwritten with an empty string.
+  std::vector<char> buf(normal_len - 1);
+  // Write L"z" in the buffer to verify it's not overwritten.
+  wcscpy(reinterpret_cast<wchar_t*>(buf.data()), L"z");
+  EXPECT_EQ(73970u, FPDFAnnot_GetAP(annot, FPDF_ANNOT_APPEARANCEMODE_NORMAL,
+                                    buf.data(), buf.size()));
+  std::string ap = BufferToString(buf);
+  EXPECT_STREQ("z", ap.c_str());
+
+  // Check that the string value of an AP is returned through a buffer that is
+  // the right size.
+  buf.clear();
+  buf.resize(normal_len);
+  EXPECT_EQ(73970u, FPDFAnnot_GetAP(annot, FPDF_ANNOT_APPEARANCEMODE_NORMAL,
+                                    buf.data(), buf.size()));
+  ap = BufferToString(buf);
+  EXPECT_THAT(ap, testing::StartsWith("q Q q 7.442786 w 2 J"));
+  EXPECT_THAT(ap, testing::EndsWith("c 716.5381 327.7156 l S Q Q"));
+
+  // Check that the string value of an AP is returned through a buffer that is
+  // larger than necessary.
+  buf.clear();
+  buf.resize(normal_len + 1);
+  EXPECT_EQ(73970u, FPDFAnnot_GetAP(annot, FPDF_ANNOT_APPEARANCEMODE_NORMAL,
+                                    buf.data(), buf.size()));
+  ap = BufferToString(buf);
+  EXPECT_THAT(ap, testing::StartsWith("q Q q 7.442786 w 2 J"));
+  EXPECT_THAT(ap, testing::EndsWith("c 716.5381 327.7156 l S Q Q"));
+
+  // Check that getting an AP for a mode that does not have an AP returns an
+  // empty string.
+  unsigned long rollover_len =
+      FPDFAnnot_GetAP(annot, FPDF_ANNOT_APPEARANCEMODE_ROLLOVER, nullptr, 0);
+  EXPECT_EQ(2u, rollover_len);
+
+  buf.clear();
+  buf.resize(1000);
+  EXPECT_EQ(2u, FPDFAnnot_GetAP(annot, FPDF_ANNOT_APPEARANCEMODE_ROLLOVER,
+                                buf.data(), buf.size()));
+  EXPECT_STREQ("", BufferToString(buf).c_str());
+
+  // Check that setting the AP for an invalid appearance mode fails.
+  std::unique_ptr<unsigned short, pdfium::FreeDeleter> apText =
+      GetFPDFWideString(L"new test ap");
+  EXPECT_FALSE(FPDFAnnot_SetAP(annot, -1, apText.get()));
+  EXPECT_FALSE(
+      FPDFAnnot_SetAP(annot, FPDF_ANNOT_APPEARANCEMODE_COUNT, apText.get()));
+  EXPECT_FALSE(FPDFAnnot_SetAP(annot, FPDF_ANNOT_APPEARANCEMODE_COUNT + 1,
+                               apText.get()));
+
+  // Set the AP correctly now.
+  EXPECT_TRUE(
+      FPDFAnnot_SetAP(annot, FPDF_ANNOT_APPEARANCEMODE_ROLLOVER, apText.get()));
+
+  // Check that the new annotation value is equal to the value we just set.
+  rollover_len =
+      FPDFAnnot_GetAP(annot, FPDF_ANNOT_APPEARANCEMODE_ROLLOVER, nullptr, 0);
+  EXPECT_EQ(24u, rollover_len);
+  buf.clear();
+  buf.resize(rollover_len);
+  EXPECT_EQ(24u, FPDFAnnot_GetAP(annot, FPDF_ANNOT_APPEARANCEMODE_ROLLOVER,
+                                 buf.data(), buf.size()));
+  EXPECT_STREQ(L"new test ap", BufferToWString(buf).c_str());
+
+  // Check that the Normal AP was not touched when the Rollover AP was set.
+  buf.clear();
+  buf.resize(normal_len);
+  EXPECT_EQ(73970u, FPDFAnnot_GetAP(annot, FPDF_ANNOT_APPEARANCEMODE_NORMAL,
+                                    buf.data(), buf.size()));
+  ap = BufferToString(buf);
+  EXPECT_THAT(ap, testing::StartsWith("q Q q 7.442786 w 2 J"));
+  EXPECT_THAT(ap, testing::EndsWith("c 716.5381 327.7156 l S Q Q"));
+
+  // Save the modified document, then reopen it.
+  FPDFPage_CloseAnnot(annot);
+  EXPECT_TRUE(FPDF_SaveAsCopy(document(), this, 0));
+  FPDF_ClosePage(page);
+
+  OpenSavedDocument();
+  page = LoadSavedPage(0);
+  FPDF_ANNOTATION new_annot = FPDFPage_GetAnnot(page, 0);
+
+  // Check that the new annotation value is equal to the value we set before
+  // saving.
+  rollover_len = FPDFAnnot_GetAP(new_annot, FPDF_ANNOT_APPEARANCEMODE_ROLLOVER,
+                                 nullptr, 0);
+  EXPECT_EQ(24u, rollover_len);
+  buf.clear();
+  buf.resize(rollover_len);
+  EXPECT_EQ(24u, FPDFAnnot_GetAP(new_annot, FPDF_ANNOT_APPEARANCEMODE_ROLLOVER,
+                                 buf.data(), buf.size()));
+  EXPECT_STREQ(L"new test ap", BufferToWString(buf).c_str());
+
+  // Close saved document.
+  FPDFPage_CloseAnnot(new_annot);
+  CloseSavedPage(page);
+  CloseSavedDocument();
+}
+
+TEST_F(FPDFAnnotEmbeddertest, RemoveOptionalAP) {
+  // Open a file with four annotations and load its first page.
+  ASSERT_TRUE(OpenDocument("annotation_stamp_with_ap.pdf"));
+  FPDF_PAGE page = FPDF_LoadPage(document(), 0);
+  ASSERT_TRUE(page);
+
+  // Retrieve the first annotation.
+  FPDF_ANNOTATION annot = FPDFPage_GetAnnot(page, 0);
+  ASSERT_TRUE(annot);
+
+  // Set Down AP. Normal AP is already set.
+  std::unique_ptr<unsigned short, pdfium::FreeDeleter> apText =
+      GetFPDFWideString(L"new test ap");
+  EXPECT_TRUE(
+      FPDFAnnot_SetAP(annot, FPDF_ANNOT_APPEARANCEMODE_DOWN, apText.get()));
+  EXPECT_EQ(73970u, FPDFAnnot_GetAP(annot, FPDF_ANNOT_APPEARANCEMODE_NORMAL,
+                                    nullptr, 0));
+  EXPECT_EQ(24u,
+            FPDFAnnot_GetAP(annot, FPDF_ANNOT_APPEARANCEMODE_DOWN, nullptr, 0));
+
+  // Check that setting the Down AP to null removes the Down entry but keeps
+  // Normal intact.
+  EXPECT_TRUE(FPDFAnnot_SetAP(annot, FPDF_ANNOT_APPEARANCEMODE_DOWN, nullptr));
+  EXPECT_EQ(73970u, FPDFAnnot_GetAP(annot, FPDF_ANNOT_APPEARANCEMODE_NORMAL,
+                                    nullptr, 0));
+  EXPECT_EQ(2u,
+            FPDFAnnot_GetAP(annot, FPDF_ANNOT_APPEARANCEMODE_DOWN, nullptr, 0));
+
+  FPDFPage_CloseAnnot(annot);
+  FPDF_ClosePage(page);
+}
+
+TEST_F(FPDFAnnotEmbeddertest, RemoveRequiredAP) {
+  // Open a file with four annotations and load its first page.
+  ASSERT_TRUE(OpenDocument("annotation_stamp_with_ap.pdf"));
+  FPDF_PAGE page = FPDF_LoadPage(document(), 0);
+  ASSERT_TRUE(page);
+
+  // Retrieve the first annotation.
+  FPDF_ANNOTATION annot = FPDFPage_GetAnnot(page, 0);
+  ASSERT_TRUE(annot);
+
+  // Set Down AP. Normal AP is already set.
+  std::unique_ptr<unsigned short, pdfium::FreeDeleter> apText =
+      GetFPDFWideString(L"new test ap");
+  EXPECT_TRUE(
+      FPDFAnnot_SetAP(annot, FPDF_ANNOT_APPEARANCEMODE_DOWN, apText.get()));
+  EXPECT_EQ(73970u, FPDFAnnot_GetAP(annot, FPDF_ANNOT_APPEARANCEMODE_NORMAL,
+                                    nullptr, 0));
+  EXPECT_EQ(24u,
+            FPDFAnnot_GetAP(annot, FPDF_ANNOT_APPEARANCEMODE_DOWN, nullptr, 0));
+
+  // Check that setting the Normal AP to null removes the whole AP dictionary.
+  EXPECT_TRUE(
+      FPDFAnnot_SetAP(annot, FPDF_ANNOT_APPEARANCEMODE_NORMAL, nullptr));
+  EXPECT_EQ(
+      2u, FPDFAnnot_GetAP(annot, FPDF_ANNOT_APPEARANCEMODE_NORMAL, nullptr, 0));
+  EXPECT_EQ(2u,
+            FPDFAnnot_GetAP(annot, FPDF_ANNOT_APPEARANCEMODE_DOWN, nullptr, 0));
+
+  FPDFPage_CloseAnnot(annot);
+  FPDF_ClosePage(page);
 }
 
 TEST_F(FPDFAnnotEmbeddertest, ExtractLinkedAnnotations) {

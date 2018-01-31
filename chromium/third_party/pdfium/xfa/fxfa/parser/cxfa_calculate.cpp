@@ -6,6 +6,12 @@
 
 #include "xfa/fxfa/parser/cxfa_calculate.h"
 
+#include "fxjs/xfa/cjx_calculate.h"
+#include "third_party/base/ptr_util.h"
+#include "xfa/fxfa/parser/cxfa_message.h"
+#include "xfa/fxfa/parser/cxfa_script.h"
+#include "xfa/fxfa/parser/cxfa_text.h"
+
 namespace {
 
 const CXFA_Node::PropertyData kPropertyData[] = {{XFA_Element::Message, 1, 0},
@@ -32,6 +38,26 @@ CXFA_Calculate::CXFA_Calculate(CXFA_Document* doc, XFA_PacketType packet)
                 XFA_Element::Calculate,
                 kPropertyData,
                 kAttributeData,
-                kName) {}
+                kName,
+                pdfium::MakeUnique<CJX_Calculate>(this)) {}
 
 CXFA_Calculate::~CXFA_Calculate() {}
+
+XFA_AttributeEnum CXFA_Calculate::GetOverride() {
+  return JSObject()
+      ->TryEnum(XFA_Attribute::Override, false)
+      .value_or(XFA_AttributeEnum::Error);
+}
+
+CXFA_Script* CXFA_Calculate::GetScriptIfExists() {
+  return GetChild<CXFA_Script>(0, XFA_Element::Script, false);
+}
+
+WideString CXFA_Calculate::GetMessageText() {
+  CXFA_Message* pNode = GetChild<CXFA_Message>(0, XFA_Element::Message, false);
+  if (!pNode)
+    return L"";
+
+  CXFA_Text* text = pNode->GetChild<CXFA_Text>(0, XFA_Element::Text, false);
+  return text ? text->GetContent() : L"";
+}

@@ -1,3 +1,524 @@
+2018-01-10  Steve Robinson  <ssrobins@gmail.com>
+
+	* CMakeLists.txt [win32]: Suppress warnings for POSIX functions.
+
+2018-01-10  Ewald Hew  <ewaldhew@gmail.com>
+
+	[psaux] Correctly handle Flex features (#52846).
+
+	* src/psaux/psintrp.c (cf2_interpT2CharString) <cf2_cmdVMOVETO,
+	cf2_cmdHMOVETO>: Do not move if doing Flex.
+
+2018-01-09  Alexei Podtelezhnikov  <apodtele@gmail.com>
+
+	* builds/windows/vc2010/freetype.sln: Synchronize with the project.
+
+2018-01-08  Werner Lemberg  <wl@gnu.org>
+
+	* Version 2.9 released.
+	=======================
+
+
+	Tag sources with `VER-2-9'.
+
+	* docs/VERSION.TXT: Add entry for version 2.9.
+
+	* README, Jamfile (RefDoc), builds/windows/vc2005/freetype.vcproj,
+	builds/windows/vc2005/index.html,
+	builds/windows/vc2008/freetype.vcproj,
+	builds/windows/vc2008/index.html,
+	builds/windows/vc2010/freetype.vcxproj,
+	builds/windows/vc2010/index.html,
+	builds/windows/visualc/freetype.dsp,
+	builds/windows/visualc/freetype.vcproj,
+	builds/windows/visualc/index.html,
+	builds/windows/visualce/freetype.dsp,
+	builds/windows/visualce/freetype.vcproj,
+	builds/windows/visualce/index.html,
+	builds/windows/ftver.rc,
+	builds/wince/vc2005-ce/freetype.vcproj,
+	builds/wince/vc2005-ce/index.html,
+	builds/wince/vc2008-ce/freetype.vcproj,
+	builds/wince/vc2008-ce/index.html: s/2.8.1/2.9/, s/281/29/.
+
+	* include/freetype/freetype.h (FREETYPE_MINOR): Set to 9.
+	(FREETYPE_PATCH): Set to 0.
+
+	* builds/unix/configure.raw (version_info): Set to 22:0:16.
+	* CMakeLists.txt (VERSION_PATCH): Set to 1.
+
+2018-01-07  Werner Lemberg  <wl@gnu.org>
+
+	Add check for librt, needed for `ftbench' (#52824).
+
+	* builds/unix/configure.raw (LIB_CLOCK_GETTIME): Define; this will
+	hold `-lrt' if necessary.
+
+	* builds/unix/unix-cc.in (LIB_CLOCK_GETTIME): New variable.
+
+2018-01-07  Ewald Hew  <ewaldhew@gmail.com>
+
+	[psaux] Fix Type 1 glyphs with too many stem hints.
+
+	According to the CFF specification, charstrings can have up to 96 stem
+	hints. Due to hint replacement routines in Type 1 charstrings, some
+	glyphs are rejected by the Adobe engine, which implements the above
+	limit. This fix turns off hinting for such glyphs.
+
+	* src/psaux/pshints.c (cf2_hintmap_build): Reset the error from calling
+	`cf2_hintmask_setAll' on a problematic Type 1 charstring and turn off
+	hinting.
+
+2018-01-06  Werner Lemberg  <wl@gnu.org>
+
+	Add `FT_Done_MM_Var'.
+
+	This is necessary in case the application's memory routines differ
+	from FreeType.  A typical example is a Python application on Windows
+	that calls FreeType compiled as a DLL via the `ctypes' interface.
+
+	* include/freetype/ftmm.h, src/base/ftmm.c (FT_Done_MM_Var): Declare
+	and define.
+
+	* docs/CHANGES: Updated.
+
+2018-01-03  Werner Lemberg  <wl@gnu.org>
+
+	[truetype] Round offsets of glyph components only if hinting is on.
+
+	* src/truetype/ttgload.c (TT_Process_Composite_Component): Implement
+	it.
+
+2018-01-03  Werner Lemberg  <wl@gnu.org>
+
+	* src/truetype/ttgxvar.c (ft_var_to_design): Remove dead code.
+
+	This is a better fix than the previous commit, which is now
+	reverted.
+
+2018-01-03  Alexei Podtelezhnikov  <apodtele@gmail.com>
+
+	Move internal LCD-related declarations.
+
+	* include/freetype/ftlcdfil.h (ft_lcd_padding, ft_lcd_filter_fir):
+	Move from here...
+	* include/freetype/internal/ftobjs.h: ... to here.
+
+2018-01-03  Alexei Podtelezhnikov  <apodtele@gmail.com>
+
+	* include/freetype/config/ftconfig.h (FT_EXPORT, FT_EXPORT_DEF)
+	[_MSC_VER]: Limit Visual C++ attributes.
+
+2018-01-03  Werner Lemberg  <wl@gnu.org>
+
+	[truetype] Make blend/design coordinate round-tripping work.
+
+	Behdad reported that setting blend coordinates, then getting design
+	coordinates did incorrectly return the default instance's
+	coordinates.
+
+	* src/truetype/ttgxvar.c (tt_set_mm_blend): Fix it.
+
+2017-12-31  Werner Lemberg  <wl@gnu.org>
+
+	* src/sfnt/ttcmap.c (tt_cmap2_char_next): Fix endless loop.
+
+	Reported as
+
+	  https://bugs.chromium.org/p/oss-fuzz/issues/detail?id=4838
+
+2017-12-31  Werner Lemberg  <wl@gnu.org>
+
+	Synchronize other Windows project files.
+
+	* builds/windows/*: Add missing files.
+
+2017-12-31  Werner Lemberg  <wl@gnu.org>
+
+	Update Visual C 2010 project files.
+
+	Problem reported by Hin-Tak.
+
+	* builds/windows/vc2010/freetype.vcxproj: Add files `ftbdf.c' and
+	`ftcid.c'.
+	Sort entries.
+	* builds/windows/vc2010/freetype.vcxproj.filter: Ditto.
+	Fix members of `FT_MODULE' group.
+
+2017-12-30  Werner Lemberg  <wl@gnu.org>
+
+	* builds/vms/ftconfig.h: Synchronize with unix `ftconfig.in' file.
+
+2017-12-28  Werner Lemberg  <wl@gnu.org>
+
+	* builds/unix/ftconfig.in: Synchronize with main `ftconfig.h' file.
+
+	Reported by Nikolaus.
+
+2017-12-27  Werner Lemberg  <wl@gnu.org>
+
+	Fix compiler warnings.
+
+	* src/base/ftbitmap.c (ft_bitmap_assure_buffer): Make `pitch' and
+	`new_pitch' unsigned.
+
+	* src/base/ftpsprop.c: Include FT_INTERNAL_POSTSCRIPT_PROPS_H.
+
+2017-12-27  Werner Lemberg  <wl@gnu.org>
+
+	Fixes for `make multi'.
+
+	* include/freetype/internal/ftpsprop.h: Use `FT_BASE_CALLBACK'.
+	(ps_property_get): Harmonize declaration with corresponding
+	function typedef.
+
+	* include/freety[e/internal/fttrace.h: Add `trace_psprops'.
+
+	* src/base/ftpsprop.c: Include necessary header files.
+	(FT_COMPONENT): Define.
+	(ps_property_set): Tag with `FT_BASE_CALLBACK_DEF'.
+	(ps_property_get): Tag with `FT_BASE_CALLBACK_DEF'.
+	Harmonize declaration with corresponding function typedef.
+
+2017-12-27  Werner Lemberg  <wl@gnu.org>
+
+	Provide support for intra-module callback functions.
+
+	This is needed especially for `make multi' with C++.
+
+	* include/freetype/config/ftconfig.h (FT_BASE_CALLBACK,
+	FT_BASE_CALLBACK_DEF): New macros.
+
+2017-12-25  Ewald Hew  <ewaldhew@gmail.com>
+
+	Move PostScript drivers' property handlers to `base'.
+
+	This reduces the amount of duplicated code across PostScript
+	drivers.
+
+	* src/cff/cffdrivr.c, src/cid/cidriver.c, src/type1/t1driver.c
+	({cff,cid,t1}_property_{get,set}): Moved to...
+	* include/freetype/internal/ftpsprop.h: ...this new file.
+	(ps_property_{get,set}): New functions to replace moved ones.
+
+	* src/base/ftpsprop.c: New file that implements above functions.
+
+	* include/freetype/internal/internal.h
+	(FT_INTERNAL_POSTSCRIPT_PROPS_H): New macro.
+
+	* src/cff/cffdrivr.c, src/cid/cidriver.c, src/type1/t1driver.c:
+	Updated.
+
+	* src/base/Jamfile, src/base/rules.mk (BASE_SRC), src/base/ftbase.c:
+	Updated.
+
+2017-12-20  Werner Lemberg  <wl@gnu.org>
+
+	Speed up FT_Set_Var_{Design,Blend}_Coordinates if curr == new.
+
+	We exit early if the current design or blend coordinates are
+	identical to the new ones.
+
+	* src/truetype/ttgxvar.c (tt_set_mm_blend, TT_Set_Var_Design):
+	Implement it, returning internal error code -1 if there will be no
+	variation change.
+
+	* src/type1/t1load.c (t1_set_mm_blend): Ditto.
+
+	* src/base/ftmm.c (FT_Set_Var_Design_Coordinates,
+	FT_Set_MM_Blend_Coordinates, FT_Set_Var_Blend_Coordinates): Updated.
+
+2017-12-18  Werner Lemberg  <wl@gnu.org>
+
+	[sfnt] Fix charmap type 2 iterator (#52646).
+
+	The subsetted demo font of the report that exhibits the bug has a
+	very unusual type 2 cmap for Unicode(!): It contains only two
+	sub-headers, one for one-byte characters (covering the range 0x20 to
+	0xFA), and a second one for higher byte 0x01 (just for character
+	code U+0131).
+
+	Before this commit, the iterator wasn't able to correctly handle a
+	sub-header for higher byte 0x01.
+
+	* src/sfnt/ttcmap.c (tt_cmap2_char_next): Fix character increment
+	for outer loop.
+
+2017-12-18  Matthias Clasen  <matthias.clasen@gmail.com>
+
+	[truetype] Fix clamping, minor tracing code beautification.
+
+	* src/truetype/ttgxvar.c (ft_var_to_normalized): Trace number of
+	design coordinates.
+	Use clamped value.
+
+2017-12-18  Werner Lemberg  <wl@gnu.org>
+
+	* src/*/*: Only use `ft_' and `FT_' variants of stdc library stuff.
+
+2017-12-18  Werner Lemberg  <wl@gnu.org>
+
+	* src/truetype/ttgxvar.c (tt_face_vary_cvt): Add size guard (#52688).
+
+2017-12-18  Werner Lemberg  <wl@gnu.org>
+
+	[truetype] Fix previous commit.
+
+	* src/truetype/ttgload.c (TT_Process_Simple_Glyph): Correctly handle
+	unhinted phantom points, which must be properly scaled.
+
+2017-12-18  Werner Lemberg  <wl@gnu.org>
+
+	[truetype] Don't apply HVAR and VVAR deltas twice (#52683).
+
+	* src/truetype/ttgload.c (TT_Process_Simple_Glyph): Always adjust
+	`pp1' to `pp4', except if we have an HVAR and/or VVAR table.
+
+	* src/truetype/ttgxvar.c (TT_Vary_Apply_Glyph_Deltas): Handle
+	alternative code branch identically w.r.t. presence of an HVAR
+	and/or VVAR table.
+
+2017-12-17  Jonathan Kew  <jfkthame@gmail.com>
+
+	[truetype] Correctly handle variation font phantom points (#52683).
+
+	* src/truetype/ttgxvar.c (TT_Vary_Apply_Glyph_Deltas): Fix phantom
+	point indices.
+
+2017-12-17  Jonathan Kew  <jfkthame@gmail.com>
+
+	Fix incorrect advance width scaling (#52683).
+
+	* src/base/ftadvance.c (FT_Get_Advances): Always respect the
+	FT_LOAD_NO_SCALE flag if present.
+
+2017-12-16  Alexei Podtelezhnikov  <apodtele@gmail.com>
+
+	* builds/windows/vc2010/freetype.vcxproj: AfterBuild copy.
+	* objs/.gitignore: Ignore almost everything.
+
+2017-12-11  Werner Lemberg  <wl@gnu.org>
+
+	Fix compiler warning (#52640).
+
+	* src/base/ftbitmap.c (ft_bitmap_assure_buffer): Remove unused
+	variable.
+
+2017-12-08  Azzuro  <azzuro@team-mediaportal.com>
+
+	* builds/windows/vc2010/freetype.vcxproj: Adjust output directory.
+
+	This allows builds with different configurations in parallel.
+
+2017-12-08  Werner Lemberg  <wl@gnu.org>
+
+	Fix `make setup dos', second try (#52622).
+
+	* builds/detect.mk (dos_setup): Don't use literal `>' character at
+	all.  Mixing the different escaping rules from make, dos, and
+	windows is too fragile.
+
+2017-12-08  Werner Lemberg  <wl@gnu.org>
+
+	[docmaker] Fix code section parsing.
+
+	Stuff like
+
+	  {
+	    <bla>
+	  }
+
+	confused the parser, which incorrectly treated `<bla>' as a markup
+	tag.
+
+	* src/tools/docmaker/content.py (ContentProcessor::process_content):
+	Apply `re_markup_tags' only outside of code sections.
+
+2017-12-08  Werner Lemberg  <wl@gnu.org>
+
+	New `ftdriver.h' file, covering all driver modules.
+
+	This reduces redundancy and increases synergy; it also reduces the
+	number of header files.
+
+	* include/freetype/config/ftheader.h (FT_DRIVER_H): New macro.
+	(FT_AUTOHINTER_H, FT_CFF_DRIVER_H, FT_TRUETYPE_DRIVER_H,
+	FT_PCF_DRIVER_H, FT_TYPE1_DRIVER_H): Make them aliases to
+	FT_DRIVER_H.
+
+	* include/freetype/ftautoh.h, include/freetype/ftcffdrv.h,
+	include/freetype/ftpcfdrv.h, include/freetype/ftt1drv.h,
+	include/freetype/ftttdrv.h: Replaced with...
+	* include/freetype/ftdriver.h: ...this new file.
+	(FT_CFF_HINTING_ADOBE, FT_T1_HINTING_ADOBE): Renamed to...
+	(FT_HINTING_ADOBE): ... this new macro.
+	(FT_CFF_HINTING_FREETYPE, FT_T1_HINTING_FREETYPE): Renamed to...
+	(FT_HINTING_FREETYPE): ... this new macro.
+
+	* src/*/*: Updated accordingly.
+
+2017-12-08  Werner Lemberg  <wl@gnu.org>
+
+	Move `ftdriver.h' to `ftdrv.h'.
+
+	* include/freetype/internal/ftdriver.h: Renamed to...
+	* include/freetype/internal/ftdrv.h: ... this name.
+
+	* include/freetype/internal/internal.h (FT_INTERNAL_DRIVER_H):
+	Updated.
+
+2017-12-08  Werner Lemberg  <wl@gnu.org>
+
+	Fix access to uninitalized memory (#52613).
+
+	Also reported as
+
+	  https://bugs.chromium.org/p/chromium/issues/detail?id=791317
+
+	* src/base/ftbitmap.c (ft_bitmap_assure_buffer): If increasing the
+	bitmap size needs a larger bitmap buffer, assure that the new memory
+	areas are initialized also.
+
+2017-12-08  Werner Lemberg  <wl@gnu.org>
+
+	Fix `make setup dos' (#52622).
+
+	* builds/detect.mk (dos_setup): Properly escape literal `>'
+	character.
+
+2017-12-07  Werner Lemberg  <wl@gnu.org>
+
+	Fix C++ compilation.
+
+	* src/psaux/psauxmod.h: Use FT_CALLBACK_TABLE macro where necessary.
+
+	* src/smooth/ftsmooth.c (ft_smooth_render_generic): Fix warning.
+
+2017-12-07  Werner Lemberg  <wl@gnu.org>
+
+	Fix `make multi'.
+
+	* include/freetype/internal/fttrace.h: Remove unused tracing macros.
+	s/pshalgo2/pshalgo/.
+	Add `trace_cffdecode'.
+	* src/pshinter/pshalgo.c (FT_COMPONENT): Updated.
+
+	* src/cff/cffload.c: Include FT_INTERNAL_POSTSCRIPT_AUX_H.
+	* src/cff/cffobjs.c: Include FT_SERVICE_METRICS_VARIATIONS_H and
+	FT_SERVICE_CFF_TABLE_LOAD_H.
+
+	* src/cid/cidriver.c: Include FT_INTERNAL_POSTSCRIPT_AUX_H.
+
+	* src/psaux/cffdecode.c: Include FT_FREETYPE_H and
+	FT_INTERNAL_DEBUG_H.
+	(FT_COMPONENT): Define.
+	* src/psaux/cffdecode.h: Include FT_INTERNAL_POSTSCRIPT_AUX_H.
+	* src/psaux/psauxmod.h: Include FT_INTERNAL_POSTSCRIPT_AUX_H.
+	Declare `cff_builder_funcs' and `ps_builder_funcs'.
+	* src/psaux/psft.c: Include `psobjs.h' and `cffdecode.h'.
+	* src/psaux/psobjs.c : Include `psauxmod.h'.
+
+2017-12-07  Werner Lemberg  <wl@gnu.org>
+
+	* include/freetype/config/ftheader.h: Some clean-up.
+
+	This commit removes documentation of deprecated macros and does some
+	minor streamlining.
+
+2017-12-06  Werner Lemberg  <wl@gnu.org>
+
+	* builds/symbian/bld.inf: Updated.
+
+2017-12-06  Werner Lemberg  <wl@gnu.org>
+
+	New header file `ftparams.h' that collects all parameter tags.
+
+	* include/freetype/config/ftheader.h (FT_PARAMETER_TAGS_H): New
+	macro.
+	(FT_TRUETYPE_UNPATENTED_H, FT_UNPATENTED_HINTING_H): Define it to
+	`ftparams.h'.
+
+	* include/freetype/ftautoh.h, include/freetype/ftcffdrv.h,
+	include/freetype/ftincrem.h, include/freetype/ftlcdfil.h,
+	include/freetype/ftsnames.h, include/freetype/ftt1drv.h: Include
+	FT_PARAMETER_TAGS_H.
+	Move FT_PARAM_TAG_XXX definitions to...
+	* include/freetype/ftparams.h: ...this new file.
+
+	* include/freetype/ttunpat.h: Remove.  No longer needed.
+
+2017-12-05  Werner Lemberg  <wl@gnu.org>
+
+	Improve tracing messages by using singular and plural forms.
+
+	* src/*/*.c: Implement it.
+
+2017-12-04  Werner Lemberg  <wl@gnu.org>
+
+	[truetype] Allow shared points in `cvar' table (#52532).
+
+	* src/truetype/ttgxvar.c (tt_face_vary_cvt): Implement it by copying
+	and adjusting the corresponding code from
+	`TT_Vary_Apply_Glyph_Deltas'.
+
+2017-11-28  Werner Lemberg  <wl@gnu.org>
+
+	[truetype] Improving tracing of composite glyphs.
+
+	* src/truetype/ttgload.c (TT_Load_Composite_Glyph)
+	[FT_DEBUG_LEVEL_TRACE]: Show composite glyph information.
+
+2017-11-27  Werner Lemberg  <wl@gnu.org>
+
+	[type1] Allow (again) `/Encoding' with >256 elements (#52464).
+
+	In version 2.6.1, this has been disallowed to better reject
+	malformed fonts; however, this restriction was too strong.  This
+	time, we only take the first 256 elements into account, since
+	encoding arrays are always accessed with a 8bit integer, according
+	to the PostScript Language Reference.
+
+	* src/type1/t1load.c (parse_encoding): Implement it.
+
+2017-11-27  Jan Alexander Steffens (heftig)  <jan.steffens@gmail.com>
+
+	Fix last commit (#52522).
+
+	* builds/freetype.mk: Set `FT_OPTION_H' and `FTOPTION_FLAG'
+	properly if we have `ftoption.h' in `BUILD_DIR'.
+
+2017-11-24  Werner Lemberg  <wl@gnu.org>
+
+	[unix] Install a massaged `ftoption.h' file (#51780).
+
+	* builds/unix/configure.raw (ftoption_set, ftoption_unset): New
+	auxiliary functions to construct...
+	(FTOPTION_H_SED): ... this new variable.
+	Apply it as a sed argument while copying `ftoption.h' to the
+	`builds/unix' directory (using `AC_CONFIG_FILES').
+	Simplify code of test that checks cpp's computation of bit length
+	(the test previously created an empty `ftoption.h' file and deleted
+	it immediately afterwards); without this change, it can happen on my
+	GNU/Linux box that `configure's execution of `config.status' doesn't
+	create `ftoption.h' (no idea why this happens).
+
+	* builds/unix/install.mk (install): Install
+	`builds/unix/ftoption.h'.
+
+	* builds/unix/unix-def.in (DISTCLEAN): Updated.
+
+	* builds/unix/.gitignore: Updated.
+
+2017-11-23  Tor Andersson  <tor.andersson@artifex.com>
+
+	Silence unused function warnings (#52465).
+
+	Some static function declarations cause unused function warnings if
+	certain config options are turned off via `ftoption.h'.
+
+	* src/base/ftbase.h, src/base/ftrfork.c, src/sfnt/ttbdf.h,
+	src/truetype/ttgxvar.h: Add #ifdef guards around these sections.
+
 2017-11-22  Ewald Hew  <ewaldhew@gmail.com>
 
 	* src/psaux/psft.c (cf2_setGlyphWidth): Check format before setting.
@@ -2707,7 +3228,7 @@
 
 	Reported by Earnestly <zibeon@googlemail.com> in
 
-	  http://lists.nongnu.org/archive/html/freetype/2017-04/msg00031.html
+	  https://lists.nongnu.org/archive/html/freetype/2017-04/msg00031.html
 
 2017-04-27  Werner Lemberg  <wl@gnu.org>
 
@@ -3044,7 +3565,7 @@
 
 	Problem reported by 張俊芝 <418092625@qq.com> in
 
-	  http://lists.nongnu.org/archive/html/freetype-devel/2017-03/msg00074.html
+	  https://lists.nongnu.org/archive/html/freetype-devel/2017-03/msg00074.html
 
 2017-03-30  Werner Lemberg  <wl@gnu.org>
 
@@ -4422,7 +4943,7 @@
 
 ----------------------------------------------------------------------------
 
-Copyright 2016-2017 by
+Copyright 2016-2018 by
 David Turner, Robert Wilhelm, and Werner Lemberg.
 
 This file is part of the FreeType project, and may only be used, modified,

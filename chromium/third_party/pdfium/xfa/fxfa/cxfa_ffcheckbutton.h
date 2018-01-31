@@ -12,7 +12,7 @@
 
 class CXFA_FFCheckButton : public CXFA_FFField {
  public:
-  explicit CXFA_FFCheckButton(CXFA_WidgetAcc* pDataAcc);
+  explicit CXFA_FFCheckButton(CXFA_Node* pNode);
   ~CXFA_FFCheckButton() override;
 
   // CXFA_FFField
@@ -29,13 +29,14 @@ class CXFA_FFCheckButton : public CXFA_FFField {
   void OnProcessEvent(CFWL_Event* pEvent) override;
   void OnDrawWidget(CXFA_Graphics* pGraphics,
                     const CFX_Matrix& matrix) override;
+  FormFieldType GetFormFieldType() override;
 
   void SetFWLCheckState(XFA_CHECKSTATE eCheckState);
 
  private:
   bool CommitData() override;
   bool IsDataChanged() override;
-  void CapLeftRightPlacement(const CXFA_MarginData& captionMarginData);
+  void CapLeftRightPlacement(const CXFA_Margin* captionMargin);
   void AddUIMargin(XFA_AttributeEnum iCapPlacement);
   XFA_CHECKSTATE FWLState2XFAState();
 

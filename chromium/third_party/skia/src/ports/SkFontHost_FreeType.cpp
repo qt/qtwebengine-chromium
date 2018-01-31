@@ -46,7 +46,7 @@
 // Flag SK_FREETYPE_DLOPEN: also try dlopen to get newer features.
 #define SK_FREETYPE_DLOPEN (0x1)
 #ifndef SK_FREETYPE_MINIMUM_RUNTIME_VERSION
-#  if defined(SK_BUILD_FOR_ANDROID_FRAMEWORK) || defined (GOOGLE3)
+#  if defined(SK_BUILD_FOR_ANDROID_FRAMEWORK) || defined (SK_BUILD_FOR_GOOGLE3)
 #    define SK_FREETYPE_MINIMUM_RUNTIME_VERSION (((FREETYPE_MAJOR) << 24) | ((FREETYPE_MINOR) << 16) | ((FREETYPE_PATCH) << 8))
 #  else
 #    define SK_FREETYPE_MINIMUM_RUNTIME_VERSION ((2 << 24) | (3 << 16) | (11 << 8) | (SK_FREETYPE_DLOPEN))
@@ -1294,7 +1294,7 @@ void SkScalerContext_FreeType::generateFontMetrics(SkPaint::FontMetrics* metrics
     SkScalar x_height = 0.0f;
     SkScalar avgCharWidth = 0.0f;
     SkScalar cap_height = 0.0f;
-    SkScalar strikeoutThickness, strikeoutPosition;
+    SkScalar strikeoutThickness = 0.0f, strikeoutPosition = 0.0f;
     TT_OS2* os2 = (TT_OS2*) FT_Get_Sfnt_Table(face, ft_sfnt_os2);
     if (os2) {
         x_height = SkIntToScalar(os2->sxHeight) / upem * fScale.y();

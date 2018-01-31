@@ -25,7 +25,7 @@ namespace sw
 	public:
 		PixelProgram(const PixelProcessor::State &state, const PixelShader *shader) :
 			PixelRoutine(state, shader), r(shader && shader->dynamicallyIndexedTemporaries),
-			loopDepth(-1), ifDepth(0), loopRepDepth(0), breakDepth(0), currentLabel(-1), whileTest(false)
+			loopDepth(-1), ifDepth(0), loopRepDepth(0), currentLabel(-1), whileTest(false)
 		{
 			for(int i = 0; i < 2048; ++i)
 			{
@@ -82,8 +82,8 @@ namespace sw
 		Int4 enableContinue;
 		Int4 enableLeave;
 
-		void sampleTexture(Vector4f &c, const Src &sampler, Vector4f &uvwq, Vector4f &dsx, Vector4f &dsy, Vector4f &offset, SamplerFunction function);
-		void sampleTexture(Vector4f &c, int samplerIndex, Vector4f &uvwq, Vector4f &dsx, Vector4f &dsy, Vector4f &offset, SamplerFunction function);
+		Vector4f sampleTexture(const Src &sampler, Vector4f &uvwq, Float4 &bias, Vector4f &dsx, Vector4f &dsy, Vector4f &offset, SamplerFunction function);
+		Vector4f sampleTexture(int samplerIndex, Vector4f &uvwq, Float4 &bias, Vector4f &dsx, Vector4f &dsy, Vector4f &offset, SamplerFunction function);
 
 		// Raster operations
 		void clampColor(Vector4f oC[RENDERTARGETS]);
@@ -106,17 +106,18 @@ namespace sw
 		void M3X4(Vector4f &dst, Vector4f &src0, const Src &src1);
 		void M4X3(Vector4f &dst, Vector4f &src0, const Src &src1);
 		void M4X4(Vector4f &dst, Vector4f &src0, const Src &src1);
-		void TEXLD(Vector4f &dst, Vector4f &src0, const Src &src1, bool project, bool bias);
-		void TEXLDD(Vector4f &dst, Vector4f &src0, const Src &src1, Vector4f &src2, Vector4f &src3);
-		void TEXLDL(Vector4f &dst, Vector4f &src0, const Src &src1);
+		void TEX(Vector4f &dst, Vector4f &src0, const Src &src1, bool project, bool bias);
+		void TEXLOD(Vector4f &dst, Vector4f &src0, const Src &src1, Float4 &lod);
+		void TEXBIAS(Vector4f &dst, Vector4f &src0, const Src &src1, Float4 &bias);
 		void TEXSIZE(Vector4f &dst, Float4 &lod, const Src &src1);
 		void TEXKILL(Int cMask[4], Vector4f &src, unsigned char mask);
-		void TEXOFFSET(Vector4f &dst, Vector4f &src0, const Src &src1, Vector4f &src2, bool bias);
-		void TEXLDL(Vector4f &dst, Vector4f &src0, const Src &src1, Vector4f &src2, bool bias);
-		void TEXELFETCH(Vector4f &dst, Vector4f &src, const Src&);
-		void TEXELFETCH(Vector4f &dst, Vector4f &src, const Src&, Vector4f &src2);
-		void TEXGRAD(Vector4f &dst, Vector4f &src, const Src&, Vector4f &src2, Vector4f &src3);
-		void TEXGRAD(Vector4f &dst, Vector4f &src, const Src&, Vector4f &src2, Vector4f &src3, Vector4f &src4);
+		void TEXOFFSET(Vector4f &dst, Vector4f &src0, const Src &src1, Vector4f &offset);
+		void TEXOFFSETBIAS(Vector4f &dst, Vector4f &src0, const Src &src1, Vector4f &offset, Float4 &bias);
+		void TEXLODOFFSET(Vector4f &dst, Vector4f &src0, const Src &src1, Vector4f &offset, Float4 &lod);
+		void TEXELFETCH(Vector4f &dst, Vector4f &src, const Src &, Float4 &lod);
+		void TEXELFETCHOFFSET(Vector4f &dst, Vector4f &src, const Src &, Vector4f &offset, Float4 &lod);
+		void TEXGRAD(Vector4f &dst, Vector4f &src0, const Src &src1, Vector4f &dsx, Vector4f &dsy);
+		void TEXGRADOFFSET(Vector4f &dst, Vector4f &src, const Src &, Vector4f &dsx, Vector4f &dsy, Vector4f &offset);
 		void DISCARD(Int cMask[4], const Shader::Instruction *instruction);
 		void DFDX(Vector4f &dst, Vector4f &src);
 		void DFDY(Vector4f &dst, Vector4f &src);
@@ -152,7 +153,6 @@ namespace sw
 
 		int ifDepth;
 		int loopRepDepth;
-		int breakDepth;
 		int currentLabel;
 		bool whileTest;
 

@@ -21,6 +21,8 @@
 
 //#define TEST_VIA_SVG
 
+namespace skottie { class Animation; }
+
 namespace DM {
 
 // This is just convenience.  It lets you use either return "foo" or return SkStringPrintf(...).
@@ -259,6 +261,26 @@ public:
 private:
     Path fPath;
 };
+
+#if !defined(SK_BUILD_FOR_GOOGLE3)
+class SkottieSrc final : public Src {
+public:
+    explicit SkottieSrc(Path path);
+
+    Error draw(SkCanvas*) const override;
+    SkISize size() const override;
+    Name name() const override;
+    bool veto(SinkFlags) const override;
+
+private:
+    // Generates a kTileCount x kTileCount filmstrip with evenly distributed frames.
+    static constexpr int               kTileCount = 5;
+
+    Name                               fName;
+    SkISize                            fTileSize = SkISize::MakeEmpty();
+    std::unique_ptr<skottie::Animation> fAnimation;
+};
+#endif
 
 #if defined(SK_XML)
 } // namespace DM

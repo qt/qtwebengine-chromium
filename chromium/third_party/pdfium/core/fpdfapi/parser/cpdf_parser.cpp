@@ -394,9 +394,8 @@ bool CPDF_Parser::VerifyCrossRefV4() {
       // If the object number read doesn't match the one stored,
       // something is wrong with the cross reference table.
       return false;
-    } else {
-      return true;
     }
+    return true;
   }
   return true;
 }
@@ -1097,7 +1096,7 @@ bool CPDF_Parser::LoadCrossRefV5(FX_FILESIZE* pos, bool bMainXRef) {
 
   uint32_t totalWidth = dwAccWidth.ValueOrDie();
   auto pAcc = pdfium::MakeRetain<CPDF_StreamAcc>(pStream);
-  pAcc->LoadAllData();
+  pAcc->LoadAllDataFiltered();
 
   const uint8_t* pData = pAcc->GetData();
   uint32_t dwTotalSize = pAcc->GetSize();
@@ -1251,7 +1250,7 @@ RetainPtr<CPDF_StreamAcc> CPDF_Parser::GetObjectStream(uint32_t objnum) {
     return nullptr;
 
   auto pStreamAcc = pdfium::MakeRetain<CPDF_StreamAcc>(pStream);
-  pStreamAcc->LoadAllData();
+  pStreamAcc->LoadAllDataFiltered();
   m_ObjectStreamMap[objnum] = pStreamAcc;
   return pStreamAcc;
 }

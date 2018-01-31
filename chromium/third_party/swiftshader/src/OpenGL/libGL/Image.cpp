@@ -33,20 +33,20 @@ namespace gl
 			return texture->getResource();
 		}
 
-		return 0;
+		return nullptr;
 	}
 
 	Image::Image(Texture *parentTexture, GLsizei width, GLsizei height, GLenum format, GLenum type)
 		: parentTexture(parentTexture), width(width), height(height), format(format), type(type)
 		, internalFormat(selectInternalFormat(format, type)), multiSampleDepth(1)
-		, sw::Surface(getParentResource(parentTexture), width, height, 1, selectInternalFormat(format, type), true, true)
+		, sw::Surface(getParentResource(parentTexture), width, height, 1, 0, 1, selectInternalFormat(format, type), true, true)
 	{
 		referenceCount = 1;
 	}
 
 	Image::Image(Texture *parentTexture, GLsizei width, GLsizei height, sw::Format internalFormat, int multiSampleDepth, bool lockable, bool renderTarget)
 		: parentTexture(parentTexture), width(width), height(height), internalFormat(internalFormat), format(0 /*GL_NONE*/), type(0 /*GL_NONE*/), multiSampleDepth(multiSampleDepth)
-		, sw::Surface(getParentResource(parentTexture), width, height, multiSampleDepth, internalFormat, lockable, renderTarget)
+		, sw::Surface(getParentResource(parentTexture), width, height, 1, 0, multiSampleDepth, internalFormat, lockable, renderTarget)
 	{
 		referenceCount = 1;
 	}
@@ -141,7 +141,7 @@ namespace gl
 
 	void Image::unbind()
 	{
-		parentTexture = 0;
+		parentTexture = nullptr;
 
 		release();
 	}

@@ -79,7 +79,7 @@ void GrAtlasTextBlob::appendGlyph(int runIndex,
 
     // If the glyph is too large we fall back to paths
     if (glyph->fTooLargeForAtlas) {
-        this->appendLargeGlyph(glyph, cache, skGlyph, x, y, scale, treatAsBMP);
+        this->appendBigGlyph(glyph, cache, skGlyph, x, y, scale, treatAsBMP);
         return;
     }
 
@@ -96,7 +96,13 @@ void GrAtlasTextBlob::appendGlyph(int runIndex,
 
     run.fInitialized = true;
 
-    size_t vertexStride = GetVertexStride(format);
+    bool hasW = subRun->hasWCoord();
+    // DF glyphs drawn in perspective must always have a w coord.
+    SkASSERT(hasW || !subRun->drawAsDistanceFields() || !fInitialViewMatrix.hasPerspective());
+    // Non-DF glyphs should never have a w coord.
+    SkASSERT(!hasW || subRun->drawAsDistanceFields());
+
+    size_t vertexStride = GetVertexStride(format, hasW);
 
     subRun->setMaskFormat(format);
 
@@ -105,59 +111,35 @@ void GrAtlasTextBlob::appendGlyph(int runIndex,
 
     intptr_t vertex = reinterpret_cast<intptr_t>(this->fVertices + subRun->vertexEndIndex());
 
-    if (kARGB_GrMaskFormat != glyph->fMaskFormat) {
-        // V0
-        SkPoint* position = reinterpret_cast<SkPoint*>(vertex);
-        position->set(positions.fLeft, positions.fTop);
-        SkColor* colorPtr = reinterpret_cast<SkColor*>(vertex + sizeof(SkPoint));
-        *colorPtr = color;
-        vertex += vertexStride;
+    // We always write the third position component used by SDFs. If it is unused it gets
+    // overwritten. Similarly, we always write the color and the blob will later overwrite it
+    // with texture coords if it is unused.
+    size_t colorOffset = hasW ? sizeof(SkPoint3) : sizeof(SkPoint);
+    // V0
+    *reinterpret_cast<SkPoint3*>(vertex) = {positions.fLeft, positions.fTop, 1.f};
+    *reinterpret_cast<GrColor*>(vertex + colorOffset) = color;
+    vertex += vertexStride;
 
-        // V1
-        position = reinterpret_cast<SkPoint*>(vertex);
-        position->set(positions.fLeft, positions.fBottom);
-        colorPtr = reinterpret_cast<SkColor*>(vertex + sizeof(SkPoint));
-        *colorPtr = color;
-        vertex += vertexStride;
+    // V1
+    *reinterpret_cast<SkPoint3*>(vertex) = {positions.fLeft, positions.fBottom, 1.f};
+    *reinterpret_cast<GrColor*>(vertex + colorOffset) = color;
+    vertex += vertexStride;
 
-        // V2
-        position = reinterpret_cast<SkPoint*>(vertex);
-        position->set(positions.fRight, positions.fTop);
-        colorPtr = reinterpret_cast<SkColor*>(vertex + sizeof(SkPoint));
-        *colorPtr = color;
-        vertex += vertexStride;
+    // V2
+    *reinterpret_cast<SkPoint3*>(vertex) = {positions.fRight, positions.fTop, 1.f};
+    *reinterpret_cast<GrColor*>(vertex + colorOffset) = color;
+    vertex += vertexStride;
 
-        // V3
-        position = reinterpret_cast<SkPoint*>(vertex);
-        position->set(positions.fRight, positions.fBottom);
-        colorPtr = reinterpret_cast<SkColor*>(vertex + sizeof(SkPoint));
-        *colorPtr = color;
-    } else {
-        // V0
-        SkPoint* position = reinterpret_cast<SkPoint*>(vertex);
-        position->set(positions.fLeft, positions.fTop);
-        vertex += vertexStride;
+    // V3
+    *reinterpret_cast<SkPoint3*>(vertex) = {positions.fRight, positions.fBottom, 1.f};
+    *reinterpret_cast<GrColor*>(vertex + colorOffset) = color;
 
-        // V1
-        position = reinterpret_cast<SkPoint*>(vertex);
-        position->set(positions.fLeft, positions.fBottom);
-        vertex += vertexStride;
-
-        // V2
-        position = reinterpret_cast<SkPoint*>(vertex);
-        position->set(positions.fRight, positions.fTop);
-        vertex += vertexStride;
-
-        // V3
-        position = reinterpret_cast<SkPoint*>(vertex);
-        position->set(positions.fRight, positions.fBottom);
-    }
     subRun->appendVertices(vertexStride);
     fGlyphs[subRun->glyphEndIndex()] = glyph;
     subRun->glyphAppended();
 }
 
-void GrAtlasTextBlob::appendLargeGlyph(GrGlyph* glyph, SkGlyphCache* cache, const SkGlyph& skGlyph,
+void GrAtlasTextBlob::appendBigGlyph(GrGlyph* glyph, SkGlyphCache* cache, const SkGlyph& skGlyph,
                                        SkScalar x, SkScalar y, SkScalar scale, bool treatAsBMP) {
     if (nullptr == glyph->fPath) {
         const SkPath* glyphPath = cache->findPath(skGlyph);
@@ -185,6 +167,7 @@ bool GrAtlasTextBlob::mustRegenerate(const GrTextUtils::Paint& paint,
         return true;
     }
 
+    /** This could be relaxed for blobs with only distance field glyphs. */
     if (fInitialViewMatrix.hasPerspective() && !fInitialViewMatrix.cheapEqualTo(viewMatrix)) {
         return true;
     }
@@ -384,11 +367,11 @@ void GrAtlasTextBlob::flushBigGlyphs(GrContext* context, GrTextUtils::Target* ta
     }
 }
 
-void GrAtlasTextBlob::flushRunAsPaths(GrContext* context, GrTextUtils::Target* target,
-                                      const SkSurfaceProps& props, const SkTextBlobRunIterator& it,
-                                      const GrClip& clip, const GrTextUtils::Paint& paint,
-                                      SkDrawFilter* drawFilter, const SkMatrix& viewMatrix,
-                                      const SkIRect& clipBounds, SkScalar x, SkScalar y) {
+void GrAtlasTextBlob::flushBigRun(GrContext* context, GrTextUtils::Target* target,
+                                    const SkSurfaceProps& props, const SkTextBlobRunIterator& it,
+                                    const GrClip& clip, const GrTextUtils::Paint& paint,
+                                    SkDrawFilter* drawFilter, const SkMatrix& viewMatrix,
+                                    const SkIRect& clipBounds, SkScalar x, SkScalar y) {
     size_t textLen = it.glyphCount() * sizeof(uint16_t);
     const SkPoint& offset = it.offset();
 
@@ -399,19 +382,19 @@ void GrAtlasTextBlob::flushRunAsPaths(GrContext* context, GrTextUtils::Target* t
 
     switch (it.positioning()) {
         case SkTextBlob::kDefault_Positioning:
-            GrTextUtils::DrawTextAsPath(context, target, clip, runPaint, viewMatrix,
-                                        (const char*)it.glyphs(), textLen, x + offset.x(),
-                                        y + offset.y(), clipBounds);
+            GrTextUtils::DrawBigText(context, target, clip, runPaint, viewMatrix,
+                                     (const char*)it.glyphs(), textLen, x + offset.x(),
+                                     y + offset.y(), clipBounds);
             break;
         case SkTextBlob::kHorizontal_Positioning:
-            GrTextUtils::DrawPosTextAsPath(context, target, props, clip, runPaint, viewMatrix,
-                                           (const char*)it.glyphs(), textLen, it.pos(), 1,
-                                           SkPoint::Make(x, y + offset.y()), clipBounds);
+            GrTextUtils::DrawBigPosText(context, target, props, clip, runPaint, viewMatrix,
+                                        (const char*)it.glyphs(), textLen, it.pos(), 1,
+                                        SkPoint::Make(x, y + offset.y()), clipBounds);
             break;
         case SkTextBlob::kFull_Positioning:
-            GrTextUtils::DrawPosTextAsPath(context, target, props, clip, runPaint, viewMatrix,
-                                           (const char*)it.glyphs(), textLen, it.pos(), 2,
-                                           SkPoint::Make(x, y), clipBounds);
+            GrTextUtils::DrawBigPosText(context, target, props, clip, runPaint, viewMatrix,
+                                        (const char*)it.glyphs(), textLen, it.pos(), 2,
+                                        SkPoint::Make(x, y), clipBounds);
             break;
     }
 }
@@ -426,9 +409,9 @@ void GrAtlasTextBlob::flushCached(GrContext* context, GrTextUtils::Target* targe
     // it as paths
     SkTextBlobRunIterator it(blob);
     for (int run = 0; !it.done(); it.next(), run++) {
-        if (fRuns[run].fDrawAsPaths) {
-            this->flushRunAsPaths(context, target, props, it, clip, paint, drawFilter, viewMatrix,
-                                  clipBounds, x, y);
+        if (fRuns[run].fTooBigForAtlas) {
+            this->flushBigRun(context, target, props, it, clip, paint, drawFilter, viewMatrix,
+                              clipBounds, x, y);
             continue;
         }
         this->flushRun(target, clip, run, viewMatrix, x, y, paint, props, distanceAdjustTable,
@@ -521,7 +504,7 @@ void GrAtlasTextBlob::AssertEqual(const GrAtlasTextBlob& l, const GrAtlasTextBlo
         // color can be changed
         //SkASSERT(lRun.fColor == rRun.fColor);
         SkASSERT_RELEASE(lRun.fInitialized == rRun.fInitialized);
-        SkASSERT_RELEASE(lRun.fDrawAsPaths == rRun.fDrawAsPaths);
+        SkASSERT_RELEASE(lRun.fTooBigForAtlas == rRun.fTooBigForAtlas);
 
         SkASSERT_RELEASE(lRun.fSubRunInfo.count() == rRun.fSubRunInfo.count());
         for(int j = 0; j < lRun.fSubRunInfo.count(); j++) {

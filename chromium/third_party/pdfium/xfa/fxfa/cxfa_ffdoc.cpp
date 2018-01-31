@@ -21,6 +21,7 @@
 #include "core/fxcrt/fx_memory.h"
 #include "core/fxcrt/xml/cfx_xmlelement.h"
 #include "core/fxcrt/xml/cfx_xmlnode.h"
+#include "fxjs/xfa/cjx_object.h"
 #include "third_party/base/ptr_util.h"
 #include "xfa/fwl/cfwl_notedriver.h"
 #include "xfa/fxfa/cxfa_ffapp.h"
@@ -28,9 +29,12 @@
 #include "xfa/fxfa/cxfa_ffnotify.h"
 #include "xfa/fxfa/cxfa_ffwidget.h"
 #include "xfa/fxfa/cxfa_fontmgr.h"
+#include "xfa/fxfa/parser/cxfa_acrobat.h"
+#include "xfa/fxfa/parser/cxfa_acrobat7.h"
 #include "xfa/fxfa/parser/cxfa_dataexporter.h"
 #include "xfa/fxfa/parser/cxfa_dataimporter.h"
 #include "xfa/fxfa/parser/cxfa_document.h"
+#include "xfa/fxfa/parser/cxfa_dynamicrender.h"
 #include "xfa/fxfa/parser/cxfa_node.h"
 
 namespace {
@@ -155,12 +159,7 @@ int32_t Base64DecodeW(const wchar_t* pSrc, int32_t iSrcLen, uint8_t* pDst) {
 }  // namespace
 
 CXFA_FFDoc::CXFA_FFDoc(CXFA_FFApp* pApp, IXFA_DocEnvironment* pDocEnvironment)
-    : m_pDocEnvironment(pDocEnvironment),
-      m_pDocumentParser(nullptr),
-      m_pApp(pApp),
-      m_pNotify(nullptr),
-      m_pPDFDoc(nullptr),
-      m_FormType(FormType::kXFAForeground) {}
+    : m_pDocEnvironment(pDocEnvironment), m_pApp(pApp) {}
 
 CXFA_FFDoc::~CXFA_FFDoc() {
   CloseDoc();
@@ -216,15 +215,14 @@ bool XFA_GetPDFContentsFromPDFXML(CFX_XMLNode* pPDFElement,
   return true;
 }
 void XFA_XPDPacket_MergeRootNode(CXFA_Node* pOriginRoot, CXFA_Node* pNewRoot) {
-  CXFA_Node* pChildNode = pNewRoot->GetNodeItem(XFA_NODEITEM_FirstChild);
+  CXFA_Node* pChildNode = pNewRoot->GetFirstChild();
   while (pChildNode) {
     CXFA_Node* pOriginChild =
         pOriginRoot->GetFirstChildByName(pChildNode->GetNameHash());
     if (pOriginChild) {
-      pChildNode = pChildNode->GetNodeItem(XFA_NODEITEM_NextSibling);
+      pChildNode = pChildNode->GetNextSibling();
     } else {
-      CXFA_Node* pNextSibling =
-          pChildNode->GetNodeItem(XFA_NODEITEM_NextSibling);
+      CXFA_Node* pNextSibling = pChildNode->GetNextSibling();
       pNewRoot->RemoveChild(pChildNode, true);
       pOriginRoot->InsertChild(pChildNode, nullptr);
       pChildNode = pNextSibling;
@@ -250,20 +248,23 @@ void CXFA_FFDoc::StopLoad() {
   if (!pConfig)
     return;
 
-  CXFA_Node* pAcrobat = pConfig->GetFirstChildByClass(XFA_Element::Acrobat);
+  CXFA_Acrobat* pAcrobat =
+      pConfig->GetFirstChildByClass<CXFA_Acrobat>(XFA_Element::Acrobat);
   if (!pAcrobat)
     return;
 
-  CXFA_Node* pAcrobat7 = pAcrobat->GetFirstChildByClass(XFA_Element::Acrobat7);
+  CXFA_Acrobat7* pAcrobat7 =
+      pAcrobat->GetFirstChildByClass<CXFA_Acrobat7>(XFA_Element::Acrobat7);
   if (!pAcrobat7)
     return;
 
-  CXFA_Node* pDynamicRender =
-      pAcrobat7->GetFirstChildByClass(XFA_Element::DynamicRender);
+  CXFA_DynamicRender* pDynamicRender =
+      pAcrobat7->GetFirstChildByClass<CXFA_DynamicRender>(
+          XFA_Element::DynamicRender);
   if (!pDynamicRender)
     return;
 
-  WideString wsType = pDynamicRender->JSNode()->GetContent(false);
+  WideString wsType = pDynamicRender->JSObject()->GetContent(false);
   if (wsType == L"required")
     m_FormType = FormType::kXFAFull;
 }
@@ -328,6 +329,7 @@ void CXFA_FFDoc::CloseDoc() {
   if (doc)
     doc->ClearLayoutData();
 
+  m_pDocumentParser.reset();
   m_pNotify.reset();
   m_pPDFFontMgr.reset();
   m_HashToDibDpiMap.clear();
@@ -379,7 +381,7 @@ RetainPtr<CFX_DIBitmap> CXFA_FFDoc::GetPDFNamedImage(
     return nullptr;
 
   auto pAcc = pdfium::MakeRetain<CPDF_StreamAcc>(pStream);
-  pAcc->LoadAllData();
+  pAcc->LoadAllDataFiltered();
 
   RetainPtr<IFX_SeekableStream> pImageFileRead =
       pdfium::MakeRetain<CFX_MemoryStream>(

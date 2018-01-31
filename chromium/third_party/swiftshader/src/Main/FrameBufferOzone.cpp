@@ -18,9 +18,9 @@ namespace sw
 {
 	FrameBufferOzone::FrameBufferOzone(intptr_t display, intptr_t window, int width, int height) : FrameBuffer(width, height, false, false)
 	{
-		buffer = sw::Surface::create(width, height, 1, destFormat, nullptr,
-		                             sw::Surface::pitchB(width, destFormat, true),
-		                             sw::Surface::sliceB(width, height, destFormat, true));
+		buffer = sw::Surface::create(width, height, 1, format, nullptr,
+		                             sw::Surface::pitchB(width, 0, format, true),
+		                             sw::Surface::sliceB(width, height, 0, format, true));
 	}
 
 	FrameBufferOzone::~FrameBufferOzone()
@@ -30,21 +30,21 @@ namespace sw
 
 	void *FrameBufferOzone::lock()
 	{
-		locked = buffer->lockInternal(0, 0, 0, sw::LOCK_READWRITE, sw::PUBLIC);
+		framebuffer = buffer->lockInternal(0, 0, 0, sw::LOCK_READWRITE, sw::PUBLIC);
 
-		return locked;
+		return framebuffer;
 	}
 
 	void FrameBufferOzone::unlock()
 	{
 		buffer->unlockInternal();
 
-		locked = nullptr;
+		framebuffer = nullptr;
 	}
 
-	void FrameBufferOzone::blit(void *source, const Rect *sourceRect, const Rect *destRect, Format sourceFormat, size_t sourceStride)
+	void FrameBufferOzone::blit(sw::Surface *source, const Rect *sourceRect, const Rect *destRect)
 	{
-		copy(source, sourceFormat, sourceStride);
+		copy(source);
 	}
 }
 

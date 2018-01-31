@@ -103,6 +103,7 @@ void InsertBuiltInFunctions(GLenum type, const ShBuiltInResources &resources, TS
 	symbolTable.insertBuiltIn(ESSL3_BUILTINS, EOpClamp, genUType, "clamp", genUType, genUType, genUType);
 	symbolTable.insertBuiltIn(COMMON_BUILTINS, EOpMix, genType, "mix", genType, genType, float1);
 	symbolTable.insertBuiltIn(COMMON_BUILTINS, EOpMix, genType, "mix", genType, genType, genType);
+	symbolTable.insertBuiltIn(COMMON_BUILTINS, EOpMix, genType, "mix", genType, genType, genBType);
 	symbolTable.insertBuiltIn(COMMON_BUILTINS, EOpStep, genType, "step", genType, genType);
 	symbolTable.insertBuiltIn(COMMON_BUILTINS, EOpStep, genType, "step", float1, genType);
 	symbolTable.insertBuiltIn(COMMON_BUILTINS, EOpSmoothStep, genType, "smoothstep", genType, genType, genType);
@@ -427,10 +428,10 @@ void InsertBuiltInFunctions(GLenum type, const ShBuiltInResources &resources, TS
 	fields->push_back(diff);
 	TStructure *depthRangeStruct = new TStructure(NewPoolTString("gl_DepthRangeParameters"), fields);
 	TVariable *depthRangeParameters = new TVariable(&depthRangeStruct->name(), depthRangeStruct, true);
-	symbolTable.insert(COMMON_BUILTINS, *depthRangeParameters);
+	symbolTable.insert(COMMON_BUILTINS, depthRangeParameters);
 	TVariable *depthRange = new TVariable(NewPoolTString("gl_DepthRange"), TType(depthRangeStruct));
 	depthRange->setQualifier(EvqUniform);
-	symbolTable.insert(COMMON_BUILTINS, *depthRange);
+	symbolTable.insert(COMMON_BUILTINS, depthRange);
 
 	//
 	// Implementation dependent built-in constants.
@@ -460,18 +461,18 @@ void IdentifyBuiltIns(GLenum shaderType,
 	switch(shaderType)
 	{
 	case GL_FRAGMENT_SHADER:
-		symbolTable.insert(COMMON_BUILTINS, *new TVariable(NewPoolTString("gl_FragCoord"), TType(EbtFloat, EbpMedium, EvqFragCoord,   4)));
-		symbolTable.insert(COMMON_BUILTINS, *new TVariable(NewPoolTString("gl_FrontFacing"), TType(EbtBool,  EbpUndefined, EvqFrontFacing, 1)));
-		symbolTable.insert(COMMON_BUILTINS, *new TVariable(NewPoolTString("gl_PointCoord"), TType(EbtFloat, EbpMedium, EvqPointCoord,  2)));
-		symbolTable.insert(ESSL1_BUILTINS, *new TVariable(NewPoolTString("gl_FragColor"), TType(EbtFloat, EbpMedium, EvqFragColor,   4)));
-		symbolTable.insert(ESSL1_BUILTINS, *new TVariable(NewPoolTString("gl_FragData[gl_MaxDrawBuffers]"), TType(EbtFloat, EbpMedium, EvqFragData,    4)));
-		symbolTable.insert(ESSL3_BUILTINS, *new TVariable(NewPoolTString("gl_FragDepth"), TType(EbtFloat, EbpHigh, EvqFragDepth, 1)));
+		symbolTable.insert(COMMON_BUILTINS, new TVariable(NewPoolTString("gl_FragCoord"), TType(EbtFloat, EbpMedium, EvqFragCoord,   4)));
+		symbolTable.insert(COMMON_BUILTINS, new TVariable(NewPoolTString("gl_FrontFacing"), TType(EbtBool,  EbpUndefined, EvqFrontFacing, 1)));
+		symbolTable.insert(COMMON_BUILTINS, new TVariable(NewPoolTString("gl_PointCoord"), TType(EbtFloat, EbpMedium, EvqPointCoord,  2)));
+		symbolTable.insert(ESSL1_BUILTINS, new TVariable(NewPoolTString("gl_FragColor"), TType(EbtFloat, EbpMedium, EvqFragColor,   4)));
+		symbolTable.insert(ESSL1_BUILTINS, new TVariable(NewPoolTString("gl_FragData[gl_MaxDrawBuffers]"), TType(EbtFloat, EbpMedium, EvqFragData,    4)));
+		symbolTable.insert(ESSL3_BUILTINS, new TVariable(NewPoolTString("gl_FragDepth"), TType(EbtFloat, EbpHigh, EvqFragDepth, 1)));
 		break;
 	case GL_VERTEX_SHADER:
-		symbolTable.insert(COMMON_BUILTINS, *new TVariable(NewPoolTString("gl_Position"), TType(EbtFloat, EbpHigh, EvqPosition,    4)));
-		symbolTable.insert(COMMON_BUILTINS, *new TVariable(NewPoolTString("gl_PointSize"), TType(EbtFloat, EbpMedium, EvqPointSize,   1)));
-		symbolTable.insert(ESSL3_BUILTINS, *new TVariable(NewPoolTString("gl_InstanceID"), TType(EbtInt, EbpHigh, EvqInstanceID, 1)));
-		symbolTable.insert(ESSL3_BUILTINS, *new TVariable(NewPoolTString("gl_VertexID"), TType(EbtInt, EbpHigh, EvqVertexID, 1)));
+		symbolTable.insert(COMMON_BUILTINS, new TVariable(NewPoolTString("gl_Position"), TType(EbtFloat, EbpHigh, EvqPosition,    4)));
+		symbolTable.insert(COMMON_BUILTINS, new TVariable(NewPoolTString("gl_PointSize"), TType(EbtFloat, EbpMedium, EvqPointSize,   1)));
+		symbolTable.insert(ESSL3_BUILTINS, new TVariable(NewPoolTString("gl_InstanceID"), TType(EbtInt, EbpHigh, EvqInstanceID, 1)));
+		symbolTable.insert(ESSL3_BUILTINS, new TVariable(NewPoolTString("gl_VertexID"), TType(EbtInt, EbpHigh, EvqVertexID, 1)));
 		break;
 	default: assert(false && "Language not supported");
 	}
@@ -484,7 +485,7 @@ void IdentifyBuiltIns(GLenum shaderType,
 			// Set up gl_FragData.  The array size.
 			TType fragData(EbtFloat, EbpMedium, EvqFragData, 4, 1, true);
 			fragData.setArraySize(resources.MaxDrawBuffers);
-			symbolTable.insert(ESSL1_BUILTINS, *new TVariable(NewPoolTString("gl_FragData"), fragData));
+			symbolTable.insert(ESSL1_BUILTINS, new TVariable(NewPoolTString("gl_FragData"), fragData));
 		}
 		break;
 	default: break;

@@ -47,9 +47,8 @@ class Gpu : public gpu::GpuChannelEstablishFactory {
 
   // gpu::GpuChannelEstablishFactory:
   void EstablishGpuChannel(
-      const gpu::GpuChannelEstablishedCallback& callback) override;
-  scoped_refptr<gpu::GpuChannelHost> EstablishGpuChannelSync(
-      bool* connection_error) override;
+      gpu::GpuChannelEstablishedCallback callback) override;
+  scoped_refptr<gpu::GpuChannelHost> EstablishGpuChannelSync() override;
   gpu::GpuMemoryBufferManager* GetGpuMemoryBufferManager() override;
 
   void LoseChannel();
@@ -58,7 +57,9 @@ class Gpu : public gpu::GpuChannelEstablishFactory {
  private:
   friend class GpuTest;
 
+  class GpuPtrIO;
   class EstablishRequest;
+
   using GpuPtrFactory = base::RepeatingCallback<mojom::GpuPtr(void)>;
 
   Gpu(GpuPtrFactory factory,
@@ -76,7 +77,7 @@ class Gpu : public gpu::GpuChannelEstablishFactory {
   scoped_refptr<base::SingleThreadTaskRunner> io_task_runner_;
   std::unique_ptr<ClientGpuMemoryBufferManager> gpu_memory_buffer_manager_;
 
-  scoped_refptr<ui::mojom::ThreadSafeGpuPtr> gpu_;
+  std::unique_ptr<GpuPtrIO, base::OnTaskRunnerDeleter> gpu_;
   scoped_refptr<EstablishRequest> pending_request_;
   scoped_refptr<gpu::GpuChannelHost> gpu_channel_;
   std::vector<gpu::GpuChannelEstablishedCallback> establish_callbacks_;

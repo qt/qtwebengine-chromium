@@ -22,6 +22,7 @@
 #include "content/public/test/content_browser_test.h"
 #include "content/public/test/content_browser_test_utils.h"
 #include "content/public/test/test_service.mojom.h"
+#include "content/public/test/test_utils.h"
 #include "content/shell/browser/shell.h"
 #include "content/shell/browser/shell_browser_context.h"
 #include "content/shell/browser/shell_browser_main_parts.h"
@@ -43,8 +44,7 @@ namespace content {
 namespace {
 
 int RenderProcessHostCount() {
-  content::RenderProcessHost::iterator hosts =
-      content::RenderProcessHost::AllHostsIterator();
+  RenderProcessHost::iterator hosts = RenderProcessHost::AllHostsIterator();
   int count = 0;
   while (!hosts.IsAtEnd()) {
     if (hosts.GetCurrentValue()->HasConnection())
@@ -74,7 +74,9 @@ class RenderProcessHostTest : public ContentBrowserTest,
   RenderProcessHostTest() : process_exits_(0), host_destructions_(0) {}
 
   void SetUpCommandLine(base::CommandLine* command_line) override {
-    command_line->AppendSwitch(switches::kIgnoreAutoplayRestrictionsForTests);
+    command_line->AppendSwitchASCII(
+        switches::kAutoplayPolicy,
+        switches::autoplay::kNoUserGestureRequiredPolicy);
     // These flags are necessary to emulate camera input for getUserMedia()
     // tests.
     command_line->AppendSwitch(switches::kUseFakeDeviceForMediaStream);
@@ -185,7 +187,7 @@ IN_PROC_BROWSER_TEST_F(RenderProcessHostTest,
 IN_PROC_BROWSER_TEST_F(RenderProcessHostTest,
                        GuestsAreNotSuitableHosts) {
   // Set max renderers to 1 to force running out of processes.
-  content::RenderProcessHost::SetMaxRendererProcessCount(1);
+  RenderProcessHost::SetMaxRendererProcessCount(1);
 
   ASSERT_TRUE(embedded_test_server()->Start());
 
@@ -350,7 +352,7 @@ IN_PROC_BROWSER_TEST_F(RenderProcessHostTest, SpareRendererOnProcessReuse) {
       base::WaitableEvent::ResetPolicy::MANUAL,
       base::WaitableEvent::InitialState::NOT_SIGNALED);
   BrowserThread::PostTask(
-      content::BrowserThread::PROCESS_LAUNCHER, FROM_HERE,
+      BrowserThread::PROCESS_LAUNCHER, FROM_HERE,
       base::BindOnce([](base::WaitableEvent* done) { done->Signal(); },
                      base::Unretained(&launcher_thread_done)));
   ASSERT_TRUE(launcher_thread_done.TimedWait(TestTimeouts::action_timeout()));

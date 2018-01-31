@@ -21,6 +21,7 @@ class CPDF_ContentMark {
   CPDF_ContentMark(const CPDF_ContentMark& that);
   ~CPDF_ContentMark();
 
+  int GetMarkedContentID() const;
   size_t CountItems() const;
   const CPDF_ContentMarkItem& GetItem(size_t i) const;
 
@@ -30,15 +31,16 @@ class CPDF_ContentMark {
   bool HasRef() const { return !!m_Ref; }
 
  private:
-  class MarkData {
+  class MarkData : public Retainable {
    public:
     MarkData();
     MarkData(const MarkData& src);
-    ~MarkData();
+    ~MarkData() override;
 
     size_t CountItems() const;
     const CPDF_ContentMarkItem& GetItem(size_t index) const;
 
+    int GetMarkedContentID() const;
     void AddMark(const ByteString& name,
                  CPDF_Dictionary* pDict,
                  bool bDictNeedClone);

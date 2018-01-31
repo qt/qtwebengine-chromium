@@ -125,8 +125,13 @@ class Surface : public gl::FramebufferAttachmentObject
 
     bool isRobustResourceInitEnabled() const { return mRobustResourceInitialization; }
 
+    const gl::Format &getBindTexImageFormat() const { return mColorFormat; }
+
   protected:
-    Surface(EGLint surfaceType, const egl::Config *config, const AttributeMap &attributes);
+    Surface(EGLint surfaceType,
+            const egl::Config *config,
+            const AttributeMap &attributes,
+            EGLenum buftype = EGL_NONE);
     ~Surface() override;
     rx::FramebufferAttachmentObjectImpl *getAttachmentImpl() const override;
 
@@ -142,6 +147,7 @@ class Surface : public gl::FramebufferAttachmentObject
     bool mDestroyed;
 
     EGLint mType;
+    EGLenum mBuftype;
 
     bool mPostSubBufferRequested;
     bool mFlexibleSurfaceCompatibilityRequested;
@@ -175,7 +181,7 @@ class Surface : public gl::FramebufferAttachmentObject
 
     gl::BindingPointer<gl::Texture> mTexture;
 
-    gl::Format mBackFormat;
+    gl::Format mColorFormat;
     gl::Format mDSFormat;
 
   private:

@@ -30,6 +30,7 @@
 #include "core/fxcodec/fx_codec.h"
 #include "core/fxcrt/cfx_fixedbufgrow.h"
 #include "core/fxcrt/fx_safe_types.h"
+#include "core/fxge/dib/cfx_dibitmap.h"
 #include "third_party/base/ptr_util.h"
 
 namespace {
@@ -328,7 +329,7 @@ int CPDF_DIBSource::ContinueLoadDIBSource(IFX_PauseIndicator* pPause) {
           m_pStreamAcc->GetImageParam()->GetStreamFor("JBIG2Globals");
       if (pGlobals) {
         m_pGlobalStream = pdfium::MakeRetain<CPDF_StreamAcc>(pGlobals);
-        m_pGlobalStream->LoadAllData(false);
+        m_pGlobalStream->LoadAllDataFiltered();
       }
     }
     iDecodeStatus = pJbig2Module->StartDecode(

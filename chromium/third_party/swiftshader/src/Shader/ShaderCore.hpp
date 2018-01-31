@@ -82,6 +82,7 @@ namespace sw
 	Float4 dot4(const Vector4f &v0, const Vector4f &v1);
 
 	void transpose4x4(Short4 &row0, Short4 &row1, Short4 &row2, Short4 &row3);
+	void transpose4x3(Short4 &row0, Short4 &row1, Short4 &row2, Short4 &row3);
 	void transpose4x4(Float4 &row0, Float4 &row1, Float4 &row2, Float4 &row3);
 	void transpose4x3(Float4 &row0, Float4 &row1, Float4 &row2, Float4 &row3);
 	void transpose4x2(Float4 &row0, Float4 &row1, Float4 &row2, Float4 &row3);
@@ -282,6 +283,8 @@ namespace sw
 		void lit(Vector4f &dst, const Vector4f &src);
 		void att(Vector4f &dst, const Vector4f &src0, const Vector4f &src1);
 		void lrp(Vector4f &dst, const Vector4f &src0, const Vector4f &src1, const Vector4f &src2);
+		void isinf(Vector4f &dst, const Vector4f &src);
+		void isnan(Vector4f &dst, const Vector4f &src);
 		void smooth(Vector4f &dst, const Vector4f &src0, const Vector4f &src1, const Vector4f &src2);
 		void packHalf2x16(Vector4f &dst, const Vector4f &src);
 		void unpackHalf2x16(Vector4f &dst, const Vector4f &src);
@@ -331,8 +334,8 @@ namespace sw
 		void acosh(Vector4f &dst, const Vector4f &src, bool pp = false);
 		void asinh(Vector4f &dst, const Vector4f &src, bool pp = false);
 		void atanh(Vector4f &dst, const Vector4f &src, bool pp = false);
-		void expp(Vector4f &dst, const Vector4f &src, unsigned short version);
-		void logp(Vector4f &dst, const Vector4f &src, unsigned short version);
+		void expp(Vector4f &dst, const Vector4f &src, unsigned short shaderModel);
+		void logp(Vector4f &dst, const Vector4f &src, unsigned short shaderModel);
 		void cmp0(Vector4f &dst, const Vector4f &src0, const Vector4f &src1, const Vector4f &src2);
 		void cmp(Vector4f &dst, const Vector4f &src0, const Vector4f &src1, Control control);
 		void icmp(Vector4f &dst, const Vector4f &src0, const Vector4f &src1, Control control);

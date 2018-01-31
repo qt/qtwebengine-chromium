@@ -56,15 +56,15 @@ void CPWL_Edit::SetText(const WideString& csText) {
   swText.clear();
 
   bool bFirst = true;
-  int32_t nCount = pXML->CountChildren();
-  for (int32_t i = 0; i < nCount; i++) {
+  size_t nCount = pXML->CountChildren();
+  for (size_t i = 0; i < nCount; ++i) {
     CXML_Element* pSubElement = ToElement(pXML->GetChild(i));
     if (!pSubElement || !pSubElement->GetTagName().EqualNoCase("p"))
       continue;
 
     WideString swSection;
-    int nSubChild = pSubElement->CountChildren();
-    for (int32_t j = 0; j < nSubChild; j++) {
+    size_t nSubChild = pSubElement->CountChildren();
+    for (size_t j = 0; j < nSubChild; ++j) {
       CXML_Content* pSubContent = ToContent(pSubElement->GetChild(j));
       if (pSubContent)
         swSection += pSubContent->m_Content;
@@ -124,10 +124,6 @@ void CPWL_Edit::SetAlignFormatV(PWL_EDIT_ALIGNFORMAT_V nFormat, bool bPaint) {
 
 bool CPWL_Edit::CanSelectAll() const {
   return GetSelectWordRange() != m_pEdit->GetWholeWordRange();
-}
-
-bool CPWL_Edit::CanClear() const {
-  return !IsReadOnly() && m_pEdit->IsSelected();
 }
 
 bool CPWL_Edit::CanCopy() const {
@@ -672,11 +668,6 @@ CPVT_WordRange CPWL_Edit::GetLatinWordsRange(const CFX_PointF& point) const {
 CPVT_WordRange CPWL_Edit::GetLatinWordsRange(
     const CPVT_WordPlace& place) const {
   return GetSameWordsRange(place, true, false);
-}
-
-CPVT_WordRange CPWL_Edit::GetArabicWordsRange(
-    const CPVT_WordPlace& place) const {
-  return GetSameWordsRange(place, false, true);
 }
 
 #define PWL_ISARABICWORD(word) \

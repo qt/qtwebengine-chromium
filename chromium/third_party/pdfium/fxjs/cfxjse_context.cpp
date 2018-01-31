@@ -43,6 +43,48 @@ const char szCompatibleModeScript[] =
 
 wchar_t g_FXJSETagString[] = L"FXJSE_HostObject";
 
+v8::Local<v8::Object> CreateReturnValue(v8::Isolate* pIsolate,
+                                        v8::TryCatch& trycatch) {
+  v8::Local<v8::Object> hReturnValue = v8::Object::New(pIsolate);
+  if (trycatch.HasCaught()) {
+    v8::Local<v8::Value> hException = trycatch.Exception();
+    v8::Local<v8::Message> hMessage = trycatch.Message();
+    if (hException->IsObject()) {
+      v8::Local<v8::Value> hValue;
+      hValue = hException.As<v8::Object>()->Get(
+          v8::String::NewFromUtf8(pIsolate, "name"));
+      if (hValue->IsString() || hValue->IsStringObject())
+        hReturnValue->Set(0, hValue);
+      else
+        hReturnValue->Set(0, v8::String::NewFromUtf8(pIsolate, "Error"));
+
+      hValue = hException.As<v8::Object>()->Get(
+          v8::String::NewFromUtf8(pIsolate, "message"));
+      if (hValue->IsString() || hValue->IsStringObject())
+        hReturnValue->Set(1, hValue);
+      else
+        hReturnValue->Set(1, hMessage->Get());
+    } else {
+      hReturnValue->Set(0, v8::String::NewFromUtf8(pIsolate, "Error"));
+      hReturnValue->Set(1, hMessage->Get());
+    }
+    hReturnValue->Set(2, hException);
+    hReturnValue->Set(3, v8::Integer::New(pIsolate, hMessage->GetLineNumber()));
+    hReturnValue->Set(4, hMessage->GetSourceLine());
+    v8::Maybe<int32_t> maybe_int =
+        hMessage->GetStartColumn(pIsolate->GetCurrentContext());
+    hReturnValue->Set(5, v8::Integer::New(pIsolate, maybe_int.FromMaybe(0)));
+    maybe_int = hMessage->GetEndColumn(pIsolate->GetCurrentContext());
+    hReturnValue->Set(6, v8::Integer::New(pIsolate, maybe_int.FromMaybe(0)));
+  }
+  return hReturnValue;
+}
+
+v8::Local<v8::Object> GetGlobalObjectFromContext(
+    v8::Local<v8::Context> hContext) {
+  return hContext->Global()->GetPrototype().As<v8::Object>();
+}
+
 }  // namespace
 
 // Note, not in the anonymous namespace due to the friend call
@@ -72,11 +114,6 @@ class CFXJSE_ScopeUtil_IsolateHandleContext {
   CFXJSE_ScopeUtil_IsolateHandle m_parent;
   v8::Context::Scope m_cscope;
 };
-
-v8::Local<v8::Object> FXJSE_GetGlobalObjectFromContext(
-    v8::Local<v8::Context> hContext) {
-  return hContext->Global()->GetPrototype().As<v8::Object>();
-}
 
 void FXJSE_UpdateObjectBinding(v8::Local<v8::Object>& hObject,
                                CFXJSE_HostObject* lpNewBinding) {
@@ -115,43 +152,6 @@ CFXJSE_HostObject* FXJSE_RetrieveObjectBinding(v8::Local<v8::Object> hJSObject,
       hObject->GetAlignedPointerFromInternalField(1));
 }
 
-v8::Local<v8::Object> FXJSE_CreateReturnValue(v8::Isolate* pIsolate,
-                                              v8::TryCatch& trycatch) {
-  v8::Local<v8::Object> hReturnValue = v8::Object::New(pIsolate);
-  if (trycatch.HasCaught()) {
-    v8::Local<v8::Value> hException = trycatch.Exception();
-    v8::Local<v8::Message> hMessage = trycatch.Message();
-    if (hException->IsObject()) {
-      v8::Local<v8::Value> hValue;
-      hValue = hException.As<v8::Object>()->Get(
-          v8::String::NewFromUtf8(pIsolate, "name"));
-      if (hValue->IsString() || hValue->IsStringObject())
-        hReturnValue->Set(0, hValue);
-      else
-        hReturnValue->Set(0, v8::String::NewFromUtf8(pIsolate, "Error"));
-
-      hValue = hException.As<v8::Object>()->Get(
-          v8::String::NewFromUtf8(pIsolate, "message"));
-      if (hValue->IsString() || hValue->IsStringObject())
-        hReturnValue->Set(1, hValue);
-      else
-        hReturnValue->Set(1, hMessage->Get());
-    } else {
-      hReturnValue->Set(0, v8::String::NewFromUtf8(pIsolate, "Error"));
-      hReturnValue->Set(1, hMessage->Get());
-    }
-    hReturnValue->Set(2, hException);
-    hReturnValue->Set(3, v8::Integer::New(pIsolate, hMessage->GetLineNumber()));
-    hReturnValue->Set(4, hMessage->GetSourceLine());
-    v8::Maybe<int32_t> maybe_int =
-        hMessage->GetStartColumn(pIsolate->GetCurrentContext());
-    hReturnValue->Set(5, v8::Integer::New(pIsolate, maybe_int.FromMaybe(0)));
-    maybe_int = hMessage->GetEndColumn(pIsolate->GetCurrentContext());
-    hReturnValue->Set(6, v8::Integer::New(pIsolate, maybe_int.FromMaybe(0)));
-  }
-  return hReturnValue;
-}
-
 // static
 std::unique_ptr<CFXJSE_Context> CFXJSE_Context::Create(
     v8::Isolate* pIsolate,
@@ -159,10 +159,10 @@ std::unique_ptr<CFXJSE_Context> CFXJSE_Context::Create(
     CFXJSE_HostObject* pGlobalObject) {
   CFXJSE_ScopeUtil_IsolateHandle scope(pIsolate);
   auto pContext = pdfium::MakeUnique<CFXJSE_Context>(pIsolate);
-  CFXJSE_Class* pGlobalClassObj = nullptr;
   v8::Local<v8::ObjectTemplate> hObjectTemplate;
   if (pGlobalClass) {
-    pGlobalClassObj = CFXJSE_Class::Create(pContext.get(), pGlobalClass, true);
+    CFXJSE_Class* pGlobalClassObj =
+        CFXJSE_Class::Create(pContext.get(), pGlobalClass, true);
     ASSERT(pGlobalClassObj);
     v8::Local<v8::FunctionTemplate> hFunctionTemplate =
         v8::Local<v8::FunctionTemplate>::New(pIsolate,
@@ -172,6 +172,7 @@ std::unique_ptr<CFXJSE_Context> CFXJSE_Context::Create(
     hObjectTemplate = v8::ObjectTemplate::New(pIsolate);
     hObjectTemplate->SetInternalFieldCount(2);
   }
+
   hObjectTemplate->Set(
       v8::Symbol::GetToStringTag(pIsolate),
       v8::String::NewFromUtf8(pIsolate, "global", v8::NewStringType::kNormal)
@@ -181,8 +182,7 @@ std::unique_ptr<CFXJSE_Context> CFXJSE_Context::Create(
   v8::Local<v8::Context> hRootContext = v8::Local<v8::Context>::New(
       pIsolate, CFXJSE_RuntimeData::Get(pIsolate)->m_hRootContext);
   hNewContext->SetSecurityToken(hRootContext->GetSecurityToken());
-  v8::Local<v8::Object> hGlobalObject =
-      FXJSE_GetGlobalObjectFromContext(hNewContext);
+  v8::Local<v8::Object> hGlobalObject = GetGlobalObjectFromContext(hNewContext);
   FXJSE_UpdateObjectBinding(hGlobalObject, pGlobalObject);
   pContext->m_hContext.Reset(pIsolate, hNewContext);
   return pContext;
@@ -197,8 +197,7 @@ std::unique_ptr<CFXJSE_Value> CFXJSE_Context::GetGlobalObject() {
   CFXJSE_ScopeUtil_IsolateHandleContext scope(this);
   v8::Local<v8::Context> hContext =
       v8::Local<v8::Context>::New(m_pIsolate, m_hContext);
-  v8::Local<v8::Object> hGlobalObject =
-      FXJSE_GetGlobalObjectFromContext(hContext);
+  v8::Local<v8::Object> hGlobalObject = GetGlobalObjectFromContext(hContext);
   pValue->ForceSetValue(hGlobalObject);
   return pValue;
 }
@@ -244,7 +243,7 @@ bool CFXJSE_Context::ExecuteScript(const char* szScript,
     }
     if (lpRetValue) {
       lpRetValue->m_hValue.Reset(m_pIsolate,
-                                 FXJSE_CreateReturnValue(m_pIsolate, trycatch));
+                                 CreateReturnValue(m_pIsolate, trycatch));
     }
     return false;
   }
@@ -269,7 +268,7 @@ bool CFXJSE_Context::ExecuteScript(const char* szScript,
   }
   if (lpRetValue) {
     lpRetValue->m_hValue.Reset(m_pIsolate,
-                               FXJSE_CreateReturnValue(m_pIsolate, trycatch));
+                               CreateReturnValue(m_pIsolate, trycatch));
   }
   return false;
 }

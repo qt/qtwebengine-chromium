@@ -24,7 +24,7 @@ class CPDF_TextPageFind {
 
   bool FindFirst(const WideString& findwhat,
                  int flags,
-                 pdfium::Optional<size_t> startPos);
+                 Optional<size_t> startPos);
   bool FindNext();
   bool FindPrev();
   int GetCurOrder() const;
@@ -35,10 +35,9 @@ class CPDF_TextPageFind {
   bool IsMatchWholeWord(const WideString& csPageText,
                         size_t startPos,
                         size_t endPos);
-  bool ExtractSubString(WideString& rString,
-                        const wchar_t* lpszFullString,
-                        int iSubString,
-                        wchar_t chSep);
+  Optional<WideString> ExtractSubString(const wchar_t* lpszFullString,
+                                        int iSubString,
+                                        wchar_t chSep);
   int GetCharIndex(int index) const;
 
  private:
@@ -48,8 +47,8 @@ class CPDF_TextPageFind {
   WideString m_findWhat;
   int m_flags;
   std::vector<WideString> m_csFindWhatArray;
-  pdfium::Optional<size_t> m_findNextStart;
-  pdfium::Optional<size_t> m_findPreStart;
+  Optional<size_t> m_findNextStart;
+  Optional<size_t> m_findPreStart;
   bool m_bMatchCase;
   bool m_bMatchWholeWord;
   int m_resStart;

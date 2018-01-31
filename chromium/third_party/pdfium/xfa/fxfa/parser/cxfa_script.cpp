@@ -6,6 +6,9 @@
 
 #include "xfa/fxfa/parser/cxfa_script.h"
 
+#include "fxjs/xfa/cjx_script.h"
+#include "third_party/base/ptr_util.h"
+
 namespace {
 
 const CXFA_Node::PropertyData kPropertyData[] = {
@@ -39,6 +42,25 @@ CXFA_Script::CXFA_Script(CXFA_Document* doc, XFA_PacketType packet)
           XFA_Element::Script,
           kPropertyData,
           kAttributeData,
-          kName) {}
+          kName,
+          pdfium::MakeUnique<CJX_Script>(this)) {}
 
 CXFA_Script::~CXFA_Script() {}
+
+CXFA_Script::Type CXFA_Script::GetContentType() {
+  Optional<WideString> cData =
+      JSObject()->TryCData(XFA_Attribute::ContentType, false);
+  if (!cData || *cData == L"application/x-formcalc")
+    return Type::Formcalc;
+  if (*cData == L"application/x-javascript")
+    return Type::Javascript;
+  return Type::Unknown;
+}
+
+XFA_AttributeEnum CXFA_Script::GetRunAt() {
+  return JSObject()->GetEnum(XFA_Attribute::RunAt);
+}
+
+WideString CXFA_Script::GetExpression() {
+  return JSObject()->GetContent(false);
+}

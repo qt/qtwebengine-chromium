@@ -13,19 +13,11 @@
 #include "xfa/fxfa/cxfa_widgetacc.h"
 #include "xfa/fxfa/fxfa_basic.h"
 
-class CFGAS_GEFont;
-class CXFA_Graphics;
-class CPDF_Document;
 class CXFA_FFPageView;
-class CXFA_Node;
-class CXFA_NodeList;
+class CXFA_Submit;
 class CXFA_WidgetAcc;
 class IFWL_AdapterTimerMgr;
 class IFX_SeekableReadStream;
-class IXFA_AppProvider;
-class IXFA_DocEnvironment;
-class IXFA_WidgetAccIterator;
-class IXFA_WidgetIterator;
 
 #define XFA_MBICON_Error 0
 #define XFA_MBICON_Warning 1
@@ -233,9 +225,9 @@ class IXFA_DocEnvironment {
   virtual bool PopupMenu(CXFA_FFWidget* hWidget, CFX_PointF ptPopup) = 0;
   virtual void PageViewEvent(CXFA_FFPageView* pPageView, uint32_t dwFlags) = 0;
   virtual void WidgetPostAdd(CXFA_FFWidget* hWidget,
-                             CXFA_WidgetAcc* pWidgetData) = 0;
+                             CXFA_WidgetAcc* pWidgetAcc) = 0;
   virtual void WidgetPreRemove(CXFA_FFWidget* hWidget,
-                               CXFA_WidgetAcc* pWidgetData) = 0;
+                               CXFA_WidgetAcc* pWidgetAcc) = 0;
 
   virtual int32_t CountPages(CXFA_FFDoc* hDoc) = 0;
   virtual int32_t GetCurrentPage(CXFA_FFDoc* hDoc) = 0;
@@ -257,7 +249,7 @@ class IXFA_DocEnvironment {
                      uint32_t dwOptions) = 0;
   virtual FX_ARGB GetHighlightColor(CXFA_FFDoc* hDoc) = 0;
 
-  virtual bool SubmitData(CXFA_FFDoc* hDoc, CXFA_SubmitData submitData) = 0;
+  virtual bool Submit(CXFA_FFDoc* hDoc, CXFA_Submit* submit) = 0;
   virtual bool GetGlobalProperty(CXFA_FFDoc* hDoc,
                                  const ByteStringView& szPropName,
                                  CFXJSE_Value* pValue) = 0;

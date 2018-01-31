@@ -22,68 +22,6 @@
 namespace sh
 {
 
-namespace
-{
-
-static const char kFunctionMangledNameSeparator = '(';
-
-}  // anonymous namespace
-
-TSymbol::TSymbol(TSymbolTable *symbolTable, const TString *name)
-    : mUniqueId(symbolTable->nextUniqueId()), mName(name), mExtension(TExtension::UNDEFINED)
-{
-}
-
-//
-// Functions have buried pointers to delete.
-//
-TFunction::~TFunction()
-{
-    clearParameters();
-}
-
-void TFunction::clearParameters()
-{
-    for (TParamList::iterator i = parameters.begin(); i != parameters.end(); ++i)
-        delete (*i).type;
-    parameters.clear();
-    mangledName = nullptr;
-}
-
-void TFunction::swapParameters(const TFunction &parametersSource)
-{
-    clearParameters();
-    for (auto parameter : parametersSource.parameters)
-    {
-        addParameter(parameter);
-    }
-}
-
-const TString *TFunction::buildMangledName() const
-{
-    std::string newName = name().c_str();
-    newName += kFunctionMangledNameSeparator;
-
-    for (const auto &p : parameters)
-    {
-        newName += p.type->getMangledName();
-    }
-    return NewPoolTString(newName.c_str());
-}
-
-const TString &TFunction::GetMangledNameFromCall(const TString &functionName,
-                                                 const TIntermSequence &arguments)
-{
-    std::string newName = functionName.c_str();
-    newName += kFunctionMangledNameSeparator;
-
-    for (TIntermNode *argument : arguments)
-    {
-        newName += argument->getAsTyped()->getType().getMangledName();
-    }
-    return *NewPoolTString(newName.c_str());
-}
-
 //
 // Symbol table levels are a map of pointers to symbols that have to be deleted.
 //
@@ -189,7 +127,7 @@ TSymbolTable::~TSymbolTable()
         pop();
 }
 
-bool IsGenType(const TType *type)
+constexpr bool IsGenType(const TType *type)
 {
     if (type)
     {
@@ -201,7 +139,7 @@ bool IsGenType(const TType *type)
     return false;
 }
 
-bool IsVecType(const TType *type)
+constexpr bool IsVecType(const TType *type)
 {
     if (type)
     {
@@ -269,50 +207,37 @@ constexpr const TType *VectorType(const TType *type, int size)
     }
 }
 
-TVariable *TSymbolTable::declareVariable(const TString *name, const TType &type)
+bool TSymbolTable::declareVariable(TVariable *variable)
 {
-    return insertVariable(currentLevel(), name, type);
+    ASSERT(variable->symbolType() == SymbolType::UserDefined);
+    return insertVariable(currentLevel(), variable);
 }
 
-TVariable *TSymbolTable::declareStructType(TStructure *str)
+bool TSymbolTable::declareStructType(TStructure *str)
 {
     return insertStructType(currentLevel(), str);
 }
 
-TInterfaceBlockName *TSymbolTable::declareInterfaceBlockName(const TString *name)
+bool TSymbolTable::declareInterfaceBlock(TInterfaceBlock *interfaceBlock)
 {
-    TInterfaceBlockName *blockNameSymbol = new TInterfaceBlockName(this, name);
-    if (insert(currentLevel(), blockNameSymbol))
-    {
-        return blockNameSymbol;
-    }
-    return nullptr;
-}
-
-TInterfaceBlockName *TSymbolTable::insertInterfaceBlockNameExt(ESymbolLevel level,
-                                                               TExtension ext,
-                                                               const TString *name)
-{
-    TInterfaceBlockName *blockNameSymbol = new TInterfaceBlockName(this, name);
-    if (insert(level, ext, blockNameSymbol))
-    {
-        return blockNameSymbol;
-    }
-    return nullptr;
+    return insert(currentLevel(), interfaceBlock);
 }
 
 TVariable *TSymbolTable::insertVariable(ESymbolLevel level, const char *name, const TType &type)
 {
-    return insertVariable(level, NewPoolTString(name), type);
+    ASSERT(level <= LAST_BUILTIN_LEVEL);
+    return insertVariable(level, NewPoolTString(name), type, SymbolType::BuiltIn);
 }
 
-TVariable *TSymbolTable::insertVariable(ESymbolLevel level, const TString *name, const TType &type)
+TVariable *TSymbolTable::insertVariable(ESymbolLevel level,
+                                        const TString *name,
+                                        const TType &type,
+                                        SymbolType symbolType)
 {
-    TVariable *var = new TVariable(this, name, type);
+    TVariable *var = new TVariable(this, name, type, symbolType);
     if (insert(level, var))
     {
-        // Do lazy initialization for struct types, so we allocate to the current scope.
-        if (var->getType().getBasicType() == EbtStruct)
+        if (level <= LAST_BUILTIN_LEVEL)
         {
             var->getType().realize();
         }
@@ -326,10 +251,10 @@ TVariable *TSymbolTable::insertVariableExt(ESymbolLevel level,
                                            const char *name,
                                            const TType &type)
 {
-    TVariable *var = new TVariable(this, NewPoolTString(name), type);
-    if (insert(level, ext, var))
+    TVariable *var = new TVariable(this, NewPoolTString(name), type, SymbolType::BuiltIn, ext);
+    if (insert(level, var))
     {
-        if (var->getType().getBasicType() == EbtStruct)
+        if (level <= LAST_BUILTIN_LEVEL)
         {
             var->getType().realize();
         }
@@ -338,15 +263,22 @@ TVariable *TSymbolTable::insertVariableExt(ESymbolLevel level,
     return nullptr;
 }
 
-TVariable *TSymbolTable::insertStructType(ESymbolLevel level, TStructure *str)
+bool TSymbolTable::insertVariable(ESymbolLevel level, TVariable *variable)
 {
-    TVariable *var = new TVariable(this, &str->name(), TType(str), true);
-    if (insert(level, var))
-    {
-        var->getType().realize();
-        return var;
-    }
-    return nullptr;
+    ASSERT(variable);
+    return insert(level, variable);
+}
+
+bool TSymbolTable::insertStructType(ESymbolLevel level, TStructure *str)
+{
+    ASSERT(str);
+    return insert(level, str);
+}
+
+bool TSymbolTable::insertInterfaceBlock(ESymbolLevel level, TInterfaceBlock *interfaceBlock)
+{
+    ASSERT(interfaceBlock);
+    return insert(level, interfaceBlock);
 }
 
 void TSymbolTable::insertBuiltIn(ESymbolLevel level,
@@ -480,7 +412,8 @@ void TSymbolTable::insertBuiltIn(ESymbolLevel level,
     }
     else
     {
-        TFunction *function = new TFunction(this, NewPoolTString(name), rvalue, op, ext);
+        TFunction *function =
+            new TFunction(this, NewPoolTString(name), rvalue, SymbolType::BuiltIn, false, op, ext);
 
         function->addParameter(TConstParameter(ptype1));
 
@@ -546,7 +479,8 @@ void TSymbolTable::insertBuiltInFunctionNoParameters(ESymbolLevel level,
                                                      const char *name)
 {
     insertUnmangledBuiltInName(name, level);
-    insert(level, new TFunction(this, NewPoolTString(name), rvalue, op));
+    insert(level,
+           new TFunction(this, NewPoolTString(name), rvalue, SymbolType::BuiltIn, false, op));
 }
 
 void TSymbolTable::insertBuiltInFunctionNoParametersExt(ESymbolLevel level,
@@ -556,7 +490,8 @@ void TSymbolTable::insertBuiltInFunctionNoParametersExt(ESymbolLevel level,
                                                         const char *name)
 {
     insertUnmangledBuiltInName(name, level);
-    insert(level, new TFunction(this, NewPoolTString(name), rvalue, op, ext));
+    insert(level,
+           new TFunction(this, NewPoolTString(name), rvalue, SymbolType::BuiltIn, false, op, ext));
 }
 
 TPrecision TSymbolTable::getDefaultPrecision(TBasicType type) const
@@ -587,6 +522,7 @@ TPrecision TSymbolTable::getDefaultPrecision(TBasicType type) const
 void TSymbolTable::insertUnmangledBuiltInName(const char *name, ESymbolLevel level)
 {
     ASSERT(level >= 0 && level < static_cast<ESymbolLevel>(table.size()));
+    ASSERT(mUserDefinedUniqueIdsStart == -1);
     table[level]->insertUnmangledBuiltInName(std::string(name));
 }
 
@@ -621,6 +557,25 @@ bool TSymbolTable::hasUnmangledBuiltInForShaderVersion(const char *name, int sha
         }
     }
     return false;
+}
+
+void TSymbolTable::markBuiltInInitializationFinished()
+{
+    mUserDefinedUniqueIdsStart = mUniqueIdCounter;
+}
+
+void TSymbolTable::clearCompilationResults()
+{
+    mUniqueIdCounter = mUserDefinedUniqueIdsStart;
+
+    // User-defined scopes should have already been cleared when the compilation finished.
+    ASSERT(table.size() == LAST_BUILTIN_LEVEL + 1u);
+}
+
+int TSymbolTable::nextUniqueIdValue()
+{
+    ASSERT(mUniqueIdCounter < std::numeric_limits<int>::max());
+    return ++mUniqueIdCounter;
 }
 
 }  // namespace sh

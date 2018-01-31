@@ -13,6 +13,7 @@
 #include "GrBuffer.h"
 #include "GrCaps.h"
 #include "GrContext.h"
+#include "GrContextPriv.h"
 #include "GrGpuResourcePriv.h"
 #include "GrMesh.h"
 #include "GrPathRendering.h"
@@ -224,16 +225,6 @@ GrBuffer* GrGpu::createBuffer(size_t size, GrBufferType intendedType,
         buffer->resourcePriv().removeScratchKey();
     }
     return buffer;
-}
-
-std::unique_ptr<gr_instanced::OpAllocator> GrGpu::createInstancedRenderingAllocator() {
-    SkASSERT(GrCaps::InstancedSupport::kNone != this->caps()->instancedSupport());
-    return this->onCreateInstancedRenderingAllocator();
-}
-
-gr_instanced::InstancedRendering* GrGpu::createInstancedRendering() {
-    SkASSERT(GrCaps::InstancedSupport::kNone != this->caps()->instancedSupport());
-    return this->onCreateInstancedRendering();
 }
 
 bool GrGpu::copySurface(GrSurface* dst, GrSurfaceOrigin dstOrigin,
@@ -493,14 +484,17 @@ bool GrGpu::SamplePatternComparator::operator()(const SamplePattern& a,
 
 GrSemaphoresSubmitted GrGpu::finishFlush(int numSemaphores,
                                          GrBackendSemaphore backendSemaphores[]) {
+    GrResourceProvider* resourceProvider = fContext->contextPriv().resourceProvider();
+
     if (this->caps()->fenceSyncSupport()) {
         for (int i = 0; i < numSemaphores; ++i) {
             sk_sp<GrSemaphore> semaphore;
             if (backendSemaphores[i].isInitialized()) {
-                semaphore = fContext->resourceProvider()->wrapBackendSemaphore(
-                        backendSemaphores[i], kBorrow_GrWrapOwnership);
+                semaphore = resourceProvider->wrapBackendSemaphore(
+                        backendSemaphores[i], GrResourceProvider::SemaphoreWrapType::kWillSignal,
+                        kBorrow_GrWrapOwnership);
             } else {
-                semaphore = fContext->resourceProvider()->makeSemaphore(false);
+                semaphore = resourceProvider->makeSemaphore(false);
             }
             this->insertSemaphore(semaphore, false);
 
@@ -523,3 +517,49 @@ void GrGpu::dumpJSON(SkJSONWriter* writer) const {
 
     writer->endObject();
 }
+
+void GrGpu::insertSemaphore(sk_sp<GrSemaphore> semaphore, bool flush) {
+    if (!semaphore) {
+        return;
+    }
+
+    SkASSERT(!semaphore->fSignaled);
+    if (semaphore->fSignaled) {
+        this->onInsertSemaphore(nullptr, flush);
+        return;
+    }
+    this->onInsertSemaphore(semaphore, flush);
+    semaphore->fSignaled = true;
+}
+
+void GrGpu::waitSemaphore(sk_sp<GrSemaphore> semaphore) {
+    if (!semaphore) {
+        return;
+    }
+
+    SkASSERT(!semaphore->fWaitedOn);
+    if (!semaphore->fWaitedOn) {
+        this->onWaitSemaphore(semaphore);
+        semaphore->fWaitedOn = true;
+    }
+}
+
+sk_sp<GrSemaphore> GrGpu::wrapBackendSemaphore(const GrBackendSemaphore& semaphore,
+                                               GrResourceProvider::SemaphoreWrapType wrapType,
+                                               GrWrapOwnership ownership) {
+    sk_sp<GrSemaphore> grSema = this->onWrapBackendSemaphore(semaphore, ownership);
+    if (GrResourceProvider::SemaphoreWrapType::kWillSignal == wrapType) {
+        // This is a safety check to make sure we never try to wait on this semaphore since we
+        // assume the client will wait on it themselves if they've asked us to signal it.
+        grSema->fWaitedOn = true;
+    } else {
+        SkASSERT(GrResourceProvider::SemaphoreWrapType::kWillWait == wrapType);
+        // This is a safety check to make sure we never try to signal this semaphore since we assume
+        // the client will signal it themselves if they've asked us wait on it.
+        grSema->fSignaled = true;
+    }
+
+    SkASSERT(this->caps()->fenceSyncSupport());
+    return grSema;
+}
+

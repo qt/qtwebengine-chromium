@@ -21,6 +21,15 @@
 #include "vp9/encoder/vp9_noise_estimate.h"
 #include "vp9/encoder/vp9_encoder.h"
 
+#if CONFIG_VP9_TEMPORAL_DENOISING
+// For SVC: only do noise estimation on top spatial layer.
+static INLINE int noise_est_svc(const struct VP9_COMP *const cpi) {
+  return (!cpi->use_svc ||
+          (cpi->use_svc &&
+           cpi->svc.spatial_layer_id == cpi->svc.number_spatial_layers - 1));
+}
+#endif
+
 void vp9_noise_estimate_init(NOISE_ESTIMATE *const ne, int width, int height) {
   ne->enabled = 0;
   ne->level = kLowLow;
@@ -45,7 +54,7 @@ static int enable_noise_estimation(VP9_COMP *const cpi) {
 #endif
 // Enable noise estimation if denoising is on.
 #if CONFIG_VP9_TEMPORAL_DENOISING
-  if (cpi->oxcf.noise_sensitivity > 0 && denoise_svc(cpi) &&
+  if (cpi->oxcf.noise_sensitivity > 0 && noise_est_svc(cpi) &&
       cpi->common.width >= 320 && cpi->common.height >= 180)
     return 1;
 #endif
@@ -111,7 +120,7 @@ void vp9_update_noise_estimate(VP9_COMP *const cpi) {
   // Estimate is between current source and last source.
   YV12_BUFFER_CONFIG *last_source = cpi->Last_Source;
 #if CONFIG_VP9_TEMPORAL_DENOISING
-  if (cpi->oxcf.noise_sensitivity > 0 && denoise_svc(cpi)) {
+  if (cpi->oxcf.noise_sensitivity > 0 && noise_est_svc(cpi)) {
     last_source = &cpi->denoiser.last_source;
     // Tune these thresholds for different resolutions when denoising is
     // enabled.
@@ -131,7 +140,7 @@ void vp9_update_noise_estimate(VP9_COMP *const cpi) {
       (cpi->svc.number_spatial_layers == 1 &&
        (ne->last_w != cm->width || ne->last_h != cm->height))) {
 #if CONFIG_VP9_TEMPORAL_DENOISING
-    if (cpi->oxcf.noise_sensitivity > 0 && denoise_svc(cpi))
+    if (cpi->oxcf.noise_sensitivity > 0 && noise_est_svc(cpi))
       copy_frame(&cpi->denoiser.last_source, cpi->Source);
 #endif
     if (last_source != NULL) {
@@ -146,7 +155,7 @@ void vp9_update_noise_estimate(VP9_COMP *const cpi) {
     ne->count = 0;
     ne->num_frames_estimate = 10;
 #if CONFIG_VP9_TEMPORAL_DENOISING
-    if (cpi->oxcf.noise_sensitivity > 0 && denoise_svc(cpi) &&
+    if (cpi->oxcf.noise_sensitivity > 0 && noise_est_svc(cpi) &&
         cpi->svc.current_superframe > 1) {
       vp9_denoiser_set_noise_level(&cpi->denoiser, ne->level);
       copy_frame(&cpi->denoiser.last_source, cpi->Source);
@@ -249,7 +258,7 @@ void vp9_update_noise_estimate(VP9_COMP *const cpi) {
       // Normalize.
       avg_est = avg_est / num_samples;
       // Update noise estimate.
-      ne->value = (int)((15 * ne->value + avg_est) >> 4);
+      ne->value = (int)((3 * ne->value + avg_est) >> 2);
       ne->count++;
       if (ne->count == ne->num_frames_estimate) {
         // Reset counter and check noise level condition.
@@ -257,14 +266,14 @@ void vp9_update_noise_estimate(VP9_COMP *const cpi) {
         ne->count = 0;
         ne->level = vp9_noise_estimate_extract_level(ne);
 #if CONFIG_VP9_TEMPORAL_DENOISING
-        if (cpi->oxcf.noise_sensitivity > 0 && denoise_svc(cpi))
+        if (cpi->oxcf.noise_sensitivity > 0 && noise_est_svc(cpi))
           vp9_denoiser_set_noise_level(&cpi->denoiser, ne->level);
 #endif
       }
     }
   }
 #if CONFIG_VP9_TEMPORAL_DENOISING
-  if (cpi->oxcf.noise_sensitivity > 0 && denoise_svc(cpi))
+  if (cpi->oxcf.noise_sensitivity > 0 && noise_est_svc(cpi))
     copy_frame(&cpi->denoiser.last_source, cpi->Source);
 #endif
 }
