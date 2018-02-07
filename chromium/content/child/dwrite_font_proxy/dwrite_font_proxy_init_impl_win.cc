@@ -87,8 +87,12 @@ void InitializeDWriteFontProxy() {
   // fallback if IDWriteFontFallback is not available.
   // This flag can be removed when Win8.0 and earlier are no longer supported.
   bool fallback_available = g_font_fallback != nullptr;
+#ifndef TOOLKIT_QT
+  // qtwebengine does not supply manifest file, version of windows is always reported as
+  // windows 8
   DCHECK_EQ(fallback_available,
             base::win::GetVersion() > base::win::Version::WIN8);
+#endif
   blink::WebFontRendering::SetUseSkiaFontFallback(fallback_available);
 }
 
