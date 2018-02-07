@@ -151,7 +151,7 @@ constexpr bool IsVecType(const TType *type)
     return false;
 }
 
-constexpr const TType *SpecificType(const TType *type, int size)
+const TType *SpecificType(const TType *type, int size)
 {
     ASSERT(size >= 1 && size <= 4);
 
@@ -181,7 +181,7 @@ constexpr const TType *SpecificType(const TType *type, int size)
     }
 }
 
-constexpr const TType *VectorType(const TType *type, int size)
+const TType *VectorType(const TType *type, int size)
 {
     ASSERT(size >= 2 && size <= 4);
 
