@@ -654,13 +654,11 @@ if (is_mac) {
   bundle_data("content_shell_framework_resources") {
     sources = [
       "$root_out_dir/content_shell.pak",
-      "$root_out_dir/v8_context_snapshot.bin",
       "resources/missingImage.png",
     ]
 
     public_deps = [
       ":pak",
-      "//tools/v8_context_snapshot:v8_context_snapshot",
     ]
 
     if (icu_use_data_file) {
@@ -674,8 +672,12 @@ if (is_mac) {
       sources += [
         "$root_out_dir/natives_blob.bin",
         "$root_out_dir/snapshot_blob.bin",
+        "$root_out_dir/v8_context_snapshot.bin",
       ]
-      public_deps += [ "//v8" ]
+      public_deps += [
+        "//tools/v8_context_snapshot:v8_context_snapshot",
+        "//v8"
+      ]
     }
 
     outputs = [

@@ -133,7 +133,6 @@ template("generate_mini_installer") {
       "$root_out_dir/chrome.exe",
       "$root_out_dir/locales/en-US.pak",
       "$root_out_dir/setup.exe",
-      "$root_out_dir/v8_context_snapshot.bin",
       "//chrome/tools/build/win/makecab.py",
       release_file,
     ]
@@ -178,7 +177,6 @@ template("generate_mini_installer") {
       "//chrome/browser/extensions/default_extensions",
       "//chrome/installer/setup",
       "//third_party/icu:icudata",
-      "//tools/v8_context_snapshot",
       chrome_dll_target,
     ]
 
@@ -213,8 +211,12 @@ template("generate_mini_installer") {
       inputs += [
         "$root_out_dir/natives_blob.bin",
         "$root_out_dir/snapshot_blob.bin",
+        "$root_out_dir/v8_context_snapshot.bin",
       ]
-      deps += [ "//v8" ]
+      deps += [
+        "//tools/v8_context_snapshot",
+        "//v8"
+      ]
     }
 
     depfile = "$target_gen_dir/archive.d"

@@ -852,7 +852,6 @@ if (is_win) {
   bundle_data("chrome_framework_resources") {
     sources = [
       "$root_out_dir/app_mode_loader.app",
-      "$root_out_dir/v8_context_snapshot.bin",
 
       # This image is used to badge the lock icon in the
       # authentication dialogs, such as those used for installation
@@ -872,7 +871,6 @@ if (is_win) {
     public_deps = [
       ":packed_resources",
       "//chrome/app_shim:app_mode_loader",
-      "//tools/v8_context_snapshot",
     ]
 
     if (is_chrome_branded) {
@@ -891,8 +889,12 @@ if (is_win) {
       sources += [
         "$root_out_dir/natives_blob.bin",
         "$root_out_dir/snapshot_blob.bin",
+        "$root_out_dir/v8_context_snapshot.bin",
       ]
-      public_deps += [ "//v8" ]
+      public_deps += [
+        "//tools/v8_context_snapshot",
+        "//v8",
+      ]
     }
   }
 
