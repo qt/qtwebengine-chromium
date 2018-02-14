@@ -16,6 +16,7 @@ buildflag_header("buildflags") {
 if (is_win) {
   executable("setup") {
     sources = [
+      "setup.ico",
       "setup.rc",
       "setup_main.cc",
       "setup_main.h",
