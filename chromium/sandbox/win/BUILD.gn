@@ -339,6 +339,7 @@ test("sandbox_poc") {
     "sandbox_poc/resource.h",
     "sandbox_poc/sandbox.cc",
     "sandbox_poc/sandbox.h",
+    "sandbox_poc/sandbox.ico",
     "sandbox_poc/sandbox.rc",
   ]
 
