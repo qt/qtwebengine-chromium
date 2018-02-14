@@ -41,6 +41,7 @@ source_set("lib") {
     "mini_file.h",
     "mini_installer.cc",
     "mini_installer.h",
+    "mini_installer.ico",
     "mini_installer.rc",
     "mini_installer_constants.cc",
     "mini_installer_constants.h",
