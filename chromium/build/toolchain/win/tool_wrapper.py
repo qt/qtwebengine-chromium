@@ -164,13 +164,20 @@ class WinTool(object):
     return popen.returncode
 
   def ExecRcWrapper(self, arch, *args):
-    """Converts .rc files to .res files."""
+    """Filter logo banner from invocations of rc.exe. Older versions of RC
+    don't support the /nologo flag."""
     env = self._GetEnv(arch)
-    args = list(args)
-    rcpy_args = args[:]
-    rcpy_args[0:1] = [sys.executable, os.path.join(BASE_DIR, 'rc', 'rc.py')]
-    rcpy_args.append('/showIncludes')
-    return subprocess.call(rcpy_args, env=env)
+
+    popen = subprocess.Popen(args, shell=True, env=env,
+                             stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    out, _ = popen.communicate()
+    for line in out.splitlines():
+      if (not line.startswith('Microsoft (R) Windows (R) Resource Compiler') and
+          not line.startswith('Copy' + 'right (C' +
+                              ') Microsoft Corporation') and
+          line):
+        print(line)
+    return popen.returncode
 
   def ExecActionWrapper(self, arch, rspfile, *dirname):
     """Runs an action command line from a response file using the environment
