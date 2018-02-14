@@ -114,10 +114,10 @@ def ReadInput(input):
         rc_file_data = rc_file_data[2:].decode('utf-16le').encode('utf-8')
         is_utf8 = True
   except IOError:
-    print('rc.py: failed to open', input, file=sys.stderr)
+    print('failed to open', input, file=sys.stderr)
     sys.exit(1)
   except UnicodeDecodeError:
-    print('rc.py: failed to decode UTF-16 despite BOM', input, file=sys.stderr)
+    print('failed to decode UTF-16 despite BOM', input, file=sys.stderr)
     sys.exit(1)
   return rc_file_data, is_utf8
 
@@ -134,11 +134,9 @@ def Preprocess(rc_file_data, flags):
   # Closing temp_handle immediately defeats the purpose of mkstemp(), but I
   # can't figure out how to let write to the temp file on Windows otherwise.
   os.close(temp_handle)
-  clang_cmd = [clang, '/P', '/DRC_INVOKED', '/TC', '-', '/Fi' + temp_file]
-  if flags.imsvcs:
-    clang_cmd += ['/X']
+  clang_cmd = ([clang, '/P', '/DRC_INVOKED', '/TC', '-', '/Fi' + temp_file] +
+               flags.includes + flags.defines)
   if os.path.dirname(flags.input):
-    # This must precede flags.includes.
     clang_cmd.append('-I' + os.path.dirname(flags.input))
   if flags.show_includes:
     clang_cmd.append('/showIncludes')
