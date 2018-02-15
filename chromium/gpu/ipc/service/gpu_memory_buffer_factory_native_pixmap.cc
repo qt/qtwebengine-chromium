@@ -120,6 +120,8 @@ GpuMemoryBufferFactoryNativePixmap::CreateImageForGpuMemoryBuffer(
                  ->CreateNativePixmapFromHandle(
                      surface_handle, size, format,
                      std::move(handle.native_pixmap_handle));
+#elif defined(TOOLKIT_QT)
+    return nullptr;
 #else
     DCHECK_EQ(surface_handle, gpu::kNullSurfaceHandle);
     pixmap = base::WrapRefCounted(new gfx::NativePixmapDmaBuf(
