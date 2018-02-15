@@ -12,7 +12,9 @@
 #include "ui/gfx/geometry/size.h"
 
 #if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
+#if !defined(TOOLKIT_QT)
 #include <drm_fourcc.h>
+#endif
 #include <unistd.h>
 
 #include "base/posix/eintr_wrapper.h"
@@ -25,7 +27,7 @@
 
 namespace gfx {
 
-#if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
+#if (BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)) && !defined(TOOLKIT_QT)
 static_assert(NativePixmapHandle::kNoModifier == DRM_FORMAT_MOD_INVALID,
               "gfx::NativePixmapHandle::kNoModifier should be an alias for"
               "DRM_FORMAT_MOD_INVALID");
