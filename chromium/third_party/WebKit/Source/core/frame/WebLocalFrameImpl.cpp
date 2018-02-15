@@ -1688,6 +1688,7 @@ WebLocalFrameImpl* WebLocalFrameImpl::CreateProvisional(
     // which triggers a cross-process navigation.
     new_frame->Loader().ForceSandboxFlags(static_cast<SandboxFlags>(flags));
   }
+  new_frame->SetIsProvisional(true);
 
   return web_frame;
 }

@@ -5024,6 +5024,15 @@ uploading your change for review.  These are checked by presubmit scripts.
   <int value="5" label="View PDF button clicked in the PDF plugin placeholder"/>
 </enum>
 
+<enum name="ChromePrimaryAccountStateInGaiaCookies">
+  <int value="0" label="No Chrome primary account."/>
+  <int value="1"
+      label="Chrome primary account is the first account in Gaia cookies."/>
+  <int value="2"
+      label="Chrome primary account is another account in Gaia cookies."/>
+  <int value="3" label="Chrome primary account is not in Gaia cookies."/>
+</enum>
+
 <enum name="ChromiumAndroidLinkerBrowserState">
   <int value="0" label="Normal, Random Address Load"/>
   <int value="1" label="Low memory, Fixed Address Load Success"/>
@@ -12474,6 +12483,7 @@ Called by update_net_error_codes.py.-->
   <int value="408" label="SpellcheckEnabled"/>
   <int value="409" label="AdsSettingForIntrusiveAdsSites"/>
   <int value="410" label="RestrictAccountsToPatterns"/>
+  <int value="414" label="WebDriverOverridesIncompatiblePolicies"/>
 </enum>
 
 <enum name="EnterprisePolicyInvalidations">
@@ -14599,6 +14609,7 @@ Called by update_net_error_codes.py.-->
   <int value="1209" label="CRYPTOTOKENPRIVATE_ISAPPIDHASHINENTERPRISECONTEXT"/>
   <int value="1210" label="CRYPTOTOKENPRIVATE_CANAPPIDGETATTESTATION"/>
   <int value="1211" label="SYSTEM_DISPLAY_SETMIRRORMODE"/>
+  <int value="1216" label="ACCESSIBILITY_PRIVATE_SENDSYNTHETICKEYEVENT"/>
 </enum>
 
 <enum name="ExtensionIconState">
@@ -25774,6 +25785,7 @@ from previous Chrome versions.
   <int value="-684223908" label="enable-android-wallpapers-app"/>
   <int value="-680787130" label="ExperimentalVRFeatures:disabled"/>
   <int value="-680589442" label="MacRTL:disabled"/>
+  <int value="-674804217" label="SoleIntegration:enabled"/>
   <int value="-671992446" label="TranslateRankerEnforcement:disabled"/>
   <int value="-670188266" label="enable-zip-archiver-unpacker"/>
   <int value="-667517406" label="overscroll-history-navigation"/>
@@ -26253,6 +26265,7 @@ from previous Chrome versions.
   <int value="636425179" label="mhtml-generator-option"/>
   <int value="637396292" label="AllBookmarks:enabled"/>
   <int value="637452937" label="ChromeHomeSurvey:enabled"/>
+  <int value="642037198" label="SoleIntegration:disabled"/>
   <int value="643725031" label="disable-touch-feedback"/>
   <int value="644189071" label="PermissionsBlacklist:enabled"/>
   <int value="646252875" label="ReadItLaterInMenu:enabled"/>
@@ -28033,6 +28046,11 @@ Called by update_use_counter_css.py.-->
   <int value="19" label="Gesture requirement overridden for media stream."/>
   <int value="20" label="Gesture requirement overridden, unknown reason."/>
   <int value="21" label="Gesture requirement overridden by play method."/>
+</enum>
+
+<enum name="MediaEngagementSessionEvent">
+  <int value="0" label="Created"/>
+  <int value="1" label="Significant Playback"/>
 </enum>
 
 <enum name="MediaGalleriesUsageType">
@@ -32761,6 +32779,7 @@ Called by update_net_trust_anchors.py.-->
   <int value="14" label="Invalid order - first paint / first image paint"/>
   <int value="15" label="Invalid order - first paint / first contentful paint"/>
   <int value="16" label="Invalid order - first paint / first meaningful paint"/>
+  <int value="17" label="Invalid order - first meaningful paint / interactive"/>
 </enum>
 
 <enum name="PageScaleFactorRange">
@@ -39340,9 +39359,12 @@ Called by update_net_trust_anchors.py.-->
 <enum name="SigninDiceResponseHeader">
   <int value="0" label="Signin"/>
   <int value="1" label="SignoutPrimary">
-    Signout including the primary account.
+    Signout including the Chrome primary account.
   </int>
-  <int value="2" label="SignoutSecondary">Signout only secondary accounts.</int>
+  <int value="2" label="SignoutSecondary">
+    Signout not including the Chrome primary accounts.
+  </int>
+  <int value="3" label="EnableSync">Enable Sync after signin.</int>
 </enum>
 
 <enum name="SigninDiceTokenFetchResult">

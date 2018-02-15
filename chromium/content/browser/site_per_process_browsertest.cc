@@ -85,6 +85,7 @@
 #include "content/shell/browser/shell.h"
 #include "content/shell/common/shell_switches.h"
 #include "content/test/content_browser_test_utils_internal.h"
+#include "content/test/did_commit_provisional_load_interceptor.h"
 #include "content/test/mock_overscroll_observer.h"
 #include "ipc/constants.mojom.h"
 #include "ipc/ipc_security_test_util.h"
@@ -1189,6 +1190,51 @@ IN_PROC_BROWSER_TEST_F(SitePerProcessBrowserTest, TitleAfterCrossSiteIframe) {
   EXPECT_EQ(expected_title, entry->GetTitle());
 }
 
+// Test that the physical backing size and view bounds for a scaled out-of-
+// process iframe are set and updated correctly.
+IN_PROC_BROWSER_TEST_F(SitePerProcessBrowserTest, PhysicalBackingSizeTest) {
+  GURL main_url(embedded_test_server()->GetURL(
+      "a.com", "/frame_tree/page_with_scaled_frame.html"));
+  EXPECT_TRUE(NavigateToURL(shell(), main_url));
+
+  FrameTreeNode* root = static_cast<WebContentsImpl*>(shell()->web_contents())
+                            ->GetFrameTree()
+                            ->root();
+
+  ASSERT_EQ(1U, root->child_count());
+
+  FrameTreeNode* parent_iframe_node = root->child_at(0);
+
+  EXPECT_EQ(
+      " Site A ------------ proxies for B\n"
+      "   +--Site A ------- proxies for B\n"
+      "        +--Site B -- proxies for A\n"
+      "Where A = http://a.com/\n"
+      "      B = http://baz.com/",
+      DepictFrameTree(root));
+
+  FrameTreeNode* nested_iframe_node = parent_iframe_node->child_at(0);
+  RenderFrameProxyHost* proxy_to_parent =
+      nested_iframe_node->render_manager()->GetProxyToParent();
+  CrossProcessFrameConnector* connector =
+      proxy_to_parent->cross_process_frame_connector();
+  RenderWidgetHostViewBase* rwhv_nested =
+      static_cast<RenderWidgetHostViewBase*>(
+          nested_iframe_node->current_frame_host()
+              ->GetRenderWidgetHost()
+              ->GetView());
+
+  WaitForChildFrameSurfaceReady(nested_iframe_node->current_frame_host());
+
+  // Verify that applying a CSS scale transform does not impact the size of the
+  // content of the nested iframe.
+  EXPECT_EQ(gfx::Size(50, 50), connector->screen_space_rect_in_dip().size());
+  EXPECT_EQ(gfx::Size(100, 100), rwhv_nested->GetViewBounds().size());
+  EXPECT_EQ(gfx::Size(100, 100), connector->local_frame_size_in_dip());
+  EXPECT_EQ(connector->local_frame_size_in_pixels(),
+            rwhv_nested->GetPhysicalBackingSize());
+}
+
 // Test that the view bounds for an out-of-process iframe are set and updated
 // correctly, including accounting for local frame offsets in the parent and
 // scroll positions.
@@ -1224,7 +1270,6 @@ IN_PROC_BROWSER_TEST_F(SitePerProcessBrowserTest, ViewBoundsInNestedFrameTest) {
           nested_iframe_node->current_frame_host()
               ->GetRenderWidgetHost()
               ->GetView());
-
   WaitForChildFrameSurfaceReady(nested_iframe_node->current_frame_host());
 
   float scale_factor = GetPageScaleFactor(shell());
@@ -6802,12 +6847,18 @@ class SitePerProcessMouseWheelBrowserTest : public SitePerProcessBrowserTest {
     EXPECT_EQ("\"scroll: 3\"", reply);
   }
 
+ protected:
+  base::test::ScopedFeatureList scroll_latching_feature_list_;
+
  private:
   RenderWidgetHostViewAura* rwhv_root_;
 };
 
 IN_PROC_BROWSER_TEST_F(SitePerProcessMouseWheelBrowserTest,
                        SubframeWheelEventsOnMainThread) {
+  scroll_latching_feature_list_.InitWithFeatures({},
+      {features::kTouchpadAndWheelScrollLatching,
+      features::kAsyncWheelEvents});
   GURL main_url(embedded_test_server()->GetURL(
       "/frame_tree/page_with_positioned_nested_frames.html"));
   EXPECT_TRUE(NavigateToURL(shell(), main_url));
@@ -6823,6 +6874,7 @@ IN_PROC_BROWSER_TEST_F(SitePerProcessMouseWheelBrowserTest,
   // surface information required for event hit testing is ready.
   RenderWidgetHostViewBase* child_rwhv = static_cast<RenderWidgetHostViewBase*>(
       root->child_at(0)->current_frame_host()->GetView());
+  EXPECT_FALSE(child_rwhv->wheel_scroll_latching_enabled());
   WaitForChildFrameSurfaceReady(root->child_at(0)->current_frame_host());
 
   content::RenderFrameHostImpl* child = root->child_at(0)->current_frame_host();
@@ -6838,6 +6890,9 @@ IN_PROC_BROWSER_TEST_F(SitePerProcessMouseWheelBrowserTest,
 // the same page loaded in the mainframe.
 IN_PROC_BROWSER_TEST_F(SitePerProcessMouseWheelBrowserTest,
                        MainframeWheelEventsOnMainThread) {
+  scroll_latching_feature_list_.InitWithFeatures({},
+      {features::kTouchpadAndWheelScrollLatching,
+      features::kAsyncWheelEvents});
   GURL main_url(
       embedded_test_server()->GetURL("/page_with_scrollable_div.html"));
   EXPECT_TRUE(NavigateToURL(shell(), main_url));
@@ -6845,6 +6900,9 @@ IN_PROC_BROWSER_TEST_F(SitePerProcessMouseWheelBrowserTest,
   FrameTreeNode* root = web_contents()->GetFrameTree()->root();
   content::RenderFrameHostImpl* rfhi = root->current_frame_host();
   SetupWheelAndScrollHandlers(rfhi);
+
+  EXPECT_FALSE(
+      rfhi->GetRenderWidgetHost()->GetView()->wheel_scroll_latching_enabled());
 
   gfx::Point pos(10, 10);
 
@@ -13362,6 +13420,262 @@ IN_PROC_BROWSER_TEST_F(SitePerProcessBrowserTest, HitTestNestedFrames) {
     content::RunThisRunLoop(&run_loop);
     // |point_in_nested_child| should hit test to |rwhv_grandchild|.
     ASSERT_EQ(rwhv_grandchild->GetFrameSinkId(), received_frame_sink_id);
+  }
+}
+
+namespace {
+
+// Intercepts the next DidCommitProvisionalLoad message for |deferred_url| in
+// any frame of the |web_contents|, and holds off on dispatching it until
+// *after* the DidCommitProvisionalLoad message for the next navigation in the
+// |web_contents| has been dispatched.
+//
+// Reversing the order in which the commit messages are dispatched simulates a
+// busy renderer that takes a very long time to actually commit the navigation
+// to |deferred_url| after receiving FrameNavigationControl::CommitNavigation;
+// whereas there is a fast cross-site navigation taking place in the same
+// frame which starts second but finishes first.
+class CommitMessageOrderReverser : public DidCommitProvisionalLoadInterceptor {
+ public:
+  using DidStartDeferringCommitCallback =
+      base::OnceCallback<void(RenderFrameHost*)>;
+
+  CommitMessageOrderReverser(
+      WebContents* web_contents,
+      const GURL& deferred_url,
+      DidStartDeferringCommitCallback deferred_url_triggered_action)
+      : DidCommitProvisionalLoadInterceptor(web_contents),
+        deferred_url_(deferred_url),
+        deferred_url_triggered_action_(
+            std::move(deferred_url_triggered_action)) {}
+  ~CommitMessageOrderReverser() override = default;
+
+  void WaitForBothCommits() { outer_run_loop.Run(); }
+
+ protected:
+  void WillDispatchDidCommitProvisionalLoad(
+      RenderFrameHost* render_frame_host,
+      ::FrameHostMsg_DidCommitProvisionalLoad_Params* params,
+      service_manager::mojom::InterfaceProviderRequest*
+          interface_provider_request) override {
+    // The DidCommitProvisionalLoad message is dispatched once this method
+    // returns, so to defer committing the the navigation to |deferred_url_|,
+    // run a nested message loop until the subsequent other commit message is
+    // dispatched.
+    if (params->url == deferred_url_) {
+      std::move(deferred_url_triggered_action_).Run(render_frame_host);
+
+      base::MessageLoop::ScopedNestableTaskAllower allow(
+          base::MessageLoop::current());
+      base::RunLoop nested_run_loop;
+      nested_loop_quit_ = nested_run_loop.QuitClosure();
+      nested_run_loop.Run();
+      outer_run_loop.Quit();
+    } else if (nested_loop_quit_) {
+      std::move(nested_loop_quit_).Run();
+    }
+  }
+
+ private:
+  base::RunLoop outer_run_loop;
+  base::OnceClosure nested_loop_quit_;
+
+  const GURL deferred_url_;
+  DidStartDeferringCommitCallback deferred_url_triggered_action_;
+
+  DISALLOW_COPY_AND_ASSIGN(CommitMessageOrderReverser);
+};
+
+}  // namespace
+
+// Regression test for https://crbug.com/877239, simulating the following
+// scenario:
+//
+//  1) http://a.com/empty.html is loaded in a main frame.
+//  2) Dynamically by JS, a same-site child frame is added:
+//       <iframe 'src=http://a.com/title1.html'/>.
+//  3) The initial byte of the response for `title1.html` arrives, causing
+//     FrameMsg_CommitNavigation to be sent to the same renderer.
+//  4) Just before processing this message, however, `main.html` navigates
+//     the iframe to http://baz.com/title2.html, which results in mojom::Frame::
+//     BeginNavigation being called on the RenderFrameHost.
+//  5) Suppose that immediately afterwards, `main.html` enters a busy-loop.
+//  6) The cross site navigation in the child frame starts, the first response
+//     byte arrives quickly, and thus the navigation commits quickly.
+//  6.1) FrameTreeNode::has_committed_real_load is set to true for the child.
+//  6.2) The same-site RenderFrame in the child FrameTreeNode is swapped out,
+//       i.e. FrameMsg_SwapOut is sent.
+//  7) The renderer for site instance `a.com` exits from the busy loop,
+//     and starts processing messages in order:
+//  7.1) The first being processed is FrameMsg_CommitNavigation, so a
+//       provisional load is created and immediately committed to
+//       http://a.com/title1.html.
+//  7.2) Because at the time the same-site child RenderFrame was created,
+//       there had been no real load committed in the child frame, and because
+//       the navigation from the initial empty document to the first real
+//       document was same-origin, the global object is reused and the
+//       RemoteInterfaceProvider of the RenderFrame is not rebound.
+//  7.3) The obsoleted load in the same-site child frame commits, calling
+//       mojom::Frame::DidCommitProvisionalLoad, however, with
+//       |interface_provider_request| being null.
+//  8) RenderFrameHostImpl::DidCommitProvisionalLoad sees that a real load was
+//     already committed in the frame, but |interface_provider_request| is
+//     missing. However, it also sees that the frame was waiting for a swap-out
+//     ACK, so ignores the commit, and does not kill the renderer process.
+//
+// In the simulation of this scenario, we simulate (5) not by delaying
+// renderer-side processing of the CommmitNavigation message, but by delaying
+// browser-side processing of the response to it, of DidCommitProvisionalLoad.
+IN_PROC_BROWSER_TEST_F(SitePerProcessBrowserTest,
+                       InterfaceProviderRequestIsOptionalForRaceyFirstCommits) {
+  const GURL kMainFrameUrl(
+      embedded_test_server()->GetURL("a.com", "/empty.html"));
+  const GURL kSubframeSameSiteUrl(
+      embedded_test_server()->GetURL("a.com", "/title1.html"));
+  const GURL kCrossSiteSubframeUrl(
+      embedded_test_server()->GetURL("baz.com", "/title2.html"));
+
+  const auto kAddSameSiteDynamicSubframe = base::StringPrintf(
+      "var f = document.createElement(\"iframe\");"
+      "f.src=\"%s\";"
+      "document.body.append(f);",
+      kSubframeSameSiteUrl.spec().c_str());
+  const auto kNavigateSubframeCrossSite = base::StringPrintf(
+      "f.src = \"%s\";", kCrossSiteSubframeUrl.spec().c_str());
+  const std::string kExtractSubframeUrl =
+      "window.domAutomationController.send(f.src);";
+
+  ASSERT_TRUE(NavigateToURL(shell(), kMainFrameUrl));
+
+  const auto* main_rfh_site_instance =
+      shell()->web_contents()->GetMainFrame()->GetSiteInstance();
+
+  auto did_start_deferring_commit_callback =
+      base::BindLambdaForTesting([&](RenderFrameHost* subframe_rfh) {
+        // Verify that the subframe starts out as same-process with its parent.
+        ASSERT_EQ(main_rfh_site_instance, subframe_rfh->GetSiteInstance());
+
+        // Trigger the second commit now that we are deferring the first one.
+        ASSERT_TRUE(ExecuteScript(shell(), kNavigateSubframeCrossSite));
+      });
+
+  CommitMessageOrderReverser commit_order_reverser(
+      shell()->web_contents(), kSubframeSameSiteUrl /* deferred_url */,
+      did_start_deferring_commit_callback);
+
+  ASSERT_TRUE(ExecuteScript(shell(), kAddSameSiteDynamicSubframe));
+  commit_order_reverser.WaitForBothCommits();
+
+  // Verify that:
+  //  - The cross-site navigation in the sub-frame was committed and the
+  //    same-site navigation was ignored.
+  //  - The parent frame thinks so, too.
+  //  - The renderer process corresponding to the sub-frame with the ignored
+  //    commit was not killed. This is verified implicitly: this is the same
+  //    renderer process where the parent RenderFrame lives, so if the call to
+  //    ExecuteScriptAndExtractString succeeds here, the process is still alive.
+  std::string actual_subframe_url;
+  ASSERT_TRUE(ExecuteScriptAndExtractString(shell(), kExtractSubframeUrl,
+                                            &actual_subframe_url));
+  EXPECT_EQ(kCrossSiteSubframeUrl.spec(), actual_subframe_url);
+}
+
+// Create an out-of-process iframe that causes itself to be detached during
+// its layout/animate phase. See https://crbug.com/802932.
+IN_PROC_BROWSER_TEST_F(SitePerProcessBrowserTest, OOPIFDetachDuringAnimation) {
+  GURL main_url(embedded_test_server()->GetURL(
+      "a.com", "/frame_tree/frame-detached-in-animationstart-event.html"));
+  EXPECT_TRUE(NavigateToURL(shell(), main_url));
+  FrameTreeNode* root = web_contents()->GetFrameTree()->root();
+
+  EXPECT_EQ(
+      " Site A ------------ proxies for B\n"
+      "   +--Site B ------- proxies for A\n"
+      "        +--Site A -- proxies for B\n"
+      "Where A = http://a.com/\n"
+      "      B = http://b.com/",
+      DepictFrameTree(root));
+
+  FrameTreeNode* nested_child = root->child_at(0)->child_at(0);
+  WaitForChildFrameSurfaceReady(nested_child->current_frame_host());
+
+  EXPECT_TRUE(
+      ExecuteScript(nested_child->current_frame_host(), "startTest();"));
+
+  // Test passes if the main renderer doesn't crash. Ping to verify.
+  bool success;
+  EXPECT_TRUE(ExecuteScriptAndExtractBool(
+      root->current_frame_host(), "window.domAutomationController.send(true);",
+      &success));
+  EXPECT_TRUE(success);
+}
+
+// Verifies that when navigating an OOPIF to same site and then canceling
+// navigation from beforeunload handler popup will not remove the
+// RemoteFrameView from OOPIF's owner element in the parent process. This test
+// uses OOPIF visibility to make sure RemoteFrameView exists after beforeunload
+// is handled.
+IN_PROC_BROWSER_TEST_F(SitePerProcessBrowserTest,
+                       CanceledBeforeUnloadShouldNotClearRemoteFrameView) {
+  GURL a_url(embedded_test_server()->GetURL(
+      "a.com", "/cross_site_iframe_factory.html?a(b)"));
+  EXPECT_TRUE(NavigateToURL(shell(), a_url));
+
+  FrameTreeNode* child_node =
+      web_contents()->GetFrameTree()->root()->child_at(0);
+  GURL b_url(embedded_test_server()->GetURL(
+      "b.com", "/render_frame_host/beforeunload.html"));
+  NavigateFrameToURL(child_node, b_url);
+  FrameConnectorDelegate* frame_connector_delegate =
+      static_cast<RenderWidgetHostViewChildFrame*>(
+          child_node->current_frame_host()->GetView())
+          ->FrameConnectorForTesting();
+
+  // Need user gesture for 'beforeunload' to fire.
+  PrepContentsForBeforeUnloadTest(web_contents());
+
+  // Simulate user choosing to stay on the page after beforeunload fired.
+  SetShouldProceedOnBeforeUnload(shell(), true /* proceed */,
+                                 false /* success */);
+
+  // First, hide the <iframe>. This goes through RemoteFrameView::Hide() and
+  // eventually updates the FrameConnectorDelegate. Also,
+  // RemoteFrameView::self_visible_ will be set to false which can only be
+  // undone by calling RemoteFrameView::Show. Therefore, potential calls to
+  // RemoteFrameView::SetParentVisible(true) would not update the visibility at
+  // the browser side.
+  ASSERT_TRUE(ExecuteScript(
+      web_contents(),
+      "document.querySelector('iframe').style.visibility = 'hidden';"));
+  while (!frame_connector_delegate->IsHidden()) {
+    base::RunLoop run_loop;
+    base::ThreadTaskRunnerHandle::Get()->PostDelayedTask(
+        FROM_HERE, run_loop.QuitClosure(), TestTimeouts::tiny_timeout());
+    run_loop.Run();
+  }
+
+  // Now we navigate the child to about:blank, but since we do not proceed with
+  // the navigation, the OOPIF should stay alive and RemoteFrameView intact.
+  ASSERT_TRUE(ExecuteScript(
+      web_contents(), "document.querySelector('iframe').src = 'about:blank';"));
+  WaitForAppModalDialog(shell());
+
+  // Sanity check: We should still have an OOPIF and hence a RWHVCF.
+  ASSERT_TRUE(static_cast<RenderWidgetHostViewBase*>(
+                  child_node->current_frame_host()->GetView())
+                  ->IsRenderWidgetHostViewChildFrame());
+
+  // Now make the <iframe> visible again. This calls RemoteFrameView::Show()
+  // only if the RemoteFrameView is the EmbeddedContentView of the corresponding
+  // HTMLFrameOwnerElement.
+  ASSERT_TRUE(ExecuteScript(
+      web_contents(),
+      "document.querySelector('iframe').style.visibility = 'visible';"));
+  while (frame_connector_delegate->IsHidden()) {
+    base::RunLoop run_loop;
+    base::ThreadTaskRunnerHandle::Get()->PostDelayedTask(
+        FROM_HERE, run_loop.QuitClosure(), TestTimeouts::tiny_timeout());
+    run_loop.Run();
   }
 }
 

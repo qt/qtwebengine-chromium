@@ -211,6 +211,7 @@
     {
       name: "CSSAdditiveAnimations",
       depends_on: ["StackedCSSPropertyAnimations"],
+      settable_from_internals: true,
       status: "experimental",
     },
     {
@@ -397,18 +398,21 @@
     },
     {
       name: "FeaturePolicyAutoplayFeature",
-      status: "stable"
+      status: "stable",
+      depends_on: ["FeaturePolicy"]
     },
     {
       name: "FeaturePolicyExperimentalFeatures",
     },
     {
       name: "FeaturePolicyForPermissions",
-      status: "stable"
+      status: "stable",
+      depends_on: ["FeaturePolicy"]
     },
     {
       name: "FeaturePolicyJavaScriptInterface",
-      status: "experimental"
+      status: "experimental",
+      depends_on: ["FeaturePolicy"]
     },
     {
       name: "FetchRequestCache",
@@ -450,7 +454,7 @@
     {
       name: "FramebustingNeedsSameOriginOrUserGesture",
       settable_from_internals: true,
-      status: "stable",
+      status: "experimental",
     },
     {
       name: "FramesTimingFunction",
@@ -1125,6 +1129,7 @@
     },
     {
       name: "WebAnimationsAPI",
+      settable_from_internals: true,
       status: "experimental",
     },
     {

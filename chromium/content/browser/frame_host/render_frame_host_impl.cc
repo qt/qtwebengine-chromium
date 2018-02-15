@@ -579,6 +579,18 @@ RenderFrameHostImpl::RenderFrameHostImpl(SiteInstance* site_instance,
 
   ax_tree_id_ = ui::AXTreeIDRegistry::GetInstance()->GetOrCreateAXTreeID(
       GetProcess()->GetID(), routing_id_);
+
+  // Content-Security-Policy: The CSP source 'self' is usually the origin of the
+  // current document, set by SetLastCommittedOrigin(). However, before a new
+  // frame commits its first navigation, 'self' should correspond to the origin
+  // of the parent (in case of a new iframe) or the opener (in case of a new
+  // window). This is necessary to correctly enforce CSP during the initial
+  // navigation.
+  FrameTreeNode* frame_owner = frame_tree_node_->parent()
+                                   ? frame_tree_node_->parent()
+                                   : frame_tree_node_->opener();
+  if (frame_owner)
+    CSPContext::SetSelf(frame_owner->current_origin());
 }
 
 RenderFrameHostImpl::~RenderFrameHostImpl() {
@@ -781,11 +793,17 @@ void RenderFrameHostImpl::ExecuteJavaScriptInIsolatedWorld(
 }
 
 void RenderFrameHostImpl::CopyImageAt(int x, int y) {
-  Send(new FrameMsg_CopyImageAt(routing_id_, x, y));
+  gfx::PointF point_in_view =
+      GetView()->TransformRootPointToViewCoordSpace(gfx::PointF(x, y));
+  Send(new FrameMsg_CopyImageAt(routing_id_, point_in_view.x(),
+                                point_in_view.y()));
 }
 
 void RenderFrameHostImpl::SaveImageAt(int x, int y) {
-  Send(new FrameMsg_SaveImageAt(routing_id_, x, y));
+  gfx::PointF point_in_view =
+      GetView()->TransformRootPointToViewCoordSpace(gfx::PointF(x, y));
+  Send(new FrameMsg_SaveImageAt(routing_id_, point_in_view.x(),
+                                point_in_view.y()));
 }
 
 RenderViewHost* RenderFrameHostImpl::GetRenderViewHost() {
@@ -1563,6 +1581,14 @@ void RenderFrameHostImpl::DidCommitProvisionalLoad(
     OnBeforeUnloadACK(true, approx_renderer_start_time, base::TimeTicks::Now());
   }
 
+  // If we're waiting for an unload ack from this renderer and we receive a
+  // Navigate message, then the renderer was navigating before it received the
+  // unload request.  It will either respond to the unload request soon or our
+  // timer will expire.  Either way, we should ignore this message, because we
+  // have already committed to closing this renderer.
+  if (IsWaitingForUnloadACK())
+    return;
+
   // Retroactive sanity check:
   // - If this is the first real load committing in this frame, then by this
   //   time the RenderFrameHost's InterfaceProvider implementation should have
@@ -1608,14 +1634,6 @@ void RenderFrameHostImpl::DidCommitProvisionalLoad(
     // if the new document is same-origin with the initial empty document, and
     // therefore the global object is not replaced.
   }
-
-  // If we're waiting for an unload ack from this renderer and we receive a
-  // Navigate message, then the renderer was navigating before it received the
-  // unload request.  It will either respond to the unload request soon or our
-  // timer will expire.  Either way, we should ignore this message, because we
-  // have already committed to closing this renderer.
-  if (IsWaitingForUnloadACK())
-    return;
 
   if (validated_params->report_type ==
       FrameMsg_UILoadMetricsReportType::REPORT_LINK) {
@@ -3501,7 +3519,6 @@ void RenderFrameHostImpl::CommitNavigation(
       FrameMsg_Navigate_Type::IsSameDocument(common_params.navigation_type);
 
   base::Optional<URLLoaderFactoryBundle> subresource_loader_factories;
-  mojom::ControllerServiceWorkerInfoPtr controller_service_worker_info;
   if (base::FeatureList::IsEnabled(features::kNetworkService) &&
       (!is_same_document || is_first_navigation)) {
     subresource_loader_factories.emplace();
@@ -3588,12 +3605,13 @@ void RenderFrameHostImpl::CommitNavigation(
       subresource_loader_factories->RegisterFactory(factory.first,
                                                     std::move(factory_proxy));
     }
+  }
 
-    // Pass the controller service worker info if we have one.
-    if (subresource_loader_params) {
-      controller_service_worker_info =
-          std::move(subresource_loader_params->controller_service_worker_info);
-    }
+  // Pass the controller service worker info if we have one.
+  mojom::ControllerServiceWorkerInfoPtr controller_service_worker_info;
+  if (subresource_loader_params) {
+    controller_service_worker_info =
+        std::move(subresource_loader_params->controller_service_worker_info);
   }
 
   // It is imperative that cross-document navigations always provide a set of
