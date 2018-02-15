@@ -191,8 +191,9 @@ GpuMemoryBufferFactoryNativePixmap::CreateImageForGpuMemoryBuffer(
                        surface_handle, size, format,
                        std::move(handle.native_pixmap_handle));
     }
-#endif
-#if !defined(OS_FUCHSIA)
+#elif defined(TOOLKIT_QT)
+    return nullptr;
+#elif !defined(OS_FUCHSIA)
     if (!pixmap) {
       DCHECK_EQ(surface_handle, gpu::kNullSurfaceHandle);
       pixmap = base::WrapRefCounted(new gfx::NativePixmapDmaBuf(

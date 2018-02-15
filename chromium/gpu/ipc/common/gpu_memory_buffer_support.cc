@@ -53,7 +53,7 @@ GpuMemoryBufferSupport::GpuMemoryBufferSupport() {
     return;
   }
 #endif
-#if defined(OS_LINUX) || defined(OS_CHROMEOS)
+#if (defined(OS_LINUX) || defined(OS_CHROMEOS)) && !defined(TOOLKIT_QT)
   client_native_pixmap_factory_.reset(
       gfx::CreateClientNativePixmapFactoryDmabuf());
 #endif
