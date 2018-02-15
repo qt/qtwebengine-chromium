@@ -9,7 +9,9 @@
 #include "build/build_config.h"
 
 #if defined(OS_LINUX)
+#if !defined(TOOLKIT_QT)
 #include <drm_fourcc.h>
+#endif
 #include "base/posix/eintr_wrapper.h"
 #endif
 
@@ -20,7 +22,7 @@
 
 namespace gfx {
 
-#if defined(OS_LINUX)
+#if defined(OS_LINUX)&& !defined(TOOLKIT_QT)
 static_assert(NativePixmapHandle::kNoModifier == DRM_FORMAT_MOD_INVALID,
               "gfx::NativePixmapHandle::kNoModifier should be an alias for"
               "DRM_FORMAT_MOD_INVALID");
