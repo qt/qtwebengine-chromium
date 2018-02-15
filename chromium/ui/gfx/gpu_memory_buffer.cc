@@ -36,7 +36,7 @@ GpuMemoryBufferHandle CloneHandleForIPC(
       gfx::GpuMemoryBufferHandle handle;
       handle.type = gfx::NATIVE_PIXMAP;
       handle.id = source_handle.id;
-#if defined(OS_LINUX)
+#if defined(OS_LINUX) && !defined(TOOLKIT_QT)
       handle.native_pixmap_handle =
           gfx::CloneHandleForIPC(source_handle.native_pixmap_handle);
 #endif
