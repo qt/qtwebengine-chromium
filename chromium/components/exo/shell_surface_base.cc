@@ -210,8 +210,10 @@ class CustomWindowTargeter : public aura::WindowTargeter {
       return false;
 
     int component = widget_->non_client_view()->NonClientHitTest(local_point);
-    if (component != HTNOWHERE && component != HTCLIENT)
+    if (component != HTNOWHERE && component != HTCLIENT &&
+        component != HTBORDER) {
       return true;
+    }
 
     aura::Window::ConvertPointToTarget(window, surface->window(), &local_point);
     return surface->HitTest(local_point);
@@ -567,6 +569,13 @@ void ShellSurfaceBase::SetCanMinimize(bool can_minimize) {
   can_minimize_ = can_minimize;
 }
 
+void ShellSurfaceBase::DisableMovement() {
+  movement_disabled_ = true;
+
+  if (widget_)
+    widget_->set_movement_disabled(true);
+}
+
 // static
 void ShellSurfaceBase::SetMainSurface(aura::Window* window, Surface* surface) {
   window->SetProperty(kMainSurfaceKey, surface);
@@ -675,7 +684,7 @@ void ShellSurfaceBase::OnSurfaceCommit() {
   widget_->OnSizeConstraintsChanged();
 }
 
-bool ShellSurfaceBase::IsTouchEnabled(Surface*) const {
+bool ShellSurfaceBase::IsInputEnabled(Surface*) const {
   return true;
 }
 

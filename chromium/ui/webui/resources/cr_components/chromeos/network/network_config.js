@@ -365,7 +365,7 @@ Polymer({
     this.error_ = '';
 
     var propertiesToSet = this.getPropertiesToSet_();
-    if (!this.guid || this.getSource_() == CrOnc.Source.NONE) {
+    if (this.getSource_() == CrOnc.Source.NONE) {
       // New non VPN network configurations default to 'AutoConnect' unless
       // prohibited by policy.
       var prohibitAutoConnect = this.globalPolicy &&
@@ -411,6 +411,8 @@ Polymer({
    * @return {!CrOnc.Source}
    */
   getSource_: function() {
+    if (!this.guid)
+      return CrOnc.Source.NONE;
     var source = this.networkProperties.Source;
     return source ? /** @type {!CrOnc.Source} */ (source) : CrOnc.Source.NONE;
   },
@@ -543,9 +545,9 @@ Polymer({
 
   /** @private */
   setShareNetwork_: function() {
-    if (this.guid) {
+    var source = this.getSource_();
+    if (source != CrOnc.Source.NONE) {
       // Configured networks can not change whether they are shared.
-      var source = this.getSource_();
       this.shareNetwork_ =
           source == CrOnc.Source.DEVICE || source == CrOnc.Source.DEVICE_POLICY;
       return;
@@ -1019,7 +1021,7 @@ Polymer({
    * @private
    */
   shareIsVisible_: function() {
-    return !this.guid &&
+    return this.getSource_() == CrOnc.Source.NONE &&
         (this.type == CrOnc.Type.WI_FI || this.type == CrOnc.Type.WI_MAX);
   },
 
@@ -1179,8 +1181,11 @@ Polymer({
   setVpnIPsecProperties_: function(propertiesToSet) {
     var vpn = propertiesToSet.VPN;
     assert(vpn.IPsec);
-    if (vpn.IPsec.AuthenticationType == CrOnc.IPsecAuthenticationType.CERT)
+    if (vpn.IPsec.AuthenticationType == CrOnc.IPsecAuthenticationType.CERT) {
+      vpn.IPsec.ClientCertType = 'PKCS11Id';
       vpn.IPsec.ClientCertPKCS11Id = this.getUserCertPkcs11Id_();
+      vpn.IPsec.ServerCAPEMs = this.getServerCaPems_();
+    }
     vpn.IPsec.IKEVersion = 1;
     vpn.IPsec.SaveCredentials = this.vpnSaveCredentials_;
     vpn.L2TP.SaveCredentials = this.vpnSaveCredentials_;

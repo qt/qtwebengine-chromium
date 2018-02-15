@@ -1237,10 +1237,10 @@ struct EchoCanceller3Config {
     size_t down_sampling_factor = 4;
     size_t num_filters = 4;
     size_t api_call_jitter_blocks = 26;
-    size_t min_echo_path_delay_blocks = 5;
-    size_t delay_headroom_blocks = 1;
+    size_t min_echo_path_delay_blocks = 0;
+    size_t delay_headroom_blocks = 2;
     size_t hysteresis_limit_1_blocks = 1;
-    size_t hysteresis_limit_2_blocks = 0;
+    size_t hysteresis_limit_2_blocks = 1;
   } delay;
 
   struct Filter {
@@ -1258,11 +1258,11 @@ struct EchoCanceller3Config {
       float noise_gate;
     };
 
-    MainConfiguration main = {12, 0.005f, 0.05f, 0.001f, 20075344.f};
-    ShadowConfiguration shadow = {12, 0.1f, 20075344.f};
+    MainConfiguration main = {13, 0.005f, 0.1f, 0.001f, 20075344.f};
+    ShadowConfiguration shadow = {13, 0.7f, 20075344.f};
 
-    MainConfiguration main_initial = {12, 0.01f, 0.1f, 0.001f, 20075344.f};
-    ShadowConfiguration shadow_initial = {12, 0.7f, 20075344.f};
+    MainConfiguration main_initial = {12, 0.05f, 5.f, 0.001f, 20075344.f};
+    ShadowConfiguration shadow_initial = {12, 0.9f, 20075344.f};
   } filter;
 
   struct Erle {
@@ -1285,7 +1285,7 @@ struct EchoCanceller3Config {
     float m2 = 0.0001f;
     float m3 = 0.01f;
     float m4 = 0.1f;
-    float m5 = 0.3f;
+    float m5 = 0.1f;
     float m6 = 0.0001f;
     float m7 = 0.01f;
     float m8 = 0.0001f;
@@ -1312,13 +1312,13 @@ struct EchoCanceller3Config {
       float min_dec;
     };
 
-    GainChanges low_noise = {3.f, 3.f, 1.5f, 1.5f, 1.5f, 1.5f};
+    GainChanges low_noise = {2.f, 2.f, 1.4f, 1.4f, 1.1f, 1.1f};
     GainChanges initial = {2.f, 2.f, 1.5f, 1.5f, 1.2f, 1.2f};
     GainChanges normal = {2.f, 2.f, 1.5f, 1.5f, 1.2f, 1.2f};
     GainChanges saturation = {1.2f, 1.2f, 1.5f, 1.5f, 1.f, 1.f};
     GainChanges nonlinear = {1.5f, 1.5f, 1.2f, 1.2f, 1.1f, 1.1f};
 
-    float floor_first_increase = 0.0001f;
+    float floor_first_increase = 0.00001f;
   } gain_updates;
 };
 

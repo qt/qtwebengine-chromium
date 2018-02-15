@@ -30935,6 +30935,35 @@ http://cs/file:chrome/histograms.xml - but prefer this file for new entries.
   </summary>
 </histogram>
 
+<histogram
+    name="InstantTethering.GattConnectionAttempt.EffectiveSuccessRateWithRetries"
+    enum="BooleanSuccess">
+  <owner>hansberry@chromium.org</owner>
+  <summary>
+    Captures the effective count of successful and failed GATT connection
+    attempts, including retries. This means that if a GATT connection attempt
+    fails but then succeeds on a future retry, this is counted as a single
+    success. In the context of this metric, a failure represents a GATT failure
+    in all retry attempts.
+
+    An individual attempt is considered successful if a GATT connection was
+    created and authenticated successfully (i.e., the connection was ready for
+    Instant Tethering to exchange protocol messages).
+  </summary>
+</histogram>
+
+<histogram name="InstantTethering.GattConnectionAttempt.SuccessRate"
+    enum="BooleanSuccess">
+  <owner>hansberry@chromium.org</owner>
+  <summary>
+    Captures the count of successful and failed GATT connection attempts.
+
+    An attempt is considered successful if a GATT connection was created and
+    authenticated successfully (i.e., the connection was ready for Instant
+    Tethering to exchange protocol messages).
+  </summary>
+</histogram>
+
 <histogram name="InstantTethering.HostScanBatchDuration" units="ms">
   <owner>hansberry@chromium.org</owner>
   <summary>
@@ -33262,6 +33291,10 @@ http://cs/file:chrome/histograms.xml - but prefer this file for new entries.
 
 <histogram name="Media.Audio.InputDevicePropertyChangedMac"
     enum="AudioDevicePropertyResult">
+  <obsolete>
+    Deprecated Feb 2018. Was put in place to debug missing callback issues that
+    have since been resolved.
+  </obsolete>
   <owner>henrika@chromium.org</owner>
   <summary>
     Lists device properties that have been changed during an audio input stream
@@ -33273,6 +33306,10 @@ http://cs/file:chrome/histograms.xml - but prefer this file for new entries.
 
 <histogram name="Media.Audio.InputDevicePropertyChangedStartupFailedMac"
     enum="AudioDevicePropertyResult">
+  <obsolete>
+    Deprecated Feb 2018. Was put in place to debug missing callback issues that
+    have since been resolved.
+  </obsolete>
   <owner>henrika@chromium.org</owner>
   <summary>
     Lists device properties that have been changed during an audio input stream
@@ -34632,6 +34669,28 @@ http://cs/file:chrome/histograms.xml - but prefer this file for new entries.
     Media engagement scores for each origin, recorded at Chrome startup. It is
     converted to a percentage so should be divided by 100 to get the actual
     score.
+  </summary>
+</histogram>
+
+<histogram name="Media.Engagement.Session" enum="MediaEngagementSessionEvent">
+  <owner>mlamouri@chromium.org</owner>
+  <owner>media-dev@chromium.org</owner>
+  <summary>
+    Records creation and playback status of a Media Engagement Session. This is
+    recorded at the same time as the data is commited into the content settings
+    database.
+  </summary>
+</histogram>
+
+<histogram name="Media.Engagement.Session.Restored"
+    enum="MediaEngagementSessionEvent">
+  <owner>mlamouri@chromium.org</owner>
+  <owner>media-dev@chromium.org</owner>
+  <summary>
+    Records creation and playback status of a restored Media Engagement Session.
+    This is recorded at the same time as the data is commited into the content
+    settings database. Restored information are recorded in addition of regular
+    ones (Media.Engagement.Session).
   </summary>
 </histogram>
 
@@ -81727,6 +81786,17 @@ http://cs/file:chrome/histograms.xml - but prefer this file for new entries.
   </summary>
 </histogram>
 
+<histogram name="Signin.ChromePrimaryAccountStateOnWebSignout"
+    enum="ChromePrimaryAccountStateInGaiaCookies">
+  <owner>droger@chromium.org</owner>
+  <summary>
+    Logs the state of the Chrome account when the user signs out on the web.
+    This assumes that a logout of the web is always a complete logout of all the
+    web accounts (e.g. single session signout is not supported). TODO(droger):
+    make this histogram obsolete when Dice is launched.
+  </summary>
+</histogram>
+
 <histogram name="Signin.CookieJar.ChromeAccountRelation" enum="AccountRelation">
   <owner>skym@chromium.org</owner>
   <summary>
@@ -100833,6 +100903,14 @@ http://cs/file:chrome/histograms.xml - but prefer this file for new entries.
   </summary>
 </histogram>
 
+<histogram name="Windows.HasHighResolutionTimeTicks" enum="Boolean">
+  <owner>gab@chromium.org</owner>
+  <summary>
+    The value of TimeTicks::IsHighResolution(). Reported once per browser
+    session, on startup.
+  </summary>
+</histogram>
+
 <histogram name="Windows.HighResolutionTimerUsage" units="%">
   <owner>stanisc@chromium.org</owner>
   <summary>
@@ -101562,7 +101640,9 @@ http://cs/file:chrome/histograms.xml - but prefer this file for new entries.
 </histogram_suffixes>
 
 <histogram_suffixes name="AppUIComponent" separator=".">
+  <suffix name="Desktop" label="Desktop"/>
   <suffix name="SearchResult" label="Launcher App Search Result"/>
+  <suffix name="Shelf" label="Shelf"/>
   <suffix name="ShelfButton" label="ShelfButton"/>
   <suffix name="SuggestedAppPeeking" label="Suggested App, Peeking Launcher"/>
   <suffix name="SuggestedAppFullscreen"

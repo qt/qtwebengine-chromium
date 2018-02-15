@@ -146,6 +146,9 @@ class ShellSurfaceBase : public SurfaceTreeHost,
 
   void SetCanMinimize(bool can_minimize);
 
+  // Prevents shell surface from being moved.
+  void DisableMovement();
+
   // Sets the main surface for the window.
   static void SetMainSurface(aura::Window* window, Surface* surface);
 
@@ -158,7 +161,7 @@ class ShellSurfaceBase : public SurfaceTreeHost,
 
   // Overridden from SurfaceDelegate:
   void OnSurfaceCommit() override;
-  bool IsTouchEnabled(Surface* surface) const override;
+  bool IsInputEnabled(Surface* surface) const override;
   void OnSetFrame(SurfaceFrameType type) override;
   void OnSetFrameColors(SkColor active_color, SkColor inactive_color) override;
   void OnSetParent(Surface* parent, const gfx::Point& position) override;
