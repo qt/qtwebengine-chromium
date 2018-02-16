@@ -75,7 +75,7 @@ void PrintJob::Initialize(PrintJobWorkerOwner* job,
   new_doc->set_page_count(page_count);
   UpdatePrintedDocument(new_doc);
 
-#if defined(OS_WIN)
+#if defined(OS_WIN) && !defined(TOOLKIT_QT)
   pdf_page_mapping_ = PageRange::GetPages(settings_.ranges());
   if (pdf_page_mapping_.empty()) {
     for (int i = 0; i < page_count; i++)
