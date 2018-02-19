@@ -49,7 +49,7 @@ if (ozone_platform_wayland) {
   ozone_platform_test_deps += [ "platform/wayland:wayland_unittests" ]
 }
 
-if (ozone_platform_x11) {
+if (ozone_platform_x11 && !use_qt) {
   ozone_platforms += [ "x11" ]
   ozone_platform_deps += [ "platform/x11" ]
 }
