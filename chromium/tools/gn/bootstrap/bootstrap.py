@@ -780,6 +780,9 @@ def write_gn_ninja(path, root_gen_dir, options):
 
   if is_win:
     static_libraries['base']['sources'].extend([
+        'base/allocator/partition_allocator/address_space_randomization.cc',
+        'base/allocator/partition_allocator/page_allocator.cc',
+        'base/allocator/partition_allocator/spin_lock.cc',
         'base/base_paths_win.cc',
         'base/cpu.cc',
         'base/debug/close_handle_hook_win.cc',
@@ -825,6 +828,7 @@ def write_gn_ninja(path, root_gen_dir, options):
         'base/timer/hi_res_timer_manager_win.cc',
         'base/trace_event/heap_profiler_allocation_register_win.cc',
         'base/trace_event/trace_event_etw_export_win.cc',
+        'base/win/core_winrt_util.cc',
         'base/win/enum_variant.cc',
         'base/win/event_trace_controller.cc',
         'base/win/event_trace_provider.cc',
@@ -838,9 +842,11 @@ def write_gn_ninja(path, root_gen_dir, options):
         'base/win/registry.cc',
         'base/win/resource_util.cc',
         'base/win/scoped_bstr.cc',
+        'base/win/scoped_com_initializer.cc',
         'base/win/scoped_handle.cc',
         'base/win/scoped_process_information.cc',
         'base/win/scoped_variant.cc',
+        'base/win/scoped_winrt_initializer.cc',
         'base/win/shortcut.cc',
         'base/win/startup_information.cc',
         'base/win/wait_chain.cc',
