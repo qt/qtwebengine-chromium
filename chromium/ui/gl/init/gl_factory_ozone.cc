@@ -30,7 +30,6 @@ bool GetGLWindowSystemBindingInfo(GLWindowSystemBindingInfo* info) {
   return false;
 }
 
-#if !defined(TOOLKIT_QT)
 scoped_refptr<GLContext> CreateGLContext(GLShareGroup* share_group,
                                          GLSurface* compatible_surface,
                                          const GLContextAttribs& attribs) {
@@ -105,7 +104,6 @@ scoped_refptr<GLSurface> CreateOffscreenGLSurfaceWithFormat(
 
   return nullptr;
 }
-#endif
 
 void SetDisabledExtensionsPlatform(const std::string& disabled_extensions) {
   if (HasGLOzone()) {
