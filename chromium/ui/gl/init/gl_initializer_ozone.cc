@@ -19,7 +19,6 @@
 namespace gl {
 namespace init {
 
-#if !defined(TOOLKIT_QT)
 bool InitializeGLOneOffPlatform() {
   if (HasGLOzone()) {
     gl::GLDisplayEglUtil::SetInstance(gl::GLDisplayEglUtilOzone::GetInstance());
@@ -35,7 +34,6 @@ bool InitializeGLOneOffPlatform() {
   }
   return false;
 }
-#endif
 
 bool InitializeStaticGLBindings(GLImplementationParts implementation) {
   // Prevent reinitialization with a different implementation. Once the gpu

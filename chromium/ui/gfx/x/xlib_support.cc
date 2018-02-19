@@ -12,7 +12,7 @@
 #include "library_loaders/xlib_xcb_loader.h"
 
 #ifdef TOOLKIT_QT
-extern XDisplay* GetQtXDisplay();
+extern void* GetQtXDisplay();
 #endif
 
 namespace x11 {

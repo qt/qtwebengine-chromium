@@ -580,13 +580,20 @@ struct GL_EXPORT DriverEGL {
 #if defined(USE_GLX)
 struct GL_EXPORT DriverGLX {
   void InitializeStaticBindings();
+#ifdef TOOLKIT_QT
+  void InitializeExtensionBindings(const std::string&);
+#else
   void InitializeExtensionBindings();
+#endif
+
   void ClearBindings();
 
   ProcsGLX fn;
   ExtensionsGLX ext;
 
+#ifndef TOOLKIT_QT
  private:
+#endif
   static std::string GetPlatformExtensions();
 };
 #endif
