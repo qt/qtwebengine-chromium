@@ -313,7 +313,7 @@ FilePath CommandLine::GetSwitchValuePath(
 CommandLine::StringType CommandLine::GetSwitchValueNative(
     const base::StringPiece& switch_string) const {
   DCHECK_EQ(ToLowerASCII(switch_string), switch_string);
-  auto result = switches_.find(switch_string);
+  auto result = switches_.find(switch_string.as_string());
   return result == switches_.end() ? StringType() : result->second;
 }
 
