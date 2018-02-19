@@ -11,14 +11,14 @@
 #include "ui/gfx/x/x11_switches.h"
 
 #ifdef TOOLKIT_QT
-extern XDisplay* GetQtXDisplay();
+extern void* GetQtXDisplay();
 #endif
 
 namespace gfx {
 
 XDisplay* GetXDisplay() {
 #ifdef TOOLKIT_QT
-  return GetQtXDisplay();
+  return static_cast<XDisplay*>(GetQtXDisplay());
 #else
   static XDisplay* display = NULL;
   if (!display)
