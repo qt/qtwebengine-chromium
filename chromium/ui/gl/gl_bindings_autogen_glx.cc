@@ -108,8 +108,12 @@ void DriverGLX::InitializeStaticBindings() {
   fn.glXWaitXFn = reinterpret_cast<glXWaitXProc>(GetGLProcAddress("glXWaitX"));
 }
 
+#ifdef TOOLKIT_QT
+void DriverGLX::InitializeExtensionBindings(const std::string& platform_extensions) {
+#else
 void DriverGLX::InitializeExtensionBindings() {
   std::string platform_extensions(GetPlatformExtensions());
+#endif
   [[maybe_unused]] gfx::ExtensionSet extensions(
       gfx::MakeExtensionSet(platform_extensions));
 
