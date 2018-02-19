@@ -484,9 +484,11 @@ bool GLSurfaceGLX::InitializeOneOff() {
 bool GLSurfaceGLX::InitializeExtensionSettingsOneOff() {
   if (!initialized_)
     return false;
-
+#ifdef TOOLKIT_QT
+  g_driver_glx.InitializeExtensionBindings(g_driver_glx.GetPlatformExtensions());
+#else
   g_driver_glx.InitializeExtensionBindings();
-
+#endif
   g_glx_context_create = HasGLXExtension("GLX_ARB_create_context");
   g_glx_create_context_robustness_supported =
       HasGLXExtension("GLX_ARB_create_context_robustness");
