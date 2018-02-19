@@ -122,7 +122,7 @@ target(link_target_type, "gpu_sources") {
   }
 
   # Use DRI on desktop Linux builds.
-  if (is_desktop_linux && (!is_chromecast || is_cast_desktop_build)) {
+  if (is_desktop_linux && (!is_chromecast || is_cast_desktop_build) && !use_qt) {
     configs += [ "//build/config/linux/dri" ]
   }
 }
