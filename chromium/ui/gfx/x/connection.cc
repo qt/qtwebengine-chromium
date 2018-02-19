@@ -56,7 +56,7 @@ int XLookupString(XKeyEvent* event_struct,
 }
 
 #ifdef TOOLKIT_QT
-extern XDisplay* GetQtXDisplay();
+extern void* GetQtXDisplay();
 #endif
 
 namespace x11 {
