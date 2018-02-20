@@ -1393,7 +1393,13 @@ SI F approx_powf(F x, float y) { return approx_powf(x, F_(y)); }
 
 SI F from_half(U16 h) {
 #if defined(SKRP_CPU_NEON) && defined(SK_CPU_ARM64)
+#if defined(__ARM_FP16_FORMAT_IEEE)
     return vcvt_f32_f16((float16x4_t)h);
+#else
+    __fp16 fp16;
+    memcpy(&fp16, &h, sizeof(U16));
+    return float(fp16);
+#endif // defined(__ARM_FP16_FORMAT_IEEE)
 
 #elif defined(SKRP_CPU_SKX)
     return _mm512_cvtph_ps((__m256i)h);
@@ -1416,7 +1422,14 @@ SI F from_half(U16 h) {
 
 SI U16 to_half(F f) {
 #if defined(SKRP_CPU_NEON) && defined(SK_CPU_ARM64)
+#if defined(__ARM_FP16_FORMAT_IEEE)
     return (U16)vcvt_f16_f32(f);
+#else
+    __fp16 fp16 = __fp16(f);
+    U16 u16;
+    memcpy(&u16, &fp16, sizeof(U16));
+    return u16;
+#endif // defined(__ARM_FP16_FORMAT_IEEE)
 
 #elif defined(SKRP_CPU_SKX)
     return (U16)_mm512_cvtps_ph(f, _MM_FROUND_CUR_DIRECTION);
