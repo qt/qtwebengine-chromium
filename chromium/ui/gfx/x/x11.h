@@ -34,7 +34,6 @@ extern "C" {
 #include <X11/extensions/Xrandr.h>
 #include <X11/extensions/Xrender.h>
 #include <X11/extensions/record.h>
-#include <X11/extensions/scrnsaver.h>
 #include <X11/extensions/shape.h>
 
 // Define XK_xxx before the #include of <X11/keysym.h> so that <X11/keysym.h>

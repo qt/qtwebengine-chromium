@@ -284,7 +284,7 @@ void CommandLine::SetProgram(const FilePath& program) {
 
 bool CommandLine::HasSwitch(const base::StringPiece& switch_string) const {
   DCHECK_EQ(ToLowerASCII(switch_string), switch_string);
-  return ContainsKey(switches_, switch_string);
+  return ContainsKey(switches_, switch_string.as_string());
 }
 
 bool CommandLine::HasSwitch(const char switch_constant[]) const {
