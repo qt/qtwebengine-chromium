@@ -667,7 +667,9 @@ SI F approx_powf(F x, F y) {
 
 SI F from_half(U16 h) {
 #if defined(__ARM_FP16_FORMAT_IEEE)
-    return float(reinterpret_cast<__fp16>(h));
+    __fp16 fp16;
+    memcpy(&fp16, &h, sizeof(U16));
+    return float(fp16);
 
 #elif defined(JUMPER_IS_HSW) || defined(JUMPER_IS_AVX512)
     return _mm256_cvtph_ps(h);
@@ -687,7 +689,10 @@ SI F from_half(U16 h) {
 
 SI U16 to_half(F f) {
 #if defined(__ARM_FP16_FORMAT_IEEE)
-    return reinterpret_cast<U16>(__fp16(f));
+    __fp16 fp16 = __fp16(f);
+    U16 u16;
+    memcpy(&u16, &fp16, sizeof(U16));
+    return u16;
 
 #elif defined(JUMPER_IS_HSW) || defined(JUMPER_IS_AVX512)
     return _mm256_cvtps_ph(f, _MM_FROUND_CUR_DIRECTION);
