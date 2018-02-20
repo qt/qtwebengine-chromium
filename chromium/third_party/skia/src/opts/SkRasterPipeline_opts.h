@@ -996,8 +996,9 @@ SI F approx_powf(F x, float y) { return approx_powf(x, F_(y)); }
 
 SI F from_half(U16 h) {
 #if defined(JUMPER_IS_NEON) && defined(SK_CPU_ARM64)
-    return vcvt_f32_f16((float16x4_t)h);
-
+    __fp16 fp16;
+    memcpy(&fp16, &h, sizeof(U16));
+    return float(fp16);
 #elif defined(JUMPER_IS_SKX)
     return _mm512_cvtph_ps((__m256i)h);
 
@@ -1019,8 +1020,10 @@ SI F from_half(U16 h) {
 
 SI U16 to_half(F f) {
 #if defined(JUMPER_IS_NEON) && defined(SK_CPU_ARM64)
-    return (U16)vcvt_f16_f32(f);
-
+    __fp16 fp16 = __fp16(f);
+    U16 u16;
+    memcpy(&u16, &fp16, sizeof(U16));
+    return u16;
 #elif defined(JUMPER_IS_SKX)
     return (U16)_mm512_cvtps_ph(f, _MM_FROUND_CUR_DIRECTION);
 
