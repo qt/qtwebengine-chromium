@@ -19,6 +19,9 @@ struct CONTENT_EXPORT SubresourceLoaderParams {
   SubresourceLoaderParams();
   ~SubresourceLoaderParams();
 
+  SubresourceLoaderParams(const SubresourceLoaderParams& other) = default;
+  SubresourceLoaderParams& operator=(const SubresourceLoaderParams& other) = default;
+
   SubresourceLoaderParams(SubresourceLoaderParams&& other);
   SubresourceLoaderParams& operator=(SubresourceLoaderParams&& other);
 

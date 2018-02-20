@@ -64,7 +64,7 @@ U2fDevice* U2fDiscovery::GetDevice(base::StringPiece device_id) {
 }
 
 const U2fDevice* U2fDiscovery::GetDevice(base::StringPiece device_id) const {
-  auto found = devices_.find(device_id);
+  auto found = devices_.find(device_id.as_string());
   return found != devices_.end() ? found->second.get() : nullptr;
 }
 
@@ -77,7 +77,7 @@ bool U2fDiscovery::AddDevice(std::unique_ptr<U2fDevice> device) {
 }
 
 bool U2fDiscovery::RemoveDevice(base::StringPiece device_id) {
-  auto found = devices_.find(device_id);
+  auto found = devices_.find(device_id.as_string());
   if (found == devices_.end())
     return false;
 

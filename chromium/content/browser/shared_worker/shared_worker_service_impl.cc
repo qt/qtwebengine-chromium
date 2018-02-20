@@ -135,7 +135,9 @@ void SharedWorkerServiceImpl::ConnectToWorker(
 void SharedWorkerServiceImpl::DestroyHost(SharedWorkerHost* host) {
   RenderProcessHost* process_host =
       RenderProcessHost::FromID(host->process_id());
-  worker_hosts_.erase(worker_hosts_.find(host));
+  std::unique_ptr<SharedWorkerHost> hostKey(host);
+  worker_hosts_.erase(hostKey);
+  hostKey.release();
 
   // Complete the call to TerminateAllWorkersForTesting if no more workers.
   if (worker_hosts_.empty() && terminate_all_workers_callback_)

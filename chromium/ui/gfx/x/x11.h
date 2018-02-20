@@ -36,6 +36,10 @@ extern "C" {
 #include <X11/extensions/record.h>
 #include <X11/extensions/shape.h>
 
+#if defined(USE_XSCRNSAVER)
+#include <X11/extensions/scrnsaver.h>
+#endif
+
 // Define XK_xxx before the #include of <X11/keysym.h> so that <X11/keysym.h>
 // defines all KeySyms we need.
 #define XK_3270  // For XK_3270_BackTab in particular.

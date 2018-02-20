@@ -30,6 +30,7 @@
 
 #include <memory>
 #include "modules/webdatabase/DatabaseBasicTypes.h"
+#include "modules/webdatabase/SQLError.h"
 #include "modules/webdatabase/SQLStatement.h"
 #include "modules/webdatabase/SQLStatementBackend.h"
 #include "modules/webdatabase/SQLTransactionStateMachine.h"

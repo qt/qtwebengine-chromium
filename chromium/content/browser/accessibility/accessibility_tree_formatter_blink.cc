@@ -194,7 +194,7 @@ void AccessibilityTreeFormatterBlink::AddProperties(
        attr_index <= ui::AX_FLOAT_ATTRIBUTE_LAST;
        ++attr_index) {
     auto attr = static_cast<ui::AXFloatAttribute>(attr_index);
-    if (node.HasFloatAttribute(attr) && isfinite(node.GetFloatAttribute(attr)))
+    if (node.HasFloatAttribute(attr) && std::isfinite(node.GetFloatAttribute(attr)))
       dict->SetDouble(ui::ToString(attr), node.GetFloatAttribute(attr));
   }
 
