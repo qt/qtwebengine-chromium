@@ -668,12 +668,16 @@ void ScreenWin::SetHDREnabled(bool hdr_enabled) {
 }
 
 HWND ScreenWin::GetHWNDFromNativeWindow(gfx::NativeWindow window) const {
+#ifndef TOOLKIT_QT
   NOTREACHED();
+#endif
   return nullptr;
 }
 
 gfx::NativeWindow ScreenWin::GetNativeWindowFromHWND(HWND hwnd) const {
+#ifndef TOOLKIT_QT
   NOTREACHED();
+#endif
   return nullptr;
 }
 
