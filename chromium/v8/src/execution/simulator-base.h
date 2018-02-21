@@ -83,6 +83,7 @@ class SimulatorBase {
   // Helper methods to convert arbitrary integer or pointer arguments to the
   // needed generic argument type intptr_t.
 
+ protected:
   // Convert integral argument to intptr_t.
   template <typename T>
   static typename std::enable_if<std::is_integral<T>::value, intptr_t>::type
