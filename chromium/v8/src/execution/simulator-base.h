@@ -102,6 +102,7 @@ class SimulatorBase {
   // Helper methods to convert arbitrary integer or pointer arguments to the
   // needed generic argument type intptr_t.
 
+ protected:
   // Convert integral argument to intptr_t.
   template <typename T>
   static intptr_t ConvertArg(T arg)
