@@ -352,12 +352,16 @@ float ScreenWin::GetScaleFactorForHWND(HWND hwnd) {
 }
 
 HWND ScreenWin::GetHWNDFromNativeView(gfx::NativeView window) const {
+#ifndef TOOLKIT_QT
   NOTREACHED();
+#endif
   return nullptr;
 }
 
 gfx::NativeWindow ScreenWin::GetNativeWindowFromHWND(HWND hwnd) const {
+#ifndef TOOLKIT_QT
   NOTREACHED();
+#endif
   return nullptr;
 }
 
