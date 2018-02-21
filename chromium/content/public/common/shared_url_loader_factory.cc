@@ -8,7 +8,7 @@ namespace content {
 
 // static
 const SharedURLLoaderFactory::Constraints
-    SharedURLLoaderFactory::kDefaultConstraints;
+    SharedURLLoaderFactory::kDefaultConstraints = { false };
 
 SharedURLLoaderFactoryInfo::SharedURLLoaderFactoryInfo() = default;
 

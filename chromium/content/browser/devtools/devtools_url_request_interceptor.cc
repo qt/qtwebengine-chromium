@@ -29,7 +29,9 @@ DevToolsURLRequestInterceptor::FilterEntry::FilterEntry(
       patterns(std::move(patterns)),
       callback(std::move(callback)) {}
 
-DevToolsURLRequestInterceptor::FilterEntry::FilterEntry(FilterEntry&&) {}
+DevToolsURLRequestInterceptor::FilterEntry::FilterEntry(FilterEntry&&)
+    : target_id() {}
+
 DevToolsURLRequestInterceptor::FilterEntry::~FilterEntry() {}
 
 // static

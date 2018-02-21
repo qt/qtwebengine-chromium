@@ -49,7 +49,7 @@ class CONTENT_EXPORT SharedURLLoaderFactory
  public:
   struct Constraints {
     // Skip appcache and service worker if this flag is set to true.
-    bool bypass_custom_network_loader = false;
+    bool bypass_custom_network_loader;
   };
   static scoped_refptr<SharedURLLoaderFactory> Create(
       std::unique_ptr<SharedURLLoaderFactoryInfo> info);
