@@ -707,12 +707,16 @@ void ScreenWin::SetDXGIInfo(gfx::mojom::DXGIInfoPtr dxgi_info) {
 }
 
 HWND ScreenWin::GetHWNDFromNativeWindow(gfx::NativeWindow window) const {
+#ifndef TOOLKIT_QT
   NOTREACHED();
+#endif
   return nullptr;
 }
 
 gfx::NativeWindow ScreenWin::GetNativeWindowFromHWND(HWND hwnd) const {
+#ifndef TOOLKIT_QT
   NOTREACHED();
+#endif
   return nullptr;
 }
 
