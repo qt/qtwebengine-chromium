@@ -20,7 +20,8 @@ DOMStorageNamespace::DOMStorageNamespace(
     DOMStorageTaskRunner* task_runner)
     : namespace_id_(kLocalStorageNamespaceId),
       directory_(directory),
-      task_runner_(task_runner) {
+      task_runner_(task_runner),
+      session_storage_database_(nullptr) {
 }
 
 DOMStorageNamespace::DOMStorageNamespace(

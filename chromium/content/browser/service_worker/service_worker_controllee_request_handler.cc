@@ -271,7 +271,7 @@ ServiceWorkerControlleeRequestHandler::MaybeCreateSubresourceLoaderParams() {
   controller_info->object_info = provider_host_->GetOrCreateServiceWorkerHandle(
       provider_host_->controller());
   params.controller_service_worker_info = std::move(controller_info);
-  return params;
+  return std::move(params);
 }
 
 void ServiceWorkerControlleeRequestHandler::PrepareForMainResource(
