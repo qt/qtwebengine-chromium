@@ -51,6 +51,7 @@ class GLES2Interface;
 // A correct fix would be not to use GL types in this interal API file.
 typedef unsigned int     GLenum;
 typedef int              GLint;
+typedef unsigned int     GLuint;
 
 namespace viz {
 class SharedBitmap;

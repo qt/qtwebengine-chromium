@@ -16,6 +16,7 @@
 #include "components/viz/service/display/output_surface_frame.h"
 #include "components/viz/service/display/software_output_device.h"
 #include "content/browser/renderer_host/render_widget_host_impl.h"
+#include "gpu/command_buffer/common/gl2_types.h"
 #include "ui/gfx/vsync_provider.h"
 #include "ui/latency/latency_info.h"
 
