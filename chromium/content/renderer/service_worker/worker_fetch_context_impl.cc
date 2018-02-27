@@ -158,7 +158,7 @@ WorkerFetchContextImpl::CreateURLLoaderFactory() {
   if (ServiceWorkerUtils::IsServicificationEnabled())
     ResetServiceWorkerURLLoaderFactory();
 
-  return factory;
+  return std::unique_ptr<blink::WebURLLoaderFactory>(factory.release());
 }
 
 void WorkerFetchContextImpl::WillSendRequest(blink::WebURLRequest& request) {

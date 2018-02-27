@@ -117,6 +117,7 @@ void QuotaPolicyCookieStore::OnLoad(
 CookieStoreConfig::CookieStoreConfig()
     : restore_old_session_cookies(false),
       persist_session_cookies(false),
+      storage_policy(nullptr),
       crypto_delegate(nullptr),
       channel_id_service(nullptr) {
   // Default to an in-memory cookie store.
