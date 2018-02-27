@@ -1733,6 +1733,10 @@ void NavigationControllerImpl::UpdateNavigationEntryDetails(
   }
   if (entry->update_virtual_url_with_url())
     UpdateVirtualURLToURL(entry, params.url);
+
+  if (request)
+    entry->SetOriginalRequestURL(request->GetOriginalRequestURL());
+
   // Don't use the page type from the pending entry. Some interstitial page
   // may have set the type to interstitial. Once we commit, however, the page
   // type must always be normal or error.
