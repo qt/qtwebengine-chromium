@@ -1672,6 +1672,8 @@ void NavigationControllerImpl::RendererDidNavigateToExistingPage(
   if (entry->update_virtual_url_with_url())
     UpdateVirtualURLToURL(entry, params.url);
 
+  entry->SetOriginalRequestURL(params.original_request_url);
+
   // The site instance will normally be the same except
   // 1) session restore, when no site instance will be assigned or
   // 2) redirect, when the site instance is reset.
