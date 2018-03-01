@@ -108,9 +108,9 @@ class CORE_EXPORT FormData final
 class FormData::Entry : public GarbageCollectedFinalized<FormData::Entry> {
  public:
   Entry(const CString& name, const CString& value)
-      : name_(name), value_(value) {}
+      : name_(name), value_(value), filename_() {}
   Entry(const CString& name, Blob* blob, const String& filename)
-      : name_(name), blob_(blob), filename_(filename) {}
+      : name_(name), value_(), blob_(blob), filename_(filename) {}
   void Trace(blink::Visitor*);
 
   bool IsString() const { return !blob_; }

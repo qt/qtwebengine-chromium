@@ -63,7 +63,7 @@ class CORE_EXPORT ScrollAnchor final {
 
   // A set of properties used to save/restore previously used scroll anchors.
   struct SerializedAnchor {
-    SerializedAnchor() : simhash(0) {}
+    SerializedAnchor() : selector(), relative_offset(), simhash(0) {}
     SerializedAnchor(const String& s, const LayoutPoint& p)
         : selector(s), relative_offset(p), simhash(0) {}
     SerializedAnchor(const String& s, const LayoutPoint& p, uint64_t hash)

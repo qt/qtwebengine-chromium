@@ -28,7 +28,10 @@ class PLATFORM_EXPORT ScriptFetchOptions final {
   // string, parser metadata is "not-parser-inserted", and credentials mode
   // is "omit"." [spec text]
   ScriptFetchOptions()
-      : parser_state_(ParserDisposition::kNotParserInserted),
+      : nonce_(),
+        integrity_metadata_(),
+        integrity_attribute_(),
+        parser_state_(ParserDisposition::kNotParserInserted),
         credentials_mode_(network::mojom::FetchCredentialsMode::kOmit) {}
 
   ScriptFetchOptions(const String& nonce,

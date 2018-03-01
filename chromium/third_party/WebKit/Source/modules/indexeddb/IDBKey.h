@@ -140,8 +140,8 @@ class MODULES_EXPORT IDBKey {
  private:
   DISALLOW_COPY_AND_ASSIGN(IDBKey);
 
-  IDBKey() : type_(kInvalidType) {}
-  IDBKey(Type type, double number) : type_(type), number_(number) {}
+  IDBKey() : type_(kInvalidType), string_() {}
+  IDBKey(Type type, double number) : type_(type), string_(), number_(number) {}
   explicit IDBKey(const class String& value)
       : type_(kStringType), string_(value) {}
   explicit IDBKey(scoped_refptr<SharedBuffer> value)
