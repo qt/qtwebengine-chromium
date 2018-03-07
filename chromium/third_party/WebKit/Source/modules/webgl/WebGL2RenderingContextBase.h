@@ -907,10 +907,7 @@ class WebGL2RenderingContextBase : public WebGLRenderingContextBase {
   GLint m_packRowLength;
   GLint m_packSkipPixels;
   GLint m_packSkipRows;
-  GLint m_unpackRowLength;
   GLint m_unpackImageHeight;
-  GLint m_unpackSkipPixels;
-  GLint m_unpackSkipRows;
   GLint m_unpackSkipImages;
 
   HeapHashSet<Member<WebGLGetBufferSubDataAsyncCallback>>

@@ -4625,19 +4625,30 @@ void WebGLRenderingContextBase::texImageHelperDOMArrayBufferView(
     data += srcOffset * pixels->typeSize();
   }
   Vector<uint8_t> tempData;
-  bool changeUnpackAlignment = false;
-  if (data && (m_unpackFlipY || m_unpackPremultiplyAlpha)) {
-    if (sourceType == Tex2D) {
-      if (!WebGLImageConversion::extractTextureData(
-              width, height, format, type, m_unpackAlignment, m_unpackFlipY,
-              m_unpackPremultiplyAlpha, data, tempData)) {
-        synthesizeGLError(GL_INVALID_OPERATION, funcName,
-                          "Invalid format/type combination.");
-        return;
-      }
-      data = tempData.data();
+  bool changeUnpackParams = false;
+  if (data && width && height &&
+       (m_unpackFlipY || m_unpackPremultiplyAlpha)) {
+    DCHECK_EQ(Tex2D, sourceType);
+    // Only enter here if width or height is non-zero. Otherwise, call to the
+    // underlying driver to generate appropriate GL errors if needed.
+    WebGLImageConversion::PixelStoreParams unpackParams =
+        getUnpackPixelStoreParams(Tex2D);
+    GLint dataStoreWidth =
+        unpackParams.rowLength ? unpackParams.rowLength : width;
+    if (unpackParams.skipPixels + width > dataStoreWidth) {
+      synthesizeGLError(GL_INVALID_OPERATION, funcName,
+                        "Invalid unpack params combination.");
+      return;
     }
-    changeUnpackAlignment = true;
+    if (!WebGLImageConversion::extractTextureData(
+          width, height, format, type, unpackParams, m_unpackFlipY,
+          m_unpackPremultiplyAlpha, data, tempData)) {
+      synthesizeGLError(GL_INVALID_OPERATION, funcName,
+                          "Invalid format/type combination.");
+      return;
+    }
+    data = tempData.data();
+    changeUnpackParams = true;
   }
   // TODO(crbug.com/666064): implement flipY and premultiplyAlpha for
   // tex(Sub)3D.
@@ -4653,7 +4664,7 @@ void WebGLRenderingContextBase::texImageHelperDOMArrayBufferView(
     return;
   }
 
-  if (changeUnpackAlignment)
+  if (changeUnpackParams)
     resetUnpackParameters();
   if (functionID == TexImage2D)
     texImage2DBase(target, level, internalformat, width, height, border, format,
@@ -4661,7 +4672,7 @@ void WebGLRenderingContextBase::texImageHelperDOMArrayBufferView(
   else if (functionID == TexSubImage2D)
     contextGL()->TexSubImage2D(target, level, xoffset, yoffset, width, height,
                                format, type, data);
-  if (changeUnpackAlignment)
+  if (changeUnpackParams)
     restoreUnpackParameters();
 }
 

@@ -1237,6 +1237,12 @@ void WebGL2RenderingContextBase::texImage2D(GLenum target,
                       "no bound PIXEL_UNPACK_BUFFER");
     return;
   }
+  if (m_unpackFlipY || m_unpackPremultiplyAlpha) {
+    synthesizeGLError(
+        GL_INVALID_OPERATION, "texImage2D",
+        "FLIP_Y or PREMULTIPLY_ALPHA isn't allowed while uploading from PBO");
+    return;
+  }
   if (!validateTexFunc("texImage2D", TexImage, SourceUnpackBuffer, target,
                        level, internalformat, width, height, 1, border, format,
                        type, 0, 0, 0))
@@ -1265,6 +1271,12 @@ void WebGL2RenderingContextBase::texSubImage2D(GLenum target,
   if (!m_boundPixelUnpackBuffer) {
     synthesizeGLError(GL_INVALID_OPERATION, "texSubImage2D",
                       "no bound PIXEL_UNPACK_BUFFER");
+    return;
+  }
+  if (m_unpackFlipY || m_unpackPremultiplyAlpha) {
+    synthesizeGLError(
+        GL_INVALID_OPERATION, "texSubImage2D",
+        "FLIP_Y or PREMULTIPLY_ALPHA isn't allowed while uploading from PBO");
     return;
   }
   if (!validateTexFunc("texSubImage2D", TexSubImage, SourceUnpackBuffer, target,
@@ -1641,6 +1653,12 @@ void WebGL2RenderingContextBase::texImage3D(GLenum target,
                                             GLenum format,
                                             GLenum type,
                                             DOMArrayBufferView* pixels) {
+  if ((m_unpackFlipY || m_unpackPremultiplyAlpha) && pixels) {
+    synthesizeGLError(
+        GL_INVALID_OPERATION, "texImage3D",
+        "FLIP_Y or PREMULTIPLY_ALPHA isn't allowed for uploading 3D textures");
+    return;
+  }
   texImageHelperDOMArrayBufferView(TexImage3D, target, level, internalformat,
                                    width, height, depth, border, format, type,
                                    0, 0, 0, pixels, NullAllowed, 0);
@@ -1657,6 +1675,13 @@ void WebGL2RenderingContextBase::texImage3D(GLenum target,
                                             GLenum type,
                                             DOMArrayBufferView* pixels,
                                             GLuint srcOffset) {
+  if (m_unpackFlipY || m_unpackPremultiplyAlpha) {
+    DCHECK(pixels);
+    synthesizeGLError(
+        GL_INVALID_OPERATION, "texImage3D",
+        "FLIP_Y or PREMULTIPLY_ALPHA isn't allowed for uploading 3D textures");
+    return;
+  }
   texImageHelperDOMArrayBufferView(
       TexImage3D, target, level, internalformat, width, height, depth, border,
       format, type, 0, 0, 0, pixels, NullNotReachable, srcOffset);
@@ -1679,6 +1704,12 @@ void WebGL2RenderingContextBase::texImage3D(GLenum target,
   if (!m_boundPixelUnpackBuffer) {
     synthesizeGLError(GL_INVALID_OPERATION, "texImage3D",
                       "no bound PIXEL_UNPACK_BUFFER");
+    return;
+  }
+  if (m_unpackFlipY || m_unpackPremultiplyAlpha) {
+    synthesizeGLError(
+        GL_INVALID_OPERATION, "texImage3D",
+        "FLIP_Y or PREMULTIPLY_ALPHA isn't allowed for uploading 3D textures");
     return;
   }
   if (!validateTexFunc("texImage3D", TexImage, SourceUnpackBuffer, target,
@@ -1793,6 +1824,14 @@ void WebGL2RenderingContextBase::texSubImage3D(GLenum target,
                                                GLenum type,
                                                DOMArrayBufferView* pixels,
                                                GLuint srcOffset) {
+  if (m_unpackFlipY || m_unpackPremultiplyAlpha) {
+    DCHECK(pixels);
+    synthesizeGLError(
+        GL_INVALID_OPERATION, "texSubImage3D",
+        "FLIP_Y or PREMULTIPLY_ALPHA isn't allowed for uploading 3D textures");
+    return;
+  }
+
   texImageHelperDOMArrayBufferView(
       TexSubImage3D, target, level, 0, width, height, depth, 0, format, type,
       xoffset, yoffset, zoffset, pixels, NullNotReachable, srcOffset);
@@ -1816,6 +1855,12 @@ void WebGL2RenderingContextBase::texSubImage3D(GLenum target,
   if (!m_boundPixelUnpackBuffer) {
     synthesizeGLError(GL_INVALID_OPERATION, "texSubImage3D",
                       "no bound PIXEL_UNPACK_BUFFER");
+    return;
+  }
+  if (m_unpackFlipY || m_unpackPremultiplyAlpha) {
+    synthesizeGLError(
+        GL_INVALID_OPERATION, "texSubImage3D",
+        "FLIP_Y or PREMULTIPLY_ALPHA isn't allowed for uploading 3D textures");
     return;
   }
   if (!validateTexFunc("texSubImage3D", TexSubImage, SourceUnpackBuffer, target,

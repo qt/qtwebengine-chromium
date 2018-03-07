@@ -771,11 +771,16 @@ class MODULES_EXPORT WebGLRenderingContextBase : public CanvasRenderingContext,
 
   GLenum m_readBufferOfDefaultFramebuffer;
 
-  GLint m_packAlignment;
-  GLint m_unpackAlignment;
-  bool m_unpackFlipY;
-  bool m_unpackPremultiplyAlpha;
-  GLenum m_unpackColorspaceConversion;
+  GLint m_packAlignment = 4;
+  GLint m_unpackAlignment = 4;
+  bool m_unpackFlipY = false;
+  bool m_unpackPremultiplyAlpha = false;
+  GLenum m_unpackColorspaceConversion = GC3D_BROWSER_DEFAULT_WEBGL;
+  // The following three unpack params belong to WebGL2 only.
+  GLint m_unpackSkipPixels = 0;
+  GLint m_unpackSkipRows = 0;
+  GLint m_unpackRowLength = 0;
+
 
   GLfloat m_clearColor[4];
   bool m_scissorEnabled;

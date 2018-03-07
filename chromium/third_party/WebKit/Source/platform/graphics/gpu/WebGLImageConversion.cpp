@@ -2965,7 +2965,7 @@ bool WebGLImageConversion::extractTextureData(unsigned width,
                                               unsigned height,
                                               GLenum format,
                                               GLenum type,
-                                              unsigned unpackAlignment,
+                                              const PixelStoreParams& unpackParams,
                                               bool flipY,
                                               bool premultiplyAlpha,
                                               const void* pixels,
@@ -2973,7 +2973,7 @@ bool WebGLImageConversion::extractTextureData(unsigned width,
   // Assumes format, type, etc. have already been validated.
   DataFormat sourceDataFormat = getDataFormat(format, type);
   if (sourceDataFormat == DataFormatNumFormats)
-      return false;
+    return false;
 
   // Resize the output buffer.
   unsigned int componentsPerPixel, bytesPerComponent;
@@ -2983,9 +2983,18 @@ bool WebGLImageConversion::extractTextureData(unsigned width,
   unsigned bytesPerPixel = componentsPerPixel * bytesPerComponent;
   data.resize(width * height * bytesPerPixel);
 
-  if (!packPixels(static_cast<const uint8_t*>(pixels), sourceDataFormat, width,
-                  height, IntRect(0, 0, width, height), 1, unpackAlignment, 0,
-                  format, type,
+  unsigned imageSizeInBytes, skipSizeInBytes;
+  computeImageSizeInBytes(format, type, width, height, 1, unpackParams,
+                          &imageSizeInBytes, nullptr, &skipSizeInBytes);
+  const uint8_t* srcData = static_cast<const uint8_t*>(pixels);
+  if (skipSizeInBytes) {
+    srcData += skipSizeInBytes;
+  }
+
+  if (!packPixels(srcData, sourceDataFormat,
+                  unpackParams.rowLength ? unpackParams.rowLength : width,
+                  height, IntRect(0, 0, width, height), 1,
+                  unpackParams.alignment, 0, format, type,
                   (premultiplyAlpha ? AlphaDoPremultiply : AlphaDoNothing),
                   data.data(), flipY))
     return false;
