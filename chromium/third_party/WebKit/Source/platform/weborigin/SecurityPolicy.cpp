@@ -70,7 +70,8 @@ static bool referrerPolicyFromStringImpl(
       (legacyKeywordsSupport == SupportReferrerPolicyLegacyKeywords);
 
   if (equalIgnoringASCIICase(policy, "no-referrer") ||
-      (supportLegacyKeywords && equalIgnoringASCIICase(policy, "never"))) {
+      (supportLegacyKeywords && (equalIgnoringASCIICase(policy, "never") ||
+                                equalIgnoringASCIICase(policy, "none")))) {
     *result = ReferrerPolicyNever;
     return true;
   }
