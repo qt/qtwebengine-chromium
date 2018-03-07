@@ -137,6 +137,9 @@ class CORE_EXPORT TextControlElement : public HTMLFormControlElementWithState {
 
   String directionForFormData() const;
 
+  virtual void setSuggestedValue(const String& value);
+  const String& suggestedValue() const;
+
   // These functions don't cause synchronous layout and SpellChecker uses
   // them to improve performance.
   // Passed |Position| must point inside of a text form control.
@@ -149,6 +152,7 @@ class CORE_EXPORT TextControlElement : public HTMLFormControlElementWithState {
   TextControlElement(const QualifiedName&, Document&, HTMLFormElement*);
   bool isPlaceholderEmpty() const;
   virtual void updatePlaceholderText() = 0;
+  virtual String getPlaceholderValue() const = 0;
 
   void parseAttribute(const QualifiedName&,
                       const AtomicString&,
@@ -194,7 +198,7 @@ class CORE_EXPORT TextControlElement : public HTMLFormControlElementWithState {
   virtual bool isEmptyValue() const = 0;
   // Returns true if suggested value is empty. Used to check placeholder
   // visibility.
-  virtual bool isEmptySuggestedValue() const { return true; }
+  virtual bool isEmptySuggestedValue() const { return suggestedValue().isEmpty(); }
   // Called in dispatchFocusEvent(), after placeholder process, before calling
   // parent's dispatchFocusEvent().
   virtual void handleFocusEvent(Element* /* oldFocusedNode */, WebFocusType) {}
@@ -211,6 +215,9 @@ class CORE_EXPORT TextControlElement : public HTMLFormControlElementWithState {
   int m_cachedSelectionStart;
   int m_cachedSelectionEnd;
   TextFieldSelectionDirection m_cachedSelectionDirection;
+
+  String m_suggestedValue;
+  String m_valueBeforeSetSuggestedValue;
 
   FRIEND_TEST_ALL_PREFIXES(TextControlElementTest, IndexForPosition);
 };

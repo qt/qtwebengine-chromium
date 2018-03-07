@@ -1039,15 +1039,11 @@ void HTMLInputElement::setValueForUser(const String& value) {
   setValue(value, DispatchChangeEvent);
 }
 
-const String& HTMLInputElement::suggestedValue() const {
-  return m_suggestedValue;
-}
-
 void HTMLInputElement::setSuggestedValue(const String& value) {
   if (!m_inputType->canSetSuggestedValue())
     return;
   m_needsToUpdateViewValue = true;
-  m_suggestedValue = sanitizeValue(value);
+  TextControlElement::setSuggestedValue(sanitizeValue(value));
   setNeedsStyleRecalc(SubtreeStyleChange, StyleChangeReasonForTracing::create(
                                               StyleChangeReason::ControlValue));
   m_inputTypeView->updateView();
@@ -1089,14 +1085,16 @@ void HTMLInputElement::setValue(const String& value,
   if (!m_inputType->canSetValue(value))
     return;
 
+  // Clear the suggested value. Use the base class version to not trigger a view
+  // update.
+  TextControlElement::setSuggestedValue(String());
+
   EventQueueScope scope;
   String sanitizedValue = sanitizeValue(value);
   bool valueChanged = sanitizedValue != this->value();
 
   setLastChangeWasNotUserEdit();
   m_needsToUpdateViewValue = true;
-  // Prevent TextFieldInputType::setValue from using the suggested value.
-  m_suggestedValue = String();
 
   m_inputType->setValue(sanitizedValue, valueChanged, eventBehavior);
   m_inputTypeView->didSetValue(sanitizedValue, valueChanged);
@@ -1167,7 +1165,9 @@ void HTMLInputElement::setValueFromRenderer(const String& value) {
   // File upload controls will never use this.
   DCHECK_NE(type(), InputTypeNames::file);
 
-  m_suggestedValue = String();
+  // Clear the suggested value. Use the base class version to not trigger a view
+  // update.
+  TextControlElement::setSuggestedValue(String());
 
   // Renderer and our event handler are responsible for sanitizing values.
   DCHECK(value == m_inputType->sanitizeUserInputValue(value) ||
@@ -1663,6 +1663,10 @@ bool HTMLInputElement::supportsPlaceholder() const {
 
 void HTMLInputElement::updatePlaceholderText() {
   return m_inputTypeView->updatePlaceholderText();
+}
+
+String HTMLInputElement::getPlaceholderValue() const {
+  return !suggestedValue().isEmpty() ? suggestedValue() : strippedPlaceholder();
 }
 
 bool HTMLInputElement::supportsAutocapitalize() const {

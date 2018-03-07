@@ -158,8 +158,8 @@ bool TextControlElement::isPlaceholderEmpty() const {
 }
 
 bool TextControlElement::placeholderShouldBeVisible() const {
-  return supportsPlaceholder() && isEmptyValue() && isEmptySuggestedValue() &&
-         !isPlaceholderEmpty();
+  return supportsPlaceholder() && innerEditorValue().isEmpty() &&
+         (!isPlaceholderEmpty() || isEmptySuggestedValue());
 }
 
 HTMLElement* TextControlElement::placeholderElement() const {
@@ -897,6 +897,40 @@ String TextControlElement::directionForFormData() const {
   }
 
   return "ltr";
+}
+
+// TODO(crbug.com/772433): Create and use a new suggested-value element instead.
+void TextControlElement::setSuggestedValue(const String& value) {
+  m_suggestedValue = value;
+  if (!m_suggestedValue.isEmpty() && !innerEditorValue().isEmpty()) {
+    // Save the value that is in the editor and set the editor value to an empty
+    // string. This will allow the suggestion placeholder to be shown to the
+    // user.
+    m_valueBeforeSetSuggestedValue = innerEditorValue();
+    setInnerEditorValue("");
+  } else if (m_suggestedValue.isEmpty() &&
+             !m_valueBeforeSetSuggestedValue.isEmpty()) {
+    // Reset the value that was in the editor before showing the suggestion.
+    setInnerEditorValue(m_valueBeforeSetSuggestedValue);
+    m_valueBeforeSetSuggestedValue = "";
+
+  }
+
+  updatePlaceholderText();
+
+  HTMLElement* placeholder = placeholderElement();
+  if (!placeholder)
+    return;
+
+  // Change the pseudo-id to set the style for suggested values or reset the
+  // placeholder style depending on if there is a suggested value.
+  placeholder->setShadowPseudoId(AtomicString(m_suggestedValue.isEmpty()
+                                                  ? "-webkit-input-placeholder"
+                                                  : "-internal-input-suggested"));
+}
+
+const String& TextControlElement::suggestedValue() const {
+  return m_suggestedValue;
 }
 
 HTMLElement* TextControlElement::innerEditorElement() const {

@@ -137,8 +137,7 @@ class CORE_EXPORT HTMLInputElement : public TextControlElement {
 
   String localizeValue(const String&) const;
 
-  const String& suggestedValue() const;
-  void setSuggestedValue(const String&);
+  void setSuggestedValue(const String&) override;
 
   void setEditingValue(const String&);
 
@@ -287,6 +286,8 @@ class CORE_EXPORT HTMLInputElement : public TextControlElement {
 
   unsigned sizeOfRadioGroup() const;
 
+  String getPlaceholderValue() const final;
+
  protected:
   HTMLInputElement(Document&, HTMLFormElement*, bool createdByParser);
 
@@ -362,9 +363,6 @@ class CORE_EXPORT HTMLInputElement : public TextControlElement {
   bool supportsPlaceholder() const final;
   void updatePlaceholderText() final;
   bool isEmptyValue() const final { return innerEditorValue().isEmpty(); }
-  bool isEmptySuggestedValue() const final {
-    return suggestedValue().isEmpty();
-  }
   void handleFocusEvent(Element* oldFocusedElement, WebFocusType) final;
   void handleBlurEvent() final;
   void dispatchFocusInEvent(const AtomicString& eventType,
@@ -401,7 +399,6 @@ class CORE_EXPORT HTMLInputElement : public TextControlElement {
   AtomicString m_name;
   // The value string in |value| value mode.
   String m_nonAttributeValue;
-  String m_suggestedValue;
   int m_size;
   // https://html.spec.whatwg.org/multipage/forms.html#concept-input-value-dirty-flag
   unsigned m_hasDirtyValue : 1;

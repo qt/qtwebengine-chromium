@@ -460,7 +460,7 @@ void TextFieldInputType::updatePlaceholderText() {
   if (!supportsPlaceholder())
     return;
   HTMLElement* placeholder = element().placeholderElement();
-  String placeholderText = element().strippedPlaceholder();
+  String placeholderText = element().getPlaceholderValue();
   if (placeholderText.isEmpty()) {
     if (placeholder)
       placeholder->remove(ASSERT_NO_EXCEPTION);
@@ -525,10 +525,10 @@ void TextFieldInputType::spinButtonStepUp() {
 }
 
 void TextFieldInputType::updateView() {
-  if (!element().suggestedValue().isNull()) {
-    element().setInnerEditorValue(element().suggestedValue());
-    element().updatePlaceholderVisibility();
-  } else if (element().needsToUpdateViewValue()) {
+  // The suggested values are now shown using placeholder elements, so there is
+  // nothing to do here for the suggested values.
+  if (element().suggestedValue().isEmpty() &&
+    element().needsToUpdateViewValue()) {
     // Update the view only if needsToUpdateViewValue is true. It protects
     // an unacceptable view value from being overwritten with the DOM value.
     //

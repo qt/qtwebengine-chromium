@@ -403,6 +403,10 @@ void HTMLTextAreaElement::setValueCommon(const String& newValue,
   normalizedValue.replace("\r\n", "\n");
   normalizedValue.replace('\r', '\n');
 
+  // Clear the suggested value. Use the base class version to not trigger a view
+  // update.
+  TextControlElement::setSuggestedValue(String());
+
   // Return early because we don't want to trigger other side effects
   // when the value isn't changing.
   // FIXME: Simple early return doesn't match the Firefox ever.
@@ -426,7 +430,6 @@ void HTMLTextAreaElement::setValueCommon(const String& newValue,
   updatePlaceholderVisibility();
   setNeedsStyleRecalc(SubtreeStyleChange, StyleChangeReasonForTracing::create(
                                               StyleChangeReason::ControlValue));
-  m_suggestedValue = String();
   setNeedsValidityCheck();
   if (isFinishedParsingChildren()) {
     // Set the caret to the end of the text value except for initialize.
@@ -496,18 +499,8 @@ void HTMLTextAreaElement::setDefaultValue(const String& defaultValue) {
     setNonDirtyValue(value);
 }
 
-String HTMLTextAreaElement::suggestedValue() const {
-  return m_suggestedValue;
-}
-
 void HTMLTextAreaElement::setSuggestedValue(const String& value) {
-  m_suggestedValue = value;
-
-  if (!value.isNull())
-    setInnerEditorValue(m_suggestedValue);
-  else
-    setInnerEditorValue(m_value);
-  updatePlaceholderVisibility();
+  TextControlElement::setSuggestedValue(value);
   setNeedsStyleRecalc(SubtreeStyleChange, StyleChangeReasonForTracing::create(
                                               StyleChangeReason::ControlValue));
 }
@@ -614,7 +607,7 @@ void HTMLTextAreaElement::setPlaceholderVisibility(bool visible) {
 
 void HTMLTextAreaElement::updatePlaceholderText() {
   HTMLElement* placeholder = placeholderElement();
-  const AtomicString& placeholderText = fastGetAttribute(placeholderAttr);
+  const String placeholderText = getPlaceholderValue();
   if (placeholderText.isEmpty()) {
     if (placeholder)
       userAgentShadowRoot()->removeChild(placeholder);
@@ -631,6 +624,11 @@ void HTMLTextAreaElement::updatePlaceholderText() {
     userAgentShadowRoot()->insertBefore(placeholder, innerEditorElement());
   }
   placeholder->setTextContent(placeholderText);
+}
+
+String HTMLTextAreaElement::getPlaceholderValue() const {
+  return !suggestedValue().isEmpty() ? suggestedValue()
+                                     : fastGetAttribute(placeholderAttr);
 }
 
 bool HTMLTextAreaElement::isInteractiveContent() const {
