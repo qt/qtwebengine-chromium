@@ -202,6 +202,9 @@ class PLATFORM_EXPORT IntRect {
 
   String toString() const;
 
+  // Return false if x + width or y + height overflows.
+  bool isValid() const;
+
  private:
   IntPoint m_location;
   IntSize m_size;

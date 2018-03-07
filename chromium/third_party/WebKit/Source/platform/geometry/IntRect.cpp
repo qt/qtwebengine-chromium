@@ -27,6 +27,7 @@
 
 #include "platform/geometry/FloatRect.h"
 #include "platform/geometry/LayoutRect.h"
+#include "wtf/CheckedNumeric.h"
 #include "third_party/skia/include/core/SkRect.h"
 #include "ui/gfx/geometry/rect.h"
 #include "wtf/text/WTFString.h"
@@ -172,6 +173,16 @@ IntRect unionRectEvenIfEmpty(const Vector<IntRect>& rects) {
 String IntRect::toString() const {
   return String::format("%s %s", location().toString().ascii().data(),
                         size().toString().ascii().data());
+}
+
+bool IntRect::isValid() const {
+  CheckedNumeric<int> max = m_location.x();
+  max += m_size.width();
+  if (!max.IsValid())
+    return false;
+  max = m_location.y();
+  max += m_size.height();
+  return max.IsValid();
 }
 
 }  // namespace blink

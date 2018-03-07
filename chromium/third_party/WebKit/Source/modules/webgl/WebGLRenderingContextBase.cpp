@@ -4367,7 +4367,7 @@ void WebGLRenderingContextBase::texImageImpl(
   Vector<uint8_t> data;
 
   IntRect subRect = sourceImageRect;
-  if (subRect == sentinelEmptyRect()) {
+  if (subRect.isValid() && subRect == sentinelEmptyRect()) {
     // Recalculate based on the size of the Image.
     subRect = safeGetImageSize(image);
   }
@@ -5137,6 +5137,13 @@ void WebGLRenderingContextBase::texImageHelperHTMLVideoElement(
                        video->videoHeight(), 1, 0, format, type, xoffset,
                        yoffset, zoffset))
     return;
+
+  if (!sourceImageRect.isValid()) {
+    synthesizeGLError(GL_INVALID_OPERATION, funcName,
+                      "source sub-rectangle specified via pixel unpack "
+                      "parameters is invalid");
+    return;
+  }
 
   bool sourceImageRectIsDefault =
       sourceImageRect == sentinelEmptyRect() ||
