@@ -2553,6 +2553,7 @@ void Document::open(Document* enteredDocument, ExceptionState& exceptionState) {
     }
     setSecurityOrigin(enteredDocument->getSecurityOrigin());
     setURL(enteredDocument->url());
+    setReferrerPolicy(enteredDocument->getReferrerPolicy());
     m_cookieURL = enteredDocument->cookieURL();
   }
 
