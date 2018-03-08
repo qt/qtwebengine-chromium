@@ -242,6 +242,14 @@ void V8Window::openMethodCustom(
     return;
   }
 
+  // If the bindings implementation is 100% correct, the current realm and the
+  // entered realm should be same origin-domain. However, to be on the safe
+  // side and add some defense in depth, we'll check against the entered realm
+  // as well here.
+  if (!BindingSecurity::shouldAllowAccessTo(enteredDOMWindow(info.GetIsolate()),
+                                            impl, exceptionState))
+    return;
+
   TOSTRING_VOID(V8StringResource<TreatNullAndUndefinedAsNullString>, urlString,
                 info[0]);
   AtomicString frameName;
