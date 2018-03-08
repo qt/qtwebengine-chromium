@@ -113,7 +113,7 @@
 <translation id="1164899421101904659">Weka Ufunguo wa Kufungua PIN</translation>
 <translation id="1165039591588034296">Hitilafu</translation>
 <translation id="1166212789817575481">Funga Vichupo vilivyo Upande wa Kulia</translation>
-<translation id="1168020859489941584">Inafungua katika <ph name="TIME_REMAINING" />...</translation>
+<translation id="1168020859489941584">Inafungua baada ya <ph name="TIME_REMAINING" />...</translation>
 <translation id="1168100932582989117">Seva za jina la Google</translation>
 <translation id="1171135284592304528">Angazia kipengee kilicholengwa kwa kibodi kinapobadilika</translation>
 <translation id="1173894706177603556">Ipe jina jipya</translation>
@@ -191,7 +191,7 @@
 <translation id="1274997165432133392">Vidakuzi na data ya tovuti nyingine</translation>
 <translation id="127668050356036882">Funga madirisha yako yote</translation>
 <translation id="1277908057200820621">Angalia orodha ya vifaa</translation>
-<translation id="1278049586634282054">Kagua maoni:</translation>
+<translation id="1278049586634282054">Kagua idadi ya kutazamwa:</translation>
 <translation id="1280820357415527819">Inatafuta mitandao ya simu</translation>
 <translation id="1285320974508926690">Kamwe usitafsiri tovuti hii</translation>
 <translation id="1285484354230578868">Hifadhi data katika akaunti yako ya Hifadhi ya Google</translation>

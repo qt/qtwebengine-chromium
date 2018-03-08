@@ -69,6 +69,15 @@ Polymer({
      * @private {!chrome.networkingPrivate.NetworkProperties}
      */
     networkProperties_: Object,
+
+    /**
+     * Set by network-config when a configuration error occurs.
+     * @private
+     */
+    error_: {
+      type: String,
+      value: '',
+    },
   },
 
   open: function() {
@@ -100,9 +109,19 @@ Polymer({
   getDialogTitle_: function() {
     const name = this.networkProperties_.Name;
     if (name)
-      return this.i18n('internetConfigName', name);
+      return this.i18n('internetConfigName', HTMLEscape(name));
     const type = this.i18n('OncType' + this.networkProperties_.Type);
     return this.i18n('internetJoinType', type);
+  },
+
+  /**
+   * @return {string}
+   * @private
+   */
+  getError_: function() {
+    if (this.i18nExists(this.error_))
+      return this.i18n(this.error_);
+    return this.i18n('networkErrorUnknown');
   },
 
   /**

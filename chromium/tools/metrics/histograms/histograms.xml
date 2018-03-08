@@ -14414,6 +14414,16 @@ http://cs/file:chrome/histograms.xml - but prefer this file for new entries.
   <summary>Whether Chrome was the default browser when it started up.</summary>
 </histogram>
 
+<histogram name="DefaultBrowser.Win10ChooserInvoked" enum="BooleanSuccess">
+  <owner>pmonette@chromium.org</owner>
+  <summary>
+    When changing the default browser on Windows 10, records whether the browser
+    chooser is successfully invoked when opening the settings page. This
+    histogram is only recorded when the Win10AcceleratedDefaultBrowserFlow
+    experiment is enabled.
+  </summary>
+</histogram>
+
 <histogram name="DefaultBrowserWarning.DontSetAsDefault" enum="BooleanHit">
   <obsolete>
     Deprecated 2015/11. The same information is available as the value Failure
@@ -58907,6 +58917,25 @@ http://cs/file:chrome/histograms.xml - but prefer this file for new entries.
   <owner>tdresser@chromium.org</owner>
   <summary>
     Measures the time to first scroll input after the first paint.
+  </summary>
+</histogram>
+
+<histogram name="PageLoad.InteractiveTiming.FirstInputDelay" units="ms">
+  <owner>tdresser@chromium.org</owner>
+  <summary>
+    Measures First Input Delay, the duration between the hardware timestamp and
+    the start of event processing on the main thread for the first meaningful
+    input per navigation. See https://goo.gl/tr1oTZ for a detailed explanation.
+    In ms.
+  </summary>
+</histogram>
+
+<histogram name="PageLoad.InteractiveTiming.FirstInputTimestamp" units="ms">
+  <owner>tdresser@chromium.org</owner>
+  <summary>
+    The duration between navigation start and the hardware timestamp of the
+    first meaningful input per navigation. See https://goo.gl/tr1oTZ for a
+    detailed explanation. In ms.
   </summary>
 </histogram>
 

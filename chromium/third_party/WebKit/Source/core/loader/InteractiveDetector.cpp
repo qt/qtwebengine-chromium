@@ -10,6 +10,7 @@
 #include "platform/instrumentation/tracing/TraceEvent.h"
 #include "platform/loader/fetch/ResourceFetcher.h"
 #include "platform/wtf/Time.h"
+#include "public/platform/WebInputEvent.h"
 
 namespace blink {
 
@@ -19,14 +20,15 @@ InteractiveDetector* InteractiveDetector::From(Document& document) {
   InteractiveDetector* detector = static_cast<InteractiveDetector*>(
       Supplement<Document>::From(document, kSupplementName));
   if (!detector) {
-    if (!document.IsInMainFrame()) {
-      return nullptr;
-    }
     detector = new InteractiveDetector(document,
                                        new NetworkActivityChecker(&document));
     Supplement<Document>::ProvideTo(document, kSupplementName, detector);
   }
   return detector;
+}
+
+const char* InteractiveDetector::SupplementName() {
+  return "InteractiveDetector";
 }
 
 InteractiveDetector::InteractiveDetector(
@@ -46,6 +48,11 @@ InteractiveDetector::~InteractiveDetector() {
 void InteractiveDetector::SetNavigationStartTime(double navigation_start_time) {
   // Should not set nav start twice.
   DCHECK(page_event_times_.nav_start == 0.0);
+
+  // Don't record TTI for OOPIFs (yet).
+  // TODO(crbug.com/808086): enable this case.
+  if (!GetSupplementable()->IsInMainFrame())
+    return;
 
   LongTaskDetector::Instance().RegisterObserver(this);
   page_event_times_.nav_start = navigation_start_time;
@@ -109,6 +116,68 @@ double InteractiveDetector::GetInteractiveDetectionTime() const {
 
 double InteractiveDetector::GetFirstInvalidatingInputTime() const {
   return page_event_times_.first_invalidating_input;
+}
+
+double InteractiveDetector::GetFirstInputDelay() const {
+  return page_event_times_.first_input_delay;
+}
+
+double InteractiveDetector::GetFirstInputTimestamp() const {
+  return page_event_times_.first_input_timestamp;
+}
+
+// This is called early enough in the pipeline that we don't need to worry about
+// javascript dispatching untrusted input events.
+void InteractiveDetector::HandleForFirstInputDelay(const WebInputEvent& event) {
+  if (page_event_times_.first_input_delay != 0)
+    return;
+
+  DCHECK(event.GetType() != WebInputEvent::kTouchStart);
+
+  // We can't report a pointerDown until the pointerUp, in case it turns into a
+  // scroll.
+  if (event.GetType() == WebInputEvent::kPointerDown) {
+    pending_pointerdown_delay_ =
+        CurrentTimeTicksInSeconds() - event.TimeStampSeconds();
+    pending_pointerdown_timestamp_ =
+        event.TimeStampSeconds();
+    return;
+  }
+
+  bool event_is_meaningful =
+      event.GetType() == WebInputEvent::kMouseDown ||
+      event.GetType() == WebInputEvent::kKeyDown ||
+      event.GetType() == WebInputEvent::kRawKeyDown ||
+      // We need to explicitly include tap, as if there are no listeners, we
+      // won't receive the pointer events.
+      event.GetType() == WebInputEvent::kGestureTap ||
+      event.GetType() == WebInputEvent::kPointerUp;
+
+  if (!event_is_meaningful)
+    return;
+
+  double delay;
+  double event_timestamp;
+  if (event.GetType() == WebInputEvent::kPointerUp) {
+    // It is possible that this pointer up doesn't match with the pointer down
+    // whose delay is stored in pending_pointerdown_delay_. In this case, the
+    // user gesture started by this event contained some non-scroll input, so we
+    // consider it reasonable to use the delay of the initial event.
+    delay = pending_pointerdown_delay_;
+    event_timestamp = pending_pointerdown_timestamp_;
+  } else {
+    delay = CurrentTimeTicksInSeconds() - event.TimeStampSeconds();
+    event_timestamp = event.TimeStampSeconds();
+  }
+
+  pending_pointerdown_delay_ = 0;
+  pending_pointerdown_timestamp_ = 0;
+
+  page_event_times_.first_input_delay = delay;
+  page_event_times_.first_input_timestamp = event_timestamp;
+
+  if (GetSupplementable()->Loader())
+    GetSupplementable()->Loader()->DidChangePerformanceTiming();
 }
 
 void InteractiveDetector::BeginNetworkQuietPeriod(double current_time) {
@@ -218,6 +287,15 @@ void InteractiveDetector::OnInvalidatingInputEvent(double timestamp_seconds) {
     return;
 
   page_event_times_.first_invalidating_input = timestamp_seconds;
+  if (GetSupplementable()->Loader())
+    GetSupplementable()->Loader()->DidChangePerformanceTiming();
+}
+
+void InteractiveDetector::OnFirstInputDelay(double delay) {
+  if (page_event_times_.first_input_delay != 0)
+    return;
+
+  page_event_times_.first_input_delay = delay;
   if (GetSupplementable()->Loader())
     GetSupplementable()->Loader()->DidChangePerformanceTiming();
 }

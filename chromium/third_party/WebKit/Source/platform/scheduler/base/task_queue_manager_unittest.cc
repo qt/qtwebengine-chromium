@@ -288,6 +288,13 @@ void TestTask(EnqueueOrder value, std::vector<EnqueueOrder>* out_result) {
   out_result->push_back(value);
 }
 
+void DisableQueueTestTask(EnqueueOrder value,
+                          std::vector<EnqueueOrder>* out_result,
+                          TaskQueue::QueueEnabledVoter* voter) {
+  out_result->push_back(value);
+  voter->SetQueueEnabled(false);
+}
+
 TEST_F(TaskQueueManagerTest, SingleQueuePosting) {
   Initialize(1u);
 
@@ -382,6 +389,55 @@ TEST_F(TaskQueueManagerTest, NonNestableTasksDoesntExecuteInNestedLoop) {
   base::RunLoop().RunUntilIdle();
   // Note we expect tasks 3 & 4 to run last because they're non-nestable.
   EXPECT_THAT(run_order, ElementsAre(1, 2, 5, 6, 3, 4));
+}
+
+namespace {
+
+void InsertFenceAndPostTestTask(EnqueueOrder id,
+                                std::vector<EnqueueOrder>* run_order,
+                                scoped_refptr<TestTaskQueue> task_queue) {
+  run_order->push_back(id);
+  task_queue->InsertFence(TaskQueue::InsertFencePosition::kNow);
+  task_queue->PostTask(FROM_HERE,
+                       base::BindRepeating(&TestTask, id + 1, run_order));
+
+  // Force reload of immediate work queue. In real life the same effect can be
+  // achieved with cross-thread posting.
+  task_queue->GetTaskQueueImpl()->ReloadImmediateWorkQueueIfEmpty();
+}
+
+}  // namespace
+
+TEST_F(TaskQueueManagerTest, TaskQueueDisabledFromNestedLoop) {
+  InitializeWithRealMessageLoop(1u);
+  std::vector<EnqueueOrder> run_order;
+
+  std::vector<std::pair<base::Closure, bool>> tasks_to_post_from_nested_loop;
+
+  tasks_to_post_from_nested_loop.push_back(
+      std::make_pair(base::BindRepeating(&TestTask, 1, &run_order), false));
+  tasks_to_post_from_nested_loop.push_back(
+      std::make_pair(base::BindRepeating(&InsertFenceAndPostTestTask, 2,
+                                         &run_order, runners_[0]),
+                     true));
+
+  runners_[0]->PostTask(
+      FROM_HERE,
+      base::BindRepeating(&PostFromNestedRunloop, message_loop_.get(),
+                          base::RetainedRef(runners_[0]),
+                          base::Unretained(&tasks_to_post_from_nested_loop)));
+  base::RunLoop().RunUntilIdle();
+
+  // Task 1 shouldn't run first due to it being non-nestable and queue gets
+  // blocked after task 2. Task 1 runs after existing nested message loop
+  // due to being posted before inserting a fence.
+  // This test checks that breaks when nestable task is pushed into a redo
+  // queue.
+  EXPECT_THAT(run_order, ElementsAre(2, 1));
+
+  runners_[0]->RemoveFence();
+  base::RunLoop().RunUntilIdle();
+  EXPECT_THAT(run_order, ElementsAre(2, 1, 3));
 }
 
 TEST_F(TaskQueueManagerTest, HasPendingImmediateWork_ImmediateTask) {
@@ -3475,6 +3531,61 @@ TEST_F(TaskQueueManagerTest, DefaultTaskRunnerSupport) {
     DCHECK_EQ(custom_task_runner, message_loop.task_runner());
   }
   DCHECK_EQ(original_task_runner, message_loop.task_runner());
+}
+
+namespace {
+
+void DoNothing() {}
+
+class PostTaskInDestructor {
+ public:
+  explicit PostTaskInDestructor(scoped_refptr<TaskQueue> task_queue)
+      : task_queue_(task_queue) {}
+
+  ~PostTaskInDestructor() {
+    task_queue_->PostTask(FROM_HERE, base::BindOnce(&DoNothing));
+  }
+
+  void Do() {}
+
+ private:
+  scoped_refptr<TaskQueue> task_queue_;
+};
+
+}  // namespace
+
+TEST_F(TaskQueueManagerTest, TaskQueueUsedInTaskDestructorAfterShutdown) {
+  // This test checks that when a task is posted to a shutdown queue and
+  // destroyed, it can try to post a task to the same queue without deadlocks.
+  Initialize(0u);
+  test_task_runner_->SetAutoAdvanceNowToPendingTasks(true);
+
+  scoped_refptr<TestTaskQueue> main_tq = CreateTaskQueue();
+
+  base::WaitableEvent test_executed(
+      base::WaitableEvent::ResetPolicy::MANUAL,
+      base::WaitableEvent::InitialState::NOT_SIGNALED);
+  std::unique_ptr<base::Thread> thread =
+      std::make_unique<base::Thread>("test thread");
+  thread->StartAndWaitForTesting();
+
+  manager_.reset();
+
+  thread->task_runner()->PostTask(
+      FROM_HERE,
+      base::BindOnce(
+          [](scoped_refptr<base::SingleThreadTaskRunner> task_queue,
+             std::unique_ptr<PostTaskInDestructor> test_object,
+             base::WaitableEvent* test_executed) {
+            task_queue->PostTask(
+                FROM_HERE,
+                base::BindOnce(&PostTaskInDestructor::Do,
+                               base::Passed(std::move(test_object))));
+            test_executed->Signal();
+          },
+          main_tq, std::make_unique<PostTaskInDestructor>(main_tq),
+          &test_executed));
+  test_executed.Wait();
 }
 
 }  // namespace task_queue_manager_unittest
