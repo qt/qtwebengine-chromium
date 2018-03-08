@@ -5,7 +5,7 @@
 
 #ifdef V8_I18N_SUPPORT
 #include "src/runtime/runtime-utils.h"
-
+#include <cmath>
 #include <memory>
 
 #include "src/api.h"
@@ -295,17 +295,21 @@ RUNTIME_FUNCTION(Runtime_InternalDateFormat) {
   DCHECK(args.length() == 2);
 
   CONVERT_ARG_HANDLE_CHECKED(JSObject, date_format_holder, 0);
-  CONVERT_ARG_HANDLE_CHECKED(JSDate, date, 1);
+  CONVERT_NUMBER_ARG_HANDLE_CHECKED(date, 1);
 
-  Handle<Object> value;
-  ASSIGN_RETURN_FAILURE_ON_EXCEPTION(isolate, value, Object::ToNumber(date));
+  double date_value = date->Number();
+  // Check for +-Infinity and Nan
+  if (!std::isfinite(date_value)) {
+    THROW_NEW_ERROR_RETURN_FAILURE(
+        isolate, NewRangeError(MessageTemplate::kInvalidTimeValue));
+  }
 
   icu::SimpleDateFormat* date_format =
       DateFormat::UnpackDateFormat(isolate, date_format_holder);
   if (!date_format) return isolate->ThrowIllegalOperation();
 
   icu::UnicodeString result;
-  date_format->format(value->Number(), result);
+  date_format->format(date_value, result);
 
   RETURN_RESULT_OR_FAILURE(
       isolate, isolate->factory()->NewStringFromTwoByte(Vector<const uint16_t>(
@@ -396,10 +400,14 @@ RUNTIME_FUNCTION(Runtime_InternalDateFormatToParts) {
   DCHECK(args.length() == 2);
 
   CONVERT_ARG_HANDLE_CHECKED(JSObject, date_format_holder, 0);
-  CONVERT_ARG_HANDLE_CHECKED(JSDate, date, 1);
+  CONVERT_NUMBER_ARG_HANDLE_CHECKED(date, 1);
 
-  Handle<Object> value;
-  ASSIGN_RETURN_FAILURE_ON_EXCEPTION(isolate, value, Object::ToNumber(date));
+
+  double date_value = date->Number();
+  if (!std::isfinite(date_value)) {
+    THROW_NEW_ERROR_RETURN_FAILURE(
+        isolate, NewRangeError(MessageTemplate::kInvalidTimeValue));
+  }
 
   icu::SimpleDateFormat* date_format =
       DateFormat::UnpackDateFormat(isolate, date_format_holder);
@@ -409,7 +417,7 @@ RUNTIME_FUNCTION(Runtime_InternalDateFormatToParts) {
   icu::FieldPositionIterator fp_iter;
   icu::FieldPosition fp;
   UErrorCode status = U_ZERO_ERROR;
-  date_format->format(value->Number(), formatted, &fp_iter, status);
+  date_format->format(date_value, formatted, &fp_iter, status);
   if (U_FAILURE(status)) return isolate->heap()->undefined_value();
 
   Handle<JSArray> result = factory->NewJSArray(0);

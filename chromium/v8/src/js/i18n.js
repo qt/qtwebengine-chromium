@@ -1721,10 +1721,7 @@ function formatDate(formatter, dateValue) {
     dateMs = TO_NUMBER(dateValue);
   }
 
-  if (!NUMBER_IS_FINITE(dateMs)) throw %make_range_error(kDateRange);
-
-  return %InternalDateFormat(%GetImplFromInitializedIntlObject(formatter),
-                             new GlobalDate(dateMs));
+  return %InternalDateFormat(%GetImplFromInitializedIntlObject(formatter), dateMs);
 }
 
 function FormatDateToParts(dateValue) {
@@ -1742,10 +1739,8 @@ function FormatDateToParts(dateValue) {
     dateMs = TO_NUMBER(dateValue);
   }
 
-  if (!NUMBER_IS_FINITE(dateMs)) throw %make_range_error(kDateRange);
-
   return %InternalDateFormatToParts(
-      %GetImplFromInitializedIntlObject(this), new GlobalDate(dateMs));
+      %GetImplFromInitializedIntlObject(this), dateMs);
 }
 
 %FunctionSetLength(FormatDateToParts, 0);
