@@ -2,6 +2,8 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//third_party/blink/renderer/config.gni")
+
 platform_config_add = [
   "//build/config/compiler:wexit_time_destructors",
   "//third_party/blink/renderer:config",
@@ -48,4 +50,9 @@ template("blink_platform_sources") {
 set_defaults("blink_platform_sources") {
   configs =
       default_compiler_configs + platform_config_add - platform_config_remove
+
+  configs -= [ "//build/config/compiler:default_symbols" ]
+  configs += blink_symbols_config
+  configs -= [ "//build/config/compiler:default_optimization" ]
+  configs += blink_optimization_config
 }
