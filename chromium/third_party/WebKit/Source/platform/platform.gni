@@ -3,6 +3,7 @@
 # found in the LICENSE file.
 
 import("//build/config/jumbo.gni")
+import("//third_party/WebKit/Source/config.gni")
 
 platform_config_add = [
   "//build/config/compiler:no_size_t_to_int_warning",
@@ -55,4 +56,12 @@ template("blink_platform_sources") {
 set_defaults("blink_platform_sources") {
   configs =
       default_compiler_configs + platform_config_add - platform_config_remove
+  if (remove_webcore_debug_symbols) {
+    configs -= [ "//build/config/compiler:default_symbols" ]
+    configs += remove_webcore_symbols_config
+    if (is_debug) {
+      configs -= [ "//build/config/compiler:default_optimization" ]
+      configs += [ "//build/config/compiler:optimize_size_only" ]
+    }
+  }
 }
