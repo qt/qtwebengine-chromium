@@ -87,7 +87,7 @@ public:
     Controller(std::unique_ptr<base::Thread> thread) : thread_(std::move(thread))
     {
         base::Thread::Options options;
-#if (defined(OS_WIN) || defined(OS_MACOSX)) && !defined(TOOLKIT_QT)
+#if (defined(OS_WIN) || defined(OS_MAC)) && !defined(TOOLKIT_QT)
         // WGL needs to create its own window and pump messages on it.
         options.message_loop_type = base::MessagePumpType::UI;
 #endif
