@@ -7600,9 +7600,7 @@ String WebGLRenderingContextBase::EnsureNotNull(const String& text) const {
 
 WebGLRenderingContextBase::LRUCanvasResourceProviderCache::
     LRUCanvasResourceProviderCache(int capacity)
-    : resource_providers_(
-          std::make_unique<std::unique_ptr<CanvasResourceProvider>[]>(
-              capacity)),
+    : resource_providers_(capacity),
       capacity_(capacity) {}
 
 CanvasResourceProvider* WebGLRenderingContextBase::

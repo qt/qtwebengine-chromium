@@ -28,6 +28,7 @@
 
 #include <memory>
 #include <set>
+#include <vector>
 #include "bindings/core/v8/Nullable.h"
 #include "bindings/core/v8/ScriptValue.h"
 #include "core/CoreExport.h"
@@ -751,7 +752,7 @@ class MODULES_EXPORT WebGLRenderingContextBase : public CanvasRenderingContext,
 
    private:
     void BubbleToFront(int idx);
-    std::unique_ptr<std::unique_ptr<CanvasResourceProvider>[]>
+    std::vector<std::unique_ptr<CanvasResourceProvider>>
         resource_providers_;
     int capacity_;
   };
