@@ -112,7 +112,14 @@ void WebUIExtension::Send(gin::Arguments* args) {
     content = base::ListValue::From(
         converter->FromV8Value(obj, frame->mainWorldScriptContext()));
     DCHECK(content);
-  }
+    // The conversion of |obj| could have triggered arbitrary JavaScript code,
+    // so check that the frame is still valid to avoid dereferencing a stale
+    // pointer.
+    if (frame != blink::WebLocalFrame::frameForCurrentContext()) {
+      NOTREACHED();
+      return;
+    }
+}
 
   // Send the message up to the browser.
   render_view->Send(new ViewHostMsg_WebUISend(render_view->GetRoutingID(),
