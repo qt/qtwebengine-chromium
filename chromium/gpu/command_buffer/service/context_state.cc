@@ -29,6 +29,16 @@ GLuint Get2dServiceId(const TextureUnit& unit) {
       ? unit.bound_texture_2d->service_id() : 0;
 }
 
+GLuint Get2dArrayServiceId(const TextureUnit& unit) {
+  return unit.bound_texture_2d_array.get()
+             ? unit.bound_texture_2d_array->service_id()
+             : 0;
+}
+
+GLuint Get3dServiceId(const TextureUnit& unit) {
+  return unit.bound_texture_3d.get() ? unit.bound_texture_3d->service_id() : 0;
+}
+
 GLuint GetCubeServiceId(const TextureUnit& unit) {
   return unit.bound_texture_cube_map.get()
       ? unit.bound_texture_cube_map->service_id() : 0;
@@ -240,6 +250,8 @@ void ContextState::RestoreTextureUnitBindings(
   DCHECK_LT(unit, texture_units.size());
   const TextureUnit& texture_unit = texture_units[unit];
   GLuint service_id_2d = Get2dServiceId(texture_unit);
+  GLuint service_id_2d_array = Get2dArrayServiceId(texture_unit);
+  GLuint service_id_3d = Get3dServiceId(texture_unit);
   GLuint service_id_cube = GetCubeServiceId(texture_unit);
   GLuint service_id_oes = GetOesServiceId(texture_unit);
   GLuint service_id_arb = GetArbServiceId(texture_unit);
@@ -250,10 +262,22 @@ void ContextState::RestoreTextureUnitBindings(
       feature_info_->feature_flags().oes_egl_image_external ||
       feature_info_->feature_flags().nv_egl_stream_consumer_external;
   bool bind_texture_arb = feature_info_->feature_flags().arb_texture_rectangle;
+  // TEXTURE_2D_ARRAY and TEXTURE_3D are only applicable from ES3 version.
+  // So set it to FALSE by default.
+  bool bind_texture_2d_array = false;
+  bool bind_texture_3d = false;
+  // set the variables to true only if the application is ES3 or newer
+  if (feature_info_->IsES3Capable()) {
+    bind_texture_2d_array = true;
+    bind_texture_3d = true;
+  }
 
   if (prev_state) {
     const TextureUnit& prev_unit = prev_state->texture_units[unit];
     bind_texture_2d = service_id_2d != Get2dServiceId(prev_unit);
+    bind_texture_2d_array =
+        service_id_2d_array != Get2dArrayServiceId(prev_unit);
+    bind_texture_3d = service_id_3d != Get3dServiceId(prev_unit);
     bind_texture_cube = service_id_cube != GetCubeServiceId(prev_unit);
     bind_texture_oes =
         bind_texture_oes && service_id_oes != GetOesServiceId(prev_unit);
@@ -262,8 +286,8 @@ void ContextState::RestoreTextureUnitBindings(
   }
 
   // Early-out if nothing has changed from the previous state.
-  if (!bind_texture_2d && !bind_texture_cube
-      && !bind_texture_oes && !bind_texture_arb) {
+  if (!bind_texture_2d && !bind_texture_2d_array && !bind_texture_3d &&
+      !bind_texture_cube && !bind_texture_oes && !bind_texture_arb) {
     return;
   }
 
@@ -279,6 +303,12 @@ void ContextState::RestoreTextureUnitBindings(
   }
   if (bind_texture_arb) {
     glBindTexture(GL_TEXTURE_RECTANGLE_ARB, service_id_arb);
+  }
+  if (bind_texture_2d_array) {
+    glBindTexture(GL_TEXTURE_2D_ARRAY, service_id_2d_array);
+  }
+  if (bind_texture_3d) {
+    glBindTexture(GL_TEXTURE_3D, service_id_3d);
   }
 }
 
