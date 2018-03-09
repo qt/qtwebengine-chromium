@@ -1708,9 +1708,12 @@ void FrameView::processUrlFragment(const KURL& url,
       !m_frame->document()->isSVGDocument())
     return;
 
+  // Try the raw fragment for HTML documents, but skip it for `svgView()`:
   String fragmentIdentifier = url.fragmentIdentifier();
-  if (processUrlFragmentHelper(fragmentIdentifier, behavior))
+  if (!m_frame->document()->isSVGDocument() &&
+      processUrlFragmentHelper(fragmentIdentifier, behavior)) {
     return;
+  }
 
   // Try again after decoding the ref, based on the document's encoding.
   if (m_frame->document()->encoding().isValid())
