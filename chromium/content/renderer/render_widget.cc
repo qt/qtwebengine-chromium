@@ -618,10 +618,8 @@ void RenderWidget::SetLocalSurfaceIdForAutoResize(
   bool screen_info_changed = screen_info_ != screen_info;
 
   screen_info_ = screen_info;
-  if (device_scale_factor_ != screen_info_.device_scale_factor) {
-    device_scale_factor_ = screen_info_.device_scale_factor;
-    OnDeviceScaleFactorChanged();
-  }
+  device_scale_factor_ = screen_info_.device_scale_factor;
+  OnDeviceScaleFactorChanged();
 
   if (screen_info_changed) {
     for (auto& observer : render_frame_proxies_)
@@ -812,8 +810,10 @@ void RenderWidget::OnSetLocalSurfaceIdForAutoResize(
     const gfx::Size& max_size,
     const content::ScreenInfo& screen_info,
     const viz::LocalSurfaceId& local_surface_id) {
-  if (!auto_resize_mode_ || resize_or_repaint_ack_num_ != sequence_number)
+  if (!auto_resize_mode_ || resize_or_repaint_ack_num_ != sequence_number) {
+    DidResizeOrRepaintAck();
     return;
+  }
 
   SetLocalSurfaceIdForAutoResize(sequence_number, screen_info,
                                  local_surface_id);
@@ -1319,10 +1319,8 @@ void RenderWidget::Resize(const ResizeParams& params) {
   if (render_thread)
     render_thread->SetRenderingColorSpace(screen_info_.color_space);
 
-  if (device_scale_factor_ != screen_info_.device_scale_factor) {
-    device_scale_factor_ = screen_info_.device_scale_factor;
-    OnDeviceScaleFactorChanged();
-  }
+  device_scale_factor_ = screen_info_.device_scale_factor;
+  OnDeviceScaleFactorChanged();
 
   if (resizing_mode_selector_->NeverUsesSynchronousResize()) {
     // A resize ack shouldn't be requested if we have not ACK'd the previous
@@ -1858,7 +1856,7 @@ void RenderWidget::OnDeviceScaleFactorChanged() {
   if (IsUseZoomForDSFEnabled())
     compositor_->SetPaintedDeviceScaleFactor(GetOriginalDeviceScaleFactor());
   else
-    compositor_->SetDeviceScaleFactor(device_scale_factor_);
+    compositor_->SetDeviceScaleFactor(GetOriginalDeviceScaleFactor());
 }
 
 void RenderWidget::OnRepaint(gfx::Size size_to_paint) {
@@ -2276,8 +2274,13 @@ void RenderWidget::DidAutoResize(const gfx::Size& new_size) {
       // on, that notification will not arrive here because the compositor is
       // deferring commits and thus submission of CompositorFrames.
       if (!size_.IsEmpty() && compositor_ &&
-          compositor_->IsSurfaceSynchronizationEnabled()) {
-        DidResizeOrRepaintAck();
+          compositor_->IsSurfaceSynchronizationEnabled() &&
+          !auto_resize_ack_callback_.callback()) {
+        auto_resize_ack_callback_.Reset(
+            base::BindOnce(&RenderWidget::DidResizeOrRepaintAck,
+                           weak_ptr_factory_.GetWeakPtr()));
+        base::ThreadTaskRunnerHandle::Get()->PostTask(
+            FROM_HERE, auto_resize_ack_callback_.callback());
       }
     }
   }

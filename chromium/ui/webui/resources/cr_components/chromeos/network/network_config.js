@@ -86,6 +86,12 @@ Polymer({
       notify: true,
     },
 
+    /** Set to any error from the last configuration result. */
+    error: {
+      type: String,
+      notify: true,
+    },
+
     /** Set if |guid| is not empty once networkProperties are received. */
     propertiesReceived_: Boolean,
 
@@ -219,9 +225,6 @@ Polymer({
       value: null,
     },
 
-    /** @private */
-    error_: String,
-
     /**
      * Object providing network type values for data binding. Note: Currently
      * we only support WiFi, but support for other types will be following
@@ -343,37 +346,36 @@ Polymer({
     this.guid = this.networkProperties.GUID;
     this.type = this.networkProperties.Type;
     if (this.guid) {
-      this.networkingPrivate.getProperties(
-          this.guid, this.getPropertiesCallback_.bind(this));
+      this.networkingPrivate.getProperties(this.guid, (properties) => {
+        this.getPropertiesCallback_(properties);
+        this.focusFirstInput_();
+      });
+    } else {
+      this.async(() => {
+        this.focusFirstInput_();
+      });
     }
     this.onCertificateListsChanged_();
     this.updateIsConfigured_();
     this.setShareNetwork_();
-    requestAnimationFrame(() => {
-      var e = this.$$(
-          'network-config-input:not([disabled]),' +
-          'network-config-select:not([disabled])');
-      if (e)
-        e.focus();
-    });
   },
 
   saveOrConnect: function() {
     if (this.propertiesSent_)
       return;
     this.propertiesSent_ = true;
-    this.error_ = '';
+    this.error = '';
 
     var propertiesToSet = this.getPropertiesToSet_();
     if (this.getSource_() == CrOnc.Source.NONE) {
-      // New non VPN network configurations default to 'AutoConnect' unless
-      // prohibited by policy.
-      var prohibitAutoConnect = this.globalPolicy &&
-          this.globalPolicy.AllowOnlyPolicyNetworksToConnect;
-      CrOnc.setTypeProperty(
-          propertiesToSet, 'AutoConnect',
-          this.type != CrOnc.Type.VPN && !prohibitAutoConnect);
-
+      // Set 'AutoConnect' to false for VPN or if prohibited by policy.
+      // Note: Do not set AutoConnect to true, the connection manager will do
+      // that on a successful connection (unless set to false here).
+      if (this.type == CrOnc.Type.VPN ||
+          (this.globalPolicy &&
+           this.globalPolicy.AllowOnlyPolicyNetworksToConnect)) {
+        CrOnc.setTypeProperty(propertiesToSet, 'AutoConnect', false);
+      }
       // Create the configuration, then connect to it in the callback.
       this.networkingPrivate.createNetwork(
           this.shareNetwork_, propertiesToSet,
@@ -383,6 +385,16 @@ Polymer({
       this.networkingPrivate.setProperties(
           this.guid, propertiesToSet, this.setPropertiesCallback_.bind(this));
     }
+  },
+
+  /** @private */
+  focusFirstInput_: function() {
+    Polymer.dom.flush();
+    var e = this.$$(
+        'network-config-input:not([disabled]),' +
+        'network-config-select:not([disabled])');
+    if (e)
+      e.focus();
   },
 
   /** @private */
@@ -893,7 +905,7 @@ Polymer({
   /** @private */
   updateCertError_: function() {
     /** @const */ var certError = 'networkErrorNoUserCertificate';
-    if (this.error_ && this.error_ != certError)
+    if (this.error && this.error != certError)
       return;
 
     var requireCerts = (this.showEap_ && this.showEap_.UserCert) ||
@@ -1023,14 +1035,6 @@ Polymer({
   shareIsVisible_: function() {
     return this.getSource_() == CrOnc.Source.NONE &&
         (this.type == CrOnc.Type.WI_FI || this.type == CrOnc.Type.WI_MAX);
-  },
-
-  /**
-   * @return {boolean}
-   * @private
-   */
-  connectingIsVisible_: function() {
-    return this.propertiesSent_ && !this.error_;
   },
 
   /**
@@ -1202,8 +1206,8 @@ Polymer({
   /** @private */
   setPropertiesCallback_: function() {
     this.setError_(this.getRuntimeError_());
-    if (this.error_) {
-      console.error('setProperties error: ' + this.guid + ': ' + this.error_);
+    if (this.error) {
+      console.error('setProperties error: ' + this.guid + ': ' + this.error);
       this.propertiesSent_ = false;
       return;
     }
@@ -1223,10 +1227,10 @@ Polymer({
    */
   createNetworkCallback_: function(guid) {
     this.setError_(this.getRuntimeError_());
-    if (this.error_) {
+    if (this.error) {
       console.error(
           'createNetworkError, type: ' + this.networkProperties.Type + ': ' +
-          'error: ' + this.error_);
+          'error: ' + this.error);
       this.propertiesSent_ = false;
       return;
     }
@@ -1278,38 +1282,11 @@ Polymer({
   },
 
   /**
-   * @param {!chrome.networkingPrivate.NetworkConfigProperties} properties
-   * @return {!CrOnc.NetworkStateProperties}
-   * @private
-   */
-  getIconState_: function(properties) {
-    return {
-      ConnectionState: CrOnc.ConnectionState.CONNECTING,
-      GUID: properties.GUID || '',
-      Type: this.type,
-    };
-  },
-
-  /**
    * @param {string|undefined} error
    * @private
    */
   setError_: function(error) {
-    if (!error) {
-      this.error_ = '';
-      return;
-    }
-    this.error_ = error;
+    this.error = error || '';
   },
-
-  /**
-   * @return {string}
-   * @private
-   */
-  getError_: function() {
-    if (this.i18nExists(this.error_))
-      return this.i18n(this.error_);
-    return this.i18n('networkErrorUnknown');
-  }
 });
 })();

@@ -2788,6 +2788,50 @@
       "features": [
         "max_msaa_sample_count_4"
       ]
+    },
+    {
+      "id": 256,
+      "description": "Don't expose disjoint_timer_query extensions to WebGL",
+      "cr_bugs": [808744],
+      "disabled_webgl_extensions": [
+        "EXT_disjoint_timer_query",
+        "EXT_disjoint_timer_query_webgl2"
+      ]
+    },
+    {
+      "id": 257,
+      "description": "Fake entry for testing disabling of WebGL extensions",
+      "cr_bugs": [808744],
+      "test_group": 2,
+      "disabled_webgl_extensions": [
+        "WEBGL_lose_context"
+      ]
+    },
+    {
+      "id": 258,
+      "description": "Shader variable initialization in a loop caused perf regression on Mac Intel.",
+      "cr_bugs": [809422],
+      "os": {
+        "type": "macosx"
+      },
+      "vendor_id": "0x8086",
+      "multi_gpu_category": "any",
+      "features": [
+        "dont_use_loops_to_initialize_variables"
+      ]
+    },
+    {
+      "id": 259,
+      "description": "8x MSAA is slow for alpha:false WebGL contexts on Mac Intel",
+      "cr_bugs": [812071],
+      "os": {
+        "type": "macosx"
+      },
+      "vendor_id": "0x8086",
+      "multi_gpu_category": "primary",
+      "features": [
+        "max_msaa_sample_count_4"
+      ]
     }
   ]
 }

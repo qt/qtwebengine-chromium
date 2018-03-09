@@ -17,7 +17,9 @@ namespace {
 
 bool MergeEventIfPossible(const blink::WebInputEvent& event,
                           ui::WebScopedInputEvent* blink_event) {
-  if (ui::CanCoalesce(event, **blink_event)) {
+  if (!blink::WebInputEvent::IsTouchEventType(event.GetType()) &&
+      !blink::WebInputEvent::IsGestureEventType(event.GetType()) &&
+      ui::CanCoalesce(event, **blink_event)) {
     ui::Coalesce(event, blink_event->get());
     return true;
   }
@@ -258,7 +260,9 @@ void RenderWidgetTargeter::FoundTarget(
     const blink::WebInputEvent& event,
     const ui::LatencyInfo& latency,
     const base::Optional<gfx::PointF>& target_location) {
-  if (!root_view)
+  // RenderWidgetHostViewMac can be deleted asynchronously, in which case the
+  // View will be valid but there will no longer be a RenderWidgetHostImpl.
+  if (!root_view || !root_view->GetRenderWidgetHost())
     return;
   // TODO: Unify position conversion for all event types.
   if (blink::WebInputEvent::IsMouseEventType(event.GetType())) {

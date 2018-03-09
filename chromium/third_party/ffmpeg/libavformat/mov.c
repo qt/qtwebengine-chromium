@@ -2882,7 +2882,7 @@ static int mov_read_stts(MOVContext *c, AVIOContext *pb, MOVAtom atom)
     for (i = 0; i < entries && !pb->eof_reached; i++) {
         int sample_duration;
         unsigned int sample_count;
-        unsigned min_entries = FFMIN(FFMAX(i, 1024 * 1024), entries);
+        unsigned int min_entries = FFMIN(FFMAX(i + 1, 1024 * 1024), entries);
         MOVStts *stts_data = av_fast_realloc(sc->stts_data, &alloc_size,
                                              min_entries * sizeof(*sc->stts_data));
         if (!stts_data) {
@@ -3157,7 +3157,7 @@ static int find_prev_closest_index(AVStream *st,
             }
         }
 
-        while (*index >= 0 && (*ctts_index) >= 0) {
+        while (*index >= 0 && (*ctts_index) >= 0 && (*ctts_index) < ctts_count) {
             // Find a "key frame" with PTS <= timestamp_pts (So that we can decode B-frames correctly).
             // No need to add dts_shift to the timestamp here becase timestamp_pts has already been
             // compensated by dts_shift above.
@@ -4713,6 +4713,7 @@ static int mov_read_trun(MOVContext *c, AVIOContext *pb, MOVAtom atom)
     st->index_entries= new_entries;
 
     requested_size = (st->nb_index_entries + entries) * sizeof(*sc->ctts_data);
+    unsigned int old_ctts_allocated_size = sc->ctts_allocated_size;
     ctts_data = av_fast_realloc(sc->ctts_data, &sc->ctts_allocated_size,
                                 requested_size);
     if (!ctts_data)
@@ -4722,8 +4723,8 @@ static int mov_read_trun(MOVContext *c, AVIOContext *pb, MOVAtom atom)
     // In case there were samples without ctts entries, ensure they get
     // zero valued entries. This ensures clips which mix boxes with and
     // without ctts entries don't pickup uninitialized data.
-    memset(sc->ctts_data + sc->ctts_count, 0,
-           (st->nb_index_entries - sc->ctts_count) * sizeof(*sc->ctts_data));
+    memset((uint8_t*)(sc->ctts_data) + old_ctts_allocated_size, 0,
+           sc->ctts_allocated_size - old_ctts_allocated_size);
 
     if (index_entry_pos < st->nb_index_entries) {
         // Make hole in index_entries and ctts_data for new samples

@@ -279,8 +279,10 @@ deps = {
     'url':
       (Var("chromium_git")) + '/chromium/third_party/errorprone.git@ecc57c2b00627667874744b9ad8efe10734d97a8'
   },
-  'src/third_party/ffmpeg':
-    (Var("chromium_git")) + '/chromium/third_party/ffmpeg.git@3e444ad8860b5d90d40a5c6e19947aba376a976b',
+  'src/third_party/ffmpeg': {
+    'url':
+      '{chromium_git}/chromium/third_party/ffmpeg.git@19a1302b214c62c56409b69ab5e936796d96209f'
+  },
   'src/third_party/findbugs': {
     'condition':
       'checkout_android',
@@ -475,7 +477,7 @@ deps = {
     (Var("webrtc_git")) + '/deps/third_party/openmax.git@b611996df3b8f6b151339d22c12c21f167009cb6',
   'src/third_party/pdfium': {
     'url':
-      '{pdfium_git}/pdfium.git@ad3e2461b811a70c433e9f62c75f8ddb1d1253ab'
+      '{pdfium_git}/pdfium.git@e839a6adb305467759e0d22fe7532a72fe4d8fa7'
   },
   'src/third_party/pefile': {
     'condition':
@@ -521,7 +523,7 @@ deps = {
     (Var("chromium_git")) + '/external/github.com/google/shaderc.git@cd8793c34907073025af2622c28bcee64e9879a4',
   'src/third_party/skia': {
     'url':
-      '{skia_git}/skia.git@567bd716a9ae4051c8629cc4e8c047be69e84cd6'
+      '{skia_git}/skia.git@bd0dafbc8112f6cfa92a8096d8cb5696d8535ef9'
   },
   'src/third_party/smhasher/src':
     (Var("chromium_git")) + '/external/smhasher.git@e87738e57558e0ec472b2fc3a643b838e5b6e88f',
@@ -563,7 +565,7 @@ deps = {
     (Var("chromium_git")) + '/external/khronosgroup/webgl.git@d458ada06171a85af00367251a4ed55db7fe2018',
   'src/third_party/webrtc': {
     'url':
-      '{webrtc_git}/src.git@1512bd5f912c37ac88a07fb27dbc42190a4cce58'
+      '{webrtc_git}/src.git@9f7e2a90da243288657e1802af85168e87daab01'
   },
   'src/third_party/xdg-utils': {
     'condition':
@@ -581,7 +583,7 @@ deps = {
     (Var("chromium_git")) + '/infra/luci/client-py.git@88229872dd17e71658fe96763feaa77915d8cbd6',
   'src/v8': {
     'url':
-      '{chromium_git}/v8/v8.git@9239b67b799f23961552d5f7538d001063f335c2'
+      '{chromium_git}/v8/v8.git@2bc5f566416da419601d55ffc83f92374be50779'
   }
 }
 
