@@ -30,7 +30,6 @@ GL_EXPORT extern const char kANGLEImplementationD3D11Name[];
 GL_EXPORT extern const char kANGLEImplementationOpenGLName[];
 GL_EXPORT extern const char kANGLEImplementationOpenGLESName[];
 GL_EXPORT extern const char kANGLEImplementationNullName[];
-
 }  // namespace gl
 
 namespace switches {
@@ -59,7 +58,7 @@ GL_EXPORT extern const char kOverrideUseSoftwareGLForTests[];
 
 GL_EXPORT extern const char* const kGLSwitchesCopiedFromGpuProcessHost[];
 GL_EXPORT extern const int kGLSwitchesCopiedFromGpuProcessHostNumSwitches;
-
+GL_EXPORT extern const char kCreateDefaultGLContext[];
 }  // namespace switches
 
 namespace features {
