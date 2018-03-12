@@ -92,7 +92,7 @@ GL_EXPORT extern const char kOverrideUseSoftwareGLForHeadless[];
 
 GL_EXPORT extern const char* const kGLSwitchesCopiedFromGpuProcessHost[];
 GL_EXPORT extern const int kGLSwitchesCopiedFromGpuProcessHostNumSwitches;
-
+GL_EXPORT extern const char kCreateDefaultGLContext[];
 }  // namespace switches
 
 namespace features {
