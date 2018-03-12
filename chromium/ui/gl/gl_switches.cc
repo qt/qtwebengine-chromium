@@ -158,6 +158,8 @@ const char* const kGLSwitchesCopiedFromGpuProcessHost[] = {
 const int kGLSwitchesCopiedFromGpuProcessHostNumSwitches =
     base::size(kGLSwitchesCopiedFromGpuProcessHost);
 
+const char kCreateDefaultGLContext[] = "create-default-gl-context";
+
 }  // namespace switches
 
 namespace features {
