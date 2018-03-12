@@ -135,6 +135,8 @@ const char* const kGLSwitchesCopiedFromGpuProcessHost[] = {
 const int kGLSwitchesCopiedFromGpuProcessHostNumSwitches =
     arraysize(kGLSwitchesCopiedFromGpuProcessHost);
 
+const char kCreateDefaultGLContext[] = "create-default-gl-context";
+
 }  // namespace switches
 
 namespace features {
