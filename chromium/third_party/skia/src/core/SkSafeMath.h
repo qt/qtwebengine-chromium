@@ -43,6 +43,10 @@ public:
         return a + b;
     }
 
+    // These saturate to their results
+    static size_t Add(size_t x, size_t y);
+    static size_t Mul(size_t x, size_t y);
+
 private:
     uint32_t mul32(uint32_t x, uint32_t y) {
         uint64_t bx = x;
