@@ -62,6 +62,15 @@ AudioHandler::AudioHandler(NodeType nodeType, AudioNode& node, float sampleRate)
   }
 #endif
   InstanceCounters::incrementCounter(InstanceCounters::AudioHandlerCounter);
+
+#if DEBUG_AUDIONODE_REFERENCES
+  fprintf(
+      stderr,
+      "[%16p]: %16p: %2d: AudioHandler::AudioHandler() %d [%d] total: %u\n",
+      context(), this, getNodeType(), m_connectionRefCount,,
+      s_nodeCount[getNodeType()],
+      InstanceCounters::counterValue(InstanceCounters::kAudioHandlerCounter));
+#endif
 }
 
 AudioHandler::~AudioHandler() {
@@ -71,9 +80,13 @@ AudioHandler::~AudioHandler() {
   InstanceCounters::decrementCounter(InstanceCounters::AudioHandlerCounter);
 #if DEBUG_AUDIONODE_REFERENCES
   --s_nodeCount[getNodeType()];
-  fprintf(stderr, "[%16p]: %16p: %2d: AudioHandler::~AudioHandler() %d [%d]\n",
-          context(), this, getNodeType(), m_connectionRefCount,
-          s_nodeCount[getNodeType()]);
+  fprintf(
+      stderr,
+      "[%16p]: %16p: %2d: AudioHandler::~AudioHandler() %d [%d] remaining: "
+       "%u\n",
+      context(), this, getNodeType(), m_connectionRefCount,
+      s_nodeCount[getNodeType()],
+      InstanceCounters::counterValue(InstanceCounters::kAudioHandlerCounter));
 #endif
 }
 
@@ -539,9 +552,26 @@ void AudioNode::dispose() {
 #endif
   BaseAudioContext::AutoLocker locker(context());
   handler().dispose();
-  if (context()->contextState() == BaseAudioContext::Running)
-    context()->deferredTaskHandler().addRenderingOrphanHandler(
-        m_handler.release());
+  if (context()->hasRealtimeConstraint()) {
+    // Add the handler to the orphan list if the context is not
+    // closed. (Nothing will clean up the orphan list if the context
+    // is closed.)  These will get cleaned up in the post render task
+    // if audio thread is running or when the context is colleced (in
+    // the worst case).
+    if (context()->contextState() != BaseAudioContext::Closed) {
+      context()->deferredTaskHandler().addRenderingOrphanHandler(
+          m_handler.release());
+    }
+  } else {
+    // For an offline context, only need to save the handler when the
+    // context is running.  The change in the context state is
+    // synchronous with the main thread (even though the offline
+    // thread is not synchronized to the main thread).
+    if (context()->contextState() == BaseAudioContext::Running) {
+      context()->deferredTaskHandler().addRenderingOrphanHandler(
+          m_handler.release());
+    }
+  }
 }
 
 void AudioNode::setHandler(PassRefPtr<AudioHandler> handler) {
