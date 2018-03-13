@@ -126,6 +126,14 @@ AccessibilityRole AXTableCell::scanToDecideHeaderRole() {
   if (isColumnHeaderCell())
     return ColumnHeaderRole;
 
+  // This occurs in an edge case that mixes non-table CSS into a
+  // table, and <th role="gridcell">, see bug 798410.
+  // The odd CSS causes the <th> to not be a LayoutTableCell,
+  // and the ARIA role causes it to fall through to here, because
+  // it is not an ARIA/HTML column/row header.
+  if (!m_layoutObject || !m_layoutObject->isTableCell())
+    return CellRole;  // <th role="gridcell">.
+
   // Check the previous cell and the next cell on the same row.
   LayoutTableCell* layoutCell = toLayoutTableCell(m_layoutObject);
   AccessibilityRole headerRole = CellRole;
