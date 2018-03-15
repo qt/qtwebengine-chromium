@@ -24,6 +24,7 @@ HEADER_PATHS = [
 UNCONDITIONALLY_BOUND_EXTENSIONS = set([
   'WGL_ARB_extensions_string',
   'WGL_EXT_extensions_string',
+  'WGL_ARB_pbuffer',
   'GL_CHROMIUM_gles_depth_binding_hack', # crbug.com/448206
   'GL_CHROMIUM_glgetstringi_hack', # crbug.com/470396
   'GL_CHROMIUM_egl_khr_fence_sync_hack', # crbug.com/504758
