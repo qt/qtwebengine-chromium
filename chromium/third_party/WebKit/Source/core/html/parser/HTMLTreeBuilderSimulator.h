@@ -57,6 +57,8 @@ class HTMLTreeBuilderSimulator {
 
  private:
   explicit HTMLTreeBuilderSimulator(HTMLTreeBuilder*);
+  bool IsHTMLIntegrationPointForStartTag(const CompactHTMLToken&) const;
+  bool IsHTMLIntegrationPointForEndTag(const CompactHTMLToken&) const;
 
   bool inForeignContent() const { return m_namespaceStack.last() != HTML; }
 
