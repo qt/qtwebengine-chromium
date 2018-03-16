@@ -383,6 +383,9 @@ bool SecurityOrigin::CanDisplay(const KURL& url) const {
     return CanLoadLocalResources() ||
            SecurityPolicy::IsAccessToURLWhiteListed(this, url);
 
+  if (IsLocal() && (protocol != "data" && protocol != "qrc"))
+    return CanRequest(url);
+
   return true;
 }
 
