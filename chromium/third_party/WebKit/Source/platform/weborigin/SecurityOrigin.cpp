@@ -646,7 +646,7 @@ String SecurityOrigin::CanonicalizeHost(const String& host, bool* success) {
         url::CanonicalizeHost(utf8.Data(), url::Component(0, utf8.length()),
                               &canon_output, &out_host);
   } else {
-    *success = url::CanonicalizeHost(host.Characters16(),
+    *success = url::CanonicalizeHost(reinterpret_cast<const base::char16 *>(host.Characters16()),
                                      url::Component(0, host.length()),
                                      &canon_output, &out_host);
   }

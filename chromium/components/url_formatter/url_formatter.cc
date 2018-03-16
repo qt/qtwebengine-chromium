@@ -374,7 +374,7 @@ bool IDNToUnicodeOneComponent(const base::char16* comp,
       // code units, |status| will be U_BUFFER_OVERFLOW_ERROR and we'll try
       // the conversion again, but with a sufficiently large buffer.
       output_length = uidna_labelToUnicode(
-          uidna, comp, static_cast<int32_t>(comp_len), &(*out)[original_length],
+          uidna, (const UChar*)comp, static_cast<int32_t>(comp_len), (UChar*)&(*out)[original_length],
           output_length, &info, &status);
     } while ((status == U_BUFFER_OVERFLOW_ERROR && info.errors == 0));
 

@@ -194,14 +194,14 @@ bool IDNSpoofChecker::SafeToDisplayAsUnicode(base::StringPiece16 label,
                                              bool is_tld_ascii) {
   UErrorCode status = U_ZERO_ERROR;
   int32_t result =
-      uspoof_check(checker_, label.data(),
+      uspoof_check(checker_, (const UChar*)label.data(),
                    base::checked_cast<int32_t>(label.size()), nullptr, &status);
   // If uspoof_check fails (due to library failure), or if any of the checks
   // fail, treat the IDN as unsafe.
   if (U_FAILURE(status) || (result & USPOOF_ALL_CHECKS))
     return false;
 
-  icu::UnicodeString label_string(FALSE, label.data(),
+  icu::UnicodeString label_string(FALSE, (const UChar*)label.data(),
                                   base::checked_cast<int32_t>(label.size()));
 
   // A punycode label with 'xn--' prefix is not subject to the URL

@@ -19,7 +19,7 @@ base::FilePath WebStringToFilePath(const WebString& web_string) {
   String str = web_string;
   if (!str.Is8Bit()) {
     return base::FilePath::FromUTF16Unsafe(
-        base::StringPiece16(str.Characters16(), str.length()));
+        base::StringPiece16((const base::char16*)str.Characters16(), str.length()));
   }
 
 #if defined(OS_POSIX)

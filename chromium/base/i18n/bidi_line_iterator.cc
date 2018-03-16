@@ -89,7 +89,7 @@ bool BiDiLineIterator::Open(const string16& text,
       return false;
   }
 
-  ubidi_setPara(bidi_, text.data(), static_cast<int>(text.length()),
+  ubidi_setPara(bidi_, reinterpret_cast<const UChar*>(text.data()), static_cast<int>(text.length()),
                 GetParagraphLevelForDirection(direction), nullptr, &error);
   return (U_SUCCESS(error));
 }
