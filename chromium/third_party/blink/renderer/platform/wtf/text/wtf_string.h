@@ -35,6 +35,7 @@
 #include "third_party/blink/renderer/platform/wtf/wtf_export.h"
 #include "third_party/blink/renderer/platform/wtf/wtf_size_t.h"
 
+#include "third_party/icu/source/common/unicode/uvernum.h"
 #ifdef __OBJC__
 #include <objc/objc.h>
 #endif
@@ -68,6 +69,10 @@ class WTF_EXPORT String {
 
   // Construct a string with UTF-16 data.
   String(const UChar* characters, unsigned length);
+#if (U_ICU_VERSION_MAJOR_NUM < 59) || !defined(USING_SYSTEM_ICU)
+  String(const char16_t* chars, unsigned length)
+      : String(reinterpret_cast<const UChar*>(chars), length) {}
+#endif
 
   // Construct a string by copying the contents of a vector.
   // This method will never create a null string. Vectors with size() == 0
@@ -81,8 +86,13 @@ class WTF_EXPORT String {
 
   // Construct a string with UTF-16 data, from a null-terminated source.
   String(const UChar*);
+#if (U_ICU_VERSION_MAJOR_NUM < 59) || !defined(USING_SYSTEM_ICU)
   String(const char16_t* chars)
       : String(reinterpret_cast<const UChar*>(chars)) {}
+#else
+  String(const uint16_t* chars)
+      : String(reinterpret_cast<const UChar*>(chars)) {}
+#endif
 
   // Construct a string with latin1 data.
   String(const LChar* characters, unsigned length);

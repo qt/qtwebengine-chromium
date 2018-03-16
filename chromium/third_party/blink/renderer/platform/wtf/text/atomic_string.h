@@ -73,8 +73,10 @@ class WTF_EXPORT AtomicString {
   AtomicString(const LChar* chars, unsigned length);
   AtomicString(const UChar* chars, unsigned length);
   AtomicString(const UChar* chars);
+#if (U_ICU_VERSION_MAJOR_NUM < 59) || !defined(USING_SYSTEM_ICU)
   AtomicString(const char16_t* chars)
       : AtomicString(reinterpret_cast<const UChar*>(chars)) {}
+#endif
 
   template <wtf_size_t inlineCapacity>
   explicit AtomicString(const Vector<UChar, inlineCapacity>& vector)
