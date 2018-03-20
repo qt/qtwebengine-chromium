@@ -577,6 +577,8 @@ class CONTENT_EXPORT RenderWidgetHostImpl : public RenderWidgetHost,
     return weak_factory_.GetWeakPtr();
   }
 
+  void ForceFirstFrameAfterNavigationTimeout();
+
  protected:
   // ---------------------------------------------------------------------------
   // The following method is overridden by RenderViewHost to send upwards to

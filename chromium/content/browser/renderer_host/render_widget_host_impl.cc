@@ -608,6 +608,10 @@ void RenderWidgetHostImpl::WasShown(const ui::LatencyInfo& latency_info) {
   TRACE_EVENT0("renderer_host", "RenderWidgetHostImpl::WasShown");
   is_hidden_ = false;
 
+  // If we navigated in background, clear the displayed graphics of the
+  // previous page before going visible.
+  ForceFirstFrameAfterNavigationTimeout();
+
   SendScreenRects();
   RestartHangMonitorTimeoutIfNecessary();
 
@@ -2520,6 +2524,14 @@ void RenderWidgetHostImpl::GrantFileAccessFromDropData(DropData* drop_data) {
                  file_system_url.origin(), filesystem_id, std::string())
                  .append(register_name));
     file_system_file.filesystem_id = filesystem_id;
+  }
+}
+
+void RenderWidgetHostImpl::ForceFirstFrameAfterNavigationTimeout() {
+  if (new_content_rendering_timeout_ &&
+      new_content_rendering_timeout_->IsRunning()) {
+    new_content_rendering_timeout_->Stop();
+    ClearDisplayedGraphics();
   }
 }
 
