@@ -639,6 +639,13 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   void ProgressFling(base::TimeTicks current_time);
   void StopFling();
 
+  // The RenderWidgetHostImpl will keep showing the old page (for a while) after
+  // navigation until the first frame of the new page arrives. This reduces
+  // flicker. However, if for some reason it is known that the frames won't be
+  // arriving, this call can be used for force a timeout, to avoid showing the
+  // content of the old page under UI from the new page.
+  void ForceFirstFrameAfterNavigationTimeout();
+
  protected:
   // ---------------------------------------------------------------------------
   // The following method is overridden by RenderViewHost to send upwards to

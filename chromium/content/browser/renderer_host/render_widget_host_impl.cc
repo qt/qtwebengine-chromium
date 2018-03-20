@@ -686,6 +686,10 @@ void RenderWidgetHostImpl::WasShown(const ui::LatencyInfo& latency_info) {
   TRACE_EVENT0("renderer_host", "RenderWidgetHostImpl::WasShown");
   is_hidden_ = false;
 
+  // If we navigated in background, clear the displayed graphics of the
+  // previous page before going visible.
+  ForceFirstFrameAfterNavigationTimeout();
+
   SendScreenRects();
   RestartHangMonitorTimeoutIfNecessary();
 
@@ -2942,6 +2946,15 @@ void RenderWidgetHostImpl::ProgressFling(base::TimeTicks current_time) {
   if (input_router_)
     input_router_->ProgressFling(current_time);
 }
+
+void RenderWidgetHostImpl::ForceFirstFrameAfterNavigationTimeout() {
+  if (new_content_rendering_timeout_ &&
+      new_content_rendering_timeout_->IsRunning()) {
+    new_content_rendering_timeout_->Stop();
+    ClearDisplayedGraphics();
+  }
+}
+
 
 void RenderWidgetHostImpl::StopFling() {
   if (input_router_)
