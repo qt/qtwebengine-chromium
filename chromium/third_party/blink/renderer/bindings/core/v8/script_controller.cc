@@ -383,6 +383,8 @@ void ScriptController::ExecuteScriptInIsolatedWorld(
   for (size_t i = 0; i < sources.size(); ++i) {
     v8::Local<v8::Value> evaluation_result =
         ExecuteScriptAndReturnValue(context, sources[i]);
+    if (!results)
+        continue;
     if (evaluation_result.IsEmpty())
       evaluation_result =
           v8::Local<v8::Value>::New(GetIsolate(), v8::Undefined(GetIsolate()));
