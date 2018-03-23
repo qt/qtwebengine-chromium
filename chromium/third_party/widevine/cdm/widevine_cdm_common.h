@@ -56,10 +56,12 @@ const char kWidevineCdmAdapterFileName[] =
     "libwidevinecdmadapter.so";
 #endif
 
-#if defined(OS_MACOSX) || defined(OS_WIN) && !defined(TOOLKIT_QT)
+#if !defined(TOOLKIT_QT)
+#if defined(OS_MACOSX) || defined(OS_WIN)
 // CDM is installed by the component installer instead of the Chrome installer.
 #define WIDEVINE_CDM_IS_COMPONENT
 #endif  // defined(OS_MACOSX) || defined(OS_WIN)
 #endif  // BUILDFLAG(ENABLE_LIBRARY_CDMS)
+#endif  // !defined(TOOLKIT_QT)
 
 #endif  // WIDEVINE_CDM_WIDEVINE_CDM_COMMON_H_
