@@ -65,19 +65,20 @@ class CPDF_StreamParser {
 
  private:
   friend class cpdf_streamparser_ReadHexString_Test;
+  static const uint32_t kMaxWordLength = 255;
 
   void GetNextWord(bool& bIsNumber);
   CFX_ByteString ReadString();
   CFX_ByteString ReadHexString();
   bool PositionIsInBounds() const;
 
+  uint32_t m_Size;      // Length in bytes of m_pBuf.
+  uint32_t m_Pos;       // Current byte position within m_pBuf.
+  uint32_t m_WordSize;  // Current byte position within m_WordBuffer.
   const uint8_t* m_pBuf;
-  uint32_t m_Size;  // Length in bytes of m_pBuf.
-  uint32_t m_Pos;   // Current byte position within m_pBuf.
-  uint8_t m_WordBuffer[256];
-  uint32_t m_WordSize;
   CPDF_Object* m_pLastObj;
   CFX_WeakPtr<CFX_ByteStringPool> m_pPool;
+  uint8_t m_WordBuffer[kMaxWordLength + 1];  // Include space for NUL.
 };
 
 #define _FPDF_MAX_TYPE3_FORM_LEVEL_ 4
