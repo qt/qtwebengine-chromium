@@ -485,7 +485,7 @@ void IDNSpoofChecker::SetAllowedUnicodeSet(UErrorCode* status) {
   // are added to the allowed set. The list has to be updated when a new
   // version of Unicode is released. The current version is 9.0.0 and ICU 60
   // will have Unicode 10.0 data.
-#if U_ICU_VERSION_MAJOR_NUM < 60
+#if U_ICU_VERSION_MAJOR_NUM < 60 || defined(TOOLKIT_QT)
   const icu::UnicodeSet aspirational_scripts(
       icu::UnicodeString(
           // Unified Canadian Syllabics
