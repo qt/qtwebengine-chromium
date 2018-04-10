@@ -94,6 +94,7 @@ component("net") {
     ":net_resources",
     "//base",
     "//net/base/registry_controlled_domains",
+    "//net/data/ssl/certificate_transparency:ct_log_list",
     "//third_party/protobuf:protobuf_lite",
     "//url:url_features",
   ]
@@ -1263,6 +1264,7 @@ test("net_unittests") {
     "//crypto:platform",
     "//crypto:test_support",
     "//net/base/registry_controlled_domains",
+    "//net/data/ssl/certificate_transparency:ct_log_list",
     "//sql",
     "//testing/gmock",
     "//testing/gtest",
