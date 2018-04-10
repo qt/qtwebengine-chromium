@@ -162,7 +162,6 @@ bool InitializeGLOneOffPlatform() {
       return true;
   }
 }
-#endif
 
 bool InitializeStaticGLBindings(GLImplementation implementation) {
   // Prevent reinitialization with a different implementation. Once the gpu
@@ -194,6 +193,7 @@ bool InitializeStaticGLBindings(GLImplementation implementation) {
 
   return false;
 }
+#endif // !defined(TOOLKIT_QT)
 
 void InitializeDebugGLBindings() {
   InitializeDebugGLBindingsEGL();
