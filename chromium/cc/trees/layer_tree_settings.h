@@ -96,7 +96,7 @@ class CC_EXPORT LayerTreeSettings {
   viz::ResourceFormat preferred_tile_format;
   bool unpremultiply_and_dither_low_bit_depth_tiles = false;
 
-  bool enable_mask_tiling = true;
+  bool enable_mask_tiling = false;
 
   // If set to true, the compositor may selectively defer image decodes to the
   // Image Decode Service and raster tiles without images until the decode is
