@@ -4954,6 +4954,10 @@ RenderFrameImpl::MakeDidCommitProvisionalLoadParams(
     params->url = GURL(kBlockedURL);
   }
 
+  if (DocumentState::FromDocumentLoader(document_loader)->was_load_data_with_base_url_request() &&
+      GURL(frame_document.Url()) != params->url)
+    params->virtual_url = frame_document.Url();
+
   // TODO(crbug.com/40161149): Reconsider how we calculate
   // should_update_history.
   params->should_update_history =
