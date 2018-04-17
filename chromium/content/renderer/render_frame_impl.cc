@@ -4691,6 +4691,10 @@ RenderFrameImpl::MakeDidCommitProvisionalLoadParams(
   // instead of this URL).
   params->url = GetLoadingUrl();
 
+  if (DocumentState::FromDocumentLoader(document_loader)->was_load_data_with_base_url_request() &&
+      GURL(frame_document.Url()) != params->url)
+    params->virtual_url = frame_document.Url();
+
   // TODO(https://crbug.com/1158101): Reconsider how we calculate
   // should_update_history.
   params->should_update_history =
