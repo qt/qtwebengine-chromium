@@ -55,6 +55,8 @@ struct CONTENT_EXPORT FrameNavigateParams : public IPC::NoParams {
   // set to original URL of the site the MHTML represents.
   GURL base_url;
 
+  GURL virtual_url;
+
   // URL of the referrer of this load. WebKit generates this based on the
   // source of the event that caused the load.
   content::Referrer referrer;
