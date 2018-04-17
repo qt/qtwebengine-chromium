@@ -3841,9 +3841,18 @@ void RenderFrameImpl::CommitSameDocumentNavigation(
         false /* was_initiated_in_this_frame */));
 
     // Load the request.
-    commit_status = frame_->CommitSameDocumentNavigation(
-        common_params.url, load_type, item_for_history_navigation,
-        is_client_redirect, std::move(document_state));
+    bool load_data = !common_params.base_url_for_data_url.is_empty() &&
+                     !common_params.history_url_for_data_url.is_empty() &&
+                     common_params.url.SchemeIs(url::kDataScheme);
+    if (load_data) {
+      commit_status = frame_->CommitSameDocumentNavigation(
+         common_params.history_url_for_data_url, load_type, item_for_history_navigation,
+         is_client_redirect, std::move(document_state));
+    } else {
+      commit_status = frame_->CommitSameDocumentNavigation(
+         common_params.url, load_type, item_for_history_navigation,
+         is_client_redirect, std::move(document_state));
+    }
 
     // The load of the URL can result in this frame being removed. Use a
     // WeakPtr as an easy way to detect whether this has occured. If so, this
@@ -5891,6 +5900,10 @@ RenderFrameImpl::MakeDidCommitProvisionalLoadParams(
   params->url = GetLoadingUrl();
   if (GURL(frame_document.BaseURL()) != params->url)
     params->base_url = frame_document.BaseURL();
+
+  if (DocumentState::FromDocumentLoader(document_loader)->was_load_data_with_base_url_request() &&
+      GURL(frame_document.Url()) != params->url)
+    params->virtual_url = frame_document.Url();
 
   GetRedirectChain(document_loader, &params->redirects);
   params->should_update_history =
