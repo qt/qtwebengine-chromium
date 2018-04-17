@@ -66,6 +66,8 @@ struct DidCommitProvisionalLoadParams {
   // URL of the page being loaded.
   url.mojom.Url url;
 
+  url.mojom.Url virtual_url;
+
   // URL of the referrer of this load. WebKit generates this based on the
   // source of the event that caused the load.
   blink.mojom.Referrer referrer;
