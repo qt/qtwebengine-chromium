@@ -3598,6 +3598,11 @@ void RenderFrameImpl::CommitSameDocumentNavigation(
     // This is a browser-initiated same-document navigation (as opposed to a
     // fragment link click), therefore |was_initiated_in_this_frame| is false.
     auto url = common_params->url;
+    if (!common_params->base_url_for_data_url.is_empty() &&
+        !common_params->history_url_for_data_url.is_empty() &&
+        common_params->url.SchemeIs(url::kDataScheme))
+      url = common_params->history_url_for_data_url;
+
     internal_data->set_navigation_state(NavigationState::CreateBrowserInitiated(
         std::move(common_params), std::move(commit_params),
         mojom::FrameNavigationControl::CommitNavigationCallback(),
@@ -5192,6 +5197,10 @@ RenderFrameImpl::MakeDidCommitProvisionalLoadParams(
   params->url = GetLoadingUrl();
   if (GURL(frame_document.BaseURL()) != params->url)
     params->base_url = frame_document.BaseURL();
+
+  if (DocumentState::FromDocumentLoader(document_loader)->was_load_data_with_base_url_request() &&
+      GURL(frame_document.Url()) != params->url)
+    params->virtual_url = frame_document.Url();
 
   GetRedirectChain(document_loader, &params->redirects);
   params->should_update_history =
