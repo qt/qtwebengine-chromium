@@ -5437,6 +5437,9 @@ RenderFrameImpl::MakeDidCommitProvisionalLoadParams(
   if (GURL(frame_document.BaseURL()) != params->url)
     params->base_url = frame_document.BaseURL();
 
+  if (document_state->was_load_data_with_base_url_request())
+    params->virtual_url = frame_document.Url();
+
   GetRedirectChain(document_loader, &params->redirects);
   params->should_update_history =
       !document_loader->HasUnreachableURL() && response.HttpStatusCode() != 404;
