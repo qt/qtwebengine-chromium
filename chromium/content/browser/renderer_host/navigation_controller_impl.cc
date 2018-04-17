@@ -1575,6 +1575,8 @@ void NavigationControllerImpl::RendererDidNavigateToNewEntry(
   new_entry->SetURL(params.url);
   if (update_virtual_url)
     UpdateVirtualURLToURL(new_entry.get(), params.url);
+  else if (!params.virtual_url.is_empty())
+    new_entry->SetVirtualURL(params.virtual_url);
   new_entry->SetReferrer(Referrer(*params.referrer));
   new_entry->SetTransitionType(params.transition);
   new_entry->set_site_instance(
@@ -1813,6 +1815,8 @@ void NavigationControllerImpl::RendererDidNavigateToExistingEntry(
   entry->SetReferrer(Referrer(*params.referrer));
   if (entry->update_virtual_url_with_url())
     UpdateVirtualURLToURL(entry, params.url);
+  else if (!params.virtual_url.is_empty())
+    entry->SetVirtualURL(params.virtual_url);
 
   entry->SetOriginalRequestURL(request->GetOriginalRequestURL());
 

@@ -4832,6 +4832,10 @@ RenderFrameImpl::MakeDidCommitProvisionalLoadParams(
   if (GURL(frame_document.BaseURL()) != params->url)
     params->base_url = frame_document.BaseURL();
 
+  if (DocumentState::FromDocumentLoader(document_loader)->was_load_data_with_base_url_request() &&
+      GURL(frame_document.Url()) != params->url)
+    params->virtual_url = frame_document.Url();
+
   GetRedirectChain(document_loader, &params->redirects);
 
   // TODO(https://crbug.com/1158101): Reconsider how we calculate
