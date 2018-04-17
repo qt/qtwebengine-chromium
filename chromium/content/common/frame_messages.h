@@ -241,6 +241,8 @@ IPC_STRUCT_BEGIN(FrameHostMsg_DidCommitProvisionalLoad_Params)
   // set to original URL of the site the MHTML represents.
   IPC_STRUCT_MEMBER(GURL, base_url)
 
+  IPC_STRUCT_MEMBER(GURL, virtual_url)
+
   // URL of the referrer of this load. WebKit generates this based on the
   // source of the event that caused the load.
   IPC_STRUCT_MEMBER(content::Referrer, referrer)
