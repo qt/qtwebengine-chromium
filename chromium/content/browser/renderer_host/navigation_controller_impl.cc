@@ -1725,6 +1725,8 @@ void NavigationControllerImpl::UpdateNavigationEntryDetails(
   }
   if (entry->update_virtual_url_with_url())
     UpdateVirtualURLToURL(entry, params.url);
+  else if (!params.virtual_url.is_empty())
+    entry->SetVirtualURL(params.virtual_url);
 
   if (request)
     entry->SetOriginalRequestURL(request->GetOriginalRequestURL());
