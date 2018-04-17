@@ -1474,6 +1474,8 @@ void NavigationControllerImpl::RendererDidNavigateToNewPage(
   new_entry->SetURL(params.url);
   if (update_virtual_url)
     UpdateVirtualURLToURL(new_entry.get(), params.url);
+  else if (!params.virtual_url.is_empty())
+    new_entry->SetVirtualURL(params.virtual_url);
   new_entry->SetReferrer(params.referrer);
   new_entry->SetTransitionType(params.transition);
   new_entry->set_site_instance(
@@ -1671,6 +1673,8 @@ void NavigationControllerImpl::RendererDidNavigateToExistingPage(
   entry->SetReferrer(params.referrer);
   if (entry->update_virtual_url_with_url())
     UpdateVirtualURLToURL(entry, params.url);
+  else if (!params.virtual_url.is_empty())
+    entry->SetVirtualURL(params.virtual_url);
 
   entry->SetOriginalRequestURL(params.original_request_url);
 
@@ -1736,6 +1740,8 @@ void NavigationControllerImpl::RendererDidNavigateToSamePage(
                                                           : PAGE_TYPE_NORMAL);
   if (existing_entry->update_virtual_url_with_url())
     UpdateVirtualURLToURL(existing_entry, params.url);
+  else if (!params.virtual_url.is_empty())
+    existing_entry->SetVirtualURL(params.virtual_url);
   existing_entry->SetURL(params.url);
 
   // If a user presses enter in the omnibox and the server redirects, the URL
