@@ -4998,12 +4998,17 @@ RenderFrameImpl::MakeDidCommitProvisionalLoadParams(
     params->url = GURL(kBlockedURL);
   }
 
+  if (DocumentState::FromDocumentLoader(document_loader)->was_load_data_with_base_url_request() &&
+      GURL(frame_document.Url()) != params->url)
+    params->virtual_url = frame_document.Url();
+
   // When `history::kVisitedLinksOn404` is enabled, visits to reachable URLs
   // that have a 404 status code qualify for history updates. Otherwise, we
   // shouldn't update history for 404s.
   bool does_status_code_qualify_for_history =
       base::FeatureList::IsEnabled(history::kVisitedLinksOn404) ||
       response.HttpStatusCode() != 404;
+
   // TODO(crbug.com/40161149): Reconsider how we calculate
   // should_update_history.
   params->should_update_history = !document_loader->HasUnreachableURL() &&
