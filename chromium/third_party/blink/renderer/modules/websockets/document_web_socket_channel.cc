@@ -236,7 +236,8 @@ bool DocumentWebSocketChannel::Connect(
   // If the connection needs to be filtered, asynchronously fail. Synchronous
   // failure blocks the worker thread which should be avoided. Note that
   // returning "true" just indicates that this was not a mixed content error.
-  if (ShouldDisallowConnection(url)) {
+  if (ShouldDisallowConnection(url) ||
+      loading_context_->GetFetchContext()->GetSecurityOrigin()->IsBroken()) {
     GetExecutionContext()
         ->GetTaskRunner(TaskType::kNetworking)
         ->PostTask(

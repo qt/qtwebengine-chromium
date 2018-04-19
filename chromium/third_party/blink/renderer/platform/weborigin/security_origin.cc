@@ -59,6 +59,10 @@ static SecurityOrigin* GetOriginFromMap(const KURL& url) {
   return nullptr;
 }
 
+bool SecurityOrigin::IsBroken() const {
+    return !IsUnique() && ToUrlOrigin().unique();
+}
+
 bool SecurityOrigin::ShouldUseInnerURL(const KURL& url) {
   // FIXME: Blob URLs don't have inner URLs. Their form is
   // "blob:<inner-origin>/<UUID>", so treating the part after "blob:" as a URL
