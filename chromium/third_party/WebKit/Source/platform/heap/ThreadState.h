@@ -269,8 +269,7 @@ class PLATFORM_EXPORT ThreadState {
   void IncrementalMarkingFinalize();
 
   bool IsIncrementalMarkingInProgress() const {
-    return GcState() == kIncrementalMarkingStartScheduled ||
-           GcState() == kIncrementalMarkingStepScheduled ||
+    return GcState() == kIncrementalMarkingStepScheduled ||
            GcState() == kIncrementalMarkingFinalizeScheduled;
   }
 
@@ -340,6 +339,8 @@ class PLATFORM_EXPORT ThreadState {
 
   bool IsIncrementalMarking() const { return incremental_marking_; }
   void SetIncrementalMarking(bool value) { incremental_marking_ = value; }
+
+  void CheckObjectNotInCallbackStacks(const void*);
 
   class MainThreadGCForbiddenScope final {
     STACK_ALLOCATED();
