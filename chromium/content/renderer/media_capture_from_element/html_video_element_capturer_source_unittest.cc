@@ -63,6 +63,7 @@ class MockWebMediaPlayer : public blink::WebMediaPlayer,
   }
 
   bool DidLoadingProgress() override { return true; }
+  bool DidGetOpaqueResponseFromServiceWorker() const override { return false; }
   bool HasSingleSecurityOrigin() const override { return true; }
   bool DidPassCORSAccessCheck() const override { return true; }
   double MediaTimeForTimeValue(double timeValue) const override { return 0.0; }
