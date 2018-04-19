@@ -15,6 +15,7 @@
 #include "content/public/common/url_constants.h"
 #include "content/public/common/url_utils.h"
 #include "url/gurl.h"
+#include "url/url_util_qt.h"
 
 namespace content {
 
@@ -42,6 +43,10 @@ static bool HandleViewSource(GURL* url, BrowserContext* browser_context) {
       all_allowed_sub_schemes.push_back(default_allowed_sub_schemes[i]);
     GetContentClient()->browser()->GetAdditionalViewSourceSchemes(
         &all_allowed_sub_schemes);
+    for (auto& cs : url::CustomScheme::GetSchemes()) {
+      if (cs.flags & url::CustomScheme::ViewSourceAllowed)
+        all_allowed_sub_schemes.push_back(cs.name);
+    }
 
     bool is_sub_scheme_allowed = false;
     for (size_t i = 0; i < all_allowed_sub_schemes.size(); ++i) {
