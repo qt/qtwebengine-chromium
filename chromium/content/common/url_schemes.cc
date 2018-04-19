@@ -15,6 +15,7 @@
 #include "content/public/common/content_client.h"
 #include "content/public/common/url_constants.h"
 #include "url/url_util.h"
+#include "url/url_util_qt.h"
 
 namespace content {
 namespace {
@@ -86,10 +87,37 @@ void RegisterContentSchemes(bool lock_schemes) {
   for (auto& scheme : schemes.empty_document_schemes)
     url::AddEmptyDocumentScheme(scheme.c_str());
 
-#if defined(OS_ANDROID)
+#if defined(OS_ANDROID) || defined(TOOLKIT_QT)
   if (schemes.allow_non_standard_schemes_in_origins)
     url::EnableNonStandardSchemesForAndroidWebView();
 #endif
+
+  // NOTE(juvaldma)(Chromium 67.0.3396.47)
+  //
+  // Since ContentClient::Schemes::standard_types doesn't have types
+  // (url::SchemeType), we need to bypass AddAdditionalSchemes and add our
+  // 'standard custom schemes' directly. Although the other scheme lists could
+  // be filled also in AddAdditionalSchemes by QtWebEngineCore, to follow the
+  // principle of the separation of concerns, we add them here instead. This
+  // way, from the perspective of QtWebEngineCore, everything to do with custom
+  // scheme parsing is fully encapsulated behind url::CustomScheme. The
+  // complexity of QtWebEngineCore is reduced while the complexity of
+  // url::CustomScheme is not significantly increased (since the functionality
+  // is needed anyway).
+  for (auto& cs : url::CustomScheme::GetSchemes()) {
+    if (cs.type != url::SCHEME_WITHOUT_AUTHORITY)
+      url::AddStandardScheme(cs.name.c_str(), cs.type);
+    if (cs.flags & url::CustomScheme::Secure)
+      url::AddSecureScheme(cs.name.c_str());
+    if (cs.flags & url::CustomScheme::Local)
+      url::AddLocalScheme(cs.name.c_str());
+    if (cs.flags & url::CustomScheme::NoAccessAllowed)
+      url::AddNoAccessScheme(cs.name.c_str());
+    if (cs.flags & url::CustomScheme::ContentSecurityPolicyIgnored)
+      url::AddCSPBypassingScheme(cs.name.c_str());
+    if (cs.flags & url::CustomScheme::CorsEnabled)
+      url::AddCorsEnabledScheme(cs.name.c_str());
+  }
 
   // Prevent future modification of the scheme lists. This is to prevent
   // accidental creation of data races in the program. Add*Scheme aren't
@@ -107,6 +135,15 @@ void RegisterContentSchemes(bool lock_schemes) {
                                     schemes.savable_schemes.end());
 
   GetMutableServiceWorkerSchemes() = std::move(schemes.service_worker_schemes);
+
+  // NOTE(juvaldma)(Chromium 67.0.3396.47)
+  //
+  // This list only applies to Chromium proper whereas Blink uses it's own
+  // hardcoded list (see blink::URLSchemesRegistry).
+  for (auto& cs : url::CustomScheme::GetSchemes()) {
+    if (cs.flags & url::CustomScheme::ServiceWorkersAllowed)
+      GetMutableServiceWorkerSchemes().push_back(cs.name);
+  }
 }
 
 const std::vector<std::string>& GetSavableSchemes() {
