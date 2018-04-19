@@ -51,6 +51,12 @@ BroadcastChannel* BroadcastChannel::Create(ExecutionContext* execution_context,
   if (window && window->IsCrossSiteSubframe())
     UseCounter::Count(window, WebFeature::kThirdPartyBroadcastChannel);
 
+  if (execution_context->GetSecurityOrigin()->IsBroken()) {
+      exception_state.ThrowDOMException(
+          DOMExceptionCode::kNotSupportedError,
+          "Can't create BroadcastChannel");
+      return nullptr;
+  }
   return MakeGarbageCollected<BroadcastChannel>(execution_context, name);
 }
 
