@@ -71,6 +71,14 @@ DedicatedWorker* DedicatedWorker::Create(ExecutionContext* context,
     return nullptr;
   }
 
+  auto origin = SecurityOrigin::Create(script_request_url);
+  if (origin->IsBroken()) {
+      exception_state.ThrowDOMException(
+          DOMExceptionCode::kNotSupportedError,
+          "Access to dedicated workers is denied to origin '" + origin->ToString() + "'.");
+      return nullptr;
+  }
+
   if (context->IsWorkerGlobalScope())
     UseCounter::Count(context, WebFeature::kNestedDedicatedWorker);
 

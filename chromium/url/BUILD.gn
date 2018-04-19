@@ -54,6 +54,8 @@ component("url") {
     "url_util.cc",
     "url_util.h",
     "url_util_internal.h",
+    "url_util_qt.cc",
+    "url_util_qt.h",
   ]
 
   defines = [ "IS_URL_IMPL" ]
@@ -175,6 +177,7 @@ test("url_unittests") {
     "url_canon_unittest.cc",
     "url_parse_unittest.cc",
     "url_test_utils.h",
+    "url_util_qt_unittest.cc",
     "url_util_unittest.cc",
   ]
 

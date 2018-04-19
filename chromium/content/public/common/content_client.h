@@ -140,10 +140,10 @@ class CONTENT_EXPORT ContentClient {
     // Registers a URL scheme as strictly empty documents, allowing them to
     // commit synchronously.
     std::vector<std::string> empty_document_schemes;
-#if defined(OS_ANDROID)
+#if defined(OS_ANDROID) || defined(TOOLKIT_QT)
     // Normally, non-standard schemes canonicalize to opaque origins. However,
     // Android WebView requires non-standard schemes to still be preserved.
-    bool allow_non_standard_schemes_in_origins = false;
+    bool allow_non_standard_schemes_in_origins = true;
 #endif
   };
 
