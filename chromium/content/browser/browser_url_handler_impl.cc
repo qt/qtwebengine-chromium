@@ -17,6 +17,7 @@
 #include "content/public/common/url_utils.h"
 #include "third_party/blink/public/common/chrome_debug_urls.h"
 #include "url/gurl.h"
+#include "url/url_util_qt.h"
 
 namespace content {
 
@@ -43,6 +44,11 @@ static bool HandleViewSource(GURL* url, BrowserContext* browser_context) {
   // the view-source schemes defined by the ContentBrowserClient.
   GetContentClient()->browser()->GetAdditionalViewSourceSchemes(
       &all_allowed_sub_schemes);
+  for (auto& cs : url::CustomScheme::GetSchemes()) {
+    if (cs.flags & url::CustomScheme::ViewSourceAllowed) {
+      all_allowed_sub_schemes.push_back(cs.name);
+    }
+  }
 
   for (const auto& allowed_sub_scheme : all_allowed_sub_schemes) {
     if (url->SchemeIs(allowed_sub_scheme)) {
