@@ -27,6 +27,7 @@ class CORE_EXPORT FrameOwner : public GarbageCollectedMixin {
 
   virtual bool IsLocal() const = 0;
   virtual bool IsRemote() const = 0;
+  virtual bool IsPlugin() { return false; }
 
   virtual Frame* ContentFrame() const = 0;
   virtual void SetContentFrame(Frame&) = 0;

@@ -51,6 +51,8 @@ class CORE_EXPORT HTMLPlugInElement
   ~HTMLPlugInElement() override;
   virtual void Trace(blink::Visitor*);
 
+  bool IsPlugin() override { return true; }
+
   bool HasPendingActivity() const final;
 
   void SetFocused(bool, WebFocusType) override;
