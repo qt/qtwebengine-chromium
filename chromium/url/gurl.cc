@@ -19,6 +19,7 @@
 #include "third_party/perfetto/include/perfetto/tracing/traced_value.h"
 #include "url/url_canon_stdstring.h"
 #include "url/url_util.h"
+#include "url/url_util_qt.h"
 
 GURL::GURL() : is_valid_(false) {
 }
@@ -273,7 +274,7 @@ void GURL::ProcessFileSystemURLAfterReplaceComponents() {
 GURL GURL::DeprecatedGetOriginAsURL() const {
   // This doesn't make sense for invalid or nonstandard URLs, so return
   // the empty URL.
-  if (!is_valid_ || !IsStandard())
+  if (!is_valid_ || (!IsStandard() && !IsCustom()))
     return GURL();
 
   if (SchemeIsFileSystem())
@@ -306,7 +307,7 @@ GURL GURL::GetAsReferrer() const {
 GURL GURL::GetWithEmptyPath() const {
   // This doesn't make sense for invalid or nonstandard URLs, so return
   // the empty URL.
-  if (!is_valid_ || !IsStandard())
+  if (!is_valid_ || (!IsStandard() && !IsCustom()))
     return GURL();
 
   // We could optimize this since we know that the URL is canonical, and we are
@@ -333,6 +334,10 @@ GURL GURL::GetWithoutFilename() const {
 
 bool GURL::IsStandard() const {
   return url::IsStandard(spec_.data(), parsed_.scheme);
+}
+
+bool GURL::IsCustom() const {
+  return url::CustomScheme::FindScheme(scheme_piece());
 }
 
 bool GURL::IsAboutBlank() const {
