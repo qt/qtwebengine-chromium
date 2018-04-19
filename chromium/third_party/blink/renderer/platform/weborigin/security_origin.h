@@ -104,6 +104,7 @@ class PLATFORM_EXPORT SecurityOrigin : public RefCounted<SecurityOrigin> {
 
   static scoped_refptr<SecurityOrigin> CreateFromUrlOrigin(const url::Origin&);
   url::Origin ToUrlOrigin() const;
+  bool IsBroken() const;
 
   // Some URL schemes use nested URLs for their security context. For example,
   // filesystem URLs look like the following:

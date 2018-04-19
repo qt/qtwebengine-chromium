@@ -8,6 +8,7 @@
 #include "url/url_canon.h"
 #include "url/url_canon_internal.h"
 #include "url/url_constants.h"
+#include "url/url_util_qt.h"
 
 namespace url {
 
@@ -135,6 +136,11 @@ int DefaultPortForScheme(const char* scheme, int scheme_len) {
         default_port = 80;
       break;
   }
+
+  if (default_port == PORT_UNSPECIFIED)
+    if (const CustomScheme* cs = CustomScheme::FindScheme(base::StringPiece(scheme, scheme_len)))
+      return cs->default_port;
+
   return default_port;
 }
 
