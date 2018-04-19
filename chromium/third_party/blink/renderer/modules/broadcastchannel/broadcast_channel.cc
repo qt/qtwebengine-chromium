@@ -44,6 +44,12 @@ BroadcastChannel* BroadcastChannel::Create(ExecutionContext* execution_context,
         "Can't create BroadcastChannel in an opaque origin");
     return nullptr;
   }
+  if (execution_context->GetSecurityOrigin()->IsBroken()) {
+      exception_state.ThrowDOMException(
+          kNotSupportedError,
+          "Can't create BroadcastChannel");
+      return nullptr;
+  }
   return new BroadcastChannel(execution_context, name);
 }
 
