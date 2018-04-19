@@ -25,13 +25,14 @@
 #include "url/url_canon_stdstring.h"
 #include "url/url_constants.h"
 #include "url/url_util.h"
+#include "url/url_util_qt.h"
 
 namespace url {
 
 Origin::Origin() : nonce_(Nonce()) {}
 
 Origin Origin::Create(const GURL& url) {
-  if (!url.is_valid())
+  if (!url.is_valid() && !url.IsCustom())
     return Origin();
 
   SchemeHostPort tuple;
@@ -49,7 +50,7 @@ Origin Origin::Create(const GURL& url) {
 
     // It's SchemeHostPort's responsibility to filter out unrecognized schemes;
     // sanity check that this is happening.
-    DCHECK(!tuple.IsValid() || url.IsStandard() ||
+    DCHECK(!tuple.IsValid() || url.IsStandard() || url.IsCustom() ||
            base::Contains(GetLocalSchemes(), url.scheme_piece()) ||
            AllowNonStandardSchemesForAndroidWebView());
   }

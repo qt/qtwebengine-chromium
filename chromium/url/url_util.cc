@@ -18,6 +18,7 @@
 #include "url/url_constants.h"
 #include "url/url_file.h"
 #include "url/url_util_internal.h"
+#include "url/url_util_qt.h"
 
 namespace url {
 
@@ -315,6 +316,15 @@ bool DoResolveRelative(const char* base_spec,
                                               base_spec_len);
     base_is_authority_based = num_slashes > 1;
     base_is_hierarchical = num_slashes > 0;
+
+    // NOTE(juvaldma)(Chromium 69.0.3497.128): Force all custom schemes to be
+    // hierarchical. This really only affects QWebEngineUrlScheme::Syntax::Path
+    // schemes since the rest are already canonicalized to start with a slash.
+    // The effect is to allow, for example, GURL("qrc:foo").Resolve("bar") to
+    // return "qrc:bar" instead of just erroring out.
+    base::StringPiece scheme_piece(&base_spec[base_parsed.scheme.begin], base_parsed.scheme.len);
+    if (CustomScheme::FindScheme(scheme_piece))
+        base_is_hierarchical = true;
   }
 
   SchemeType unused_scheme_type = SCHEME_WITH_HOST_PORT_AND_USER_INFORMATION;
@@ -471,9 +481,10 @@ void DoSchemeModificationPreamble() {
   //
   // This normally means you're trying to set up a new scheme too late or using
   // the SchemeRegistry too early in your application's init process.
-  DCHECK(!g_scheme_registries_used.load())
-      << "Trying to add a scheme after the lists have been used. "
-         "Make sure that you haven't added any static GURL initializers in tests.";
+// QWE: We violate this but it is harmless.
+//   DCHECK(!g_scheme_registries_used.load())
+//       << "Trying to add a scheme after the lists have been used. "
+//          "Make sure that you haven't added any static GURL initializers in tests.";
 
   // If this assert triggers, it means you've called Add*Scheme after
   // LockSchemeRegistries has been called (see the header file for
