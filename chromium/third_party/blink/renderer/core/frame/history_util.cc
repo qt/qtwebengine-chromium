@@ -9,6 +9,7 @@
 #include "third_party/blink/renderer/platform/weborigin/security_origin.h"
 #include "third_party/blink/renderer/platform/wtf/text/string_utf8_adaptor.h"
 #include "url/url_util.h"
+#include "url/url_util_qt.h"
 
 namespace blink {
 
@@ -84,6 +85,8 @@ bool CanChangeToUrlForHistoryApi(const KURL& url,
   std::string protocol = url.Protocol().Ascii();
   is_standard = url::IsStandard(
       protocol.data(), url::Component(0, static_cast<int>(protocol.size())));
+  // Also allow registered QWE schemes
+  is_standard = is_standard || (url::CustomScheme::FindScheme(protocol) != nullptr);
   if (is_standard) {
     return true;
   }
