@@ -55,6 +55,10 @@ BroadcastChannel* BroadcastChannel::Create(ExecutionContext* execution_context,
   if (window && window->IsCrossSiteSubframe())
     UseCounter::Count(window, WebFeature::kThirdPartyBroadcastChannel);
 
+  if (execution_context->GetSecurityOrigin()->IsBroken()) {
+    return nullptr;
+  }
+
   if (auto* worker_global_scope =
           DynamicTo<WorkerGlobalScope>(execution_context)) {
     if (worker_global_scope->Url().ProtocolIsData()) {
