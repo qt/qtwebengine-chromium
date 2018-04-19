@@ -62,6 +62,7 @@ class PLATFORM_EXPORT SecurityOrigin : public RefCounted<SecurityOrigin> {
                                               const String& suborigin);
   static scoped_refptr<SecurityOrigin> CreateFromUrlOrigin(const url::Origin&);
   url::Origin ToUrlOrigin() const;
+  bool IsBroken() const;
 
   static void SetMap(URLSecurityOriginMap*);
 

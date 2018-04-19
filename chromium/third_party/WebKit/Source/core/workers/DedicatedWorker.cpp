@@ -64,6 +64,14 @@ DedicatedWorker* DedicatedWorker::Create(ExecutionContext* context,
                                WebURLRequest::kRequestContextScript);
   if (!script_url.IsValid())
     return nullptr;
+  auto origin = SecurityOrigin::Create(script_url);
+  if (origin->IsBroken()) {
+      exception_state.ThrowDOMException(
+          kNotSupportedError,
+          "Access to dedicated workers is denied to origin '" + origin->ToString() + "'.");
+      return nullptr;
+  }
+
 
   // TODO(nhiroki): WorkerOptions should be passed from the caller of Create().
   // See also the comment in Worker.idl (https://crbug.com/680046).
