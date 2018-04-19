@@ -35,6 +35,7 @@
 #include "third_party/blink/renderer/platform/wtf/thread_specific.h"
 #include "third_party/blink/renderer/platform/wtf/threading.h"
 #include "url/url_util.h"
+#include "url/url_util_qt.h"
 
 namespace blink {
 
@@ -78,6 +79,16 @@ class URLSchemesRegistry final {
     }
     for (auto& scheme : url::GetEmptyDocumentSchemes())
       empty_document_schemes.insert(scheme.c_str());
+
+    // NOTE(juvaldma)(Chromium 67.0.3396.47)
+    //
+    // Non-blink Chromium has it's own version of this list (see
+    // content::RegisterContentSchemes).
+    for (auto& cs : url::CustomScheme::GetSchemes()) {
+      if (cs.flags & url::CustomScheme::ServiceWorkersAllowed) {
+        service_worker_schemes.insert(String(cs.name.c_str()));
+      }
+    }
   }
   ~URLSchemesRegistry() = default;
 
