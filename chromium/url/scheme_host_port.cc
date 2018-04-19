@@ -21,6 +21,7 @@
 #include "url/url_canon_stdstring.h"
 #include "url/url_constants.h"
 #include "url/url_util.h"
+#include "url/url_util_qt.h"
 
 namespace url {
 
@@ -67,6 +68,22 @@ bool IsValidInput(const base::StringPiece& scheme,
   if (base::Contains(GetNoAccessSchemes(), scheme))
     return false;
 
+  // NOTE(juvaldma)(Chromium 67.0.3396.47)
+  //
+  // Differences between standard and custom schemes:
+  //
+  //   - SCHEME_WITH_HOST: host part is optional for standard schemes and
+  //     mandatory for custom schemes. Among the standard schemes, 'file' has an
+  //     optional host part, so that's probably why it's optional.
+  //
+  //   - SCHEME_WITHOUT_AUTHORITY: disallowed for standard schemes, allowed for
+  //     custom schemes. The idea being that all pages from a such a scheme, for
+  //     example 'qrc', should belong to the same origin.
+  if (const CustomScheme* cs = CustomScheme::FindScheme(scheme))
+    return (cs->has_host_component() == !host.empty() &&
+            cs->has_port_component() == (port != 0) &&
+            (policy != SchemeHostPort::CHECK_CANONICALIZATION || host.empty() || IsCanonicalHost(host)));
+
   SchemeType scheme_type = SCHEME_WITH_HOST_PORT_AND_USER_INFORMATION;
   bool is_standard = GetStandardSchemeType(
       scheme.data(),
@@ -85,7 +102,7 @@ bool IsValidInput(const base::StringPiece& scheme,
 
     // Otherwise, allow non-standard schemes only if the Android WebView
     // workaround is enabled.
-    return AllowNonStandardSchemesForAndroidWebView();
+    return !base::Contains(url::GetNoAccessSchemes(), scheme) && AllowNonStandardSchemesForAndroidWebView();
   }
 
   switch (scheme_type) {
@@ -200,6 +217,26 @@ bool SchemeHostPort::IsValid() const {
 }
 
 std::string SchemeHostPort::Serialize() const {
+  // NOTE(juvaldma)(Chromium 67.0.3396.47)
+  //
+  // We break from the standard format here and skip the double-slashes for
+  // custom schemes of type SCHEME_WITHOUT_AUTHORITY. This seems to be the only
+  // way to ensure that invariants like
+  //
+  //   GURL(x.Serialize()) == x.GetURL() for all SchemeHostPort x
+  //
+  // and
+  //
+  //   y == Origin::Create(GURL(y.Serialize())) for all Origin y
+  //
+  // hold without changing the URL parser. URLs of this type are parsed with the
+  // PathURL parser, which would include the double-slashes in the path
+  // component instead of ignoring them as part of the authority syntax like
+  // they are supposed to be.
+  if (const CustomScheme* cs = CustomScheme::FindScheme(scheme_))
+    if (!cs->has_host_component())
+      return scheme_ + ":";
+
   // Null checking for |parsed| in SerializeInternal is probably slower than
   // just filling it in and discarding it here.
   url::Parsed parsed;
@@ -207,6 +244,19 @@ std::string SchemeHostPort::Serialize() const {
 }
 
 GURL SchemeHostPort::GetURL() const {
+  // NOTE(juvaldma)(Chromium 67.0.3396.47)
+  //
+  // See note in Serialize(). We also skip the extra slash workaround for custom
+  // schemes of type SCHEME_WITHOUT_AUTHORITY, since that only applies to
+  // StandardURL canonicalization.
+  if (const CustomScheme* cs = CustomScheme::FindScheme(scheme_)) {
+    if (!cs->has_host_component()) {
+      url::Parsed parsed;
+      parsed.scheme = Component(0, scheme_.length());
+      return GURL(scheme_ + ":", parsed, true);
+    }
+  }
+
   url::Parsed parsed;
   std::string serialized = SerializeInternal(&parsed);
 

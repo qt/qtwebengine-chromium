@@ -309,7 +309,8 @@ bool WebSocketChannelImpl::Connect(const KURL& url, const String& protocol) {
   // If the connection needs to be filtered, asynchronously fail. Synchronous
   // failure blocks the worker thread which should be avoided. Note that
   // returning "true" just indicates that this was not a mixed content error.
-  if (ShouldDisallowConnection(url)) {
+  if (ShouldDisallowConnection(url) ||
+      execution_context_->GetSecurityOrigin()->IsBroken()) {
     execution_context_->GetTaskRunner(TaskType::kNetworking)
         ->PostTask(FROM_HERE,
                    WTF::Bind(&WebSocketChannelImpl::TearDownFailedConnection,
