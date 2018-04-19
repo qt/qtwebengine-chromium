@@ -13,6 +13,7 @@
 #include "url/url_canon.h"
 #include "url/url_canon_internal.h"
 #include "url/url_constants.h"
+#include "url/url_util_qt.h"
 
 namespace url {
 
@@ -149,6 +150,12 @@ int DefaultPortForScheme(std::string_view scheme) {
       }
       break;
   }
+  if (const CustomScheme* cs = CustomScheme::FindScheme(scheme)) {
+    if (cs->has_port_component()) {
+      return cs->default_port;
+    }
+  }
+
   return PORT_UNSPECIFIED;
 }
 
