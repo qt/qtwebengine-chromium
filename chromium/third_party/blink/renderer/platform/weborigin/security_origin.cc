@@ -52,6 +52,7 @@
 #include "url/url_canon.h"
 #include "url/url_canon_ip.h"
 #include "url/url_util.h"
+#include "url/url_util_qt.h"
 
 namespace blink {
 
@@ -64,6 +65,10 @@ const String& EnsureNonNull(const String& string) {
 }
 
 }  // namespace
+
+bool SecurityOrigin::IsBroken() const {
+  return !IsOpaque() && ToUrlOrigin().opaque();
+}
 
 bool SecurityOrigin::ShouldUseInnerURL(const KURL& url) {
   // FIXME: Blob URLs don't have inner URLs. Their form is
@@ -153,10 +158,27 @@ SecurityOrigin::SecurityOrigin(const String& protocol,
                                const String& host,
                                uint16_t port)
     : protocol_(protocol), host_(host), domain_(host_), port_(port) {
+  DCHECK(!IsOpaque());
+
+  // NOTE(juvaldma)(Chromium 67.0.3396.47)
+  //
+  // If DefaultPortForProtocol and IsDefaultPortForProtocol were appropriately
+  // extended, then SecurityOrigin would *almost* work without the following
+  // code. The only problem is that can_load_local_resources_ would be set for
+  // Local schemes and not LocalAccessAllowed schemes.
+  if (const url::CustomScheme* cs = url::CustomScheme::FindScheme(StringUTF8Adaptor(protocol_).AsStringPiece())) {
+    if (cs->has_port_component()) {
+      if (!port_)
+        port_ = cs->default_port;
+    } else {
+      port_ = 0;
+    }
+    can_load_local_resources_ = cs->flags & url::CustomScheme::LocalAccessAllowed;
+    return;
+  }
   DCHECK(url::SchemeHostPort(protocol.Utf8(), host.Utf8(), port,
                              url::SchemeHostPort::CHECK_CANONICALIZATION)
              .IsValid());
-  DCHECK(!IsOpaque());
   // By default, only local SecurityOrigins can load local resources.
   can_load_local_resources_ = IsLocal();
 }
@@ -498,6 +520,23 @@ String SecurityOrigin::ToRawString() const {
 }
 
 void SecurityOrigin::BuildRawString(StringBuilder& builder) const {
+  // NOTE(juvaldma)(Chromium 69.0.3497.128)
+  //
+  // Should match url::SchemeHostPort::Serialize().
+  if (const url::CustomScheme* cs = url::CustomScheme::FindScheme(StringUTF8Adaptor(protocol_).AsStringPiece())) {
+    builder.Append(protocol_);
+    builder.Append(":");
+    if (!cs->has_host_component())
+      return;
+    builder.Append("//");
+    builder.Append(host_);
+    if (!cs->has_port_component() || port_ == cs->default_port)
+      return;
+    builder.Append(':');
+    builder.AppendNumber(port_);
+    return;
+  }
+
   builder.Append(protocol_);
   builder.Append("://");
   builder.Append(host_);
