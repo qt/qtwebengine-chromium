@@ -94,6 +94,7 @@ class PLATFORM_EXPORT SecurityOrigin : public RefCounted<SecurityOrigin> {
                                               uint16_t port);
   static scoped_refptr<SecurityOrigin> CreateFromUrlOrigin(const url::Origin&);
   url::Origin ToUrlOrigin() const;
+  bool IsBroken() const;
 
   // Sets the map to look up a SecurityOrigin instance serialized to "null" from
   // a blob URL.
@@ -377,8 +378,8 @@ class PLATFORM_EXPORT SecurityOrigin : public RefCounted<SecurityOrigin> {
   const String protocol_ = g_empty_string;
   const String host_ = g_empty_string;
   String domain_ = g_empty_string;
-  const uint16_t port_ = kInvalidPort;
-  const uint16_t effective_port_ = kInvalidPort;
+  uint16_t port_ = kInvalidPort;
+  uint16_t effective_port_ = kInvalidPort;
   const base::Optional<url::Origin::Nonce> nonce_if_opaque_;
   bool universal_access_ = false;
   bool domain_was_set_in_dom_ = false;

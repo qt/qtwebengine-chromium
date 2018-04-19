@@ -50,6 +50,7 @@
 #include "url/url_canon.h"
 #include "url/url_canon_ip.h"
 #include "url/url_util.h"
+#include "url/url_util_qt.h"
 
 namespace blink {
 
@@ -70,6 +71,10 @@ static SecurityOrigin* GetNullOriginFromBlobURL(const KURL& blob_url) {
   if (g_blob_url_null_origin_map)
     return g_blob_url_null_origin_map->GetOrigin(blob_url);
   return nullptr;
+}
+
+bool SecurityOrigin::IsBroken() const {
+  return !IsOpaque() && ToUrlOrigin().opaque();
 }
 
 bool SecurityOrigin::ShouldUseInnerURL(const KURL& url) {
@@ -153,7 +158,28 @@ SecurityOrigin::SecurityOrigin(const KURL& url)
       port_(IsDefaultPortForProtocol(url.Port(), protocol_) ? kInvalidPort
                                                             : url.Port()),
       effective_port_(port_ ? port_ : DefaultPortForProtocol(protocol_)) {
-  DCHECK(!ShouldTreatAsOpaqueOrigin(url));
+//  DCHECK(!ShouldTreatAsOpaqueOrigin(url));
+
+  // NOTE(juvaldma)(Chromium 67.0.3396.47)
+  //
+  // If DefaultPortForProtocol and IsDefaultPortForProtocol were appropriately
+  // extended, then SecurityOrigin would *almost* work without the following
+  // code. The only problem is that can_load_local_resources_ would be set for
+  // Local schemes and not LocalAccessAllowed schemes.
+  if (const url::CustomScheme* cs = url::CustomScheme::FindScheme(StringUTF8Adaptor(protocol_).AsStringPiece())) {
+    if (cs->has_port_component()) {
+      if (!effective_port_) // 0 is kInvalidPort
+        effective_port_ = cs->default_port;
+      if (port_ == cs->default_port)
+        port_ = kInvalidPort;
+    } else {
+      effective_port_ = kInvalidPort;
+      port_ = kInvalidPort;
+    }
+    can_load_local_resources_ = cs->flags & url::CustomScheme::LocalAccessAllowed;
+    return;
+  }
+
   // By default, only local SecurityOrigins can load local resources.
   can_load_local_resources_ = IsLocal();
 }
@@ -564,6 +590,17 @@ String SecurityOrigin::ToRawString() const {
 }
 
 void SecurityOrigin::BuildRawString(StringBuilder& builder) const {
+  // NOTE(juvaldma)(Chromium 69.0.3497.128)
+  //
+  // Should match url::SchemeHostPort::Serialize().
+  if (const url::CustomScheme* cs = url::CustomScheme::FindScheme(StringUTF8Adaptor(protocol_).AsStringPiece())) {
+    if (!cs->has_host_component()) {
+      builder.Append(protocol_);
+      builder.Append(":");
+      return;
+    }
+  }
+
   builder.Append(protocol_);
   builder.Append("://");
   builder.Append(host_);

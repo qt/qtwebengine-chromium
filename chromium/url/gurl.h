@@ -213,6 +213,9 @@ class COMPONENT_EXPORT(URL) GURL {
   // by calling SchemeIsFile[System].
   bool IsStandard() const;
 
+  // Qt WebEngine custom scheme.
+  bool IsCustom() const;
+
   // Returns true when the url is of the form about:blank, about:blank?foo or
   // about:blank/#foo.
   bool IsAboutBlank() const;
