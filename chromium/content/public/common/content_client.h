@@ -143,10 +143,10 @@ class CONTENT_EXPORT ContentClient {
     std::vector<std::string> empty_document_schemes;
     // Registers a URL scheme as extension scheme.
     std::vector<std::string> extension_schemes;
-#if BUILDFLAG(IS_ANDROID)
+#if BUILDFLAG(IS_ANDROID) || defined(TOOLKIT_QT)
     // Normally, non-standard schemes canonicalize to opaque origins. However,
     // Android WebView requires non-standard schemes to still be preserved.
-    bool allow_non_standard_schemes_in_origins = false;
+    bool allow_non_standard_schemes_in_origins = true;
 #endif
   };
 
