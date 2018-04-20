@@ -10026,6 +10026,43 @@ test_xmlHashDefaultDeallocator(void) {
 
 
 static int
+test_xmlHashDefaultDeallocator(void) {
+    int test_ret = 0;
+
+    int mem_base;
+    void * entry; /* the hash table entry */
+    int n_entry;
+    xmlChar * name; /* the entry's name */
+    int n_name;
+
+    for (n_entry = 0;n_entry < gen_nb_void_ptr;n_entry++) {
+    for (n_name = 0;n_name < gen_nb_const_xmlChar_ptr;n_name++) {
+        mem_base = xmlMemBlocks();
+        entry = gen_void_ptr(n_entry, 0);
+        name = gen_const_xmlChar_ptr(n_name, 1);
+
+        xmlHashDefaultDeallocator(entry, (const xmlChar *)name);
+        call_tests++;
+        des_void_ptr(n_entry, entry, 0);
+        des_const_xmlChar_ptr(n_name, (const xmlChar *)name, 1);
+        xmlResetLastError();
+        if (mem_base != xmlMemBlocks()) {
+            printf("Leak of %d blocks found in xmlHashDefaultDeallocator",
+	           xmlMemBlocks() - mem_base);
+	    test_ret++;
+            printf(" %d", n_entry);
+            printf(" %d", n_name);
+            printf("\n");
+        }
+    }
+    }
+    function_tests++;
+
+    return(test_ret);
+}
+
+
+static int
 test_xmlHashLookup(void) {
     int test_ret = 0;
 
