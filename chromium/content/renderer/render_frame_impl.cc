@@ -7133,6 +7133,10 @@ RenderFrameImpl::GetDefaultURLLoaderFactoryGetter() {
   return url_loader_factory_getter_.get();
 }
 
+void RenderFrameImpl::FrameDidCallFocus() {
+  Send(new FrameHostMsg_FrameDidCallFocus(routing_id_));
+}
+
 void RenderFrameImpl::SetAccessibilityModeForTest(ui::AXMode new_mode) {
   OnSetAccessibilityMode(new_mode);
 }

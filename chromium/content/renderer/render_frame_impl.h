@@ -876,6 +876,10 @@ class CONTENT_EXPORT RenderFrameImpl
   // TODO(kinuko) We can remove this when network service is the only path.
   ChildURLLoaderFactoryGetter* GetDefaultURLLoaderFactoryGetter();
 
+  // Called to notify a frame that it called |window.focus()| on a different
+  // frame.
+  void FrameDidCallFocus();
+
  protected:
   explicit RenderFrameImpl(CreateParams params);
 
