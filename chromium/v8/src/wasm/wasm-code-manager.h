@@ -299,7 +299,7 @@ class V8_EXPORT_PRIVATE NativeModule final {
                          bool is_liftoff = false);
   void SetCodeTable(uint32_t, wasm::WasmCode*);
   WasmCode* CloneCode(const WasmCode*);
-  bool CloneTrampolinesAndStubs(const NativeModule* other);
+  void CloneTrampolinesAndStubs(const NativeModule* other);
   WasmCode* Lookup(Address);
   Address GetLocalAddressFor(Handle<Code>);
   Address CreateTrampolineTo(Handle<Code>);

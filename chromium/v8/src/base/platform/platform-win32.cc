@@ -872,6 +872,10 @@ void OS::Sleep(TimeDelta interval) {
 
 
 void OS::Abort() {
+  // Before aborting, make sure to flush output buffers.
+  fflush(stdout);
+  fflush(stderr);
+
   if (g_hard_abort) {
     V8_IMMEDIATE_CRASH();
   }
