@@ -23,6 +23,8 @@
 #include "core/loader/ImageLoader.h"
 
 #include <memory>
+#include <utility>
+
 #include "bindings/core/v8/ExceptionState.h"
 #include "bindings/core/v8/ScriptController.h"
 #include "bindings/core/v8/V8BindingForCore.h"
@@ -396,10 +398,16 @@ void ImageLoader::DoUpdateFromElement(BypassMainWorldBehavior bypass_behavior,
           referrer_policy, url, document.OutgoingReferrer()));
     }
 
+    // Correct the RequestContext if necessary.
     if (IsHTMLPictureElement(GetElement()->parentNode()) ||
-        !GetElement()->FastGetAttribute(HTMLNames::srcsetAttr).IsNull())
+        !GetElement()->FastGetAttribute(HTMLNames::srcsetAttr).IsNull()) {
       resource_request.SetRequestContext(
           WebURLRequest::kRequestContextImageSet);
+    } else if (IsHTMLObjectElement(GetElement())) {
+      resource_request.SetRequestContext(WebURLRequest::kRequestContextObject);
+    } else if (IsHTMLEmbedElement(GetElement())) {
+      resource_request.SetRequestContext(WebURLRequest::kRequestContextEmbed);
+    }
 
     if (document.PageDismissalEventBeingDispatched() !=
         Document::kNoDismissal) {
