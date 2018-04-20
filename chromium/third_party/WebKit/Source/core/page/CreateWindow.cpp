@@ -61,7 +61,7 @@ static Frame* reuseExistingWindow(LocalFrame& activeFrame,
           if (host == activeFrame.host())
             frame->page()->focusController().setFocusedFrame(frame);
           else
-            host->chromeClient().focus();
+            host->chromeClient().focus(&activeFrame);
         }
       }
       return frame;

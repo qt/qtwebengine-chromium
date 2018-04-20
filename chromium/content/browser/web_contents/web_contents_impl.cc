@@ -4718,8 +4718,14 @@ void WebContentsImpl::SetFocusedFrame(FrameTreeNode* node,
   }
 
   SetAsFocusedWebContentsIfNecessary();
-
   frame_tree_.SetFocusedFrame(node, source);
+}
+
+void WebContentsImpl::DidCallFocus() {
+  // Any explicit focusing of another window while this WebContents is in
+  // fullscreen can be used to confuse the user, so drop fullscreen.
+  if (IsFullscreenForCurrentTab())
+    ExitFullscreen(true);
 }
 
 void WebContentsImpl::OnFocusedElementChangedInFrame(

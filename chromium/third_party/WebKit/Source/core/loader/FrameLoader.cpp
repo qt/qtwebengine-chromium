@@ -1135,7 +1135,7 @@ void FrameLoader::load(const FrameLoadRequest& passedRequest,
     targetFrame->navigate(request);
     Page* page = targetFrame->page();
     if (!wasInSamePage && page)
-      page->chromeClient().focus();
+      page->chromeClient().focus(nullptr);
     return;
   }
 

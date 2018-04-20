@@ -710,6 +710,10 @@ class CONTENT_EXPORT RenderFrameImpl
   void OnSetPepperVolume(int32_t pp_instance, double volume);
 #endif  // ENABLE_PLUGINS
 
+  // Called to notify a frame that it called |window.focus()| on a different
+  // frame.
+  void FrameDidCallFocus();
+
  protected:
   explicit RenderFrameImpl(const CreateParams& params);
 

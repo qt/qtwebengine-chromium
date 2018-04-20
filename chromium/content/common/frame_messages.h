@@ -1499,6 +1499,8 @@ IPC_MESSAGE_ROUTED1(FrameHostMsg_HittestData, FrameHostMsg_HittestData_Params)
 // FrameMsg_RunFileChooserResponse message.
 IPC_MESSAGE_ROUTED1(FrameHostMsg_RunFileChooser, content::FileChooserParams)
 
+// Sent to notify that a frame called |window.focus()|.
+IPC_MESSAGE_ROUTED0(FrameHostMsg_FrameDidCallFocus)
 #if defined(USE_EXTERNAL_POPUP_MENU)
 
 // Message to show/hide a popup menu using native controls.

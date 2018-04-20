@@ -140,7 +140,7 @@ class CORE_EXPORT DOMWindow : public EventTargetWithInlineData,
 
   virtual DOMSelection* getSelection() = 0;
 
-  void focus(ExecutionContext*);
+  void focus(LocalDOMWindow* window);
   virtual void blur() = 0;
   void close(ExecutionContext*);
   virtual void print(ScriptState*) = 0;

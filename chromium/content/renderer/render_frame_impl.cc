@@ -6567,6 +6567,10 @@ bool RenderFrameImpl::IsBrowserSideNavigationPending() {
   return browser_side_navigation_pending_;
 }
 
+void RenderFrameImpl::FrameDidCallFocus() {
+  Send(new FrameHostMsg_FrameDidCallFocus(routing_id_));
+}
+
 blink::WebPlugin* RenderFrameImpl::GetWebPluginForFind() {
   if (frame_->document().isPluginDocument())
     return frame_->document().to<WebPluginDocument>().plugin();

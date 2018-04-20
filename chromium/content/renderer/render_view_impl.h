@@ -337,7 +337,7 @@ class CONTENT_EXPORT RenderViewImpl
   void pageImportanceSignalsChanged() override;
   void didAutoResize(const blink::WebSize& newSize) override;
   blink::WebRect rootWindowRect() override;
-  void didFocus() override;
+  void didFocus(blink::WebLocalFrame* calling_frame) override;
 
 #if defined(OS_ANDROID)
   void scheduleContentIntent(const blink::WebURL& intent,

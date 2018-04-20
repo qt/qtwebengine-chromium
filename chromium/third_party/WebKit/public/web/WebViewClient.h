@@ -193,7 +193,7 @@ class WebViewClient : protected WebWidgetClient {
   virtual void didAutoResize(const WebSize& newSize) {}
 
   // Called when the View acquires focus.
-  virtual void didFocus() {}
+  virtual void didFocus(WebLocalFrame* calling_frame) {}
 
   // TODO(lfg): The callback below is exposed in RenderViewObserver and only
   // used to implement autofill. We should figure out a better way to plumb

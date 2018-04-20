@@ -495,6 +495,7 @@ class CONTENT_EXPORT WebContentsImpl
   std::unique_ptr<WebUIImpl> CreateWebUIForRenderFrameHost(
       const GURL& url) override;
   void SetFocusedFrame(FrameTreeNode* node, SiteInstance* source) override;
+  void DidCallFocus() override;
   void OnFocusedElementChangedInFrame(
       RenderFrameHostImpl* frame,
       const gfx::Rect& bounds_in_root_view) override;
@@ -843,6 +844,8 @@ class CONTENT_EXPORT WebContentsImpl
                            DialogsFromJavaScriptEndFullscreen);
   FRIEND_TEST_ALL_PREFIXES(WebContentsImplBrowserTest,
                            PopupsFromJavaScriptEndFullscreen);
+  FRIEND_TEST_ALL_PREFIXES(WebContentsImplBrowserTest,
+                           FocusFromJavaScriptEndsFullscreen);
 
   // So |find_request_manager_| can be accessed for testing.
   friend class FindRequestManagerTest;

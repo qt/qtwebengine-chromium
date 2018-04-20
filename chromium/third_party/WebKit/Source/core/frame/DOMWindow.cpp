@@ -407,7 +407,7 @@ void DOMWindow::close(ExecutionContext* context) {
   m_windowIsClosing = true;
 }
 
-void DOMWindow::focus(ExecutionContext* context) {
+void DOMWindow::focus(LocalDOMWindow* window) {
   if (!frame())
     return;
 
@@ -415,7 +415,8 @@ void DOMWindow::focus(ExecutionContext* context) {
   if (!page)
     return;
 
-  ASSERT(context);
+  DCHECK(window);
+  ExecutionContext* context = window->getExecutionContext();
 
   bool allowFocus = context->isWindowInteractionAllowed();
   if (allowFocus) {
@@ -428,7 +429,7 @@ void DOMWindow::focus(ExecutionContext* context) {
 
   // If we're a top level window, bring the window to the front.
   if (frame()->isMainFrame() && allowFocus)
-    page->chromeClient().focus();
+    page->chromeClient().focus(window->frame());
 
   page->focusController().focusDocumentView(frame(), true /* notifyEmbedder */);
 }

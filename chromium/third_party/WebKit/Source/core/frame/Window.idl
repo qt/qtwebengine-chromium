@@ -50,7 +50,7 @@
     [DoNotCheckSecurity, CallWith=ExecutionContext] void close();
     [DoNotCheckSecurity] readonly attribute boolean closed;
     void stop();
-    [DoNotCheckSecurity, CallWith=ExecutionContext] void focus();
+    [DoNotCheckSecurity, CallWith=CurrentWindow] void focus();
     [DoNotCheckSecurity] void blur();
 
     // other browsing contexts

@@ -45,6 +45,7 @@ class PagePopupClient;
 class WebViewImpl;
 struct WebCursorInfo;
 
+
 // Handles window-level notifications from core on behalf of a WebView.
 class WEB_EXPORT ChromeClientImpl final : public ChromeClient {
  public:
@@ -58,7 +59,7 @@ class WEB_EXPORT ChromeClientImpl final : public ChromeClient {
   void setWindowRect(const IntRect&, LocalFrame&) override;
   IntRect rootWindowRect() override;
   IntRect pageRect() override;
-  void focus() override;
+  void focus(LocalFrame* ) override;
   bool canTakeFocus(WebFocusType) override;
   void takeFocus(WebFocusType) override;
   void focusedNodeChanged(Node* fromNode, Node* toNode) override;

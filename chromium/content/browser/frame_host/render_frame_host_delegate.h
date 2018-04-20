@@ -207,6 +207,9 @@ class CONTENT_EXPORT RenderFrameHostDelegate {
   // possibly changing focus in distinct but related inner/outer WebContents.
   virtual void SetFocusedFrame(FrameTreeNode* node, SiteInstance* source) {}
 
+  // The frame called |window.focus()|.
+  virtual void DidCallFocus() {}
+
   // Creates a WebUI object for a frame navigating to |url|. If no WebUI
   // applies, returns null.
   virtual std::unique_ptr<WebUIImpl> CreateWebUIForRenderFrameHost(
