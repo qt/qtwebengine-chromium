@@ -268,6 +268,11 @@ void ScrollableArea::scrollOffsetChanged(const ScrollOffset& offset,
   // Tell the derived class to scroll its contents.
   updateScrollOffset(truncatedOffset, scrollType);
 
+  // If the layout object has been detached as a result of updating the scroll
+  // this object will be cleaned up shortly.
+  if (hasBeenDisposed())
+    return;
+
   // Tell the scrollbars to update their thumb postions.
   // If the scrollbar does not have its own layer, it must always be
   // invalidated to reflect the new thumb offset, even if the theme did not

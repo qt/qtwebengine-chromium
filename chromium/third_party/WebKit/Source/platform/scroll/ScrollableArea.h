@@ -402,6 +402,8 @@ class PLATFORM_EXPORT ScrollableArea : public GarbageCollectedMixin {
   // then reset to alpha, causing spurrious "visibilityChanged" calls.
   virtual void scrollbarVisibilityChanged() {}
 
+  virtual bool hasBeenDisposed() const { return false; }
+
  private:
   void programmaticScrollHelper(const ScrollOffset&, ScrollBehavior);
   void userScrollHelper(const ScrollOffset&, ScrollBehavior);

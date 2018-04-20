@@ -227,6 +227,7 @@ class CORE_EXPORT PaintLayerScrollableArea final
 
   ~PaintLayerScrollableArea() override;
   void dispose();
+  bool hasBeenDisposed() const override;
 
   bool hasHorizontalScrollbar() const { return horizontalScrollbar(); }
   bool hasVerticalScrollbar() const { return verticalScrollbar(); }
@@ -526,8 +527,7 @@ class CORE_EXPORT PaintLayerScrollableArea final
     return *m_rareData.get();
   }
 
-  PaintLayer& m_layer;
-
+  PaintLayer* m_layer;
   PaintLayer* m_nextTopmostScrollChild;
   PaintLayer* m_topmostScrollChild;
 

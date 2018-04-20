@@ -97,7 +97,7 @@ PaintLayerScrollableAreaRareData::PaintLayerScrollableAreaRareData() {}
 const int ResizerControlExpandRatioForTouch = 2;
 
 PaintLayerScrollableArea::PaintLayerScrollableArea(PaintLayer& layer)
-    : m_layer(layer),
+    : m_layer(&layer),
       m_nextTopmostScrollChild(0),
       m_topmostScrollChild(0),
       m_inResizeMode(false),
@@ -114,10 +114,6 @@ PaintLayerScrollableArea::PaintLayerScrollableArea(PaintLayer& layer)
       m_scrollCorner(nullptr),
       m_resizer(nullptr),
       m_scrollAnchor(this)
-#if DCHECK_IS_ON()
-      ,
-      m_hasBeenDisposed(false)
-#endif
 {
   Node* node = box().node();
   if (node && node->isElementNode()) {
@@ -133,9 +129,7 @@ PaintLayerScrollableArea::PaintLayerScrollableArea(PaintLayer& layer)
 }
 
 PaintLayerScrollableArea::~PaintLayerScrollableArea() {
-#if DCHECK_IS_ON()
-  DCHECK(m_hasBeenDisposed);
-#endif
+  DCHECK(hasBeenDisposed());
 }
 
 void PaintLayerScrollableArea::dispose() {
@@ -190,9 +184,11 @@ void PaintLayerScrollableArea::dispose() {
       !box().documentBeingDestroyed())
     m_scrollAnchor.clearSelf();
 
-#if DCHECK_IS_ON()
-  m_hasBeenDisposed = true;
-#endif
+  m_layer = nullptr;
+}
+
+bool PaintLayerScrollableArea::hasBeenDisposed() const {
+  return !m_layer;
 }
 
 DEFINE_TRACE(PaintLayerScrollableArea) {
@@ -617,11 +613,11 @@ int PaintLayerScrollableArea::pageStep(ScrollbarOrientation orientation) const {
 }
 
 LayoutBox& PaintLayerScrollableArea::box() const {
-  return *m_layer.layoutBox();
+  return *m_layer->layoutBox();
 }
 
 PaintLayer* PaintLayerScrollableArea::layer() const {
-  return &m_layer;
+  return m_layer;
 }
 
 LayoutUnit PaintLayerScrollableArea::scrollWidth() const {
