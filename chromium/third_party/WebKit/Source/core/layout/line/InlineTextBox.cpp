@@ -400,6 +400,7 @@ LayoutUnit InlineTextBox::placeEllipsisBox(bool flowIsLTR,
 bool InlineTextBox::isLineBreak() const {
   return getLineLayoutItem().isBR() ||
          (getLineLayoutItem().style()->preserveNewline() && len() == 1 &&
+          getLineLayoutItem().text().length() > start() &&
           (*getLineLayoutItem().text().impl())[start()] == '\n');
 }
 
