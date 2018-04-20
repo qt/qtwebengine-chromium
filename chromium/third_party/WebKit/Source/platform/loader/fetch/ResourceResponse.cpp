@@ -514,6 +514,21 @@ void ResourceResponse::SetResourceLoadInfo(
   resource_load_info_ = std::move(load_info);
 }
 
+bool ResourceResponse::IsOpaqueResponseFromServiceWorker() const {
+  switch (response_type_via_service_worker_) {
+    case network::mojom::FetchResponseType::kBasic:
+    case network::mojom::FetchResponseType::kCORS:
+    case network::mojom::FetchResponseType::kDefault:
+    case network::mojom::FetchResponseType::kError:
+      return false;
+    case network::mojom::FetchResponseType::kOpaque:
+    case network::mojom::FetchResponseType::kOpaqueRedirect:
+      return true;
+  }
+  NOTREACHED();
+  return false;
+}
+
 KURL ResourceResponse::OriginalURLViaServiceWorker() const {
   if (url_list_via_service_worker_.IsEmpty())
     return KURL();
