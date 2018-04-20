@@ -21,6 +21,7 @@
  */
 
 #include "core/loader/ImageLoader.h"
+#include <utility>
 
 #include "bindings/core/v8/Microtask.h"
 #include "bindings/core/v8/ScriptController.h"
@@ -305,9 +306,15 @@ void ImageLoader::doUpdateFromElement(BypassMainWorldBehavior bypassBehavior,
           referrerPolicy, url, document.outgoingReferrer()));
     }
 
+    // Correct the RequestContext if necessary.
     if (isHTMLPictureElement(element()->parentNode()) ||
-        !element()->fastGetAttribute(HTMLNames::srcsetAttr).isNull())
+        !element()->fastGetAttribute(HTMLNames::srcsetAttr).isNull()) {
       resourceRequest.setRequestContext(WebURLRequest::RequestContextImageSet);
+    } else if (isHTMLObjectElement(element())) {
+      resourceRequest.setRequestContext(WebURLRequest::RequestContextObject);
+    } else if (isHTMLEmbedElement(element())) {
+      resourceRequest.setRequestContext(WebURLRequest::RequestContextEmbed);
+    }
     FetchRequest request(resourceRequest, element()->localName(),
                          resourceLoaderOptions);
     configureRequest(request, bypassBehavior, *m_element,
