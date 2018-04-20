@@ -30,8 +30,7 @@ class DevToolsSession : public protocol::FrontendChannel,
 
   DevToolsAgentHostClient* client() const { return client_; }
   void AddHandler(std::unique_ptr<protocol::DevToolsDomainHandler> handler);
-  void SetRenderer(RenderProcessHost* process_host,
-                   RenderFrameHostImpl* frame_host);
+  void SetRenderer(int process_host_id, RenderFrameHostImpl* frame_host);
   void SetFallThroughForNotFound(bool value);
   void AttachToAgent(const blink::mojom::DevToolsAgentAssociatedPtr& agent);
   void ReattachToAgent(const blink::mojom::DevToolsAgentAssociatedPtr& agent);
@@ -92,7 +91,7 @@ class DevToolsSession : public protocol::FrontendChannel,
   DevToolsAgentHostClient* client_;
   base::flat_map<std::string, std::unique_ptr<protocol::DevToolsDomainHandler>>
       handlers_;
-  RenderProcessHost* process_;
+  int process_host_id_;
   RenderFrameHostImpl* host_;
   std::unique_ptr<protocol::UberDispatcher> dispatcher_;
   MessageByCallId waiting_for_response_messages_;
