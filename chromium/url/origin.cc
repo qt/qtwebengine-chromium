@@ -14,13 +14,14 @@
 #include "url/url_canon_stdstring.h"
 #include "url/url_constants.h"
 #include "url/url_util.h"
+#include "url/url_util_qt.h"
 
 namespace url {
 
 Origin::Origin() : unique_(true) {}
 
 Origin Origin::Create(const GURL& url) {
-  if (!url.is_valid() || (!url.IsStandard() && !url.SchemeIsBlob()))
+  if (!url.is_valid() || (!url.IsStandard() && !url.SchemeIsBlob() && !url.IsCustom()))
     return Origin();
 
   SchemeHostPort tuple;

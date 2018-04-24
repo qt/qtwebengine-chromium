@@ -46,6 +46,7 @@
 #include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
 #include "url/url_canon.h"
 #include "url/url_canon_ip.h"
+#include "url/url_util_qt.h"
 
 namespace blink {
 
@@ -137,6 +138,26 @@ SecurityOrigin::SecurityOrigin(const KURL& url)
 
   // document.domain starts as m_host, but can be set by the DOM.
   domain_ = host_;
+
+  // NOTE(juvaldma)(Chromium 67.0.3396.47)
+  //
+  // If DefaultPortForProtocol and IsDefaultPortForProtocol were appropriately
+  // extended, then SecurityOrigin would *almost* work without the following
+  // code. The only problem is that can_load_local_resources_ would be set for
+  // Local schemes and not LocalAccessAllowed schemes.
+  if (const url::CustomScheme* cs = url::CustomScheme::FindScheme(StringUTF8Adaptor(protocol_).AsStringPiece())) {
+    if (cs->has_port_component()) {
+      if (!effective_port_) // 0 is kInvalidPort
+        effective_port_ = cs->default_port;
+      if (port_ == cs->default_port)
+        port_ = kInvalidPort;
+    } else {
+      effective_port_ = kInvalidPort;
+      port_ = kInvalidPort;
+    }
+    can_load_local_resources_ = cs->flags & url::CustomScheme::LocalAccessAllowed;
+    return;
+  }
 
   if (IsDefaultPortForProtocol(port_, protocol_))
     port_ = kInvalidPort;
