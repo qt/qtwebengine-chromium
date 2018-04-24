@@ -46,7 +46,7 @@ BroadcastChannel* BroadcastChannel::Create(ExecutionContext* execution_context,
   }
   if (execution_context->GetSecurityOrigin()->IsBroken()) {
       exception_state.ThrowDOMException(
-          kNotSupportedError,
+          DOMExceptionCode::kNotSupportedError,
           "Can't create BroadcastChannel");
       return nullptr;
   }

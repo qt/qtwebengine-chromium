@@ -75,7 +75,7 @@ DedicatedWorker* DedicatedWorker::Create(ExecutionContext* context,
   auto origin = SecurityOrigin::Create(script_url);
   if (origin->IsBroken()) {
       exception_state.ThrowDOMException(
-          kNotSupportedError,
+          DOMExceptionCode::kNotSupportedError,
           "Access to dedicated workers is denied to origin '" + origin->ToString() + "'.");
       return nullptr;
   }
