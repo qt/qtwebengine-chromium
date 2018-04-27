@@ -40,7 +40,7 @@ const struct {
   const FX_CHAR* m_pFaceName;
   const FX_CHAR* m_pVariantName;
 } g_VariantNames[] = {
-    {"DFKai-SB", "\x19\x6A\x77\x69\xD4\x9A"},
+    {"DFKai-SB", "\x19\x6A\x77\x69\xD4\x9A\x00\x00"},
 };
 
 const struct {
