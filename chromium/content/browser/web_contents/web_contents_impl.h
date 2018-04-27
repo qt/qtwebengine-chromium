@@ -265,6 +265,13 @@ class CONTENT_EXPORT WebContentsImpl
   base::Closure AddBindingSet(const std::string& interface_name,
                               WebContentsBindingSet* binding_set);
 
+  // TODO(https://crbug.com/826293): This is a simple mitigation to validate
+  // that an action that requires a user gesture actually has one in the
+  // trustworthy browser process, rather than relying on the untrustworthy
+  // renderer. This should be eventually merged into and accounted for in the
+  // user activation work.
+  bool HasRecentInteractiveInputEvent() const;
+
   // WebContents ------------------------------------------------------
   WebContentsDelegate* GetDelegate() override;
   void SetDelegate(WebContentsDelegate* delegate) override;
@@ -388,7 +395,7 @@ class CONTENT_EXPORT WebContentsImpl
   RendererPreferences* GetMutableRendererPrefs() override;
   void Close() override;
   void SystemDragEnded(RenderWidgetHost* source_rwh) override;
-  void UserGestureDone() override;
+  void NavigatedByUser() override;
   void SetClosedByUserGesture(bool value) override;
   bool GetClosedByUserGesture() const override;
   void ViewSource() override;
@@ -528,8 +535,8 @@ class CONTENT_EXPORT WebContentsImpl
                               const base::string16& source_id) override;
   RendererPreferences GetRendererPrefs(
       BrowserContext* browser_context) const override;
-  void OnUserInteraction(RenderWidgetHostImpl* render_widget_host,
-                         const blink::WebInputEvent::Type type) override;
+  void DidReceiveInputEvent(RenderWidgetHostImpl* render_widget_host,
+                            const blink::WebInputEvent::Type type) override;
   void OnIgnoredUIEvent() override;
   void Activate() override;
   void UpdatePreferredSize(const gfx::Size& pref_size) override;
@@ -1143,6 +1150,8 @@ class CONTENT_EXPORT WebContentsImpl
   // |delegate_|.
   void OnPreferredSizeChanged(const gfx::Size& old_size);
 
+  void OnUserInteraction(const blink::WebInputEvent::Type type);
+
   // Internal helper to create WebUI objects associated with |this|. |url| is
   // used to determine which WebUI should be created (if any). |frame_name|
   // corresponds to the name of a frame that the WebUI should be created for (or
@@ -1322,6 +1331,11 @@ class CONTENT_EXPORT WebContentsImpl
   // The time that this WebContents was last made hidden. The initial value is
   // zero.
   base::TimeTicks last_hidden_time_;
+
+  // The time that this WebContents last received an 'interactive' input event
+  // from the user. Interactive input events are things like mouse clicks and
+  // keyboard input, but not mouse wheel scrolling or mouse moves.
+  base::TimeTicks last_interactive_input_event_time_;
 
   // See description above setter.
   bool closed_by_user_gesture_;

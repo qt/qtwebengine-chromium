@@ -19,12 +19,13 @@
 namespace content {
 class RenderFrameHost;
 class RenderViewHost;
+class WebContentsImpl;
 
 class CONTENT_EXPORT WebUIImpl : public WebUI,
                                  public IPC::Listener,
                                  public base::SupportsWeakPtr<WebUIImpl> {
  public:
-  WebUIImpl(WebContents* contents, const std::string& frame_name);
+  WebUIImpl(WebContentsImpl* contents, const std::string& frame_name);
   ~WebUIImpl() override;
 
   // Called when a RenderFrame is created for a WebUI (reload after a renderer
@@ -117,8 +118,8 @@ class CONTENT_EXPORT WebUIImpl : public WebUI,
   // The WebUIMessageHandlers we own.
   ScopedVector<WebUIMessageHandler> handlers_;
 
-  // Non-owning pointer to the WebContents this WebUI is associated with.
-  WebContents* web_contents_;
+  // Non-owning pointer to the WebContentsImpl this WebUI is associated with.
+  WebContentsImpl* web_contents_;
 
   // Notifies this WebUI about notifications in the main frame.
   std::unique_ptr<MainFrameNavigationObserver> web_contents_observer_;

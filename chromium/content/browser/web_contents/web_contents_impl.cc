@@ -136,6 +136,7 @@
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/accessibility/ax_tree_combiner.h"
 #include "ui/base/layout.h"
+#include "ui/events/base_event_utils.h"
 #include "ui/events/blink/web_input_event_traits.h"
 #include "ui/gl/gl_switches.h"
 
@@ -1390,6 +1391,20 @@ void WebContentsImpl::WasHidden() {
     observer.WasHidden();
 
   should_normally_be_visible_ = false;
+}
+
+bool WebContentsImpl::HasRecentInteractiveInputEvent() const {
+  static constexpr base::TimeDelta kMaxInterval =
+      base::TimeDelta::FromSeconds(5);
+  base::TimeDelta delta =
+      ui::EventTimeForNow() - last_interactive_input_event_time_;
+  // Note: the expectation is that the caller is typically expecting an input
+  // event, e.g. validating that a WebUI message that requires a gesture is
+  // actually attached to a gesture. Logging to UMA here should hopefully give
+  // sufficient data if 5 seconds is actually sufficient (or even too high a
+  // threshhold).
+  UMA_HISTOGRAM_TIMES("Tabs.TimeSinceLastInteraction", delta);
+  return delta <= kMaxInterval;
 }
 
 void WebContentsImpl::WasOccluded() {
@@ -3052,9 +3067,8 @@ void WebContentsImpl::SystemDragEnded(RenderWidgetHost* source_rwh) {
     browser_plugin_embedder_->SystemDragEnded();
 }
 
-void WebContentsImpl::UserGestureDone() {
-  OnUserInteraction(GetRenderViewHost()->GetWidget(),
-                    blink::WebInputEvent::Undefined);
+void WebContentsImpl::NavigatedByUser() {
+  OnUserInteraction(blink::WebInputEvent::Undefined);
 }
 
 void WebContentsImpl::SetClosedByUserGesture(bool value) {
@@ -4785,21 +4799,25 @@ bool WebContentsImpl::DidAddMessageToConsole(int32_t level,
                                            source_id);
 }
 
-void WebContentsImpl::OnUserInteraction(
+void WebContentsImpl::DidReceiveInputEvent(
     RenderWidgetHostImpl* render_widget_host,
     const blink::WebInputEvent::Type type) {
+  // Ideally, this list would be based more off of
+  // https://whatwg.org/C/interaction.html#triggered-by-user-activation.
+  if (type != blink::WebInputEvent::MouseDown &&
+      type != blink::WebInputEvent::GestureScrollBegin &&
+      type != blink::WebInputEvent::TouchStart &&
+      type != blink::WebInputEvent::RawKeyDown)
+    return;
+
   // Ignore unless the widget is currently in the frame tree.
   if (!HasMatchingWidgetHost(&frame_tree_, render_widget_host))
     return;
 
-  for (auto& observer : observers_)
-    observer.DidGetUserInteraction(type);
+  if (type != blink::WebInputEvent::GestureScrollBegin)
+    last_interactive_input_event_time_ = ui::EventTimeForNow();
 
-  ResourceDispatcherHostImpl* rdh = ResourceDispatcherHostImpl::Get();
-  // Exclude scroll events as user gestures for resource load dispatches.
-  // rdh is NULL in unittests.
-  if (rdh && type != blink::WebInputEvent::MouseWheel)
-    rdh->OnUserGesture();
+  OnUserInteraction(type);
 }
 
 void WebContentsImpl::FocusOwningWebContents(
@@ -5213,6 +5231,20 @@ void WebContentsImpl::OnPreferredSizeChanged(const gfx::Size& old_size) {
   const gfx::Size new_size = GetPreferredSize();
   if (new_size != old_size)
     delegate_->UpdatePreferredSize(this, new_size);
+}
+
+void WebContentsImpl::OnUserInteraction(const blink::WebInputEvent::Type type) {
+  for (auto& observer : observers_)
+    observer.DidGetUserInteraction(type);
+
+  // TODO(https://crbug.com/827659): This used to check if type != kMouseWheel.
+  // However, due to the caller already filtering event types, this would never
+  // be called with type == kMouseWheel so checking for that here is pointless.
+  // However, mouse wheel events *also* generate a kGestureScrollBegin event...
+  // which is *not* filtered out. Maybe they should be?
+  ResourceDispatcherHostImpl* rdh = ResourceDispatcherHostImpl::Get();
+  if (rdh)  // null in unittests. =(
+    rdh->OnUserGesture();
 }
 
 std::unique_ptr<WebUIImpl> WebContentsImpl::CreateWebUI(
