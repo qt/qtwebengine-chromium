@@ -7,7 +7,6 @@
 #include <memory>
 #include <utility>
 
-#include "base/strings/string_util.h"
 #include "base/values.h"
 #include "content/common/frame_messages.h"
 #include "content/public/common/bindings_policy.h"
@@ -95,13 +94,6 @@ void WebUIExtension::Send(gin::Arguments* args) {
   std::string message;
   if (!args->GetNext(&message)) {
     args->ThrowError();
-    return;
-  }
-
-  if (base::EndsWith(message, "RequiringGesture",
-                     base::CompareCase::SENSITIVE) &&
-      !blink::WebUserGestureIndicator::IsProcessingUserGesture(frame)) {
-    NOTREACHED();
     return;
   }
 
