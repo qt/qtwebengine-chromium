@@ -246,6 +246,8 @@ class NavigationController {
     explicit LoadURLParams(const OpenURLParams& open_url_params);
 
     ~LoadURLParams();
+    LoadURLParams(LoadURLParams &&) = default;
+    LoadURLParams& operator=(LoadURLParams &&) = default;
 
     DISALLOW_COPY_AND_ASSIGN(LoadURLParams);
   };
