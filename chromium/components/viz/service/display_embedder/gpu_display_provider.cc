@@ -57,6 +57,10 @@
 #include "ui/ozone/public/surface_ozone_canvas.h"
 #endif
 
+#ifndef GL_BGRA_EXT
+#define GL_BGRA_EXT             0x80E1
+#endif
+
 namespace viz {
 
 GpuDisplayProvider::GpuDisplayProvider(
