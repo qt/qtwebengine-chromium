@@ -295,7 +295,7 @@ constexpr const char* to_string(CredentialType type) {
     case CredentialType::kPublicKey:
       return kPublicKey;
   }
-  NOTREACHED();
+//  NOTREACHED();
   return kPublicKey;
 }
 

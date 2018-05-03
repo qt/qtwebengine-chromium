@@ -211,6 +211,8 @@ class NavigationController {
 
     explicit LoadURLParams(const GURL& url);
     ~LoadURLParams();
+    LoadURLParams(LoadURLParams &&) = default;
+    LoadURLParams& operator=(LoadURLParams &&) = default;
 
     DISALLOW_COPY_AND_ASSIGN(LoadURLParams);
   };
