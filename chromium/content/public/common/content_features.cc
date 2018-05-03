@@ -7,6 +7,7 @@
 #include "build/build_config.h"
 #include "build/chromeos_buildflags.h"
 #include "content/common/buildflags.h"
+#include "net/net_buildflags.h"
 
 #if defined(OS_WIN)
 #include "base/win/windows_version.h"

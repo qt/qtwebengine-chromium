@@ -74,6 +74,10 @@
 #include "components/viz/service/display_embedder/output_surface_unified.h"
 #endif
 
+#ifndef GL_BGRA_EXT
+#define GL_BGRA_EXT             0x80E1
+#endif
+
 namespace viz {
 
 OutputSurfaceProviderImpl::OutputSurfaceProviderImpl(
