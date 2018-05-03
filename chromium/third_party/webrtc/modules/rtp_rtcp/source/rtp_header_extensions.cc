@@ -769,6 +769,8 @@ bool BaseRtpStringExtension::Write(rtc::ArrayView<uint8_t> data,
 
 // Constant declarations for string RTP header extension types.
 
+constexpr uint8_t BaseRtpStringExtension::kMaxValueSizeBytes;
+
 constexpr RTPExtensionType RtpStreamId::kId;
 constexpr const char RtpStreamId::kUri[];
 
