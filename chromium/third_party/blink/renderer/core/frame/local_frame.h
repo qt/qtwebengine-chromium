@@ -61,6 +61,7 @@
 #include "third_party/blink/renderer/core/editing/forward.h"
 #include "third_party/blink/renderer/core/frame/frame.h"
 #include "third_party/blink/renderer/core/frame/frame_types.h"
+#include "third_party/blink/renderer/core/frame/local_dom_window.h"
 #include "third_party/blink/renderer/core/frame/local_frame_view.h"
 #include "third_party/blink/renderer/core/frame/policy_container.h"
 #include "third_party/blink/renderer/core/loader/frame_loader.h"
@@ -124,7 +125,6 @@ class InspectorTaskRunner;
 class InterfaceRegistry;
 class IntSize;
 class LayoutView;
-class LocalDOMWindow;
 class LocalWindowProxy;
 class LocalFrameClient;
 class Node;

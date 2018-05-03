@@ -828,7 +828,9 @@ void ComputeClips(PropertyTrees* property_trees) {
     bool success = ApplyClipNodeToAccumulatedClip(
         property_trees, include_expanding_clips, target_effect_id,
         target_transform_id, clip_node, &accumulated_clip);
-    DCHECK(success);
+    if (!success)
+      LOG(ERROR) << "Compute clip failure";
+//    DCHECK(success);
     clip_node->cached_accumulated_rect_in_screen_space = accumulated_clip;
   }
   clip_tree->set_needs_update(false);

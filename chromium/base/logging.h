@@ -639,7 +639,7 @@ class LogMessageVoidify {
   LogMessageVoidify() = default;
   // This has to be an operator with a precedence lower than << but
   // higher than ?:
-  void operator&(std::ostream&) { }
+  constexpr void operator&(std::ostream&) { }
 };
 
 #if defined(OS_WIN)
