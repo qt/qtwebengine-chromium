@@ -4,6 +4,7 @@
 
 #include "content/public/common/content_features.h"
 #include "build/build_config.h"
+#include "net/net_buildflags.h"
 
 #if defined(OS_WIN)
 #include "base/win/windows_version.h"
